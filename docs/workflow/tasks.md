@@ -27,7 +27,7 @@ What "does no work" means depends on the type:
 
 This is how a single trigger inside a workflow is switched off: the trigger's `condition` task is disabled, so the event still starts the run but that trigger's branch never fires.
 
-A skip does not propagate. A task that `dependsOn` a disabled task still runs, and finds no exports from it; a task listed in a disabled condition's `onTrue` is skipped because the condition resolved false, not because of the dependency.
+A skip does not propagate through `dependsOn`. A task that `dependsOn` a disabled task still runs, and finds no exports from it; a task listed in a disabled condition's `onTrue` is skipped because the condition resolved false, not because of the dependency. Only a branch not taken skips what is under it, nested conditions' branches included (see [condition](#condition)).
 
 ## action
 
@@ -237,7 +237,7 @@ The event type is the subject the event goes out on, so a workflow could otherwi
 
 Reserved names, defined in `shared/common/golang/cloudevents/reserved.go`. An entry ending in `.` reserves that whole namespace; any other entry reserves exactly that name.
 
-- **Commands** (also refused as events declared by an uploaded module): `webhook.`, `db.`, `engine.`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `action.execute`.
+- **Commands** (also refused as events declared by an uploaded module): `webhook.`, `db.`, `engine.`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute`, `action.execute`.
 - **Engine events**: `HEARTBEAT`, `MESSAGEBUS_INIT`, `barkloader.`, `channel.`, `channelpoints.`, `chat.command.`, `module.`, `session.`, `setting.`, `stream.offline`, `stream.online`, `user.message`, `viewer.`, `widget.event`, `workflow.health.`, `workflow.run.`.
 
 Pick an event name of the workflow's own, such as `badge.awarded`. To test a workflow against a platform event (`channel.*`, `stream.online`, ...), fire it with the api's `simulateTwitchEvent` rather than publishing it.
@@ -294,6 +294,27 @@ Evaluates conditions and controls branching. Unlike conditions on other task typ
 
 When the condition evaluates to `true`, tasks listed in `onFalse` are skipped. When `false`, tasks in `onTrue` are skipped. Both branches can contain multiple task IDs.
 
+A branch behaves like the steps under an "if" in a step list, whatever `dependsOn` the tasks in it declare:
+
+- **A branch task never runs before its condition.** Listing a task in `onTrue` or `onFalse` makes it wait for the condition, even with no `dependsOn` of its own.
+- **A branch not taken skips everything under it, at any depth.** A condition inside a skipped branch is skipped too, never evaluated, and so are both of its branches, and theirs. A condition only needs to list its direct children.
+- **The step after a condition waits for its branches.** A task outside a condition's branches that depends on the condition, or on any task in its branches, waits for every task in them, nested ones included. Skipped tasks count as finished, so it runs once the branch taken has finished, or right after the condition when that branch is empty. The one exception is a branch task that itself declares `dependsOn` that following task: the declared order is kept, and the following task does not wait for it.
+
+```json
+[
+  { "id": "check", "type": "condition", "conditions": [{ "field": "${trigger.data.amount}", "operator": "gte", "value": 500 }],
+    "onTrue": ["big-alert", "big-thanks"], "onFalse": ["small-thanks"] },
+  { "id": "big-alert", "type": "log", "dependsOn": ["check"], "parameters": { "message": "big alert" } },
+  { "id": "big-thanks", "type": "log", "dependsOn": ["big-alert"], "parameters": { "message": "big thanks" } },
+  { "id": "small-thanks", "type": "log", "dependsOn": ["check"], "parameters": { "message": "small thanks" } },
+  { "id": "log-it", "type": "log", "dependsOn": ["check"], "parameters": { "message": "after the branch" } }
+]
+```
+
+`log-it` depends only on `check`, but runs after `big-alert` and `big-thanks` (or after `small-thanks`), never alongside them.
+
+A condition listing an unknown task, or listing itself, is refused when the run starts, as is a condition that would have to run after its own branch.
+
 The condition task itself always succeeds (unless evaluation throws an error). It exports:
 
 | Export | Type | Description |
@@ -318,13 +339,15 @@ Waits for one matching event:
     "type": "event",
     "event": "channel.follow",
     "conditions": [
-      { "field": "${trigger.data.userId}", "operator": "eq", "value": "${trigger.data.userId}" }
+      { "field": "${event.data.userName}", "operator": "ne", "value": "" }
     ],
     "timeout": "5m",
     "onTimeout": "continue"
   }
 }
 ```
+
+A wait's `conditions` see only the event being considered, as `${event.data.X}`, `${event.type}` and `${event.id}`; `trigger` and task exports are not available to them. See [Wait conditions](./schema.md#wait-conditions).
 
 ### Aggregation Wait
 
@@ -388,10 +411,17 @@ Paused waits and delays live in the engine's memory. A run paused when the engin
 | `sum` | Sums the numeric value at `field` across events until `threshold` | Yes |
 | `threshold` | Satisfied when a single event's `field` value meets `threshold` | Yes |
 
-`field` is a dot path rooted at the event, as in `data.amount`. With no `field` set,
-`sum` and `threshold` read `data.amount` and then `data.value`; an event carrying
-neither fails the wait rather than contributing a default, so a `sum` that cannot
-find its number is reported instead of quietly behaving like a `count`.
+`field` is a plain dot path rooted at the event, as in `data.amount`; only the
+payload is reachable. With no `field` set, `sum` and `threshold` read `data.amount`
+and then `data.value`. An event whose value is missing or not a number is logged as
+an error and not counted, rather than contributing a default, so a `sum` that cannot
+find its number is reported instead of quietly behaving like a `count`; the wait
+keeps waiting for events that carry one.
+
+Every strategy keeps both `count` and `sum` current, whichever one decides the
+wait, so a `threshold` wait can still report how many events it saw and their
+total. A `count` needs no number: an event it cannot read one from still counts
+and adds nothing to `sum`.
 
 Wait tasks export aggregation results for downstream tasks:
 
@@ -399,11 +429,11 @@ Wait tasks export aggregation results for downstream tasks:
 |--------|------|-------------|
 | `satisfied` | `boolean` | Whether the wait's event (or aggregation threshold) arrived. `true` for a delay that ran its course |
 | `timedOut` | `boolean` | Whether the wait ended at its timeout |
-| `count` | `number` | Events counted (aggregation waits) |
-| `sum` | `number` | Running sum (aggregation waits) |
+| `count` | `number` | Events counted (aggregation waits, every strategy) |
+| `sum` | `number` | Running total of the events' numbers (aggregation waits, every strategy) |
 | `events` | `Event[]` | All received events |
 | `lastEvent` | `Event` | The most recent received event, when there is one |
-| `data` | `object` | `lastEvent`'s data, when there is one |
+| `data` | `object` | `lastEvent`'s data. Empty when the wait ended without an event, and then any field read from it, such as `${pause.data.user}`, resolves to empty instead of failing |
 
 ---
 

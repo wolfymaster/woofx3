@@ -1,7 +1,33 @@
-import type { Msg as NatsCoreMsg, NatsConnection, Subscription } from "@nats-io/nats-core";
+import type { ConnectionOptions, Msg as NatsCoreMsg, NatsConnection, Subscription } from "@nats-io/nats-core";
 import { jwtAuthenticator, wsconnect } from "@nats-io/nats-core";
 import { MessageImpl } from "./msg";
 import type { Handler, Logger, Msg, NATSConfig } from "./types";
+
+/** The connect options a config asks for. */
+export function connectOptions(config: NATSConfig): ConnectionOptions {
+  const options: ConnectionOptions = {
+    name: config.name,
+    servers: config.url,
+    // Retry the first connect attempt instead of failing immediately —
+    // in local dev, messagebus and its dependents start in parallel via
+    // process-compose with no ordering guarantee, so the NATS server may
+    // not be listening yet when a consumer's first connect fires.
+    waitOnFirstConnect: true,
+    maxReconnectAttempts: 30,
+    reconnectTimeWait: 1000,
+  };
+
+  if (config.jwt && config.nkeySeed) {
+    options.authenticator = jwtAuthenticator(config.jwt, Buffer.from(config.nkeySeed));
+  }
+
+  const token = config.token?.trim();
+  if (token) {
+    options.token = token;
+  }
+
+  return options;
+}
 
 export default class NATSClient {
   private connection: NatsConnection | null = null;
@@ -19,24 +45,7 @@ export default class NATSClient {
       return;
     }
     try {
-      const options: any = {
-        name: this.config.name,
-        servers: this.config.url,
-        // Retry the first connect attempt instead of failing immediately —
-        // in local dev, messagebus and its dependents start in parallel via
-        // process-compose with no ordering guarantee, so the NATS server may
-        // not be listening yet when a consumer's first connect fires.
-        waitOnFirstConnect: true,
-        maxReconnectAttempts: 30,
-        reconnectTimeWait: 1000,
-      };
-
-      // Add JWT authentication if provided
-      if (this.config.jwt && this.config.nkeySeed) {
-        const authenticator = jwtAuthenticator(this.config.jwt, Buffer.from(this.config.nkeySeed));
-        options.authenticator = authenticator;
-      }
-
+      const options = connectOptions(this.config);
       this.connection = await wsconnect(options);
       this.logger.info("Connected to NATS", {
         url: options.servers,

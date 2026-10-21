@@ -20,7 +20,7 @@ export interface Alert {
   id: string;
   /**
    * Full AlertPayload envelope JSON
-   * (`{ id, parameters, event }`) — same bytes streamware broadcasts.
+   * (`{ id, parameters, event }`) — same bytes delivered to overlays.
    * Persisted verbatim in `alerts.payload` (JSONB).
    */
   payload: string;
@@ -341,7 +341,7 @@ export async function DeleteAlertJSON(
  *
  * Replay path: the api gateway calls `GetAlert` to fetch the row,
  * re-publishes `payload` to the `ui.notify.alert` NATS subject (so
- * streamware broadcasts it to overlays exactly like the original
+ * sceneManager delivers it to overlays exactly like the original
  * dispatch), then calls `UpdateAlertStatus(..., "replayed")`.
  *
  * Lifecycle path: the scene manager reports each play's `playing` /

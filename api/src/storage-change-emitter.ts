@@ -1,7 +1,7 @@
+import { EngineEventType, type ModuleStorageChangedEvent } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
-import { EngineEventType, type ModuleStorageChangedEvent } from "@woofx3/api/webhooks";
 import type { WebhookClient } from "./webhook-client";
 
 // Wildcard subject pattern emitted by the QuickJS / Lua sandbox after a

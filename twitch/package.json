@@ -2,6 +2,7 @@
   "dependencies": {
     "@nats-io/transport-node": "^3.0.0-35",
     "@twurple/api": "^8.0.0",
+    "@twurple/api-call": "^8.1.4",
     "@twurple/auth": "^8.0.0",
     "@twurple/chat": "^8.1.4",
     "@twurple/eventsub-ws": "^8.0.0",
@@ -9,7 +10,7 @@
     "dotenv": "^16.4.7",
     "express": "^5.2.1",
     "open": "^10.1.0",
-    "zod": "^3.24.0"
+    "zod": "^4.6.6"
   },
   "scripts": {
     "start": "bun run src/api.ts",

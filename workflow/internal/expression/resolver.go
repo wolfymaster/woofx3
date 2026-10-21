@@ -3,6 +3,7 @@ package expression
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"regexp"
 	"strconv"
@@ -25,6 +26,13 @@ const assetURLPrefix = "woofx3_asset_url:"
 // a missing key, an index out of range, or a step into a value that has no
 // such member.
 var ErrPathNotFound = errors.New("path not found")
+
+// OpenRecord is an object whose keys are open-ended: a path into it that it
+// does not have resolves to nil rather than failing, however deep the path
+// goes. It stands in for data that may legitimately be absent, such as the
+// payload of a wait that ended without its event, so a reference to one of
+// its fields reads as empty instead of breaking the step that uses it.
+type OpenRecord map[string]any
 
 type Resolver struct {
 	sources         map[string]any
@@ -138,7 +146,18 @@ func (r *Resolver) evaluateExpression(expr string) (any, error) {
 	if isCompound(expr) {
 		return r.evaluateCompound(expr)
 	}
-	return r.evaluateReference(expr)
+	return closeRecord(r.evaluateReference(expr))
+}
+
+// closeRecord hands a reference that resolved to a whole OpenRecord back as a
+// plain map. The openness only matters for paths into it, which the resolver
+// has already followed; a value leaving the resolver as the named type would
+// fail a caller's `.(map[string]any)` assertion.
+func closeRecord(value any, err error) (any, error) {
+	if record, open := value.(OpenRecord); open {
+		return maps.Clone(map[string]any(record)), err
+	}
+	return value, err
 }
 
 // evaluateReference resolves a plain `source.path` reference.
@@ -215,6 +234,12 @@ func ResolvePath(data any, path string) (any, error) {
 		}
 
 		switch v := current.(type) {
+		case OpenRecord:
+			val, ok := v[part]
+			if !ok {
+				return nil, nil
+			}
+			current = val
 		case map[string]any:
 			val, ok := v[part]
 			if !ok {

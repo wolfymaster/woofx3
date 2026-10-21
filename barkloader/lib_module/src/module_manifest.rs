@@ -162,6 +162,13 @@ pub struct ManifestAction {
     /// an opaque map and never validates it against this.
     #[serde(default)]
     pub returns: Option<ManifestDataShape>,
+    /// A one-line English template the UI renders for a configured step that
+    /// runs this action, e.g. `"Add {amount} to {counter}"`. Each `{fieldId}`
+    /// names a field in `schema`; the UI substitutes the configured value or
+    /// that field's `missingText` while it has none. Absent means the UI
+    /// builds a sentence from the setting labels.
+    #[serde(default)]
+    pub sentence: Option<String>,
     /// Only a system module may use this action in a workflow or command.
     /// For actions that do what module code is not allowed to ask for through
     /// a sandbox capability, so an uploaded module cannot reach the same
@@ -257,11 +264,14 @@ pub struct ManifestConfigField {
     /// Trigger config only - the words a trigger `sentence` shows in place of
     /// this field when it is set to "any". An empty string drops that part of
     /// the sentence, which is distinct from absent: absent leaves the wording
-    /// to the UI.
+    /// to the UI. Refused on an action field, which is never "any".
     #[serde(default)]
     pub any_text: Option<String>,
-    /// Trigger config only - the words a trigger `sentence` shows in place of
-    /// this field while it is required and has no value yet.
+    /// The words a `sentence` shows in place of this field while it has no
+    /// value: for a required field, until one is set; for an optional action
+    /// field, whenever the step leaves it empty, so the words say what the
+    /// action does then (`"the counter's step"`). Absent leaves the wording
+    /// to the UI.
     #[serde(default)]
     pub missing_text: Option<String>,
 }
@@ -409,7 +419,26 @@ pub struct ManifestDataShapeField {
     /// each viewer of an `array`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
+    /// Every value the field can hold, each with the words a person reads for
+    /// it, when the set is known and closed (a subscription tier, who made a
+    /// workflow). Only on a `string` or `number` field, each value of that
+    /// type. A condition editor offers these instead of a free-text box.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub options: Option<Vec<ManifestDataShapeFieldOption>>,
 }
+
+/// One value a data-shape field can hold. `value` is what the payload
+/// carries, so it is a JSON string or number matching the field's `type`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestDataShapeFieldOption {
+    pub value: serde_json::Value,
+    pub label: String,
+}
+
+/// The `type` tokens a field may carry alongside `options`: a closed set is
+/// a set of scalars a condition can compare with `eq` or `in`.
+pub const DATA_SHAPE_OPTION_FIELD_TYPES: [&str; 2] = ["string", "number"];
 
 /// The accepted `identity` tokens for a data-shape field. Closed: each token
 /// is something the engine keys state by, so a new one needs engine support
@@ -564,9 +593,8 @@ pub struct ManifestWorkflow {
 /// A retired manifest surface, parsed only so that validation can reject it
 /// by name.
 ///
-/// `overlays[]` is a streamware-era declaration: it uploaded an entry file and
-/// wrote a ledger row, but no catalog registration or serving route was ever
-/// built, so nothing could render one. What the field was reaching for is now
+/// `overlays[]` uploaded an entry file and wrote a ledger row, but no catalog
+/// registration or serving route exists for it, so nothing can render one. What the field was reaching for is now
 /// scenes -- a scene composes module-provided widgets and is addressed by an
 /// overlay token minted in the UI, so a module contributes the widgets and the
 /// operator composes the overlay.
@@ -1499,7 +1527,7 @@ impl ModuleWidget {
     /// that the api/ service forwards to Convex as `module.widget.registered`.
     ///
     /// `directory` is the manifest's `assets` bundle path (trimmed) — that's
-    /// what streamware / Convex use to address widget files via the asset route.
+    /// what sceneManager / Convex use to address widget files via the asset route.
     /// `entry` is assets-relative (see `entry_relative_to_assets`); empty
     /// means the consumer falls back to `index.html`.
     /// `settings_schema` is the manifest's `settingsSchema` value serialized;
@@ -1681,9 +1709,8 @@ impl ManifestAction {
     /// carries the handler name and an empty call, which is the shape
     /// `workflow/app.go` writes for the handlers it registers by hand.
     ///
-    /// `type` used to be omitted entirely, leaving every barkloader-installed
-    /// action on the column default - fine while `function` was the only
-    /// variant, wrong the moment it was not.
+    /// `type` is always written explicitly: the column default only fits
+    /// `function` actions, so relying on it mislabels every other variant.
     pub fn to_input(
         &self,
         action_type: &str,
@@ -1696,6 +1723,7 @@ impl ManifestAction {
             call: resolved_call.to_string(),
             params_schema: encode_field_list(Some(&self.schema)),
             returns: encode_data_shape(self.returns.as_ref()),
+            sentence: self.sentence.clone().unwrap_or_default(),
             taxonomy: self.taxonomy.clone(),
             manifest_id: self.id.clone(),
         }
@@ -2541,6 +2569,36 @@ mod tests {
         }))
         .expect("parse");
         assert_eq!(t.to_input("test_mod").sentence, "");
+    }
+
+    #[test]
+    fn action_to_input_projects_sentence() {
+        let a: ManifestAction = serde_json::from_value(serde_json::json!({
+            "id": "increment",
+            "name": "Increment",
+            "type": "function",
+            "function": "increment",
+            "sentence": "Add {amount} to {counter}",
+            "schema": [
+                { "id": "counter", "label": "Counter", "type": "text" },
+                { "id": "amount", "label": "Amount", "type": "number" }
+            ]
+        }))
+        .expect("parse");
+        let input = a.to_input("function", "mod:function:increment");
+        assert_eq!(input.sentence, "Add {amount} to {counter}");
+    }
+
+    #[test]
+    fn action_to_input_defaults_sentence_to_empty() {
+        let a: ManifestAction = serde_json::from_value(serde_json::json!({
+            "id": "alert",
+            "name": "Alert",
+            "type": "native",
+            "handler": "alert"
+        }))
+        .expect("parse");
+        assert_eq!(a.to_input("alert", "").sentence, "");
     }
 
     #[test]

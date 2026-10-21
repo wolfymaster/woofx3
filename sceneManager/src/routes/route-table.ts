@@ -34,24 +34,36 @@ export interface Route<TDeps> {
 }
 
 const OPEN_CORS: Readonly<Record<string, string>> = Object.freeze({
-  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Max-Age": "86400",
   "Cross-Origin-Resource-Policy": "cross-origin",
 });
 
-/** The headers a policy grants, for a route answering `methods`. */
-export function corsHeaders(policy: CorsPolicy, methods: readonly string[]): Record<string, string> {
+/**
+ * The allowed-origin headers of a request: every origin, unless the request
+ * guard limits them (`RequestGuard.corsOriginHeaders`).
+ */
+export type CorsOrigin = Readonly<Record<string, string>>;
+
+export const ANY_ORIGIN: CorsOrigin = Object.freeze({ "Access-Control-Allow-Origin": "*" });
+
+/** The headers a policy grants, for a route answering `methods`, to a request from `origin`. */
+export function corsHeaders(
+  policy: CorsPolicy,
+  methods: readonly string[],
+  origin: CorsOrigin = ANY_ORIGIN
+): Record<string, string> {
   switch (policy) {
     case "none":
       return {};
     case "upload":
       // Upload grants are bearer capabilities in the URL, not cookies, so
-      // letting any origin use them grants nothing the token did not.
-      return { ...OPEN_CORS, "Access-Control-Allow-Methods": [...methods, "OPTIONS"].join(", ") };
+      // letting a cross-origin page use them grants nothing the token did
+      // not. Which origins may is still the request guard's call.
+      return { ...origin, ...OPEN_CORS, "Access-Control-Allow-Methods": [...methods, "OPTIONS"].join(", ") };
     case "open":
-      return { ...OPEN_CORS };
+      return { ...origin, ...OPEN_CORS };
   }
 }
 
@@ -134,9 +146,15 @@ function matchSegments<TDeps>(compiled: CompiledRoute<TDeps>, parts: string[]): 
 }
 
 /** The CORS headers the route answering `pathname` grants; open for a path no route answers. */
-export function corsHeadersForPath<TDeps>(table: RouteTable<TDeps>, pathname: string): Record<string, string> {
+export function corsHeadersForPath<TDeps>(
+  table: RouteTable<TDeps>,
+  pathname: string,
+  origin: CorsOrigin = ANY_ORIGIN
+): Record<string, string> {
   const match = matchRoute(table, pathname);
-  return match.route === null ? corsHeaders("open", []) : corsHeaders(match.route.cors, match.route.methods);
+  return match.route === null
+    ? corsHeaders("open", [], origin)
+    : corsHeaders(match.route.cors, match.route.methods, origin);
 }
 
 /** Answer `req` from `table`. */
@@ -145,17 +163,18 @@ export async function dispatchRoute<TDeps>(
   req: Request,
   url: URL,
   deps: TDeps,
-  logger: Logger
+  logger: Logger,
+  origin: CorsOrigin = ANY_ORIGIN
 ): Promise<Response> {
   const match = matchRoute(table, url.pathname);
   if (match.route === null) {
     return withHeaders(
       match.reason === "bad_path" ? jsonError(400, "bad_path") : jsonError(404, "not_found"),
-      corsHeaders("open", [])
+      corsHeaders("open", [], origin)
     );
   }
   const { route, params } = match;
-  const cors = corsHeaders(route.cors, route.methods);
+  const cors = corsHeaders(route.cors, route.methods, origin);
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: cors });
   }

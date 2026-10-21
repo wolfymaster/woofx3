@@ -31,7 +31,7 @@ use lib_repository::{
 use serde::{Deserialize, Serialize};
 use tracing::{error, info, warn};
 
-use crate::callback::{send_processing_failure_callback, send_processing_success_callback};
+use crate::callback::CallbackSender;
 use crate::services::storage_settings::get_setting;
 use crate::services::thumbnail::{self, ThumbnailOutcome};
 use crate::services::upload_token::{self, TokenError};
@@ -478,8 +478,17 @@ where
 /// Kick off a processing utility. Returns 202 immediately; the outcome
 /// arrives on `callback_url`, mirroring how module installs report
 /// completion rather than blocking the request.
+///
+/// The only caller is the api, which points `callback_url` at its own
+/// webhook, so a `callback_url` on any other origin is refused: this route
+/// is unauthenticated, and accepting one would let any caller make
+/// barkloader POST to an address of its choosing.
 #[post("/assets/process")]
-async fn process_handler(ctx: Data<AppContext>, body: Json<ProcessRequest>) -> HttpResponse {
+async fn process_handler(
+    repository: Data<SharedRepository>,
+    callbacks: Data<CallbackSender>,
+    body: Json<ProcessRequest>,
+) -> HttpResponse {
     let request = body.into_inner();
 
     if request.utility != UTILITY_THUMBNAIL {
@@ -493,13 +502,25 @@ async fn process_handler(ctx: Data<AppContext>, body: Json<ProcessRequest>) -> H
             .json(error_body("only user/ resources can be processed"));
     }
 
+    let callback = match request
+        .callback_url
+        .as_deref()
+        .map(|url| callbacks.target(url))
+        .transpose()
+    {
+        Ok(callback) => callback,
+        Err(refused) => {
+            return HttpResponse::BadRequest().json(error_body(&refused.to_string()));
+        }
+    };
+
     let accepted = ProcessAcceptedResponse {
         accepted: true,
         utility: request.utility.clone(),
         repository_key: request.repository_key.clone(),
     };
 
-    let repository = ctx.repository.current();
+    let repository = repository.current();
     tokio::spawn(async move {
         let outcome = thumbnail::generate(
             &repository,
@@ -508,7 +529,7 @@ async fn process_handler(ctx: Data<AppContext>, body: Json<ProcessRequest>) -> H
         )
         .await;
 
-        let Some(callback_url) = request.callback_url.as_deref() else {
+        let Some(callback) = callback else {
             match outcome {
                 Ok(result) => {
                     info!(
@@ -533,40 +554,43 @@ async fn process_handler(ctx: Data<AppContext>, body: Json<ProcessRequest>) -> H
                 content_type,
                 ..
             }) => {
-                send_processing_success_callback(
-                    callback_url,
-                    resource_id,
-                    &request.repository_key,
-                    UTILITY_THUMBNAIL,
-                    Some(&repository_key),
-                    Some(&content_type),
-                    None,
-                )
-                .await;
+                callbacks
+                    .send_success(
+                        &callback,
+                        resource_id,
+                        &request.repository_key,
+                        UTILITY_THUMBNAIL,
+                        Some(&repository_key),
+                        Some(&content_type),
+                        None,
+                    )
+                    .await;
             }
             // Not an error: audio has no frame to show. The caller
             // records "no thumbnail" and stops asking.
             Ok(ThumbnailOutcome::NotApplicable { reason }) => {
-                send_processing_success_callback(
-                    callback_url,
-                    resource_id,
-                    &request.repository_key,
-                    UTILITY_THUMBNAIL,
-                    None,
-                    None,
-                    Some(&reason),
-                )
-                .await;
+                callbacks
+                    .send_success(
+                        &callback,
+                        resource_id,
+                        &request.repository_key,
+                        UTILITY_THUMBNAIL,
+                        None,
+                        None,
+                        Some(&reason),
+                    )
+                    .await;
             }
             Err(err) => {
-                send_processing_failure_callback(
-                    callback_url,
-                    resource_id,
-                    &request.repository_key,
-                    UTILITY_THUMBNAIL,
-                    &err.to_string(),
-                )
-                .await;
+                callbacks
+                    .send_failure(
+                        &callback,
+                        resource_id,
+                        &request.repository_key,
+                        UTILITY_THUMBNAIL,
+                        &err.to_string(),
+                    )
+                    .await;
             }
         }
     });
@@ -1095,6 +1119,65 @@ mod tests {
             let stored =
                 std::fs::read(root.path().join("user/res-2/clip.mp4")).expect("upload on disk");
             assert_eq!(stored.len(), bytes.len());
+        }
+    }
+
+    mod process {
+        use super::super::*;
+        use actix_web::App;
+        use actix_web::test as actix_test;
+        use lib_repository::{FileRepository, FileRepositoryConfig};
+
+        async fn process(callback_url: &str) -> u16 {
+            let root = tempfile::tempdir().expect("tempdir");
+            let repo = FileRepository::new(FileRepositoryConfig {
+                destination: root.path().to_path_buf(),
+            });
+            repo.setup().expect("repo setup");
+            let callbacks = CallbackSender::new(
+                url::Url::parse("http://127.0.0.1:5050").unwrap(),
+                "engine-secret".to_string(),
+            )
+            .expect("client builds");
+            let app = actix_test::init_service(
+                App::new()
+                    .app_data(Data::new(SharedRepository::new(RepositoryImpl::File(repo))))
+                    .app_data(Data::new(callbacks))
+                    .service(process_handler),
+            )
+            .await;
+            let request = actix_test::TestRequest::post()
+                .uri("/assets/process")
+                .set_json(serde_json::json!({
+                    "repository_key": "user/res-1/missing.png",
+                    "utility": "thumbnail",
+                    "callback_url": callback_url,
+                    "resource_id": "res-1",
+                }))
+                .to_request();
+            actix_test::call_service(&app, request)
+                .await
+                .status()
+                .as_u16()
+        }
+
+        #[actix_web::test]
+        async fn refuses_a_callback_url_off_the_api_origin() {
+            for callback_url in [
+                "http://127.0.0.1:9999/steal",
+                "https://attacker.example/webhooks/barkloader/processing",
+                "not a url",
+            ] {
+                assert_eq!(process(callback_url).await, 400, "{callback_url}");
+            }
+        }
+
+        #[actix_web::test]
+        async fn accepts_a_callback_url_on_the_api_origin() {
+            assert_eq!(
+                process("http://localhost:5050/webhooks/barkloader/processing").await,
+                202
+            );
         }
     }
 

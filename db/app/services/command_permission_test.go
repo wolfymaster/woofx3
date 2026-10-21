@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/casbin/casbin/v2"
@@ -39,6 +40,7 @@ func newCommandPermFixture(t *testing.T) *commandPermFixture {
 			groupRepo,
 			enforcer,
 			nil,
+			slog.New(slog.DiscardHandler),
 		),
 		groupSvc:  NewGroupService(groupRepo, permissionRepo, enforcer),
 		enforcer:  enforcer,

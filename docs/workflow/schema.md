@@ -46,9 +46,10 @@ Defines the event that starts a workflow execution.
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
 | `$ref` | `string` | No | Canonical id of the trigger declaration this workflow references (see [Canonical IDs and References](../barkloader/modules.md#canonical-ids-and-references)). Recorded in `resource_references` so the system knows which trigger declaration — and which module — this workflow depends on. The engine **ignores `$ref` at execution time**; subscription is driven by `event`. Module-bundled workflows populate `$ref` automatically; UI-created workflows should populate it from the user's trigger selection so module deletion can detect the dependency. |
-| `type` | `string` | Yes | Trigger type. Currently only `"event"` is supported. |
+| `type` | `string` | Yes | Trigger type: `"event"` (subscribes to `event`), `"schedule"` (fires on the cron expression in `schedule`), or `"command"`. A `"command"` trigger belongs to the workflow a chat command runs: nothing subscribes it, and only its command starts it, by id, once the command has matched and passed its checks, so the `chat.command.<slug>` event the same invocation announces cannot run it a second time. Its `event` is that `chat.command.<slug>`, the event the run reads as `${trigger...}`; a run asked for with any other event type is refused. Only the command writes such a workflow: the workflow api and db-proxy refuse to create one, or to change, toggle or delete a command's workflow. See [How a command runs its steps](../services/commands-ui.md#how-a-command-runs-its-steps). |
 | `event` | `string` | Yes | NATS subject to subscribe to. Uses dot notation (e.g., `channel.cheer`). Supports NATS-style wildcards (`*` for one token, `>` for the remaining tail). Same value lives on the underlying trigger row's `event` column. A `webhook.*` subject is a webhook trigger's reserved placeholder: nothing publishes it, and a workflow cannot bind to it — bind to the event its handler returns. |
 | `conditions` | [ConditionConfig[]](#conditionconfig) | No | Optional conditions evaluated against the matching event payload before the workflow starts. All conditions are evaluated with AND logic; if any returns false the workflow does not run. The same `${trigger.data.X}` expression syntax used in step conditions is available here. If omitted, any event matching `event` triggers the workflow. |
+| `order` | `integer` | No | Puts the workflow in line with the other workflows on the same event that set an `order`. For each event they run one at a time, lowest `order` first and by workflow id among equals, each starting once the one before it settles or pauses at a wait. A workflow that sets no `order` runs as soon as the event arrives, alongside everything else. Only an `event` trigger is ordered: a `command` trigger's workflow is run by its command, not dispatched by the event, so `order` on it has no effect. See [Ordered workflows](./execution.md#ordered-workflows). |
 
 > **Why `$ref` and `event` are both present.** `event` is execution data — the actual NATS subject the workflow engine subscribes to, baked into the workflow at create time so the engine never needs a runtime lookup. `$ref` is reference metadata — the canonical id of the trigger declaration that owns that event, used only by the reference graph (in-use checks, upgrade tracking, "what depends on this module"). They live together in the same JSON object because they describe the same trigger from two different angles, but neither is derived from the other; both are populated at workflow create time.
 
@@ -83,10 +84,10 @@ A single unit of work within a workflow. Tasks execute in dependency order deter
 |----------|------|----------|-------------|
 | `id` | `string` | Yes | Unique identifier within the workflow. Referenced by `dependsOn`, `onTrue`, and `onFalse` in other tasks. |
 | `type` | `string` | Yes | Task type. One of: `action`, `log`, `wait`, `condition`, `workflow`. See [Task Types](./tasks.md). |
-| `action` | `string` | Yes (when `type` is `"action"`) | Registered action handler name. Currently `"function"` is the only handler. Mirrors the manifest action's `type` field for module-contributed actions. |
+| `action` | `string` | Yes (when `type` is `"action"`) | Registered action handler name: `function`, `alert`, `chat.reply`, `scene.widget.visibility` or `print` (see [Built-in Actions](./tasks.md#built-in-actions)). A step instantiating a module's `function` action uses `function`; one instantiating a `native` action uses that action's `handler`. |
 | `function` | `string` | Yes (when `action` is `"function"`) | Canonical id of the function this step invokes (e.g. `twitch_platform:function:play_alert`). Top-level handler config — same shape as `wait` and `workflow` configs sit at the top level for their step types. The `function` action handler reads it at runtime and dispatches to the barkloader sandbox without any DB lookup. |
 | `$ref` | `string` | No | Canonical id of the source action declaration this step instantiates (e.g. `twitch_platform:action:play_alert`). Recorded in `resource_references` for ownership tracking and the in-use check. The engine **ignores `$ref` at execution time** — dispatch is driven by `action` + `function`. Module-bundled workflows populate `$ref` automatically; UI-created workflows should populate it from the user's action selection. |
-| `dependsOn` | `string[]` | No | List of task IDs that must complete before this task runs. The engine builds a directed acyclic graph from these relationships and executes tasks in topological order. |
+| `dependsOn` | `string[]` | No | List of task IDs that must complete before this task runs. The engine builds a directed acyclic graph from these relationships, plus the orderings a `condition`'s branches imply, and executes tasks in topological order, ties going to the task declared first. |
 | `parameters` | `map<string, any>` | Yes | Task-specific inputs passed to the handler. For `function` actions the entire object is forwarded as a single argument to the sandboxed function. All string values support [expression resolution](#expression-syntax). |
 | `exports` | `map<string, string>` | No | Extracts values from the task result and makes them available to downstream tasks. Keys are the export names, values are dot-notation paths into the task's result data. |
 | `onError` | `string` | No | Error handling strategy. `"fail"` (default) stops the workflow. `"continue"` marks the task as failed but continues execution. |
@@ -102,8 +103,8 @@ These properties control conditional execution. For non-`condition` type tasks, 
 | `condition` | [ConditionConfig](#conditionconfig) | No | Single condition (backward compatible). Evaluated before the task runs. |
 | `conditions` | [ConditionConfig[]](#conditionconfig) | No | Multiple conditions. Combined using `conditionLogic`. |
 | `conditionLogic` | `string` | No | How multiple conditions are combined. `"and"` (default) requires all conditions to be true. `"or"` requires at least one. |
-| `onTrue` | `string[]` | No | Task IDs to execute when the condition is **true**. Only used with `type: "condition"`. Tasks listed in `onFalse` are skipped. |
-| `onFalse` | `string[]` | No | Task IDs to execute when the condition is **false**. Only used with `type: "condition"`. Tasks listed in `onTrue` are skipped. |
+| `onTrue` | `string[]` | No | Task IDs to execute when the condition is **true**. Only used with `type: "condition"`. Tasks listed in `onFalse` are skipped, along with everything under any condition among them. Listed tasks always run after the condition. See [condition](./tasks.md#condition). |
+| `onFalse` | `string[]` | No | Task IDs to execute when the condition is **false**. Only used with `type: "condition"`. Tasks listed in `onTrue` are skipped, along with everything under any condition among them. Listed tasks always run after the condition. |
 
 ### Special Type Properties
 
@@ -130,7 +131,7 @@ A single condition that compares a field value against an expected value using a
 |----------|------|----------|-------------|
 | `field` | `string` | Yes | The value to test. Supports [expression syntax](#expression-syntax) (e.g., `${trigger.data.amount}`). |
 | `operator` | `string` | Yes | Comparison operator. See [Operators](#operators). |
-| `value` | `any` | Yes | The expected value to compare against. Also supports expression syntax if it's a string. Type depends on the operator. |
+| `value` | `any` | Yes | The expected value to compare against. Type depends on the operator. A string supports expression syntax, and so does each item of a list (an `in` item, a `between` bound). |
 
 ### Operators
 
@@ -154,6 +155,8 @@ A single condition that compares a field value against an expected value using a
 
 A null or missing field satisfies only `eq null`, `ne`, `in` a list holding `null`, `not_in` and `not_exists`; every other operator is false for it. A malformed `value` (an invalid `regex`, a `between` that is not `[min, max]`) is an error even when the field is null.
 
+Each item of a list value is resolved on its own, so `"value": ["${trigger.data.low}", 1000]` bounds a `between` by a trigger field. An item that is exactly one `${…}` keeps its value's type, so a referenced number bound compares as a number; a reference to a list stays a single item and is not spliced into the list. An item naming a path that does not exist fails the condition, as a whole value does, and a `${viewer.*}` item the viewer has no value for is null. A `between` with a null bound is false.
+
 Comparisons are numeric when both sides are numbers. A string is never converted to a number: `"100"` against `99` compares as text. Any other pair falls back to string comparison.
 
 ---
@@ -167,7 +170,7 @@ Configuration for `wait` type tasks. Pauses workflow execution until a matching 
   "type": "aggregation",
   "event": "channel.cheer",
   "conditions": [
-    { "field": "${trigger.data.channelId}", "operator": "eq", "value": "${trigger.data.channelId}" }
+    { "field": "${event.data.isAnonymous}", "operator": "eq", "value": false }
   ],
   "aggregation": {
     "strategy": "sum",
@@ -182,9 +185,9 @@ Configuration for `wait` type tasks. Pauses workflow execution until a matching 
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `type` | `string` | Yes | Wait type. `"event"` waits for a single matching event. `"aggregation"` collects multiple events and checks an aggregation threshold. `"delay"` pauses for `durationMs` and then continues. |
-| `event` | `string` | Yes, except for `delay` | NATS subject to listen for while waiting. |
-| `conditions` | [ConditionConfig[]](#conditionconfig) | No | Conditions that incoming events must match to be counted. |
+| `type` | `string` | No | Wait type, `"event"` when omitted or empty. `"event"` waits for a single matching event. `"aggregation"` collects multiple events and checks an aggregation threshold. `"delay"` pauses for `durationMs` and then continues. |
+| `event` | `string` | Yes, except for `delay` | Event type to wait for, matched exactly against each incoming event's `type`. |
+| `conditions` | [ConditionConfig[]](#conditionconfig) | No | Conditions an incoming event must all match (AND) to be counted. Evaluated against the waited event only; see [Wait conditions](#wait-conditions). |
 | `aggregation` | [AggregationConfig](#aggregationconfig) | No | Required when `type` is `"aggregation"`. Defines the aggregation strategy. |
 | `timeout` | `string` | No | Maximum time to wait, as a duration string of at least `"1s"` (numbers are refused). If exceeded, behavior is determined by `onTimeout`. Without one, the wait lasts until its event arrives. |
 | `onTimeout` | `string` | No | What happens when the timeout expires. `"continue"` marks the task as successful and proceeds. `"fail"` (default) fails the task and the workflow. |
@@ -195,6 +198,22 @@ A `delay` takes only `type` and `durationMs`; setting `event`, `conditions`, `ag
 ```json
 { "type": "delay", "durationMs": 10000 }
 ```
+
+### Wait conditions
+
+A wait's `conditions` are evaluated against the event being considered, not the run. The only [expression source](#sources) they can reference is `event`, plus `env`:
+
+| Path | Description |
+|------|-------------|
+| `${event.id}` | Event id |
+| `${event.type}` | Event type |
+| `${event.source}` | Event source |
+| `${event.time}` | Event timestamp |
+| `${event.data.X}` | Field `X` of the event payload |
+
+`trigger`, task exports and `viewer` are not available. A condition that names them fails to resolve, so it never matches and the wait never sees a qualifying event. The waited event cannot be compared against a value from the trigger.
+
+A condition whose `field` names a key the event does not carry also fails to resolve, so it is false for every operator, `not_exists` included.
 
 ---
 
@@ -213,10 +232,10 @@ Defines how multiple events are aggregated in a `wait` task.
 
 | Property | Type | Required | Description |
 |----------|------|----------|-------------|
-| `strategy` | `string` | Yes | Aggregation strategy. `"count"` counts events until threshold. `"sum"` sums a numeric field until threshold. `"threshold"` checks if a single event's field meets the threshold. |
-| `field` | `string` | No | Dot-notation path to the numeric field to aggregate, rooted at the event (`data.amount`). Used by `"sum"` and `"threshold"`; without it they read `data.amount` then `data.value`, and fail the wait if the event carries neither. |
+| `strategy` | `string` | Yes | Aggregation strategy. `"count"` is satisfied once the number of matching events reaches `threshold`. `"sum"` is satisfied once the running total of `field` reaches `threshold`. `"threshold"` is satisfied by the first single event whose `field` is at least `threshold`. Any other value, including a different case such as `"Count"`, is refused when the workflow is registered. |
+| `field` | `string` | No | Plain dot path (no `${...}`) to the numeric field to aggregate, rooted at the event, as in `data.amount`. Only the payload is reachable, so it starts with `data.`. Used by `"sum"` and `"threshold"`; without it they read `data.amount` then `data.value`. An event whose value is missing or not a number is logged and not counted, and the wait keeps waiting: it is left out of the wait's `events` and never becomes its `lastEvent` or `data`. Every strategy adds the value to the exported `sum` and counts the event in `count`; a `"count"` still counts an event without a number and adds nothing to `sum`. |
 | `threshold` | `number` | Yes | Target value. The wait is satisfied when the aggregated value reaches or exceeds this. |
-| `timeWindow` | [Duration](#duration) | No | Time window for aggregation, measured from when the wait began. Events arriving after it are ignored; the window does not restart, so a wait whose threshold is not met inside it ends on `onTimeout`. |
+| `timeWindow` | [Duration](#duration) | No | Time window for aggregation, measured from when the wait began; without one, the window ends at the wait's `timeout`. Events arriving after it are ignored; the window does not restart, so a wait whose threshold is not met inside it ends on `onTimeout`, or, with no `timeout`, never ends. |
 
 ---
 

@@ -15,6 +15,11 @@ func NewGroupRepository(db *gorm.DB) *GroupRepository {
 	return &GroupRepository{db: db}
 }
 
+// WithDB returns a repository that runs on `db`, typically a transaction.
+func (r *GroupRepository) WithDB(db *gorm.DB) *GroupRepository {
+	return &GroupRepository{db: db}
+}
+
 func (r *GroupRepository) Create(group *models.Group) error {
 	return r.db.Create(group).Error
 }

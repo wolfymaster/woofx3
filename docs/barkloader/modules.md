@@ -186,7 +186,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `taxonomy` | array of string | no | Open, multi-valued UI classification for the module as a whole. **Legacy:** superseded by `category` (single string) on older manifests — see [Taxonomy](#taxonomy). |
 | `category` | string | no | **Legacy.** UI catalog grouping for the module as a whole (e.g. `platform`, `automation`). Still accepted; folded into `taxonomy` at parse time when `taxonomy` is unset. New manifests should use `taxonomy` instead. |
 | `triggers` | array | no | Event sources; see below. |
-| `actions` | array | no | Module-contributed actions — implementations of the workflow engine's `action` step type. Each carries a `type` matching a workflow action handler (`function` is the only one today) and the handler-specific config (e.g. `function` for the canonical function id). See [Module actions vs. action handlers](#module-actions-vs-action-handlers). |
+| `actions` | array | no | Module-contributed actions — implementations of the workflow engine's `action` step type. Each carries a `type` — `function` (a sandboxed module function) or `native` (an engine handler; bundled system modules only) — and that type's config (`function` or `handler`). See [Module actions vs. action handlers](#module-actions-vs-action-handlers). |
 | `functions` | array | no | Callable assets (`runtime`, `path` relative to ZIP root). |
 | `commands` | array | no | Chat/bot commands (`pattern`, `type`: `prefix` \| `exact` \| `regex`, optional `actions` or `workflow`, `requiredRole`). See [Command entry](#command-entry-commands). |
 | `workflows` | array | no | Bundled workflows (`trigger` reference + `steps`). |
@@ -209,7 +209,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `name` | string | yes | Display name. Used only for presentation; never used as an identifier. |
 | `description` | string | no | Human-readable summary. |
 | `type` | string | yes | Trigger transport: `eventbus`, `webhook`, `command`, `schedule`. Determines how install wires the trigger up. See [Webhook triggers](#webhook-triggers) for `webhook`. |
-| `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. Must not start with `webhook.`, which is reserved. An uploaded module also may not use a subject the engine treats as a command, because a webhook handler can publish its module's eventbus trigger events verbatim: `db.`, `engine.`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel` and `action.execute` (prefix match). Rejected on a `webhook` trigger. |
+| `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. Must not start with `webhook.`, which is reserved. An uploaded module also may not use a subject the engine treats as a command, because a webhook handler can publish its module's eventbus trigger events verbatim: `db.`, `engine.`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute` and `action.execute` (prefix match). Rejected on a `webhook` trigger. |
 | `handler` | string | yes (for `webhook`) | Manifest-local id of the function that handles inbound HTTP requests for a `webhook` trigger. Rejected on every other type. |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification (e.g. `["platform.twitch.chat", "function.chat"]`). Sent to RegisterTrigger as `taxonomy`. See [Taxonomy](#taxonomy). **Legacy:** superseded by `category`. |
 | `category` | string | no | **Legacy.** UX / registry grouping (e.g. `platform.twitch`). Still accepted; folded into a single-element `taxonomy` at parse time when `taxonomy` is unset, otherwise falls back to `type`. New manifests should use `taxonomy` instead. |
@@ -267,11 +267,11 @@ The vocabulary is intentionally open — there is no fixed enum and the engine d
 
 #### How the action picker reads an action's taxonomy
 
-An action is filed under its **first** `taxonomy` entry, so put the entry that says where the action belongs first and any further axes after it. The entry's first segment is the section in the picker's left rail and its second segment the heading inside that section; deeper segments are kept for other surfaces and do not split the picker further. `platform.obs` lists the action under **Platforms › OBS**, `system.counter` under **Built-in › Counters**.
+An action is filed under its **first** `taxonomy` entry, so put the entry that says where the action belongs first and any further axes after it. The entry's first segment is the section in the picker's left rail and its second segment the heading inside that section; deeper segments are kept for other surfaces and do not split the picker further. `platform.obs` lists the action under **Platforms › OBS**, `tools.counter` under **Stream tools › Counters**.
 
 An action with no `taxonomy` is listed under the module that provides it, as one section named after the module. Because of that fallback, a taxonomy is optional for an action that should simply sit with the rest of its module; declare one when the action belongs with similar actions from other modules (every `platform.obs` action reads as one OBS group regardless of which module ships it).
 
-The bundled `woofx3` module files its actions under the `system` family: `system.workflow` (Function, Print), `system.alerts`, `system.scenes`, `system.chat`, `system.counter`, `system.timer` and `system.queue`. The picker lists `system` first, labelled **Built-in**.
+Sections are by purpose, not by the module shipping the action, so file an action by what it does. The bundled `woofx3` module uses: `workflow` (Function, Print), `chat`, `overlay.alerts` and `overlay.scenes` (**Overlays**), and `tools.counter`, `tools.timer` and `tools.queue` (**Stream tools**). The picker lists `workflow` first; an older engine's `system` family is labelled **Built-in** and also listed first.
 
 On install, every action `taxonomy` entry must be a dotted path of names, each of `[A-Za-z0-9_-]` (`platform.obs`, not `platform.`, `platform..obs` or `platform obs`), and no entry may appear twice on one action. The vocabulary itself is not checked.
 
@@ -309,8 +309,8 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `description` | string | no | Short prose rendered as muted helper text below the input. Always visible. |
 | `hint` | string | no | Longer prose rendered inside the field's info-icon popover. |
 | `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover. An illustration, not a declaration: nothing reads its keys. |
-| `anyText` | string | no | Trigger `schema` only. The words a [trigger sentence](#trigger-sentences) shows in place of this field when it is set to "any". `""` drops that part of the sentence; whitespace alone is rejected. |
-| `missingText` | string | no | Trigger `schema` only. The words a [trigger sentence](#trigger-sentences) shows in place of this field while it is required and has no value yet. Must be non-empty when present. |
+| `anyText` | string | no | Trigger `schema` only. The words a [trigger sentence](#trigger-sentences) shows in place of this field when it is set to "any". `""` drops that part of the sentence; whitespace alone is rejected. Rejected on an action field, which is never set to "any". |
+| `missingText` | string | no | Trigger and action `schema` only. The words a [trigger sentence](#trigger-sentences) or [action sentence](#action-sentences) shows in place of this field while it has no value: for a required field, until one is set; for an optional action field, whenever the step leaves it empty, so they say what the action does then. Must be non-empty when present. |
 
 The info icon next to a field's label appears if and only if `hint` or `examplePayload` is present. `description` renders independently below the input.
 
@@ -368,7 +368,7 @@ These `type` values render dedicated pickers in the UI rather than freeform inpu
 | `color` | — | CSS color string (`"#7ad7ff"`). | Native browser color picker. |
 | `font` | — | CSS font-family list (`"\"Lobster\", cursive"`). Plain lists such as `"Roboto, system-ui, sans-serif"` are valid too. | Searchable list of every Google Fonts family; any other family name can be typed in. See [widget fonts](./sdk.md#fonts). |
 | `asset` | `kinds?: string[]` | Asset canonical id (`"twitch_platform:asset:bell.mp3"`). | Scoped to **this module's** `assets[]`, optionally filtered by `kinds`. |
-| `resource_ref` | `kind: string` (required) | Instance canonical id (`"woofx3:counter:death_count"`). Stored verbatim; the function receives it via `ctx.event.parameters.<id>`. | Cross-module: every installed module's instances of the given `kind`. Backed by `ListResourceInstancesByKind` and refreshed live via the `module.resource.instance.{created,deleted}` webhook events. |
+| `resource_ref` | `resourceKind: string` (required) | Instance canonical id (`"woofx3:counter:death_count"`). Stored verbatim; the function receives it via `ctx.event.parameters.<id>`. | Cross-module: every installed module's instances of the given `resourceKind` (see [Naming a kind](#naming-a-kind)). Backed by `ListResourceInstancesByKind` and refreshed live via the `module.resource.instance.{created,deleted}` webhook events. |
 
 `resource_ref` is the discriminator that lets actions and widgets reference runtime instances (counters, timers, queues, future polls/leaderboards, etc.) without the engine learning what each kind means. See [Runtime resource instances](#runtime-resource-instances).
 
@@ -503,6 +503,8 @@ Both fields are **optional**. A module that declares neither behaves exactly as 
 }
 ```
 
+A field may also carry identity annotations (see [Identity fields](#identity-fields)) and a closed set of `options` (see [Field options](#field-options)).
+
 Deliberately a flat list of path strings rather than full JSON Schema: it matches `${trigger.data.X}` access exactly and renders straight into a picker. It carries no `required`, no nesting and no constraints — those would all be promises the engine does not keep.
 
 **Validated at install.** A malformed declaration aborts the install before any database or filesystem side effect, so a bad shape can never land and render wrong variables forever. Structure is enforced when the manifest is parsed (`fields` must be a list; every entry needs `path` and `type`; a key the shape or a field does not define is rejected, so a misspelling cannot be dropped silently), and these rules are checked after, each reporting the offending resource by id:
@@ -579,6 +581,35 @@ The annotations are kept verbatim in the `emits` registered for the trigger; a f
 | `anonymousWhen` names a declared `boolean` path; `displayName` a declared `string` path | Both are read from the same payload as the identity, by exact path. |
 | `displayName` only on a `string` identity | One name cannot name each viewer of an array. |
 | `displayName` names a field other than the identity | An id is not a name; pointing at itself would show ids where names were promised. |
+
+#### Field options
+
+A `string` or `number` field whose values come from a known, closed set can list them with `options`, each value with the words a streamer reads for it. A condition editor then offers a picker ("Tier is Tier 1 or Tier 2") instead of asking the streamer to type the value the payload carries ("1000").
+
+```json
+{
+  "path": "tier",
+  "type": "string",
+  "description": "The subscription tier.",
+  "options": [
+    { "value": "1000", "label": "Tier 1" },
+    { "value": "2000", "label": "Tier 2" },
+    { "value": "3000", "label": "Tier 3" }
+  ]
+}
+```
+
+List options only when the set is closed: a picker offers only what is listed, so a value missing from it can only be checked with a typed `${…}`. Leave `options` out when the values are open (a user name, a reward title). It is allowed in `returns` too, for a function result with a fixed set of outcomes.
+
+When a trigger's `emits` field has no `options`, the condition editor borrows them from a `select` config field of the same trigger whose `eventPath` names that path, so a trigger already offering a choice in its settings offers the same choice in conditions.
+
+| Rule | Why |
+|---|---|
+| `options` only on a `string` or `number` field | A closed set is a set of scalars a condition compares with `eq` or `in`. |
+| at least one option | An empty list would offer nothing to choose; leave the key out instead. |
+| each `value` of the field's `type` | A `"1000"` option on a `number` field could never equal the `1000` the payload carries, so a condition built from it would never match. |
+| each `label` non-empty, each `value` listed once | A blank label shows nothing to pick, and a repeated value is two names for one thing. |
+| no keys beyond `value` and `label` | As everywhere in a shape, a misspelt key is rejected rather than dropped. |
 
 #### Alert summaries
 
@@ -661,7 +692,7 @@ Same shape, describing the function's result rather than an event payload. See t
 
 ### Action entry (`actions[]`)
 
-> **Module actions vs. action handlers.** A manifest "action" is **not** a workflow primitive — it's a *configured implementation* of the workflow engine's built-in `action` step type. Each action's `type` field names a workflow action handler (`function` is the only one today; more may ship), and at runtime the engine dispatches via that handler. Modules cannot add new step types or new action handlers; they only declare configured invocations of existing handlers. The shape mirrors how engine `TaskDefinition` puts handler-specific config (`wait`, `workflow`, etc.) at the top level next to `type`.
+> **Module actions vs. action handlers.** A manifest "action" is **not** a workflow primitive — it's a *configured implementation* of the workflow engine's built-in `action` step type. Each action's `type` says how it reaches a workflow action handler: `function` dispatches through the engine's `function` handler to a sandboxed module function, and `native` names an engine handler directly. At runtime the engine dispatches via that handler. Modules cannot add new step types or new action handlers; they only declare configured invocations of existing handlers. The shape mirrors how engine `TaskDefinition` puts handler-specific config (`wait`, `workflow`, etc.) at the top level next to `type`.
 >
 > See also: [terminology — `action` is overloaded](#module-actions-vs-action-handlers).
 
@@ -672,9 +703,10 @@ Common fields:
 | `id` | string | yes | Manifest-local action id. Forms the canonical id `{moduleId}:action:{id}`. Must match `[A-Za-z0-9._-]+`. |
 | `name` | string | yes | Display name. Presentation only. |
 | `description` | string | no | Human-readable summary. |
-| `type` | string | yes | Workflow action handler name. Must match an existing engine handler (`function` is the only one today). Determines which other top-level fields are required. |
+| `type` | string | yes | `function` or `native`; any other value is refused at install. Determines which other top-level field is required. |
 | `schema` | array | no | `ConfigField[]` describing user-editable inputs the UI surfaces when wiring this action into a workflow step; see [Field declarations](#field-declarations). Forwarded to the DB as `params_schema`. |
 | `returns` | object | no | `DataShape` naming what this action's function hands back; see [Emits and returns](#emits-and-returns). Powers the workflow builder's `${stepId.field}` autocomplete: when a downstream step references `${action-1.next}`, the picker looks up `action-1`'s declared `returns` to know `next` exists. Forwarded to the DB as `returns`. |
+| `sentence` | string | no | One-line English template the UI renders for a configured step that runs this action, e.g. `"Add {step} to {target}"`; see [Action sentences](#action-sentences). Forwarded to the DB as `sentence` (`""` when absent). |
 | `systemOnly` | boolean | no | Bundled system modules only. When `true`, a module that is not a system module is refused at install if any of its workflow steps or command actions names this action. See [Engine integrity](../services/engine-integrity.md#system-only-actions). |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification. The first entry places the action in the workflow builder's action picker; with none, the action is listed under its module. See [How the action picker reads an action's taxonomy](#how-the-action-picker-reads-an-action-s-taxonomy). |
 
@@ -682,7 +714,22 @@ Type-specific fields:
 
 | When `type` is | Required field | Description |
 |----------------|----------------|-------------|
-| `function`     | `function`     | Manifest-local function id (or full canonical id for cross-module references). Resolved to the canonical function id at install and stored on the action row's `call` column. |
+| `function`     | `function`     | Manifest-local function id (or full canonical id for cross-module references). Resolved to the canonical function id at install and stored on the action row's `call` column. The row's handler is `function`. |
+| `native`       | `handler`      | Name of an action handler compiled into the workflow engine: `alert`, `chat.reply`, `scene.widget.visibility`, `print` or `function` (the handlers registered in `workflow/app.go`). Must be non-empty; install does not check it against the engine's handlers, so a name the engine does not register installs and fails when a step runs. Stored as the action row's handler, with an empty `call`. **Bundled system modules only**: an uploaded module that declares a `native` action is refused at install, because naming an engine handler would let an upload bind workflow steps to engine internals. |
+
+The bundled `woofx3` module (`modules/woofx3/manifest.json`) declares its engine handlers this way:
+
+```json
+{
+  "id": "chat.reply",
+  "name": "Send chat message",
+  "type": "native",
+  "handler": "chat.reply",
+  "schema": [
+    { "id": "message", "label": "Message", "type": "text", "required": true }
+  ]
+}
+```
 
 **Example — an increment action declaring what it returns:**
 
@@ -694,7 +741,7 @@ Type-specific fields:
   "type": "function",
   "function": "increment",
   "schema": [
-    { "id": "target", "label": "Counter", "type": "resource_ref", "kind": "counter", "required": true },
+    { "id": "target", "label": "Counter", "type": "resource_ref", "resourceKind": "counter", "required": true },
     { "id": "step", "label": "Increment by", "type": "number", "defaultValue": 1, "min": 1 }
   ],
   "returns": {
@@ -709,6 +756,22 @@ Type-specific fields:
 ```
 
 A later workflow step can then reference `${increment.next}` (where `increment` is that step's id) in any of its own field values, and the workflow builder's variable picker will offer `next` / `previous` / `step` with their declared descriptions.
+
+#### Action sentences
+
+An action's `sentence` is how the UI describes a configured step that runs it, so a collapsed step reads as one line of plain English. It uses the [trigger sentence](#trigger-sentences) grammar: each `{fieldId}` placeholder names a field in the action's own `schema`, and never a trigger field or an earlier step's output. For the increment action above, `"sentence": "Add {step} to {target}"` renders as "Add 5 to Deaths". The UI substitutes, in order of preference:
+
+- the value the user configured, or the option's label for a `select`
+- the field's short variable name when the value is taken from an earlier step or the trigger (`next` for `${increment.next}`)
+- the field's `missingText` while the field is empty: rendered as a warning for a required field, which the step cannot run without, and as ordinary words for an optional one, which the action runs without
+
+An optional field's `missingText` says what the action does with the field left empty, in words that fit the sentence. The bundled `counter.increment` declares `"sentence": "Add {amount} to {target}"` and gives its optional `amount` the missing text `"the counter's step"`, so a step that leaves it empty reads "Add the counter's step to Deaths". An optional field with neither a value nor `missingText` is worded by the UI.
+
+`anyText` does not apply, and is rejected on an action field: an action field is never set to "any".
+
+A sentence is rejected at install, naming the action, when it is empty or only whitespace, when a brace is unbalanced, nested or encloses nothing, or when a placeholder is not the `id` of a field in the action's `schema`. The rules and their reasons are the trigger ones.
+
+Absent means the author declared none, and clients build a sentence from the action's name and its setting labels instead. An action with no settings can usually leave it out.
 
 ### Function entry (`functions[]`)
 
@@ -729,7 +792,7 @@ The word `action` shows up at three layers in the system. Authors and reviewers 
 | Layer | What it is | Example | Extensible by modules? |
 |-------|-----------|---------|------------------------|
 | **Engine step type** | A workflow step's `type` field. The `action` value selects the action-dispatch step path. Other step types are `wait`, `condition`, `log`, `workflow`. | `step.type = "action"` | No — engine flow primitive |
-| **Action handler** | When a step's type is `action`, the handler that runs the work. | `function`, `print` | No — engine-built-in |
+| **Action handler** | When a step's type is `action`, the handler that runs the work. | `function`, `alert`, `chat.reply`, `print` | No — engine-built-in |
 | **Module action** | What a manifest contributes — a parameterized invocation of an action handler, exposed in the UI as a building block. | `twitch_platform:action:play_alert` (type `function`, function `twitch_platform:function:play_alert`) | **Yes** — that's what this section is about |
 
 A module's `actions[]` list is not "things modules add to the engine." It's "configured ways to use the engine's existing handlers, surfaced in the UI as building blocks for workflows."
@@ -977,6 +1040,8 @@ A theme entry carries nothing else: any other property fails the install, so the
 
 `requires` maps module id to a semver range. A theme for another module's widget must name that module in `requires`.
 
+The marketplace keys on both of these definitions, so they are a contract with it and not only with the engine: a package it finds to have `themes` and no triggers, actions, functions, widgets, workflows or commands becomes a **theme** listing rather than a module one, and the module named in `requires` is what its storefront prompts a buyer to install first. Widening what a theme pack may contain, or making `requires` optional for a theme targeting another module, changes what the storefront shows and what it installs. `examples/theme-packs/README.md` is the author-facing version of this.
+
 #### Install-time validation
 
 The install fails, naming the offending field, when:
@@ -1033,8 +1098,8 @@ A `resources[]` entry declares that this module is the **controller** for runtim
 Declaring a kind is necessary but not sufficient — the module must also expose **actions or commands** that actually create / mutate / delete instances. By convention these:
 
 - A `createX` action whose function calls `ctx.resources.create(kind, instanceId, displayName)`.
-- A `deleteX` action with a `target: resource_ref(kind=...)` parameter that calls `ctx.resources.delete(target)`.
-- One or more mutation actions (e.g. `increment`, `decrement`) whose `target` is a `resource_ref(kind=...)`.
+- A `deleteX` action with a `target: resource_ref(resourceKind=...)` parameter that calls `ctx.resources.delete(target)`.
+- One or more mutation actions (e.g. `increment`, `decrement`) whose `target` is a `resource_ref(resourceKind=...)`.
 
 See `modules/utility/counter/manifest.json` in the **woofx3-modules** repository for the canonical example.
 
@@ -1613,7 +1678,7 @@ Settings can be changed afterwards (`updateResourceInstance`), along with the di
 | Module declares it provides a kind | `manifest.resources[].kind` | Module manifest |
 | User triggers instance creation (UI, chat command, etc.) | `createResourceInstance(...)` engine RPC, or `ctx.resources.create(kind, instanceId, displayName, settings?)` | Dashboard / module function |
 | Engine persists the row + emits NATS event | `module.ModuleService/CreateResourceInstance` | DB proxy |
-| Other parts of the system reference the instance | `resource_ref(kind=...)` ConfigField → canonical id | UI / workflow editor |
+| Other parts of the system reference the instance | `resource_ref(resourceKind=...)` ConfigField → canonical id | UI / workflow editor |
 | Owning function performs work using the canonical id | `ctx.event.parameters.target` | Module function |
 | User triggers instance deletion | `ctx.resources.delete(canonicalId)` | Module function |
 | Engine cascades on module uninstall | FK `module_resource_instances.module_id → modules.id ON DELETE CASCADE` | DB |

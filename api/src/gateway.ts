@@ -1,11 +1,12 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { type ApiGatewayContract, REGISTRATION_REFUSED, type RegisterClientOptions } from "@woofx3/api/rpc";
+import { secretsMatch } from "@woofx3/common/http/secrets";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 import { ApiSession } from "./api-session";
 import type { ClientAuth } from "./auth";
 import type { DbClient } from "./db-client";
+import type { RegistrationPolicy } from "./registration";
 import type { WebhookClient } from "./webhook-client";
 
 /**
@@ -23,22 +24,34 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
   private webhookClient: WebhookClient | null = null;
 
   /**
-   * @param registrationToken The secret a caller must present to register
-   *   (`WOOFX3_REGISTRATION_TOKEN`), or null to accept any caller. A
-   *   managed engine is publicly reachable before anyone has registered,
-   *   so without a token the first caller to find it would own it.
+   * Serialises `registerClient` in `first` mode, so two callers racing on an
+   * engine with no client cannot both be admitted as the first.
+   */
+  private registrationQueue: Promise<unknown> = Promise.resolve();
+
+  /**
+   * @param registration Who may register (see registration.ts). A managed
+   *   engine is publicly reachable before anyone has registered, so without
+   *   a token the first caller to find it would own it.
    */
   constructor(
     private api: Api,
     private auth: ClientAuth,
     private db: DbClient,
     private logger: SharedLogger,
-    private registrationToken: string | null
+    private registration: RegistrationPolicy
   ) {
     super();
-    if (registrationToken === null) {
+    if (registration.mode === "open") {
       logger.warn(
         "WOOFX3_REGISTRATION_TOKEN is not set: any caller that reaches this engine can register a client. Set it on any engine reachable from the internet."
+      );
+    }
+    if (registration.mode === "first") {
+      logger.info(
+        registration.token === null
+          ? "Registration is open until the first client registers, then closed"
+          : "Registration is open until the first client registers, then requires the registration token"
       );
     }
   }
@@ -63,9 +76,34 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     description: string,
     options: RegisterClientOptions
   ): Promise<{ clientId: string; clientSecret: string }> {
+    if (this.registration.mode !== "first") {
+      this.admit(options.registrationToken, this.registration.mode === "token");
+      return this.createClient(description, options);
+    }
+    const registered = this.registrationQueue.then(async () => {
+      this.admit(options.registrationToken, await this.hasRegisteredClient());
+      return this.createClient(description, options);
+    });
+    this.registrationQueue = registered.catch(() => {});
+    return registered;
+  }
+
+  /**
+   * Whether a `first`-mode engine is past its first registration. Read from
+   * the db each time rather than remembered, so it holds across restarts;
+   * removing every client opens registration again.
+   */
+  private async hasRegisteredClient(): Promise<boolean> {
+    const resp = await this.db.listClients();
+    return resp.clients.length > 0;
+  }
+
+  private async createClient(
+    description: string,
+    options: RegisterClientOptions
+  ): Promise<{ clientId: string; clientSecret: string }> {
     const { callbackUrl, callbackToken } = options;
-    this.requireRegistrationToken(options.registrationToken);
-    this.logger.info("Registering client", { description });
+    this.logger.info("Registering client", { description, mode: this.registration.mode });
 
     const resp = await this.db.createClient({
       description,
@@ -87,20 +125,21 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
   }
 
   /**
-   * Refuse unless the caller presented this engine's registration token.
-   * Both sides are hashed first so the comparison takes the same time
-   * whatever the presented token's length, and never short-circuits.
+   * Refuse unless the caller presented this engine's registration token,
+   * when `tokenRequired`.
    */
-  private requireRegistrationToken(presented: string | undefined): void {
-    if (this.registrationToken === null) {
+  private admit(presented: string | undefined, tokenRequired: boolean): void {
+    if (!tokenRequired) {
       return;
+    }
+    const expected = this.registration.token;
+    if (expected === null) {
+      throw new RegistrationRefused("This engine already has a registered client and accepts no more.");
     }
     if (!presented) {
       throw new RegistrationRefused("This engine requires a registration token to register.");
     }
-    const expected = createHash("sha256").update(this.registrationToken).digest();
-    const actual = createHash("sha256").update(presented).digest();
-    if (!timingSafeEqual(expected, actual)) {
+    if (!secretsMatch(expected, presented)) {
       throw new RegistrationRefused("The registration token does not match this engine's.");
     }
   }

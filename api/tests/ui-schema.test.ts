@@ -65,6 +65,47 @@ describe("parseDataShape", () => {
     expect(parseDataShape('{"fields":[{"type":"string"},null]}')).toBeUndefined();
   });
 
+  test("keeps a field's options", () => {
+    const raw = JSON.stringify({
+      fields: [
+        {
+          path: "tier",
+          type: "string",
+          options: [
+            { value: "1000", label: "Tier 1" },
+            { value: "2000", label: "Tier 2" },
+          ],
+        },
+        { path: "level", type: "number", options: [{ value: 1, label: "Low" }] },
+      ],
+    } satisfies DataShape);
+
+    expect(parseDataShape(raw)?.fields).toEqual([
+      {
+        path: "tier",
+        type: "string",
+        options: [
+          { value: "1000", label: "Tier 1" },
+          { value: "2000", label: "Tier 2" },
+        ],
+      },
+      { path: "level", type: "number", options: [{ value: 1, label: "Low" }] },
+    ]);
+  });
+
+  // A picker missing one of the values a field can hold is worse than a
+  // free-text box, so one malformed entry drops the whole list.
+  test.each([
+    ["an empty list", []],
+    ["a list that is not an array", { value: "a", label: "A" }],
+    ["an entry without a label", [{ value: "a", label: "A" }, { value: "b" }]],
+    ["an entry whose value is not a scalar", [{ value: ["a"], label: "A" }]],
+  ])("drops the options of %s and keeps the field", (_label, options) => {
+    const raw = JSON.stringify({ fields: [{ path: "tier", type: "string", options }] });
+
+    expect(parseDataShape(raw)?.fields).toEqual([{ path: "tier", type: "string" }]);
+  });
+
   test("keeps a summary, its details and identity annotations", () => {
     const raw = JSON.stringify({
       summary: "{userName} redeemed {rewardTitle}",

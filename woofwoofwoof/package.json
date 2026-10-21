@@ -2,7 +2,7 @@
   "name": "woofwoofwoof",
   "type": "module",
   "dependencies": {
-    "zod": "^3.24.0",
+    "zod": "^4.6.6",
     "@nats-io/transport-node": "^3.0.0-33",
     "@twurple/auth": "^7.4.0",
     "@twurple/chat": "^7.4.0",

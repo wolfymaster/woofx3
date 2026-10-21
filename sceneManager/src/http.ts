@@ -1,3 +1,4 @@
+import { RequestGuard } from "@woofx3/common/http/request-guard";
 import { SpanKind, withSpan } from "@woofx3/common/logging";
 import type { ApplicationContext } from "@woofx3/common/runtime";
 import type { SceneManagerContext, SceneManagerServices } from "./application";
@@ -25,7 +26,15 @@ import { handleStaticAssetRoute } from "./routes/assets";
 import { handleAssetReadRoute } from "./routes/asset-read";
 import { handleFontRoute } from "./routes/fonts";
 import { handleMediaProxyRoute } from "./routes/media";
-import { corsHeadersForPath, dispatchRoute, matchRoute, type Route, routeTable } from "./routes/route-table";
+import {
+  ANY_ORIGIN,
+  type CorsOrigin,
+  corsHeadersForPath,
+  dispatchRoute,
+  matchRoute,
+  type Route,
+  routeTable,
+} from "./routes/route-table";
 import { ENGINE_ASSET_PREFIXES } from "@woofx3/module-sdk";
 import { MEDIA_PROXY_PATH } from "../contract/media-url";
 import { FONT_FILES_PREFIX, FONT_STYLESHEET_PATH } from "./fonts/google-font-cache";
@@ -226,14 +235,19 @@ export function routeOf(pathname: string): string | null {
   return match.route === null ? null : match.route.path;
 }
 
-/** The CORS headers the route answering `pathname` grants: its preflight answer and its responses. */
-export function corsHeadersFor(pathname: string): Record<string, string> {
-  return corsHeadersForPath(ROUTES, pathname);
+/**
+ * The CORS headers the route answering `pathname` grants: its preflight
+ * answer and its responses, to a request from `origin` (every origin unless
+ * WOOFX3_ALLOWED_ORIGINS is set).
+ */
+export function corsHeadersFor(pathname: string, origin: CorsOrigin = ANY_ORIGIN): Record<string, string> {
+  return corsHeadersForPath(ROUTES, pathname, origin);
 }
 
 export function createHttpServer(deps: HttpDeps) {
   const { ctx } = deps;
   const editorDeps = { sessionTokens: deps.sessionTokens, sceneDocuments: deps.sceneDocuments, logger: ctx.logger };
+  const requestGuard = new RequestGuard(ctx.runtimeConfig.requestGuard);
   return Bun.serve<EditorSocketData>({
     port: ctx.runtimeConfig.port,
     hostname: ctx.runtimeConfig.bindHost,
@@ -253,6 +267,20 @@ export function createHttpServer(deps: HttpDeps) {
     fetch: async (req, server) => {
       const url = new URL(req.url);
 
+      // Before any route, the editor's WebSocket upgrade and the SSE stream
+      // included; see "Host and Origin checks" in
+      // docs/services/deployment.md for what OBS and widget frames send.
+      const rejected = requestGuard.reject(req);
+      if (rejected) {
+        ctx.logger.warn("Request refused by host/origin guard", {
+          status: rejected.status,
+          host: req.headers.get("host"),
+          origin: req.headers.get("origin"),
+          path: url.pathname,
+        });
+        return rejected;
+      }
+
       // GET /scene/{sceneId}/edit — upgraded outside the route table and the
       // request span, since a socket that opens returns no response.
       const editorMatch = /^\/scene\/([^/]+)\/edit$/.exec(url.pathname);
@@ -266,10 +294,14 @@ export function createHttpServer(deps: HttpDeps) {
         return handleEditorUpgrade(req, server, sceneId, editorDeps);
       }
 
-      return withSpan(`scene-manager ${req.method}`, () => dispatchRoute(ROUTES, req, url, deps, ctx.logger), {
-        attributes: { "http.request.method": req.method, "url.path": url.pathname },
-        kind: SpanKind.SERVER,
-      });
+      return withSpan(
+        `scene-manager ${req.method}`,
+        () => dispatchRoute(ROUTES, req, url, deps, ctx.logger, requestGuard.corsOriginHeaders(req)),
+        {
+          attributes: { "http.request.method": req.method, "url.path": url.pathname },
+          kind: SpanKind.SERVER,
+        }
+      );
     },
   });
 }

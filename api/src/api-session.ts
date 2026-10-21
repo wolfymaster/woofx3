@@ -1,6 +1,7 @@
 import type {
   ConfigBundle,
   ConfigImportOptions,
+  MarketplaceInstallRequest,
   RelayConfig,
   StreamEventSubscriber,
   TwitchAccessToken,
@@ -50,6 +51,10 @@ export class ApiSession extends RpcTarget {
       moduleKey,
       ...ctx,
     });
+  }
+
+  async installMarketplaceListing(listingId: string, request: MarketplaceInstallRequest) {
+    return this.api.installMarketplaceListing(listingId, request, { clientId: this.clientId });
   }
 
   async setTwitchToken(token: TwitchAccessToken, convexUserId?: string) {
@@ -137,6 +142,14 @@ export const RPC_METHODS = [
   "getModule",
   "installModuleZip",
   "installModuleFromUrl",
+  "installMarketplaceListing",
+  "inspectMarketplaceListing",
+  "installMarketplaceBundle",
+  "marketplaceSearch",
+  "marketplaceCounts",
+  "marketplaceGetListing",
+  "marketplaceGetAuthor",
+  "marketplaceQuote",
   "listEngineModules",
   "uninstallModule",
   "uninstallEngineModule",
@@ -190,6 +203,29 @@ export const RPC_METHODS = [
   "setTwitchToken",
   "setRelayConfig",
   "deleteTwitchToken",
+  "twitchGetChannelInformation",
+  "twitchGetGames",
+  "twitchSearchCategories",
+  "twitchModifyChannelInformation",
+  "twitchCreateStreamMarker",
+  "twitchGetAdSchedule",
+  "twitchSnoozeNextAd",
+  "twitchGetUsers",
+  "twitchGetBlockedTerms",
+  "twitchAddBlockedTerm",
+  "twitchRemoveBlockedTerm",
+  "twitchBanUser",
+  "twitchUnbanUser",
+  "twitchGetChatSettings",
+  "twitchUpdateChatSettings",
+  "twitchSendChatMessage",
+  "twitchSendChatAnnouncement",
+  "twitchSendShoutout",
+  "twitchGetChatters",
+  "twitchGetChatPins",
+  "twitchPinChatMessage",
+  "twitchUnpinChatMessage",
+  "twitchCreateClip",
   "dispatchFieldOptionsRequest",
   "getScenes",
   "getScene",
@@ -223,6 +259,7 @@ export const RPC_METHODS = [
   "skipCurrentAlert",
   "clearAlertQueue",
   "getObsStatus",
+  "listViewerFacts",
   "completeModuleOAuth",
   "mintOverlayToken",
   "revokeOverlayToken",

@@ -13,6 +13,7 @@
 // adding or renaming event types.
 
 import type { RelayConfig, StreamSession, StreamSessionTotals, WorkflowHealth } from "./api";
+import type { CommandSnapshot } from "./command";
 /**
  * Canonical event-type strings for every engine callback. Prefer
  * `EngineEventType.MODULE_INSTALLED` over the raw string in application
@@ -192,6 +193,17 @@ export interface ActionDefinition {
    * with `parseDataShape` from `./ui-schema`.
    */
   returns?: string;
+  /**
+   * The module author's one-line English template for a configured step that
+   * runs this action, e.g. `"Add {amount} to {counter}"`. Each `{fieldId}`
+   * names a field in `paramsSchema`; render it by substituting the configured
+   * value (an option's label for a select), that field's `missingText` while
+   * a required field has no value, or the short variable name when the value
+   * comes from an earlier step. Barkloader guarantees at install that the
+   * braces are balanced and every placeholder names a field. Absent means the
+   * author declared none; build a sentence from the setting labels instead.
+   */
+  sentence?: string;
   createdByType: string;
   createdByRef: string;
 }
@@ -674,6 +686,12 @@ export interface ModuleInstalledEvent {
   moduleKey: string;
   alreadyInstalled?: boolean;
   /**
+   * Where the install came from. Set only on the events the api sends
+   * itself (an already-installed answer); barkloader's own completion event
+   * carries none.
+   */
+  source?: "marketplace";
+  /**
    * Catalog metadata extracted from the stored manifest at install
    * completion. `author` is guaranteed non-empty by the engine —
    * "Unknown" when the manifest omitted the field. `taxonomy` is the
@@ -700,6 +718,12 @@ export interface ModuleInstallFailedEvent {
   version: string;
   moduleKey: string;
   error: string;
+  /**
+   * Where the install came from. Set only on failures the api reports
+   * before barkloader has the archive; barkloader's own failure event
+   * carries none.
+   */
+  source?: "marketplace";
 }
 
 export interface ModuleDeletedEvent {
@@ -833,32 +857,8 @@ export interface SceneDeletedEvent {
 // Command events
 // ---------------------------------------------------------------------------
 
-/**
- * Snapshot of a chat command row at the point a webhook was emitted.
- * Mirrors `CommandSnapshot` in `./api` field-for-field (kept as a separate
- * local type, same precedent as `WorkflowSnapshot`/`SceneSnapshot`, to avoid
- * a circular import between this file and `./api`).
- */
-export interface CommandWebhookSnapshot {
-  id: string;
-  command: string;
-  /** The actions this command runs, in order -- `ActionStep` in api.ts. */
-  actions: Array<{
-    id?: string;
-    action: string;
-    function?: string;
-    parameters?: Record<string, unknown>;
-    $ref?: string;
-    dependsOn?: string[];
-  }>;
-  cooldown: number;
-  priority: number;
-  enabled: boolean;
-  visibility: "public" | "restricted";
-  groupIds: string[];
-  usernames: string[];
-  argumentPattern: string;
-}
+/** A chat command at the point a webhook was emitted. */
+export type CommandWebhookSnapshot = CommandSnapshot;
 
 export interface CommandCreatedEvent {
   type: typeof EngineEventType.COMMAND_CREATED;

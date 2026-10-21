@@ -16,7 +16,7 @@ import (
 //   - Append-only. Nothing reads it in normal operation.
 func CreateSceneBackupsTable() *gormigrate.Migration {
 	return &gormigrate.Migration{
-		ID: "0062_scene_backups",
+		ID: "0067_scene_backups",
 		Migrate: func(tx *gorm.DB) error {
 			statements := []string{
 				`CREATE TABLE IF NOT EXISTS public.scene_backups (

@@ -7,6 +7,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { OPEN_REQUEST_GUARD_POLICY } from "@woofx3/common/http/request-guard";
 import SceneManager from "../../src/application";
 import type { SceneManagerRuntimeConfig } from "../../src/config";
 import { createFakeDb, type FakeDb } from "./fake-db";
@@ -59,6 +60,7 @@ export async function bootSceneManager(busUrl: string, options: { port?: number 
     databaseProxyUrl: "http://127.0.0.1:1",
     barkloaderUrl: barkloader.url,
     mediaProxySecret: "smoke-media-secret-0123456789abcdef",
+    requestGuard: OPEN_REQUEST_GUARD_POLICY,
     obs: { host: "127.0.0.1", port: "1" },
     nats: { url: busUrl, name: "scene-manager-smoke" },
   };

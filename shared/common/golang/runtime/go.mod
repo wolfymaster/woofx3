@@ -3,10 +3,12 @@ module github.com/wolfymaster/woofx3/common/runtime
 go 1.24.0
 
 require (
+	github.com/nats-io/nats.go v1.38.0
 	github.com/wolfymaster/woofx3/clients/barkloader v0.0.0
 	github.com/wolfymaster/woofx3/clients/db v0.0.0
 	github.com/wolfymaster/woofx3/clients/nats v0.0.0
 	github.com/wolfymaster/woofx3/common/cloudevents v0.0.0
+	github.com/wolfymaster/woofx3/common/config v0.0.0
 )
 
 require (
@@ -17,7 +19,6 @@ require (
 	github.com/klauspost/compress v1.17.11 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
-	github.com/nats-io/nats.go v1.38.0 // indirect
 	github.com/nats-io/nkeys v0.4.9 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
 	github.com/twitchtv/twirp v8.1.3+incompatible // indirect
@@ -33,4 +34,5 @@ replace (
 	github.com/wolfymaster/woofx3/clients/db => ../../../clients/golang/db
 	github.com/wolfymaster/woofx3/clients/nats => ../../../clients/golang/nats
 	github.com/wolfymaster/woofx3/common/cloudevents => ../../../common/golang/cloudevents
+	github.com/wolfymaster/woofx3/common/config => ../../../common/golang/config
 )

@@ -11,7 +11,7 @@ import (
 // the same ID for the shape decisions.
 func CreateSceneBackupsTable() *gormigrate.Migration {
 	return &gormigrate.Migration{
-		ID: "0062_scene_backups",
+		ID: "0067_scene_backups",
 		Migrate: func(tx *gorm.DB) error {
 			log.Println("Creating scene_backups table...")
 			return execStatements(tx, []string{

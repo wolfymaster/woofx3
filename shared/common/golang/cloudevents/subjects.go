@@ -44,6 +44,14 @@ const (
 	// not recorded: there is no workflow row to attribute it to.
 	SubjectActionExecute Subject = "action.execute"
 
+	// Run the workflow a chat command is linked to, from the
+	// `chat.command.<slug>` event of one invocation. Published by whoever
+	// matched the command and checked who may run it (woofwoofwoof, or the api
+	// running a command for the dashboard); the workflow engine runs that one
+	// workflow (Engine.RunCommand). Its trigger has type "command", so the
+	// event the same invocation announces cannot start it a second time.
+	SubjectWorkflowCommandExecute Subject = "workflow.command.execute"
+
 	// Run a recorded run again, whole or from one of its steps. Carries the
 	// original trigger event and the recorded step outcomes, published by the
 	// api after reading them from the db proxy.
@@ -161,11 +169,9 @@ const (
 
 	// DB-proxy overlay-token outbox patterns. Same publisher.go format:
 	// "db.{entityType}.{operation}.{appId}". Mint emits created.*;
-	// revoke / rotate emit updated.*. Streamware subscribes to updated.*
-	// to poison its token-resolution cache and close revoked sockets;
-	// the api projects both onto the OVERLAY_TOKEN_MINTED /
-	// OVERLAY_TOKEN_REVOKED webhook events (payloads never carry the
-	// plaintext token).
+	// revoke / rotate emit updated.*. The api projects both onto the
+	// OVERLAY_TOKEN_MINTED / OVERLAY_TOKEN_REVOKED webhook events
+	// (payloads never carry the plaintext token).
 	SubjectDbOverlayTokenCreatedPattern Subject = "db.overlay_token.created.*"
 	SubjectDbOverlayTokenUpdatedPattern Subject = "db.overlay_token.updated.*"
 

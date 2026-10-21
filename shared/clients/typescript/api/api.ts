@@ -8,7 +8,27 @@ import type {
   ConfigImportPlan,
   ConfigImportResult,
 } from "./config-bundle";
+import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "./marketplace-catalog";
 import type { RegisterClientOptions } from "./rpc";
+import type {
+  TwitchAddBlockedTermParams,
+  TwitchBanUserParams,
+  TwitchChatPinParams,
+  TwitchCreateStreamMarkerParams,
+  TwitchGetBlockedTermsParams,
+  TwitchGetChattersParams,
+  TwitchGetGamesParams,
+  TwitchGetUsersParams,
+  TwitchHelixResult,
+  TwitchModifyChannelInformationParams,
+  TwitchRemoveBlockedTermParams,
+  TwitchSearchCategoriesParams,
+  TwitchSendChatAnnouncementParams,
+  TwitchSendChatMessageParams,
+  TwitchSendShoutoutParams,
+  TwitchUnbanUserParams,
+  TwitchUpdateChatSettingsParams,
+} from "./twitch-helix";
 import type {
   EventLogPage,
   EventLogQuery,
@@ -23,7 +43,10 @@ import type {
   TriggerDefinition,
   WidgetBehaviorKinds,
 } from "./webhooks";
-import type { WorkflowDefinition } from "./workflow-definition";
+import type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
+import type { TaskDefinition, WorkflowDefinition } from "./workflow-definition";
+
+export type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
 
 // ==================== Modules ====================
 
@@ -41,6 +64,13 @@ export interface Module {
   author: string;
   isInstalled: boolean;
   iconUrl: string;
+  /**
+   * The marketplace listing an installed module came from, and that
+   * listing's edition. Absent for a module that did not come from the
+   * marketplace or was installed before the engine recorded it.
+   */
+  marketplaceListingId?: string;
+  marketplaceEdition?: number;
 }
 
 export interface ModuleSetting {
@@ -297,27 +327,6 @@ export interface TwitchAccessToken {
 // ==================== Actions ====================
 
 /**
- * One action to run: the same shape a workflow step has, because it is the
- * same thing. `action` names the engine handler (`function`, `alert`,
- * `print`, ...); `function` carries the canonical function id when the
- * handler is `function`; `$ref` records which module action this came from,
- * for the reference graph.
- *
- * Parameters may contain `${trigger.data...}` expressions, resolved against
- * the event the actions run for.
- */
-export interface ActionStep {
-  /** Defaults to the step's position ("action-1", ...) when omitted. */
-  id?: string;
-  action: string;
-  function?: string;
-  parameters?: Record<string, unknown>;
-  $ref?: string;
-  /** Omit to run after the previous action; `[]` to run alongside it. */
-  dependsOn?: string[];
-}
-
-/**
  * A request to run actions that belong to no workflow.
  *
  * The run is not recorded and reports no lifecycle: both are keyed by a
@@ -339,54 +348,13 @@ export interface RunActionsInput {
 
 // ==================== Commands ====================
 
-/** "public" always allows any user; "restricted" requires the invoking user
- * to belong to one of groupIds or be listed in usernames. */
-export type CommandVisibility = "public" | "restricted";
-
-/**
- * Snapshot of a chat command as the engine stores it.
- *
- * A command runs `actions`, in order. Replying in chat is an action like any
- * other (`chat.reply`), which is what lets a command do anything a workflow
- * step can. An empty list is a command that only announces itself on
- * `chat.command.<slug>` for workflows to react to.
- */
-export interface CommandSnapshot {
-  id: string;
-  command: string;
-  actions: ActionStep[];
-  cooldown: number;
-  priority: number;
-  enabled: boolean;
-  visibility: CommandVisibility;
-  groupIds: string[];
-  usernames: string[];
-  /**
-   * Optional "{variable}" placeholders declaring named arguments, e.g.
-   * "{songTitle}" or "{userA} {userB}" - `command` itself never contains
-   * braces, it's always the bare trigger word ("sr", "hug"). The extracted
-   * values reach the command's actions on the trigger event, as
-   * `${trigger.data.variables.songTitle}`.
-   *
-   * Extraction rule: exactly one variable captures the entire remainder of
-   * the message (not split on whitespace) - `!sr {songTitle}` against
-   * "!sr Life is a highway" yields `songTitle: "Life is a highway"`. More
-   * than one variable: every variable but the last consumes one
-   * whitespace-delimited token, and the last captures whatever remains -
-   * `!hug {userA} {userB}` against "!hug alice bob" yields
-   * `userA: "alice", userB: "bob"`.
-   *
-   * Each `{name}` must be a single word or dot-separated words
-   * (`^\w+(\.\w+)*$`) - no other characters are valid. The engine rejects
-   * `createCommand`/`updateCommand` calls with an invalid name in this
-   * pattern.
-   */
-  argumentPattern: string;
-}
-
 export interface CreateCommandInput {
   command: string;
-  actions: ActionStep[];
+  /** The tasks the command's workflow runs. Takes precedence over `actions`;
+   *  either one non-empty creates the workflow. */
+  steps?: TaskDefinition[];
+  /** Actions to run in order, for a writer that has nothing but actions. */
+  actions?: ActionStep[];
   cooldown: number;
   priority?: number;
   enabled: boolean;
@@ -469,14 +437,20 @@ export interface AvailableFunction {
 }
 
 /**
- * Full-replace update; the engine's UpdateCommand proto requires every
- * field, so the contract mirrors that rather than offering partial
- * patches. Callers should send the merged result of (current snapshot ∪
- * user changes).
+ * Full-replace update of everything but the steps; the engine's UpdateCommand
+ * proto requires every other field, so the contract mirrors that rather than
+ * offering partial patches. Callers should send the merged result of (current
+ * snapshot ∪ user changes). The steps change only when `steps` or `actions` is
+ * given.
  */
 export interface UpdateCommandInput {
   command: string;
-  actions: ActionStep[];
+  /** Replaces the tasks of the command's workflow, creating it when the command
+   *  has none; an empty list removes it. Omit both this and `actions` to keep
+   *  the steps as they are. */
+  steps?: TaskDefinition[];
+  /** Actions to run in order, replacing the steps; ignored with `steps`. */
+  actions?: ActionStep[];
   cooldown: number;
   priority: number;
   enabled: boolean;
@@ -845,6 +819,32 @@ export interface SceneEditorSession {
 }
 
 /**
+ * One value a workflow can read as `${viewer.<path>}` about the viewer its
+ * triggering event names: the viewer's `id`, `platform` and `name`, and each
+ * active viewer fact, a fact `{owner}:fact:{slug}` at `{owner}.{slug}`.
+ *
+ * `${viewer.*}` holds values only when the trigger's `emits` marks exactly
+ * one `string` field with `identity: "viewer"`. A fact the viewer has no
+ * value for yet reads as null, as does `name` when neither the event nor the
+ * db knows it.
+ */
+export interface ViewerFact {
+  /** The path after `viewer.`, e.g. `"id"` or `"user.apple_mentions"`. */
+  path: string;
+  name: string;
+  /** Empty when the fact's author wrote none. */
+  description: string;
+  /** What the value is; a timestamp is epoch milliseconds, compared as a number. */
+  valueKind: "string" | "number" | "timestamp";
+  /**
+   * Whether a fact counts over the viewer's lifetime or the current stream
+   * session, in which case it reads the current session's value. Absent on
+   * `id`, `platform` and `name`, which are not facts.
+   */
+  window?: "lifetime" | "session";
+}
+
+/**
  * Outcome of `getObsStatus`.
  *
  * - `state`: the connection's state, or `unanswered` when the scene manager did
@@ -942,6 +942,96 @@ export interface UninstallModuleResponse {
   requested: boolean;
 }
 
+// ==================== Marketplace installs ====================
+
+/**
+ * What a marketplace install needs from its caller. The approvals are every
+ * permission and `local[]` endpoint id the streamer approved for this
+ * listing, including those an installed version already held; the install is
+ * refused while the archive declares one outside them.
+ *
+ * `buyerToken` is the short-lived marketplace token the dashboard minted for
+ * the buyer. The engine forwards it to the marketplace unread and keeps
+ * nothing. Without one the listing is read and downloaded anonymously, which
+ * only a free, public listing allows, and it is not claimed for anyone.
+ */
+export interface MarketplaceInstallRequest {
+  approvedPermissions: string[];
+  approvedLocalEndpoints: string[];
+  buyerToken?: string;
+}
+
+/**
+ * The outcome of `installMarketplaceListing`.
+ *
+ * - `installed`: barkloader accepted the archive under `moduleKey`
+ *   (`{moduleId}:{version}:{first 7 hex of sha256}`, where `moduleId` is the
+ *   manifest id every edition of the module shares, the catalog's
+ *   `moduleKey`); the install finishes asynchronously with
+ *   `module.installed` or `module.install_failed`. A later edition of an
+ *   installed module replaces it in place. `alreadyInstalled` when that key
+ *   was installed before, in which case `module.installed` has already been
+ *   sent.
+ * - `needs_approval`: the archive declares permissions or local endpoints
+ *   outside the approval, e.g. because the listing was republished after the
+ *   streamer reviewed it. Nothing was installed.
+ * - `payment_required`: the buyer must buy the listing first. Nothing was
+ *   downloaded.
+ */
+export type MarketplaceInstallResult =
+  | { status: "installed"; moduleKey: string; alreadyInstalled?: boolean }
+  | {
+      status: "needs_approval";
+      name: string;
+      version: string;
+      unapproved: string[];
+      /** Ids of `local[]` endpoints outside the approval. */
+      unapprovedLocalEndpoints: string[];
+    }
+  | { status: "payment_required"; name: string; version: string };
+
+/** A `local[]` endpoint as an install review shows it: what the module reaches on the streamer's network. */
+export interface MarketplaceLocalEndpoint {
+  id: string;
+  name: string;
+  protocol: string;
+}
+
+/**
+ * A module listing's current build, read from the archive an install would
+ * use, for the review a streamer approves before installing.
+ */
+export interface MarketplaceListingInspection {
+  listingId: string;
+  /**
+   * The module the listing installs as: the manifest id every edition
+   * shares (the catalog's `moduleKey`). Equals `listingId` for edition 1.
+   */
+  moduleId: string;
+  /** Which edition of the module the listing is. */
+  edition: number;
+  type: "module" | "theme";
+  name: string;
+  version: string;
+  /** The key an install of this build would use: `{moduleId}:{version}:{first 7 hex of sha256}`. */
+  moduleKey: string;
+  sha256: string;
+  sizeBytes: number;
+  manifest: { id: string; name: string; version: string; description: string };
+  permissions: string[];
+  localEndpoints: MarketplaceLocalEndpoint[];
+  files: ModuleFileEntry[];
+}
+
+/**
+ * The outcome of `installMarketplaceBundle`. An overlay listing becomes a
+ * scene and an alert listing an alert composition; `engineId` is the new
+ * one's id.
+ */
+export type MarketplaceBundleInstallResult =
+  | { status: "installed"; listingId: string; engineId: string; kind: "scene" | "alert" }
+  | { status: "payment_required"; name: string; version: string };
+
 /** Summary row returned by `listEngineModules`. */
 export interface EngineModuleSummary {
   name: string;
@@ -964,6 +1054,9 @@ export interface EngineModuleSummary {
    * so a mirror that never reads this one sees no kinds.
    */
   manifest: Record<string, unknown> | null;
+  /** See `Module.marketplaceListingId`. */
+  marketplaceListingId?: string;
+  marketplaceEdition?: number;
 }
 
 // ==================== Stream / workflow response types ====================
@@ -1322,6 +1415,27 @@ export interface EngineInfo {
   overlayPublicUrl: string;
   /** The release this engine runs (its image tag), or "dev" for an unversioned build. */
   version: string;
+  /**
+   * How this engine is run, as its deployment declares it (`WOOFX3_HOSTING`).
+   * Absent when the deployment does not say, which a client treats as
+   * unknown, not as any one of the values.
+   */
+  hosting?: EngineHosting;
+}
+
+/**
+ * How an engine is run:
+ * - `managed`: provisioned and operated by the woofx3 cloud.
+ * - `self`: run by its owner on infrastructure they operate.
+ * - `local`: run on the streamer's own machine by the desktop app.
+ */
+export type EngineHosting = (typeof ENGINE_HOSTINGS)[number];
+
+export const ENGINE_HOSTINGS = ["managed", "self", "local"] as const;
+
+/** `value` as an `EngineHosting`, or null when it is not one. */
+export function parseEngineHosting(value: string): EngineHosting | null {
+  return (ENGINE_HOSTINGS as readonly string[]).includes(value) ? (value as EngineHosting) : null;
 }
 
 /**
@@ -1465,6 +1579,57 @@ export interface Woofx3EngineApi {
       marketplaceModuleId: string;
     }
   ): Promise<ModuleInstallZipResponse>;
+
+  /**
+   * Install a marketplace module or theme listing by id. The engine reads the
+   * listing, claims it for the buyer when given a `buyerToken` (a listing
+   * that must be bought first answers `payment_required`), downloads the
+   * archive only from an allowed host, refuses it unless its size and
+   * SHA-256 match what the marketplace recorded, and checks the manifest's
+   * permissions and `local[]` endpoints against the approval before handing
+   * it to barkloader. Install webhooks the engine sends itself carry
+   * `source: "marketplace"`. `clientId` is injected by the session.
+   * Capability `modules.marketplaceInstall`.
+   */
+  installMarketplaceListing(listingId: string, request: MarketplaceInstallRequest): Promise<MarketplaceInstallResult>;
+
+  /**
+   * A module or theme listing's current build, read from its verified
+   * archive: the manifest, permissions, local endpoints and files an install
+   * would review. Claims nothing. Capability `modules.marketplaceInstall`.
+   */
+  inspectMarketplaceListing(listingId: string, buyerToken?: string): Promise<MarketplaceListingInspection>;
+
+  /**
+   * Install an overlay or alert listing: its bundle becomes a new scene or
+   * alert composition, through the same writes as `createScene` and
+   * `createAlertComposition`. Claims the listing for the buyer first when
+   * given a `buyerToken`. Capability `modules.marketplaceInstall`.
+   */
+  installMarketplaceBundle(listingId: string, buyerToken?: string): Promise<MarketplaceBundleInstallResult>;
+
+  // Marketplace catalog reads. Each answers with the marketplace's JSON
+  // unchanged, to be parsed as the marketplace's own answer would be. An
+  // optional `buyerToken` is forwarded as the buyer's bearer: with the dev
+  // claim it reveals dev-tier listings, without it the read is the same as
+  // an anonymous one. A marketplace failure throws a message that
+  // `parseMarketplaceCatalogError` reads (`marketplace-catalog.ts`).
+  // Capability `marketplace.catalog`.
+
+  /** `GET /catalog`: search and browse every listing type. Unknown query keys are refused. */
+  marketplaceSearch(query: MarketplaceCatalogQuery, buyerToken?: string): Promise<unknown>;
+
+  /** `GET /catalog/counts`: `{counts{module, theme, emote, overlay, alert}, total}`. */
+  marketplaceCounts(buyerToken?: string): Promise<unknown>;
+
+  /** `GET /catalog/{id}`: `{listing}` with everything a listing page shows. */
+  marketplaceGetListing(listingId: string, buyerToken?: string): Promise<unknown>;
+
+  /** `GET /authors/{slug}`: `{author, listings[], total, limit, offset}`. */
+  marketplaceGetAuthor(slug: string, query?: MarketplaceAuthorQuery, buyerToken?: string): Promise<unknown>;
+
+  /** `GET /catalog/{id}/quote`: `{quote}` for the token's buyer. The token is required. */
+  marketplaceQuote(listingId: string, buyerToken: string): Promise<unknown>;
 
   /** Lightweight summary of every module currently installed on the engine. */
   listEngineModules(): Promise<EngineModuleSummary[]>;
@@ -1632,6 +1797,12 @@ export interface Woofx3EngineApi {
    * partial.
    */
   getWorkflowHealth(): Promise<WorkflowHealth[]>;
+  /**
+   * Every value `${viewer.*}` can resolve in a workflow, in a stable order:
+   * `id`, `platform` and `name` first, then the active facts by path.
+   * Requires the `workflow.viewerFacts` capability.
+   */
+  listViewerFacts(): Promise<ViewerFact[]>;
 
   // Commands (chat command CRUD on the engine — synchronous, emits
   // command.created / command.updated / command.deleted webhooks on success)
@@ -1695,6 +1866,57 @@ export interface Woofx3EngineApi {
   // and stored on settings.user_id so the row is properly user-scoped.
   setTwitchToken(token: TwitchAccessToken, convexUserId?: string): Promise<{ ok: true }>;
   deleteTwitchToken(): Promise<{ ok: true }>;
+
+  // Twitch: each method performs one Helix call as the linked broadcaster
+  // and answers with Twitch's own result (see ./twitch-helix.ts). They never
+  // throw for a refusal; `ok: false` carries the reason.
+
+  /** `GET /helix/channels` for the broadcaster. Requires the `twitch.streamInfo` capability. */
+  twitchGetChannelInformation(): Promise<TwitchHelixResult>;
+  /** `GET /helix/games`. Requires the `twitch.streamInfo` capability. */
+  twitchGetGames(params: TwitchGetGamesParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/search/categories`. Requires the `twitch.streamInfo` capability. */
+  twitchSearchCategories(params: TwitchSearchCategoriesParams): Promise<TwitchHelixResult>;
+  /** `PATCH /helix/channels` for the broadcaster. Requires the `twitch.streamInfo` capability. */
+  twitchModifyChannelInformation(params: TwitchModifyChannelInformationParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/streams/markers` on the broadcaster's stream. Requires the `twitch.streamInfo` capability. */
+  twitchCreateStreamMarker(params: TwitchCreateStreamMarkerParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/channels/ads` for the broadcaster. Requires the `twitch.ads` capability. */
+  twitchGetAdSchedule(): Promise<TwitchHelixResult>;
+  /** `POST /helix/channels/ads/schedule/snooze` for the broadcaster. Requires the `twitch.ads` capability. */
+  twitchSnoozeNextAd(): Promise<TwitchHelixResult>;
+  /** `GET /helix/users`. Requires the `twitch.moderation` capability. */
+  twitchGetUsers(params: TwitchGetUsersParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/moderation/blocked_terms` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchGetBlockedTerms(params: TwitchGetBlockedTermsParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/moderation/blocked_terms` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchAddBlockedTerm(params: TwitchAddBlockedTermParams): Promise<TwitchHelixResult>;
+  /** `DELETE /helix/moderation/blocked_terms` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchRemoveBlockedTerm(params: TwitchRemoveBlockedTermParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/moderation/bans` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchBanUser(params: TwitchBanUserParams): Promise<TwitchHelixResult>;
+  /** `DELETE /helix/moderation/bans` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchUnbanUser(params: TwitchUnbanUserParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/chat/settings` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchGetChatSettings(): Promise<TwitchHelixResult>;
+  /** `PATCH /helix/chat/settings` for the broadcaster. Requires the `twitch.moderation` capability. */
+  twitchUpdateChatSettings(params: TwitchUpdateChatSettingsParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/chat/messages` as the broadcaster. Requires the `twitch.chat` capability. */
+  twitchSendChatMessage(params: TwitchSendChatMessageParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/chat/announcements` for the broadcaster. Requires the `twitch.chat` capability. */
+  twitchSendChatAnnouncement(params: TwitchSendChatAnnouncementParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/chat/shoutouts` from the broadcaster. Requires the `twitch.chat` capability. */
+  twitchSendShoutout(params: TwitchSendShoutoutParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/chat/chatters` for the broadcaster. Requires the `twitch.chat` capability. */
+  twitchGetChatters(params: TwitchGetChattersParams): Promise<TwitchHelixResult>;
+  /** `GET /helix/chat/pins` for the broadcaster (Twitch beta). Requires the `twitch.pins` capability. */
+  twitchGetChatPins(): Promise<TwitchHelixResult>;
+  /** `PUT /helix/chat/pins` for the broadcaster (Twitch beta). Requires the `twitch.pins` capability. */
+  twitchPinChatMessage(params: TwitchChatPinParams): Promise<TwitchHelixResult>;
+  /** `DELETE /helix/chat/pins` for the broadcaster (Twitch beta). Requires the `twitch.pins` capability. */
+  twitchUnpinChatMessage(params: TwitchChatPinParams): Promise<TwitchHelixResult>;
+  /** `POST /helix/clips` on the broadcaster's stream. Requires the `twitch.clips` capability. */
+  twitchCreateClip(): Promise<TwitchHelixResult>;
 
   // Generic dynamic-options dispatch. The caller names the field; the engine
   // reads the request that field declares from the installed manifest, fires
@@ -2065,8 +2287,8 @@ export interface Woofx3EngineApi {
     commands: Array<{
       id: string;
       name: string;
-      /** How many actions it runs. The actions themselves are on listCommands. */
-      actions: number;
+      /** How many steps it runs. The steps themselves are on listCommands. */
+      stepCount: number;
       cooldown: number;
       enabled: boolean;
     }>;

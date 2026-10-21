@@ -45,6 +45,8 @@ async function gracefulShutdown(signal: string): Promise<void> {
 
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+// The orchestrator's stop request on Windows (CTRL_BREAK_EVENT). Never raised elsewhere.
+process.on("SIGBREAK", () => gracefulShutdown("SIGBREAK"));
 process.on("uncaughtException", (error) => {
   logger.error("Uncaught Exception", { error: error.message, stack: error.stack });
   gracefulShutdown("uncaughtException");

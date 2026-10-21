@@ -3,6 +3,8 @@ export interface NATSConfig {
   name: string;
   jwt?: string;
   nkeySeed?: string;
+  /** Sent when the message bus requires a token (WOOFX3_MESSAGEBUS_TOKEN); blank sends none. */
+  token?: string;
 }
 
 /**

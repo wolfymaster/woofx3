@@ -42,6 +42,13 @@ export interface Module {
   createdByType: string;
   createdByRef: string;
   moduleKey: string;
+  /**
+   * The marketplace listing this module was installed from, and that
+   * listing's edition. Unset for a module that did not come from the
+   * marketplace or was installed before the engine recorded it.
+   */
+  marketplaceListingId?: string | null | undefined;
+  marketplaceEdition?: number | null | undefined;
 }
 
 export interface ModuleFunction {
@@ -78,6 +85,12 @@ export interface CreateModuleRequest {
    * Manifest-local module id (manifest.json `id`). Required on install.
    */
   moduleId: string;
+  /**
+   * Set together for an install from the marketplace; see Module. A request
+   * that leaves them unset keeps what an existing row of the same name has.
+   */
+  marketplaceListingId?: string | null | undefined;
+  marketplaceEdition?: number | null | undefined;
 }
 
 export interface CreateModuleFunctionRequest {
@@ -2168,6 +2181,8 @@ export const Module = {
       createdByType: "",
       createdByRef: "",
       moduleKey: "",
+      marketplaceListingId: undefined,
+      marketplaceEdition: undefined,
       ...msg,
     };
   },
@@ -2229,6 +2244,12 @@ export const Module = {
     }
     if (msg.moduleKey) {
       writer.writeString(12, msg.moduleKey);
+    }
+    if (msg.marketplaceListingId != undefined) {
+      writer.writeString(14, msg.marketplaceListingId);
+    }
+    if (msg.marketplaceEdition != undefined) {
+      writer.writeInt32(15, msg.marketplaceEdition);
     }
     return writer;
   },
@@ -2298,6 +2319,14 @@ export const Module = {
         }
         case 12: {
           msg.moduleKey = reader.readString();
+          break;
+        }
+        case 14: {
+          msg.marketplaceListingId = reader.readString();
+          break;
+        }
+        case 15: {
+          msg.marketplaceEdition = reader.readInt32();
           break;
         }
         default: {
@@ -2471,6 +2500,8 @@ export const CreateModuleRequest = {
       createdByRef: "",
       moduleKey: "",
       moduleId: "",
+      marketplaceListingId: undefined,
+      marketplaceEdition: undefined,
       ...msg,
     };
   },
@@ -2512,6 +2543,12 @@ export const CreateModuleRequest = {
     }
     if (msg.moduleId) {
       writer.writeString(9, msg.moduleId);
+    }
+    if (msg.marketplaceListingId != undefined) {
+      writer.writeString(10, msg.marketplaceListingId);
+    }
+    if (msg.marketplaceEdition != undefined) {
+      writer.writeInt32(11, msg.marketplaceEdition);
     }
     return writer;
   },
@@ -2562,6 +2599,14 @@ export const CreateModuleRequest = {
         }
         case 9: {
           msg.moduleId = reader.readString();
+          break;
+        }
+        case 10: {
+          msg.marketplaceListingId = reader.readString();
+          break;
+        }
+        case 11: {
+          msg.marketplaceEdition = reader.readInt32();
           break;
         }
         default: {
@@ -4381,6 +4426,8 @@ export const ModuleJSON = {
       createdByType: "",
       createdByRef: "",
       moduleKey: "",
+      marketplaceListingId: undefined,
+      marketplaceEdition: undefined,
       ...msg,
     };
   },
@@ -4428,6 +4475,12 @@ export const ModuleJSON = {
     }
     if (msg.moduleKey) {
       json["moduleKey"] = msg.moduleKey;
+    }
+    if (msg.marketplaceListingId != undefined) {
+      json["marketplaceListingId"] = msg.marketplaceListingId;
+    }
+    if (msg.marketplaceEdition != undefined) {
+      json["marketplaceEdition"] = msg.marketplaceEdition;
     }
     return json;
   },
@@ -4491,6 +4544,16 @@ export const ModuleJSON = {
     const _moduleKey_ = json["moduleKey"] ?? json["module_key"];
     if (_moduleKey_) {
       msg.moduleKey = _moduleKey_;
+    }
+    const _marketplaceListingId_ =
+      json["marketplaceListingId"] ?? json["marketplace_listing_id"];
+    if (_marketplaceListingId_) {
+      msg.marketplaceListingId = _marketplaceListingId_;
+    }
+    const _marketplaceEdition_ =
+      json["marketplaceEdition"] ?? json["marketplace_edition"];
+    if (_marketplaceEdition_) {
+      msg.marketplaceEdition = protoscript.parseNumber(_marketplaceEdition_);
     }
     return msg;
   },
@@ -4639,6 +4702,8 @@ export const CreateModuleRequestJSON = {
       createdByRef: "",
       moduleKey: "",
       moduleId: "",
+      marketplaceListingId: undefined,
+      marketplaceEdition: undefined,
       ...msg,
     };
   },
@@ -4678,6 +4743,12 @@ export const CreateModuleRequestJSON = {
     }
     if (msg.moduleId) {
       json["moduleId"] = msg.moduleId;
+    }
+    if (msg.marketplaceListingId != undefined) {
+      json["marketplaceListingId"] = msg.marketplaceListingId;
+    }
+    if (msg.marketplaceEdition != undefined) {
+      json["marketplaceEdition"] = msg.marketplaceEdition;
     }
     return json;
   },
@@ -4728,6 +4799,16 @@ export const CreateModuleRequestJSON = {
     const _moduleId_ = json["moduleId"] ?? json["module_id"];
     if (_moduleId_) {
       msg.moduleId = _moduleId_;
+    }
+    const _marketplaceListingId_ =
+      json["marketplaceListingId"] ?? json["marketplace_listing_id"];
+    if (_marketplaceListingId_) {
+      msg.marketplaceListingId = _marketplaceListingId_;
+    }
+    const _marketplaceEdition_ =
+      json["marketplaceEdition"] ?? json["marketplace_edition"];
+    if (_marketplaceEdition_) {
+      msg.marketplaceEdition = protoscript.parseNumber(_marketplaceEdition_);
     }
     return msg;
   },

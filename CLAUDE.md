@@ -156,6 +156,17 @@ unaffected — this rule is about authorship lines, not vocabulary.
 Fixing an existing violation is worth a history rewrite: amend the commit and
 force-push with `--force-with-lease` while the branch is still unmerged.
 
+**Commits, pull requests and committed files stand on their own.**
+
+- Never commit plan documents: effort plans, phase breakdowns, task lists or
+  design notes for work in flight. They live outside the repository. `docs/`
+  describes how the system works, not what is planned for it. A release branch
+  gets its first commit from its first feature PR, not from a plan.
+- Never link to private or tool-hosted pages, such as claude.ai artifacts,
+  mockups or chat-shared plans, in a commit message, a pull request title,
+  description or comment, or a committed file. Readers of the repository cannot
+  open them. Put what matters into the PR description or the docs instead.
+
 # Code style and programming principles
 
 Write for senior engineers: **homogeneous** patterns, naming, and formatting across the repo. **Do not use emojis in comments** (they can break tooling).

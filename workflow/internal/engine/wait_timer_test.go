@@ -428,3 +428,47 @@ func TestRegisterRefusesInvalidWait(t *testing.T) {
 		t.Fatal("a refused workflow was still registered")
 	}
 }
+
+// A wait that carries on past its timeout has no event, so a later step that
+// reads one of its fields gets an empty value rather than failing.
+func TestWaitTimeoutContinuesWithEmptyData(t *testing.T) {
+	engine := newExecEngine(t)
+	recorder := newSettleRecorder()
+	engine.SetRunRecorder(recorder)
+	got := make(chan map[string]any, 1)
+	if err := engine.RegisterAction("say", func(_ tasks.ActionContext[execSvcs], params map[string]any) (map[string]any, error) {
+		got <- params
+		return map[string]any{}, nil
+	}); err != nil {
+		t.Fatalf("RegisterAction: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := engine.Stop(); err != nil {
+			t.Errorf("Stop: %v", err)
+		}
+	})
+
+	def := &types.WorkflowDefinition{
+		ID:      "wf-wait-data",
+		Name:    "wait data",
+		Trigger: &types.TriggerConfig{Type: "event", Event: "channel.raid"},
+		Tasks: []types.TaskDefinition{
+			{ID: "pause", Type: "wait", Wait: eventWait(20*time.Millisecond, tasks.OnTimeoutContinue)},
+			{
+				ID: "after", Type: "action", Action: "say", DependsOn: []string{"pause"},
+				Parameters: map[string]any{"user": "${pause.data.user}", "message": "Thanks ${pause.data.user}!"},
+			},
+		},
+	}
+	trigger := &types.Event{ID: "raid-1", Type: "channel.raid", Source: "test", Time: time.Now(), Data: map[string]any{}}
+	go engine.executeWorkflow(def, trigger, engine.newViewerLoader(viewerTrigger(def), trigger))
+
+	execution := recorder.awaitSettled(t, 2*time.Second)
+	if execution.Status != types.ExecutionStatusCompleted {
+		t.Fatalf("status = %s (%s), want completed", execution.Status, execution.Error)
+	}
+	params := <-got
+	if params["user"] != nil || params["message"] != "Thanks !" {
+		t.Fatalf("params = %v, want an empty user", params)
+	}
+}

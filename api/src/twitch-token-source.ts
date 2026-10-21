@@ -7,6 +7,7 @@ import {
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
+import { selectStrategy } from "@woofx3/twitch/token-strategy";
 import type { DbClient } from "./db-client";
 
 export const TWITCH_TOKEN_SETTING = "twitch_token";
@@ -74,14 +75,25 @@ export class TwitchTokenSource implements TwitchCredentials {
     if (!stored) {
       return "no twitch_token setting";
     }
-    if (asDashboardToken(stored)) {
-      try {
-        const token = await this.dashboardToken(false);
-        return { clientId: token.clientId, accessToken: token.accessToken, broadcasterId: token.userId };
-      } catch (err) {
-        return `could not get a Twitch token from the dashboard: ${errorMessage(err)}`;
-      }
+    switch (selectStrategy(stored)) {
+      case "dashboard":
+        return this.dashboardHelix();
+      case "engineRefresh":
+        return this.engineRefreshHelix(stored);
     }
+  }
+
+  private async dashboardHelix(): Promise<HelixCredentials | string> {
+    try {
+      const token = await this.dashboardToken(false);
+      return { clientId: token.clientId, accessToken: token.accessToken, broadcasterId: token.userId };
+    } catch (err) {
+      return `could not get a Twitch token from the dashboard: ${errorMessage(err)}`;
+    }
+  }
+
+  /** The engine's own token, which the twitch service refreshes; this only reads it. */
+  private engineRefreshHelix(stored: Record<string, unknown>): HelixCredentials | string {
     const clientId = this.ownClientId();
     if (!clientId) {
       return "WOOFX3_TWITCH_CLIENT_ID is not set";
@@ -99,13 +111,15 @@ export class TwitchTokenSource implements TwitchCredentials {
 
   /**
    * The engine client id of the dashboard the linked Twitch account came
-   * from, or null when the token is the engine's own (or there is none). That
+   * from, or null when there is none to ask: the token is the engine's own,
+   * is incomplete, or there is no token. That
    * dashboard holds the Twitch link, so it is the one to ask for anything
    * that acts as the channel, such as its shoutout queue.
    */
   async linkedDashboardClientId(): Promise<string | null> {
     const stored = await this.read();
-    return (stored && asDashboardToken(stored)?.dashboardClientId) || null;
+    const token = stored ? asDashboardToken(stored) : null;
+    return typeof token === "string" ? null : (token?.dashboardClientId ?? null);
   }
 
   /**
@@ -115,9 +129,12 @@ export class TwitchTokenSource implements TwitchCredentials {
    */
   async dashboardToken(force: boolean): Promise<TwitchTokenGrant> {
     const stored = await this.read();
-    const token = stored ? asDashboardToken(stored) : null;
-    if (!token) {
+    const token = stored ? asDashboardToken(stored) : "there is no twitch_token setting";
+    if (token === null) {
       throw new Error("twitch_token did not come from a dashboard");
+    }
+    if (typeof token === "string") {
+      throw new Error(token);
     }
     if (!force && token.obtainmentTimestamp + token.expiresIn * 1000 - EXPIRY_MARGIN_MS > this.now()) {
       return withoutDashboardClientId(token);
@@ -156,12 +173,25 @@ export class TwitchTokenSource implements TwitchCredentials {
   }
 }
 
-function asDashboardToken(stored: Record<string, unknown>): StoredDashboardToken | null {
-  if (typeof stored.dashboardClientId !== "string" || !stored.dashboardClientId) {
+/**
+ * The stored token as a dashboard's; null when its strategy is not
+ * `dashboard`; or, for a dashboard's token that lacks the dashboard client id
+ * or a complete grant needed to ask that dashboard for the next one, why it
+ * cannot be used. Such a token is never treated as the engine's own: its
+ * `clientId` names the dashboard's Twitch app, not the engine's.
+ */
+function asDashboardToken(stored: Record<string, unknown>): StoredDashboardToken | string | null {
+  if (selectStrategy(stored) !== "dashboard") {
     return null;
   }
+  if (typeof stored.dashboardClientId !== "string" || !stored.dashboardClientId) {
+    return "twitch_token came from a dashboard but does not say which one; relink Twitch from the dashboard";
+  }
   const grant = asGrant(stored);
-  return grant ? { ...grant, dashboardClientId: stored.dashboardClientId } : null;
+  if (!grant) {
+    return "twitch_token came from a dashboard but its grant is incomplete; relink Twitch from the dashboard";
+  }
+  return { ...grant, dashboardClientId: stored.dashboardClientId };
 }
 
 function asGrant(value: Record<string, unknown>): TwitchTokenGrant | null {

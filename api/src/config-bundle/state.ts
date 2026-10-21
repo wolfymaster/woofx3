@@ -1,7 +1,8 @@
 import type { ActionStep, CommandVisibility, WorkflowDefinition } from "@woofx3/api";
+import type { TaskDefinition } from "@woofx3/api/workflow-definition";
 import type { DbClient } from "../db-client";
 import { parseInstanceSettings } from "../module-event-handlers";
-import { parseActions } from "../routes/helpers";
+import { parseActions, parseSteps } from "../routes/helpers";
 
 /**
  * The engine's configuration as export and the import planner need it: every
@@ -31,6 +32,7 @@ export interface EngineCommand {
   visibility: CommandVisibility;
   argumentPattern: string;
   actions: ActionStep[];
+  steps: TaskDefinition[];
   groupIds: string[];
   usernames: string[];
   userOwned: boolean;
@@ -168,7 +170,9 @@ async function readWorkflows(db: DbClient): Promise<EngineWorkflow[]> {
       break;
     }
   }
-  return rows.map((wf) => ({
+  // A command's workflow belongs to its command, which carries its steps.
+  const own = rows.filter((wf) => parseJson<{ type?: string } | null>(wf.triggerJson, null)?.type !== "command");
+  return own.map((wf) => ({
     id: wf.id ?? "",
     name: wf.name ?? "",
     description: wf.description ?? "",
@@ -247,6 +251,7 @@ export async function readEngineConfig(db: DbClient, options: { members: boolean
       visibility: (c.visibility || "restricted") as CommandVisibility,
       argumentPattern: c.argumentPattern ?? "",
       actions: parseActions(c.actionsJson),
+      steps: parseSteps(c.stepsJson),
       groupIds: c.groupIds ?? [],
       usernames: c.usernames ?? [],
       userOwned: isUserOwned(c.createdByType),
