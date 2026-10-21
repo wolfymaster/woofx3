@@ -77,11 +77,15 @@ function immediate() {
   return { delays, schedule };
 }
 
-function logins(baseUrl: string, opts: { clientId?: string | null; now?: () => number; schedule?: Schedule } = {}) {
+function logins(
+  baseUrl: string,
+  opts: { clientId?: string | null; now?: () => number; schedule?: Schedule; random?: () => number } = {}
+) {
   const stored: StoredPublicToken[] = [];
   const storeToken = mock(async (token: StoredPublicToken) => {
     stored.push(token);
   });
+  let ids = 0;
   const manager = new TwitchDeviceLogins({
     clientId: opts.clientId === undefined ? "public-app" : opts.clientId,
     oauth: new TwitchOAuthClient({ baseUrl, now: () => NOW }),
@@ -89,7 +93,8 @@ function logins(baseUrl: string, opts: { clientId?: string | null; now?: () => n
     logger: { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never,
     now: opts.now ?? (() => NOW),
     schedule: opts.schedule ?? immediate().schedule,
-    newId: () => `login-${Math.random()}`,
+    newId: () => `login-${++ids}`,
+    random: opts.random ?? (() => 0.5),
   });
   return { manager, stored, storeToken };
 }
@@ -196,16 +201,30 @@ describe("a device login", () => {
     expect(storeToken).not.toHaveBeenCalled();
   });
 
-  test("keeps polling through a Twitch outage, backing off", async () => {
-    const twitch = fakeTwitch([{ status: 503, body: {} }, ISSUED]);
+  test.each([
+    // The retry after the outage backs off past the interval: double it, less up to a quarter of jitter.
+    ["no jitter drawn", 0, [5_000, 7_500, 5_000]],
+    ["half the jitter", 0.5, [5_000, 8_750, 5_000]],
+    ["almost all the jitter", 0.999, [5_000, 9_998, 5_000]],
+  ])("keeps polling through a Twitch outage, backing off (%s)", async (_, random, expected) => {
+    const twitch = fakeTwitch([{ status: 503, body: {} }, PENDING, ISSUED]);
     const { schedule, delays } = immediate();
-    const { manager } = logins(twitch.baseUrl, { schedule });
+    const { manager } = logins(twitch.baseUrl, { schedule, random: () => random });
 
     const login = await start(manager);
     expect(await settled(manager, login.loginId)).toMatchObject({ ok: true, state: { status: "linked" } });
-    // The retry after the outage backs off past the interval: double it, less up to a quarter of jitter.
-    expect(delays[1]).toBeGreaterThanOrEqual(7_500);
-    expect(delays[1]).toBeLessThanOrEqual(10_000);
+    expect(delays).toEqual(expected);
+  });
+
+  test("backs off further on each outage in a row, up to a minute", async () => {
+    const outage: Answer = { status: 503, body: {} };
+    const twitch = fakeTwitch([outage, outage, outage, outage, ISSUED]);
+    const { schedule, delays } = immediate();
+    const { manager } = logins(twitch.baseUrl, { schedule, random: () => 0 });
+
+    const login = await start(manager);
+    expect(await settled(manager, login.loginId)).toMatchObject({ ok: true, state: { status: "linked" } });
+    expect(delays).toEqual([5_000, 7_500, 15_000, 30_000, 45_000]);
   });
 
   test("fails when the token cannot be stored", async () => {

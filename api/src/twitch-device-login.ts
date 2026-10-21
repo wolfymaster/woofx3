@@ -33,6 +33,8 @@ export interface TwitchDeviceLoginsOptions {
   now?: () => number;
   schedule?: Schedule;
   newId?: () => string;
+  /** A number in [0, 1) for the retry jitter; `Math.random` when absent. */
+  random?: () => number;
 }
 
 interface Login {
@@ -67,11 +69,13 @@ export class TwitchDeviceLogins {
   private readonly now: () => number;
   private readonly schedule: Schedule;
   private readonly newId: () => string;
+  private readonly random: () => number;
 
   constructor(private readonly opts: TwitchDeviceLoginsOptions) {
     this.now = opts.now ?? (() => Date.now());
     this.schedule = opts.schedule ?? scheduleWithTimer;
     this.newId = opts.newId ?? (() => crypto.randomUUID());
+    this.random = opts.random ?? Math.random;
   }
 
   async start(scopes?: string[]): Promise<TwitchDeviceLoginStartResult> {
@@ -212,7 +216,7 @@ export class TwitchDeviceLogins {
       case "unavailable":
         login.unavailableStreak += 1;
         login.reason = result.reason;
-        this.pollAfter(login, retryDelay(login.intervalMs, login.unavailableStreak));
+        this.pollAfter(login, retryDelay(login.intervalMs, login.unavailableStreak, this.random()));
         return;
       case "expired":
         this.finish(login, "expired", result.reason);
@@ -271,10 +275,13 @@ export class TwitchDeviceLogins {
   }
 }
 
-/** Exponential backoff from the polling interval, capped, with jitter so retries do not land in step. */
-function retryDelay(intervalMs: number, streak: number): number {
+/**
+ * Exponential backoff from the polling interval, capped, less up to a quarter
+ * of jitter (`random` in [0, 1)) so retries do not land in step.
+ */
+function retryDelay(intervalMs: number, streak: number, random: number): number {
   const backoff = Math.min(intervalMs * 2 ** streak, MAX_RETRY_DELAY_MS);
-  return Math.max(intervalMs, Math.round(backoff * (0.75 + Math.random() * 0.25)));
+  return Math.max(intervalMs, Math.round(backoff * (0.75 + random * 0.25)));
 }
 
 function stateOf(login: Login): TwitchDeviceLoginState {
