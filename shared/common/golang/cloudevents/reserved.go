@@ -12,8 +12,8 @@ import "strings"
 
 // CommandSubjectPrefixes are the subjects the engine and its services treat as
 // commands: forge outbox events (`db.`), change OBS (`engine.`), call
-// the Twitch API, speak in chat, play or skip alerts, or run workflows and
-// actions.
+// the Twitch API, speak in chat (`message.send`, and the chat providers under
+// `platform.`), play or skip alerts, or run workflows and actions.
 //
 // Must match USER_RESERVED_EVENT_PREFIXES in
 // barkloader/lib_module/src/manifest_validate.rs, which refuses uploaded
@@ -26,6 +26,7 @@ var CommandSubjectPrefixes = []string{
 	"engine.",
 	"twitchapi",
 	"message.send",
+	"platform.",
 	"ui.notify.",
 	"ui.alert.",
 	"widget.queue.",

@@ -531,7 +531,7 @@ async fn validate_theme_dependencies(
 /// eventbus trigger, verbatim, so declaring one of these would let an upload
 /// drive the engine directly: forge outbox events (`db.`), change OBS
 /// (`engine.obs.command`), call the Twitch API (`twitchapi`), speak in
-/// chat (`message.send`), play or skip alerts (`ui.notify.`, `ui.alert.`,
+/// chat (`message.send`, or a chat provider under `platform.`), play or skip alerts (`ui.notify.`, `ui.alert.`,
 /// `widget.queue.`), or run, replay or stop workflows and actions
 /// (`workflow.execute`, `workflow.replay`, `workflow.cancel`,
 /// `workflow.command.execute`, `action.execute`).
@@ -540,12 +540,13 @@ async fn validate_theme_dependencies(
 ///
 /// The outbox stays open to the system module, which owns the `db.workflow.*`
 /// triggers and declares no handlers.
-const USER_RESERVED_EVENT_PREFIXES: [&str; 13] = [
+const USER_RESERVED_EVENT_PREFIXES: [&str; 14] = [
     WEBHOOK_EVENT_PREFIX,
     "db.",
     "engine.",
     "twitchapi",
     "message.send",
+    "platform.",
     "ui.notify.",
     "ui.alert.",
     "widget.queue.",
@@ -3229,6 +3230,8 @@ mod tests {
             "engine.obs.command",
             "twitchapi",
             "message.send",
+            "platform.twitch.chat.send",
+            "platform.twitch.chat.announce",
             "ui.notify.alert",
             "ui.alert.broadcast",
             "widget.queue.skip",
@@ -3290,6 +3293,7 @@ mod tests {
             "engine.obs.command",
             "engine.obs.options",
             "message.send",
+            "platform.twitch.chat.send",
             "workflow.execute",
             "some.service.command",
         ] {

@@ -99,6 +99,8 @@ func TestReservedSubjectMatch(t *testing.T) {
 		{"workflow.cancel", "workflow.cancel"},
 		{"workflow.run.cancelled", "workflow.run."},
 		{"message.send", "message.send"},
+		{"platform.twitch.chat.send", "platform."},
+		{"platform.youtube.chat.send", "platform."},
 		{"stream.online", "stream.online"},
 		{"channel.cheer", "channel."},
 		{"session.ended", "session."},
@@ -110,6 +112,7 @@ func TestReservedSubjectMatch(t *testing.T) {
 		{"custom.event", ""},
 		{"message.sent", ""},
 		{"message.send.later", ""},
+		{"platformer.score", ""},
 	}
 	for _, tc := range cases {
 		match, reserved := ReservedSubjectMatch(tc.subject)

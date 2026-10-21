@@ -16,6 +16,7 @@ export const RESERVED_SUBJECT_PREFIXES: readonly string[] = [
   "engine.",
   "twitchapi",
   "message.send",
+  "platform.",
   "ui.notify.",
   "ui.alert.",
   "widget.queue.",
