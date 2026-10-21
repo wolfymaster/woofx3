@@ -89,7 +89,7 @@ describe("request guard defaults", () => {
   });
 
   function guard(env: Record<string, string>): RequestGuard {
-    delete process.env.PORT;
+    delete process.env.WOOFX3_BEHIND_EDGE;
     delete process.env.WOOFX3_ALLOWED_HOSTS;
     delete process.env.WOOFX3_ALLOWED_ORIGINS;
     delete process.env.WOOFX3_SCENE_MANAGER_HOST;
@@ -110,7 +110,7 @@ describe("request guard defaults", () => {
   });
 
   it("behind the edge, accepts the Host the proxy sends and the public page's own origin", () => {
-    const g = guard({ PORT: "8080", WOOFX3_SCENE_MANAGER_URL: "https://streamer.example" });
+    const g = guard({ WOOFX3_BEHIND_EDGE: "true", WOOFX3_SCENE_MANAGER_URL: "https://streamer.example" });
     expect(g.reject(request({ host: "eng-1.up.railway.app", origin: "https://streamer.example" }))).toBeNull();
     expect(g.reject(request({ host: "eng-1.up.railway.app", origin: "https://evil.example" }))?.status).toBe(403);
   });

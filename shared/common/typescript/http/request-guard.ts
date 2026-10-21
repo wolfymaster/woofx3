@@ -106,13 +106,13 @@ export function isLoopbackHostname(hostname: string): boolean {
 }
 
 /**
- * The exposure of a service that binds `bindHost`. `edgePort` is the edge's
- * `PORT`: when it is set, the edge listens beyond loopback and forwards to the
- * service, so the service is reachable from the network whatever it binds.
+ * The exposure of a service that binds `bindHost`. `behindEdge` is
+ * `WOOFX3_BEHIND_EDGE`, which the production image sets: there the edge
+ * listens beyond loopback and forwards to the service, so the service is
+ * reachable from the network whatever it binds.
  */
-export function resolveExposure(bindHost: string, edgePort: string | number | boolean | undefined): Exposure {
-  const edgeSet = edgePort !== undefined && String(edgePort).trim() !== "";
-  return edgeSet || !isLoopbackHostname(bindHost) ? "network" : "loopback";
+export function resolveExposure(bindHost: string, behindEdge: boolean): Exposure {
+  return behindEdge || !isLoopbackHostname(bindHost) ? "network" : "loopback";
 }
 
 const OPAQUE_ORIGIN = "null";

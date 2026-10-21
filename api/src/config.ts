@@ -150,8 +150,8 @@ export const ApiEnvSchema = z.looseObject({
   woofx3TwitchPublicClientId: z.union([z.string(), z.number()]).optional(),
   woofx3TwitchClientId: z.union([z.string(), z.number()]).optional(),
   woofx3AuthCacheTtlMs: z.union([z.number(), z.string()]).optional(),
-  // The edge's public port (`PORT`); set means the api is reachable beyond loopback.
-  port: z.union([z.number(), z.string()]).optional(),
+  // True where the edge listens beyond loopback and forwards to the api; the production image sets it.
+  woofx3BehindEdge: z.boolean().optional(),
 });
 
 /**
@@ -311,7 +311,7 @@ export function loadConfig(): ApiConfig {
   assertValidHttpUrl("sceneManagerUrl (WOOFX3_SCENE_MANAGER_URL)", sceneManagerUrl);
   assertValidHttpUrl("apiUrl (WOOFX3_API_URL)", apiUrl);
 
-  const exposure = resolveExposure(host, config.port);
+  const exposure = resolveExposure(host, config.woofx3BehindEdge === true);
   assertRegistrationExposure(registration, exposure);
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: config.woofx3AllowedHosts,

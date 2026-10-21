@@ -270,16 +270,15 @@ describe("parseRequestGuardPolicy defaults", () => {
 
 describe("resolveExposure", () => {
   test("loopback binds with no edge are loopback-only", () => {
-    expect(resolveExposure("127.0.0.1", undefined)).toBe("loopback");
-    expect(resolveExposure("localhost", "")).toBe("loopback");
-    expect(resolveExposure("::1", undefined)).toBe("loopback");
+    expect(resolveExposure("127.0.0.1", false)).toBe("loopback");
+    expect(resolveExposure("localhost", false)).toBe("loopback");
+    expect(resolveExposure("::1", false)).toBe("loopback");
   });
 
-  test("a non-loopback bind or an edge PORT is network", () => {
-    expect(resolveExposure("0.0.0.0", undefined)).toBe("network");
-    expect(resolveExposure("192.168.1.10", undefined)).toBe("network");
-    expect(resolveExposure("127.0.0.1", 8080)).toBe("network");
-    expect(resolveExposure("127.0.0.1", "8080")).toBe("network");
+  test("a non-loopback bind or the edge is network", () => {
+    expect(resolveExposure("0.0.0.0", false)).toBe("network");
+    expect(resolveExposure("192.168.1.10", false)).toBe("network");
+    expect(resolveExposure("127.0.0.1", true)).toBe("network");
   });
 
   test("isLoopbackHostname", () => {

@@ -144,13 +144,19 @@ When a setting is unset or blank, a default list applies:
   sceneManager adds `WOOFX3_SCENE_MANAGER_URL`. sceneManager also adds `null`,
   for widget frames (see below).
 - **Hosts**: only on a service reachable over loopback alone, meaning it binds
-  a loopback address and `PORT` is unset. Then `localhost`, `127.0.0.1` and
-  `[::1]` on any port, plus the hosts of the same configured URLs. A service
-  that binds another interface, or sits behind the edge (`PORT` is set), does
+  a loopback address and `WOOFX3_BEHIND_EDGE` is not `true`. Then `localhost`,
+  `127.0.0.1` and `[::1]` on any port, plus the hosts of the same configured
+  URLs. A service that binds another interface, or sits behind the edge, does
   not check Host by default: the Host it sees is whatever the proxy in front of
   it sends (behind the edge Worker, the hosting provider's own domain), which
   only the operator knows. List it in `WOOFX3_ALLOWED_HOSTS` to turn the check
   on.
+
+`WOOFX3_BEHIND_EDGE` (`true` or `false`, anything else stops the service)
+tells the services that the edge forwards to them. They bind loopback either
+way and cannot see the edge, which is public whether or not `PORT` is set, so
+the production image sets it to `true`; set it yourself only when you put your
+own proxy in front of services that bind loopback.
 
 Set a list to `*` to turn that check off: every Host, or every Origin with
 CORS `Access-Control-Allow-Origin: *`. `*` must be the only entry.
@@ -241,7 +247,7 @@ one after it lost its credentials), set `WOOFX3_REGISTRATION_TOKEN` or
 
 `open` is never a default, and it is only allowed on an engine reachable over
 loopback alone: the api refuses to start in `open` mode when it binds a
-non-loopback address or `PORT` is set (it sits behind the edge).
+non-loopback address or `WOOFX3_BEHIND_EDGE` is `true` (it sits behind the edge).
 
 The token comes from one of:
 

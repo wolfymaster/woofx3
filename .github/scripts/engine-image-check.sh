@@ -190,6 +190,16 @@ else
   fail "only the edge listens beyond loopback" "expected just $PORT, found: ${public_listeners:-none}"
 fi
 
+# The services bind loopback and cannot see the edge, so the image has to tell
+# them it is there: without it they would turn on loopback-only defaults (open
+# registration allowed, Host limited to loopback names) on a public engine.
+behind_edge="$(docker exec "$CONTAINER_NAME" printenv WOOFX3_BEHIND_EDGE 2>/dev/null || true)"
+if [ "$behind_edge" = "true" ]; then
+  pass "the image tells the services they sit behind the edge"
+else
+  fail "the image tells the services they sit behind the edge" "WOOFX3_BEHIND_EDGE is '${behind_edge}', expected 'true'"
+fi
+
 # --- idle memory --------------------------------------------------------
 # Reported, not asserted: it feeds the per-engine cost estimate.
 idle_rss="$(docker stats --no-stream --format '{{.MemUsage}}' "$CONTAINER_NAME" 2>/dev/null || echo unknown)"

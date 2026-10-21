@@ -81,14 +81,14 @@ export function resolveRegistrationPolicy(settings: RegistrationSettings): Regis
 
 /**
  * Throws at startup when `open` registration would admit callers from beyond
- * this machine: with `exposure` `network` (a non-loopback bind, or an edge
- * listening on `PORT`), anyone who finds the engine could register and then
- * use every session method.
+ * this machine: with `exposure` `network` (a non-loopback bind, or the edge
+ * forwarding to it, `WOOFX3_BEHIND_EDGE`), anyone who finds the engine could
+ * register and then use every session method.
  */
 export function assertRegistrationExposure(policy: RegistrationPolicy, exposure: Exposure): void {
   if (policy.mode === "open" && exposure === "network") {
     throw new Error(
-      "Config error: WOOFX3_REGISTRATION_MODE=open is only allowed on an engine reachable over loopback alone; this one binds a non-loopback interface or sits behind the edge (PORT is set). Use first or token instead"
+      "Config error: WOOFX3_REGISTRATION_MODE=open is only allowed on an engine reachable over loopback alone; this one binds a non-loopback interface or sits behind the edge (WOOFX3_BEHIND_EDGE is true). Use first or token instead"
     );
   }
 }

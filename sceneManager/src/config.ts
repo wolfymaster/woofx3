@@ -33,8 +33,8 @@ export const SceneManagerEnvSchema = z.object({
   // The URL OBS and the dashboard reach sceneManager at; its host and origin
   // join the request guard's defaults.
   woofx3SceneManagerUrl: z.string().optional(),
-  // The edge's public port (`PORT`); set means sceneManager is reachable beyond loopback.
-  port: z.union([z.number(), z.string()]).optional(),
+  // True where the edge listens beyond loopback and forwards to sceneManager; the production image sets it.
+  woofx3BehindEdge: z.boolean().optional(),
 });
 
 export interface SceneManagerRuntimeConfig {
@@ -173,7 +173,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: c.woofx3AllowedHosts,
     allowedOrigins: c.woofx3AllowedOrigins,
-    exposure: resolveExposure(bindHost, c.port),
+    exposure: resolveExposure(bindHost, c.woofx3BehindEdge === true),
     ownUrls: publicUrl === undefined ? [] : [publicUrl],
     // Sandboxed widget frames load fonts and module scripts from sceneManager with `Origin: null`.
     extraDefaultOrigins: ["null"],
