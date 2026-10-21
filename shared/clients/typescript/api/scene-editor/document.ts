@@ -168,9 +168,38 @@ export function entryIdOf(epoch: string, v: number): EntryId {
   return `${epoch}.${v}`;
 }
 
-/** `doc` with `ops` applied; `doc` itself is left as it was. Throws when the ops do not apply. */
+/**
+ * `doc` with `ops` applied; `doc` itself is left as it was. Throws when the
+ * ops do not apply, and when a component's path names a reserved key or
+ * walks through a property the document does not own: json0 follows a path
+ * with plain property reads, so `__proto__` or an inherited name would reach
+ * a prototype shared by the whole process. `invalidOps` refuses the reserved
+ * names before this; the walk also covers callers that skip it and inherited
+ * names only the document can reveal.
+ */
 export function applyOps(doc: SceneDocument, ops: readonly Json0Component[]): SceneDocument {
-  return json0.apply(structuredClone(doc), structuredClone([...ops])) as SceneDocument;
+  let next: unknown = structuredClone(doc);
+  for (const component of structuredClone([...ops])) {
+    assertOwnPath(next, component.p);
+    next = json0.apply(next, [component]);
+  }
+  return next as SceneDocument;
+}
+
+function assertOwnPath(doc: unknown, path: readonly (string | number)[]): void {
+  let node = doc;
+  for (const [depth, segment] of path.entries()) {
+    if (typeof segment === "string" && RESERVED_KEYS.has(segment)) {
+      throw new Error(`op path ${JSON.stringify(path)} names a reserved key`);
+    }
+    if (depth === path.length - 1) {
+      return;
+    }
+    if (node === null || typeof node !== "object" || !Object.hasOwn(node, segment)) {
+      throw new Error(`op path ${JSON.stringify(path)} leaves the document`);
+    }
+    node = (node as Record<string | number, unknown>)[segment];
+  }
 }
 
 /**
@@ -462,6 +491,72 @@ export { normalizeComposition };
 
 const COMPONENT_KEYS: ReadonlySet<string> = new Set(["p", "oi", "od", "si", "sd"]);
 
+/** Longest key an op may name: a layout key, an entry id, or a key in a freeform or keyed field. */
+export const KEY_MAX_LENGTH = ENTRY_ID_MAX_LENGTH;
+
+/**
+ * Keys that lead off a plain object onto its prototype chain when read or
+ * assigned. No op may name one or insert a value holding one.
+ */
+const RESERVED_KEYS: ReadonlySet<string> = new Set(["__proto__", "prototype", "constructor"]);
+const RESERVED_KEY_LIST = [...RESERVED_KEYS].join(", ");
+
+/** What a layout key or an entry id is made of: ids are generated, and layout keys are a fixed few. */
+const NAME_PATTERN = /^[A-Za-z0-9_.:-]+$/;
+const SAFE_KEY_RULE = `1 to ${KEY_MAX_LENGTH} letters, digits, _ . : or -, and not ${RESERVED_KEY_LIST}`;
+
+/**
+ * Whether `key` may name a layout key or an entry: 1 to `KEY_MAX_LENGTH`
+ * letters, digits, `_`, `.`, `:` or `-`, and not a reserved key.
+ */
+export function isSafeKey(key: string): boolean {
+  return isSafeFreeformKey(key) && NAME_PATTERN.test(key);
+}
+
+/**
+ * Whether `key` may name a value in a freeform or keyed field (settings,
+ * extra, params): 1 to `KEY_MAX_LENGTH` characters and not a reserved key.
+ * Any characters, since widget manifests choose their settings keys.
+ */
+function isSafeFreeformKey(key: string): boolean {
+  return key.length > 0 && key.length <= KEY_MAX_LENGTH && !RESERVED_KEYS.has(key);
+}
+
+/**
+ * The first key at any depth of `value` that may not be inserted, or null
+ * when there is none. Walked with an explicit stack, since a value nested
+ * deeper than the call stack would otherwise throw instead of being refused.
+ * `Object.keys` lists a `__proto__` that `JSON.parse` made an own property;
+ * the `Object.hasOwn` check also catches one defined as non-enumerable.
+ */
+function unsafeKeyIn(value: unknown): string | null {
+  const pending: unknown[] = [value];
+  while (pending.length > 0) {
+    const node = pending.pop();
+    if (node === null || typeof node !== "object") {
+      continue;
+    }
+    if (Object.hasOwn(node, "__proto__")) {
+      return "__proto__";
+    }
+    if (!Array.isArray(node)) {
+      const unsafe = Object.keys(node).find((key) => !isSafeFreeformKey(key));
+      if (unsafe !== undefined) {
+        return unsafe;
+      }
+    }
+    for (const child of Object.values(node)) {
+      pending.push(child);
+    }
+  }
+  return null;
+}
+
+function invalidValueKeys(value: unknown): string | null {
+  const unsafe = unsafeKeyIn(value);
+  return unsafe === null ? null : `a value may not hold the key ${JSON.stringify(unsafe)}`;
+}
+
 export function isPlacement(value: unknown, registry: TypeRegistry = STRICT_REGISTRY): value is PlacementDocument {
   return registry.isEntry("widgets", value);
 }
@@ -492,6 +587,11 @@ export function isBehavior(value: unknown, registry: TypeRegistry = STRICT_REGIS
  *   remove or replace a value under string keys.
  * - `.<field>.<subfield>` of a `struct` field (a behavior's timing):
  *   replace a subfield, or insert or remove an optional one.
+ *
+ * Layout keys and entry ids pass `isSafeKey`; keys in a freeform or keyed
+ * field are 1 to `KEY_MAX_LENGTH` characters; and no path segment, nor any
+ * key at any depth of an `oi` value, is `__proto__`, `prototype` or
+ * `constructor`.
  *
  * Anything else (number adds, list and subtype ops, replacing the layout or
  * a whole collection at once, changing `inputs` or `base`, paths into
@@ -539,23 +639,29 @@ function invalidComponent(component: unknown, registry: TypeRegistry): string | 
   } else if (!("oi" in component) && !("od" in component)) {
     return "an op must change something";
   }
+  if ("oi" in component) {
+    const invalid = invalidValueKeys(component.oi);
+    if (invalid !== null) {
+      return invalid;
+    }
+  }
   const root = p[0];
   if (root === "layout") {
     if (p.length !== 2 || typeof p[1] !== "string" || isSplice) {
       return "the layout changes one key at a time, replaced whole";
     }
+    if (!isSafeKey(p[1])) {
+      return `a layout key is ${SAFE_KEY_RULE}`;
+    }
     return registry.invalidLayoutKey(p[1], "oi" in component ? component.oi : undefined);
   }
-  if (
-    !registry.isCollection(root) ||
-    p.length < 2 ||
-    typeof p[1] !== "string" ||
-    p[1].length === 0 ||
-    p[1].length > ENTRY_ID_MAX_LENGTH
-  ) {
+  if (!registry.isCollection(root) || p.length < 2 || typeof p[1] !== "string") {
     return "a path must start at a layout key, a placement or a behavior";
   }
   const noun = registry.collection(root).noun;
+  if (!isSafeKey(p[1])) {
+    return `a ${noun} id is ${SAFE_KEY_RULE}`;
+  }
   if (p.length === 2) {
     if (isSplice) {
       return `a ${noun} is not text`;
@@ -588,6 +694,9 @@ function invalidComponent(component: unknown, registry: TypeRegistry): string | 
       const keys = isSplice ? p.slice(3, -1) : p.slice(3);
       if (keys.length === 0 || !keys.every((key) => typeof key === "string")) {
         return `${field} changes key by key`;
+      }
+      if (!keys.every(isSafeFreeformKey)) {
+        return `a key in ${field} is 1 to ${KEY_MAX_LENGTH} characters, and not ${RESERVED_KEY_LIST}`;
       }
       if (isSplice && spec.grain === "keyed") {
         return `the values in ${field} are replaced whole`;
@@ -643,7 +752,7 @@ export function invalidExternalOps(ops: unknown, registry: TypeRegistry = STRICT
       return "an op must change something";
     }
     if ("oi" in component) {
-      const invalid = invalidInputs(component.oi);
+      const invalid = invalidInputs(component.oi) ?? invalidValueKeys(component.oi);
       if (invalid !== null) {
         return invalid;
       }
