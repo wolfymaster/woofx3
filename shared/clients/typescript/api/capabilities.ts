@@ -182,6 +182,13 @@ export const ENGINE_CAPABILITIES = {
    * `@woofx3/scene/runtime` (`preview-protocol.ts`).
    */
   compositionsPreview: "compositions.preview",
+  /**
+   * The dashboard's own data kept by the engine, with engine-wide revisions,
+   * tombstones and conflict checks for a later sync: `listUISettings`,
+   * `getUISetting`, `setUISetting`, `deleteUISetting`,
+   * `listUISettingChangesSince`, and the `ui.setting.changed` webhook.
+   */
+  uiSettings: "ui.settings",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
   /**

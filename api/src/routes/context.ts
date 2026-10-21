@@ -1,4 +1,4 @@
-import type { EngineHosting } from "@woofx3/api";
+import type { EngineHosting, UISetting } from "@woofx3/api";
 import type {
   CommandCreatedEvent,
   CommandDeletedEvent,
@@ -15,6 +15,7 @@ import type {
   WorkflowDeletedEvent,
   WorkflowUpdatedEvent,
 } from "@woofx3/api/webhooks";
+import { EngineEventType } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
 import {
   RELAY_CONFIG_SETTING,
@@ -213,6 +214,26 @@ export class ApiRouteHost extends RpcTarget {
       await this.webhookClient.send(event);
     } catch (err) {
       this.logger.error("Failed to send scene webhook", { type: event.type, err });
+    }
+  }
+
+  /** Announces a local UI setting write. Best effort: a reader that missed it pages the changes. */
+  protected async emitUISettingWebhook(setting: UISetting): Promise<void> {
+    if (!this.webhookClient) {
+      this.logger.warn("No webhook client set, skipping ui setting webhook", { namespace: setting.namespace });
+      return;
+    }
+    try {
+      await this.webhookClient.send({
+        type: EngineEventType.UI_SETTING_CHANGED,
+        namespace: setting.namespace,
+        key: setting.key,
+        revision: setting.revision,
+        deleted: setting.deleted,
+        value: setting.value,
+      });
+    } catch (err) {
+      this.logger.error("Failed to send ui setting webhook", { namespace: setting.namespace, err });
     }
   }
 

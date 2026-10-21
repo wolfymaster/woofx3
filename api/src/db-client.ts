@@ -4,6 +4,7 @@ import * as command from "@woofx3/db/command.pb";
 import type * as common from "@woofx3/db/common.pb";
 import { MigrationStatus, Ping } from "@woofx3/db/common.pb";
 import * as group from "@woofx3/db/group.pb";
+import * as local_ui_setting from "@woofx3/db/local_ui_setting.pb";
 import * as module from "@woofx3/db/module.pb";
 import type * as module_action from "@woofx3/db/module_action.pb";
 import type * as module_resource_instance from "@woofx3/db/module_resource_instance.pb";
@@ -664,6 +665,52 @@ export class DbClient {
     }
     unwrapVoid("findStreamGaugeSamples", response);
     return response.samples ?? [];
+  }
+
+  async listLocalUISettings(namespace: string): Promise<local_ui_setting.LocalUISetting[]> {
+    const response = await local_ui_setting.ListLocalUISettings({ namespace }, this.config);
+    unwrapVoid("listLocalUISettings", response);
+    return response.settings ?? [];
+  }
+
+  /** A live setting, or null when the key was never written or is a tombstone. */
+  async findLocalUISetting(namespace: string, key: string): Promise<local_ui_setting.LocalUISetting | null> {
+    try {
+      const response = await local_ui_setting.GetLocalUISetting({ namespace, key }, this.config);
+      return unwrap("findLocalUISetting", response, response.setting);
+    } catch (err) {
+      const failure = toError(err, "findLocalUISetting");
+      if (failure instanceof DbError && failure.code === "not_found") {
+        return null;
+      }
+      throw failure;
+    }
+  }
+
+  /** A conflict is an answer, not a failure: it resolves with `conflict` true. */
+  async setLocalUISetting(
+    req: local_ui_setting.SetLocalUISettingRequest
+  ): Promise<local_ui_setting.WriteLocalUISettingResponse> {
+    const response = await local_ui_setting.SetLocalUISetting(req, this.config);
+    unwrapVoid("setLocalUISetting", response);
+    return response;
+  }
+
+  /** As `setLocalUISetting`, storing a tombstone. */
+  async deleteLocalUISetting(
+    req: local_ui_setting.DeleteLocalUISettingRequest
+  ): Promise<local_ui_setting.WriteLocalUISettingResponse> {
+    const response = await local_ui_setting.DeleteLocalUISetting(req, this.config);
+    unwrapVoid("deleteLocalUISetting", response);
+    return response;
+  }
+
+  async listLocalUISettingChanges(
+    req: local_ui_setting.ListLocalUISettingChangesRequest
+  ): Promise<{ settings: local_ui_setting.LocalUISetting[]; hasMore: boolean }> {
+    const response = await local_ui_setting.ListLocalUISettingChanges(req, this.config);
+    unwrapVoid("listLocalUISettingChanges", response);
+    return { settings: response.settings ?? [], hasMore: response.hasMore ?? false };
   }
 
   /**

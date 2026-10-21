@@ -2215,7 +2215,7 @@ func (s *resourceServiceServer) serveGetResourceUsageProtobuf(ctx context.Contex
 }
 
 func (s *resourceServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor9, 0
+	return twirpFileDescriptor10, 0
 }
 
 func (s *resourceServiceServer) ProtocGenTwirpVersion() string {
@@ -2229,7 +2229,7 @@ func (s *resourceServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "resource", "ResourceService")
 }
 
-var twirpFileDescriptor9 = []byte{
+var twirpFileDescriptor10 = []byte{
 	// 934 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x56, 0xcd, 0x92, 0xdb, 0x44,
 	0x10, 0x8e, 0x2c, 0xc9, 0x2b, 0xb7, 0xbd, 0xde, 0xad, 0x49, 0x76, 0x57, 0x71, 0x80, 0x75, 0x5c,

@@ -1580,6 +1580,50 @@ export interface StorageConfig {
   forcePathStyle?: boolean;
 }
 
+// ==================== Local UI settings ====================
+//
+// The dashboard's own data (layouts, notes, counters, macros) kept by the
+// engine, for a dashboard run without an account. Rules for revisions,
+// tombstones and conflicts: docs/services/local-ui-settings.md.
+
+/** A value a setting can hold: anything JSON can represent. */
+export type UISettingValue = null | boolean | number | string | UISettingValue[] | { [key: string]: UISettingValue };
+
+export interface UISetting {
+  /** The kind of data, such as `dashboardLayouts`, `dashboardNotes`, `dashboardCounters` or `macros`. */
+  namespace: string;
+  key: string;
+  /** Null for a tombstone. A live setting may also hold JSON `null`; `deleted` tells them apart. */
+  value: UISettingValue;
+  /**
+   * The engine-wide revision of this setting's last write, set or delete.
+   * Every write takes the next one, whatever its namespace.
+   */
+  revision: number;
+  /** ISO 8601. */
+  updatedAt: string;
+  /** True for a tombstone: the setting was deleted at `revision`. */
+  deleted: boolean;
+}
+
+/**
+ * Outcome of `setUISetting` and `deleteUISetting`. `ok` false means the
+ * `expectedRevision` did not match: nothing was written, and `current` is the
+ * stored setting (a tombstone included), or null when the key was never
+ * written.
+ */
+export type UISettingWriteResult =
+  | { ok: true; setting: UISetting }
+  | { ok: false; reason: "conflict"; current: UISetting | null };
+
+/** One page of `listUISettingChangesSince`. */
+export interface UISettingChanges {
+  /** Oldest revision first, tombstones included. */
+  changes: UISetting[];
+  /** True when more changes follow the last one here; ask again from its revision. */
+  hasMore: boolean;
+}
+
 export interface Woofx3EngineApi {
   ping(): Promise<PingResponse>;
 
@@ -1921,6 +1965,34 @@ export interface Woofx3EngineApi {
    * Requires the `workflow.viewerFacts` capability.
    */
   listViewerFacts(): Promise<ViewerFact[]>;
+
+  // Local UI settings. Each write emits a `ui.setting.changed` webhook.
+  // Requires the `ui.settings` capability.
+
+  /** A namespace's live settings, by key. Tombstones are left out. */
+  listUISettings(namespace: string): Promise<UISetting[]>;
+  /** One live setting, or null when the key was never written or was deleted. */
+  getUISetting(namespace: string, key: string): Promise<UISetting | null>;
+  /**
+   * Store `value` under the next revision. With `expectedRevision`, write
+   * only if it is the stored revision (0: the key has no live value), and
+   * otherwise answer with a conflict. Rejects a namespace or key that is
+   * empty or too long, and a value JSON cannot represent or that is too large.
+   */
+  setUISetting(
+    namespace: string,
+    key: string,
+    value: UISettingValue,
+    expectedRevision?: number
+  ): Promise<UISettingWriteResult>;
+  /** Replace a setting with a tombstone under the next revision; `expectedRevision` as on `setUISetting`. */
+  deleteUISetting(namespace: string, key: string, expectedRevision?: number): Promise<UISettingWriteResult>;
+  /**
+   * Every setting written after `revision`, tombstones included, oldest
+   * first, at most `limit` (default 100, at most 500). For a sync: start at
+   * 0 and continue from the last revision returned while `hasMore`.
+   */
+  listUISettingChangesSince(revision: number, limit?: number): Promise<UISettingChanges>;
 
   // Commands (chat command CRUD on the engine — synchronous, emits
   // command.created / command.updated / command.deleted webhooks on success)

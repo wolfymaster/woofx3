@@ -30,6 +30,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 - **[OBS control](/services/obs)** - Connecting OBS, the `ctx.obs` host extension the OBS module calls, and the `engine.obs.command` request/reply contract
 - **[Analytics](/services/analytics)** - Design: turning stream events into per-session and lifetime totals, and why counters are not that
 - **[Viewer facts](/services/viewer-facts)** - Per-viewer values defined as data: fact definitions, aggregates, the `where` tree, how events are counted before workflows run, segments and their enter/leave events, and `${viewer.*}` in workflows
+- **[Local UI settings](/services/local-ui-settings)** - The dashboard's own data kept by the engine for a dashboard without an account: engine-wide revisions, tombstones, conflict checks and how a sync with Convex reads them
 
 ## Getting Started
 
