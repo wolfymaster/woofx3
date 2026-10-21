@@ -2026,12 +2026,11 @@ func (e *Engine[TServices]) checkSubWorkflowCompletion(subExecutionID string) {
 		return
 	}
 
-	// Remove from waiters map
+	// The child is read before its waiters are dropped, while the waiters
+	// lock still pins it against the sweep.
+	subExecution, _, exists := e.runs.get(subExecutionID)
 	delete(e.subWorkflowWaiters, subExecutionID)
 	e.subWorkflowWaitersMu.Unlock()
-
-	// Get the sub-execution status
-	subExecution, _, exists := e.runs.get(subExecutionID)
 
 	if !exists {
 		return
