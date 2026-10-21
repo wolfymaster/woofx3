@@ -290,6 +290,11 @@ async fn setup() -> Result<AppContext> {
         public_url_resolver,
         oauth: oauth_service,
         frame_cache: Arc::new(services::frame_cache::FrameCache::new()),
+        file_service: Arc::new(services::file_service::FileService::new(
+            &routes::functions::upload_dir(),
+            services::upload_limits::UploadLimits::from_env()?,
+        )?),
+        module_locks: Arc::new(types::ModuleLocks::new()),
     };
 
     Ok(ctx)

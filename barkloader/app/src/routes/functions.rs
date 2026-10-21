@@ -5,12 +5,11 @@ use lib_repository::{CreateFileRequest, Repository};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::Read as _;
 use std::path::PathBuf;
 use tokio::task;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
-use crate::services::file_service::FileService;
+use crate::services::file_service::{FileMetadata, unpack_zip};
 use crate::types::{AppContext, SafeTempDir};
 use lib_module::db_proxy;
 use lib_module::db_proxy_client::{HttpDbProxyClient, ModuleDbProxy};
@@ -51,7 +50,7 @@ struct DeleteQuery {
 /// the working directory or, when set, the data directory.
 const UPLOAD_DIR: &str = "./uploads";
 
-fn upload_dir() -> PathBuf {
+pub(crate) fn upload_dir() -> PathBuf {
     woofx3_runtime::resolve_data_path(UPLOAD_DIR)
 }
 
@@ -100,12 +99,11 @@ async fn upload_handler(
 ) -> Result<HttpResponse, Error> {
     let force = query.force.unwrap_or(false);
 
-    let file_service = FileService::new(&upload_dir());
+    let file_service = ctx.file_service.clone();
 
     // upload the file to temporary location for processing;
     // multipart fields client_id and module_key are extracted alongside the file
-    let metadata: crate::services::file_service::FileMetadata =
-        file_service.process_upload(multipart).await?;
+    let metadata: FileMetadata = file_service.process_upload(multipart).await?;
 
     let expected_module_key = metadata.module_key.clone().unwrap_or_default();
     let marketplace = marketplace_origin(
@@ -148,18 +146,9 @@ async fn upload_handler(
         // save original zip path before processing extracts files
         let original_zip_path = PathBuf::from(&metadata.temp_dir_path).join(&metadata.file_name);
 
-        // compute SHA-256 hash of the zip for the composite module_key
-        let zip_hash = match fs::read(&original_zip_path) {
-            Ok(bytes) => {
-                let mut hasher = Sha256::new();
-                hasher.update(&bytes);
-                format!("{:x}", hasher.finalize())
-            }
-            Err(e) => {
-                error!("Failed to read zip for hashing: {}", e);
-                "0000000".to_string()
-            }
-        };
+        // SHA-256 of the zip for the composite module_key, computed while it
+        // was streamed to disk.
+        let zip_hash = metadata.sha256.clone();
         let zip_hash_short = zip_hash[..7_usize.min(zip_hash.len())].to_string();
 
         // Helper: send install status notification to db proxy via outbox
@@ -251,17 +240,13 @@ async fn upload_handler(
         };
         let mut module = ModuleService::new(module_config);
 
-        // DEBUG: log all extracted files
-        tracing::info!("=== ZIP CONTENTS ({} entries) ===", file_metadata.len());
+        debug!("zip contents ({} entries)", file_metadata.len());
         for data in &file_metadata {
-            tracing::info!(
+            debug!(
                 "  file: {:?}  ext: {:?}  dir: {:?}",
-                data.file_name,
-                data.file_extension,
-                data.temp_dir_path,
+                data.file_name, data.file_extension, data.temp_dir_path,
             );
         }
-        tracing::info!("=== END ZIP CONTENTS ===");
 
         // loop the file meta and add files to module
         // skip the original zip folder in the directory
@@ -285,20 +270,32 @@ async fn upload_handler(
             };
 
             let file_path = std::path::PathBuf::from(&data.temp_dir_path).join(&data.file_name);
-            let Ok(contents) = fs::read(&file_path) else {
-                error!("Failed to read file contents: {}", &data.file_name);
-                continue;
+            let contents = match fs::read(&file_path) {
+                Ok(contents) => contents,
+                Err(e) => {
+                    let err_msg =
+                        format!("Failed to read extracted file {}: {}", data.file_name, e);
+                    error!("{}", err_msg);
+                    notify_install(
+                        db_proxy_ref,
+                        "unknown",
+                        "unknown",
+                        "failed",
+                        &err_msg,
+                        request_context.as_ref(),
+                    )
+                    .await;
+                    return;
+                }
             };
 
             module.add_file(kind, &data.file_name, contents);
         }
 
-        // DEBUG: log what files were added to the module service
-        tracing::info!("=== FILES ADDED TO MODULE SERVICE ===");
+        debug!("files added to module service:");
         for f in module.files() {
-            tracing::info!("  name: {:?}  kind: {:?}", f.name, f.kind);
+            debug!("  name: {:?}  kind: {:?}", f.name, f.kind);
         }
-        tracing::info!("=== END FILES ADDED ===");
 
         // run workflow to create module and upload files to repository
         let module_plan = match module.create_plan() {
@@ -378,14 +375,33 @@ async fn upload_handler(
 
         let archive_key = format!("archives/{}.zip", computed_module_key);
 
-        if !force
-            && ctx
-                .repository
-                .current()
-                .exists(&archive_key)
-                .await
-                .unwrap_or(false)
-        {
+        // The module's name is only known once its manifest is parsed, so
+        // this is the earliest point an install can take its turn. Nothing
+        // above writes to the repository or the registry.
+        let _turn = ctx.module_locks.lock(module_name).await;
+
+        let already_installed = if force {
+            false
+        } else {
+            match ctx.repository.current().exists(&archive_key).await {
+                Ok(exists) => exists,
+                Err(e) => {
+                    let err_msg = format!("Failed to check for an existing install: {}", e);
+                    error!("{}", err_msg);
+                    notify_install(
+                        db_proxy_ref,
+                        module_name,
+                        module_version,
+                        "failed",
+                        &err_msg,
+                        request_context.as_ref(),
+                    )
+                    .await;
+                    return;
+                }
+            }
+        };
+        if already_installed {
             let err_msg = format!(
                 "Module '{}' version '{}' already exists. Use force=true to overwrite.",
                 module_name, module_version
@@ -561,6 +577,7 @@ async fn delete_handler(
     let module_name_task = module_name.clone();
 
     tokio::spawn(async move {
+        let _turn = ctx_clone.module_locks.lock(&module_name_task).await;
         let _frames = ctx_clone.frame_cache.clear_on_drop();
         let db_proxy = HttpDbProxyClient::new(db_proxy_url.clone());
         let mut request_context = db_proxy::RequestContext {
@@ -864,6 +881,7 @@ async fn rollback_handler(
 ) -> Result<HttpResponse, Error> {
     let module_name = path.into_inner();
     let version = &query.version;
+    let _turn = ctx.module_locks.lock(&module_name).await;
     let _frames = ctx.frame_cache.clear_on_drop();
 
     let db_proxy_url = ctx.db_proxy_url.as_deref().ok_or_else(|| {
@@ -906,10 +924,6 @@ async fn rollback_handler(
     let hash = format!("{:x}", hasher.finalize());
     let hash_short = hash[..7_usize.min(hash.len())].to_string();
 
-    let cursor = std::io::Cursor::new(&zip_bytes);
-    let mut archive = zip::ZipArchive::new(cursor)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-
     let module_config = ModuleServiceConfig {
         repository: (*ctx.repository.current()).clone(),
         system_only_actions: crate::bundled_modules::system_only_actions()
@@ -918,30 +932,31 @@ async fn rollback_handler(
     };
     let mut module = ModuleService::new(module_config);
 
-    for i in 0..archive.len() {
-        let mut file = archive
-            .by_index(i)
-            .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-        if file.is_dir() {
-            continue;
-        }
-        let file_name = file.name().to_string();
-        let extension = std::path::Path::new(&file_name)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_string();
-        let Ok(kind) = extension.parse::<ModuleFileKind>() else {
-            // Mirrors upload_handler: unknown extensions are skipped,
-            // not fatal — the zip may carry files barkloader doesn't
-            // track (READMEs, screenshots, ...).
-            continue;
-        };
-        let mut contents = Vec::new();
-        file.read_to_end(&mut contents)
-            .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-        module.add_file(kind, file_name, contents);
-    }
+    unpack_zip(
+        std::io::Cursor::new(&zip_bytes),
+        zip_bytes.len() as u64,
+        &ctx.file_service.limits(),
+        |relative, reader| {
+            let file_name = relative.to_string_lossy().replace('\\', "/");
+            let extension = relative.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let Ok(kind) = extension.parse::<ModuleFileKind>() else {
+                // Mirrors upload_handler: unknown extensions are skipped,
+                // not fatal — the zip may carry files barkloader doesn't
+                // track (READMEs, screenshots, ...).
+                return Ok(());
+            };
+            let mut contents = Vec::new();
+            reader.read_to_end(&mut contents)?;
+            module.add_file(kind, file_name, contents);
+            Ok(())
+        },
+    )
+    .map_err(|e| {
+        actix_web::error::ErrorInternalServerError(format!(
+            "Failed to read archive {}: {}",
+            archive_key, e
+        ))
+    })?;
 
     let module_plan = module.create_plan().map_err(|e| {
         actix_web::error::ErrorInternalServerError(format!(
