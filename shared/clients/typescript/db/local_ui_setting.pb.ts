@@ -73,12 +73,21 @@ export interface DeleteLocalUISettingRequest {
   expectedRevision?: bigint | null | undefined;
 }
 
-export interface WriteLocalUISettingResponse {
+export interface SetLocalUISettingResponse {
   status: common.ResponseStatus;
   /**
    * Without `conflict`, the row as written, its revision the new one. With
    * it, the stored row that refused the write, a tombstone included; absent
    * when the key was never written.
+   */
+  setting: LocalUISetting;
+  conflict: boolean;
+}
+
+export interface DeleteLocalUISettingResponse {
+  status: common.ResponseStatus;
+  /**
+   * As on SetLocalUISettingResponse; the row is the tombstone when written.
    */
   setting: LocalUISetting;
   conflict: boolean;
@@ -149,13 +158,13 @@ export async function GetLocalUISetting(
 export async function SetLocalUISetting(
   setLocalUISettingRequest: SetLocalUISettingRequest,
   config?: ClientConfiguration,
-): Promise<WriteLocalUISettingResponse> {
+): Promise<SetLocalUISettingResponse> {
   const response = await PBrequest(
     "/local_ui_setting.LocalUISettingService/SetLocalUISetting",
     SetLocalUISettingRequest.encode(setLocalUISettingRequest),
     config,
   );
-  return WriteLocalUISettingResponse.decode(response);
+  return SetLocalUISettingResponse.decode(response);
 }
 
 /**
@@ -165,13 +174,13 @@ export async function SetLocalUISetting(
 export async function DeleteLocalUISetting(
   deleteLocalUISettingRequest: DeleteLocalUISettingRequest,
   config?: ClientConfiguration,
-): Promise<WriteLocalUISettingResponse> {
+): Promise<DeleteLocalUISettingResponse> {
   const response = await PBrequest(
     "/local_ui_setting.LocalUISettingService/DeleteLocalUISetting",
     DeleteLocalUISettingRequest.encode(deleteLocalUISettingRequest),
     config,
   );
-  return WriteLocalUISettingResponse.decode(response);
+  return DeleteLocalUISettingResponse.decode(response);
 }
 
 /**
@@ -233,13 +242,13 @@ export async function GetLocalUISettingJSON(
 export async function SetLocalUISettingJSON(
   setLocalUISettingRequest: SetLocalUISettingRequest,
   config?: ClientConfiguration,
-): Promise<WriteLocalUISettingResponse> {
+): Promise<SetLocalUISettingResponse> {
   const response = await JSONrequest(
     "/local_ui_setting.LocalUISettingService/SetLocalUISetting",
     SetLocalUISettingRequestJSON.encode(setLocalUISettingRequest),
     config,
   );
-  return WriteLocalUISettingResponseJSON.decode(response);
+  return SetLocalUISettingResponseJSON.decode(response);
 }
 
 /**
@@ -249,13 +258,13 @@ export async function SetLocalUISettingJSON(
 export async function DeleteLocalUISettingJSON(
   deleteLocalUISettingRequest: DeleteLocalUISettingRequest,
   config?: ClientConfiguration,
-): Promise<WriteLocalUISettingResponse> {
+): Promise<DeleteLocalUISettingResponse> {
   const response = await JSONrequest(
     "/local_ui_setting.LocalUISettingService/DeleteLocalUISetting",
     DeleteLocalUISettingRequestJSON.encode(deleteLocalUISettingRequest),
     config,
   );
-  return WriteLocalUISettingResponseJSON.decode(response);
+  return DeleteLocalUISettingResponseJSON.decode(response);
 }
 
 /**
@@ -314,7 +323,7 @@ export interface LocalUISettingService<Context = unknown> {
   SetLocalUISetting: (
     setLocalUISettingRequest: SetLocalUISettingRequest,
     context: Context,
-  ) => Promise<WriteLocalUISettingResponse> | WriteLocalUISettingResponse;
+  ) => Promise<SetLocalUISettingResponse> | SetLocalUISettingResponse;
   /**
    * Turns a setting into a tombstone under the next revision, conditional on
    * `expected_revision` like a set. A key never written gets a tombstone too.
@@ -322,7 +331,7 @@ export interface LocalUISettingService<Context = unknown> {
   DeleteLocalUISetting: (
     deleteLocalUISettingRequest: DeleteLocalUISettingRequest,
     context: Context,
-  ) => Promise<WriteLocalUISettingResponse> | WriteLocalUISettingResponse;
+  ) => Promise<DeleteLocalUISettingResponse> | DeleteLocalUISettingResponse;
   /**
    * Every row, tombstones included, with a revision greater than
    * `after_revision`, oldest revision first, one page at a time.
@@ -373,8 +382,8 @@ export function createLocalUISettingService<Context>(
           json: SetLocalUISettingRequestJSON,
         },
         output: {
-          protobuf: WriteLocalUISettingResponse,
-          json: WriteLocalUISettingResponseJSON,
+          protobuf: SetLocalUISettingResponse,
+          json: SetLocalUISettingResponseJSON,
         },
       },
       DeleteLocalUISetting: {
@@ -385,8 +394,8 @@ export function createLocalUISettingService<Context>(
           json: DeleteLocalUISettingRequestJSON,
         },
         output: {
-          protobuf: WriteLocalUISettingResponse,
-          json: WriteLocalUISettingResponseJSON,
+          protobuf: DeleteLocalUISettingResponse,
+          json: DeleteLocalUISettingResponseJSON,
         },
       },
       ListLocalUISettingChanges: {
@@ -1011,33 +1020,33 @@ export const DeleteLocalUISettingRequest = {
   },
 };
 
-export const WriteLocalUISettingResponse = {
+export const SetLocalUISettingResponse = {
   /**
-   * Serializes WriteLocalUISettingResponse to protobuf.
+   * Serializes SetLocalUISettingResponse to protobuf.
    */
-  encode: function (msg: PartialDeep<WriteLocalUISettingResponse>): Uint8Array {
-    return WriteLocalUISettingResponse._writeMessage(
+  encode: function (msg: PartialDeep<SetLocalUISettingResponse>): Uint8Array {
+    return SetLocalUISettingResponse._writeMessage(
       msg,
       new protoscript.BinaryWriter(),
     ).getResultBuffer();
   },
 
   /**
-   * Deserializes WriteLocalUISettingResponse from protobuf.
+   * Deserializes SetLocalUISettingResponse from protobuf.
    */
-  decode: function (bytes: ByteSource): WriteLocalUISettingResponse {
-    return WriteLocalUISettingResponse._readMessage(
-      WriteLocalUISettingResponse.initialize(),
+  decode: function (bytes: ByteSource): SetLocalUISettingResponse {
+    return SetLocalUISettingResponse._readMessage(
+      SetLocalUISettingResponse.initialize(),
       new protoscript.BinaryReader(bytes),
     );
   },
 
   /**
-   * Initializes WriteLocalUISettingResponse with all fields set to their default value.
+   * Initializes SetLocalUISettingResponse with all fields set to their default value.
    */
   initialize: function (
-    msg?: Partial<WriteLocalUISettingResponse>,
-  ): WriteLocalUISettingResponse {
+    msg?: Partial<SetLocalUISettingResponse>,
+  ): SetLocalUISettingResponse {
     return {
       status: common.ResponseStatus.initialize(),
       setting: LocalUISetting.initialize(),
@@ -1050,7 +1059,7 @@ export const WriteLocalUISettingResponse = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<WriteLocalUISettingResponse>,
+    msg: PartialDeep<SetLocalUISettingResponse>,
     writer: protoscript.BinaryWriter,
   ): protoscript.BinaryWriter {
     if (msg.status) {
@@ -1069,9 +1078,97 @@ export const WriteLocalUISettingResponse = {
    * @private
    */
   _readMessage: function (
-    msg: WriteLocalUISettingResponse,
+    msg: SetLocalUISettingResponse,
     reader: protoscript.BinaryReader,
-  ): WriteLocalUISettingResponse {
+  ): SetLocalUISettingResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          reader.readMessage(msg.status, common.ResponseStatus._readMessage);
+          break;
+        }
+        case 2: {
+          reader.readMessage(msg.setting, LocalUISetting._readMessage);
+          break;
+        }
+        case 3: {
+          msg.conflict = reader.readBool();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const DeleteLocalUISettingResponse = {
+  /**
+   * Serializes DeleteLocalUISettingResponse to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<DeleteLocalUISettingResponse>,
+  ): Uint8Array {
+    return DeleteLocalUISettingResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes DeleteLocalUISettingResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): DeleteLocalUISettingResponse {
+    return DeleteLocalUISettingResponse._readMessage(
+      DeleteLocalUISettingResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes DeleteLocalUISettingResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<DeleteLocalUISettingResponse>,
+  ): DeleteLocalUISettingResponse {
+    return {
+      status: common.ResponseStatus.initialize(),
+      setting: LocalUISetting.initialize(),
+      conflict: false,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<DeleteLocalUISettingResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.status) {
+      writer.writeMessage(1, msg.status, common.ResponseStatus._writeMessage);
+    }
+    if (msg.setting) {
+      writer.writeMessage(2, msg.setting, LocalUISetting._writeMessage);
+    }
+    if (msg.conflict) {
+      writer.writeBool(3, msg.conflict);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: DeleteLocalUISettingResponse,
+    reader: protoscript.BinaryReader,
+  ): DeleteLocalUISettingResponse {
     while (reader.nextField()) {
       const field = reader.getFieldNumber();
       switch (field) {
@@ -1795,30 +1892,30 @@ export const DeleteLocalUISettingRequestJSON = {
   },
 };
 
-export const WriteLocalUISettingResponseJSON = {
+export const SetLocalUISettingResponseJSON = {
   /**
-   * Serializes WriteLocalUISettingResponse to JSON.
+   * Serializes SetLocalUISettingResponse to JSON.
    */
-  encode: function (msg: PartialDeep<WriteLocalUISettingResponse>): string {
-    return JSON.stringify(WriteLocalUISettingResponseJSON._writeMessage(msg));
+  encode: function (msg: PartialDeep<SetLocalUISettingResponse>): string {
+    return JSON.stringify(SetLocalUISettingResponseJSON._writeMessage(msg));
   },
 
   /**
-   * Deserializes WriteLocalUISettingResponse from JSON.
+   * Deserializes SetLocalUISettingResponse from JSON.
    */
-  decode: function (json: string): WriteLocalUISettingResponse {
-    return WriteLocalUISettingResponseJSON._readMessage(
-      WriteLocalUISettingResponseJSON.initialize(),
+  decode: function (json: string): SetLocalUISettingResponse {
+    return SetLocalUISettingResponseJSON._readMessage(
+      SetLocalUISettingResponseJSON.initialize(),
       JSON.parse(json),
     );
   },
 
   /**
-   * Initializes WriteLocalUISettingResponse with all fields set to their default value.
+   * Initializes SetLocalUISettingResponse with all fields set to their default value.
    */
   initialize: function (
-    msg?: Partial<WriteLocalUISettingResponse>,
-  ): WriteLocalUISettingResponse {
+    msg?: Partial<SetLocalUISettingResponse>,
+  ): SetLocalUISettingResponse {
     return {
       status: common.ResponseStatusJSON.initialize(),
       setting: LocalUISettingJSON.initialize(),
@@ -1831,7 +1928,7 @@ export const WriteLocalUISettingResponseJSON = {
    * @private
    */
   _writeMessage: function (
-    msg: PartialDeep<WriteLocalUISettingResponse>,
+    msg: PartialDeep<SetLocalUISettingResponse>,
   ): Record<string, unknown> {
     const json: Record<string, unknown> = {};
     if (msg.status) {
@@ -1856,9 +1953,89 @@ export const WriteLocalUISettingResponseJSON = {
    * @private
    */
   _readMessage: function (
-    msg: WriteLocalUISettingResponse,
+    msg: SetLocalUISettingResponse,
     json: any,
-  ): WriteLocalUISettingResponse {
+  ): SetLocalUISettingResponse {
+    const _status_ = json["status"];
+    if (_status_) {
+      common.ResponseStatusJSON._readMessage(msg.status, _status_);
+    }
+    const _setting_ = json["setting"];
+    if (_setting_) {
+      LocalUISettingJSON._readMessage(msg.setting, _setting_);
+    }
+    const _conflict_ = json["conflict"];
+    if (_conflict_) {
+      msg.conflict = _conflict_;
+    }
+    return msg;
+  },
+};
+
+export const DeleteLocalUISettingResponseJSON = {
+  /**
+   * Serializes DeleteLocalUISettingResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<DeleteLocalUISettingResponse>): string {
+    return JSON.stringify(DeleteLocalUISettingResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes DeleteLocalUISettingResponse from JSON.
+   */
+  decode: function (json: string): DeleteLocalUISettingResponse {
+    return DeleteLocalUISettingResponseJSON._readMessage(
+      DeleteLocalUISettingResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes DeleteLocalUISettingResponse with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<DeleteLocalUISettingResponse>,
+  ): DeleteLocalUISettingResponse {
+    return {
+      status: common.ResponseStatusJSON.initialize(),
+      setting: LocalUISettingJSON.initialize(),
+      conflict: false,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<DeleteLocalUISettingResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.status) {
+      const _status_ = common.ResponseStatusJSON._writeMessage(msg.status);
+      if (Object.keys(_status_).length > 0) {
+        json["status"] = _status_;
+      }
+    }
+    if (msg.setting) {
+      const _setting_ = LocalUISettingJSON._writeMessage(msg.setting);
+      if (Object.keys(_setting_).length > 0) {
+        json["setting"] = _setting_;
+      }
+    }
+    if (msg.conflict) {
+      json["conflict"] = msg.conflict;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: DeleteLocalUISettingResponse,
+    json: any,
+  ): DeleteLocalUISettingResponse {
     const _status_ = json["status"];
     if (_status_) {
       common.ResponseStatusJSON._readMessage(msg.status, _status_);

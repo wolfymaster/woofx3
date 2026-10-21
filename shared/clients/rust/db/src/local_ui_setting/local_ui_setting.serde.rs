@@ -129,6 +129,131 @@ impl<'de> serde::Deserialize<'de> for DeleteLocalUiSettingRequest {
         deserializer.deserialize_struct("local_ui_setting.DeleteLocalUISettingRequest", FIELDS, GeneratedVisitor)
     }
 }
+impl serde::Serialize for DeleteLocalUiSettingResponse {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if self.status.is_some() {
+            len += 1;
+        }
+        if self.setting.is_some() {
+            len += 1;
+        }
+        if self.conflict {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("local_ui_setting.DeleteLocalUISettingResponse", len)?;
+        if let Some(v) = self.status.as_ref() {
+            struct_ser.serialize_field("status", v)?;
+        }
+        if let Some(v) = self.setting.as_ref() {
+            struct_ser.serialize_field("setting", v)?;
+        }
+        if self.conflict {
+            struct_ser.serialize_field("conflict", &self.conflict)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for DeleteLocalUiSettingResponse {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "status",
+            "setting",
+            "conflict",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Status,
+            Setting,
+            Conflict,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "status" => Ok(GeneratedField::Status),
+                            "setting" => Ok(GeneratedField::Setting),
+                            "conflict" => Ok(GeneratedField::Conflict),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = DeleteLocalUiSettingResponse;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct local_ui_setting.DeleteLocalUISettingResponse")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<DeleteLocalUiSettingResponse, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut status__ = None;
+                let mut setting__ = None;
+                let mut conflict__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Status => {
+                            if status__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("status"));
+                            }
+                            status__ = map_.next_value()?;
+                        }
+                        GeneratedField::Setting => {
+                            if setting__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("setting"));
+                            }
+                            setting__ = map_.next_value()?;
+                        }
+                        GeneratedField::Conflict => {
+                            if conflict__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("conflict"));
+                            }
+                            conflict__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(DeleteLocalUiSettingResponse {
+                    status: status__,
+                    setting: setting__,
+                    conflict: conflict__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("local_ui_setting.DeleteLocalUISettingResponse", FIELDS, GeneratedVisitor)
+    }
+}
 impl serde::Serialize for GetLocalUiSettingRequest {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -1115,7 +1240,7 @@ impl<'de> serde::Deserialize<'de> for SetLocalUiSettingRequest {
         deserializer.deserialize_struct("local_ui_setting.SetLocalUISettingRequest", FIELDS, GeneratedVisitor)
     }
 }
-impl serde::Serialize for WriteLocalUiSettingResponse {
+impl serde::Serialize for SetLocalUiSettingResponse {
     #[allow(deprecated)]
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
@@ -1132,7 +1257,7 @@ impl serde::Serialize for WriteLocalUiSettingResponse {
         if self.conflict {
             len += 1;
         }
-        let mut struct_ser = serializer.serialize_struct("local_ui_setting.WriteLocalUISettingResponse", len)?;
+        let mut struct_ser = serializer.serialize_struct("local_ui_setting.SetLocalUISettingResponse", len)?;
         if let Some(v) = self.status.as_ref() {
             struct_ser.serialize_field("status", v)?;
         }
@@ -1145,7 +1270,7 @@ impl serde::Serialize for WriteLocalUiSettingResponse {
         struct_ser.end()
     }
 }
-impl<'de> serde::Deserialize<'de> for WriteLocalUiSettingResponse {
+impl<'de> serde::Deserialize<'de> for SetLocalUiSettingResponse {
     #[allow(deprecated)]
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
@@ -1195,13 +1320,13 @@ impl<'de> serde::Deserialize<'de> for WriteLocalUiSettingResponse {
         }
         struct GeneratedVisitor;
         impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
-            type Value = WriteLocalUiSettingResponse;
+            type Value = SetLocalUiSettingResponse;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                formatter.write_str("struct local_ui_setting.WriteLocalUISettingResponse")
+                formatter.write_str("struct local_ui_setting.SetLocalUISettingResponse")
             }
 
-            fn visit_map<V>(self, mut map_: V) -> std::result::Result<WriteLocalUiSettingResponse, V::Error>
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<SetLocalUiSettingResponse, V::Error>
                 where
                     V: serde::de::MapAccess<'de>,
             {
@@ -1230,13 +1355,13 @@ impl<'de> serde::Deserialize<'de> for WriteLocalUiSettingResponse {
                         }
                     }
                 }
-                Ok(WriteLocalUiSettingResponse {
+                Ok(SetLocalUiSettingResponse {
                     status: status__,
                     setting: setting__,
                     conflict: conflict__.unwrap_or_default(),
                 })
             }
         }
-        deserializer.deserialize_struct("local_ui_setting.WriteLocalUISettingResponse", FIELDS, GeneratedVisitor)
+        deserializer.deserialize_struct("local_ui_setting.SetLocalUISettingResponse", FIELDS, GeneratedVisitor)
     }
 }

@@ -2,6 +2,7 @@ package routes
 
 import (
 	"net/http"
+	"time"
 
 	client "github.com/wolfymaster/woofx3/clients/db"
 	middleware "github.com/wolfymaster/woofx3/db/app/middleware"
@@ -15,7 +16,7 @@ import (
 // and these settings belong to the engine's one dashboard, which reaches them
 // through the api's authenticated session, like stream gauges.
 func LocalUISettingRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMiddleware) {
-	localUISettingService := svc.NewLocalUISettingService(repo.NewLocalUISettingRepository(app.Db))
+	localUISettingService := svc.NewLocalUISettingService(repo.NewLocalUISettingRepository(app.Db), func() time.Time { return time.Now().UTC() })
 	localUISettingHandler := client.NewLocalUISettingServiceServer(localUISettingService)
 	mux.Handle(localUISettingHandler.PathPrefix(), localUISettingHandler)
 }

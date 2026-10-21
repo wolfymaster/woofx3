@@ -68,12 +68,22 @@ pub struct DeleteLocalUiSettingRequest {
     pub expected_revision: ::core::option::Option<i64>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct WriteLocalUiSettingResponse {
+pub struct SetLocalUiSettingResponse {
     #[prost(message, optional, tag="1")]
     pub status: ::core::option::Option<super::common::ResponseStatus>,
     /// Without `conflict`, the row as written, its revision the new one. With
     /// it, the stored row that refused the write, a tombstone included; absent
     /// when the key was never written.
+    #[prost(message, optional, tag="2")]
+    pub setting: ::core::option::Option<LocalUiSetting>,
+    #[prost(bool, tag="3")]
+    pub conflict: bool,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct DeleteLocalUiSettingResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    /// As on SetLocalUISettingResponse; the row is the tombstone when written.
     #[prost(message, optional, tag="2")]
     pub setting: ::core::option::Option<LocalUiSetting>,
     #[prost(bool, tag="3")]

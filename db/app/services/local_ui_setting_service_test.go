@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -28,10 +30,7 @@ func newLocalUISettingSvc(t *testing.T) client.LocalUISettingService {
 	if err := gormigrate.New(db, gormigrate.DefaultOptions, sqliteChain(t)).Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return &localUISettingService{
-		settings: repo.NewLocalUISettingRepository(db),
-		now:      func() time.Time { return localUISettingClock },
-	}
+	return NewLocalUISettingService(repo.NewLocalUISettingRepository(db), func() time.Time { return localUISettingClock })
 }
 
 func setUISetting(t *testing.T, svc client.LocalUISettingService, namespace, key, value string) *client.LocalUISetting {
@@ -75,7 +74,7 @@ func TestLocalUISettingRevisionsRiseAcrossNamespaces(t *testing.T) {
 func TestLocalUISettingExpectedRevision(t *testing.T) {
 	svc := newLocalUISettingSvc(t)
 	ctx := context.Background()
-	set := func(value string, expected int64) *client.WriteLocalUISettingResponse {
+	set := func(value string, expected int64) *client.SetLocalUISettingResponse {
 		t.Helper()
 		resp, err := svc.SetLocalUISetting(ctx, &client.SetLocalUISettingRequest{
 			Namespace: "macros", Key: "m1", ValueJson: value, ExpectedRevision: int64Ptr(expected),
@@ -253,5 +252,114 @@ func TestLocalUISettingValidation(t *testing.T) {
 	}
 	if len(changes.Settings) != 1 || changes.Settings[0].Revision != 1 {
 		t.Fatalf("changes = %v, want only the write at the cap, at revision 1", changes.Settings)
+	}
+}
+
+func TestLocalUISettingCancelledContextAbortsEveryCall(t *testing.T) {
+	svc := newLocalUISettingSvc(t)
+	setUISetting(t, svc, "macros", "m1", `1`)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	calls := map[string]func() error{
+		"list": func() error {
+			_, err := svc.ListLocalUISettings(ctx, &client.ListLocalUISettingsRequest{Namespace: "macros"})
+			return err
+		},
+		"get": func() error {
+			_, err := svc.GetLocalUISetting(ctx, &client.GetLocalUISettingRequest{Namespace: "macros", Key: "m1"})
+			return err
+		},
+		"set": func() error {
+			_, err := svc.SetLocalUISetting(ctx, &client.SetLocalUISettingRequest{Namespace: "macros", Key: "m1", ValueJson: `2`})
+			return err
+		},
+		"delete": func() error {
+			_, err := svc.DeleteLocalUISetting(ctx, &client.DeleteLocalUISettingRequest{Namespace: "macros", Key: "m1"})
+			return err
+		},
+		"changes": func() error {
+			_, err := svc.ListLocalUISettingChanges(ctx, &client.ListLocalUISettingChangesRequest{})
+			return err
+		},
+	}
+	for name, call := range calls {
+		t.Run(name, func(t *testing.T) {
+			if err := call(); err == nil {
+				t.Fatal("call with a cancelled context succeeded, want an error")
+			}
+		})
+	}
+
+	got, err := svc.GetLocalUISetting(context.Background(), &client.GetLocalUISettingRequest{Namespace: "macros", Key: "m1"})
+	if err != nil || got.Setting.Revision != 1 || got.Setting.ValueJson != `1` {
+		t.Fatalf("after cancelled writes: %v, %v, want the untouched revision 1 row", got, err)
+	}
+}
+
+// SQLite serialises writers on one connection, so this exercises the service
+// path under concurrent callers; the Postgres migration test covers true
+// lock contention.
+func TestLocalUISettingConcurrentWritersGetDistinctRevisions(t *testing.T) {
+	svc := newLocalUISettingSvc(t)
+	ctx := context.Background()
+	seed := setUISetting(t, svc, "race", "contested", `1`)
+
+	const unconditionalWriters = 12
+	const racingWriters = 6
+	var mu sync.Mutex
+	revisions := map[int64]bool{seed.Revision: true}
+	racingWins := 0
+	var wg sync.WaitGroup
+	record := func(resp *client.SetLocalUISettingResponse, err error) {
+		defer wg.Done()
+		if err != nil {
+			t.Errorf("concurrent SetLocalUISetting: %v", err)
+			return
+		}
+		if resp.Conflict {
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if revisions[resp.Setting.Revision] {
+			t.Errorf("revision %d handed out twice", resp.Setting.Revision)
+		}
+		revisions[resp.Setting.Revision] = true
+		if resp.Setting.Key == "contested" {
+			racingWins++
+		}
+	}
+	for i := 0; i < unconditionalWriters; i++ {
+		wg.Add(1)
+		go func() {
+			record(svc.SetLocalUISetting(ctx, &client.SetLocalUISettingRequest{Namespace: "race", Key: fmt.Sprintf("k%d", i), ValueJson: `1`}))
+		}()
+	}
+	for i := 0; i < racingWriters; i++ {
+		wg.Add(1)
+		go func() {
+			record(svc.SetLocalUISetting(ctx, &client.SetLocalUISettingRequest{Namespace: "race", Key: "contested", ValueJson: `2`, ExpectedRevision: int64Ptr(seed.Revision)}))
+		}()
+	}
+	wg.Wait()
+
+	if racingWins != 1 {
+		t.Fatalf("%d racing writers won, want exactly 1", racingWins)
+	}
+	want := 1 + unconditionalWriters + racingWins
+	for revision := int64(1); revision <= int64(want); revision++ {
+		if !revisions[revision] {
+			t.Fatalf("revision %d never handed out: a gap in 1..%d", revision, want)
+		}
+	}
+	changes, err := svc.ListLocalUISettingChanges(ctx, &client.ListLocalUISettingChangesRequest{})
+	if err != nil {
+		t.Fatalf("ListLocalUISettingChanges: %v", err)
+	}
+	for i := 1; i < len(changes.Settings); i++ {
+		if changes.Settings[i].Revision <= changes.Settings[i-1].Revision {
+			t.Fatalf("changes out of order at %d", i)
+		}
 	}
 }
