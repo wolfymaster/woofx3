@@ -528,6 +528,12 @@ export class DbClient {
     return response.clearedItems ?? [];
   }
 
+  /** The module storage database's size in bytes. */
+  async getModuleStorageUsage(): Promise<{ bytes: bigint }> {
+    const response = await storage.GetUsage({}, this.config);
+    return { bytes: response.bytes ?? 0n };
+  }
+
   /** One module's stored value, decoded, or `undefined` when the key holds nothing. */
   async getModuleStorageValue(namespace: string, key: string): Promise<unknown> {
     const response = await storage.Get({ namespace, key }, this.config);
