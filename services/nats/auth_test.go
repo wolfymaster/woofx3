@@ -188,8 +188,37 @@ func TestSameOriginTurnsAwayOtherPages(t *testing.T) {
 	}
 }
 
+// TestTheDefaultConfigurationTurnsAwayOtherPages runs the configuration a
+// deployment gets when it sets nothing: the origin check must already be on.
+func TestTheDefaultConfigurationTurnsAwayOtherPages(t *testing.T) {
+	cfg := DefaultConfiguration()
+	cfg.Port = -1
+	cfg.WebSocketPort = freePort(t)
+	ns, err := createServer(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("createServer: %v", err)
+	}
+	defer ns.Shutdown()
+	url := fmt.Sprintf("ws://%s:%d", cfg.Host, cfg.WebSocketPort)
+
+	cases := []struct {
+		origin string
+		want   int
+	}{
+		{origin: "", want: http.StatusSwitchingProtocols},
+		{origin: "https://attacker.example", want: http.StatusForbidden},
+		{origin: "http://localhost:5173", want: http.StatusForbidden},
+	}
+	for _, c := range cases {
+		if got := upgradeStatus(t, url, c.origin); got != c.want {
+			t.Errorf("Origin %q: status %d, want %d", c.origin, got, c.want)
+		}
+	}
+}
+
 func TestAnOpenServerAdmitsAnyone(t *testing.T) {
 	cfg := DefaultConfiguration()
+	cfg.WebSocketSameOrigin = false
 	cfg.Port = -1
 	cfg.WebSocketPort = freePort(t)
 	wsPort := cfg.WebSocketPort

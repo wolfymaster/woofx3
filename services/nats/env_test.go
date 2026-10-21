@@ -140,14 +140,24 @@ func TestWithoutLocationVariablesTheConfigIsFoundAboveTheWorkingDirectory(t *tes
 	}
 }
 
-func TestHardeningIsOffUnlessConfigured(t *testing.T) {
+func TestOnlyTheSameOriginCheckIsOnUnlessConfigured(t *testing.T) {
 	cfg := DefaultConfiguration()
 	if err := cfg.OverlayFromMap(map[string]string{}); err != nil {
 		t.Fatalf("OverlayFromMap: %v", err)
 	}
 
-	if cfg.Token != "" || cfg.TCPDisabled || cfg.WebSocketSameOrigin || len(cfg.WebSocketAllowedOrigins) != 0 {
-		t.Fatalf("hardening = %+v, want all of it off", cfg)
+	if cfg.Token != "" || cfg.TCPDisabled || !cfg.WebSocketSameOrigin || len(cfg.WebSocketAllowedOrigins) != 0 {
+		t.Fatalf("hardening = %+v, want same-origin on and the rest unset", cfg)
+	}
+}
+
+func TestTheSameOriginCheckCanBeTurnedOff(t *testing.T) {
+	cfg := DefaultConfiguration()
+	if err := cfg.OverlayFromMap(map[string]string{"WOOFX3_MESSAGEBUS_WEBSOCKET_SAME_ORIGIN": "false"}); err != nil {
+		t.Fatalf("OverlayFromMap: %v", err)
+	}
+	if cfg.WebSocketSameOrigin {
+		t.Fatal("same-origin still on after WOOFX3_MESSAGEBUS_WEBSOCKET_SAME_ORIGIN=false")
 	}
 }
 

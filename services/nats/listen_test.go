@@ -132,3 +132,33 @@ func TestABlankFileValueKeepsEachDefault(t *testing.T) {
 		t.Fatalf("config = %+v, want the file's WebSocket port and every other default", cfg)
 	}
 }
+
+func TestValidateChecksTheAllowedOrigins(t *testing.T) {
+	cases := []struct {
+		name       string
+		origins    []string
+		sameOrigin bool
+		wantErr    error
+	}{
+		{name: "none", sameOrigin: true},
+		{name: "http and https with ports", origins: []string{"http://127.0.0.1:5173", "https://app.example", "http://[::1]:8080"}},
+		{name: "a path", origins: []string{"https://app.example/"}, wantErr: ErrInvalidOrigin},
+		{name: "no scheme", origins: []string{"app.example"}, wantErr: ErrInvalidOrigin},
+		{name: "another scheme", origins: []string{"ws://app.example"}, wantErr: ErrInvalidOrigin},
+		{name: "a query", origins: []string{"https://app.example?x=1"}, wantErr: ErrInvalidOrigin},
+		{name: "user info", origins: []string{"https://user@app.example"}, wantErr: ErrInvalidOrigin},
+		{name: "a wildcard", origins: []string{"*"}, wantErr: ErrInvalidOrigin},
+		{name: "one bad among good", origins: []string{"https://app.example", "nope"}, wantErr: ErrInvalidOrigin},
+		{name: "a list with same-origin on", origins: []string{"https://app.example"}, sameOrigin: true, wantErr: ErrOriginsUnreachable},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultConfiguration()
+			cfg.WebSocketSameOrigin = tc.sameOrigin
+			cfg.WebSocketAllowedOrigins = tc.origins
+			if err := cfg.Validate(); !errors.Is(err, tc.wantErr) {
+				t.Fatalf("Validate() = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}

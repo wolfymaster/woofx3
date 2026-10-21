@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,9 +36,13 @@ type Configuration struct {
 	// WebSocketSameOrigin rejects a WebSocket upgrade whose Origin header
 	// names a different host than the one it was sent to. A request with no
 	// Origin header, which is what the engine's own clients send, is accepted.
+	// On by default: it is what keeps a web page in any browser on this
+	// machine off the bus.
 	WebSocketSameOrigin bool `json:"-"`
 	// WebSocketAllowedOrigins, when not empty, admits only upgrades whose
 	// Origin is listed. As with WebSocketSameOrigin, no Origin is accepted.
+	// NATS applies both checks when both are set, so a list only admits a
+	// foreign origin with WebSocketSameOrigin turned off.
 	WebSocketAllowedOrigins []string `json:"-"`
 }
 
@@ -55,15 +60,19 @@ const (
 // by every neighbour.
 func DefaultConfiguration() *Configuration {
 	return &Configuration{
-		Host:          DefaultHost,
-		Port:          DefaultClientPort,
-		WebSocketPort: DefaultWebSocketPort,
+		Host:                DefaultHost,
+		Port:                DefaultClientPort,
+		WebSocketPort:       DefaultWebSocketPort,
+		WebSocketSameOrigin: true,
 	}
 }
 
-// ErrPortsCollide is returned by Validate when the TCP and WebSocket
-// listeners would bind the same port.
-var ErrPortsCollide = errors.New("the TCP and WebSocket listeners are set to the same port")
+// The ways Validate refuses a configuration, for errors.Is.
+var (
+	ErrPortsCollide       = errors.New("the TCP and WebSocket listeners are set to the same port")
+	ErrInvalidOrigin      = errors.New("is not an http(s) origin: write it as scheme://host[:port], with no path")
+	ErrOriginsUnreachable = errors.New("messagebusWebSocketAllowedOrigins admits only same-origin pages while messagebusWebSocketSameOrigin is on: set WOOFX3_MESSAGEBUS_WEBSOCKET_SAME_ORIGIN=false to admit the listed origins")
+)
 
 // Validate refuses a configuration the server must not start with. Each
 // problem is one the operator has to resolve; none has a safe guess.
@@ -80,7 +89,28 @@ func (c *Configuration) Validate() error {
 	if !c.TCPDisabled && c.Port == c.WebSocketPort {
 		return fmt.Errorf("%w (%d): set messagebusServerListeningPort and messagebusWebSocketPort apart, or disable TCP", ErrPortsCollide, c.Port)
 	}
+	for _, origin := range c.WebSocketAllowedOrigins {
+		if !isHTTPOrigin(origin) {
+			return fmt.Errorf("messagebusWebSocketAllowedOrigins entry %q %w", origin, ErrInvalidOrigin)
+		}
+	}
+	if c.WebSocketSameOrigin && len(c.WebSocketAllowedOrigins) > 0 {
+		return ErrOriginsUnreachable
+	}
 	return nil
+}
+
+// isHTTPOrigin reports whether origin is written the way a browser sends an
+// Origin header: http or https, a host, an optional port, and nothing else.
+func isHTTPOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	return u.Hostname() != "" && u.User == nil && u.Opaque == "" && u.Path == "" && u.RawQuery == "" && !u.ForceQuery && u.Fragment == ""
 }
 
 func checkPort(key string, port int) error {
