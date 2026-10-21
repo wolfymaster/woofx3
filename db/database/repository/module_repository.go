@@ -21,6 +21,9 @@ type ModuleRepository struct {
 }
 
 func NewModuleRepository(db *gorm.DB, ids database.IDSource, now func() time.Time) *ModuleRepository {
+	if ids == nil || now == nil {
+		panic("module repository: id source and clock are required")
+	}
 	return &ModuleRepository{db: db, ids: ids, now: now}
 }
 

@@ -28,7 +28,7 @@ func newProvenanceSvc(t *testing.T) *moduleService {
 		t.Fatalf("migrate: %v", err)
 	}
 	return NewModuleService(
-		repo.NewModuleRepository(db, database.RandomIDs{}, time.Now),
+		repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }),
 		repo.NewResourceReferenceRepository(db),
 		repo.NewModuleResourceInstanceRepository(db),
 		nil,

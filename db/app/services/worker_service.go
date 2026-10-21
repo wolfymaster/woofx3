@@ -20,6 +20,7 @@ type WorkerService struct {
 	logger          *slog.Logger
 	databaseSvc     *DatabaseService
 	natsSvc         *service.NATSService
+	ids             database.IDSource
 	db              *gorm.DB
 	natsConn        *nats.Conn
 	eventCache      *workers.EventCache
@@ -30,12 +31,13 @@ type WorkerService struct {
 	eventPublisher  *workers.EventPublisher
 }
 
-func NewWorkerService(logger *slog.Logger, databaseSvc *DatabaseService, natsSvc *service.NATSService) *WorkerService {
+func NewWorkerService(logger *slog.Logger, databaseSvc *DatabaseService, natsSvc *service.NATSService, ids database.IDSource) *WorkerService {
 	svc := &WorkerService{
 		BaseService: runtime.NewBaseServiceWithDeps[*WorkerService]("workers", "workers", nil, false, []string{"database", "nats"}),
 		logger:      logger,
 		databaseSvc: databaseSvc,
 		natsSvc:     natsSvc,
+		ids:         ids,
 	}
 	// Initialize client after struct creation
 	svc.SetClient(svc)
@@ -78,8 +80,8 @@ func (s *WorkerService) initializeWorkers() error {
 		Outbox:     workersRepo,
 		Facts:      repository.NewViewerFactRepository(s.db),
 		UserEvents: repository.NewUserEventRepository(s.db),
-		Alerts:     repository.NewAlertRepository(s.db),
-		Workflows:  repository.NewWorkflowRepository(s.db, database.RandomIDs{}),
+		Alerts:     repository.NewAlertRepository(s.db, s.ids),
+		Workflows:  repository.NewWorkflowRepository(s.db, s.ids),
 	}, s.logger, workersConfig)
 	s.metricsWorker = workers.NewMetricsWorker(eventCache, s.logger, 30*time.Second)
 	s.eventCache = eventCache

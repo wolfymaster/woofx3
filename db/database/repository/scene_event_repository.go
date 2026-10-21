@@ -21,6 +21,9 @@ type SceneEventRepository struct {
 }
 
 func NewSceneEventRepository(db *gorm.DB, now func() time.Time) *SceneEventRepository {
+	if now == nil {
+		panic("scene event repository: clock is required")
+	}
 	return &SceneEventRepository{db: db, now: now}
 }
 

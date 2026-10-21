@@ -30,6 +30,9 @@ import (
 // search_path resolving them to the `public` schema the migrations create
 // them in; a deployment with another search_path is not supported.
 func InitializeDB(dsn string, slogger *slog.Logger, ids IDSource) (*gorm.DB, error) {
+	if ids == nil {
+		return nil, fmt.Errorf("initialize database: id source is nil")
+	}
 	parsed, err := ParseDatabaseURL(dsn)
 	if err != nil {
 		return nil, err

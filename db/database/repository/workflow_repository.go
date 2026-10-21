@@ -18,6 +18,9 @@ type WorkflowRepository struct {
 
 // NewWorkflowRepository returns a new instance of WorkflowRepository
 func NewWorkflowRepository(db *gorm.DB, ids database.IDSource) *WorkflowRepository {
+	if ids == nil {
+		panic("workflow repository: id source is required")
+	}
 	return &WorkflowRepository{db: db, ids: ids}
 }
 

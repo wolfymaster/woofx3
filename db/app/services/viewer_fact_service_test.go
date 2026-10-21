@@ -42,7 +42,7 @@ func newFactSvc(t *testing.T, db *gorm.DB) *viewerFactService {
 	svc := NewViewerFactService(
 		repo.NewViewerFactRepository(db),
 		repo.NewViewerSegmentRepository(db),
-		repo.NewModuleRepository(db, database.RandomIDs{}, time.Now),
+		repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }),
 		workers.NewEventPublisher(repo.NewDbEventRepository(db), logger),
 	).(*viewerFactService)
 	svc.now = func() time.Time { return factNow.Add(time.Hour) }
