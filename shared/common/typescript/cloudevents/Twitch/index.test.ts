@@ -87,6 +87,8 @@ describe("assertPlainPayload", () => {
     ["a Map", { map: new Map() }, "payload.map is an instance of Map"],
     ["a function", { fn: () => 1 }, "payload.fn is a function"],
     ["a bigint", { big: 1n }, "payload.big is a bigint"],
+    ["NaN", { n: Number.NaN }, "payload.n is NaN"],
+    ["Infinity", { list: [Number.POSITIVE_INFINITY] }, "payload.list[0] is Infinity"],
     ["a cycle", cyclic, "payload.self refers back to one of its own ancestors"],
   ];
 

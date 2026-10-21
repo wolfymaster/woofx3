@@ -51,12 +51,23 @@ export interface TwitchEventPayloads {
  * data, so every payload must be mapped field by field into a plain object
  * first, and this check makes forgetting to do so fail at the publish call.
  */
-export function assertPlainPayload(value: unknown, path = "payload", ancestors: object[] = []): void {
+export function assertPlainPayload(value: unknown): void {
+  walkPayload(value, "payload", []);
+}
+
+function walkPayload(value: unknown, path: string, ancestors: object[]): void {
   if (value === null) {
     return;
   }
   const kind = typeof value;
-  if (kind === "string" || kind === "number" || kind === "boolean" || kind === "undefined") {
+  if (kind === "number") {
+    // JSON turns NaN and Infinity into null without warning.
+    if (!Number.isFinite(value)) {
+      throw new TypeError(`${path} is ${String(value)}; event payloads may only hold finite numbers`);
+    }
+    return;
+  }
+  if (kind === "string" || kind === "boolean" || kind === "undefined") {
     return;
   }
   if (kind !== "object") {
@@ -69,7 +80,7 @@ export function assertPlainPayload(value: unknown, path = "payload", ancestors: 
   const nested = [...ancestors, object];
   if (Array.isArray(object)) {
     object.forEach((item, index) => {
-      assertPlainPayload(item, `${path}[${index}]`, nested);
+      walkPayload(item, `${path}[${index}]`, nested);
     });
     return;
   }
@@ -79,7 +90,7 @@ export function assertPlainPayload(value: unknown, path = "payload", ancestors: 
     throw new TypeError(`${path} is an instance of ${name}; map it into a plain object before publishing`);
   }
   for (const [key, field] of Object.entries(object)) {
-    assertPlainPayload(field, `${path}.${key}`, nested);
+    walkPayload(field, `${path}.${key}`, nested);
   }
 }
 
