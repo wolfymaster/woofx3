@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
@@ -241,6 +242,39 @@ func TestValidateAlertParams_NamesTheFieldAtFault(t *testing.T) {
 			}
 			if err.Error() != tc.want {
 				t.Errorf("error = %q, want %q", err.Error(), tc.want)
+			}
+		})
+	}
+}
+
+func TestNewChainedEvent_CarriesTriggerChainAndWorkflow(t *testing.T) {
+	tests := []struct {
+		name    string
+		trigger *types.Event
+		want    string
+	}{
+		{"no trigger event starts the chain", nil, "wf-b"},
+		{"trigger without a chain starts the chain", &types.Event{}, "wf-b"},
+		{"trigger chain is extended", &types.Event{WorkflowChain: "wf-a"}, "wf-a,wf-b"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := tasks.ActionContext[AppServices]{WorkflowID: "wf-b", TriggerEvent: tt.trigger}
+			event := newChainedEvent(ctx, "message.send", map[string]any{"message": "hi"})
+
+			raw, err := json.Marshal(event)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var wire map[string]any
+			if err := json.Unmarshal(raw, &wire); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if wire["workflowChain"] != tt.want {
+				t.Errorf("workflowChain = %v, want %q", wire["workflowChain"], tt.want)
+			}
+			if wire["type"] != "message.send" || wire["source"] != "workflow" || wire["id"] == "" {
+				t.Errorf("unexpected envelope: %v", wire)
 			}
 		})
 	}

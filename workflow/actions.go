@@ -42,13 +42,8 @@ func NewChatReplyAction() tasks.ActionFunc[AppServices] {
 			platform = "twitch"
 		}
 
-		payload, err := json.Marshal(map[string]any{
-			"id":     uuid.NewString(),
-			"type":   "message.send",
-			"source": "workflow",
-			"time":   time.Now().UTC().Format(time.RFC3339),
-			"data":   map[string]any{"platform": platform, "message": message},
-		})
+		event := newChainedEvent(ctx, "message.send", map[string]any{"platform": platform, "message": message})
+		payload, err := json.Marshal(event)
 		if err != nil {
 			return nil, fmt.Errorf("marshal message.send: %w", err)
 		}
@@ -56,6 +51,21 @@ func NewChatReplyAction() tasks.ActionFunc[AppServices] {
 			return nil, fmt.Errorf("publish message.send: %w", err)
 		}
 		return map[string]any{"message": message}, nil
+	}
+}
+
+// newChainedEvent builds an event a native action publishes on behalf of the
+// running workflow. It carries the run's workflowChain (the trigger's chain plus
+// this workflow), which is what lets the loop guard see a workflow whose output
+// re-triggers itself; an event published without it starts a fresh chain.
+func newChainedEvent(ctx tasks.ActionContext[AppServices], eventType string, data map[string]any) types.Event {
+	return types.Event{
+		ID:            uuid.NewString(),
+		Type:          eventType,
+		Source:        "workflow",
+		Time:          time.Now().UTC(),
+		WorkflowChain: ctx.TriggerEvent.ChainThrough(ctx.WorkflowID),
+		Data:          data,
 	}
 }
 
