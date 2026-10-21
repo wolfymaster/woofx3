@@ -42,6 +42,10 @@ func rowID(ids database.IDSource, id uuid.UUID) uuid.UUID {
 	return ids.NewUUID()
 }
 
+func (r *ModuleRepository) Transaction(fn func(tx *gorm.DB) error) error {
+	return r.db.Transaction(fn)
+}
+
 func (r *ModuleRepository) Create(m *models.Module) error {
 	return r.db.Create(m).Error
 }

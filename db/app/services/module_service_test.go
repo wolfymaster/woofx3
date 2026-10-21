@@ -167,3 +167,53 @@ func TestCreateModuleRenamesTheRowItsModuleIDOwns(t *testing.T) {
 		t.Fatalf("row = %+v, want renamed to v2", row)
 	}
 }
+
+func TestCreateModuleReplaceRollsBackWhenAFunctionWriteFails(t *testing.T) {
+	svc, db := newModuleSvc(t)
+	mustCreateModule(t, svc, moduleRequest("cozy", "Cozy", "1.0.0",
+		moduleFunction("kept", "kept-v1"),
+		moduleFunction("dropped", "dropped-v1"),
+	))
+	// A real constraint failure on the last write of the replace, after the
+	// row update, the archive of "dropped" and the upsert of "kept" ran.
+	if err := db.Exec(`CREATE TRIGGER refuse_boom BEFORE INSERT ON functions
+		WHEN NEW.manifest_id = 'boom'
+		BEGIN SELECT RAISE(ABORT, 'injected failure'); END`).Error; err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	_, err := svc.CreateModule(context.Background(), moduleRequest("cozy", "Cozy", "2.0.0",
+		moduleFunction("kept", "kept-v2"),
+		moduleFunction("boom", "boom-v2"),
+	))
+	if err == nil {
+		t.Fatal("CreateModule succeeded although a function write failed")
+	}
+
+	row, functions := storedModule(t, db, "cozy")
+	if row.Version != "1.0.0" || row.ModuleKey != "cozy:1.0.0:abcdef0" || row.ArchiveKey != "archives/cozy-1.0.0.zip" {
+		t.Fatalf("module row not rolled back to v1: %+v", row)
+	}
+	if len(functions) != 2 || functions["kept"].FileKey != "kept-v1" || functions["dropped"].FileKey != "dropped-v1" {
+		t.Fatalf("functions not rolled back to v1: %+v", functions)
+	}
+}
+
+func TestCreateModuleReplaceRestoresAnEarlierVersion(t *testing.T) {
+	svc, db := newModuleSvc(t)
+	v1 := moduleRequest("cozy", "Cozy", "1.0.0", moduleFunction("kept", "kept-v1"), moduleFunction("dropped", "dropped-v1"))
+	mustCreateModule(t, svc, v1)
+	mustCreateModule(t, svc, moduleRequest("cozy", "Cozy", "2.0.0", moduleFunction("kept", "kept-v2")))
+
+	// barkloader restores a failed upgrade by installing the previous
+	// version's request again.
+	restored := mustCreateModule(t, svc, v1)
+
+	if restored.Version != "1.0.0" {
+		t.Fatalf("restored version = %q, want 1.0.0", restored.Version)
+	}
+	_, functions := storedModule(t, db, "cozy")
+	if len(functions) != 2 || functions["kept"].FileKey != "kept-v1" || functions["dropped"].FileKey != "dropped-v1" {
+		t.Fatalf("functions after restore = %+v, want both v1 functions active", functions)
+	}
+}
