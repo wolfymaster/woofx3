@@ -171,6 +171,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       nats: natsClient,
       functions,
       barkloaderUrl: config.barkloaderUrl,
+      barkloaderKey: config.barkloaderKey,
       streamwareUrl: config.streamwareUrl,
       sceneManagerUrl: config.sceneManagerUrl,
       apiUrl: config.apiUrl,

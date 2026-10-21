@@ -37,6 +37,7 @@ function makeApi(opts: { db: any; webhookClient?: any }) {
     nats: null,
     functions: null,
     barkloaderUrl: BARKLOADER_URL,
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger,
@@ -102,6 +103,11 @@ describe("Api.installModuleFromUrl", () => {
     expect(fetchCalls.length).toBe(2);
     expect(fetchCalls[0]!.url).toBe(DOWNLOAD_URL);
     expect(fetchCalls[1]!.url).toBe(`${BARKLOADER_URL}/functions`);
+    // The engine secret goes to barkloader only, never to the marketplace.
+    expect(new Headers(fetchCalls[0]!.init?.headers).get("Authorization")).toBeNull();
+    expect(new Headers(fetchCalls[1]!.init.headers).get("Authorization")).toBe(
+      "Bearer test-barkloader-key-0123456789abcdef"
+    );
 
     const body = fetchCalls[1]!.init.body as FormData;
     expect(body.get("client_id")).toBe(MARKETPLACE_CTX.clientId);
