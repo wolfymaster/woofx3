@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.40.0](https://github.com/wolfymaster/woofx3/compare/v0.39.0...v0.40.0) (2026-10-21)
+
+### Features
+
+* **api:** add the engine event stream transport ([0ef460f](https://github.com/wolfymaster/woofx3/commit/0ef460f265ad484b882c61a12406d56b306a647b))
+* **api:** deliver engine callbacks over webhooks and the event stream ([5b9be18](https://github.com/wolfymaster/woofx3/commit/5b9be187b461e559b22732019da56eb046109774))
+* **api:** link Twitch from the engine with a device login ([fac8f33](https://github.com/wolfymaster/woofx3/commit/fac8f3399c499523a9147776437f7820d700cd86))
+* **api:** read alerts, run detail, resource kinds and the workflow catalog ([edf1a1c](https://github.com/wolfymaster/woofx3/commit/edf1a1c4fe9f99e0546d8086c504a5a28be970e5))
+* **api:** refresh public-app Twitch tokens in the api service alone ([cb4619d](https://github.com/wolfymaster/woofx3/commit/cb4619d06e69d34eb294638a4c54d2cb7a5ebb54))
+* **api:** serve local UI settings behind ui.settings ([4e9e404](https://github.com/wolfymaster/woofx3/commit/4e9e4044306201c0cd8b4a3eddd3c876716444cc))
+* **api:** serve subscribeEngineEvents and answerEngineRequest ([1105e60](https://github.com/wolfymaster/woofx3/commit/1105e601250b0e0f3d1aaa9cf88ca42480b67de1))
+* **db:** declare LocalUISettingService ([b530445](https://github.com/wolfymaster/woofx3/commit/b53044530361ef951d4e05ff01cf1e0ba987790c))
+* **db:** filter alerts by run and identify run steps in the proto ([eadbcd4](https://github.com/wolfymaster/woofx3/commit/eadbcd40559195e401de0e3ba65ef7d12c79f7e9))
+* **db:** serve the alert run filter and step identity ([70aa348](https://github.com/wolfymaster/woofx3/commit/70aa348b7dc0e4f5c6dd0ddcdf8ab2a76ec48fd7))
+* **db:** split local ui setting set and delete responses ([9029b22](https://github.com/wolfymaster/woofx3/commit/9029b2289d34d7907811f37a42b6b30422f46cf4))
+* **db:** store local UI settings under one revision counter ([4074638](https://github.com/wolfymaster/woofx3/commit/4074638c8e77dc0deed3f9fd2f89b2a006b796a3))
+* **scenemanager:** answer widget.queue.state with the overlays' queue ([314def2](https://github.com/wolfymaster/woofx3/commit/314def2136f5fe2b4beb708eaf380499809380aa))
+* **twitch:** public-app OAuth client and api-served device-login tokens ([c9231f1](https://github.com/wolfymaster/woofx3/commit/c9231f115724bc3f88f311b5fb7d99f4a2b174dc))
+
+### Bug Fixes
+
+* **api:** drop a deleted client's event stream subscriptions ([fe9e1a9](https://github.com/wolfymaster/woofx3/commit/fe9e1a98ed4e1e664aa5b0a7ea85076168d41e36))
+* **api:** drop an event stream subscription whose push never settles ([91e4199](https://github.com/wolfymaster/woofx3/commit/91e4199c2de61084abb4255a36066ed6e493d598))
+* **api:** fail findWorkflow on a non-OK envelope ([71132d7](https://github.com/wolfymaster/woofx3/commit/71132d7256ec63875914ec8096326118fd2102f7))
+* **api:** give every twitch_token write in the api one owner ([c270aec](https://github.com/wolfymaster/woofx3/commit/c270aec17f922f0ce0a71d8b88687cb3a042cafa))
+* **api:** give run callbacks the stored-read timestamp layout ([c8a9ad2](https://github.com/wolfymaster/woofx3/commit/c8a9ad2467047ecb96abc436fcb78322c6a3290d))
+* **api:** inject the device login's retry jitter ([228f319](https://github.com/wolfymaster/woofx3/commit/228f3197428d35f33ff5b76a2ec37ead3a9073e6))
+* **api:** let a device login that is storing its token end linked ([c7c72f7](https://github.com/wolfymaster/woofx3/commit/c7c72f70202ea5aeb9f05db400495e35bbefc9eb))
+* **api:** read a missing workflow or run as null ([3beae24](https://github.com/wolfymaster/woofx3/commit/3beae2481e45b8c21f92c307bac3d31967783088))
+* **api:** read an absent row in a write conflict as never written ([65dfa5e](https://github.com/wolfymaster/woofx3/commit/65dfa5ee2d616f9de7600127a37680105142150c))
+* **api:** refuse an empty target client id in WebhookClient.send ([b86e9ba](https://github.com/wolfymaster/woofx3/commit/b86e9ba05abb3935f3d838996ccb3e36176a2afd))
+* **api:** refuse unknown event types in subscribeEngineEvents ([4c63be0](https://github.com/wolfymaster/woofx3/commit/4c63be07d8655bd60e2dd73d6111db707408bfe4))
+* **api:** skip event stream request frames nobody is waiting for ([9807918](https://github.com/wolfymaster/woofx3/commit/9807918c0bfdfdc9f18aaa4d914d79be799c2e7c))
+* **api:** stop the engine event stream on shutdown ([b788da2](https://github.com/wolfymaster/woofx3/commit/b788da21740be382971a15d1c85d39e91359ceca))
+* **api:** validate the scene manager's alert queue reply ([7a4fc13](https://github.com/wolfymaster/woofx3/commit/7a4fc13e76ef630d7a1dbbfcf2b52a22c67d0815))
+* **ci:** give the image checks a well-formed Twitch client id ([2ba941f](https://github.com/wolfymaster/woofx3/commit/2ba941fcec67e162bffc8e2c91755c30c4af7813))
+* **db:** number the local UI settings migration after scene backups ([1cb92e6](https://github.com/wolfymaster/woofx3/commit/1cb92e69d36b098bd4d1bbe7af5a3f7b70ed5a2c))
+* **db:** pass request ctx through local ui setting queries ([75431fd](https://github.com/wolfymaster/woofx3/commit/75431fd829e975277311e6c4f471185bd349f9cc))
+* **db:** report failed run and workflow reads as internal errors ([f11a692](https://github.com/wolfymaster/woofx3/commit/f11a692bf7c3ca870d40c74b10c734c6866a1e1d))
+* **db:** seal the twitch_token setting at rest ([dab7904](https://github.com/wolfymaster/woofx3/commit/dab79040da7f7d73c853f7e221422f95d42936e7))
+* **twitch:** reconnect when a relink switches how the token is renewed ([c1762c1](https://github.com/wolfymaster/woofx3/commit/c1762c17943dd2cbbbacca185f2f290bc64ffe52))
+* **twitch:** time out and wrap every OAuth body read ([87436a0](https://github.com/wolfymaster/woofx3/commit/87436a03ee7fc3378d8ee92d30626e73279d3fd9))
+
 ## [0.39.0](https://github.com/wolfymaster/woofx3/compare/v0.38.0...v0.39.0) (2026-10-21)
 
 ### Features
