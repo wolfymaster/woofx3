@@ -30,9 +30,11 @@ pub const DEFAULT_HOOK_INTERVAL: u32 = 10_000;
 /// Times QuickJS may call its interrupt handler in one invocation, sized to
 /// about 1e7 bytecode ops to match the Lua budget. QuickJS calls the handler
 /// once every 10,000 jumps and calls, so one call stands for thousands of
-/// ops. Measured in a release build: `for (let i = 0; i < n; i++) { t += i; }`
-/// spends one call per 5,000 iterations (two jumps each), so 200 calls allow
-/// about 1e6 iterations of about 10 ops, which take about 85 ms.
+/// ops. Regular expression matching calls it once every 10,000 backtracking
+/// steps as well. Measured in a release build:
+/// `for (let i = 0; i < n; i++) { t += i; }` spends one call per 5,000
+/// iterations (two jumps each), so 200 calls allow about 1e6 iterations of
+/// about 10 ops, which take about 85 ms.
 pub const DEFAULT_QUICKJS_MAX_INTERRUPTS: u64 = 200;
 
 /// Invocations that may run at once across the whole engine. Each one holds

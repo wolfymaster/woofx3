@@ -606,6 +606,16 @@ fn test_busy_loops_end_at_the_deadline() {
             "run.js",
             "function run(ctx) { for (;;) { try { for (;;) {} } catch (e) {} } }",
         ),
+        (
+            "js backtracking regex",
+            "run.js",
+            "function run(ctx) { return { r: /^(a+)+$/.test('a'.repeat(40) + 'b') }; }",
+        ),
+        (
+            "js backtracking regex in try/catch",
+            "run.js",
+            "function run(ctx) { for (;;) { try { /^(a+)+$/.test('a'.repeat(40) + 'b'); } catch (e) {} } }",
+        ),
     ] {
         let timeout = Duration::from_millis(500);
         let started = Instant::now();
