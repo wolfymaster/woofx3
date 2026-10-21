@@ -175,7 +175,7 @@ describe("keys that reach the prototype chain", () => {
   const component = (json: string): Json0Component => JSON.parse(json) as Json0Component;
   const doc = (): SceneDocument =>
     sceneDoc({ a: placement({ settings: { font: {} } }) }, { b: behavior({ params: { phase: "in" } }) });
-  const prototypeOf = (value: object) => Object.getPrototypeOf(value) as Record<string, unknown>;
+  const prototypeOf = (value: object): unknown => Object.getPrototypeOf(value);
   const polluted = () => ({}) as Record<string, unknown>;
 
   afterEach(() => {
