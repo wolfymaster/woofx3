@@ -20,10 +20,18 @@ export function integrationEnabledSettingKey(id: IntegrationId): string {
 /** Published by the api whenever an integration's enabled setting is written. Payload: `IntegrationEnabledUpdated`. */
 export const INTEGRATION_ENABLED_UPDATED_SUBJECT = "setting.integration.enabled.updated";
 
-/** Published by the api whenever an integration's credential changes. Payload: `{ integration }`. For the api only. */
+/** Published only by the api whenever an integration's credential changes. Payload: `IntegrationTokenUpdated`. */
 export const INTEGRATION_TOKEN_UPDATED_SUBJECT = "setting.integration.token.updated";
 
 export type IntegrationEnabledUpdated = { integration: IntegrationId; enabled: boolean };
+
+export type IntegrationTokenUpdated = { integration: IntegrationId };
+
+/** Ties each integration subject to its payload type. */
+export type IntegrationEventPayloads = {
+  [INTEGRATION_ENABLED_UPDATED_SUBJECT]: IntegrationEnabledUpdated;
+  [INTEGRATION_TOKEN_UPDATED_SUBJECT]: IntegrationTokenUpdated;
+};
 
 export type IntegrationEnabled =
   | { kind: "set"; enabled: boolean }

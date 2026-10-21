@@ -28,7 +28,7 @@ import { encode } from "@woofx3/common/cloudevents/utils";
 import {
   INTEGRATION_ENABLED_UPDATED_SUBJECT,
   INTEGRATION_TOKEN_UPDATED_SUBJECT,
-  type IntegrationEnabledUpdated,
+  type IntegrationEventPayloads,
   type IntegrationId,
   integrationEnabledSettingKey,
 } from "@woofx3/common/integrations/integration-settings";
@@ -267,12 +267,14 @@ export class ApiRouteHost extends RpcTarget {
    * event only delays the pickup until the next reconcile.
    */
   protected async announceIntegrationChanged(id: IntegrationId, enabled: boolean): Promise<void> {
-    const payload: IntegrationEnabledUpdated = { integration: id, enabled };
-    await this.publishBestEffort(INTEGRATION_ENABLED_UPDATED_SUBJECT, payload);
+    await this.publishBestEffort(INTEGRATION_ENABLED_UPDATED_SUBJECT, { integration: id, enabled });
     await this.publishBestEffort(INTEGRATION_TOKEN_UPDATED_SUBJECT, { integration: id });
   }
 
-  private async publishBestEffort(subject: string, payload: Record<string, unknown>): Promise<void> {
+  private async publishBestEffort<S extends keyof IntegrationEventPayloads>(
+    subject: S,
+    payload: IntegrationEventPayloads[S]
+  ): Promise<void> {
     try {
       await this.publishEvent(subject, payload);
     } catch (err) {

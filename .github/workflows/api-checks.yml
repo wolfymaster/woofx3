@@ -91,8 +91,7 @@ jobs:
         working-directory: shared/clients/typescript/scene
         run: bun test
 
-      # Not reached by api's own run (outside api/); drop when
-      # shared-packages.yml covers shared/common/typescript.
+      # api's own test run does not reach shared/common/typescript.
       - name: Test the integration settings
         working-directory: shared/common/typescript
         run: bun test integrations/
