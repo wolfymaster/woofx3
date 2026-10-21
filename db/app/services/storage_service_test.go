@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -380,5 +381,37 @@ func TestStorageService_ClearSessionScoped_ReportsWhatItCleared(t *testing.T) {
 	item := resp.ClearedItems[0]
 	if item.Namespace != "woofx3" || item.Key != "state:woofx3:counter:deaths" {
 		t.Errorf("cleared %s/%s, want woofx3/state:woofx3:counter:deaths", item.Namespace, item.Key)
+	}
+}
+
+// Usage is the database's size in pages, so it grows with what modules store
+// and counts writes still sitting in the WAL.
+func TestStorageService_GetUsage_GrowsWithStoredValues(t *testing.T) {
+	svc := newStorageTestService(t)
+	ctx := context.Background()
+
+	empty, err := svc.GetUsage(ctx, &client.GetUsageRequest{})
+	if err != nil {
+		t.Fatalf("GetUsage: %v", err)
+	}
+	if empty.Bytes <= 0 {
+		t.Fatalf("empty usage = %d, want the schema's pages", empty.Bytes)
+	}
+
+	value := strings.Repeat("x", 64*1024)
+	for i := range 16 {
+		if _, err := svc.Set(ctx, &client.SetRequest{
+			Item: &client.StorageItem{Key: fmt.Sprintf("blob:%d", i), Value: value, Namespace: "mod"},
+		}); err != nil {
+			t.Fatalf("Set: %v", err)
+		}
+	}
+
+	full, err := svc.GetUsage(ctx, &client.GetUsageRequest{})
+	if err != nil {
+		t.Fatalf("GetUsage: %v", err)
+	}
+	if grown := full.Bytes - empty.Bytes; grown < 16*64*1024 {
+		t.Errorf("usage grew by %d bytes, want at least the %d stored", grown, 16*64*1024)
 	}
 }

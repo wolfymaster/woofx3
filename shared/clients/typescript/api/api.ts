@@ -131,6 +131,14 @@ export interface ModuleFileList {
   files: ModuleFileEntry[];
 }
 
+/**
+ * What module storage holds across every module: the size of the engine's
+ * module storage database, in bytes.
+ */
+export interface ModuleStorageUsage {
+  bytes: number;
+}
+
 /** The bytes a `getModuleFile` reads as text at most. */
 export const MODULE_FILE_TEXT_LIMIT_BYTES = 1024 * 1024;
 
@@ -1701,6 +1709,13 @@ export interface Woofx3EngineApi {
    * when no module with that id is installed.
    */
   getModuleFile(moduleId: string, path: string): Promise<ModuleFileContent>;
+
+  /**
+   * How much module storage (`ctx.storage`) holds across every module. The
+   * engine never limits it; a hosted engine's plan may, and the dashboard
+   * compares this figure to that limit.
+   */
+  getModuleStorageUsage(): Promise<ModuleStorageUsage>;
 
   /**
    * The installed themes made for one widget, for the picker behind a

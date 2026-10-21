@@ -78,6 +78,8 @@ export const ENGINE_CAPABILITIES = {
   modulesOAuth: "modules.oauth",
   /** Reading an installed module's files for a read-only viewer: `listModuleFiles`, `getModuleFile`. */
   modulesFiles: "modules.files",
+  /** What module storage holds across every module, in bytes: `getModuleStorageUsage`. */
+  modulesStorageUsage: "modules.storageUsage",
   /**
    * Installing from the marketplace by listing id, with the engine fetching
    * and verifying the archive itself: `installMarketplaceListing`,
