@@ -6,8 +6,8 @@
 // JS function authors reference the ctx surface via a triple-slash:
 //   /// <reference types="@woofx3/module-sdk/function-ctx" />
 //
-// The widget preview helper (mock host for offline development) lives
-// at "@woofx3/module-sdk/preview" — see preview/widget-preview.ts.
+// The mock host for unit-testing widgets lives at
+// "@woofx3/module-sdk/preview" — see preview/widget-preview.ts.
 
 export type {
   DeliveredWidgetEvent,
@@ -25,14 +25,19 @@ export type {
   WidgetTheme,
 } from "./widget-host";
 
-export type { WidgetAssetErrorCode } from "./widget-assets";
+export type { EngineAssetPath, WidgetAssetErrorCode } from "./widget-assets";
 export {
+  ASSET_READ_PREFIX,
   ENGINE_ASSET_PREFIXES,
   WidgetAssetError,
+  assetOfReadPath,
+  assetReadPath,
   assetRefUrl,
   createWidgetAsset,
   engineAssetPath,
   isWidgetAssetErrorCode,
+  parseEngineAssetPath,
+  widgetMayRead,
 } from "./widget-assets";
 
 export type {
@@ -78,17 +83,23 @@ export type {
   WidgetSettingsReadsMessage,
   WidgetToHostMessage,
   WidgetBehaviorMessage,
+  WidgetCapability,
+  WidgetMessageBody,
 } from "./widget-protocol";
 export {
   PROTOCOL_VERSION,
   WIDGET_BOOT_FRAGMENT_PARAM,
   WIDGET_BOOT_GLOBAL,
+  WIDGET_CAPABILITIES,
   WIDGET_PROTOCOL,
   decodePlacementBoot,
   encodePlacementBoot,
   isWidgetBootPayload,
+  isWidgetCapability,
   isWidgetProtocolEnvelope,
   isWidgetTheme,
+  parseHostToWidgetMessage,
+  parseWidgetToHostMessage,
 } from "./widget-protocol";
 
 export type {

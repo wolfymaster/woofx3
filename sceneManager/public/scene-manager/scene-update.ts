@@ -1,42 +1,15 @@
 // What a saved scene change means for the widgets already on the page.
 //
-// Reloading the whole overlay would restart every widget on stream to apply
-// a change to one, so the page instead fetches the saved config and works
-// out, per placement, the least it has to do. A placement whose frame
+// A save must not restart every widget on stream to apply a change to one, so
+// the page fetches the saved config and works out, per placement, the least
+// it has to do. A placement whose frame
 // document is the same keeps its frame: it is moved, and its settings are
 // patched in or, when the widget's script read a changed one, it is swapped
 // for a fresh frame once that has painted. Only a different frame document
 // (another widget, version or theme) means a new frame for that reason.
 
-import type { DeclaredBehaviorKinds } from "@woofx3/scene/model";
-
-export interface WidgetPlacementConfig {
-  id: string;
-  widgetCanonicalId: string;
-  moduleId: string;
-  position: { x: number; y: number; width: number; height: number };
-  settings: Record<string, unknown>;
-  /** "alert" for an alert widget, which the page draws itself; "" otherwise. */
-  hostsSurface: string;
-  frameUrl: string;
-  /** The resource instances the widget's module links, handed to the frame. */
-  linkedResources?: Record<string, string>;
-  /** The engine's media proxy URL prefix, for a widget whose frame runs
-   *  under the theme policy (see `PlacementMeta.mediaProxyBase`). */
-  mediaProxyBase?: string;
-  /** The kinds the widget declares it plays itself (see
-   *  `PlacementMeta.behaviorKinds`); absent means none. */
-  behaviorKinds?: DeclaredBehaviorKinds;
-  /** False for a placement hidden in the editor; absent means shown. */
-  visible?: boolean;
-}
-
-export interface SceneConfig {
-  id: string;
-  name: string;
-  layout: Record<string, unknown>;
-  widgets: WidgetPlacementConfig[];
-}
+import { sameValue } from "@woofx3/scene/model";
+import { themeOf, type WidgetPlacementConfig } from "../../contract/scene-config";
 
 export interface ScenePlan {
   /** Placements no longer on the scene. */
@@ -91,82 +64,4 @@ function sameFrame(a: WidgetPlacementConfig, b: WidgetPlacementConfig): boolean 
     a.frameUrl === b.frameUrl &&
     (a.hostsSurface === "" || sameValue(a.settings, b.settings))
   );
-}
-
-/** The settings a widget's script has read; `all` when it read every one. */
-export interface SettingsReads {
-  all: boolean;
-  keys: ReadonlySet<string>;
-}
-
-/**
- * What a change of settings takes for a widget whose frame stays. `patch`
- * hands them over and the shim updates the widget's bindings in place;
- * `reload` swaps in a fresh frame, needed when the widget's script read a
- * setting that changed, or when what it read is not known yet.
- */
-export function settingsUpdate(
-  current: Record<string, unknown>,
-  next: Record<string, unknown>,
-  reads: SettingsReads | null
-): "none" | "patch" | "reload" {
-  const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
-  const changed = [...keys].filter((key) => !sameValue(current[key], next[key]));
-  if (changed.length === 0) {
-    return "none";
-  }
-  if (reads === null || reads.all || changed.some((key) => reads.keys.has(key))) {
-    return "reload";
-  }
-  return "patch";
-}
-
-/** The setting a widget's theme is chosen by. Matches THEME_SETTING_ID on the server. */
-const THEME_SETTING_ID = "theme";
-
-/** The theme a set of settings selects, "" for none. */
-export function themeOf(settings: Record<string, unknown>): string {
-  const value = settings[THEME_SETTING_ID];
-  return typeof value === "string" ? value.trim() : "";
-}
-
-/** Structural equality for JSON values, ignoring object key order. */
-export function sameValue(a: unknown, b: unknown): boolean {
-  if (a === b) {
-    return true;
-  }
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) {
-    return false;
-  }
-  if (Array.isArray(a) || Array.isArray(b)) {
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, i) => sameValue(item, b[i]));
-  }
-  const aRecord = a as Record<string, unknown>;
-  const bRecord = b as Record<string, unknown>;
-  const aKeys = Object.keys(aRecord);
-  if (aKeys.length !== Object.keys(bRecord).length) {
-    return false;
-  }
-  return aKeys.every((key) => Object.hasOwn(bRecord, key) && sameValue(aRecord[key], bRecord[key]));
-}
-
-/** The scene in a `GET /scene/{sceneId}/config` response, or null when the body is not one. */
-export function parseSceneConfig(body: unknown): SceneConfig | null {
-  if (typeof body !== "object" || body === null) {
-    return null;
-  }
-  const scene = (body as { scene?: unknown }).scene;
-  if (typeof scene !== "object" || scene === null) {
-    return null;
-  }
-  const s = scene as Record<string, unknown>;
-  if (typeof s.id !== "string" || typeof s.layout !== "object" || s.layout === null || !Array.isArray(s.widgets)) {
-    return null;
-  }
-  return {
-    id: s.id,
-    name: typeof s.name === "string" ? s.name : "",
-    layout: s.layout as Record<string, unknown>,
-    widgets: s.widgets as WidgetPlacementConfig[],
-  };
 }

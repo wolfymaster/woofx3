@@ -127,6 +127,17 @@ export interface ClearSessionScopedResponse {
   clearedItems: StorageItem[];
 }
 
+export interface GetUsageRequest {}
+
+export interface GetUsageResponse {
+  /**
+   * Size of the module storage database in bytes: its page count times its
+   * page size, as of the latest commit. Free pages count too, since they take
+   * the same room on disk and in the replica until a vacuum returns them.
+   */
+  bytes: bigint;
+}
+
 //========================================//
 //     StorageService Protobuf Client     //
 //========================================//
@@ -239,6 +250,22 @@ export async function ClearSessionScoped(
     config,
   );
   return ClearSessionScopedResponse.decode(response);
+}
+
+/**
+ * Report how much module storage holds, so a hosted engine can be held to
+ * its plan's module storage limit.
+ */
+export async function GetUsage(
+  getUsageRequest: GetUsageRequest,
+  config?: ClientConfiguration,
+): Promise<GetUsageResponse> {
+  const response = await PBrequest(
+    "/storage.StorageService/GetUsage",
+    GetUsageRequest.encode(getUsageRequest),
+    config,
+  );
+  return GetUsageResponse.decode(response);
 }
 
 //========================================//
@@ -355,6 +382,22 @@ export async function ClearSessionScopedJSON(
   return ClearSessionScopedResponseJSON.decode(response);
 }
 
+/**
+ * Report how much module storage holds, so a hosted engine can be held to
+ * its plan's module storage limit.
+ */
+export async function GetUsageJSON(
+  getUsageRequest: GetUsageRequest,
+  config?: ClientConfiguration,
+): Promise<GetUsageResponse> {
+  const response = await JSONrequest(
+    "/storage.StorageService/GetUsage",
+    GetUsageRequestJSON.encode(getUsageRequest),
+    config,
+  );
+  return GetUsageResponseJSON.decode(response);
+}
+
 //========================================//
 //             StorageService             //
 //========================================//
@@ -417,6 +460,14 @@ export interface StorageService<Context = unknown> {
     clearSessionScopedRequest: ClearSessionScopedRequest,
     context: Context,
   ) => Promise<ClearSessionScopedResponse> | ClearSessionScopedResponse;
+  /**
+   * Report how much module storage holds, so a hosted engine can be held to
+   * its plan's module storage limit.
+   */
+  GetUsage: (
+    getUsageRequest: GetUsageRequest,
+    context: Context,
+  ) => Promise<GetUsageResponse> | GetUsageResponse;
 }
 
 export function createStorageService<Context>(
@@ -487,6 +538,12 @@ export function createStorageService<Context>(
           protobuf: ClearSessionScopedResponse,
           json: ClearSessionScopedResponseJSON,
         },
+      },
+      GetUsage: {
+        name: "GetUsage",
+        handler: service.GetUsage,
+        input: { protobuf: GetUsageRequest, json: GetUsageRequestJSON },
+        output: { protobuf: GetUsageResponse, json: GetUsageResponseJSON },
       },
     },
   } as const;
@@ -1488,6 +1545,119 @@ export const ClearSessionScopedResponse = {
   },
 };
 
+export const GetUsageRequest = {
+  /**
+   * Serializes GetUsageRequest to protobuf.
+   */
+  encode: function (_msg?: PartialDeep<GetUsageRequest>): Uint8Array {
+    return new Uint8Array();
+  },
+
+  /**
+   * Deserializes GetUsageRequest from protobuf.
+   */
+  decode: function (_bytes?: ByteSource): GetUsageRequest {
+    return {};
+  },
+
+  /**
+   * Initializes GetUsageRequest with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<GetUsageRequest>): GetUsageRequest {
+    return {
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    _msg: PartialDeep<GetUsageRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    _msg: GetUsageRequest,
+    _reader: protoscript.BinaryReader,
+  ): GetUsageRequest {
+    return _msg;
+  },
+};
+
+export const GetUsageResponse = {
+  /**
+   * Serializes GetUsageResponse to protobuf.
+   */
+  encode: function (msg: PartialDeep<GetUsageResponse>): Uint8Array {
+    return GetUsageResponse._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes GetUsageResponse from protobuf.
+   */
+  decode: function (bytes: ByteSource): GetUsageResponse {
+    return GetUsageResponse._readMessage(
+      GetUsageResponse.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes GetUsageResponse with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<GetUsageResponse>): GetUsageResponse {
+    return {
+      bytes: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetUsageResponse>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.bytes) {
+      writer.writeInt64String(1, msg.bytes.toString() as any);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: GetUsageResponse,
+    reader: protoscript.BinaryReader,
+  ): GetUsageResponse {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.bytes = BigInt(reader.readInt64String());
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 //========================================//
 //          JSON Encode / Decode          //
 //========================================//
@@ -2357,6 +2527,100 @@ export const ClearSessionScopedResponseJSON = {
         StorageItemJSON._readMessage(m, item);
         msg.clearedItems.push(m);
       }
+    }
+    return msg;
+  },
+};
+
+export const GetUsageRequestJSON = {
+  /**
+   * Serializes GetUsageRequest to JSON.
+   */
+  encode: function (_msg?: PartialDeep<GetUsageRequest>): string {
+    return "{}";
+  },
+
+  /**
+   * Deserializes GetUsageRequest from JSON.
+   */
+  decode: function (_json?: string): GetUsageRequest {
+    return {};
+  },
+
+  /**
+   * Initializes GetUsageRequest with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<GetUsageRequest>): GetUsageRequest {
+    return {
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    _msg: PartialDeep<GetUsageRequest>,
+  ): Record<string, unknown> {
+    return {};
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: GetUsageRequest, _json: any): GetUsageRequest {
+    return msg;
+  },
+};
+
+export const GetUsageResponseJSON = {
+  /**
+   * Serializes GetUsageResponse to JSON.
+   */
+  encode: function (msg: PartialDeep<GetUsageResponse>): string {
+    return JSON.stringify(GetUsageResponseJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes GetUsageResponse from JSON.
+   */
+  decode: function (json: string): GetUsageResponse {
+    return GetUsageResponseJSON._readMessage(
+      GetUsageResponseJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes GetUsageResponse with all fields set to their default value.
+   */
+  initialize: function (msg?: Partial<GetUsageResponse>): GetUsageResponse {
+    return {
+      bytes: 0n,
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<GetUsageResponse>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.bytes) {
+      json["bytes"] = String(msg.bytes);
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (msg: GetUsageResponse, json: any): GetUsageResponse {
+    const _bytes_ = json["bytes"];
+    if (_bytes_) {
+      msg.bytes = BigInt(_bytes_);
     }
     return msg;
   },

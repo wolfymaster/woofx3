@@ -245,14 +245,16 @@ describe("opening OBS on a route", () => {
     fake = null;
   });
 
-  it("negotiates the subprotocol, signs in and loads the scenes", async () => {
+  it("negotiates the subprotocol, signs in, and asks OBS through the session", async () => {
     fake = startFakeObs({ password: "hunter2" });
     const session = await openObsOverRoute(
       { route: "direct", url: fake.url, password: "hunter2", address: "127.0.0.1" },
       quietLogger
     );
     expect(fake.protocols).toEqual(["obswebsocket.msgpack"]);
-    expect(fake.requests).toEqual(["GetSceneList", "GetSceneItemList", "GetSceneItemList"]);
+    expect(fake.requests).toEqual([]);
+    await session.client.request("GetSceneList");
+    expect(fake.requests).toEqual(["GetSceneList"]);
     await session.close();
   });
 

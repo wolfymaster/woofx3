@@ -6,6 +6,7 @@ import {
 } from "../../src/scene/scene-command";
 import { SceneDocuments, type SceneWrite } from "../../src/scene/scene-documents";
 import type { OverlaySceneState } from "../../src/scene/scene-host";
+import { eventAndData } from "../helpers/stream-frames";
 
 function fakeLogger() {
   return { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as never;
@@ -50,7 +51,7 @@ function documents(
       loadFramedSceneById: load,
       framePlacements: async () => [],
     },
-    { broadcast: (_sceneId, event, data) => sent.push({ event, data }), connectedSceneIds: () => ["scene-1"] },
+    { broadcast: (_sceneId, frame) => sent.push(eventAndData(frame)), connectedSceneIds: () => ["scene-1"] },
     fakeLogger(),
     {
       autosaveMs: 1,

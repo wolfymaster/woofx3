@@ -24,6 +24,9 @@ export interface OBSCommand {
   priority: number;
 }
 
+/** Show a source, hide it, or flip whichever it is when the command runs. */
+export type SourceVisibility = "visible" | "hidden" | "toggle";
+
 /**
  * One change to OBS, carried as the `data` of an `engine.obs.command`
  * CloudEvent to the OBS connection the scene manager holds. Request/reply: the
@@ -43,7 +46,7 @@ export type ObsControlCommand =
       /** The current program scene when absent. */
       sceneName?: string;
       sourceName: string;
-      visible: boolean;
+      visibility: SourceVisibility;
     }
   | { command: "set_input_mute"; inputName: string; muted: boolean }
   | {

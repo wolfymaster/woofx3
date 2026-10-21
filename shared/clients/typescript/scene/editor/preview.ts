@@ -23,7 +23,7 @@ export interface PreviewFrame {
   playing: boolean;
 }
 
-/** One placement in the form the dashboard stores a scene's widgets (see `storedPlacementOf` in sceneManager). */
+/** One placement in the form the dashboard stores a scene's widgets (see `storedOfPlacement` in model/stored-placement.ts). */
 export interface PreviewPlacement {
   id: string;
   widgetCanonicalId: string;

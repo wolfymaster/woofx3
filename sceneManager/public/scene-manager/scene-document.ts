@@ -9,7 +9,7 @@
 
 import { type SceneDocument, type SceneSnapshot, stackOrder } from "@woofx3/api/scene-editor/document";
 import { evenKeys, type PlacementDocument } from "@woofx3/scene/model";
-import type { SceneConfig, WidgetPlacementConfig } from "./scene-update";
+import type { SceneConfig, WidgetPlacementConfig } from "../../contract/scene-config";
 
 export {
   applyOps,
@@ -27,33 +27,6 @@ export {
   transformOps,
   zKey,
 } from "@woofx3/api/scene-editor/document";
-
-/** The page's config for a snapshot: placements in stacking order. A
- *  placement with no meta is left out until its meta arrives. */
-export function configOfSnapshot(snapshot: SceneSnapshot): SceneConfig {
-  const widgets: WidgetPlacementConfig[] = [];
-  for (const id of stackOrder(snapshot.doc)) {
-    const placement = snapshot.doc.widgets[id]!;
-    const meta = snapshot.meta[id];
-    if (!meta) {
-      continue;
-    }
-    widgets.push({
-      id,
-      widgetCanonicalId: placement.widget,
-      moduleId: meta.moduleId,
-      position: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },
-      settings: placement.settings,
-      hostsSurface: meta.hostsSurface,
-      frameUrl: meta.frameUrl,
-      linkedResources: meta.linkedResources,
-      ...(meta.mediaProxyBase === undefined ? {} : { mediaProxyBase: meta.mediaProxyBase }),
-      ...(meta.behaviorKinds === undefined ? {} : { behaviorKinds: meta.behaviorKinds }),
-      visible: placement.visible,
-    });
-  }
-  return { id: snapshot.sceneId, name: snapshot.name, layout: snapshot.doc.layout, widgets };
-}
 
 /**
  * The composition the page plays for a config: the config's placements, in

@@ -13,7 +13,7 @@ import type { CompositionKind } from "@woofx3/api";
 import type { SceneControlCommand, SceneControlReply } from "@woofx3/common/cloudevents/Scene/commands";
 import type { Logger } from "@woofx3/common/runtime";
 import { z } from "zod";
-import type { Json0Component, SceneSnapshot } from "../../public/scene-manager/scene-document";
+import type { Json0Component, SceneSnapshot } from "@woofx3/api/scene-editor/document";
 import type { SceneVersion } from "./scene-host";
 
 const nonEmptyId = z.string().min(1);

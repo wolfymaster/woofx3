@@ -1,18 +1,34 @@
 import { describe, expect, it } from "bun:test";
-import { SessionTokenService } from "../../src/scene/session-token";
+import { SignJWT } from "jose";
+import {
+  EDITOR_TOKEN_TTL_SECONDS,
+  PREVIEW_TOKEN_TTL_SECONDS,
+  SessionTokenService,
+  sceneTokenIssuer,
+} from "../../src/scene/session-token";
 
 describe("SessionTokenService", () => {
   it("mints a token that verifies back to the same claims", async () => {
     const svc = new SessionTokenService("test-secret");
-    const token = await svc.mint({ sceneId: "scene-1" });
+    const token = await svc.mint({ sceneId: "scene-1", authAt: 1_700_000_000 });
     const claims = await svc.verify(token);
-    expect(claims).toEqual({ sceneId: "scene-1" });
+    expect(claims).toEqual({ sceneId: "scene-1", authAt: 1_700_000_000 });
+  });
+
+  it("refuses an overlay session that does not say when its token was verified", async () => {
+    const secret = "test-secret";
+    const bare = await new SignJWT({ sceneId: "scene-1" })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode(secret));
+    expect(await new SessionTokenService(secret).verify(bare)).toBeNull();
   });
 
   it("rejects a token signed with a different secret", async () => {
     const a = new SessionTokenService("secret-a");
     const b = new SessionTokenService("secret-b");
-    const token = await a.mint({ sceneId: "scene-1" });
+    const token = await a.mint({ sceneId: "scene-1", authAt: 0 });
     expect(await b.verify(token)).toBeNull();
   });
 
@@ -50,8 +66,8 @@ describe("SessionTokenService — editor tokens", () => {
   });
 
   it("never lets an overlay's session edit the scene", async () => {
-    const session = await tokens.mint({ sceneId: "s1" });
-    expect(await tokens.verify(session)).toEqual({ sceneId: "s1" });
+    const session = await tokens.mint({ sceneId: "s1", authAt: 5 });
+    expect(await tokens.verify(session)).toEqual({ sceneId: "s1", authAt: 5 });
     expect(await tokens.verifyEditor(session)).toBeNull();
   });
 });
@@ -75,7 +91,7 @@ describe("SessionTokenService — composition preview tokens", () => {
       expect(await tokens.verify(preview)).toBeNull();
       expect(await tokens.verifyEditor(preview)).toBeNull();
     }
-    for (const other of [await tokens.mint({ sceneId: "s1" }), await tokens.mintEditor({ sceneId: "s1" })]) {
+    for (const other of [await tokens.mint({ sceneId: "s1", authAt: 0 }), await tokens.mintEditor({ sceneId: "s1" })]) {
       expect(await tokens.verifyPreview(other)).toBe(false);
       expect(await tokens.verifyPreviewSession(other)).toBe(false);
     }
@@ -86,5 +102,23 @@ describe("SessionTokenService — composition preview tokens", () => {
     expect(await tokens.verifyPreview(entry)).toBe(false);
     expect(await tokens.verifyPreview("")).toBe(false);
     expect(await tokens.verifyPreview("not-a-jwt")).toBe(false);
+  });
+});
+
+describe("sceneTokenIssuer", () => {
+  const issuer = () => sceneTokenIssuer(new SessionTokenService("x".repeat(32)), async (sceneId) => sceneId === "s1");
+
+  it("issues an editor token for a scene that exists, with its lifetime and path", async () => {
+    const reply = await issuer().editorToken("s1");
+    expect(reply).toMatchObject({ ok: true, expiresInSeconds: EDITOR_TOKEN_TTL_SECONDS });
+    expect(reply.ok && reply.path).toContain("s1");
+  });
+
+  it("refuses an editor token for a scene that does not", async () => {
+    expect(await issuer().editorToken("nope")).toEqual({ ok: false, reason: "scene not found" });
+  });
+
+  it("issues a preview token", async () => {
+    expect(await issuer().previewToken()).toMatchObject({ ok: true, expiresInSeconds: PREVIEW_TOKEN_TTL_SECONDS });
   });
 });

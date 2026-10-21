@@ -1,3 +1,7 @@
-# Built from @woofx3/module-sdk's src/widget-host-shim.entry.ts by
-# `bun run build:shim`, which dev and build:client run first.
+# Built by `bun run build:shim` from @woofx3/module-sdk's
+# src/widget-host-shim.entry.ts.
 public/widget-host-shim.js
+# The overlay page and the composition preview page, built by
+# `bun run build:client` from their .ts entries beside them.
+public/scene-manager/index.js
+public/scene-manager/composition-preview-page.js

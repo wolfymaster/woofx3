@@ -8,20 +8,17 @@ import {
   decideWelcome,
   decodeEditorState,
   diffDocuments,
-  type EditorSnapshot,
   type EditorState,
   type Entry,
   type EntryRef,
   type ErrorMessage,
   type ExternalBody,
-  editorStateOf,
   entryIdOf,
   type ItemBody,
   type MetaChanges,
   type NackMessage,
   nackOf,
   type Ops,
-  type PlacementDocument,
   type PlacementMeta,
   type Plan,
   PROTOCOL_VERSION,
@@ -30,23 +27,43 @@ import {
   type SceneDocument,
   type SceneOpsEvent,
   type SceneSnapshot,
-  type SequencerState,
   type ServerMessage,
-  sameValue,
-  stackOrder,
   type Version,
   watermarkOf,
-  zKey,
 } from "@woofx3/api/scene-editor";
 import type { Logger } from "@woofx3/common/runtime";
-import { STRICT_REGISTRY } from "@woofx3/scene/model";
-import { externalMediaUrls } from "../../public/scene-manager/media-url";
-import { themeOf } from "../../public/scene-manager/scene-update";
+import type { StreamFrame } from "../../contract/overlay-stream";
+import { documentOf, documentsDigest } from "./scene-codec";
+import { framingOf, OVERLAY_ORDER, PlacementMetaResolver } from "./placement-meta";
+import { SceneWriteback } from "./scene-writeback";
+import {
+  type EditorConnection,
+  editorSnapshotOf,
+  errorText,
+  type HeldScene,
+  type MetaPlan,
+  noMeta,
+  type SceneBackupStore,
+  type ScenePersister,
+  type ScenesView,
+  safeSend,
+  savePending,
+  sceneBackupsOf,
+  snapshotOf,
+  storedDigestOf,
+  unreadableColumns,
+  unreadableDetail,
+  unreadOf,
+  unreadReportOf,
+  unref,
+  type VersionView,
+  viewOf,
+} from "./held-scene";
+
+export type { EditorConnection, ScenePersister, SceneWrite } from "./held-scene";
+import { externalMediaUrls } from "../../contract/media-url";
 import type { MediaProxy } from "./media-proxy";
 import type { EditableScene, OverlaySceneState, OverlayWidgetInstance, SceneVersion } from "./scene-host";
-
-/** SSE event carrying a `SceneOpsEvent` to every overlay open on the scene. */
-export const SCENE_OPS_EVENT = "scene-ops";
 
 /** The slice of `OverlayHost` the documents load scenes through. */
 export interface SceneLoader {
@@ -57,29 +74,8 @@ export interface SceneLoader {
   framePlacements(sceneId: string, entries: unknown[]): Promise<OverlayWidgetInstance[]>;
 }
 
-/** What the documents write a scene back with; unset fields are left alone. */
-export interface SceneWrite {
-  id: string;
-  widgetsJson?: string;
-  layoutJson?: string;
-  behaviorsJson?: string;
-  draftWidgetsJson?: string;
-  draftLayoutJson?: string;
-  /** Stored with the draft's widgets and layout. */
-  draftBehaviorsJson?: string;
-  clearDraft?: boolean;
-  /** The scene editor's sync state, stored in the same row update as the documents. */
-  editorStateJson?: string;
-}
-
-/** The slice of the db client the documents write scenes through. */
-export interface ScenePersister {
-  updateScene(write: SceneWrite): Promise<unknown>;
-}
-
-/** The slice of `DeliveryStore` that pushes to a scene's open overlays. */
 export interface SceneBroadcaster {
-  broadcast(sceneId: string, event: string, data: unknown): void;
+  broadcast(sceneId: string, frame: StreamFrame): void;
   connectedSceneIds(): string[];
 }
 
@@ -96,11 +92,9 @@ const SYSTEM_CLOCK: SceneDocumentsClock = {
   clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 };
 
-/** One editor socket, as the documents talk to it. */
-export interface EditorConnection {
-  send(message: ServerMessage): void;
-  close(code: number, reason: string): void;
-}
+/** Standard WebSocket close codes (the IANA registry), for closes no editor needs to tell apart. */
+const WS_INTERNAL_ERROR = 1011;
+const WS_SERVICE_RESTART = 1012;
 
 /** An editor's opening message, as the documents need it. */
 export interface EditorHello {
@@ -114,89 +108,6 @@ export type EditorPresenceUpdate = { selection: string | null; version: Version 
 /** The answer to an item that committed no entry; a committed item's answer is its entry. */
 export type ItemReply = AckMessage | NackMessage | ErrorMessage;
 
-/** The fields of a stored placement the document models; the rest go to `extra`. */
-const MODELED_FIELDS = new Set([
-  "id",
-  "widgetCanonicalId",
-  "widgetDefinitionRef",
-  "name",
-  "position",
-  "size",
-  "rotation",
-  "opacity",
-  "zIndex",
-  "locked",
-  "visible",
-  "settings",
-]);
-
-function numberOr(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
-}
-
-/**
- * The canvas a scene stored without a usable size is drawn on. The dashboard
- * already shows such a scene at this size; the editor refuses every move,
- * resize and add on a canvas with no size, so the document must carry the
- * size the user is looking at.
- */
-const DEFAULT_CANVAS = { width: 1920, height: 1080 } as const;
-
-function canvasDimensionOr(value: unknown, fallback: number): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
-/**
- * A scene state as a document: placements keyed by id, stacked as saved,
- * with the version's behaviors as stored. `inputs` is present only when the
- * composition declares some, so a scene's document has no such key.
- *
- * A layout without a usable width or height gets the default canvas.
- *
- * Entries stored in an older shape are brought to the current one by the
- * registry's migrations (a placement's `transitionIn` / `transitionOut` in
- * `extra` become transition behaviors), so everything past this point sees
- * one shape. The stored row changes only when the document is next written.
- */
-export function documentOf(state: OverlaySceneState): SceneDocument {
-  const widgets: SceneDocument["widgets"] = {};
-  state.instances.forEach((instance, index) => {
-    const stored = instance.stored ?? {};
-    const extra: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(stored)) {
-      if (!MODELED_FIELDS.has(key)) {
-        extra[key] = value;
-      }
-    }
-    widgets[instance.id] = {
-      // As stored, so writing the scene back does not rewrite the id.
-      widget: typeof stored.widgetCanonicalId === "string" ? stored.widgetCanonicalId : instance.widgetCanonicalId,
-      x: instance.position.x,
-      y: instance.position.y,
-      width: instance.position.width,
-      height: instance.position.height,
-      visible: instance.visible,
-      z: zKey(index),
-      settings: instance.settings,
-      name: typeof stored.name === "string" ? stored.name : "",
-      rotation: numberOr(stored.rotation, 0),
-      opacity: numberOr(stored.opacity, 1),
-      locked: stored.locked === true,
-      extra,
-    };
-  });
-  const layout = {
-    ...state.layout,
-    width: canvasDimensionOr(state.layout.width, DEFAULT_CANVAS.width),
-    height: canvasDimensionOr(state.layout.height, DEFAULT_CANVAS.height),
-  };
-  const doc: SceneDocument = { layout, widgets, behaviors: structuredClone(state.behaviors) };
-  if (state.inputs.length > 0) {
-    doc.inputs = structuredClone(state.inputs);
-  }
-  return STRICT_REGISTRY.migrateDocument(doc);
-}
-
 /** A composition's published document and what it is, as `SceneDocuments.published` gives it. */
 export interface PublishedComposition {
   sceneId: string;
@@ -205,106 +116,9 @@ export interface PublishedComposition {
   doc: SceneDocument;
 }
 
-/**
- * A document in the shapes the database stores and the editor reads:
- * `widgets_json` is the placements in stacking order, each as the editor
- * writes one, `layout_json` the layout and `behaviors_json` the behaviors.
- * Inputs are not among them: the editor never changes them, so they are
- * written only where they are set (the api), and a write from here never
- * races one there.
- */
-export function storedSceneOf(doc: SceneDocument): { widgetsJson: string; layoutJson: string; behaviorsJson: string } {
-  const widgets = stackOrder(doc).map((id, index) => storedPlacementOf(id, doc.widgets[id]!, index));
-  return {
-    widgetsJson: JSON.stringify(widgets),
-    layoutJson: JSON.stringify(doc.layout),
-    behaviorsJson: JSON.stringify(doc.behaviors),
-  };
-}
-
-/** One placement as the editor stores it. */
-export function storedPlacementOf(id: string, p: PlacementDocument, zIndex: number): Record<string, unknown> {
-  return {
-    ...p.extra,
-    id,
-    widgetCanonicalId: p.widget,
-    name: p.name,
-    position: { x: p.x, y: p.y },
-    size: { width: p.width, height: p.height },
-    rotation: p.rotation,
-    opacity: p.opacity,
-    zIndex,
-    locked: p.locked,
-    visible: p.visible,
-    settings: p.settings,
-  };
-}
-
-/**
- * What each placement of a framed scene state needs beyond the document, and
- * the placements whose frame barkloader did not give.
- */
-interface Framing {
-  meta: Record<string, PlacementMeta>;
-  /** Placement ids framed without barkloader's answer (`OverlayWidgetInstance.frameUnavailable`). */
-  unframed: Set<string>;
-}
-
-function framingOf(instances: readonly OverlayWidgetInstance[]): Framing {
-  const meta: Record<string, PlacementMeta> = {};
-  const unframed = new Set<string>();
-  for (const instance of instances) {
-    meta[instance.id] = placementMetaOf(instance);
-    if (instance.frameUnavailable === true && instance.resolved) {
-      unframed.add(instance.id);
-    }
-  }
-  return { meta, unframed };
-}
-
-function placementMetaOf(instance: OverlayWidgetInstance): PlacementMeta {
-  return {
-    moduleId: instance.moduleId,
-    hostsSurface: instance.hostsSurface,
-    frameUrl: instance.frameUrl,
-    linkedResources: instance.linkedResources ?? {},
-    ...(instance.mediaProxyBase === undefined ? {} : { mediaProxyBase: instance.mediaProxyBase }),
-    ...(instance.behaviorKinds === undefined ? {} : { behaviorKinds: instance.behaviorKinds }),
-  };
-}
-
-/**
- * A digest of both documents that does not depend on key order. Stored with
- * the editor state, so a load can tell whether the documents it read are the
- * ones the stored head describes (see `restoredEditorState`).
- */
-export function documentsDigest(docs: Readonly<Record<Version, SceneDocument>>): string {
-  return Bun.hash(canonicalJson({ draft: docs.draft, published: docs.published })).toString(36);
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(",")}]`;
-  }
-  if (typeof value === "object" && value !== null) {
-    const record = value as Record<string, unknown>;
-    const members = Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`);
-    return `{${members.join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
 /** How long after its first unwritten change a scene is written back, at most. */
 export const AUTOSAVE_DELAY_MS = 2000;
-/**
- * Writes `close()` tries before giving up on a scene, and the wait between
- * them. What is still unwritten then is lost with the process; editors that
- * had it are told so when they reconnect.
- */
-export const CLOSE_WRITE_ATTEMPTS = 3;
-export const CLOSE_RETRY_MS = 250;
+
 /**
  * How long after a placement is framed without barkloader's answer it is
  * framed again, doubling on each failure up to `REFRAME_RETRY_MAX_MS`.
@@ -312,68 +126,15 @@ export const CLOSE_RETRY_MS = 250;
 export const REFRAME_RETRY_MS = 10_000;
 export const REFRAME_RETRY_MAX_MS = 5 * 60_000;
 
-/** Version order for overlay events: a live edit reaches overlays before its copy into the draft. */
-const OVERLAY_ORDER: readonly Version[] = ["published", "draft"];
-
-interface EditorRecord {
-  conn: EditorConnection;
-  name: string;
-  presence: { selection: string | null; version: Version } | null;
-  /** The editor is draining before it closes: hidden from the others. */
-  away: boolean;
-}
-
-interface SaveState {
-  timer: unknown | null;
-  /** Something to write (documents or editor state) since the last write began. */
-  dirty: boolean;
-  /** A document changed since the last write began. */
-  docsDirty: boolean;
-  writing: Promise<void> | null;
-  /** The head the stored editor state names, or null when it names none of this load's. */
-  storedHeadId: string | null;
-}
-
-interface ReframeState {
-  timer: unknown | null;
-  /** The wait before the next retry, doubled by each one. */
-  delayMs: number;
-}
-
-interface HeldScene {
-  sceneId: string;
-  name: string;
-  /** Fixed when the row is created, so never changes while held. */
-  kind: CompositionKind;
-  state: SequencerState;
-  meta: Record<Version, Record<string, PlacementMeta>>;
-  /** Placements whose meta was worked out without barkloader's answer, so
-   *  their frame URL is unversioned and their `mediaProxyBase` unknown. */
-  unframed: Record<Version, Set<string>>;
-  reframe: ReframeState;
-  /** Each version's overlay sequence number: bumped by every entry that changes that version's ops or meta. */
-  overlaySeq: Record<Version, number>;
-  /** The scene's editors by clientId: one socket per client. */
-  editors: Map<string, EditorRecord>;
-  save: SaveState;
-}
-
-interface MetaPlan {
-  next: Record<Version, Record<string, PlacementMeta>>;
-  unframed: Record<Version, Set<string>>;
-  changes: Partial<Record<Version, MetaChanges>>;
-}
-
-/** A version's document and meta, as they stood before a commit or after it. */
-interface VersionView {
-  doc: SceneDocument;
-  meta: Record<string, PlacementMeta>;
-}
-
-type ScenesView = Record<Version, VersionView>;
+/** The answer to `SceneDocuments.repair`, as `repairScene` gives it (see `SceneRepairResult` in `@woofx3/api`). */
+export type SceneRepairOutcome =
+  | { ok: true; backups: number }
+  | { ok: false; reason: "not_found" | "unavailable" | "failed"; detail: string };
 
 export interface SceneDocumentsOptions {
   persister?: ScenePersister;
+  /** Where a repair sets aside what could not be read; without one, scenes cannot be repaired. */
+  backups?: SceneBackupStore;
   autosaveMs?: number;
   clock?: SceneDocumentsClock;
   /** A fresh epoch for each load of a scene; random by default. */
@@ -414,12 +175,13 @@ export class SceneDocuments {
   private readonly loading = new Map<string, Promise<HeldScene | null>>();
   /** One change at a time per scene, in the order they arrive. */
   private readonly queues = new Map<string, Promise<unknown>>();
-  private readonly persister: ScenePersister | null;
-  private readonly autosaveMs: number;
+  private readonly writeback: SceneWriteback;
+  private readonly meta: PlacementMetaResolver;
   private readonly clock: SceneDocumentsClock;
   private readonly newEpoch: () => string;
   private readonly reframeRetryMs: number;
   private readonly mediaProxy: MediaProxy | null;
+  private readonly backups: SceneBackupStore | null;
   private closed = false;
 
   constructor(
@@ -428,12 +190,38 @@ export class SceneDocuments {
     private readonly logger: Logger,
     options: SceneDocumentsOptions = {}
   ) {
-    this.persister = options.persister ?? null;
-    this.autosaveMs = options.autosaveMs ?? AUTOSAVE_DELAY_MS;
     this.clock = options.clock ?? SYSTEM_CLOCK;
+    this.meta = new PlacementMetaResolver(loader, logger);
+    this.writeback = new SceneWriteback(
+      options.persister ?? null,
+      this.clock,
+      options.autosaveMs ?? AUTOSAVE_DELAY_MS,
+      logger
+    );
     this.newEpoch = options.newEpoch ?? (() => crypto.randomUUID());
     this.reframeRetryMs = options.reframeRetryMs ?? REFRAME_RETRY_MS;
     this.mediaProxy = options.mediaProxy ?? null;
+    this.backups = options.backups ?? null;
+  }
+
+  /**
+   * The meta of a placement on either version of the scene (published first),
+   * or null when it is on neither or the scene does not exist. Searched in the
+   * held documents rather than the stored row: pages mount a placement the
+   * moment an editor's change reaches them, while the row is written back only
+   * after the autosave delay and holds a draft placement only under its draft.
+   */
+  async placementMeta(sceneId: string, instanceId: string): Promise<PlacementMeta | null> {
+    for (const version of ["published", "draft"] as const) {
+      const snapshot = await this.snapshot(sceneId, version);
+      if (!snapshot) {
+        return null;
+      }
+      if (Object.hasOwn(snapshot.meta, instanceId)) {
+        return snapshot.meta[instanceId]!;
+      }
+    }
+    return null;
   }
 
   /** A version of the scene with its values as entered, loading the scene when it is not held. */
@@ -518,7 +306,7 @@ export class SceneDocuments {
   openEditor(sceneId: string, hello: EditorHello, conn: EditorConnection): Promise<void> {
     return this.serial(sceneId, async () => {
       if (this.closed) {
-        conn.close(1012, "the scene service is restarting");
+        conn.close(WS_SERVICE_RESTART, "the scene service is restarting");
         return;
       }
       let held: HeldScene | null;
@@ -526,12 +314,24 @@ export class SceneDocuments {
         held = await this.hold(sceneId);
       } catch (err) {
         this.logger.warn("scene documents: loading a scene for an editor failed", { sceneId, error: errorText(err) });
-        conn.close(1011, "the scene could not be loaded");
+        conn.close(WS_INTERNAL_ERROR, "the scene could not be loaded");
         return;
       }
       if (!held) {
         safeSend(conn, { type: "error", code: "not_found", detail: "the scene does not exist" });
         conn.close(CLOSE_CODES.notFound, "scene not found");
+        return;
+      }
+      const unreadable = unreadableColumns(held);
+      if (unreadable.length > 0) {
+        const unread = unreadReportOf(held);
+        safeSend(conn, {
+          type: "error",
+          code: "not_found",
+          detail: unreadableDetail(unreadable),
+          ...(unread === null ? {} : { unread }),
+        });
+        conn.close(CLOSE_CODES.notFound, "scene could not be read");
         return;
       }
       const existing = held.editors.get(hello.clientId);
@@ -540,12 +340,14 @@ export class SceneDocuments {
         existing.conn.close(CLOSE_CODES.replaced, "another socket opened for this editor");
       }
       const decision = decideWelcome(held.state, hello.have);
+      const unread = unreadReportOf(held);
       const base = {
         type: "welcome" as const,
         protocol: PROTOCOL_VERSION as typeof PROTOCOL_VERSION,
         features: [] as string[],
         clientId: hello.clientId,
         last: watermarkOf(held.state, hello.clientId),
+        ...(unread === null ? {} : { unread }),
       };
       held.editors.set(hello.clientId, { conn, name: hello.name, presence: null, away: false });
       safeSend(
@@ -561,7 +363,7 @@ export class SceneDocuments {
       }
       // An editor now holds this head: store it, so a restart resumes from it.
       if (held.save.storedHeadId !== held.state.headId) {
-        this.markDirty(held);
+        this.writeback.markDirty(held);
       }
       this.scheduleReframe(held);
     });
@@ -608,13 +410,13 @@ export class SceneDocuments {
         if (prepared.refused) {
           const reply = recordRefusal(held.state, src, prepared, this.clock.now());
           if (!reply.retryable) {
-            this.markDirty(held);
+            this.writeback.markDirty(held);
           }
           respond(reply);
           return;
         }
         plan = prepared;
-        meta = await this.metaFor(held, plan.docs);
+        meta = await this.meta.metaFor(held, plan.docs);
         before = viewOf(held);
         entry = commit(held.state, plan, meta.changes, src, this.clock.now());
       } catch (err) {
@@ -682,9 +484,18 @@ export class SceneDocuments {
     change: (snapshot: SceneSnapshot) => SceneDocumentOps | { error: string }
   ): Promise<{ ok: true } | { ok: false; error: string }> {
     return this.serial(sceneId, async () => {
+      // Past close the scenes have been written back for the last time, so a
+      // change committed now would be reported made and then lost.
+      if (this.closed) {
+        return { ok: false as const, error: "unavailable" };
+      }
       const held = await this.hold(sceneId);
       if (!held) {
         return { ok: false as const, error: "not_found" };
+      }
+      const unreadable = unreadableColumns(held);
+      if (unreadable.length > 0) {
+        return { ok: false as const, error: unreadableDetail(unreadable) };
       }
       const ops = change(snapshotOf(held, version));
       if (!Array.isArray(ops)) {
@@ -695,7 +506,7 @@ export class SceneDocuments {
       if (plan.refused) {
         return { ok: false as const, error: plan.detail };
       }
-      const meta = await this.metaFor(held, plan.docs);
+      const meta = await this.meta.metaFor(held, plan.docs);
       const before = viewOf(held);
       this.afterCommit(held, commit(held.state, plan, meta.changes, null, this.clock.now()), meta, before);
       return { ok: true as const };
@@ -710,6 +521,9 @@ export class SceneDocuments {
    */
   refresh(sceneId: string): Promise<void> {
     return this.serial(sceneId, async () => {
+      if (this.closed) {
+        return;
+      }
       const held = this.scenes.get(sceneId);
       if (!held) {
         // Nobody has it open; the next overlay or editor loads the save.
@@ -734,6 +548,10 @@ export class SceneDocuments {
         return;
       }
       held.name = loaded.name;
+      held.unread.published = unreadOf(loaded);
+      if (!held.state.hasDraft) {
+        held.unread.draft = held.unread.published;
+      }
       const saved = documentOf(loaded);
       const ops = diffDocuments(held.state.docs.published, saved);
       const body: ExternalBody = {
@@ -750,13 +568,74 @@ export class SceneDocuments {
         });
         return;
       }
-      const meta = await this.metaFor(held, plan.docs, { knownPublished: framingOf(loaded.instances) });
+      const meta = await this.meta.metaFor(held, plan.docs, { knownPublished: framingOf(loaded.instances) });
       const before = viewOf(held);
       this.afterCommit(held, commit(held.state, plan, meta.changes, null, this.clock.now()), meta, before);
       this.takeInInputs(held, saved);
     }).catch((err) => {
       // Callers do not wait on a refresh; the next save or load picks the change up.
       this.logger.warn("scene documents: taking in a save made elsewhere failed", { sceneId, error: errorText(err) });
+    });
+  }
+
+  /**
+   * Make a scene whose stored data could not be read editable again. What
+   * could not be read is set aside first (`SceneBackupStore`), every backup
+   * or none; then the documents held in its place, which are the readable
+   * rest, are written back over it. An unreadable column was loaded as its
+   * empty value, so it is written back empty; unreadable placements are
+   * written back without. Nothing changes when the backups fail, and when the
+   * write fails the scene is left as unreadable as it was (the backups stay:
+   * a second copy of the same text does no harm). Open editors are closed so
+   * they reconnect to a welcome that no longer reports anything unread; the
+   * documents did not change, so overlays are not told anything.
+   */
+  repair(sceneId: string): Promise<SceneRepairOutcome> {
+    return this.serial(sceneId, async (): Promise<SceneRepairOutcome> => {
+      if (this.closed) {
+        return { ok: false, reason: "unavailable", detail: "the scene service is restarting" };
+      }
+      if (this.backups === null) {
+        return { ok: false, reason: "unavailable", detail: "this scene service cannot store backups" };
+      }
+      const held = await this.hold(sceneId);
+      if (!held) {
+        return { ok: false, reason: "not_found", detail: "the scene does not exist" };
+      }
+      if (unreadReportOf(held) === null) {
+        return { ok: true, backups: 0 };
+      }
+      const stored = await this.backups.storedColumns(sceneId);
+      if (stored === null) {
+        return { ok: false, reason: "not_found", detail: "the scene does not exist" };
+      }
+      const backups = sceneBackupsOf(held, stored);
+      try {
+        await this.backups.store(sceneId, backups);
+      } catch (err) {
+        this.logger.warn("scene documents: storing a repair's backups failed; the scene is unchanged", {
+          sceneId,
+          error: errorText(err),
+        });
+        return { ok: false, reason: "failed", detail: "the unreadable data could not be backed up" };
+      }
+      const unread = held.unread;
+      const nothing = { placements: [], columns: [] };
+      held.unread = { published: nothing, draft: nothing };
+      if (!(await this.writeback.writeNow(held))) {
+        held.unread = unread;
+        this.logger.warn("scene documents: writing a repaired scene failed; it is left unreadable", { sceneId });
+        return { ok: false, reason: "failed", detail: "the repaired scene could not be saved" };
+      }
+      this.logger.info("scene documents: repaired a scene, setting aside what could not be read", {
+        sceneId,
+        backups: backups.map(({ version, column, reason }) => `${version}.${column}: ${reason}`),
+      });
+      // Each close comes back through `closeEditor`, which forgets the editor.
+      for (const editor of [...held.editors.values()]) {
+        editor.conn.close(WS_SERVICE_RESTART, "the scene was repaired");
+      }
+      return { ok: true, backups: backups.length };
     });
   }
 
@@ -797,33 +676,13 @@ export class SceneDocuments {
   async close(): Promise<void> {
     this.closed = true;
     await Promise.all([...this.queues.values()]);
-    await Promise.all(
-      [...this.scenes.values()].map(async (held) => {
-        if (held.reframe.timer !== null) {
-          this.clock.clearTimeout(held.reframe.timer);
-          held.reframe.timer = null;
-        }
-        if (held.save.timer !== null) {
-          this.clock.clearTimeout(held.save.timer);
-          held.save.timer = null;
-        }
-        while (held.save.writing !== null) {
-          await held.save.writing;
-        }
-        for (let attempt = 1; held.save.dirty && attempt <= CLOSE_WRITE_ATTEMPTS; attempt++) {
-          if (attempt > 1) {
-            await new Promise<void>((resolve) => this.clock.setTimeout(resolve, CLOSE_RETRY_MS));
-          }
-          await this.write(held);
-        }
-        if (held.save.dirty) {
-          this.logger.error("scene documents: changes could not be written before shutdown", {
-            sceneId: held.sceneId,
-            v: held.state.v,
-          });
-        }
-      })
-    );
+    for (const held of this.scenes.values()) {
+      if (held.reframe.timer !== null) {
+        this.clock.clearTimeout(held.reframe.timer);
+        held.reframe.timer = null;
+      }
+    }
+    await this.writeback.flush(this.scenes.values());
   }
 
   // ---------------------------------------------------------------------------
@@ -836,10 +695,21 @@ export class SceneDocuments {
   private afterCommit(held: HeldScene, entry: Entry | null, meta: MetaPlan, before: ScenesView): void {
     held.meta = meta.next;
     held.unframed = meta.unframed;
+    if (!held.state.hasDraft) {
+      // With no draft the two versions are one, and so are the placements the
+      // load could not read: a publish carries the draft's over, and anything
+      // else (a discard, a live edit) leaves the published ones. Told apart by
+      // the entry, since the documents of a publish and a discard can match.
+      if (entry?.kind === "publish") {
+        held.unread.published = held.unread.draft;
+      } else {
+        held.unread.draft = held.unread.published;
+      }
+    }
     if (entry !== null) {
       this.publishEntry(held, entry, before);
     }
-    this.markDirty(
+    this.writeback.markDirty(
       held,
       entry !== null && (entry.changes.draft !== undefined || entry.changes.published !== undefined)
     );
@@ -862,7 +732,7 @@ export class SceneDocuments {
         meta: meta ?? {},
       };
       try {
-        this.broadcaster.broadcast(held.sceneId, SCENE_OPS_EVENT, event);
+        this.broadcaster.broadcast(held.sceneId, { kind: "scene-ops", event });
       } catch (err) {
         this.logger.warn("scene documents: pushing to overlays failed", {
           sceneId: held.sceneId,
@@ -929,114 +799,6 @@ export class SceneDocuments {
   }
 
   /**
-   * The meta of each version whose document changes to `docs`. A placement
-   * keeps the meta it had in this version, or in the other version after the
-   * change, when its widget and theme are the same there; others are framed
-   * again. With `retryUnframed`, every unframed placement is framed again
-   * too, whether its version changed or not. A placement framing gives no
-   * frame for, or that framing fails for, keeps whatever meta it had, or
-   * none, and is left to the timed retry (see `scheduleReframe`): meta never
-   * fails a change, and an edit never waits on barkloader twice.
-   */
-  private async metaFor(
-    held: HeldScene,
-    docs: Readonly<Record<Version, SceneDocument>>,
-    options: { knownPublished?: Framing; retryUnframed?: boolean } = {}
-  ): Promise<MetaPlan> {
-    const next = { ...held.meta };
-    const unframed = { ...held.unframed };
-    const changes: Partial<Record<Version, MetaChanges>> = {};
-    for (const version of OVERLAY_ORDER) {
-      const after = docs[version];
-      const known = version === "published" ? options.knownPublished : undefined;
-      const retry = options.retryUnframed === true ? held.unframed[version] : new Set<string>();
-      if (known === undefined && after === held.state.docs[version] && retry.size === 0) {
-        continue;
-      }
-      const other: Version = version === "published" ? "draft" : "published";
-      const framing =
-        known ??
-        (await this.framedMeta(
-          held.sceneId,
-          after,
-          [
-            { doc: held.state.docs[version], meta: held.meta[version], unframed: held.unframed[version] },
-            { doc: docs[other], meta: next[other], unframed: unframed[other] },
-          ],
-          retry
-        ));
-      next[version] = framing.meta;
-      unframed[version] = framing.unframed;
-      const changed = changedMeta(held.meta[version], next[version]);
-      if (Object.keys(changed).length > 0) {
-        changes[version] = changed;
-      }
-    }
-    return { next, unframed, changes };
-  }
-
-  private async framedMeta(
-    sceneId: string,
-    after: SceneDocument,
-    candidates: ReadonlyArray<VersionView & { unframed: ReadonlySet<string> }>,
-    retry: ReadonlySet<string>
-  ): Promise<Framing> {
-    const meta: Record<string, PlacementMeta> = {};
-    const unframed = new Set<string>();
-    const reframe: string[] = [];
-    for (const [id, placement] of Object.entries(after.widgets)) {
-      const same = retry.has(id)
-        ? undefined
-        : candidates.find((candidate) => {
-            const old = candidate.doc.widgets[id];
-            return (
-              candidate.meta[id] !== undefined &&
-              old !== undefined &&
-              old.widget === placement.widget &&
-              themeOf(old.settings) === themeOf(placement.settings)
-            );
-          });
-      if (same !== undefined) {
-        meta[id] = same.meta[id]!;
-        if (same.unframed.has(id)) {
-          unframed.add(id);
-        }
-      } else {
-        reframe.push(id);
-      }
-    }
-    if (reframe.length === 0) {
-      return { meta, unframed };
-    }
-    const order = stackOrder(after);
-    const entries = reframe.map((id) => storedPlacementOf(id, after.widgets[id]!, order.indexOf(id)));
-    try {
-      const wanted = new Set(reframe);
-      const framing = framingOf(
-        (await this.loader.framePlacements(sceneId, entries)).filter((instance) => wanted.has(instance.id))
-      );
-      Object.assign(meta, framing.meta);
-      for (const id of framing.unframed) {
-        unframed.add(id);
-      }
-    } catch (err) {
-      this.logger.warn("scene documents: framing placements failed; they keep their meta", {
-        sceneId,
-        placements: reframe.length,
-        error: errorText(err),
-      });
-      for (const id of reframe) {
-        const kept = candidates.find((candidate) => candidate.meta[id] !== undefined);
-        if (kept !== undefined) {
-          meta[id] = kept.meta[id]!;
-        }
-        unframed.add(id);
-      }
-    }
-    return { meta, unframed };
-  }
-
-  /**
    * Frame again, a while from now, the placements framed without
    * barkloader's answer. Until then such a placement has an unversioned
    * frame URL and no `mediaProxyBase`, while the frame itself may already be
@@ -1079,7 +841,7 @@ export class SceneDocuments {
       if (plan.refused) {
         throw new Error(`an external change with no ops was refused: ${plan.detail}`);
       }
-      const meta = await this.metaFor(held, plan.docs, { retryUnframed: true });
+      const meta = await this.meta.metaFor(held, plan.docs, { retryUnframed: true });
       const before = viewOf(held);
       this.afterCommit(held, commit(held.state, plan, meta.changes, null, this.clock.now()), meta, before);
     });
@@ -1149,6 +911,7 @@ export class SceneDocuments {
         writing: null,
         storedHeadId: restored.stored ? restored.state.headId : null,
       },
+      unread: { published: unreadOf(published), draft: unreadOf(draft) },
     };
     this.scenes.set(sceneId, held);
     this.scheduleReframe(held);
@@ -1193,168 +956,7 @@ export class SceneDocuments {
     const v = decoded.state.v + 1;
     return { state: { v, headId: entryIdOf(epoch, v), clients: decoded.state.clients }, stored: false };
   }
-
-  // ---------------------------------------------------------------------------
-  // Writing back
-
-  /** Something changed: write the scene back, at most `autosaveMs` from now. */
-  private markDirty(held: HeldScene, docsChanged = false): void {
-    held.save.dirty = true;
-    held.save.docsDirty = held.save.docsDirty || docsChanged;
-    this.scheduleWrite(held);
-  }
-
-  private scheduleWrite(held: HeldScene): void {
-    if (this.persister === null || held.save.timer !== null || held.save.writing !== null || this.closed) {
-      return;
-    }
-    held.save.timer = this.clock.setTimeout(() => {
-      held.save.timer = null;
-      void this.write(held);
-    }, this.autosaveMs);
-  }
-
-  /**
-   * One row update with both documents and the editor state, read in one
-   * synchronous step so they describe the same head. A failed write is
-   * retried on the next schedule.
-   */
-  private async write(held: HeldScene): Promise<void> {
-    if (this.persister === null || held.save.writing !== null) {
-      return;
-    }
-    const write = sceneWriteOf(held, this.clock.now());
-    const headId = held.state.headId;
-    const docsChanged = held.save.docsDirty;
-    held.save.dirty = false;
-    held.save.docsDirty = false;
-    const persister = this.persister;
-    const writing = (async () => {
-      try {
-        await persister.updateScene(write);
-        held.save.storedHeadId = headId;
-      } catch (err) {
-        held.save.dirty = true;
-        held.save.docsDirty = held.save.docsDirty || docsChanged;
-        this.logger.warn("scene documents: writing a scene back failed", {
-          sceneId: held.sceneId,
-          error: errorText(err),
-        });
-      }
-    })();
-    held.save.writing = writing;
-    await writing;
-    held.save.writing = null;
-    if (held.save.dirty) {
-      this.scheduleWrite(held);
-    }
-  }
 }
 
 /** The ops `applyChange` takes. */
 type SceneDocumentOps = ExternalBody["ops"];
-
-/** A change that leaves every placement's meta as it is. */
-function noMeta(held: HeldScene): MetaPlan {
-  return { next: held.meta, unframed: held.unframed, changes: {} };
-}
-
-function savePending(held: HeldScene): boolean {
-  return held.save.dirty || held.save.timer !== null || held.save.writing !== null;
-}
-
-function sceneWriteOf(held: HeldScene, now: number): SceneWrite {
-  const { docs, hasDraft } = held.state;
-  const published = storedSceneOf(docs.published);
-  const draft = hasDraft
-    ? (() => {
-        const stored = storedSceneOf(docs.draft);
-        return {
-          draftWidgetsJson: stored.widgetsJson,
-          draftLayoutJson: stored.layoutJson,
-          draftBehaviorsJson: stored.behaviorsJson,
-        };
-      })()
-    : { clearDraft: true };
-  const editorState = { ...editorStateOf(held.state, now), digest: documentsDigest(docs) };
-  return {
-    id: held.sceneId,
-    widgetsJson: published.widgetsJson,
-    layoutJson: published.layoutJson,
-    behaviorsJson: published.behaviorsJson,
-    ...draft,
-    editorStateJson: JSON.stringify(editorState),
-  };
-}
-
-/** The digest stored beside the sequencer's fields, or null when there is none. */
-function storedDigestOf(json: string): string | null {
-  try {
-    const value: unknown = JSON.parse(json);
-    if (typeof value === "object" && value !== null && typeof (value as { digest?: unknown }).digest === "string") {
-      return (value as { digest: string }).digest;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-function snapshotOf(held: HeldScene, version: Version): SceneSnapshot {
-  return {
-    sceneId: held.sceneId,
-    name: held.name,
-    seq: held.overlaySeq[version],
-    doc: held.state.docs[version],
-    meta: held.meta[version],
-  };
-}
-
-function viewOf(held: HeldScene): ScenesView {
-  return {
-    published: { doc: held.state.docs.published, meta: held.meta.published },
-    draft: { doc: held.state.docs.draft, meta: held.meta.draft },
-  };
-}
-
-function editorSnapshotOf(held: HeldScene): EditorSnapshot {
-  return {
-    v: held.state.v,
-    id: held.state.headId,
-    docs: held.state.docs,
-    meta: held.meta,
-    hasDraft: held.state.hasDraft,
-    name: held.name,
-  };
-}
-
-function changedMeta(
-  before: Record<string, PlacementMeta>,
-  after: Record<string, PlacementMeta>
-): Record<string, PlacementMeta | null> {
-  const changes: Record<string, PlacementMeta | null> = {};
-  for (const id of new Set([...Object.keys(before), ...Object.keys(after)])) {
-    if (!sameValue(before[id], after[id])) {
-      changes[id] = after[id] ?? null;
-    }
-  }
-  return changes;
-}
-
-/** A send to a socket that already closed is dropped; one editor's socket never fails another's change. */
-function safeSend(conn: EditorConnection, message: ServerMessage): void {
-  try {
-    conn.send(message);
-  } catch {
-    // The socket's close handler unregisters it.
-  }
-}
-
-/** A retry timer does not keep the process alive on its own. */
-function unref(handle: unknown): void {
-  (handle as { unref?: () => void } | null)?.unref?.();
-}
-
-function errorText(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}

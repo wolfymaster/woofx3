@@ -53,7 +53,7 @@ const commandSchema = z.discriminatedUnion("command", [
     command: z.literal("set_source_visibility"),
     sceneName: z.string().optional(),
     sourceName: nonEmptyName,
-    visible: z.boolean(),
+    visibility: z.enum(["visible", "hidden", "toggle"]),
   }),
   z.strictObject({ command: z.literal("set_input_mute"), inputName: nonEmptyName, muted: z.boolean() }),
   z.strictObject({
@@ -156,10 +156,17 @@ async function runCommand(obs: ObsControlClient, command: ObsControlCommand): Pr
     case "set_source_visibility": {
       const sceneName = command.sceneName || (await obs.request("GetCurrentProgramScene")).currentProgramSceneName;
       const item = await findSceneItem(obs, sceneName, command.sourceName, !command.sceneName);
+      // A toggle reads the item as OBS has it now, not as any earlier step
+      // left it: the streamer may have flipped it by hand since.
+      const enabled =
+        command.visibility === "toggle"
+          ? !(await obs.request("GetSceneItemEnabled", { sceneName: item.sceneName, sceneItemId: item.sceneItemId }))
+              .sceneItemEnabled
+          : command.visibility === "visible";
       await obs.request("SetSceneItemEnabled", {
         sceneName: item.sceneName,
         sceneItemId: item.sceneItemId,
-        sceneItemEnabled: command.visible,
+        sceneItemEnabled: enabled,
       });
       return { ok: true };
     }

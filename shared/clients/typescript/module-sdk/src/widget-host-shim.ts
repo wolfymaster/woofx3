@@ -8,7 +8,7 @@
 // so this module installs the host synchronously: settings come from
 // the inlined boot payload, not from the async `init` handshake.
 //
-// Trust model (design §2.3, §5.2.10): the frame runs with an opaque
+// Trust model: the frame runs with an opaque
 // origin (`sandbox="allow-scripts"`), so `targetOrigin` is "*" on the
 // way out and origin checks are useless on the way in. Instead every
 // inbound message must (1) come from `window.parent` (`event.source`
@@ -18,43 +18,39 @@
 import type {
   DeliveredWidgetEvent,
   WidgetAsset,
-  WidgetEvent,
   WidgetEventHandler,
   WidgetHost,
   WidgetHostAssets,
   WidgetHostStorage,
   WidgetTheme,
 } from "./widget-host";
-import {
-  WidgetAssetError,
-  assetRefUrl,
-  createWidgetAsset,
-  engineAssetPath,
-  isWidgetAssetErrorCode,
-} from "./widget-assets";
+import { WidgetAssetError, assetRefUrl, createWidgetAsset, engineAssetPath } from "./widget-assets";
 import { type BindingDocument, applySettingBindings } from "./widget-bindings";
-import { applyWidgetBehavior, isWidgetBehaviorState, type WidgetBehaviorState } from "./widget-behaviors";
+import { applyWidgetBehavior, type WidgetBehaviorState } from "./widget-behaviors";
 import { type FontDocument, type FontLoader, createFontLoader } from "./widget-fonts";
 import {
   PROTOCOL_VERSION,
   WIDGET_BOOT_GLOBAL,
+  WIDGET_CAPABILITIES,
   WIDGET_PROTOCOL,
   decodePlacementBoot,
   isWidgetBootPayload,
-  isWidgetProtocolEnvelope,
+  isWidgetCapability,
+  parseHostToWidgetMessage,
   type EventQueueConfig,
   type WidgetBootPayload,
+  type WidgetCapability,
   type WidgetToHostMessage,
 } from "./widget-protocol";
 
 /** Keep in sync with package.json `version`. Carried on `hello`. */
-export const SDK_VERSION = "0.1.0";
+export const SDK_VERSION = "0.2.0";
 
 /** `hello` re-post cadence until the parent answers with `init`. */
 export const HELLO_RETRY_INTERVAL_MS = 250;
 
 /** Capabilities this shim implementation uses — `hello.wants`. */
-const SHIM_WANTS = ["storage", "events", "status", "assets"];
+const SHIM_WANTS: readonly WidgetCapability[] = WIDGET_CAPABILITIES;
 
 // ---------------------------------------------------------------------------
 // Injectable environment (testability without jsdom)
@@ -154,6 +150,9 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   let initialized = false;
   let rejected = false;
   let disposed = false;
+  // What the host offers: the boot payload's until `init` says what this
+  // frame actually gets.
+  let capabilities: readonly WidgetCapability[] = Object.freeze(boot.capabilities.filter(isWidgetCapability));
   const outQueue: WidgetToHostMessage[] = [];
 
   const pendingGets = new Map<string, (value: unknown) => void>();
@@ -180,10 +179,20 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   let unreportedKeys: string[] = [];
   let unreportedAll = false;
   let reportScheduled = false;
+  // Set by `onSettingsChange`: the widget redraws itself, so nothing it
+  // reads needs a reload, and the host is told so once.
+  let handlesChanges = false;
+  let handlesUnreported = false;
+  const settingsHandlers = new Set<(settings: Readonly<Record<string, unknown>>) => void>();
 
   function reportReads(): void {
     reportScheduled = false;
-    if (unreportedKeys.length === 0 && !unreportedAll) {
+    if (handlesUnreported) {
+      handlesUnreported = false;
+      send(envelope({ type: "settings.reads" as const, keys: [], all: false, handles: true }));
+      return;
+    }
+    if (handlesChanges || (unreportedKeys.length === 0 && !unreportedAll)) {
       return;
     }
     send(envelope({ type: "settings.reads" as const, keys: unreportedKeys, all: unreportedAll }));
@@ -199,7 +208,7 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   }
 
   function noteRead(key: string | symbol): void {
-    if (typeof key !== "string" || readAll || readKeys.has(key)) {
+    if (handlesChanges || typeof key !== "string" || readAll || readKeys.has(key)) {
       return;
     }
     readKeys.add(key);
@@ -208,7 +217,7 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   }
 
   function noteReadAll(): void {
-    if (readAll) {
+    if (handlesChanges || readAll) {
       return;
     }
     readAll = true;
@@ -310,7 +319,6 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
   const helloMessage = envelope({
     type: "hello" as const,
     instanceId: boot.instanceId,
-    moduleId: boot.moduleId,
     sdkVersion: SDK_VERSION,
     wants: SHIM_WANTS.slice(),
   });
@@ -353,29 +361,27 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     if (event.source !== parentRef) {
       return;
     }
-    const msg = event.data;
-    if (!isWidgetProtocolEnvelope(msg)) {
+    const msg = parseHostToWidgetMessage(event.data, boot.nonce);
+    if (msg === null || disposed) {
       return;
     }
-    if (msg.nonce !== boot.nonce) {
-      return;
-    }
-    if (disposed) {
-      return;
-    }
-
-    // Envelope validated; payload fields are read defensively below.
-    const m = msg as unknown as Record<string, unknown>;
     switch (msg.type) {
       case "init": {
         if (initialized || rejected) {
           return;
         }
         initialized = true;
+        capabilities = Object.freeze(msg.capabilities.filter(isWidgetCapability));
         stopHelloLoop();
+        // Each on its own: one message the channel cannot carry (a status
+        // value that does not clone) must not take the rest with it.
         const queued = outQueue.splice(0, outQueue.length);
         for (const pending of queued) {
-          post(pending);
+          try {
+            post(pending);
+          } catch (err) {
+            console.error("[widget-host-shim] could not send a queued message", { type: pending.type, error: err });
+          }
         }
         return;
       }
@@ -384,75 +390,49 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
         stopHelloLoop();
         outQueue.length = 0;
         console.error("[widget-host-shim] init rejected by host", {
-          reason: m.reason,
-          supportedVersions: m.supportedVersions,
+          reason: msg.reason,
+          supportedVersions: msg.supportedVersions,
         });
         return;
       }
       case "storage.value": {
-        if (typeof m.id !== "string") {
-          return;
-        }
-        const resolve = pendingGets.get(m.id);
+        const resolve = pendingGets.get(msg.id);
         if (resolve !== undefined) {
-          pendingGets.delete(m.id);
-          resolve(m.value === undefined ? null : m.value);
+          pendingGets.delete(msg.id);
+          resolve(msg.value);
         }
         return;
       }
       case "asset.value": {
-        if (typeof m.id !== "string") {
-          return;
-        }
-        const pending = pendingAssets.get(m.id);
+        const pending = pendingAssets.get(msg.id);
         if (pending === undefined) {
           return;
         }
-        pendingAssets.delete(m.id);
-        if (!(m.bytes instanceof ArrayBuffer)) {
-          pending.reject(new WidgetAssetError("unavailable", pending.ref, "host answered without the file's bytes"));
-          return;
-        }
-        const contentType = typeof m.contentType === "string" ? m.contentType : "";
-        pending.resolve(createWidgetAsset(pending.path, contentType, m.bytes));
+        pendingAssets.delete(msg.id);
+        pending.resolve(createWidgetAsset(pending.path, msg.contentType, msg.bytes));
         return;
       }
       case "asset.error": {
-        if (typeof m.id !== "string") {
-          return;
-        }
-        const pending = pendingAssets.get(m.id);
+        const pending = pendingAssets.get(msg.id);
         if (pending === undefined) {
           return;
         }
-        pendingAssets.delete(m.id);
-        pending.reject(new WidgetAssetError(isWidgetAssetErrorCode(m.code) ? m.code : "unavailable", pending.ref));
+        pendingAssets.delete(msg.id);
+        pending.reject(new WidgetAssetError(msg.code, pending.ref));
         return;
       }
       case "storage.changed": {
-        if (typeof m.subId !== "string") {
-          return;
-        }
-        const sub = storageSubs.get(m.subId);
-        if (sub !== undefined) {
-          sub.cb(m.value);
-        }
+        storageSubs.get(msg.subId)?.cb(msg.value);
         return;
       }
       case "event.deliver": {
-        if (typeof m.subId !== "string") {
+        const sub = eventSubs.get(msg.subId);
+        if (sub === undefined) {
           return;
         }
-        const sub = eventSubs.get(m.subId);
-        if (sub === undefined || typeof m.event !== "object" || m.event === null) {
-          return;
-        }
-        const rawEvent = m.event as WidgetEvent;
-        if (typeof rawEvent.eventId !== "string" || rawEvent.eventId.length === 0) {
-          return;
-        }
-        const subId = m.subId;
-        const eventId = rawEvent.eventId;
+        const rawEvent = msg.event;
+        const subId = msg.subId;
+        const eventId = rawEvent.eventId as string;
         const completeOnce = (): void => {
           if (completedEventIds.has(eventId)) {
             return;
@@ -461,7 +441,15 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
           send(envelope({ type: "event.complete" as const, subId, eventId }));
         };
         const delivered: DeliveredWidgetEvent = { ...rawEvent, complete: completeOnce };
-        sub.handler(delivered);
+        try {
+          sub.handler(delivered);
+        } catch (err) {
+          // A handler that throws will never complete the event itself, and
+          // the host would hold every later event behind it.
+          console.error("[widget-host-shim] event handler threw; completing the event", { eventId, error: err });
+          completeOnce();
+          return;
+        }
         // Default (autoComplete !== false): the handler having returned
         // *is* completion — post it now unless the widget already
         // called complete() itself inside the handler (idempotent).
@@ -471,19 +459,21 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
         return;
       }
       case "settings.changed": {
-        if (typeof m.settings !== "object" || m.settings === null || Array.isArray(m.settings)) {
-          return;
-        }
         const previous = currentSettings;
-        currentSettings = Object.freeze({ ...(m.settings as Record<string, unknown>) });
+        currentSettings = Object.freeze({ ...msg.settings });
         settingsForScript = settingsView(currentSettings);
         bind(previous);
+        for (const handler of [...settingsHandlers]) {
+          try {
+            handler(settingsForScript);
+          } catch (err) {
+            console.error("[widget-host-shim] a settings handler threw", err);
+          }
+        }
         return;
       }
       case "behavior": {
-        if (m.behavior === null || isWidgetBehaviorState(m.behavior)) {
-          markBehavior(m.behavior);
-        }
+        markBehavior(msg.behavior);
         return;
       }
       case "dispose": {
@@ -491,7 +481,7 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
         return;
       }
       case "ping": {
-        send(envelope({ type: "pong" as const, ts: typeof m.ts === "number" ? m.ts : 0 }));
+        send(envelope({ type: "pong" as const, ts: msg.ts }));
         return;
       }
       default: {
@@ -540,7 +530,7 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     load(ref: string | { url: string }): Promise<WidgetAsset> {
       const refUrl = assetRefUrl(ref);
       if (refUrl === null) {
-        throw new Error("[widget-host-shim] assets.load requires a URL, a path or a media setting's value");
+        return Promise.reject(new WidgetAssetError("not_engine_asset", typeof ref === "string" ? ref : ""));
       }
       return new Promise<WidgetAsset>((resolve, reject) => {
         if (disposed || rejected) {
@@ -568,6 +558,9 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
     linkedResources: Object.freeze({ ...(boot.linkedResources ?? {}) }),
     moduleId: boot.moduleId,
     instanceId: boot.instanceId,
+    get capabilities() {
+      return capabilities;
+    },
     storage,
     assets,
     getResourceUrl(path: string): string {
@@ -585,6 +578,22 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
           return;
         }
         send(envelope({ type: "events.unsubscribe" as const, subId }));
+      };
+    },
+    onSettingsChange(handler: (settings: Readonly<Record<string, unknown>>) => void): () => void {
+      if (typeof handler !== "function") {
+        throw new Error("[widget-host-shim] onSettingsChange requires a handler function");
+      }
+      settingsHandlers.add(handler);
+      if (!handlesChanges) {
+        handlesChanges = true;
+        handlesUnreported = true;
+        unreportedKeys = [];
+        unreportedAll = false;
+        scheduleReport();
+      }
+      return () => {
+        settingsHandlers.delete(handler);
       };
     },
     reportStatus(key: string, value: unknown): void {

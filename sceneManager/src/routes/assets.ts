@@ -16,9 +16,6 @@ import { join, normalize } from "node:path";
  * URL to bust on.
  */
 export async function handleStaticAssetRoute(req: Request, url: URL, publicDir: string): Promise<Response> {
-  if (req.method !== "GET") {
-    return new Response(null, { status: 404 });
-  }
   const root = normalize(publicDir);
   const rel = url.pathname.slice("/assets/".length);
   const safe = normalize(join(root, rel));

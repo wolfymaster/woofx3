@@ -1,4 +1,9 @@
 import { jwtVerify, SignJWT } from "jose";
+import {
+  COMPOSITION_PREVIEW_PATH,
+  type CompositionPreviewTokenReply,
+} from "@woofx3/common/cloudevents/Scene/composition-preview";
+import { sceneEditorPath, type SceneEditorTokenReply } from "@woofx3/common/cloudevents/Scene/editor";
 
 /**
  * Short-lived session credential minted at `GET /scene/{sceneId}?token=`
@@ -14,17 +19,31 @@ import { jwtVerify, SignJWT } from "jose";
  * tokens, no enumeration oracle). So there is no id to key a
  * DB-recheckable `sub` claim on without embedding the plaintext opaque
  * token itself, which would defeat the point of exchanging it for a
- * short-lived credential in the first place. The tradeoff this
- * implies: revoking an overlay token takes effect on the *next* full
- * page load (fresh `?token=` verification), not instantly mid-session
- * — the same behavior most session-cookie systems have.
+ * short-lived credential in the first place.
+ *
+ * Instead an overlay's session records when its overlay token was last
+ * verified (`authAt`), and a refresh past `SESSION_REAUTH_SECONDS` of that
+ * must present the token again (routes/session.ts): the page sends the one
+ * in its URL, so an open overlay re-verifies without reloading, and a
+ * revoked token stops it within that long rather than never.
  */
 export interface SessionClaims {
   sceneId: string;
 }
 
+/** An overlay's session: its scene, and when its overlay token was last verified (unix seconds). */
+export interface OverlaySession extends SessionClaims {
+  authAt: number;
+}
+
 /** Token lifetime: 60s, refreshed pre-emptively by the client every ~50s. */
 export const SESSION_TOKEN_TTL_SECONDS = 60;
+
+/**
+ * How long an overlay's session renews without its overlay token being
+ * verified again: the longest a revoked token keeps an open overlay going.
+ */
+export const SESSION_REAUTH_SECONDS = 600;
 
 /**
  * An editor token is only presented when the editor socket opens, so it
@@ -49,6 +68,11 @@ const PREVIEW_SESSION_SCOPE = "composition-preview-session";
 /** As an editor token: long enough for the dashboard to load the page it was minted for. */
 export const PREVIEW_TOKEN_TTL_SECONDS = 300;
 
+/** The current time as JWT times are kept: whole unix seconds. */
+export function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
 export class SessionTokenService {
   private readonly key: Uint8Array;
 
@@ -59,8 +83,8 @@ export class SessionTokenService {
     this.key = new TextEncoder().encode(secret);
   }
 
-  async mint(claims: SessionClaims): Promise<string> {
-    return new SignJWT({ sceneId: claims.sceneId })
+  async mint(session: OverlaySession): Promise<string> {
+    return new SignJWT({ sceneId: session.sceneId, authAt: session.authAt })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime(`${SESSION_TOKEN_TTL_SECONDS}s`)
@@ -80,14 +104,16 @@ export class SessionTokenService {
   /** Verifies signature + expiry and returns the claims, or `null` for
    *  any failure (expired, tampered, malformed) — uniform, no detail
    *  leaked to the caller. An editor token is not a session. */
-  async verify(token: string): Promise<SessionClaims | null> {
-    return this.claims(token, false);
+  async verify(token: string): Promise<OverlaySession | null> {
+    const claims = await this.claims(token, false);
+    return claims !== null && claims.authAt !== undefined ? { sceneId: claims.sceneId, authAt: claims.authAt } : null;
   }
 
   /** Verifies an editor token: as `verify`, and it must carry the edit scope.
    *  An overlay's session never lets its holder edit the scene. */
   async verifyEditor(token: string): Promise<SessionClaims | null> {
-    return this.claims(token, true);
+    const claims = await this.claims(token, true);
+    return claims !== null ? { sceneId: claims.sceneId } : null;
   }
 
   /** A token that opens the composition preview page, minted for the dashboard through the api. */
@@ -128,7 +154,7 @@ export class SessionTokenService {
     }
   }
 
-  private async claims(token: string, editor: boolean): Promise<SessionClaims | null> {
+  private async claims(token: string, editor: boolean): Promise<(SessionClaims & { authAt?: number }) | null> {
     if (!token) {
       return null;
     }
@@ -141,9 +167,42 @@ export class SessionTokenService {
       if ((payload.scope === EDIT_SCOPE) !== editor) {
         return null;
       }
-      return { sceneId };
+      return typeof payload.authAt === "number" ? { sceneId, authAt: payload.authAt } : { sceneId };
     } catch {
       return null;
     }
   }
+}
+
+/**
+ * The replies to the api's requests for an editor token and a preview token
+ * (`engine.scene.editor.token`, `engine.composition.preview.token`): the
+ * token, how long it lives, and the path it opens.
+ */
+export function sceneTokenIssuer(
+  tokens: SessionTokenService,
+  sceneExists: (sceneId: string) => Promise<boolean>
+): {
+  editorToken(sceneId: string): Promise<SceneEditorTokenReply>;
+  previewToken(): Promise<CompositionPreviewTokenReply>;
+} {
+  return {
+    editorToken: async (sceneId) => {
+      if (!(await sceneExists(sceneId))) {
+        return { ok: false, reason: "scene not found" };
+      }
+      return {
+        ok: true,
+        token: await tokens.mintEditor({ sceneId }),
+        expiresInSeconds: EDITOR_TOKEN_TTL_SECONDS,
+        path: sceneEditorPath(sceneId),
+      };
+    },
+    previewToken: async () => ({
+      ok: true,
+      token: await tokens.mintPreview(),
+      expiresInSeconds: PREVIEW_TOKEN_TTL_SECONDS,
+      path: COMPOSITION_PREVIEW_PATH,
+    }),
+  };
 }

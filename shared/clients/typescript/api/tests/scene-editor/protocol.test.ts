@@ -74,6 +74,21 @@ const validServer: ServerMessage[] = [
   { type: "presence", clientId: "c2", name: "Sam", selection: null, version: "draft" },
   { type: "presence", clientId: "c2", left: true },
   { type: "error", code: "not_found", detail: "gone" },
+  {
+    type: "error",
+    code: "not_found",
+    detail: "unreadable",
+    unread: { columns: [{ version: "draft", column: "behaviors" }], placements: { published: 0, draft: 0 } },
+  },
+  {
+    type: "welcome",
+    protocol: 2,
+    features: [],
+    clientId: "c1",
+    last: null,
+    catchup: [],
+    unread: { columns: [], placements: { published: 2, draft: 0 } },
+  },
 ];
 
 describe("protocol parsers", () => {
@@ -143,6 +158,19 @@ describe("protocol parsers", () => {
       { type: "nack", seq: 1, code: "invalid", retryable: true, detail: "" },
       { type: "nack", seq: 1, code: "bogus", retryable: false, detail: "" },
       { type: "error", code: "teapot", detail: "" },
+      {
+        type: "error",
+        code: "not_found",
+        detail: "",
+        unread: { columns: [], placements: { published: -1, draft: 0 } },
+      },
+      {
+        type: "error",
+        code: "not_found",
+        detail: "",
+        unread: { columns: [{ version: "draft", column: "inputs" }], placements: { published: 0, draft: 0 } },
+      },
+      { ...validServer[0], unread: { columns: "widgets", placements: { published: 0, draft: 0 } } },
     ]) {
       expect(parseServerMessage(value)).toBeNull();
     }

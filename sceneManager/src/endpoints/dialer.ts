@@ -50,7 +50,7 @@ export interface DialerDeps {
    * `force` asks for a fresh one in place of a cached one. Throws when none can be had.
    */
   relayCredential(force: boolean): Promise<RelayGrant | null>;
-  fetch: typeof fetch;
+  fetch: (url: string | URL, init: RequestInit) => Promise<Response>;
   logger: Logger;
 }
 

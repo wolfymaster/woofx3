@@ -1,20 +1,18 @@
 // P1 — `woofx3.widget` v1: the widget <-> scene-manager postMessage
 // protocol. The widget side is implemented by `widget-host-shim.ts`
 // (built to a classic-script IIFE and injected into every assembled
-// widget frame); the parent side lives in streamware/ui's widget
-// bridge. Both sides import these types — this file is the single
-// source of truth for the wire shape.
-//
-// Design reference:
-//   docs/superpowers/specs/2026-06-12-streamware-overlay-architecture-design.md §2.3
+// widget frame); the parent side is the widget host's bridge
+// (shared/clients/typescript/widget-host/page/widget-bridge.ts). Both sides import
+// these types — this file is the single source of truth for the wire
+// shape.
 //
 // Versioning: `v` is bumped on any breaking wire change. A parent that
 // receives a `hello` with an unsupported `v` replies `init.reject`
 // carrying its `supportedVersions`. Unknown message `type`s are
 // ignored by both sides (forward compatibility).
 
+import { isWidgetAssetErrorCode, type WidgetAssetErrorCode } from "./widget-assets";
 import { isWidgetBehaviorState, type WidgetBehaviorState } from "./widget-behaviors";
-import type { WidgetAssetErrorCode } from "./widget-assets";
 import type { WidgetEvent, WidgetSurface, WidgetTheme } from "./widget-host";
 
 export const WIDGET_PROTOCOL = "woofx3.widget";
@@ -31,9 +29,8 @@ export const WIDGET_BOOT_GLOBAL = "__WOOFX3_WIDGET_BOOT__";
 /**
  * Boot payload inlined into the assembled frame document ahead of the
  * shim script. Carrying `settings` here (rather than waiting for
- * `init`) keeps `widgetHost.settings` synchronously readable — the
- * FR-4.3 source-compatibility requirement for existing widgets that
- * read settings at IIFE time.
+ * `init`) keeps `widgetHost.settings` synchronously readable, as
+ * existing widgets that read settings at IIFE time require.
  *
  * `nonce` is a per-frame CSPRNG value; every P1 message in both
  * directions must carry it, and each side drops messages whose nonce
@@ -283,11 +280,17 @@ export interface WidgetStatusReportMessage extends WidgetProtocolEnvelope {
  * change to any other setting is applied in place through its bindings
  * (`settings.changed`). `all` means the script read every setting at once
  * (spread them, listed their keys), so every change reloads it.
+ *
+ * `handles` means the widget redraws itself on every change
+ * (`widgetHost.onSettingsChange`): whatever it has read, every change is
+ * applied in place, and later reads are not reported. A host that does not
+ * know the field reloads as the reads say, which is always safe.
  */
 export interface WidgetSettingsReadsMessage extends WidgetProtocolEnvelope {
   type: "settings.reads";
   keys: string[];
   all: boolean;
+  handles?: boolean;
 }
 
 /**
@@ -535,9 +538,259 @@ export function isWidgetTheme(value: unknown): value is WidgetTheme {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Capabilities
+// ---------------------------------------------------------------------------
+
+/**
+ * What a host can give a widget. The boot payload lists what the host may
+ * offer; `init` lists what this frame actually gets (an alert's widget has
+ * no storage, say), and is what `widgetHost.capabilities` reports.
+ */
+export const WIDGET_CAPABILITIES = ["storage", "events", "status", "settings", "assets"] as const;
+export type WidgetCapability = (typeof WIDGET_CAPABILITIES)[number];
+
+export function isWidgetCapability(value: unknown): value is WidgetCapability {
+  return typeof value === "string" && (WIDGET_CAPABILITIES as readonly string[]).includes(value);
+}
+
+// ---------------------------------------------------------------------------
+// Reading messages
+// ---------------------------------------------------------------------------
+
+/** A message as its sender writes it, before the envelope is added. */
+export type WidgetMessageBody<M extends WidgetProtocolEnvelope> = M extends unknown
+  ? Omit<M, "proto" | "v" | "nonce">
+  : never;
+
+/**
+ * The envelope of a message on this frame's channel: the protocol, this
+ * frame's nonce, a type, and this version. `hello` and `init.reject` are
+ * read at any version, since they are how the two sides learn they differ.
+ */
+function readEnvelope(value: unknown, nonce: string): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const msg = value as Record<string, unknown>;
+  if (msg.proto !== WIDGET_PROTOCOL || msg.nonce !== nonce || typeof msg.type !== "string" || msg.type === "") {
+    return null;
+  }
+  const negotiating = msg.type === "hello" || msg.type === "init.reject";
+  if (negotiating ? typeof msg.v !== "number" : msg.v !== PROTOCOL_VERSION) {
+    return null;
+  }
+  return msg;
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function plainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function eventQueueConfig(value: unknown): EventQueueConfig | undefined {
+  if (!plainObject(value)) {
+    return undefined;
+  }
+  const config: EventQueueConfig = {};
+  if (typeof value.retryTimeoutMs === "number" && value.retryTimeoutMs > 0) {
+    config.retryTimeoutMs = value.retryTimeoutMs;
+  }
+  if (typeof value.maxInFlight === "number" && value.maxInFlight >= 1) {
+    config.maxInFlight = Math.floor(value.maxInFlight);
+  }
+  if (typeof value.autoComplete === "boolean") {
+    config.autoComplete = value.autoComplete;
+  }
+  if (typeof value.priorityExpr === "string") {
+    config.priorityExpr = value.priorityExpr;
+  }
+  return config;
+}
+
+/**
+ * A message from the widget on the channel with `nonce`, typed and with its
+ * fields checked, or null when it is not one: another channel's, malformed,
+ * or of a type this version does not know (ignored, for forward
+ * compatibility). The host reads every inbound message through this.
+ */
+export function parseWidgetToHostMessage(value: unknown, nonce: string): WidgetToHostMessage | null {
+  const m = readEnvelope(value, nonce);
+  if (m === null) {
+    return null;
+  }
+  const envelope: Omit<WidgetProtocolEnvelope, "type"> = {
+    proto: WIDGET_PROTOCOL,
+    v: m.v as WidgetProtocolVersion,
+    nonce,
+  };
+  switch (m.type) {
+    case "hello":
+      return {
+        ...envelope,
+        type: "hello",
+        instanceId: typeof m.instanceId === "string" ? m.instanceId : "",
+        sdkVersion: typeof m.sdkVersion === "string" ? m.sdkVersion : "",
+        wants: stringList(m.wants),
+      };
+    case "storage.get":
+      return nonEmptyString(m.id) && typeof m.key === "string"
+        ? { ...envelope, type: "storage.get", id: m.id, key: m.key }
+        : null;
+    case "storage.subscribe":
+      return nonEmptyString(m.subId) && typeof m.key === "string"
+        ? { ...envelope, type: "storage.subscribe", subId: m.subId, key: m.key }
+        : null;
+    case "storage.unsubscribe":
+      return nonEmptyString(m.subId) ? { ...envelope, type: "storage.unsubscribe", subId: m.subId } : null;
+    case "asset.load":
+      return nonEmptyString(m.id) && typeof m.path === "string"
+        ? { ...envelope, type: "asset.load", id: m.id, path: m.path }
+        : null;
+    case "events.subscribe": {
+      if (!nonEmptyString(m.subId)) {
+        return null;
+      }
+      const message: WidgetEventsSubscribeMessage = { ...envelope, type: "events.subscribe", subId: m.subId };
+      if (Array.isArray(m.types)) {
+        message.types = stringList(m.types);
+      }
+      const queue = eventQueueConfig(m.queue);
+      if (queue !== undefined) {
+        message.queue = queue;
+      }
+      return message;
+    }
+    case "events.unsubscribe":
+      return nonEmptyString(m.subId) ? { ...envelope, type: "events.unsubscribe", subId: m.subId } : null;
+    case "event.complete":
+      return nonEmptyString(m.subId) && nonEmptyString(m.eventId)
+        ? { ...envelope, type: "event.complete", subId: m.subId, eventId: m.eventId }
+        : null;
+    case "status.report":
+      return typeof m.key === "string"
+        ? {
+            ...envelope,
+            type: "status.report",
+            key: m.key,
+            value: m.value,
+            ts: typeof m.ts === "string" ? m.ts : "",
+          }
+        : null;
+    case "settings.reads":
+      return {
+        ...envelope,
+        type: "settings.reads",
+        keys: stringList(m.keys),
+        all: m.all === true,
+        ...(m.handles === true ? { handles: true } : {}),
+      };
+    case "rendered":
+      return { ...envelope, type: "rendered" };
+    case "ping":
+    case "pong":
+      return { ...envelope, type: m.type, ts: typeof m.ts === "number" ? m.ts : 0 };
+    default:
+      return null;
+  }
+}
+
+/**
+ * A message from the host on the channel with `nonce`, typed and with its
+ * fields checked, or null when it is not one. The shim reads every inbound
+ * message through this.
+ */
+export function parseHostToWidgetMessage(value: unknown, nonce: string): HostToWidgetMessage | null {
+  const m = readEnvelope(value, nonce);
+  if (m === null) {
+    return null;
+  }
+  const envelope: Omit<WidgetProtocolEnvelope, "type"> = {
+    proto: WIDGET_PROTOCOL,
+    v: m.v as WidgetProtocolVersion,
+    nonce,
+  };
+  switch (m.type) {
+    case "init":
+      return {
+        ...envelope,
+        type: "init",
+        settings: plainObject(m.settings) ? m.settings : {},
+        capabilities: stringList(m.capabilities),
+      };
+    case "init.reject":
+      return {
+        ...envelope,
+        type: "init.reject",
+        reason: typeof m.reason === "string" ? m.reason : "",
+        supportedVersions: Array.isArray(m.supportedVersions)
+          ? m.supportedVersions.filter((v): v is number => typeof v === "number")
+          : [],
+      };
+    case "storage.value":
+      return nonEmptyString(m.id) && typeof m.key === "string"
+        ? { ...envelope, type: "storage.value", id: m.id, key: m.key, value: m.value === undefined ? null : m.value }
+        : null;
+    case "storage.changed":
+      return nonEmptyString(m.subId) && typeof m.key === "string"
+        ? {
+            ...envelope,
+            type: "storage.changed",
+            subId: m.subId,
+            key: m.key,
+            value: m.value,
+            occurredAt: typeof m.occurredAt === "string" ? m.occurredAt : "",
+          }
+        : null;
+    case "asset.value":
+      return nonEmptyString(m.id) && m.bytes instanceof ArrayBuffer
+        ? {
+            ...envelope,
+            type: "asset.value",
+            id: m.id,
+            contentType: typeof m.contentType === "string" ? m.contentType : "",
+            bytes: m.bytes,
+          }
+        : null;
+    case "asset.error":
+      return nonEmptyString(m.id)
+        ? { ...envelope, type: "asset.error", id: m.id, code: isWidgetAssetErrorCode(m.code) ? m.code : "unavailable" }
+        : null;
+    case "event.deliver": {
+      if (!nonEmptyString(m.subId) || !plainObject(m.event)) {
+        return null;
+      }
+      const event = m.event as Partial<WidgetEvent>;
+      return typeof event.type === "string" && nonEmptyString(event.eventId)
+        ? { ...envelope, type: "event.deliver", subId: m.subId, event: event as WidgetEvent }
+        : null;
+    }
+    case "settings.changed":
+      return plainObject(m.settings) ? { ...envelope, type: "settings.changed", settings: m.settings } : null;
+    case "behavior":
+      return m.behavior === null || isWidgetBehaviorState(m.behavior)
+        ? { ...envelope, type: "behavior", behavior: m.behavior }
+        : null;
+    case "dispose":
+      return { ...envelope, type: "dispose", reason: typeof m.reason === "string" ? m.reason : "" };
+    case "ping":
+    case "pong":
+      return { ...envelope, type: m.type, ts: typeof m.ts === "number" ? m.ts : 0 };
+    default:
+      return null;
+  }
+}
+
 declare global {
   interface Window {
-    /** Inlined by streamware's frame assembler ahead of the shim
+    /** Inlined by the scene manager's frame assembler ahead of the shim
      *  script. Absent everywhere except assembled widget frames. */
     __WOOFX3_WIDGET_BOOT__?: WidgetBootPayload;
   }

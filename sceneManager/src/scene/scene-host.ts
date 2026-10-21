@@ -5,10 +5,11 @@ import type { DeclaredBehaviorKinds } from "@woofx3/scene/model";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
 import type * as scene from "@woofx3/db/scene.pb";
 import type * as scene_event from "@woofx3/db/scene_event.pb";
-import { frameDocumentUrl, type PlacementFraming, UNAVAILABLE_VERSION } from "./frame-catalog";
+import type { PlacementFraming } from "./frame-catalog";
 import type { OverlayTokenResolver } from "./token-resolver";
 import { maskToken } from "./token-resolver";
-import { selectedThemeId } from "./widget-theme";
+import { SceneRowReader } from "./scene-rows";
+import { WidgetCatalog } from "./widget-catalog";
 
 export interface OverlayWidgetPosition {
   x: number;
@@ -69,10 +70,9 @@ export interface OverlayWidgetInstance {
    * scene still points at the old id.
    *
    * Placements are canonical-id references with no integrity check behind
-   * them: nothing rewrites a scene when a module renames a widget. An
-   * unresolvable one rendered as a blank area would look exactly like a
-   * widget with nothing to show, and go unnoticed until someone wondered
-   * why their alerts stopped.
+   * them: nothing rewrites a scene when a module renames a widget. Flagged
+   * here because an unresolvable one would otherwise render as a blank area,
+   * which is exactly what a widget with nothing to show looks like.
    */
   resolved: boolean;
 }
@@ -104,6 +104,25 @@ export interface OverlaySceneState {
   inputs: NonNullable<SceneDocument["inputs"]>;
   /** Whether the scene has an unpublished draft (see `loadSceneById`). */
   hasDraft?: boolean;
+  /** What of the stored version could not be read; absent when all of it was. */
+  unread?: StoredUnread;
+}
+
+/** A column of a stored scene version that `StoredUnread` can name. */
+export type StoredColumn = "widgets" | "layout" | "behaviors";
+
+/**
+ * Stored data a load could not read. A scene is written back whole, so
+ * anything left out of the document on the way in would be deleted on the
+ * way out: unreadable placements are kept as stored and written back after
+ * the readable ones, and a column whose text could not be read at all means
+ * the scene must not be written back.
+ */
+export interface StoredUnread {
+  /** Placements that did not parse, exactly as stored, in stored order. */
+  placements: unknown[];
+  /** Columns whose whole text was not what it must be (JSON of the right shape). */
+  columns: StoredColumn[];
 }
 
 /**
@@ -148,41 +167,17 @@ export interface OverlayHostOptions {
   framing?: PlacementFraming;
 }
 
-const WIDGET_CACHE_TTL_MS = 30_000;
-
 /**
- * Parse a widget canonical id with the invariant `{moduleKey}:widget:{manifestId}`.
- * The moduleKey itself may contain colons (e.g. `spotify:1.0.0:df18e02`), so we
- * locate the last `:widget:` marker rather than splitting on all colons.
- */
-export function parseWidgetCanonicalId(canonicalId: string): { moduleKey: string; manifestId: string } | null {
-  const MARKER = ":widget:";
-  const markerIdx = canonicalId.lastIndexOf(MARKER);
-  if (markerIdx <= 0) {
-    return null;
-  }
-  const moduleKey = canonicalId.slice(0, markerIdx);
-  const manifestId = canonicalId.slice(markerIdx + MARKER.length);
-  if (!moduleKey || !manifestId) {
-    return null;
-  }
-  return { moduleKey, manifestId };
-}
-
-/**
- * Scene host: token -> assembled scene config.
- *
- * Assembly is read-only and derivation-only: stored `bundleUrl` values
- * are ignored (deprecation-logged once per canonical id) and every
- * instance — module-sourced or built-in — gets a derived, absolute
- * `frameUrl` for its widget's frame document (see `frameDocumentUrl`).
+ * Scenes as the routes and the scene documents load them: by overlay token
+ * (the page's first load), by id (everything holding a session), or both
+ * versions at once (the scene documents), each read from its row by
+ * `SceneRowReader` and framed for this engine (`PlacementFraming`); and the
+ * page config built from one.
  */
 export class OverlayHost {
-  private widgetCache: { rows: OverlayWidgetDefinition[]; expiresAt: number } | null = null;
-  private readonly widgetCacheTtlMs: number;
   private readonly framing: PlacementFraming | null;
-  private readonly now: () => number;
-  private readonly bundleUrlWarned = new Set<string>();
+  private readonly catalog: WidgetCatalog;
+  private readonly rows: SceneRowReader;
 
   constructor(
     private readonly resolver: OverlayTokenResolver,
@@ -190,12 +185,16 @@ export class OverlayHost {
     private readonly logger: Logger,
     opts: OverlayHostOptions = {}
   ) {
-    this.widgetCacheTtlMs = opts.widgetCacheTtlMs ?? WIDGET_CACHE_TTL_MS;
-    this.now = opts.now ?? Date.now;
     this.framing = opts.framing ?? null;
+    this.catalog = new WidgetCatalog(db, logger, { ttlMs: opts.widgetCacheTtlMs, now: opts.now });
+    this.rows = new SceneRowReader(this.catalog, logger);
   }
 
-  /** The page's scene config, each placement framed for this engine. */
+  /** The widget catalog, cached for a short while. Empty when the lookup fails. */
+  loadWidgetCatalog(): Promise<OverlayWidgetDefinition[]> {
+    return this.catalog.rows();
+  }
+
   /** A scene with each placement framed for this engine (see `PlacementFraming`).
    *  Authorization is the caller's, as for `loadSceneById`. */
   async loadFramedSceneById(sceneId: string, version: SceneVersion = "published"): Promise<OverlaySceneState | null> {
@@ -206,11 +205,17 @@ export class OverlayHost {
     return { ...state, instances: await this.framing.frame(state.instances) };
   }
 
+  /** The page's scene config, each placement framed for this engine. */
   private async configOf(state: OverlaySceneState | null): Promise<Record<string, unknown>> {
     if (!state || !this.framing) {
       return sceneConfigOf(state);
     }
     return sceneConfigOf({ ...state, instances: await this.framing.frame(state.instances) });
+  }
+
+  /** The scene an overlay token opens, or null when it opens none (unknown, revoked, or the db unreachable). */
+  async sceneIdOfToken(token: string): Promise<string | null> {
+    return (await this.resolver.resolve(token))?.sceneId ?? null;
   }
 
   /**
@@ -222,32 +227,16 @@ export class OverlayHost {
     if (!resolved) {
       return null;
     }
-    if (!this.db) {
-      this.logger.warn("scene load skipped — db proxy unavailable", {
-        token: maskToken(token),
-      });
-      return null;
-    }
-
-    let response: scene.SceneResponse;
-    try {
-      response = await this.db.getScene({ id: resolved.sceneId });
-    } catch (err) {
-      this.logger.warn("scene fetch failed", {
-        sceneId: resolved.sceneId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    }
-    if (response.status?.code !== "OK" || !response.scene) {
-      this.logger.warn("overlay token resolves to missing scene", {
+    const row = await this.fetchRowOrNull(resolved.sceneId);
+    if (row === null) {
+      this.logger.warn("overlay token resolves to no readable scene", {
         sceneId: resolved.sceneId,
         token: maskToken(token),
       });
       return null;
     }
 
-    const state = await this.stateOf(response.scene, "published");
+    const state = await this.rows.stateOf(row, "published");
     if (state === null) {
       return null;
     }
@@ -265,59 +254,6 @@ export class OverlayHost {
   }
 
   /**
-   * Resolve each placement against the widget catalog: whether its widget
-   * still exists, and which surface it hosts. Says so once per unresolvable
-   * placement.
-   *
-   * Checked on load rather than at render time because this is the only point
-   * that sees the whole scene: one warning naming every dead placement is
-   * actionable, where a per-frame miss is a line someone has to correlate.
-   *
-   * The hosted surface comes from the definition, never the placement: a
-   * placement is a reference, and a copy stored on it would freeze what the
-   * widget was at the moment it was placed.
-   */
-  private async resolveInstances(
-    instances: OverlayWidgetInstance[],
-    sceneId: string
-  ): Promise<OverlayWidgetInstance[]> {
-    if (instances.length === 0) {
-      return instances;
-    }
-    const catalog = await this.loadWidgetCatalog();
-    // An empty catalog means the lookup failed, not that every widget is gone.
-    // Marking the whole scene broken on a transient db blip would be worse
-    // than the silence this replaces.
-    if (catalog.length === 0) {
-      return instances.map((instance) => ({ ...instance, resolved: true }));
-    }
-
-    const byCanonicalId = new Map(catalog.map((row) => [`${row.moduleKey}:widget:${row.manifestId}`, row]));
-    const resolved = instances.map((instance) => {
-      const definition = byCanonicalId.get(instance.widgetCanonicalId);
-      return {
-        ...instance,
-        hostsSurface: definition?.hostsSurface ?? "",
-        ...(definition === undefined ? {} : { behaviorKinds: definition.behaviorKinds }),
-        resolved: definition !== undefined,
-      };
-    });
-
-    const dead = resolved.filter((instance) => !instance.resolved);
-    if (dead.length > 0) {
-      this.logger.warn("scene has widget placements that resolve to nothing", {
-        sceneId,
-        count: dead.length,
-        placements: dead.map((instance) => ({
-          instanceId: instance.id,
-          widgetCanonicalId: instance.widgetCanonicalId,
-        })),
-      });
-    }
-    return resolved;
-  }
-
-  /**
    * Load scene state directly by id, bypassing token resolution.
    * Callers must have already established authorization some other
    * way — the session JWT minted at `GET /scene/{sceneId}` (which was
@@ -326,24 +262,8 @@ export class OverlayHost {
    * carry that JWT instead of the original opaque overlay token.
    */
   async loadSceneById(sceneId: string, version: SceneVersion = "published"): Promise<OverlaySceneState | null> {
-    if (!this.db) {
-      this.logger.warn("scene load skipped — db proxy unavailable", { sceneId });
-      return null;
-    }
-    let response: scene.SceneResponse;
-    try {
-      response = await this.db.getScene({ id: sceneId });
-    } catch (err) {
-      this.logger.warn("scene fetch failed", {
-        sceneId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    }
-    if (response.status?.code !== "OK" || !response.scene) {
-      return null;
-    }
-    return this.stateOf(response.scene, version);
+    const row = await this.fetchRowOrNull(sceneId);
+    return row === null ? null : this.rows.stateOf(row, version);
   }
 
   /**
@@ -354,69 +274,74 @@ export class OverlayHost {
    * `loadSceneById`.
    */
   async loadEditableScene(sceneId: string): Promise<EditableScene | null> {
-    if (!this.db) {
-      throw new Error("db proxy unavailable");
-    }
-    const response = await this.db.getScene({ id: sceneId });
-    if (response.status?.code !== "OK" || !response.scene) {
+    const s = await this.fetchRow(sceneId);
+    if (s === null) {
       return null;
     }
-    const s = response.scene;
-    const [published, draft] = await Promise.all([this.stateOf(s, "published"), this.stateOf(s, "draft")]);
+    const [published, draft] = await Promise.all([this.rows.stateOf(s, "published"), this.rows.stateOf(s, "draft")]);
     if (published === null || draft === null) {
       return null;
     }
     const framed = async (state: OverlaySceneState): Promise<OverlaySceneState> =>
       this.framing ? { ...state, instances: await this.framing.frame(state.instances) } : state;
+    const framedPublished = await framed(published);
     return {
-      published: await framed(published),
-      draft: await framed(draft),
+      published: framedPublished,
+      // With no draft the draft is the published scene: framed once.
+      draft: s.hasDraft ? await framed(draft) : framedPublished,
       editorStateJson: s.editorStateJson === "" ? null : s.editorStateJson,
     };
   }
 
-  /** One version of a row, or null when the row is of a kind this build does not know. */
-  private async stateOf(s: scene.Scene, version: SceneVersion): Promise<OverlaySceneState | null> {
-    const kind = compositionKindOf(s.kind);
-    if (kind === null) {
-      this.logger.warn("scene row has a kind this build does not know; not loaded", { sceneId: s.id, kind: s.kind });
+  /**
+   * The id of every placement stored in either version of a scene, whether
+   * or not it parses; null when there is no such scene, or a version's
+   * placements are not a list to read ids from. Throws when the scene cannot
+   * be read.
+   */
+  async placementIds(sceneId: string): Promise<Set<string> | null> {
+    const s = await this.fetchRow(sceneId);
+    if (s === null) {
       return null;
     }
-    // A scene with no draft reads as its own draft.
-    const draft = version === "draft" && s.hasDraft;
-    const widgetsJson = draft ? s.draftWidgetsJson : s.widgetsJson;
-    const layoutJson = draft ? s.draftLayoutJson : s.layoutJson;
-    const behaviorsJson = draft ? s.draftBehaviorsJson : s.behaviorsJson;
-    return {
-      sceneId: s.id,
-      name: s.name,
-      kind,
-      layout: parseLayout(layoutJson),
-      instances: await this.resolveInstances(this.parseInstances(widgetsJson, s.id), s.id),
-      behaviors: this.parseBehaviors(behaviorsJson, s.id),
-      inputs: this.parseInputs(s.inputsJson, s.id),
-      hasDraft: s.hasDraft,
-    };
+    const ids = new Set<string>();
+    for (const json of [s.widgetsJson, s.hasDraft ? s.draftWidgetsJson : ""]) {
+      let stored: unknown;
+      try {
+        stored = JSON.parse(json || "[]");
+      } catch {
+        return null;
+      }
+      if (!Array.isArray(stored)) {
+        return null;
+      }
+      for (const placement of stored) {
+        const id = (placement as { id?: unknown } | null)?.id;
+        if (typeof id === "string") {
+          ids.add(id);
+        }
+      }
+    }
+    return ids;
   }
 
-  /** Stored behaviors; `{}` (said once in the log) when the text is not a JSON object. */
-  private parseBehaviors(behaviorsJson: string, sceneId: string): SceneDocument["behaviors"] {
-    const parsed = parseJson(behaviorsJson || "{}");
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      this.logger.warn("scene behaviors are not a JSON object; loading none", { sceneId });
-      return {};
+  /** A scene's row, or null when there is none; throws when it cannot be read. */
+  private async fetchRow(sceneId: string): Promise<scene.Scene | null> {
+    if (!this.db) {
+      throw new Error("db proxy unavailable");
     }
-    return parsed as SceneDocument["behaviors"];
+    const response = await this.db.getScene({ id: sceneId });
+    return response.status?.code === "OK" && response.scene ? response.scene : null;
   }
 
-  /** Stored inputs; none (said in the log) when the text is not a JSON array. */
-  private parseInputs(inputsJson: string, sceneId: string): NonNullable<SceneDocument["inputs"]> {
-    const parsed = parseJson(inputsJson || "[]");
-    if (!Array.isArray(parsed)) {
-      this.logger.warn("scene inputs are not a JSON array; loading none", { sceneId });
-      return [];
+  /** A scene's row, or null when there is none or it cannot be read (said in the log). */
+  private async fetchRowOrNull(sceneId: string): Promise<scene.Scene | null> {
+    try {
+      return await this.fetchRow(sceneId);
+    } catch (err) {
+      this.logger.warn("scene fetch failed", { sceneId, error: err instanceof Error ? err.message : String(err) });
+      return null;
     }
-    return parsed as NonNullable<SceneDocument["inputs"]>;
   }
 
   /**
@@ -432,57 +357,14 @@ export class OverlayHost {
     if (!saved) {
       return { scene: null };
     }
-    const instances = await this.resolveDraftPlacements(sceneId, draftPlacements);
+    const instances = await this.rows.placements(sceneId, draftPlacements);
     return this.configOf({ ...saved, instances });
   }
 
   /** Placements given as stored, parsed, resolved and framed like a loaded scene's. */
   async framePlacements(sceneId: string, entries: unknown[]): Promise<OverlayWidgetInstance[]> {
-    const instances = await this.resolveDraftPlacements(sceneId, entries);
+    const instances = await this.rows.placements(sceneId, entries);
     return this.framing ? this.framing.frame(instances) : instances;
-  }
-
-  /** Unsaved placements, parsed and resolved like saved ones. */
-  async resolveDraftPlacements(sceneId: string, draftPlacements: unknown[]): Promise<OverlayWidgetInstance[]> {
-    const instances: OverlayWidgetInstance[] = [];
-    for (const entry of draftPlacements) {
-      const instance = this.normalizeInstance(entry, sceneId);
-      if (instance) {
-        instances.push(instance);
-      }
-    }
-    return this.resolveInstances(instances, sceneId);
-  }
-
-  /** Dev diagnostic: returns raw DB data + parse results side-by-side. */
-  async loadRawScene(token: string): Promise<Record<string, unknown> | null> {
-    const resolved = await this.resolver.resolve(token);
-    if (!resolved || !this.db) {
-      return null;
-    }
-    let response: scene.SceneResponse;
-    try {
-      response = await this.db.getScene({ id: resolved.sceneId });
-    } catch {
-      return null;
-    }
-    if (response.status?.code !== "OK" || !response.scene) {
-      return null;
-    }
-    const s = response.scene;
-    let rawParsed: unknown = null;
-    try {
-      rawParsed = JSON.parse(s.widgetsJson || "[]");
-    } catch {
-      rawParsed = "INVALID_JSON";
-    }
-    return {
-      sceneId: s.id,
-      name: s.name,
-      widgetsJsonRaw: s.widgetsJson,
-      widgetsJsonParsed: rawParsed,
-      parsedInstances: this.parseInstances(s.widgetsJson, s.id),
-    };
   }
 
   /**
@@ -491,26 +373,6 @@ export class OverlayHost {
    */
   async buildConfig(token: string): Promise<Record<string, unknown>> {
     return this.configOf(await this.loadScene(token));
-  }
-
-  /**
-   * The same payload for a scene the caller already holds a session for, which
-   * an open overlay fetches to apply a save in place. Authorization is the
-   * caller's, as for `loadSceneById`.
-   */
-  async buildConfigById(sceneId: string): Promise<Record<string, unknown>> {
-    return this.configOf(await this.loadSceneById(sceneId));
-  }
-
-  /**
-   * Widget catalog lookup by (moduleKey, manifestId), backed by a
-   * TTL-cached `listWidgets` sweep. Returns null when the catalog has
-   * no matching row — the frame assembler then falls back to the
-   * default entry ("index.html").
-   */
-  async lookupWidgetDefinition(moduleKey: string, manifestId: string): Promise<OverlayWidgetDefinition | null> {
-    const rows = await this.loadWidgetCatalog();
-    return rows.find((r) => r.moduleKey === moduleKey && r.manifestId === manifestId) ?? null;
   }
 
   /**
@@ -543,119 +405,6 @@ export class OverlayHost {
       return null;
     }
   }
-
-  /** The widget catalog, cached for the TTL. Empty when the lookup fails. */
-  async loadWidgetCatalog(): Promise<OverlayWidgetDefinition[]> {
-    if (this.widgetCache && this.widgetCache.expiresAt > this.now()) {
-      return this.widgetCache.rows;
-    }
-    if (!this.db) {
-      return [];
-    }
-    try {
-      const response = await this.db.listWidgets({ createdByType: "", createdByRef: "" });
-      const rows: OverlayWidgetDefinition[] = (response.widgets ?? []).map((w) => ({
-        moduleKey: w.moduleId,
-        manifestId: w.manifestId,
-        entry: w.entry ?? "",
-        surfaces: w.surfaces ?? [],
-        hostsSurface: w.hostsSurface ?? "",
-        behaviorKinds: declaredKindsOf(w.behaviorKinds),
-      }));
-      this.widgetCache = { rows, expiresAt: this.now() + this.widgetCacheTtlMs };
-      return rows;
-    } catch (err) {
-      this.logger.warn("widget catalog load failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return this.widgetCache?.rows ?? [];
-    }
-  }
-
-  private parseInstances(widgetsJson: string, sceneId: string): OverlayWidgetInstance[] {
-    let raw: unknown;
-    try {
-      raw = JSON.parse(widgetsJson || "[]");
-    } catch {
-      this.logger.warn("scene widgetsJson is not valid JSON; rendering empty scene");
-      return [];
-    }
-    if (!Array.isArray(raw)) {
-      return [];
-    }
-    const instances: OverlayWidgetInstance[] = [];
-    for (const entry of raw) {
-      const instance = this.normalizeInstance(entry, sceneId);
-      if (instance) {
-        instances.push(instance);
-      }
-    }
-    return instances;
-  }
-
-  private normalizeInstance(raw: unknown, sceneId: string): OverlayWidgetInstance | null {
-    if (!raw || typeof raw !== "object") {
-      return null;
-    }
-    const w = raw as Record<string, unknown>;
-    const id = typeof w.id === "string" ? w.id : "";
-    const canonicalId =
-      typeof w.widgetCanonicalId === "string" && w.widgetCanonicalId
-        ? w.widgetCanonicalId
-        : typeof w.widgetDefinitionRef === "string"
-          ? w.widgetDefinitionRef
-          : "";
-    if (!id || !canonicalId) {
-      return null;
-    }
-    const parsed = parseWidgetCanonicalId(canonicalId);
-    if (!parsed) {
-      return null;
-    }
-
-    // Strip version segments from the module key so scene placements remain
-    // stable across module updates. A versioned key like "spotify:1.0.0:abc1234"
-    // normalises to "spotify"; a simple key like "woofx3" is unchanged.
-    const stableModuleKey = stableModuleKeyFrom(parsed.moduleKey);
-    const stableCanonicalId = `${stableModuleKey}:widget:${parsed.manifestId}`;
-    if (stableModuleKey !== parsed.moduleKey) {
-      this.logger.warn(
-        "normalizeInstance: stripping version from moduleKey — update the UI to store the stable projection key",
-        {
-          id,
-          stored: canonicalId,
-          normalized: stableCanonicalId,
-        }
-      );
-    }
-
-    if (typeof w.bundleUrl === "string" && w.bundleUrl && !this.bundleUrlWarned.has(stableCanonicalId)) {
-      this.bundleUrlWarned.add(stableCanonicalId);
-      this.logger.warn("scene widget carries deprecated bundleUrl; ignored in favor of frameUrl", {
-        widgetCanonicalId: stableCanonicalId,
-      });
-    }
-
-    const settings = w.settings && typeof w.settings === "object" ? (w.settings as Record<string, unknown>) : {};
-    return {
-      id,
-      widgetCanonicalId: stableCanonicalId,
-      moduleId: stableModuleKey,
-      manifestId: parsed.manifestId,
-      position: normalizePosition(w),
-      settings,
-      visible: w.visible !== false,
-      stored: w,
-      // Placements carry none; `resolveInstances` takes it from the widget
-      // definition.
-      hostsSurface: "",
-      // Versioned by `framing` when the config is built.
-      frameUrl: frameDocumentUrl(stableModuleKey, parsed.manifestId, selectedThemeId(settings), UNAVAILABLE_VERSION),
-      // Assumed until the catalog says otherwise; `resolveInstances` is what
-      // decides, since parsing alone cannot know what exists.
-      resolved: true,
-    };
-  }
 }
 
 /** The page's scene config, the shape `window.__WOOFX3_SCENE__` and `/config` share. */
@@ -684,62 +433,4 @@ function sceneConfigOf(state: OverlaySceneState | null): Record<string, unknown>
       })),
     },
   };
-}
-
-/** A catalog row's declared kinds, ids only: what a page decides delegation on. */
-function declaredKindsOf(kinds: module_widget.WidgetBehaviorKinds | null | undefined): DeclaredBehaviorKinds {
-  return {
-    transitions: (kinds?.transitions ?? []).map((kind) => kind.id),
-    effects: (kinds?.effects ?? []).map((kind) => kind.id),
-  };
-}
-
-/**
- * Extract the stable base name from a module key. If the key contains colons
- * (indicating a versioned form like "spotify:1.0.0:abc1234"), only the first
- * segment is returned. Simple keys like "woofx3" pass through unchanged.
- */
-export function stableModuleKeyFrom(moduleKey: string): string {
-  const colonIdx = moduleKey.indexOf(":");
-  return colonIdx === -1 ? moduleKey : moduleKey.slice(0, colonIdx);
-}
-
-export function normalizePosition(w: Record<string, unknown>): OverlayWidgetPosition {
-  const position = (w.position ?? {}) as Record<string, unknown>;
-  const size = (w.size ?? {}) as Record<string, unknown>;
-  const num = (v: unknown): number | undefined => (typeof v === "number" ? v : undefined);
-  return {
-    x: num(position.x) ?? 0,
-    y: num(position.y) ?? 0,
-    width: num(position.width) ?? num(size.width) ?? 0,
-    height: num(position.height) ?? num(size.height) ?? 0,
-  };
-}
-
-/**
- * The kind a row names, or null for one this build does not know. Empty is
- * a scene: a db proxy that predates kinds stores only scenes.
- */
-export function compositionKindOf(kind: string | undefined): CompositionKind | null {
-  if (kind === undefined || kind === "" || kind === "scene") {
-    return "scene";
-  }
-  return kind === "alert" ? "alert" : null;
-}
-
-function parseJson(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-}
-
-function parseLayout(layoutJson: string): OverlaySceneLayout {
-  try {
-    const parsed = JSON.parse(layoutJson || "{}");
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as OverlaySceneLayout) : {};
-  } catch {
-    return {};
-  }
 }

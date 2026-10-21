@@ -24,7 +24,7 @@ import type DatabaseService from "./services/database";
 import type MessageBusService from "./services/messageBus";
 import type TwitchChatClientService from "./services/twitchChat";
 import { DerivedGroupSync } from "./derivedGroupSync";
-import { canUse, parseTime } from "./util";
+import { canUse } from "./util";
 
 type Context = ApplicationContext<WoofWoofWoofContext, WoofWoofWoofServices>;
 
@@ -379,13 +379,6 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       }
     );
 
-    ctx.commander.add("follow", async (text: string) => {
-      const username = text.replace("@", "").trim();
-      const [topic, data] = ctx.events.Slobs().follow({ username });
-      ctx.services.messageBus.client.publish(topic, data);
-      return "";
-    });
-
     ctx.commander.add(
       "category",
       async (text: string) => {
@@ -439,69 +432,6 @@ export default class WoofWoofWoof implements IApplication<WoofWoofWoofContext, W
       },
       { allowRoles: CHANNEL_EDITOR_ROLES }
     );
-
-    ctx.commander.add("sc", async (text: string) => {
-      let sceneName = "";
-      switch (text) {
-        case "1":
-          sceneName = "Chat";
-          break;
-        case "2":
-          sceneName = "Programming";
-          break;
-        case "3":
-          sceneName = "StreamTogether";
-          break;
-        case "4":
-          sceneName = "";
-          break;
-      }
-
-      if (!sceneName) {
-        return "Scene does not exist";
-      }
-
-      const [topic, data] = ctx.events.Slobs().sceneChange({ sceneName });
-      ctx.services.messageBus.client.publish(topic, data);
-      return "Updated Scene";
-    });
-
-    ctx.commander.add("src", async (text: string) => {
-      if (!text) {
-        return "";
-      }
-
-      let visibility = false;
-      const [sourceName, onoff] = text.split(" ");
-
-      if (onoff === "on" || onoff === "1") {
-        visibility = true;
-      }
-
-      const [topic, data] = ctx.events.Slobs().sourceChange({
-        sourceName,
-        value: visibility ? "on" : "off",
-      });
-      ctx.services.messageBus.client.publish(topic, data);
-      return `Updating source: ${sourceName}`;
-    });
-
-    // add a command for updating the timer
-    ctx.commander.add("time", async (msg: string) => {
-      const time = msg;
-      const [topic, data] = ctx.events.Slobs().notifyWidget({
-        widgetId: "49b3fa3b-5eeb-40c3-bdc2-4d0e97192391",
-        message: "setTime",
-        data: {
-          timerId: "49b3fa3b-5eeb-40c3-bdc2-4d0e97192391",
-          valueInSeconds: parseTime(time),
-        },
-      });
-
-      ctx.services.messageBus.client.publish(topic, data);
-
-      return "Timer updated";
-    });
   }
 
   async terminate(_ctx: Context) {}

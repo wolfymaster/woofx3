@@ -7,7 +7,7 @@ Woofx3 consists of the following tools:
     - Module storage (SQLite) - this is a key/value datastore that is available for modules to utilize. Since modules are provided by end-users, this extends a persistant layer to modules
 - Permissions embeded in db proxy that can allow/deny user access
 - Shared clients and libraries that are used across multiple services are kept in the 'shared' directory
-- Integration with OBS and Streamlabs
+- Integration with OBS
 - Rules engine and evaluation based on the Rete algorithm. This evaluates the world as a collection of 'facts' and 'requirements' Actions/neurons have requirements and are triggered if the required facts are present.
 - Twitch integration with the EventBus
 - Twitch chatbot
@@ -58,7 +58,7 @@ This project makes heavy use of Typescript (Bun), Rust, and Golang. Core service
 
 ### Running, building, and linting
 
-- **TypeScript/Bun projects** (e.g., `streamlabs/`): Run `bun run <script>` or `bun run typecheck` / `bun run lint`
+- **TypeScript/Bun projects** (e.g., `sceneManager/`): Run `bun run <script>` or `bun run typecheck` / `bun run lint`
 - **Go projects** (e.g., `wooflow/`): Run `go run main.go` or `go build`
 - **Rust projects** (e.g., `barkloader/`): Run `cargo build` / `cargo test`
 - **Database migrations**: Use `make migrate-up` / `make migrate-down` (requires Go) 

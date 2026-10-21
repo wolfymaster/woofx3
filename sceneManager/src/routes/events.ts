@@ -1,8 +1,9 @@
 import type { Logger } from "@woofx3/common/runtime";
+import { type AckRefusal, encodeStreamFrame, KEEPALIVE_FRAME, parseAckBody } from "../../contract/overlay-stream";
 import { type AlertLifecycleWriter, alertReportTargets, updateAlertLifecycle } from "../events/alert-dispatch";
 import { handleStatusReport } from "../events/handlers";
 import type { HttpDeps } from "../http";
-import { readSessionCookie } from "../scene/session-cookie";
+import { BODY_LIMITS, invalidSession, jsonError, jsonOk, readJsonBody, requireSceneSession } from "./http-kit";
 
 /**
  * SSE comment-frame heartbeat interval. Must stay comfortably below
@@ -10,19 +11,6 @@ import { readSessionCookie } from "../scene/session-cookie";
  * path, so the stream is never the thing that goes quiet first.
  */
 const SSE_HEARTBEAT_MS = 20_000;
-
-function unauthorized(): Response {
-  return new Response(JSON.stringify({ error: "invalid_session" }), {
-    status: 401,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-  });
-}
-
-async function verifySession(req: Request, sceneId: string, deps: HttpDeps): Promise<boolean> {
-  const cookie = readSessionCookie(req, sceneId);
-  const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
-  return !!claims && claims.sceneId === sceneId;
-}
 
 /**
  * `GET /scene/{sceneId}/events` — the SSE stream. Opening a connection
@@ -32,103 +20,94 @@ async function verifySession(req: Request, sceneId: string, deps: HttpDeps): Pro
  * relies on the client's own reconnect/backoff (event-source.ts) to
  * re-establish it after a drop.
  */
-export function handleEventsStreamRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
-  return (async () => {
-    if (!(await verifySession(req, sceneId, deps))) {
-      return unauthorized();
-    }
+export async function handleEventsStreamRoute(req: Request, sceneId: string, deps: HttpDeps): Promise<Response> {
+  if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+    return invalidSession();
+  }
 
-    let unsubscribe: (() => void) | null = null;
-    let heartbeat: ReturnType<typeof setInterval> | null = null;
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        unsubscribe = deps.deliveryStore.subscribe(sceneId, controller);
-        // Opening frame: nudges the connection open immediately in
-        // browsers/proxies that buffer until the first byte, and
-        // carries this process's boot identity so a reconnecting
-        // overlay can detect that it came back to a *restarted*
-        // sceneManager rather than resuming against the same one.
-        // It also says which scene ops the overlay should be up to, so one
-        // that missed some while its stream was down resyncs.
-        const hello = {
-          bootId: deps.bootId,
-          seq: deps.sceneDocuments.seqOf(sceneId, "published"),
-          draftSeq: deps.sceneDocuments.seqOf(sceneId, "draft"),
-        };
-        controller.enqueue(encoder.encode(`event: hello\ndata: ${JSON.stringify(hello)}\n\n`));
-        // A scene can sit idle far longer than any idle timeout on the
-        // path: Bun.serve reaps a silent connection (see `idleTimeout`
-        // in http.ts), and reverse proxies do the same. Without this
-        // the stream is torn down and rebuilt every few seconds, which
-        // flashes the Disconnected banner and re-runs the open-delivery
-        // replay on every cycle. The client parses comment frames as
-        // no-ops (parseSseChunk), so a heartbeat costs nothing there.
-        heartbeat = setInterval(() => {
-          try {
-            controller.enqueue(encoder.encode(": keepalive\n\n"));
-          } catch {
-            // Already closed from the other end — stop pumping.
-            if (heartbeat !== null) {
-              clearInterval(heartbeat);
-              heartbeat = null;
-            }
+  let unsubscribe: (() => void) | null = null;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      unsubscribe = deps.deliveryStore.subscribe(sceneId, controller);
+      // Opening frame: nudges the connection open immediately in
+      // browsers/proxies that buffer until the first byte, and
+      // carries this process's boot identity so a reconnecting
+      // overlay can detect that it came back to a *restarted*
+      // sceneManager rather than resuming against the same one.
+      // It also says which scene ops the overlay should be up to, so one
+      // that missed some while its stream was down resyncs.
+      controller.enqueue(
+        encoder.encode(
+          encodeStreamFrame({
+            kind: "hello",
+            bootId: deps.bootId,
+            seq: deps.sceneDocuments.seqOf(sceneId, "published"),
+            draftSeq: deps.sceneDocuments.seqOf(sceneId, "draft"),
+          })
+        )
+      );
+      // A scene can sit idle far longer than any idle timeout on the
+      // path: Bun.serve reaps a silent connection (see `idleTimeout`
+      // in http.ts), and reverse proxies do the same. Without this
+      // the stream is torn down and rebuilt every few seconds, which
+      // flashes the Disconnected banner and re-runs the open-delivery
+      // replay on every cycle. The client parses comment frames as
+      // no-ops (parseSseChunk), so a heartbeat costs nothing there.
+      heartbeat = setInterval(() => {
+        try {
+          controller.enqueue(encoder.encode(KEEPALIVE_FRAME));
+        } catch {
+          // Already closed from the other end — stop pumping.
+          if (heartbeat !== null) {
+            clearInterval(heartbeat);
+            heartbeat = null;
           }
-        }, SSE_HEARTBEAT_MS);
-      },
-      cancel() {
-        if (heartbeat !== null) {
-          clearInterval(heartbeat);
-          heartbeat = null;
         }
-        unsubscribe?.();
-      },
-    });
+      }, SSE_HEARTBEAT_MS);
+    },
+    cancel() {
+      if (heartbeat !== null) {
+        clearInterval(heartbeat);
+        heartbeat = null;
+      }
+      unsubscribe?.();
+    },
+  });
 
-    return new Response(stream, {
-      status: 200,
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-store",
-        Connection: "keep-alive",
-      },
-    });
-  })();
-}
-
-interface AckBody {
-  instanceIds?: unknown;
-}
-
-function parseInstanceIds(body: unknown): string[] | null {
-  const b = body as AckBody;
-  if (!Array.isArray(b.instanceIds) || b.instanceIds.length === 0) {
-    return null;
-  }
-  if (!b.instanceIds.every((v): v is string => typeof v === "string" && v.length > 0)) {
-    return null;
-  }
-  return b.instanceIds;
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-store",
+      Connection: "keep-alive",
+    },
+  });
 }
 
 /** `POST /scene/{sceneId}/events/{eventId}/delivered` — body
- *  `{ instanceIds: string[] }`, batched per the design note (a burst
- *  of events shouldn't mean a burst of single-item HTTP calls). */
+ *  `{ instanceIds: string[] }`, batched by the page (ack-batcher.ts) so a
+ *  burst of events is not a burst of single-item HTTP calls. */
 export async function handleEventDeliveredRoute(
   req: Request,
   sceneId: string,
   eventId: string,
   deps: HttpDeps
 ): Promise<Response> {
-  if (!(await verifySession(req, sceneId, deps))) {
-    return unauthorized();
+  if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+    return invalidSession();
   }
-  const instanceIds = parseInstanceIds(await req.json().catch(() => null));
+  const body = await readJsonBody(req, BODY_LIMITS.ack);
+  if (!body.ok) {
+    return body.response;
+  }
+  const instanceIds = parseAckBody(body.value);
   if (!instanceIds) {
-    return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
+    return jsonError(400, "invalid_body");
   }
-  await deps.deliveryStore.ackDelivered(sceneId, eventId, instanceIds);
-  return Response.json({ status: "ok" });
+  const failed = await deps.deliveryStore.ackDelivered(sceneId, eventId, instanceIds);
+  return ackAnswer(failed);
 }
 
 /**
@@ -143,16 +122,20 @@ export async function handleEventStartedRoute(
   eventId: string,
   deps: HttpDeps
 ): Promise<Response> {
-  if (!(await verifySession(req, sceneId, deps))) {
-    return unauthorized();
+  if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+    return invalidSession();
   }
-  const instanceIds = parseInstanceIds(await req.json().catch(() => null));
+  const body = await readJsonBody(req, BODY_LIMITS.ack);
+  if (!body.ok) {
+    return body.response;
+  }
+  const instanceIds = parseAckBody(body.value);
   if (!instanceIds) {
-    return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
+    return jsonError(400, "invalid_body");
   }
   const firsts = deps.deliveryStore.markStarted(sceneId, eventId, instanceIds);
   await reportAlertsPlaying(deps.ctx.services.db.client, deps.ctx.logger, firsts);
-  return Response.json({ status: "ok" });
+  return jsonOk({ status: "ok" });
 }
 
 /**
@@ -161,22 +144,12 @@ export async function handleEventStartedRoute(
  * the rest, since the row has already moved there or past it, and publishes
  * nothing for them.
  */
-export async function reportAlertsPlaying(
+export function reportAlertsPlaying(
   db: AlertLifecycleWriter,
   logger: Logger,
   started: Array<{ type: string; key: string; value: unknown }>
 ): Promise<void> {
-  for (const target of alertReportTargets(started)) {
-    try {
-      await updateAlertLifecycle(db, target, "playing", "");
-    } catch (err) {
-      logger.debug("alert start not recorded", {
-        alertId: target.envelopeId,
-        rowId: target.rowId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
+  return reportAlerts(db, logger, started, "playing");
 }
 
 /** `POST /scene/{sceneId}/events/{eventId}/completed` — same body shape. */
@@ -186,16 +159,33 @@ export async function handleEventCompletedRoute(
   eventId: string,
   deps: HttpDeps
 ): Promise<Response> {
-  if (!(await verifySession(req, sceneId, deps))) {
-    return unauthorized();
+  if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+    return invalidSession();
   }
-  const instanceIds = parseInstanceIds(await req.json().catch(() => null));
+  const body = await readJsonBody(req, BODY_LIMITS.ack);
+  if (!body.ok) {
+    return body.response;
+  }
+  const instanceIds = parseAckBody(body.value);
   if (!instanceIds) {
-    return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
+    return jsonError(400, "invalid_body");
   }
-  const closed = await deps.deliveryStore.ackCompleted(sceneId, eventId, instanceIds);
+  const { closed, failed } = await deps.deliveryStore.ackCompleted(sceneId, eventId, instanceIds);
   await reportAlertsCompleted(deps.ctx.services.db.client, deps.ctx.logger, closed);
-  return Response.json({ status: "ok" });
+  return ackAnswer(failed);
+}
+
+/**
+ * 503 when some of an ack could not be recorded, so the page sends it again
+ * (see ack-batcher.ts); acks are idempotent, so resending what did land is
+ * harmless.
+ */
+function ackAnswer(failed: string[]): Response {
+  if (failed.length > 0) {
+    const refusal: AckRefusal = { error: "unavailable", instanceIds: failed };
+    return jsonError(503, refusal.error, { instanceIds: refusal.instanceIds });
+  }
+  return jsonOk({ status: "ok" });
 }
 
 /**
@@ -207,16 +197,27 @@ export async function handleEventCompletedRoute(
  * the db proxy refuses the others' reports of the same verdict and publishes
  * nothing for them.
  */
-export async function reportAlertsCompleted(
+export function reportAlertsCompleted(
   db: AlertLifecycleWriter,
   logger: Logger,
   closed: Array<{ type: string; key: string; value: unknown }>
 ): Promise<void> {
-  for (const target of alertReportTargets(closed)) {
+  return reportAlerts(db, logger, closed, "completed");
+}
+
+/** Move each alert among `deliveries` to `status`, best-effort: a refused or failed write is only logged. */
+async function reportAlerts(
+  db: AlertLifecycleWriter,
+  logger: Logger,
+  deliveries: Array<{ type: string; key: string; value: unknown }>,
+  status: "playing" | "completed"
+): Promise<void> {
+  for (const target of alertReportTargets(deliveries)) {
     try {
-      await updateAlertLifecycle(db, target, "completed", "");
+      await updateAlertLifecycle(db, target, status, "");
     } catch (err) {
-      logger.debug("alert completion not recorded", {
+      logger.debug("alert lifecycle not recorded", {
+        status,
         alertId: target.envelopeId,
         rowId: target.rowId,
         error: err instanceof Error ? err.message : String(err),
@@ -233,6 +234,34 @@ interface StatusReportBody {
   ts?: unknown;
 }
 
+/**
+ * The module a status report is filed under. For a scene placement it is the
+ * placement's, from the scene's documents. An alert's widget is addressed as
+ * `{eventId}.{widgetId}`, which is no scene placement: its module is the one
+ * the page read from the alert layout it was delivered. Neither comes from
+ * the widget, whose `hello` claim nothing checks.
+ */
+async function statusModuleOf(
+  deps: HttpDeps,
+  sceneId: string,
+  instanceId: string,
+  body: StatusReportBody
+): Promise<string> {
+  try {
+    const placed = await deps.sceneDocuments.placementMeta(sceneId, instanceId);
+    if (placed !== null) {
+      return placed.moduleId;
+    }
+  } catch (err) {
+    deps.ctx.logger.warn("widget status: scene unavailable; filing under the page's module", {
+      sceneId,
+      instanceId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  return typeof body.moduleId === "string" ? body.moduleId : "";
+}
+
 /** `POST /scene/{sceneId}/widget/{instanceId}/status` — widget
  *  `status.report` (both `reportStatus` calls and `event.complete()`'s
  *  optional accompanying status). */
@@ -242,23 +271,25 @@ export async function handleWidgetStatusRoute(
   instanceId: string,
   deps: HttpDeps
 ): Promise<Response> {
-  const cookie = readSessionCookie(req, sceneId);
-  const claims = cookie ? await deps.sessionTokens.verify(cookie) : null;
-  if (!claims || claims.sceneId !== sceneId) {
-    return unauthorized();
+  if ((await requireSceneSession(req, sceneId, deps.sessionTokens)) === null) {
+    return invalidSession();
   }
-  const body = (await req.json().catch(() => null)) as StatusReportBody | null;
-  if (!body || typeof body.key !== "string" || body.key.length === 0) {
-    return new Response(JSON.stringify({ error: "invalid_body" }), { status: 400 });
+  const read = await readJsonBody(req, BODY_LIMITS.status);
+  if (!read.ok) {
+    return read.response;
+  }
+  const body = read.value as StatusReportBody | null;
+  if (typeof body !== "object" || body === null || typeof body.key !== "string" || body.key.length === 0) {
+    return jsonError(400, "invalid_body");
   }
 
   await handleStatusReport(deps.ctx.services.db.client, deps.ctx.logger, {
-    moduleId: typeof body.moduleId === "string" ? body.moduleId : "",
+    moduleId: await statusModuleOf(deps, sceneId, instanceId, body),
     instanceId,
     widgetCanonicalId: typeof body.widgetCanonicalId === "string" ? body.widgetCanonicalId : undefined,
     key: body.key,
     value: body.value,
     occurredAt: typeof body.ts === "string" ? body.ts : undefined,
   });
-  return Response.json({ status: "ok" });
+  return jsonOk({ status: "ok" });
 }

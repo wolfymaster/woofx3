@@ -78,6 +78,8 @@ export const ENGINE_CAPABILITIES = {
   modulesOAuth: "modules.oauth",
   /** Reading an installed module's files for a read-only viewer: `listModuleFiles`, `getModuleFile`. */
   modulesFiles: "modules.files",
+  /** What module storage holds across every module, in bytes: `getModuleStorageUsage`. */
+  modulesStorageUsage: "modules.storageUsage",
   /**
    * Installing from the marketplace by listing id, with the engine fetching
    * and verifying the archive itself: `installMarketplaceListing`,
@@ -155,6 +157,13 @@ export const ENGINE_CAPABILITIES = {
    * them.
    */
   scenesBehaviors: "scenes.behaviors",
+  /**
+   * Stored scene data sceneManager cannot read is reported and can be
+   * repaired: the editor socket's `not_found` refusal and its welcome carry
+   * `unread` (`@woofx3/api/scene-editor`), and `repairScene` sets what cannot
+   * be read aside in the db's `scene_backups` before writing back the rest.
+   */
+  scenesRepair: "scenes.repair",
   /**
    * Alert compositions stored in the engine: `listAlertCompositions`,
    * `getAlertComposition`, `createAlertComposition`,

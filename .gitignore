@@ -6,8 +6,6 @@ node_modules
 
 .*access_token
 
-# streamlabs assets
-streamlabs/public
 
 # Local .terraform directories
 **/.terraform/*

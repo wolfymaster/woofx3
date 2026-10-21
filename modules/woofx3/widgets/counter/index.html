@@ -23,8 +23,15 @@
       padding: 8px;
     }
 
+    /* Colour, font, size and alignment come from the placement's settings
+       through the host's bindings, so changing them updates the widget in
+       place. */
     #text {
       width: 100%;
+      color: var(--setting-color, #ffffff);
+      font-family: var(--setting-fontFamily, Roboto, system-ui, sans-serif);
+      font-size: calc(var(--setting-fontSize, 48) * 1px);
+      text-align: var(--setting-align, center);
       font-weight: bold;
       line-height: 1.2;
       white-space: pre-wrap;
@@ -46,36 +53,63 @@
       if (!host) {
         return;
       }
-      const settings = host.settings;
       const el = document.getElementById("text");
-      el.style.color = str(settings.color, "#ffffff");
-      el.style.fontFamily = str(settings.fontFamily, "Roboto, system-ui, sans-serif");
-      el.style.fontSize = num(settings.fontSize, 48) + "px";
-      el.style.textAlign = ["left", "center", "right"].includes(settings.align) ? settings.align : "center";
 
-      const counter = str(settings.counter, "");
-      if (counter === "") {
-        return;
-      }
-      const template = str(settings.text, "{value}");
-
-      // The host sends the counter as a whole, `{ value, settings }`: what
-      // it stores, and its own settings, which hold its starting value and
-      // goals. Nothing shows until the first one arrives rather than a
+      // The counter followed, how to stop following it, and the last reading
+      // of it. The host sends the counter as a whole, `{ value, settings }`:
+      // what it stores, and its own settings, which hold its starting value
+      // and goals. Nothing shows until the first one arrives rather than a
       // number that may be wrong.
-      host.storage.subscribe("resource:" + counter, (instance) => {
-        if (instance === null || typeof instance !== "object") {
+      let following = null;
+      let stopFollowing = null;
+      let instance = null;
+
+      function draw() {
+        if (instance === null) {
           return;
         }
         const instanceSettings = instance.settings || {};
         const value = counterValue(instance.value, numberOr(instanceSettings.initialValue, 0));
         const goal = parseGoals(instanceSettings.goals).find((g) => g.value > value) || null;
-        render(el, fill(template, {
+        render(el, fill(str(host.settings.text, "{value}"), {
           value: String(value),
           goal: goal ? String(goal.value) : "",
           goalName: goal ? goal.name : "",
         }));
-      });
+      }
+
+      // Follows the counter the settings name and draws it with their template.
+      function follow() {
+        const counter = str(host.settings.counter, "");
+        if (counter === following) {
+          draw();
+          return;
+        }
+        if (stopFollowing !== null) {
+          stopFollowing();
+          stopFollowing = null;
+        }
+        following = counter;
+        instance = null;
+        el.textContent = "";
+        if (counter === "") {
+          return;
+        }
+        stopFollowing = host.storage.subscribe("resource:" + counter, (next) => {
+          if (next === null || typeof next !== "object") {
+            return;
+          }
+          instance = next;
+          draw();
+        });
+      }
+
+      // On a scene, an edit to the template or the counter redraws in place
+      // rather than reloading the widget. A host without the call reloads it.
+      if (host.surface !== "alert" && typeof host.onSettingsChange === "function") {
+        host.onSettingsChange(follow);
+      }
+      follow();
     })();
 
     // The counter's number from what it stores, or its starting value when
@@ -135,10 +169,6 @@
 
     function str(value, fallback) {
       return typeof value === "string" && value.trim() !== "" ? value : fallback;
-    }
-
-    function num(value, fallback) {
-      return typeof value === "number" && Number.isFinite(value) ? value : fallback;
     }
   </script>
 </body>

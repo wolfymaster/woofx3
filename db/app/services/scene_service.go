@@ -515,3 +515,51 @@ func buildSceneChangeData(scene *models.Scene) map[string]interface{} {
 		"created_by_ref":  scene.CreatedByRef,
 	}
 }
+
+var (
+	sceneBackupVersions = map[string]bool{"published": true, "draft": true}
+	sceneBackupColumns  = map[string]bool{"widgets": true, "layout": true, "behaviors": true}
+	sceneBackupReasons  = map[string]bool{
+		models.SceneBackupReasonUnreadableColumn:     true,
+		models.SceneBackupReasonUnreadablePlacements: true,
+	}
+)
+
+// CreateSceneBackups sets aside stored data a repair is about to replace. The
+// scene need not exist any more: a backup is worth keeping either way.
+func (s *sceneService) CreateSceneBackups(ctx context.Context, req *client.CreateSceneBackupsRequest) (*client.ResponseStatus, error) {
+	sceneID, err := uuid.Parse(req.SceneId)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("scene_id", "invalid UUID format")
+	}
+	if len(req.Backups) == 0 {
+		return nil, twirp.RequiredArgumentError("backups")
+	}
+	rows := make([]*models.SceneBackup, 0, len(req.Backups))
+	for i, backup := range req.Backups {
+		if !sceneBackupVersions[backup.Version] {
+			return nil, twirp.InvalidArgumentError(fmt.Sprintf("backups[%d].version", i), "must be published or draft")
+		}
+		if !sceneBackupColumns[backup.Column] {
+			return nil, twirp.InvalidArgumentError(fmt.Sprintf("backups[%d].column", i), "must be widgets, layout or behaviors")
+		}
+		if !sceneBackupReasons[backup.Reason] {
+			return nil, twirp.InvalidArgumentError(fmt.Sprintf("backups[%d].reason", i), "must be unreadable_column or unreadable_placements")
+		}
+		rows = append(rows, &models.SceneBackup{
+			ID:           uuid.New(),
+			SceneID:      sceneID,
+			Version:      backup.Version,
+			SourceColumn: backup.Column,
+			Reason:       backup.Reason,
+			Content:      backup.Content,
+		})
+	}
+	if err := s.repo.CreateBackups(rows); err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to store scene backups: %w", err))
+	}
+	return &client.ResponseStatus{
+		Code:    client.ResponseStatus_OK,
+		Message: fmt.Sprintf("Stored %d scene backup(s)", len(rows)),
+	}, nil
+}
