@@ -2,6 +2,7 @@ package routes
 
 import (
 	"net/http"
+	"time"
 
 	client "github.com/wolfymaster/woofx3/clients/db"
 	middleware "github.com/wolfymaster/woofx3/db/app/middleware"
@@ -19,7 +20,7 @@ func ViewerFactRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMi
 	viewerFactService := svc.NewViewerFactService(
 		repo.NewViewerFactRepository(app.Db),
 		repo.NewViewerSegmentRepository(app.Db),
-		repo.NewModuleRepository(app.Db, database.RandomIDs{}),
+		repo.NewModuleRepository(app.Db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }),
 		app.EventPublisher,
 	)
 	viewerFactHandler := client.NewViewerFactServiceServer(viewerFactService)

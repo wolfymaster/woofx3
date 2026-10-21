@@ -52,7 +52,7 @@ func (r *WorkflowRepository) Upsert(wf *models.WorkflowDefinition) error {
 		Enabled bool      `gorm:"column:enabled"`
 	}
 	err := r.db.Raw(`
-		INSERT INTO public.workflow_definitions (id, name, steps, trigger, created_by_type, created_by_ref, manifest_id, taxonomy, enabled)
+		INSERT INTO workflow_definitions (id, name, steps, trigger, created_by_type, created_by_ref, manifest_id, taxonomy, enabled)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) WHERE manifest_id <> '' DO UPDATE SET
 			name = EXCLUDED.name,

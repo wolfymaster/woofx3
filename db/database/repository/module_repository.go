@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database"
@@ -10,18 +11,22 @@ import (
 	"gorm.io/gorm"
 )
 
+// ModuleRepository's hand-written SQL is written once for Postgres and
+// SQLite: tables are named without a schema, and timestamps are bound from
+// now rather than read from the database's clock.
 type ModuleRepository struct {
 	db  *gorm.DB
 	ids database.IDSource
+	now func() time.Time
 }
 
-func NewModuleRepository(db *gorm.DB, ids database.IDSource) *ModuleRepository {
-	return &ModuleRepository{db: db, ids: ids}
+func NewModuleRepository(db *gorm.DB, ids database.IDSource, now func() time.Time) *ModuleRepository {
+	return &ModuleRepository{db: db, ids: ids, now: now}
 }
 
 // WithDB returns the repository over db, typically a transaction.
 func (r *ModuleRepository) WithDB(db *gorm.DB) *ModuleRepository {
-	return &ModuleRepository{db: db, ids: r.ids}
+	return &ModuleRepository{db: db, ids: r.ids, now: r.now}
 }
 
 // rowID is the id a hand-written INSERT binds: the caller's, or a new one
@@ -113,7 +118,7 @@ func (r *ModuleRepository) UpsertFunction(f *models.ModuleFunction) error {
 		ID uuid.UUID `gorm:"column:id"`
 	}
 	err := r.db.Raw(`
-		INSERT INTO public.functions (id, module_id, manifest_id, name, file_name, file_key, entry_point, runtime)
+		INSERT INTO functions (id, module_id, manifest_id, name, file_name, file_key, entry_point, runtime)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (module_id, manifest_id) WHERE archived_at IS NULL AND manifest_id <> '' DO UPDATE SET
 			name = EXCLUDED.name,
@@ -140,7 +145,7 @@ func (r *ModuleRepository) ArchiveFunctionByManifestID(moduleID uuid.UUID, manif
 	return r.db.Model(&models.ModuleFunction{}).Where(
 		"module_id = ? AND manifest_id = ? AND archived_at IS NULL",
 		moduleID, manifestID,
-	).Update("archived_at", gorm.Expr("NOW()")).Error
+	).Update("archived_at", r.now().UTC()).Error
 }
 
 func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
@@ -165,9 +170,10 @@ func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 	if emits == "" {
 		emits = "{}"
 	}
+	now := r.now().UTC()
 	err := r.db.Raw(`
-		INSERT INTO public.triggers (id, taxonomy, name, description, event, config_schema, emits, sentence, allow_variants, created_by_type, created_by_ref, manifest_id, transport, handler, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO triggers (id, taxonomy, name, description, event, config_schema, emits, sentence, allow_variants, created_by_type, created_by_ref, manifest_id, transport, handler, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) WHERE archived_at IS NULL DO UPDATE SET
 			taxonomy = EXCLUDED.taxonomy,
 			name = EXCLUDED.name,
@@ -179,9 +185,9 @@ func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 			allow_variants = EXCLUDED.allow_variants,
 			transport = EXCLUDED.transport,
 			handler = EXCLUDED.handler,
-			updated_at = NOW()
+			updated_at = EXCLUDED.updated_at
 		RETURNING id
-	`, rowID(r.ids, t.ID), t.Taxonomy, t.Name, t.Description, t.Event, t.ConfigSchema, emits, t.Sentence, t.AllowVariants, t.CreatedByType, t.CreatedByRef, t.ManifestID, t.Transport, t.Handler).Scan(&result).Error
+	`, rowID(r.ids, t.ID), t.Taxonomy, t.Name, t.Description, t.Event, t.ConfigSchema, emits, t.Sentence, t.AllowVariants, t.CreatedByType, t.CreatedByRef, t.ManifestID, t.Transport, t.Handler, now, now).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -257,7 +263,7 @@ func (r *ModuleRepository) ArchiveTriggerByManifestID(moduleID, manifestID strin
 		if err != nil {
 			return err
 		}
-		if err := tx.Model(&trigger).Update("archived_at", gorm.Expr("NOW()")).Error; err != nil {
+		if err := tx.Model(&trigger).Update("archived_at", r.now().UTC()).Error; err != nil {
 			return err
 		}
 		archived = &trigger
@@ -348,9 +354,10 @@ func (r *ModuleRepository) UpsertAction(a *models.Action) error {
 	if a.Returns == "" {
 		a.Returns = "{}"
 	}
+	now := r.now().UTC()
 	err := r.db.Raw(`
-		INSERT INTO public.actions (id, name, description, call, params_schema, returns, sentence, created_by_type, created_by_ref, manifest_id, type, taxonomy, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO actions (id, name, description, call, params_schema, returns, sentence, created_by_type, created_by_ref, manifest_id, type, taxonomy, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) WHERE archived_at IS NULL DO UPDATE SET
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
@@ -360,9 +367,9 @@ func (r *ModuleRepository) UpsertAction(a *models.Action) error {
 			sentence = EXCLUDED.sentence,
 			type = EXCLUDED.type,
 			taxonomy = EXCLUDED.taxonomy,
-			updated_at = NOW()
+			updated_at = EXCLUDED.updated_at
 		RETURNING id
-	`, rowID(r.ids, a.ID), a.Name, a.Description, a.Call, a.ParamsSchema, a.Returns, a.Sentence, a.CreatedByType, a.CreatedByRef, a.ManifestID, a.Type, a.Taxonomy).Scan(&result).Error
+	`, rowID(r.ids, a.ID), a.Name, a.Description, a.Call, a.ParamsSchema, a.Returns, a.Sentence, a.CreatedByType, a.CreatedByRef, a.ManifestID, a.Type, a.Taxonomy, now, now).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -402,7 +409,7 @@ func (r *ModuleRepository) ArchiveActionByManifestID(moduleID, manifestID string
 	return r.db.Model(&models.Action{}).Where(
 		"created_by_type = ? AND created_by_ref = ? AND manifest_id = ? AND archived_at IS NULL",
 		"MODULE", moduleID, manifestID,
-	).Update("archived_at", gorm.Expr("NOW()")).Error
+	).Update("archived_at", r.now().UTC()).Error
 }
 
 // ListActionsByModulePrefix mirrors ListTriggersByModulePrefix for the
@@ -443,9 +450,10 @@ func (r *ModuleRepository) UpsertAsset(a *models.Asset) error {
 	var result struct {
 		ID uuid.UUID `gorm:"column:id"`
 	}
+	now := r.now().UTC()
 	err := r.db.Raw(`
-		INSERT INTO public.assets (id, name, description, manifest_path, repository_key, kind, content_type, created_by_type, created_by_ref, manifest_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO assets (id, name, description, manifest_path, repository_key, kind, content_type, created_by_type, created_by_ref, manifest_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) DO UPDATE SET
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
@@ -453,10 +461,10 @@ func (r *ModuleRepository) UpsertAsset(a *models.Asset) error {
 			repository_key = EXCLUDED.repository_key,
 			kind = EXCLUDED.kind,
 			content_type = EXCLUDED.content_type,
-			updated_at = NOW()
+			updated_at = EXCLUDED.updated_at
 		RETURNING id
 	`, rowID(r.ids, a.ID), a.Name, a.Description, a.ManifestPath, a.RepositoryKey, a.Kind, a.ContentType,
-		a.CreatedByType, a.CreatedByRef, a.ManifestID).Scan(&result).Error
+		a.CreatedByType, a.CreatedByRef, a.ManifestID, now, now).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -525,16 +533,17 @@ func (r *ModuleRepository) UpsertModuleResource(res *models.ModuleResource) erro
 	var result struct {
 		ID uuid.UUID `gorm:"column:id"`
 	}
+	now := r.now().UTC()
 	err := r.db.Raw(`
-		INSERT INTO public.module_resources (id, module_id, resource_type, resource_id, manifest_id, resource_name, original_version, current_version, installed_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO module_resources (id, module_id, resource_type, resource_id, manifest_id, resource_name, original_version, current_version, installed_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (module_id, resource_type, manifest_id) DO UPDATE SET
 			resource_id = EXCLUDED.resource_id,
 			resource_name = EXCLUDED.resource_name,
 			current_version = EXCLUDED.current_version,
-			updated_at = NOW()
+			updated_at = EXCLUDED.updated_at
 		RETURNING id
-	`, rowID(r.ids, res.ID), res.ModuleID, res.ResourceType, res.ResourceID, res.ManifestID, res.ResourceName, res.OriginalVersion, res.CurrentVersion).Scan(&result).Error
+	`, rowID(r.ids, res.ID), res.ModuleID, res.ResourceType, res.ResourceID, res.ManifestID, res.ResourceName, res.OriginalVersion, res.CurrentVersion, now, now).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -575,9 +584,10 @@ func (r *ModuleRepository) UpsertWidget(w *models.Widget) error {
 	var result struct {
 		ID uuid.UUID `gorm:"column:id"`
 	}
+	now := r.now().UTC()
 	err := r.db.Raw(`
-		INSERT INTO public.widgets (id, name, description, directory, entry, alert_types, settings_schema, surfaces, hosts_surface, taxonomy, behavior_kinds, created_by_type, created_by_ref, manifest_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO widgets (id, name, description, directory, entry, alert_types, settings_schema, surfaces, hosts_surface, taxonomy, behavior_kinds, created_by_type, created_by_ref, manifest_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) WHERE archived_at IS NULL DO UPDATE SET
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
@@ -589,9 +599,9 @@ func (r *ModuleRepository) UpsertWidget(w *models.Widget) error {
 			hosts_surface = EXCLUDED.hosts_surface,
 			taxonomy = EXCLUDED.taxonomy,
 			behavior_kinds = EXCLUDED.behavior_kinds,
-			updated_at = NOW()
+			updated_at = EXCLUDED.updated_at
 		RETURNING id
-	`, rowID(r.ids, w.ID), w.Name, w.Description, w.Directory, w.Entry, w.AlertTypes, w.SettingsSchema, w.Surfaces, w.HostsSurface, w.Taxonomy, w.BehaviorKinds, w.CreatedByType, w.CreatedByRef, w.ManifestID).Scan(&result).Error
+	`, rowID(r.ids, w.ID), w.Name, w.Description, w.Directory, w.Entry, w.AlertTypes, w.SettingsSchema, w.Surfaces, w.HostsSurface, w.Taxonomy, w.BehaviorKinds, w.CreatedByType, w.CreatedByRef, w.ManifestID, now, now).Scan(&result).Error
 	if err != nil {
 		return err
 	}
@@ -658,24 +668,25 @@ func (r *ModuleRepository) ArchiveWidgetByManifestID(moduleID, manifestID string
 	return r.db.Model(&models.Widget{}).Where(
 		"created_by_type = ? AND created_by_ref = ? AND manifest_id = ? AND archived_at IS NULL",
 		"MODULE", moduleID, manifestID,
-	).Update("archived_at", gorm.Expr("NOW()")).Error
+	).Update("archived_at", r.now().UTC()).Error
 }
 
 func (r *ModuleRepository) UpsertBackgroundTask(t *models.BackgroundTask) error {
 	var result struct {
 		ID uuid.UUID `gorm:"column:id"`
 	}
+	now := r.now().UTC()
 	err := r.db.Raw(`
-		INSERT INTO public.background_tasks (id, name, description, function, schedule, created_by_type, created_by_ref, manifest_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+		INSERT INTO background_tasks (id, name, description, function, schedule, created_by_type, created_by_ref, manifest_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) DO UPDATE SET
 			name = EXCLUDED.name,
 			description = EXCLUDED.description,
 			function = EXCLUDED.function,
 			schedule = EXCLUDED.schedule,
-			updated_at = NOW()
+			updated_at = EXCLUDED.updated_at
 		RETURNING id
-	`, rowID(r.ids, t.ID), t.Name, t.Description, t.Function, t.Schedule, t.CreatedByType, t.CreatedByRef, t.ManifestID).Scan(&result).Error
+	`, rowID(r.ids, t.ID), t.Name, t.Description, t.Function, t.Schedule, t.CreatedByType, t.CreatedByRef, t.ManifestID, now, now).Scan(&result).Error
 	if err != nil {
 		return err
 	}

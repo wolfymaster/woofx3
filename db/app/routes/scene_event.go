@@ -2,6 +2,7 @@ package routes
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
@@ -15,7 +16,7 @@ import (
 // Symmetric with `WidgetStatusRoutes` — engine-internal (sceneManager
 // only), no Casbin middleware yet.
 func SceneEventRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMiddleware) {
-	r := repo.NewSceneEventRepository(app.Db)
+	r := repo.NewSceneEventRepository(app.Db, func() time.Time { return time.Now().UTC() })
 	s := svc.NewSceneEventService(r)
 	handler := client.NewSceneEventServiceServer(
 		s,

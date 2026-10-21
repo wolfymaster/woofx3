@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
@@ -14,10 +15,13 @@ import (
 // `WidgetStatusRepository` / `AlertRepository`.
 type SceneEventRepository struct {
 	db *gorm.DB
+	// now stamps delivery and log rows, so both dialects store the same
+	// time format the rest of the row's timestamps use.
+	now func() time.Time
 }
 
-func NewSceneEventRepository(db *gorm.DB) *SceneEventRepository {
-	return &SceneEventRepository{db: db}
+func NewSceneEventRepository(db *gorm.DB, now func() time.Time) *SceneEventRepository {
+	return &SceneEventRepository{db: db, now: now}
 }
 
 // RecordSceneEvent persists the parent row plus one open delivery row
@@ -59,12 +63,12 @@ func (r *SceneEventRepository) RecordSceneEvent(event *models.SceneEvent, target
 // treated as a no-op — the caller's ack arrived late or twice, not an
 // error.
 func (r *SceneEventRepository) RecordDelivery(sceneEventID uuid.UUID, instanceID string) error {
-	return r.appendLog(sceneEventID, instanceID, "delivered", func(tx *gorm.DB, delivery *models.SceneEventDelivery) error {
+	return r.appendLog(sceneEventID, instanceID, "delivered", func(tx *gorm.DB, delivery *models.SceneEventDelivery, now time.Time) error {
 		return tx.Model(&models.SceneEventDelivery{}).
 			Where("scene_event_id = ? AND instance_id = ?", sceneEventID, instanceID).
 			Updates(map[string]interface{}{
-				"delivered_at":    gorm.Expr("NOW()"),
-				"last_attempt_at": gorm.Expr("NOW()"),
+				"delivered_at":    now,
+				"last_attempt_at": now,
 			}).Error
 	})
 }
@@ -74,7 +78,7 @@ func (r *SceneEventRepository) RecordDelivery(sceneEventID uuid.UUID, instanceID
 // log row is the permanent record. Idempotent: completing an
 // already-completed (deleted) delivery is a no-op, not an error.
 func (r *SceneEventRepository) RecordCompletion(sceneEventID uuid.UUID, instanceID string) error {
-	return r.appendLog(sceneEventID, instanceID, "completed", func(tx *gorm.DB, delivery *models.SceneEventDelivery) error {
+	return r.appendLog(sceneEventID, instanceID, "completed", func(tx *gorm.DB, delivery *models.SceneEventDelivery, now time.Time) error {
 		return tx.Where("scene_event_id = ? AND instance_id = ?", sceneEventID, instanceID).
 			Delete(&models.SceneEventDelivery{}).Error
 	})
@@ -83,14 +87,16 @@ func (r *SceneEventRepository) RecordCompletion(sceneEventID uuid.UUID, instance
 // appendLog is the shared transaction shape for RecordDelivery /
 // RecordCompletion: look up the delivery row (for its scene_id, and to
 // no-op when it's already gone), append the log row, then run the
-// caller's mutation against the delivery row.
+// caller's mutation against the delivery row. The log row and the mutation
+// are stamped with one time.
 func (r *SceneEventRepository) appendLog(
 	sceneEventID uuid.UUID,
 	instanceID string,
 	kind string,
-	mutate func(tx *gorm.DB, delivery *models.SceneEventDelivery) error,
+	mutate func(tx *gorm.DB, delivery *models.SceneEventDelivery, now time.Time) error,
 ) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
+		now := r.now().UTC()
 		var delivery models.SceneEventDelivery
 		err := tx.Where("scene_event_id = ? AND instance_id = ?", sceneEventID, instanceID).First(&delivery).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -104,15 +110,12 @@ func (r *SceneEventRepository) appendLog(
 			SceneID:      delivery.SceneID,
 			InstanceID:   instanceID,
 			Kind:         kind,
+			OccurredAt:   now,
 		}
-		if err := tx.Exec(
-			`INSERT INTO public.scene_event_log (scene_event_id, scene_id, instance_id, kind, occurred_at)
-			 VALUES (?, ?, ?, ?, NOW())`,
-			entry.SceneEventID, entry.SceneID, entry.InstanceID, entry.Kind,
-		).Error; err != nil {
+		if err := tx.Create(entry).Error; err != nil {
 			return err
 		}
-		return mutate(tx, &delivery)
+		return mutate(tx, &delivery, now)
 	})
 }
 
