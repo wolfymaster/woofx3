@@ -65,6 +65,20 @@ would carry no signature.
 | Inline `user/` bytes | `public, max-age=60, must-revalidate` | A thumbnail is written after its original |
 | Redirect | `public, max-age=3600` | Well inside the presigned URL's 12 hours |
 
+### Stored documents are inert
+
+A stored file is never allowed to run as a page on the engine's origin. Barkloader
+sends `X-Content-Type-Options: nosniff` with every asset, and
+`Content-Security-Policy: sandbox; default-src 'none'` with html, svg and xml
+types. A `user/` file of one of those types is also sent as
+`Content-Disposition: attachment`. Content types come from a fixed table of
+extensions; anything else is served as `application/octet-stream`.
+
+The scene manager adds the same protection (`sandbox` and `nosniff`) to what it
+relays under `/assets/user/*` and `/assets/modules/*`, except for files under
+`/assets/modules/{module}/{version}/widgets/` and `.../themes/`, which a widget
+frame loads as its own scripts, styles, fonts and media.
+
 ## How an upload is stored
 
 A caller never sends bytes through the api. It asks for a grant, PUTs
