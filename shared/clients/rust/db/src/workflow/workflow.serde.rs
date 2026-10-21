@@ -893,6 +893,15 @@ impl serde::Serialize for ExecutionStep {
         if self.step_index != 0 {
             len += 1;
         }
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        if self.created_at.is_some() {
+            len += 1;
+        }
+        if self.updated_at.is_some() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("workflow.ExecutionStep", len)?;
         if !self.step_id.is_empty() {
             struct_ser.serialize_field("stepId", &self.step_id)?;
@@ -929,6 +938,15 @@ impl serde::Serialize for ExecutionStep {
         if self.step_index != 0 {
             struct_ser.serialize_field("stepIndex", &self.step_index)?;
         }
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        if let Some(v) = self.created_at.as_ref() {
+            struct_ser.serialize_field("createdAt", v)?;
+        }
+        if let Some(v) = self.updated_at.as_ref() {
+            struct_ser.serialize_field("updatedAt", v)?;
+        }
         struct_ser.end()
     }
 }
@@ -957,6 +975,11 @@ impl<'de> serde::Deserialize<'de> for ExecutionStep {
             "outputsJson",
             "step_index",
             "stepIndex",
+            "id",
+            "created_at",
+            "createdAt",
+            "updated_at",
+            "updatedAt",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -972,6 +995,9 @@ impl<'de> serde::Deserialize<'de> for ExecutionStep {
             InputsJson,
             OutputsJson,
             StepIndex,
+            Id,
+            CreatedAt,
+            UpdatedAt,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -1004,6 +1030,9 @@ impl<'de> serde::Deserialize<'de> for ExecutionStep {
                             "inputsJson" | "inputs_json" => Ok(GeneratedField::InputsJson),
                             "outputsJson" | "outputs_json" => Ok(GeneratedField::OutputsJson),
                             "stepIndex" | "step_index" => Ok(GeneratedField::StepIndex),
+                            "id" => Ok(GeneratedField::Id),
+                            "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
+                            "updatedAt" | "updated_at" => Ok(GeneratedField::UpdatedAt),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -1034,6 +1063,9 @@ impl<'de> serde::Deserialize<'de> for ExecutionStep {
                 let mut inputs_json__ = None;
                 let mut outputs_json__ = None;
                 let mut step_index__ = None;
+                let mut id__ = None;
+                let mut created_at__ = None;
+                let mut updated_at__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::StepId => {
@@ -1108,6 +1140,24 @@ impl<'de> serde::Deserialize<'de> for ExecutionStep {
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
                         }
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::CreatedAt => {
+                            if created_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("createdAt"));
+                            }
+                            created_at__ = map_.next_value()?;
+                        }
+                        GeneratedField::UpdatedAt => {
+                            if updated_at__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("updatedAt"));
+                            }
+                            updated_at__ = map_.next_value()?;
+                        }
                     }
                 }
                 Ok(ExecutionStep {
@@ -1122,6 +1172,9 @@ impl<'de> serde::Deserialize<'de> for ExecutionStep {
                     inputs_json: inputs_json__.unwrap_or_default(),
                     outputs_json: outputs_json__.unwrap_or_default(),
                     step_index: step_index__.unwrap_or_default(),
+                    id: id__.unwrap_or_default(),
+                    created_at: created_at__,
+                    updated_at: updated_at__,
                 })
             }
         }

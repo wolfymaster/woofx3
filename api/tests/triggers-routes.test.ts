@@ -106,3 +106,106 @@ describe("moduleProjectionKey", () => {
     expect(moduleProjectionKey({ createdByType: "MODULE", createdByRef: "m", manifestId: "" }, "action")).toBe("");
   });
 });
+
+/** getWorkflowCatalog reads triggers, actions and modules; a reader that throws stands for db-proxy failing. */
+function getWorkflowCatalog(db: { triggers?: unknown[]; actions?: unknown[]; modules?: unknown[]; failing?: string }) {
+  const read = (name: string, rows: unknown[] | undefined) => async () => {
+    if (db.failing === name) {
+      throw new Error(`db.${name} failed`);
+    }
+    return rows ?? [];
+  };
+  const ctx = {
+    db: {
+      listTriggers: read("listTriggers", db.triggers),
+      listActions: read("listActions", db.actions),
+      listModules: read("listModules", db.modules),
+    },
+  };
+  const route = triggersRoutes.getWorkflowCatalog as unknown as () => Promise<{
+    triggers: Record<string, unknown>[];
+    actions: Record<string, unknown>[];
+    functions: Record<string, unknown>[];
+  }>;
+  return route.call(ctx);
+}
+
+describe("getWorkflowCatalog", () => {
+  test("lists triggers and actions as getTriggers and getActions do, and every module function", async () => {
+    const catalog = await getWorkflowCatalog({
+      triggers: [
+        {
+          id: "t1",
+          createdByType: "MODULE",
+          createdByRef: "twitch",
+          manifestId: "follow",
+          transport: "eventbus",
+          handler: "",
+        },
+      ],
+      actions: [
+        { id: "a1", createdByType: "MODULE", createdByRef: "woofx3", manifestId: "counter.increment", sentence: "" },
+      ],
+      modules: [
+        {
+          id: "mod-1",
+          name: "counter",
+          functions: [
+            { id: "f1", manifestId: "increment", name: "Increment", runtime: "lua" },
+            { id: "f2", manifestId: "", name: "Unnamed", runtime: "lua" },
+          ],
+        },
+      ],
+    });
+
+    expect(catalog.triggers).toEqual([
+      {
+        id: "t1",
+        createdByType: "MODULE",
+        createdByRef: "twitch",
+        manifestId: "follow",
+        transport: "eventbus",
+        projectionKey: "twitch:trigger:follow",
+      },
+    ]);
+    expect(catalog.actions).toEqual([
+      {
+        id: "a1",
+        createdByType: "MODULE",
+        createdByRef: "woofx3",
+        manifestId: "counter.increment",
+        projectionKey: "woofx3:action:counter.increment",
+      },
+    ]);
+    expect(catalog.functions).toEqual([
+      {
+        id: "f1",
+        moduleId: "mod-1",
+        moduleName: "counter",
+        manifestId: "increment",
+        name: "Increment",
+        qualifiedName: "counter/increment",
+        runtime: "lua",
+      },
+    ]);
+  });
+
+  // A webhook trigger is fired by its module's handler; the builder cannot bind to it.
+  test("leaves out triggers fired by inbound HTTP", async () => {
+    const catalog = await getWorkflowCatalog({
+      triggers: [
+        { id: "hook", createdByType: "MODULE", createdByRef: "throne", manifestId: "gift", transport: "webhook" },
+        { id: "bus", createdByType: "MODULE", createdByRef: "twitch", manifestId: "raid", transport: "eventbus" },
+        { id: "old", createdByType: "SYSTEM", createdByRef: "", manifestId: "" },
+      ],
+    });
+
+    expect(catalog.triggers.map((trigger) => trigger.id)).toEqual(["bus", "old"]);
+  });
+
+  for (const failing of ["listTriggers", "listActions", "listModules"]) {
+    test(`fails whole when ${failing} fails, rather than answering part of the catalog`, async () => {
+      await expect(getWorkflowCatalog({ failing })).rejects.toThrow(`db.${failing} failed`);
+    });
+  }
+});

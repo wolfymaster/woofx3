@@ -38,10 +38,13 @@ import type {
 } from "./stream-events";
 import type {
   ActionDefinition,
+  AlertSnapshot,
   ModuleResourceUsage,
   ResourceInstanceDefinition,
   TriggerDefinition,
   WidgetBehaviorKinds,
+  WorkflowRunSnapshot,
+  WorkflowRunStepSnapshot,
 } from "./webhooks";
 import type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
 import type { TaskDefinition, WorkflowDefinition } from "./workflow-definition";
@@ -273,6 +276,35 @@ export interface WorkflowRunsQuery {
 }
 
 /**
+ * A recorded run as `getWorkflowRun` returns it: the run, every step it
+ * recorded in the order it ran them, and the alerts it fired. The run and its
+ * steps are the snapshots `workflow.run.recorded`, `workflow.run.updated` and
+ * `workflow.run.step.recorded` carry, read from the engine's stored history.
+ */
+export interface WorkflowRunDetail {
+  /** `workflowName` is "" when the workflow has since been deleted. */
+  run: WorkflowRunSnapshot & { workflowName: string };
+  steps: WorkflowRunStepSnapshot[];
+  /** Newest first, at most WORKFLOW_RUN_ALERT_LIMIT. */
+  alerts: AlertSnapshot[];
+}
+
+/** Most alerts `getWorkflowRun` returns for one run; a run fires a handful at most. */
+export const WORKFLOW_RUN_ALERT_LIMIT = 50;
+
+/**
+ * Every trigger and action a workflow can use, and the module functions an
+ * action can call, as `getWorkflowCatalog` returns them in one read. Triggers
+ * fired by inbound HTTP (`transport` `"webhook"`) are left out: nothing binds
+ * to them.
+ */
+export interface WorkflowCatalog {
+  triggers: TriggerDefinition[];
+  actions: ActionDefinition[];
+  functions: AvailableFunction[];
+}
+
+/**
  * Whether the engine could load a stored workflow. `"error"` means the saved
  * definition is not running as saved: usually it never fires (unreadable,
  * refused, or its trigger could not be registered), though a refused update
@@ -434,6 +466,32 @@ export interface AvailableFunction {
   /** Slash-separated barkloader invoke path (`{moduleName}/{manifestId}`). */
   qualifiedName: string;
   runtime: string;
+}
+
+/**
+ * A resource kind an installed module declares in its manifest's
+ * `resources[]`: the definition an instance is created from. Two modules may
+ * each declare a kind of the same name; `moduleName` tells them apart.
+ */
+export interface DeclaredResourceKind {
+  /** The declaring module's manifest id, the first segment of its instances' canonical ids. */
+  moduleName: string;
+  kind: string;
+  name: string;
+  description: string;
+  /** A lucide icon name, when the module chose one. */
+  icon?: string;
+  /**
+   * The create-instance form, as config fields: the vocabulary actions and
+   * triggers declare. Passed through as the manifest holds it; the engine
+   * never reads it.
+   */
+  schema: unknown[];
+  /**
+   * Where in an instance's value the reading shown beside its name is: object
+   * keys and list indexes joined by `.`. Absent means the whole value.
+   */
+  summaryPath?: string;
 }
 
 /**
@@ -906,6 +964,57 @@ export interface AlertClearResult {
 export interface AlertReplayResult {
   ok: boolean;
   replayEnvelopeId?: string;
+  reason?: string;
+}
+
+/** Arguments to `listAlerts`. Every field is optional. */
+export interface AlertListQuery {
+  /** At most this many alerts, 1 to ALERT_LIST_MAX_LIMIT. Default ALERT_LIST_DEFAULT_LIMIT. */
+  limit?: number;
+  /** Alerts to skip from the newest, for the next page. Default 0. */
+  offset?: number;
+  /** Only the alerts this workflow run fired (`AlertSnapshot.workflowId`). */
+  workflowId?: string;
+}
+
+export const ALERT_LIST_DEFAULT_LIMIT = 50;
+export const ALERT_LIST_MAX_LIMIT = 500;
+
+/**
+ * A page of `listAlerts`: the engine's recorded alerts, newest first, each the
+ * snapshot the `alert.*` callbacks carry. `totalCount` counts every alert the
+ * query matches, not only this page.
+ */
+export interface AlertListPage {
+  alerts: AlertSnapshot[];
+  totalCount: number;
+  limit: number;
+  offset: number;
+}
+
+/**
+ * One alert in the overlays' queue. `alertId` is its recorded row
+ * (`AlertSnapshot.id`), or "" for a delivery queued before deliveries carried
+ * their row; `envelopeId` is its envelope id either way.
+ */
+export interface AlertQueueEntry {
+  alertId: string;
+  envelopeId: string;
+  /** ISO 8601. When an overlay first reported starting it; set only on a playing alert. */
+  startedAt?: string;
+}
+
+/**
+ * Outcome of `getAlertQueue`: the alerts the open overlays are playing and
+ * the alerts waiting behind them, each counted once however many alert
+ * widgets show it. With `ok` false the queue could not be read (no overlay is
+ * open, or the scene manager did not answer), both lists are empty, and
+ * `reason` says why.
+ */
+export interface AlertQueueState {
+  ok: boolean;
+  playing: AlertQueueEntry[];
+  waiting: AlertQueueEntry[];
   reason?: string;
 }
 
@@ -1762,9 +1871,21 @@ export interface Woofx3EngineApi {
    */
   listResourceInstancesForModule(moduleKey: string, moduleName?: string): Promise<ResourceInstanceDefinition[]>;
 
+  /**
+   * Every resource kind the installed modules' manifests declare, one entry
+   * per declaration, by module and then in manifest order. Requires the
+   * `modules.resourceKinds` capability.
+   */
+  listResourceKinds(): Promise<DeclaredResourceKind[]>;
+
   // Triggers & actions catalog
   getTriggers(createdByType?: string, createdByRef?: string): Promise<TriggerDefinition[]>;
   getActions(createdByType?: string, createdByRef?: string): Promise<ActionDefinition[]>;
+  /**
+   * The triggers, actions and module functions a workflow can use, read
+   * together. Requires the `workflow.catalog` capability.
+   */
+  getWorkflowCatalog(): Promise<WorkflowCatalog>;
 
   // Workflows
   getWorkflows(query?: WorkflowsQuery): Promise<PaginatedWorkflows>;
@@ -1778,6 +1899,12 @@ export interface Woofx3EngineApi {
     correlationKey?: string
   ): Promise<{ id: string; isEnabled: boolean }>;
   getWorkflowRuns(query?: WorkflowRunsQuery): Promise<WorkflowRun[]>;
+  /**
+   * One recorded run with its steps' inputs, outputs, errors, timings and
+   * attempts, and the alerts it fired. Null when the engine holds no run with
+   * that id. Requires the `workflow.runDetail` capability.
+   */
+  getWorkflowRun(executionId: string): Promise<WorkflowRunDetail | null>;
   /**
    * Health of every enabled workflow the engine has loaded. Authoritative:
    * a client replaces its whole view with the answer, and any workflow not
@@ -2162,6 +2289,19 @@ export interface Woofx3EngineApi {
    * `skipCurrentAlert` to stop everything.
    */
   clearAlertQueue(): Promise<AlertClearResult>;
+
+  /**
+   * The engine's recorded alerts, newest first: every alert it dispatched
+   * and how each one went, kept until the db proxy prunes settled alerts.
+   * Requires the `alerts.history` capability.
+   */
+  listAlerts(query?: AlertListQuery): Promise<AlertListPage>;
+
+  /**
+   * What the open overlays are playing now and what waits behind it, as the
+   * scene manager holds it. Requires the `alerts.queueState` capability.
+   */
+  getAlertQueue(): Promise<AlertQueueState>;
 
   /**
    * How the scene manager's connection to OBS is doing, for the OBS module's

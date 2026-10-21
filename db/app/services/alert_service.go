@@ -107,12 +107,20 @@ func (s *alertService) ListAlerts(ctx context.Context, req *client.ListAlertsReq
 	if offset < 0 {
 		offset = 0
 	}
+	var filter repo.AlertFilter
+	if req.WorkflowId != "" {
+		parsed, parseErr := uuid.Parse(req.WorkflowId)
+		if parseErr != nil {
+			return nil, twirp.InvalidArgumentError("workflow_id", "invalid UUID format")
+		}
+		filter.WorkflowID = &parsed
+	}
 
-	alerts, err := s.repo.List(limit, offset)
+	alerts, err := s.repo.List(filter, limit, offset)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list alerts: %w", err))
 	}
-	total, err := s.repo.Count()
+	total, err := s.repo.Count(filter)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to count alerts: %w", err))
 	}

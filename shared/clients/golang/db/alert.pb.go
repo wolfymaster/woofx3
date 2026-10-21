@@ -486,9 +486,12 @@ func (x *AlertResponse) GetAlert() *Alert {
 }
 
 type ListAlertsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
-	Offset        int32                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Limit  int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	Offset int32                  `protobuf:"varint,3,opt,name=offset,proto3" json:"offset,omitempty"`
+	// When set, only the alerts that workflow execution fired (`Alert.workflow_id`).
+	// `total_count` then counts those alerts only. Not a UUID: INVALID_ARGUMENT.
+	WorkflowId    string `protobuf:"bytes,6,opt,name=workflow_id,json=workflowId,proto3" json:"workflow_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -535,6 +538,13 @@ func (x *ListAlertsRequest) GetOffset() int32 {
 		return x.Offset
 	}
 	return 0
+}
+
+func (x *ListAlertsRequest) GetWorkflowId() string {
+	if x != nil {
+		return x.WorkflowId
+	}
+	return ""
 }
 
 type ListAlertsResponse struct {
@@ -753,10 +763,12 @@ const file_alert_proto_rawDesc = "" +
 	"\x02id\x18\x05 \x01(\tR\x02idJ\x04\b\x01\x10\x02R\x0eapplication_id\"c\n" +
 	"\rAlertResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12\"\n" +
-	"\x05alert\x18\x02 \x01(\v2\f.alert.AlertR\x05alert\"W\n" +
+	"\x05alert\x18\x02 \x01(\v2\f.alert.AlertR\x05alert\"x\n" +
 	"\x11ListAlertsRequest\x12\x14\n" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\x12\x16\n" +
-	"\x06offset\x18\x03 \x01(\x05R\x06offsetJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xb9\x01\n" +
+	"\x06offset\x18\x03 \x01(\x05R\x06offset\x12\x1f\n" +
+	"\vworkflow_id\x18\x06 \x01(\tR\n" +
+	"workflowIdJ\x04\b\x01\x10\x02R\x0eapplication_id\"\xb9\x01\n" +
 	"\x12ListAlertsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12$\n" +
 	"\x06alerts\x18\x02 \x03(\v2\f.alert.AlertR\x06alerts\x12\x1f\n" +

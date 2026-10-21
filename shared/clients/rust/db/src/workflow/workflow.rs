@@ -143,6 +143,13 @@ pub struct ExecutionStep {
     /// is edited.
     #[prost(int32, tag="13")]
     pub step_index: i32,
+    /// The step row's own id: one row per (execution, step, attempt).
+    #[prost(string, tag="14")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="15")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(message, optional, tag="16")]
+    pub updated_at: ::core::option::Option<::pbjson_types::Timestamp>,
 }
 /// Request to create a new workflow
 #[derive(Clone, PartialEq, ::prost::Message)]

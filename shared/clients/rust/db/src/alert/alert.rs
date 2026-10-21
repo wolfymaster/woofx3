@@ -113,12 +113,16 @@ pub struct AlertResponse {
     #[prost(message, optional, tag="2")]
     pub alert: ::core::option::Option<Alert>,
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListAlertsRequest {
     #[prost(int32, tag="2")]
     pub limit: i32,
     #[prost(int32, tag="3")]
     pub offset: i32,
+    /// When set, only the alerts that workflow execution fired (`Alert.workflow_id`).
+    /// `total_count` then counts those alerts only. Not a UUID: INVALID_ARGUMENT.
+    #[prost(string, tag="6")]
+    pub workflow_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListAlertsResponse {

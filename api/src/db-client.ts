@@ -116,12 +116,12 @@ function unwrapVoid(op: string, response: { status?: { code?: string; message?: 
 }
 
 /**
- * Runs a read keyed by a stream session id and returns null when db-proxy has
- * no such session. Session ids are opaque to callers, so an id db-proxy cannot
- * parse (`invalid_argument`) is the same answer as one it cannot find; callers
+ * Runs a read keyed by a row id and returns null when db-proxy has no such
+ * row. Ids are opaque to callers, so an id db-proxy cannot parse
+ * (`invalid_argument`) is the same answer as one it cannot find; callers
  * validate every other argument first, so that code means the id.
  */
-async function nullWhenSessionMissing<T>(op: string, read: () => Promise<T>): Promise<T | null> {
+async function nullWhenMissing<T>(op: string, read: () => Promise<T>): Promise<T | null> {
   try {
     return await read();
   } catch (err) {
@@ -299,8 +299,8 @@ export class DbClient {
 
   /** The workflow, or null when it does not exist. See findScene. */
   async findWorkflow(req: workflow.GetWorkflowRequest): Promise<workflow.Workflow | null> {
-    const response = await workflow.GetWorkflow(req, this.config);
-    if (response.status?.code !== "OK" || !response.workflow) {
+    const response = await nullWhenMissing("findWorkflow", () => workflow.GetWorkflow(req, this.config));
+    if (!response || response.status?.code !== "OK" || !response.workflow) {
       return null;
     }
     return response.workflow;
@@ -449,6 +449,14 @@ export class DbClient {
     return unwrap("getWorkflowExecution", response, response.execution);
   }
 
+  /** The run with its steps, or null when db-proxy holds no run with that id. */
+  async findWorkflowExecution(req: workflow.GetWorkflowExecutionRequest): Promise<workflow.WorkflowExecution | null> {
+    const response = await nullWhenMissing("findWorkflowExecution", () =>
+      workflow.GetWorkflowExecution(req, this.config)
+    );
+    return response ? unwrap("findWorkflowExecution", response, response.execution) : null;
+  }
+
   async listWorkflowExecutions(
     req: workflow.ListWorkflowExecutionsRequest
   ): Promise<{ executions: workflow.WorkflowExecution[]; totalCount: number; page: number; pageSize: number }> {
@@ -501,8 +509,10 @@ export class DbClient {
     return alert.GetAlertByEnvelopeId(req, this.config);
   }
 
-  async listAlerts(req: alert.ListAlertsRequest): Promise<alert.ListAlertsResponse> {
-    return alert.ListAlerts(req, this.config);
+  async listAlerts(req: alert.ListAlertsRequest): Promise<{ alerts: alert.Alert[]; totalCount: number }> {
+    const response = await alert.ListAlerts(req, this.config);
+    unwrapVoid("listAlerts", response);
+    return { alerts: response.alerts ?? [], totalCount: Number(response.totalCount ?? 0) };
   }
 
   // `replayed` is the only status UpdateAlertStatus accepts.
@@ -646,7 +656,7 @@ export class DbClient {
    * or null when db-proxy has no session with that id.
    */
   async findStreamGaugeSamples(streamSessionId: string): Promise<stream_gauge.StreamGaugeSample[] | null> {
-    const response = await nullWhenSessionMissing("findStreamGaugeSamples", () =>
+    const response = await nullWhenMissing("findStreamGaugeSamples", () =>
       stream_gauge.ListStreamGaugeSamples({ streamSessionId }, this.config)
     );
     if (response === null) {
@@ -664,7 +674,7 @@ export class DbClient {
    * one whose raw events are already being pruned, whose copy then stands.
    */
   async compactStreamSession(streamSessionId: string): Promise<user_event.CompactStreamSessionResponse | null> {
-    const response = await nullWhenSessionMissing("compactStreamSession", () =>
+    const response = await nullWhenMissing("compactStreamSession", () =>
       user_event.CompactStreamSession({ streamSessionId }, this.config)
     );
     if (response === null) {
@@ -676,7 +686,7 @@ export class DbClient {
 
   /** Channel totals for the time a session owns, or null for an unknown session. */
   async findStreamSessionEventTotals(streamSessionId: string): Promise<user_event.StreamSessionEventTotals | null> {
-    const response = await nullWhenSessionMissing("findStreamSessionEventTotals", () =>
+    const response = await nullWhenMissing("findStreamSessionEventTotals", () =>
       user_event.GetStreamSessionEventTotals({ streamSessionId }, this.config)
     );
     if (response === null) {
@@ -692,7 +702,7 @@ export class DbClient {
   async findViewerEventTotals(
     req: user_event.GetViewerEventTotalsRequest
   ): Promise<user_event.ViewerEventTotals | null> {
-    const response = await nullWhenSessionMissing("findViewerEventTotals", () =>
+    const response = await nullWhenMissing("findViewerEventTotals", () =>
       user_event.GetViewerEventTotals(req, this.config)
     );
     if (response === null) {
@@ -705,7 +715,7 @@ export class DbClient {
   async findViewerLeaderboard(
     req: user_event.ListViewerLeaderboardRequest
   ): Promise<user_event.LeaderboardEntry[] | null> {
-    const response = await nullWhenSessionMissing("findViewerLeaderboard", () =>
+    const response = await nullWhenMissing("findViewerLeaderboard", () =>
       user_event.ListViewerLeaderboard(req, this.config)
     );
     if (response === null) {
@@ -722,7 +732,7 @@ export class DbClient {
   async findStreamSessionUserEvents(
     req: user_event.ListStreamSessionUserEventsRequest
   ): Promise<{ events: user_event.UserEvent[]; total: bigint } | null> {
-    const response = await nullWhenSessionMissing("findStreamSessionUserEvents", () =>
+    const response = await nullWhenMissing("findStreamSessionUserEvents", () =>
       user_event.ListStreamSessionUserEvents(req, this.config)
     );
     if (response === null) {

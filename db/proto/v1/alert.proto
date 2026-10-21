@@ -131,6 +131,9 @@ message ListAlertsRequest {
   reserved "application_id";
   int32 limit = 2;
   int32 offset = 3;
+  // When set, only the alerts that workflow execution fired (`Alert.workflow_id`).
+  // `total_count` then counts those alerts only. Not a UUID: INVALID_ARGUMENT.
+  string workflow_id = 6;
 }
 
 message ListAlertsResponse {

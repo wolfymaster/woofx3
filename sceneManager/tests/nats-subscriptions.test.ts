@@ -167,7 +167,7 @@ describe("alert queue control subjects", () => {
     return handlers;
   }
 
-  it("answers skip, clear and replay with a refusal when no overlay is open", async () => {
+  it("answers skip, clear, replay and state with a refusal when no overlay is open", async () => {
     const handlers = await wire({ connectedSceneIds: () => [] });
 
     expect(await request(handlers, "widget.queue.skip", {})).toEqual({
@@ -182,6 +182,12 @@ describe("alert queue control subjects", () => {
     });
     expect(await request(handlers, "widget.queue.replay", { id: "row-1" })).toEqual({
       ok: false,
+      reason: "no overlay is open",
+    });
+    expect(await request(handlers, "widget.queue.state", {})).toEqual({
+      ok: false,
+      playing: [],
+      waiting: [],
       reason: "no overlay is open",
     });
   });
@@ -207,7 +213,7 @@ describe("alert queue control subjects", () => {
       },
     });
     let responded = false;
-    for (const subject of ["widget.queue.skip", "widget.queue.clear", "widget.queue.replay"]) {
+    for (const subject of ["widget.queue.skip", "widget.queue.clear", "widget.queue.replay", "widget.queue.state"]) {
       await handlers.get(subject)!({
         subject,
         json: () => ({ id: "row-1" }),
