@@ -27,7 +27,11 @@ export const DEFAULT_SENT_LINE_CONFIG: SentLineConfig = {
 /** Milliseconds since the epoch. Injected so tests control expiry. */
 export type Clock = () => number;
 
-/** `text` made safe to say: a line that would run a command no longer starts with the prefix. */
+/**
+ * `text` made safe to say: a line that would run a command no longer starts
+ * with the prefix. Must match guardChatLine in twitch/src/lib/helix.ts, which
+ * guards lines the bot says through Helix.
+ */
 export function guardOutgoingLine(text: string): string {
   if (text.startsWith(COMMAND_PREFIX)) {
     return `${ZERO_WIDTH_SPACE}${text}`;
