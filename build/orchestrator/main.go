@@ -86,14 +86,7 @@ func main() {
 		fatalExit(sharedLogger, reporter, "Failed to copy existing engine data into the data directory", err)
 	}
 
-	// Every service that reads one of these refuses to start without a
-	// usable value, so each is resolved, and generated on first run, here.
-	engineSecrets := []SecretSpec{
-		{Name: "barkloader-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey"},
-		{Name: "scene-manager-token-secret", EnvKey: "WOOFX3_SCENE_MANAGER_TOKEN_SECRET", ConfigKey: "sceneManagerTokenSecret"},
-		{Name: "messagebus-token", EnvKey: "WOOFX3_MESSAGEBUS_TOKEN", ConfigKey: "messagebusToken"},
-	}
-	secrets, err := ResolveSecrets(engineSecrets, sources, engineStateDir(workDir, woofx3config.DataDir()), rand.Reader, logger)
+	secrets, err := ResolveSecrets(engineSecretSpecs(), sources, engineStateDir(workDir, woofx3config.DataDir()), rand.Reader, logger)
 	if err != nil {
 		fatalExit(sharedLogger, reporter, "Failed to resolve the engine secrets", err)
 	}
@@ -1022,4 +1015,15 @@ func (s *Supervisor) checkHealthOverHTTP(ctx context.Context, endpoint string) b
 	defer response.Body.Close()
 
 	return response.StatusCode == http.StatusOK
+}
+
+// engineSecretSpecs lists the secrets every service that reads one refuses to
+// start without, so each is resolved, and generated on first run, by the
+// orchestrator.
+func engineSecretSpecs() []SecretSpec {
+	return []SecretSpec{
+		{Name: "barkloader-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey"},
+		{Name: "scene-manager-token-secret", EnvKey: "WOOFX3_SCENE_MANAGER_TOKEN_SECRET", ConfigKey: "sceneManagerTokenSecret"},
+		{Name: "messagebus-token", EnvKey: "WOOFX3_MESSAGEBUS_TOKEN", ConfigKey: "messagebusToken"},
+	}
 }
