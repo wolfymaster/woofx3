@@ -393,6 +393,21 @@ describe("EngineEventStream requests", () => {
     await slow.releaseAll();
   });
 
+  test("a request whose caller stopped waiting before it was sent is not pushed", async () => {
+    const { stream } = newStream();
+    const slow = stalled();
+    stream.subscribe(slow.subscriber, undefined, {}, "local");
+    stream.publish(workflowDeleted("in flight"));
+
+    await expect(stream.request(tokenRequest(), "local", 10)).rejects.toThrow("no answer on the event stream");
+    stream.publish(workflowDeleted("after"));
+    await slow.releaseAll();
+
+    expect(slow.frames.map((f) => f.kind)).toEqual(["event", "event"]);
+    expect(slow.frames.map((f) => f.seq)).toEqual([1, 3]);
+    expect(stream.subscriberCount).toBe(1);
+  });
+
   test("rejects when the client has no subscription", async () => {
     const { stream } = newStream();
     await expect(stream.request(tokenRequest(), "local", 1_000)).rejects.toThrow(

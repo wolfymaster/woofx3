@@ -285,6 +285,11 @@ export class EngineEventStream {
         if (subscription.closed) {
           return;
         }
+        if (frame.kind === "request" && this.pending.get(frame.envelope.id)?.subscription !== subscription) {
+          // Its caller stopped waiting (timed out, or answered already), so
+          // pushing it would only ask the client a question nobody hears.
+          continue;
+        }
         const failure = await this.push(subscription, frame);
         if (failure !== null) {
           this.dropSubscription(subscription, failure);
