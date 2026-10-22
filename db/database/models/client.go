@@ -24,10 +24,10 @@ type Client struct {
 	ID          int       `gorm:"primaryKey;autoIncrement"`
 	Description string    `gorm:"type:varchar(100)"`
 	ClientID    uuid.UUID `gorm:"column:client_id;type:uuid;not null;uniqueIndex"`
-	// ClientSecret is the plain text of a secret issued before secrets were
-	// hashed, kept only so the previous release can still validate it; nil
-	// for every client created since. Nothing in this release reads it but
-	// the startup pass that hashes it.
+	// ClientSecret is a plain-text secret, as issued before secrets were
+	// hashed or written by an older release run on this schema after a
+	// rollback. Only HashStoredClientSecrets reads it: it hashes and clears
+	// it before db-proxy serves, so it is nil for every client then.
 	ClientSecret *string `gorm:"column:client_secret;type:varchar(100)"`
 	// ClientSecretHash is the lowercase hex SHA-256 of the secret.
 	ClientSecretHash *string    `gorm:"column:client_secret_hash"`

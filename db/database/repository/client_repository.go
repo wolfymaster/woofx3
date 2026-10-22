@@ -88,20 +88,26 @@ func (r *ClientRepository) RecordAuthentication(clientID uuid.UUID, at time.Time
 	return res.RowsAffected > 0, nil
 }
 
-// ListUnhashed returns the clients that have a plain-text secret and no hash.
-func (r *ClientRepository) ListUnhashed() ([]models.Client, error) {
-	var clients []models.Client
-	err := r.db.Where("client_secret_hash IS NULL AND client_secret IS NOT NULL").Find(&clients).Error
-	return clients, err
+// ListPlaintextSecretIDs returns the ids of the clients that still have a
+// plain-text secret.
+func (r *ClientRepository) ListPlaintextSecretIDs() ([]int, error) {
+	var ids []int
+	err := r.db.Model(&models.Client{}).Where("client_secret IS NOT NULL").Order("id").Pluck("id", &ids).Error
+	return ids, err
 }
 
-// SetSecretHash stores `hash` for the client with `id`, only while it still
-// has no hash and its plain-text secret is still `plaintext`, and reports
-// whether it did. A write landing between the read and this one is kept.
-func (r *ClientRepository) SetSecretHash(id int, plaintext, hash string) (bool, error) {
-	res := r.db.Model(&models.Client{}).
-		Where("id = ? AND client_secret_hash IS NULL AND client_secret = ?", id, plaintext).
-		Update("client_secret_hash", hash)
+// ReplacePlaintextSecret stores `hash` and clears the plain-text secret of
+// the client with `id`, only while the row still holds `plaintext` and
+// `expectedHash` (nil for no hash), and reports whether it did. A write
+// landing between the caller's read and this one is kept.
+func (r *ClientRepository) ReplacePlaintextSecret(id int, plaintext string, expectedHash *string, hash string) (bool, error) {
+	query := r.db.Model(&models.Client{}).Where("id = ? AND client_secret = ?", id, plaintext)
+	if expectedHash == nil {
+		query = query.Where("client_secret_hash IS NULL")
+	} else {
+		query = query.Where("client_secret_hash = ?", *expectedHash)
+	}
+	res := query.Updates(map[string]interface{}{"client_secret": nil, "client_secret_hash": hash})
 	if res.Error != nil {
 		return false, res.Error
 	}

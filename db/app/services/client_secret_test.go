@@ -123,7 +123,7 @@ func TestClientServiceNeverReturnsAStoredSecret(t *testing.T) {
 	})
 }
 
-func TestHashStoredClientSecretsHashesPlainTextOnce(t *testing.T) {
+func TestHashStoredClientSecretsHashesAndClearsPlainTextOnce(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 		clients := repo.NewClientRepository(db)
@@ -140,11 +140,11 @@ func TestHashStoredClientSecretsHashesPlainTextOnce(t *testing.T) {
 		}
 
 		if first != 1 || second != 0 {
-			t.Errorf("hashed %d then %d, want 1 then 0", first, second)
+			t.Errorf("settled %d then %d, want 1 then 0", first, second)
 		}
 		stored := readStoredSecret(t, db, legacy)
-		if stored.ClientSecret == nil || *stored.ClientSecret != "legacy-plain-text" {
-			t.Error("the plain text the previous release validates against was not kept")
+		if stored.ClientSecret != nil {
+			t.Errorf("the plain-text secret is still stored: %q", *stored.ClientSecret)
 		}
 		if stored.ClientSecretHash == nil || *stored.ClientSecretHash != hashClientSecret("legacy-plain-text") {
 			t.Errorf("stored hash = %v", stored.ClientSecretHash)
@@ -155,24 +155,100 @@ func TestHashStoredClientSecretsHashesPlainTextOnce(t *testing.T) {
 	})
 }
 
-func TestSetSecretHashKeepsAWriteThatLandedSinceTheRead(t *testing.T) {
+func TestHashStoredClientSecretsKeepsAStoredHashOverPlainTextBesideIt(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		svc := newClientSvc(t, db)
+		created := createClient(t, svc, &client.CreateClientRequest{
+			Description: "desktop", Kind: client.ClientKind_CLIENT_KIND_REGISTERED,
+		})
+		// What an older release's UpdateClient writes into a client it did
+		// not create: an empty plain-text secret.
+		if err := db.Exec(`UPDATE clients SET client_secret = '' WHERE client_id = ?`, created.ClientId).Error; err != nil {
+			t.Fatalf("older release's save: %v", err)
+		}
+
+		settled, err := HashStoredClientSecrets(repo.NewClientRepository(db))
+		if err != nil {
+			t.Fatalf("HashStoredClientSecrets: %v", err)
+		}
+
+		stored := readStoredSecret(t, db, created.ClientId)
+		if settled != 1 || stored.ClientSecret != nil {
+			t.Errorf("settled %d, plain text %v; want 1 and none", settled, stored.ClientSecret)
+		}
+		if resp := validate(t, svc, created.ClientId, created.ClientSecret); resp.Status.Code != client.ResponseStatus_OK {
+			t.Errorf("the client lost its secret: %v", resp.Status.Code)
+		}
+	})
+}
+
+func TestReplacePlaintextSecretKeepsAWriteThatLandedSinceTheRead(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		clients := repo.NewClientRepository(db)
 		legacy := insertLegacyClient(t, db, "read-earlier")
-		rows, err := clients.ListUnhashed()
-		if err != nil || len(rows) != 1 {
-			t.Fatalf("ListUnhashed = %d rows, %v", len(rows), err)
+		ids, err := clients.ListPlaintextSecretIDs()
+		if err != nil || len(ids) != 1 {
+			t.Fatalf("ListPlaintextSecretIDs = %v, %v", ids, err)
 		}
 		if err := db.Exec(`UPDATE clients SET client_secret = 'written-since' WHERE client_id = ?`, legacy).Error; err != nil {
 			t.Fatalf("concurrent write: %v", err)
 		}
 
-		swapped, err := clients.SetSecretHash(rows[0].ID, "read-earlier", hashClientSecret("read-earlier"))
+		swapped, err := clients.ReplacePlaintextSecret(ids[0], "read-earlier", nil, hashClientSecret("read-earlier"))
 		if err != nil {
-			t.Fatalf("SetSecretHash: %v", err)
+			t.Fatalf("ReplacePlaintextSecret: %v", err)
 		}
 		if swapped || readStoredSecret(t, db, legacy).ClientSecretHash != nil {
 			t.Error("a hash of a stale secret was stored")
+		}
+	})
+}
+
+// racingStore is the real clients table, with a write that lands between
+// the pass's read and its swap the first `races` times.
+type racingStore struct {
+	*repo.ClientRepository
+	db    *gorm.DB
+	races int
+}
+
+func (s *racingStore) ReplacePlaintextSecret(id int, plaintext string, expectedHash *string, hash string) (bool, error) {
+	if s.races > 0 {
+		s.races--
+		if err := s.db.Exec(`UPDATE clients SET client_secret = ? WHERE id = ?`, plaintext+"-changed", id).Error; err != nil {
+			return false, err
+		}
+	}
+	return s.ClientRepository.ReplacePlaintextSecret(id, plaintext, expectedHash, hash)
+}
+
+func TestHashStoredClientSecretsRereadsARowThatChangedMeanwhile(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		svc := newClientSvc(t, db)
+		legacy := insertLegacyClient(t, db, "first")
+		store := &racingStore{ClientRepository: repo.NewClientRepository(db), db: db, races: 1}
+
+		settled, err := HashStoredClientSecrets(store)
+		if err != nil {
+			t.Fatalf("HashStoredClientSecrets: %v", err)
+		}
+
+		if settled != 1 {
+			t.Errorf("settled %d, want 1", settled)
+		}
+		if resp := validate(t, svc, legacy, "first-changed"); resp.Status.Code != client.ResponseStatus_OK {
+			t.Errorf("the client is not usable after a lost race: %v", resp.Status.Code)
+		}
+	})
+}
+
+func TestHashStoredClientSecretsGivesUpOnARowThatNeverSettles(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		insertLegacyClient(t, db, "moving")
+		store := &racingStore{ClientRepository: repo.NewClientRepository(db), db: db, races: clientSecretSettleAttempts}
+
+		if _, err := HashStoredClientSecrets(store); err == nil {
+			t.Error("a row that changed on every attempt was reported as settled")
 		}
 	})
 }

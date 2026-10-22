@@ -195,11 +195,11 @@ A dashboard or desktop shell becomes a client of the engine by calling
 `registerClient` over `/api`, which returns the client id and secret it
 authenticates with from then on. That response is the only place the secret
 appears: the db proxy stores only its SHA-256 hash, so a client that loses its
-secret registers again. Secrets issued before hashing are hashed when the db
-proxy starts; their plain text is kept for one more release so that rolling
-back to the previous release, which validates plain text, locks no client out.
-A client created after the upgrade has no plain text, so after such a rollback
-it registers again. Who may register is set by `WOOFX3_REGISTRATION_MODE`:
+secret registers again. A secret stored in plain text, issued before secrets
+were hashed, is hashed and its plain text cleared when the db proxy starts,
+before it serves. Rolling back to a release from before hashing therefore
+refuses every existing client; see "Rollback compatibility" in
+`docs/operations/releases.md`. Who may register is set by `WOOFX3_REGISTRATION_MODE`:
 
 | Mode | Who may register |
 |---|---|

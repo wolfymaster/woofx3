@@ -7,9 +7,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// AddClientSecretHash makes room for client secrets stored as their SHA-256
-// hash. See the postgres migration of the same ID for why `client_secret`
-// stays for now.
+// AddClientSecretHash stores client secrets as their SHA-256 hash. See the
+// postgres migration of the same ID for why `client_secret` becomes nullable
+// rather than being dropped.
 //
 // SQLite cannot add a table constraint to an existing table, so both CHECKs
 // ride on the new column. Relaxing `client_secret`'s NOT NULL needs the table

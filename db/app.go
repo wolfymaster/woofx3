@@ -160,8 +160,9 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 			a.logger.Info("Sealed stored credential settings", "count", sealed)
 		}
 
-		// Before serving, so ValidateClient finds a hash for every client,
-		// including one the previous release created after a rollback.
+		// Before serving, so no plain-text secret stays at rest and
+		// ValidateClient finds a hash for every client, including one an
+		// older release created on this schema after a rollback.
 		hashed, err := svc.HashStoredClientSecrets(repository.NewClientRepository(a.db))
 		if err != nil {
 			a.logger.Error("Failed to hash stored client secrets", "error", err)

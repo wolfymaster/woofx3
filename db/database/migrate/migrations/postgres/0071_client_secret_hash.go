@@ -7,21 +7,24 @@ import (
 	"gorm.io/gorm"
 )
 
-// AddClientSecretHash makes room for client secrets stored as their SHA-256
-// hash (lowercase hex) instead of in plain text.
+// AddClientSecretHash stores client secrets as their SHA-256 hash (lowercase
+// hex) instead of in plain text.
 //
-// This is the expand step only. `client_secret` stays, now nullable: a
-// client this release creates has only a hash, while existing clients keep
-// their plain text beside the hash db-proxy computes for them at startup
-// (services.HashStoredClientSecrets). The previous release validates against
-// `client_secret`, so the plain text has to outlive one release for a
-// rollback to keep every existing client working; a later release clears it
-// and drops the column.
+// The migration changes only the schema. db-proxy hashes every stored
+// plain-text secret and clears it at startup, before it serves
+// (services.HashStoredClientSecrets), so no secret stays in plain text.
+//
+// `client_secret` becomes nullable rather than being dropped, so an older
+// release can still start on this schema and register clients after a
+// rollback. It cannot authenticate any client that existed before, because
+// it validates against the plain text db-proxy clears
+// (docs/operations/releases.md). The plain text an older release writes is
+// hashed and cleared on the next start of this one.
 //
 // Every client has a secret in one form or the other
 // (clients_secret_present), and a hash is 64 lowercase hex digits
-// (clients_secret_hash_format). Rows the previous release writes have plain
-// text and no hash, which both allow.
+// (clients_secret_hash_format). Rows an older release writes have plain text
+// and no hash, which both allow.
 func AddClientSecretHash() *gormigrate.Migration {
 	return &gormigrate.Migration{
 		ID: "0071_client_secret_hash",
@@ -51,9 +54,9 @@ func AddClientSecretHash() *gormigrate.Migration {
 			return nil
 		},
 		Rollback: func(tx *gorm.DB) error {
-			// Not reversible: a client created since has no plain-text secret,
-			// so client_secret cannot become NOT NULL again, and without the
-			// hash it could never authenticate. Rollback is a deliberate no-op.
+			// Not reversible: no client has a plain-text secret any more, so
+			// client_secret cannot become NOT NULL again, and without the hash
+			// no client could authenticate. Rollback is a deliberate no-op.
 			return nil
 		},
 	}

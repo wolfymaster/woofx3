@@ -277,31 +277,74 @@ func (s *clientService) ValidateClient(ctx context.Context, req *client.Validate
 	}, nil
 }
 
-// HashStoredClientSecrets gives every client that has only a plain-text
-// secret, as issued before secrets were hashed or written by the previous
-// release after a rollback, its hash, and returns how many it hashed. The
-// plain text stays for the previous release to validate against. Each row is
-// swapped only while it still holds the value read, so running it again, or
-// beside a write, changes nothing it should not.
-func HashStoredClientSecrets(repo *repository.ClientRepository) (int, error) {
-	rows, err := repo.ListUnhashed()
+// clientSecretSettleAttempts bounds how often HashStoredClientSecrets re-reads
+// a client whose row changed between its read and its write.
+const clientSecretSettleAttempts = 3
+
+// clientSecretStore is what HashStoredClientSecrets needs of the clients
+// table.
+type clientSecretStore interface {
+	ListPlaintextSecretIDs() ([]int, error)
+	GetByID(id int) (*models.Client, error)
+	ReplacePlaintextSecret(id int, plaintext string, expectedHash *string, hash string) (bool, error)
+}
+
+// HashStoredClientSecrets leaves every client with a hash and no plain-text
+// secret, and returns how many clients it changed. Plain text comes from
+// secrets issued before secrets were hashed, and from an older release run on
+// this schema after a rollback. Each row is swapped only while it still holds
+// the values read, so running it again, or beside a write, changes nothing it
+// should not.
+func HashStoredClientSecrets(store clientSecretStore) (int, error) {
+	ids, err := store.ListPlaintextSecretIDs()
 	if err != nil {
 		return 0, fmt.Errorf("reading clients with plain-text secrets: %w", err)
 	}
-	hashed := 0
-	for _, row := range rows {
-		if row.ClientSecret == nil {
-			return hashed, fmt.Errorf("client %d was listed as having a plain-text secret but has none", row.ID)
-		}
-		swapped, err := repo.SetSecretHash(row.ID, *row.ClientSecret, hashClientSecret(*row.ClientSecret))
+	settled := 0
+	for _, id := range ids {
+		changed, err := settleClientSecret(store, id)
 		if err != nil {
-			return hashed, fmt.Errorf("hashing the secret of client %d: %w", row.ID, err)
+			return settled, err
 		}
-		if swapped {
-			hashed++
+		if changed {
+			settled++
 		}
 	}
-	return hashed, nil
+	return settled, nil
+}
+
+// settleClientSecret hashes and clears the plain-text secret of client `id`.
+// A row that changed since it was read is read again, so a lost race never
+// leaves a client without a hash, which ValidateClient treats as an error.
+//
+// A hash already stored wins over the plain text beside it: an older release
+// saving a client created by this one writes an empty plain-text secret into
+// it, and no release issues a new secret to an existing client.
+func settleClientSecret(store clientSecretStore, id int) (bool, error) {
+	for attempt := 0; attempt < clientSecretSettleAttempts; attempt++ {
+		row, err := store.GetByID(id)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		if err != nil {
+			return false, fmt.Errorf("reading client %d: %w", id, err)
+		}
+		if row.ClientSecret == nil {
+			return false, nil
+		}
+		hash := hashClientSecret(*row.ClientSecret)
+		if row.ClientSecretHash != nil {
+			hash = *row.ClientSecretHash
+		}
+		swapped, err := store.ReplacePlaintextSecret(id, *row.ClientSecret, row.ClientSecretHash, hash)
+		if err != nil {
+			return false, fmt.Errorf("hashing the secret of client %d: %w", id, err)
+		}
+		if swapped {
+			return true, nil
+		}
+	}
+	return false, fmt.Errorf("the secret of client %d changed on every one of %d attempts to hash it", id, clientSecretSettleAttempts)
 }
 
 // RecordClientAuthentication stamps the client's last authentication with
