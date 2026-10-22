@@ -8,6 +8,7 @@
 #   check.sh <path>...       packages owning these paths
 #   check.sh --all           every package CI checks
 #   check.sh --quick ...     build and type-check only; skip tests and clippy
+#   check.sh contracts       generated contract code is up to date
 #
 # Each package runs the same commands as its CI job (.github/workflows/
 # {go,rust,api,service,format}-checks.yml), so a pass here should mean a pass
@@ -30,7 +31,8 @@ readonly GO_MODULES=(
   db workflow services/nats build/orchestrator
   shared/clients/golang/barkloader shared/clients/golang/db shared/clients/golang/nats
   shared/clients/golang/servicediscovery shared/common/golang/cloudevents shared/common/golang/conditions
-  shared/common/golang/config shared/common/golang/logging shared/common/golang/runtime
+  shared/common/golang/config shared/common/golang/logging shared/common/golang/platformgateway
+  shared/common/golang/runtime shared/common/contracts/gen
 )
 readonly RUST_ROOTS=(barkloader shared/common/rust/logging shared/common/rust/runtime)
 readonly TS_SERVICES=(api connectors twitch woofwoofwoof sceneManager)
@@ -53,7 +55,7 @@ for arg in "$@"; do
     --quick) quick=true ;;
     --all) all=true ;;
     -h | --help)
-      sed -n '4,10p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '4,11p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     -*)
@@ -76,12 +78,33 @@ select_all() {
   select_target "ts:shared/common/typescript"
   for service in "${TS_SERVICES[@]}"; do select_target "ts:$service"; done
   for package in "${TS_PACKAGES[@]}"; do select_target "ts:$package"; done
+  select_target "contracts:shared/common/contracts"
 }
 
 # Maps one repository path to the check targets that cover it.
 select_for_path() {
   local path="$1" module root service package
+  # Generated contract code is checked against its contract wherever it lives.
+  # The generated paths must match the outputs in CONTRACTS in
+  # scripts/gen-contracts.sh.
   case "$path" in
+    contracts/ | scripts/gen-contracts.sh/ | \
+      shared/common/golang/platformgateway/catalog_gen.go/ | \
+      shared/clients/typescript/api/platform-gateway.gen.ts/)
+      select_target "contracts:shared/common/contracts"
+      ;;
+  esac
+  case "$path" in
+    contracts/ | scripts/gen-contracts.sh/) return ;;
+    # The generator's golden test reads the committed outputs, and api's tests
+    # read the shared fixtures.
+    shared/common/contracts/*)
+      select_target "contracts:shared/common/contracts"
+      select_target "go:shared/common/contracts/gen"
+      select_target "go:shared/common/golang/platformgateway"
+      select_target "ts:api"
+      return
+      ;;
     shared/common/golang/* | shared/clients/golang/*)
       for module in "${GO_MODULES[@]}"; do select_target "go:$module"; done
       return
@@ -179,6 +202,9 @@ ensure_ts_deps() {
 run_steps() {
   local kind="$1" dir="$2"
   case "$kind" in
+    contracts)
+      ./scripts/gen-contracts.sh --check || return 1
+      ;;
     go)
       (cd "$dir" && go build ./...) || return 1
       $quick || (cd "$dir" && go test ./...) || return 1
@@ -217,8 +243,8 @@ run_target() {
   fi
 }
 
-# Go first, then TS, then Rust: cheapest feedback first.
-for kind in go ts rust; do
+# Contracts and Go first, then TS, then Rust: cheapest feedback first.
+for kind in contracts go ts rust; do
   for target in $(printf '%s\n' "${!selected[@]}" | grep "^$kind:" | sort); do
     run_target "$target"
   done
