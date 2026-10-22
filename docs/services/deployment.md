@@ -730,7 +730,9 @@ connectors holds the engine's OBS connection (its `obs` adapter), not
 sceneManager. Set `WOOFX3_OBS_HOST`, `WOOFX3_OBS_PORT` and
 `WOOFX3_OBS_RPC_TOKEN`, when an engine needs them at all, where connectors
 reads its configuration; the OBS module's own settings take precedence over
-them. With connectors stopped, OBS control fails the same way it did with
+them. connectors connects to OBS only while a module that controls OBS is
+installed and active, or while `WOOFX3_OBS_HOST` is set; an engine with
+neither never dials OBS. With connectors stopped, OBS control fails the same way it did with
 sceneManager stopped: `ctx.obs` reports that nothing answered, and the OBS
 module's page shows the status as unanswered. Overlays still recover after a
 sceneManager restart when connectors starts later, because sceneManager keeps
