@@ -23,7 +23,8 @@ var sqlSourceDirs = []string{
 
 // portableAlternative matches SQL that only one dialect accepts and that has
 // a form both accept, so it is never needed: name tables without a schema,
-// use CURRENT_TIMESTAMP, and give rows their ids in Go.
+// bind times from the repository's injected clock, and give rows their ids
+// in Go.
 var portableAlternative = regexp.MustCompile(`(?i)\bpublic\.[a-z_]|\bnow\(\)|gen_random_uuid\(|uuid_generate_v4\(|datetime\('now'\)`)
 
 // dialectOnly matches SQL that only one dialect accepts and that has no
@@ -158,7 +159,7 @@ func (l *sqlLinter) check(lit *ast.BasicLit, guarded bool) {
 		return
 	}
 	if portableAlternative.MatchString(lit.Value) {
-		l.report(lit, "SQL with a portable spelling")
+		l.report(lit, "one dialect's SQL with a portable form (no schema prefix; bind times from the injected clock; ids from Go)")
 	}
 	if dialectOnly.MatchString(lit.Value) && !guarded {
 		l.report(lit, "one dialect's SQL outside a dialect-checked path")

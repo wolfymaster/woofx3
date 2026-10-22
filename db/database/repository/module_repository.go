@@ -24,8 +24,10 @@ func NewModuleRepository(db *gorm.DB, now func() time.Time) *ModuleRepository {
 	return &ModuleRepository{db: db, now: now}
 }
 
-// stamp is the time a write records, in UTC so every stored time shares one
-// zone.
+// stamp is the time a write records, in UTC. Only this repository's and
+// SceneEventRepository's stamps are UTC: gorm's own CreatedAt/UpdatedAt and
+// the other repositories' bound times are local, so on SQLite a column these
+// write can still hold both zones.
 func (r *ModuleRepository) stamp() time.Time {
 	return r.now().UTC()
 }
