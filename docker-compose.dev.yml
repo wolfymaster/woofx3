@@ -4,7 +4,9 @@
 #
 # Services here run in separate containers and reach each other by service
 # name, so the ones other containers connect to bind 0.0.0.0 through their
-# *_HOST variables. Everywhere else they default to loopback.
+# *_HOST variables. Everywhere else they default to loopback. Ports published
+# to the host bind 127.0.0.1: Docker would otherwise publish them on every
+# host interface, past the host firewall.
 #
 # Prerequisites:
 #   docker build -f Dockerfile.dev -t woofx3-dev .
@@ -24,6 +26,11 @@ name: woofx3-dev
 # the same value for any service run outside compose.
 x-dev-barkloader-key: &dev-barkloader-key ${WOOFX3_BARKLOADER_KEY:-920b1fd6f0f8b9b7c22e5749d9cc9633eeed42ce4250f5b3df2352249582bc51}
 
+# The message bus refuses to start without a token, and every client must
+# present the same one, so every service gets this dev-only value. Set
+# WOOFX3_MESSAGEBUS_TOKEN in .env (at least 32 bytes) to use your own.
+x-dev-messagebus-token: &dev-messagebus-token ${WOOFX3_MESSAGEBUS_TOKEN:-a1a1e55da81b066ec63a4bdd57293d88db023e073fe10376f04a6f9ac91dbb4f}
+
 # The db proxy refuses callers without its service token, so the db service
 # and every service that dials it share this dev-only value. Set
 # WOOFX3_DB_PROXY_TOKEN in .env (at least 32 bytes) to use your own.
@@ -37,6 +44,7 @@ services:
     command: go run .
     environment:
       FORCE_COLOR: "1"
+      WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
       GO_ENV: development
       WOOFX3_MESSAGEBUS_HOST: 0.0.0.0
     volumes:
@@ -49,7 +57,7 @@ services:
       - path: ./.env
         required: false
     ports:
-      - "4222:4222"
+      - "127.0.0.1:4222:4222"
     networks:
       - woofx3
 
@@ -60,6 +68,7 @@ services:
     command: go run .
     environment:
       FORCE_COLOR: "1"
+      WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
       WOOFX3_DATABASE_PROXY_HOST: 0.0.0.0
       # Other containers reach the proxy by this service name.
@@ -75,7 +84,7 @@ services:
       - path: ./.env
         required: false
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     depends_on:
       - messagebus
     networks:
@@ -88,6 +97,7 @@ services:
     command: go run .
     environment:
       FORCE_COLOR: "1"
+      WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
       WOOFX3_BARKLOADER_KEY: *dev-barkloader-key
       WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token
@@ -113,6 +123,7 @@ services:
     command: sh -c "cargo build -p barkloader && RUST_LOG=info ./target/debug/barkloader"
     environment:
       FORCE_COLOR: "1"
+      WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
       RUST_LOG: info
       # Rust runtime reads MESSAGEBUS_URL; WOOFX3_MESSAGEBUS_URL covers any Go/TS paths
       MESSAGEBUS_URL: nats://messagebus:4222
@@ -141,6 +152,7 @@ services:
     command: sh -c "bun install && bun run dev"
     environment:
       FORCE_COLOR: "1"
+      WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
       WOOFX3_API_HOST: 0.0.0.0
       WOOFX3_BARKLOADER_KEY: *dev-barkloader-key
@@ -166,6 +178,7 @@ services:
     command: sh -c "bun install && bun run src/api.ts"
     environment:
       FORCE_COLOR: "1"
+      WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
       WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token
     volumes:
@@ -188,6 +201,7 @@ services:
     command: sh -c "bun install && bun run src/woofwoofwoof.ts"
     environment:
       FORCE_COLOR: "1"
+      WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
       WOOFX3_BARKLOADER_KEY: *dev-barkloader-key
       WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token

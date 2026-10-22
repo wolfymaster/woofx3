@@ -3,6 +3,12 @@ export type ReconnectAttemptHandler = (attempt: number, maxRetries: number | typ
 
 export interface BarkloaderClientConfig {
   wsUrl: string;
+  /**
+   * The engine secret (`barkloaderKey`), sent as `Authorization: Bearer` on
+   * the upgrade request. Never put it in `wsUrl`: barkloader refuses a key in
+   * the query string, and URLs end up in logs.
+   */
+  key: string;
   onOpen: EventListener;
   onClose: EventListener;
   onError: EventListener;
@@ -28,6 +34,18 @@ interface BarkloaderInvokeReply {
 }
 
 const INVOKE_TIMEOUT_MS = 5000;
+
+/**
+ * Bun's WebSocket, which takes request headers. Packages that also load the
+ * DOM lib see the browser's constructor, which has no options argument, so the
+ * overload is named here. This client only runs server-side.
+ */
+type ServerWebSocketConstructor = new (url: string, options: Bun.WebSocketOptions) => WebSocket;
+
+function openSocket(url: string, key: string): WebSocket {
+  const ServerWebSocket = WebSocket as unknown as ServerWebSocketConstructor;
+  return new ServerWebSocket(url, { headers: { Authorization: `Bearer ${key}` } });
+}
 
 /** Barkloader did not answer an `invoke` within INVOKE_TIMEOUT_MS. */
 export class InvokeTimeoutError extends Error {
@@ -72,7 +90,7 @@ export default class BarkloaderClient {
     this.shouldReconnect = true;
 
     try {
-      this.socket = new WebSocket(this.config.wsUrl);
+      this.socket = openSocket(this.config.wsUrl, this.config.key);
       this.attachEventListeners();
     } catch (error) {
       this.isConnecting = false;

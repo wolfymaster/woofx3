@@ -2,6 +2,8 @@ package cloudevents
 
 import "strings"
 
+//go:generate go run ./internal/genreserved ../../contracts/reserved-subjects.json reserved_data.go
+
 // Subject prefixes nothing a user or module authors may publish on: a
 // workflow's publish_event step, or an event a module declares. The event
 // type is the NATS subject it goes out on, so publishing here would let that
@@ -9,69 +11,54 @@ import "strings"
 // An entry ending in "." reserves that namespace (everything that starts with
 // it); any other entry reserves exactly that name, so "message.send" leaves
 // "message.sent" and "message.send.later" open.
-
-// CommandSubjectPrefixes are the subjects the engine and its services treat as
-// commands: forge outbox events (`db.`), change OBS (`engine.`), call
-// the Twitch API, speak in chat, play or skip alerts, or run workflows and
-// actions.
 //
-// Must match USER_RESERVED_EVENT_PREFIXES in
-// barkloader/lib_module/src/manifest_validate.rs, which refuses uploaded
-// modules that declare these events; reserved_test.go compares the two.
-// Barkloader matches every entry as a prefix, so it is the stricter of the two
-// on the exact-name entries.
-var CommandSubjectPrefixes = []string{
-	"webhook.",
-	"db.",
-	"engine.",
-	"twitchapi",
-	"message.send",
-	"ui.notify.",
-	"ui.alert.",
-	"widget.queue.",
-	"workflow.execute",
-	"workflow.replay",
-	"workflow.cancel",
-	"workflow.command.execute",
-	"action.execute",
+// The lists live in shared/common/contracts/reserved-subjects.json, which the
+// api and barkloader read too; reserved_data.go is generated from it.
+
+// reservedSubjectsContract is the shape of reserved-subjects.json.
+type reservedSubjectsContract struct {
+	// CommandSubjectPrefixes are the subjects the engine and its services
+	// treat as commands: forge outbox events (`db.`), change OBS (`engine.`),
+	// call the Twitch API, speak in chat, play or skip alerts, or run
+	// workflows and actions. Barkloader refuses an uploaded module that
+	// declares one as an event.
+	CommandSubjectPrefixes []string `json:"commandSubjectPrefixes"`
+	// EngineAssertedPrefixes are the events engine services assert about the
+	// platform and about themselves: a follow or a cheer, a stream going
+	// live, a session boundary, a module installed, a run finished, a viewer
+	// entering a segment. A workflow publishing one would forge that fact for
+	// every workflow and service that acts on it.
+	EngineAssertedPrefixes []string `json:"engineAssertedPrefixes"`
+	// PlatformEventEntries are the reservations that hold platform events,
+	// which a creator testing a workflow can fire through the api's
+	// simulateTwitchEvent instead of publishing them.
+	PlatformEventEntries []string `json:"platformEventEntries"`
+	// UploadReservedPrefixes are the engine-asserted events an uploaded
+	// module may not declare either, on top of the command subjects. Platform
+	// events a platform module brings (channel., user.message, stream.online)
+	// are left out; barkloader enforces this list.
+	UploadReservedPrefixes []string `json:"uploadReservedPrefixes"`
+	// EngineModuleSegments are the second tokens of the module.<segment>
+	// subjects the engine publishes, which barkloader keeps out of the
+	// module.<moduleId>. namespace an upload may declare events in.
+	EngineModuleSegments []string `json:"engineModuleSegments"`
 }
 
-// EngineEventSubjectPrefixes are the events engine services assert about the
-// platform and about themselves: a follow or a cheer, a stream going live, a
-// session boundary, a module installed, a run finished, a viewer entering a
-// segment. A workflow publishing one would forge that fact for every workflow
-// and service that acts on it.
-// Modules are not held to this tier: a platform module declares the platform
-// events it brings, which is what CommandSubjectPrefixes leaves room for.
-var EngineEventSubjectPrefixes = []string{
-	"HEARTBEAT",
-	"MESSAGEBUS_INIT",
-	"barkloader.",
-	"channel.",
-	"channelpoints.",
-	"chat.command.",
-	"module.",
-	"session.",
-	"setting.",
-	"stream.offline",
-	"stream.online",
-	"user.message",
-	"viewer.",
-	"widget.event",
-	"workflow.health.",
-	"workflow.run.",
-}
+// CommandSubjectPrefixes and EngineEventSubjectPrefixes are the two tiers a
+// workflow may not publish on; see reservedSubjectsContract.
+var (
+	CommandSubjectPrefixes     = reservedSubjects.CommandSubjectPrefixes
+	EngineEventSubjectPrefixes = reservedSubjects.EngineAssertedPrefixes
+)
 
-// platformEventEntries are the reservations that hold platform events, which a
-// creator testing a workflow can fire through the api's simulateTwitchEvent
-// instead of publishing them.
-var platformEventEntries = map[string]bool{
-	"channel.":       true,
-	"channelpoints.": true,
-	"chat.command.":  true,
-	"stream.offline": true,
-	"stream.online":  true,
-	"user.message":   true,
+var platformEventEntries = setOf(reservedSubjects.PlatformEventEntries)
+
+func setOf(entries []string) map[string]bool {
+	set := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		set[entry] = true
+	}
+	return set
 }
 
 // ReservedSubjectMatch reports whether a workflow may not publish subject and,

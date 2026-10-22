@@ -13,17 +13,21 @@ const loadedConfig = loadRuntimeEnv({
   injectIntoProcess: true,
 });
 
-const bus = await MessageBus.createMessageBus({
-  name: "twitchapi",
-  url: loadedConfig.getConfig("woofx3MessagebusUrl") as string,
-  jwt: loadedConfig.getConfig("woofx3MessagebusJwt") as string,
-  nkeySeed: loadedConfig.getConfig("woofx3MessagebusNKey") as string,
-  token: String(loadedConfig.getConfig("woofx3MessagebusToken") ?? ""),
-});
 const logger = createServiceLogger({
   serviceName: "twitch",
   logDir: path.join((loadedConfig.getConfig("woofx3RootPath") as string | undefined) ?? process.cwd(), "logs"),
 });
+
+const bus = await MessageBus.createMessageBus(
+  {
+    name: "twitchapi",
+    url: loadedConfig.getConfig("woofx3MessagebusUrl") as string,
+    jwt: loadedConfig.getConfig("woofx3MessagebusJwt") as string,
+    nkeySeed: loadedConfig.getConfig("woofx3MessagebusNKey") as string,
+    token: String(loadedConfig.getConfig("woofx3MessagebusToken") ?? ""),
+  },
+  logger
+);
 
 const application = new Application();
 

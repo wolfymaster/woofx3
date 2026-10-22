@@ -239,6 +239,8 @@
 ---@field module CtxModule
 ---@field log CtxLog
 ---@field response fun(success: boolean, message: string): CtxResponse
+---@field success fun(message: string, fields?: table): CtxResponse  response with success = true plus extra fields (may not set proto, v, success or message; errors if it does)
+---@field failure fun(message: string, fields?: table): CtxResponse  response with success = false plus extra fields (same rules as success)
 ---@field result fun(value: any, events?: CtxResultEvent[]): CtxResult
 ---@field twitch? CtxTwitchExtension
 ---@field obs? CtxObsExtension

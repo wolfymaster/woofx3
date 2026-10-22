@@ -86,14 +86,7 @@ func main() {
 		fatalExit(sharedLogger, reporter, "Failed to copy existing engine data into the data directory", err)
 	}
 
-	// Every service that reads one of these refuses to start without a
-	// usable value, so each is resolved, and generated on first run, here.
-	engineSecrets := []SecretSpec{
-		{Name: "barkloader-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey"},
-		{Name: "scene-manager-token-secret", EnvKey: "WOOFX3_SCENE_MANAGER_TOKEN_SECRET", ConfigKey: "sceneManagerTokenSecret"},
-		{Name: "db-proxy-token", EnvKey: "WOOFX3_DB_PROXY_TOKEN", ConfigKey: "dbProxyToken"},
-	}
-	secrets, err := ResolveSecrets(engineSecrets, sources, engineStateDir(workDir, woofx3config.DataDir()), rand.Reader, logger)
+	secrets, err := ResolveSecrets(engineSecretSpecs(), sources, engineStateDir(workDir, woofx3config.DataDir()), rand.Reader, logger)
 	if err != nil {
 		fatalExit(sharedLogger, reporter, "Failed to resolve the engine secrets", err)
 	}
@@ -390,7 +383,9 @@ const stopGracePeriod = 25 * time.Second
 // on others get to themselves, before the services they depend on are asked
 // to stop. It must cover the workflow engine's Stop (DefaultStopDrainTimeout
 // plus DefaultStopSettleTimeout in workflow/internal/engine/engine.go), which
-// records through db-proxy the runs it could not finish. What is left of
+// records through db-proxy the runs it could not finish, and the run
+// recorder's drain after it (DefaultRecorderDrainTimeout in
+// workflow/async_run_recorder.go). What is left of
 // stopGracePeriod must cover db-proxy's final flush of module storage to its
 // replica (closeTimeout in db/app/services/module_storage_service.go); a kill
 // mid-flush loses the writes since the last sync.
@@ -1022,4 +1017,16 @@ func (s *Supervisor) checkHealthOverHTTP(ctx context.Context, endpoint string) b
 	defer response.Body.Close()
 
 	return response.StatusCode == http.StatusOK
+}
+
+// engineSecretSpecs lists the secrets every service that reads one refuses to
+// start without, so each is resolved, and generated on first run, by the
+// orchestrator.
+func engineSecretSpecs() []SecretSpec {
+	return []SecretSpec{
+		{Name: "barkloader-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey"},
+		{Name: "scene-manager-token-secret", EnvKey: "WOOFX3_SCENE_MANAGER_TOKEN_SECRET", ConfigKey: "sceneManagerTokenSecret"},
+		{Name: "messagebus-token", EnvKey: "WOOFX3_MESSAGEBUS_TOKEN", ConfigKey: "messagebusToken"},
+		{Name: "db-proxy-token", EnvKey: "WOOFX3_DB_PROXY_TOKEN", ConfigKey: "dbProxyToken"},
+	}
 }

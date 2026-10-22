@@ -434,13 +434,11 @@ func TestCancelClaimsAParentWaitingOnASubWorkflow(t *testing.T) {
 	}
 
 	var childID string
-	h.engine.executionsMu.RLock()
-	for execID, execution := range h.engine.executions {
+	for execID, execution := range h.engine.runs.executions() {
 		if execution.WorkflowID == "wf-child" {
 			childID = execID
 		}
 	}
-	h.engine.executionsMu.RUnlock()
 	if status := h.log.awaitSettled(t, childID); status != types.ExecutionStatusCancelled {
 		t.Fatalf("child settled %q, want cancelled", status)
 	}

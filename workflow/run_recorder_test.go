@@ -33,9 +33,26 @@ func (s *stubRunStore) RecordWorkflowRunStep(_ context.Context, req *dbv1.Record
 	return &dbv1.ResponseStatus{}, nil
 }
 
-func recorderFixture() (*dbRunRecorder, *stubRunStore) {
+// recorderFixture is a started recorder over a stub store. A test reads the
+// store only after drain, once the writer has applied everything queued.
+func recorderFixture(t *testing.T) (*asyncRunRecorder, *stubRunStore) {
+	t.Helper()
 	store := &stubRunStore{}
-	return newDBRunRecorder(store, &executeEventLogger{}), store
+	recorder, err := newAsyncRunRecorder(store, defaultRecorderConfig(), &executeEventLogger{}, time.Now)
+	if err != nil {
+		t.Fatalf("newAsyncRunRecorder: %v", err)
+	}
+	recorder.Start()
+	return recorder, store
+}
+
+func drain(t *testing.T, recorder *asyncRunRecorder) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := recorder.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
 }
 
 func runWith(triggeredBy string) *types.WorkflowExecution {
@@ -56,12 +73,14 @@ func runWith(triggeredBy string) *types.WorkflowExecution {
 // The whole ephemeral/system policy rests on this one predicate: a run fired by
 // hand is already being watched live, so it is not written down.
 func TestRecorderSkipsDashboardRuns(t *testing.T) {
-	recorder, store := recorderFixture()
+	recorder, store := recorderFixture(t)
 	execution := runWith(dashboardOrigin)
 
 	recorder.RunStarted(execution)
 	recorder.RunSettled(execution)
 	recorder.StepSettled(execution, engine.RunStep{TaskID: "t1"})
+
+	drain(t, recorder)
 
 	if len(store.runs) != 0 || len(store.updates) != 0 || len(store.steps) != 0 {
 		t.Fatalf("dashboard run was recorded: runs=%d updates=%d steps=%d",
@@ -70,10 +89,12 @@ func TestRecorderSkipsDashboardRuns(t *testing.T) {
 }
 
 func TestRecorderRecordsSystemRuns(t *testing.T) {
-	recorder, store := recorderFixture()
+	recorder, store := recorderFixture(t)
 	execution := runWith("twitch")
 
 	recorder.RunStarted(execution)
+
+	drain(t, recorder)
 
 	if len(store.runs) != 1 {
 		t.Fatalf("expected one recorded run, got %d", len(store.runs))
@@ -100,7 +121,7 @@ func TestRecorderRecordsSystemRuns(t *testing.T) {
 // serialises the string "null" into the column a replay treats as its source of
 // truth. Empty is the honest answer.
 func TestRecorderHandlesMissingTriggerEvent(t *testing.T) {
-	recorder, store := recorderFixture()
+	recorder, store := recorderFixture(t)
 	execution := &types.WorkflowExecution{
 		ID:         "exec-2",
 		WorkflowID: "wf-1",
@@ -109,6 +130,8 @@ func TestRecorderHandlesMissingTriggerEvent(t *testing.T) {
 	}
 
 	recorder.RunStarted(execution)
+
+	drain(t, recorder)
 
 	if len(store.runs) != 1 {
 		t.Fatalf("expected one recorded run, got %d", len(store.runs))
@@ -119,7 +142,7 @@ func TestRecorderHandlesMissingTriggerEvent(t *testing.T) {
 }
 
 func TestRecorderRecordsTerminalOutcome(t *testing.T) {
-	recorder, store := recorderFixture()
+	recorder, store := recorderFixture(t)
 	execution := runWith("twitch")
 	execution.Status = types.ExecutionStatusFailed
 	execution.Error = "alert cannot be published: layout must be an object, got nothing"
@@ -127,6 +150,8 @@ func TestRecorderRecordsTerminalOutcome(t *testing.T) {
 	execution.CompletedAt = &completed
 
 	recorder.RunSettled(execution)
+
+	drain(t, recorder)
 
 	if len(store.updates) != 1 {
 		t.Fatalf("expected one update, got %d", len(store.updates))
@@ -144,7 +169,7 @@ func TestRecorderRecordsTerminalOutcome(t *testing.T) {
 }
 
 func TestRecorderStepCarriesInputsAndOutputs(t *testing.T) {
-	recorder, store := recorderFixture()
+	recorder, store := recorderFixture(t)
 	execution := runWith("twitch")
 	started := time.Now()
 	completed := started.Add(250 * time.Millisecond)
@@ -159,6 +184,8 @@ func TestRecorderStepCarriesInputsAndOutputs(t *testing.T) {
 		StartedAt:   started,
 		CompletedAt: &completed,
 	})
+
+	drain(t, recorder)
 
 	if len(store.steps) != 1 {
 		t.Fatalf("expected one step, got %d", len(store.steps))
@@ -184,13 +211,15 @@ func TestRecorderStepCarriesInputsAndOutputs(t *testing.T) {
 // keeps it in the timeline -- that a branch was not taken is part of what the
 // run did -- without inventing values it never had.
 func TestRecorderStepWithoutPayloads(t *testing.T) {
-	recorder, store := recorderFixture()
+	recorder, store := recorderFixture(t)
 
 	recorder.StepSettled(runWith("twitch"), engine.RunStep{
 		TaskID:    "skipped-step",
 		Status:    "skipped",
 		StepIndex: 1,
 	})
+
+	drain(t, recorder)
 
 	if len(store.steps) != 1 {
 		t.Fatalf("expected one step, got %d", len(store.steps))
@@ -205,11 +234,13 @@ func TestRecorderStepWithoutPayloads(t *testing.T) {
 }
 
 func TestRecorderMarksADryRun(t *testing.T) {
-	recorder, store := recorderFixture()
+	recorder, store := recorderFixture(t)
 	execution := runWith("test")
 	execution.DryRun = true
 
 	recorder.RunStarted(execution)
+
+	drain(t, recorder)
 
 	if len(store.runs) != 1 || !store.runs[0].DryRun {
 		t.Fatalf("dry run recorded without its mark: %+v", store.runs)

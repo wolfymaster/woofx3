@@ -46,8 +46,11 @@ export interface SceneManagerRuntimeConfig {
   /** Service token db-proxy requires of every caller. */
   dbProxyToken: string;
   barkloaderUrl: string;
-  /** Signs the media proxy URLs barkloader verifies (scene/media-proxy.ts). */
-  mediaProxySecret: string;
+  /**
+   * The engine secret: signs the media proxy URLs barkloader verifies
+   * (scene/media-proxy.ts) and authenticates to barkloader's management routes.
+   */
+  barkloaderKey: string;
   /** Which Host and Origin headers the HTTP server accepts; open unless set. */
   requestGuard: RequestGuardPolicy;
   /**
@@ -78,9 +81,10 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
     throw new Error("sceneManager: bindHost must not be empty (WOOFX3_SCENE_MANAGER_HOST)");
   }
   // Session and editor tokens are signed with tokenSecret, and media proxy
-  // URLs with barkloaderKey: a guessable secret lets anyone forge either.
+  // URLs and barkloader requests with barkloaderKey: a guessable secret lets
+  // anyone forge any of them.
   assertSecret("sceneManagerTokenSecret", config.tokenSecret);
-  assertSecret("barkloaderKey", config.mediaProxySecret);
+  assertSecret("barkloaderKey", config.barkloaderKey);
   assertSecret(DB_PROXY_TOKEN_CONFIG_KEY, config.dbProxyToken);
   if (!config.barkloaderUrl) {
     throw new Error("sceneManager: barkloaderUrl must not be empty (WOOFX3_BARKLOADER_URL)");
@@ -170,7 +174,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? "");
   const dbProxyToken = String(c.woofx3DbProxyToken ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? "http://127.0.0.1:9653");
-  const mediaProxySecret = String(c.woofx3BarkloaderKey ?? "");
+  const barkloaderKey = String(c.woofx3BarkloaderKey ?? "");
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: c.woofx3AllowedHosts,
     allowedOrigins: c.woofx3AllowedOrigins,
@@ -187,7 +191,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     databaseProxyUrl,
     dbProxyToken,
     barkloaderUrl,
-    mediaProxySecret,
+    barkloaderKey,
     requestGuard,
     obs: {
       host: obsHost,

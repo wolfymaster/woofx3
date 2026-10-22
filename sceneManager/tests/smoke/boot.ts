@@ -60,7 +60,7 @@ export async function bootSceneManager(busUrl: string, options: { port?: number 
     databaseProxyUrl: "http://127.0.0.1:1",
     dbProxyToken: "smoke-db-proxy-token-0123456789abcdef",
     barkloaderUrl: barkloader.url,
-    mediaProxySecret: "smoke-media-secret-0123456789abcdef",
+    barkloaderKey: "smoke-media-secret-0123456789abcdef",
     requestGuard: OPEN_REQUEST_GUARD_POLICY,
     obs: { host: "127.0.0.1", port: "1" },
     nats: { url: busUrl, name: "scene-manager-smoke" },

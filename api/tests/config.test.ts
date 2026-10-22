@@ -96,7 +96,6 @@ describe("message bus token", () => {
 
   test("is unset when nothing sets it", () => {
     delete process.env.WOOFX3_MESSAGEBUS_TOKEN;
-    delete process.env.MESSAGEBUS_TOKEN;
     withEnv({});
 
     expect(loadConfig().nats.token).toBeUndefined();

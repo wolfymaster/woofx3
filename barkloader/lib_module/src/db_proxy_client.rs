@@ -20,10 +20,10 @@ use async_trait::async_trait;
 use super::manifest_validate::InstallProvenance;
 
 use super::db_proxy::{
-    self, ActionInputJson, AssetInputJson, BackgroundTaskInputJson, CreateModuleFunctionJson,
-    MarketplaceOrigin, ModuleCommandRow, ModuleRecord, ModuleSettingJson, RequestContext,
-    ResolvedActionRef, ResourceInstanceJson, ResourceUsage, SettingInputJson, TriggerInputJson,
-    WidgetInputJson,
+    self, ActionInputJson, AssetInputJson, BackgroundTaskInputJson, CommandAccess,
+    CreateModuleFunctionJson, MarketplaceOrigin, ModuleCommandRow, ModuleRecord, ModuleSettingJson,
+    RequestContext, ResolvedActionRef, ResourceInstanceJson, ResourceUsage, SettingInputJson,
+    TriggerInputJson, WidgetInputJson,
 };
 
 // async-trait marks each method it rewrites `#[must_use]`, and its boxed
@@ -97,7 +97,7 @@ pub trait ModuleDbProxy: Send + Sync {
         assets: Vec<AssetInputJson>,
     ) -> Result<()>;
 
-    // cleanup / delete-by-module-id (used by cleanup_old_version and rollback)
+    // cleanup / delete-by-module-id (used by a failed fresh install's rollback)
     async fn delete_triggers_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()>;
     async fn delete_actions_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()>;
     async fn delete_widgets_by_module_id(&self, module_id: &str, module_key: &str) -> Result<()>;
@@ -167,12 +167,15 @@ pub trait ModuleDbProxy: Send + Sync {
         request: woofx3::db::workflow::CreateWorkflowRequest,
     ) -> Result<()>;
     /// `actions_json` is the JSON array of actions the command runs, in order
-    /// -- the same shape a workflow's steps have.
+    /// -- the same shape a workflow's steps have. `access` applies only when
+    /// the command is new; a command the module registered before keeps the
+    /// access the streamer gave it.
     async fn register_command(
         &self,
         command: &str,
         actions_json: &str,
         module_name: &str,
+        access: CommandAccess,
     ) -> Result<()>;
 
     // install-status notification + read queries the HTTP routes need
@@ -531,8 +534,9 @@ impl ModuleDbProxy for HttpDbProxyClient {
         command: &str,
         actions_json: &str,
         module_name: &str,
+        access: CommandAccess,
     ) -> Result<()> {
-        db_proxy::create_command(&self.base_url, command, actions_json, module_name).await
+        db_proxy::create_command(&self.base_url, command, actions_json, module_name, access).await
     }
 
     async fn complete_module_install(
@@ -616,8 +620,12 @@ pub use test_support::FakeDbProxyClient;
 mod test_support {
     use super::*;
     use anyhow::anyhow;
+    use serde_json::Value;
     use std::collections::HashSet;
     use std::sync::Mutex;
+
+    /// The row id the fake's `create_module` gives a new module row.
+    pub const FAKE_DB_RECORD_ID: &str = "fake-db-record-id";
 
     /// In-memory `ModuleDbProxy` for install-saga tests: records every
     /// call in order, and fails whichever calls are named in `fail_on` —
@@ -641,6 +649,8 @@ mod test_support {
         failing_command: Option<&'static str>,
         /// `(command, actions_json)` for every `register_command`, in order.
         registered_commands: Mutex<Vec<(String, String)>>,
+        /// `(command, access)` for every `register_command`, in order.
+        registered_access: Mutex<Vec<(String, CommandAccess)>>,
         /// Every `register_workflow` request, in order.
         registered_workflows: Mutex<Vec<woofx3::db::workflow::CreateWorkflowRequest>>,
         /// What `list_modules` answers: the modules already installed.
@@ -649,6 +659,18 @@ mod test_support {
         settings: Mutex<std::collections::BTreeMap<String, String>>,
         /// Resource instances as the db would hold them.
         instances: Mutex<Vec<ResourceInstanceJson>>,
+        /// What `get_module_by_module_id` answers: the installed version's
+        /// `GetModuleByModuleId` response body, if any.
+        installed_version: Mutex<Option<String>>,
+        /// `(module_key, version)` for every `create_module`, in order.
+        created_modules: Mutex<Vec<(String, String)>>,
+        /// `(resource_type, manifest_id)` for every archive or delete by
+        /// manifest id, in order.
+        removed_resources: Mutex<Vec<(String, String)>>,
+        /// Module rows as the db would hold them, oldest first, as the
+        /// `module` of a `GetModuleByName` response: seeded ones and the one
+        /// `create_module` writes.
+        module_rows: Mutex<Vec<Value>>,
     }
 
     impl FakeDbProxyClient {
@@ -666,10 +688,15 @@ mod test_support {
                 commands: Mutex::new(Vec::new()),
                 failing_command: None,
                 registered_commands: Mutex::new(Vec::new()),
+                registered_access: Mutex::new(Vec::new()),
                 registered_workflows: Mutex::new(Vec::new()),
                 installed: Mutex::new(Vec::new()),
                 settings: Mutex::new(Default::default()),
                 instances: Mutex::new(Vec::new()),
+                installed_version: Mutex::new(None),
+                created_modules: Mutex::new(Vec::new()),
+                removed_resources: Mutex::new(Vec::new()),
+                module_rows: Mutex::new(Vec::new()),
             }
         }
 
@@ -696,6 +723,40 @@ mod test_support {
                 .expect("installed mutex poisoned")
                 .extend(modules);
             self
+        }
+
+        /// Seeds the installed version `get_module_by_module_id` reports, as
+        /// a `GetModuleByModuleId` response body.
+        pub fn with_installed_version(self, response_body: String) -> Self {
+            self.installed_version
+                .lock()
+                .expect("installed_version mutex poisoned")
+                .replace(response_body);
+            self
+        }
+
+        /// Seeds a module row an earlier install left, as the `module` of a
+        /// `GetModuleByName` response.
+        pub fn with_module_row(self, row: Value) -> Self {
+            self.module_rows
+                .lock()
+                .expect("module_rows mutex poisoned")
+                .push(row);
+            self
+        }
+
+        pub fn created_modules(&self) -> Vec<(String, String)> {
+            self.created_modules
+                .lock()
+                .expect("created_modules mutex poisoned")
+                .clone()
+        }
+
+        pub fn removed_resources(&self) -> Vec<(String, String)> {
+            self.removed_resources
+                .lock()
+                .expect("removed_resources mutex poisoned")
+                .clone()
         }
 
         /// Seeds a setting value an earlier install or the streamer left.
@@ -743,6 +804,13 @@ mod test_support {
                 .clone()
         }
 
+        pub fn registered_access(&self) -> Vec<(String, CommandAccess)> {
+            self.registered_access
+                .lock()
+                .expect("registered_access mutex poisoned")
+                .clone()
+        }
+
         pub fn registered_workflows(&self) -> Vec<woofx3::db::workflow::CreateWorkflowRequest> {
             self.registered_workflows
                 .lock()
@@ -779,6 +847,13 @@ mod test_support {
                 .clone()
         }
 
+        fn record_removed(&self, resource_type: &str, manifest_id: &str) {
+            self.removed_resources
+                .lock()
+                .expect("removed_resources mutex poisoned")
+                .push((resource_type.to_string(), manifest_id.to_string()));
+        }
+
         fn record(&self, method: &'static str) -> Result<()> {
             self.calls
                 .lock()
@@ -795,18 +870,22 @@ mod test_support {
     impl ModuleDbProxy for FakeDbProxyClient {
         async fn create_module(
             &self,
-            _display_name: &str,
-            _module_id: &str,
-            _version: &str,
+            display_name: &str,
+            module_id: &str,
+            version: &str,
             manifest_json: &str,
             _archive_key: &str,
             _functions: &[CreateModuleFunctionJson],
-            _module_key: &str,
+            module_key: &str,
             _client_id: &str,
             provenance: InstallProvenance,
             marketplace: Option<&MarketplaceOrigin>,
         ) -> Result<String> {
             self.record("create_module")?;
+            self.created_modules
+                .lock()
+                .expect("created_modules mutex poisoned")
+                .push((module_key.to_string(), version.to_string()));
             *self.marketplace.lock().expect("marketplace mutex poisoned") = marketplace.cloned();
             self.stored_manifest
                 .lock()
@@ -816,7 +895,27 @@ mod test_support {
                 .lock()
                 .expect("provenance mutex poisoned")
                 .replace(provenance);
-            Ok("fake-db-record-id".to_string())
+            let mut rows = self.module_rows.lock().expect("module_rows mutex poisoned");
+            let row_id = match rows.iter_mut().find(|row| row["module_id"] == module_id) {
+                Some(row) => {
+                    row["name"] = Value::from(display_name);
+                    row["version"] = Value::from(version);
+                    row["module_key"] = Value::from(module_key);
+                    row["id"].as_str().unwrap_or_default().to_string()
+                }
+                None => {
+                    rows.push(serde_json::json!({
+                        "id": FAKE_DB_RECORD_ID,
+                        "module_id": module_id,
+                        "name": display_name,
+                        "version": version,
+                        "module_key": module_key,
+                        "created_by_type": "CLIENT",
+                    }));
+                    FAKE_DB_RECORD_ID.to_string()
+                }
+            };
+            Ok(row_id)
         }
 
         async fn delete_module(&self, _module_name: &str) -> Result<()> {
@@ -825,12 +924,22 @@ mod test_support {
 
         async fn get_module_by_module_id(&self, _module_id: &str) -> Result<Option<String>> {
             self.record("get_module_by_module_id")?;
-            Ok(None)
+            Ok(self
+                .installed_version
+                .lock()
+                .expect("installed_version mutex poisoned")
+                .clone())
         }
 
-        async fn get_module_by_name(&self, _name: &str) -> Result<Option<String>> {
+        /// Resolves `name` like the db's GetModuleByName: against the
+        /// module_id or the name column, oldest row first.
+        async fn get_module_by_name(&self, name: &str) -> Result<Option<String>> {
             self.record("get_module_by_name")?;
-            Ok(None)
+            let rows = self.module_rows.lock().expect("module_rows mutex poisoned");
+            Ok(rows
+                .iter()
+                .find(|row| row["module_id"] == name || row["name"] == name)
+                .map(|row| serde_json::json!({ "module": row }).to_string()))
         }
 
         async fn register_triggers(
@@ -979,19 +1088,23 @@ mod test_support {
         async fn archive_resource_by_manifest_id(
             &self,
             _module_id: &str,
-            _resource_type: &str,
-            _manifest_id: &str,
+            resource_type: &str,
+            manifest_id: &str,
         ) -> Result<()> {
-            self.record("archive_resource_by_manifest_id")
+            self.record("archive_resource_by_manifest_id")?;
+            self.record_removed(resource_type, manifest_id);
+            Ok(())
         }
 
         async fn delete_resource_by_manifest_id(
             &self,
             _module_id: &str,
-            _resource_type: &str,
-            _manifest_id: &str,
+            resource_type: &str,
+            manifest_id: &str,
         ) -> Result<()> {
-            self.record("delete_resource_by_manifest_id")
+            self.record("delete_resource_by_manifest_id")?;
+            self.record_removed(resource_type, manifest_id);
+            Ok(())
         }
 
         async fn get_trigger_event_by_canonical_id(&self, _canonical_id: &str) -> Result<String> {
@@ -1059,12 +1172,17 @@ mod test_support {
             command: &str,
             actions_json: &str,
             _module_name: &str,
+            access: CommandAccess,
         ) -> Result<()> {
             self.record("register_command")?;
             self.registered_commands
                 .lock()
                 .expect("registered_commands mutex poisoned")
                 .push((command.to_string(), actions_json.to_string()));
+            self.registered_access
+                .lock()
+                .expect("registered_access mutex poisoned")
+                .push((command.to_string(), access));
             if self.failing_command == Some(command) {
                 return Err(anyhow!(
                     "FakeDbProxyClient: injected failure registering command {}",

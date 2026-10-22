@@ -1,8 +1,10 @@
 use crate::error::Error;
 use crate::host::{HostError, InvocationContext};
 use crate::runtime::RuntimeAdapter;
+use crate::runtime::limits::{Budget, ConversionLimits, SandboxLimits};
 use mlua::{
-    Function, HookTriggers, Lua, LuaOptions, LuaSerdeExt, StdLib, Value as LuaValue, VmState,
+    ChunkMode, Function, HookTriggers, Lua, LuaOptions, LuaSerdeExt, StdLib, Value as LuaValue,
+    VmState,
 };
 use serde_json::Value;
 use std::cell::{Cell, RefCell};
@@ -12,16 +14,61 @@ const DEFAULT_MEMORY_LIMIT: usize = 16 * 1024 * 1024;
 const DEFAULT_MAX_INSTRUCTIONS: u64 = 10_000_000;
 const HOOK_INTERVAL: u32 = 10_000;
 
+/// The only globals module code may see. mlua opens the base library even
+/// under `StdLib::NONE`, so every other global is removed before host
+/// bindings are installed. Notable omissions: `dofile` and `loadfile` read
+/// host files (and echo their contents in parse errors); `load` and
+/// `loadstring` compile code at runtime, including unverified binary chunks,
+/// which are a memory-corruption primitive; `print` writes to the engine's
+/// stdout; `collectgarbage` lets a module stall or tune the host's collector;
+/// `require` loads code by a caller-supplied name.
+const LUA_ALLOWED_GLOBALS: &[&str] = &[
+    "assert",
+    "error",
+    "ipairs",
+    "next",
+    "pairs",
+    "pcall",
+    "rawequal",
+    "rawget",
+    "rawlen",
+    "rawset",
+    "select",
+    "setmetatable",
+    "getmetatable",
+    "tonumber",
+    "tostring",
+    "type",
+    "xpcall",
+    "_G",
+    "_VERSION",
+];
+
+/// Globals that reach outside the sandbox. Checked after the strip so a
+/// change to the allow-list or to mlua's base library fails the invocation
+/// instead of handing these to module code.
+const LUA_FORBIDDEN_GLOBALS: &[&str] = &[
+    "dofile",
+    "loadfile",
+    "load",
+    "loadstring",
+    "print",
+    "collectgarbage",
+    "require",
+];
+
 pub struct LuaAdapter {
     memory_limit: usize,
     max_instructions: u64,
+    limits: SandboxLimits,
 }
 
 impl LuaAdapter {
-    pub fn new() -> Result<Self, Error> {
+    pub fn new(limits: SandboxLimits) -> Result<Self, Error> {
         Ok(Self {
             memory_limit: DEFAULT_MEMORY_LIMIT,
             max_instructions: DEFAULT_MAX_INSTRUCTIONS,
+            limits,
         })
     }
 }
@@ -35,6 +82,7 @@ impl RuntimeAdapter for LuaAdapter {
     ) -> Result<Value, Error> {
         let lua = Lua::new_with(StdLib::NONE, LuaOptions::new())?;
         lua.set_memory_limit(self.memory_limit)?;
+        strip_globals(&lua)?;
 
         let max_instr = self.max_instructions;
         let count = Cell::new(0u64);
@@ -53,14 +101,44 @@ impl RuntimeAdapter for LuaAdapter {
             },
         );
 
-        let ctx_table = build_lua_ctx(&lua, invocation)?;
+        let ctx_table = build_lua_ctx(&lua, invocation, self.limits.conversion)?;
 
-        lua.load(code).exec()?;
+        lua.load(code).set_mode(ChunkMode::Text).exec()?;
         let main: Function = lua.globals().get(entry_point)?;
         let result = main.call::<LuaValue>(ctx_table)?;
 
-        Ok(serde_json::to_value(&result)?)
+        lua_to_json(&lua, &result, &mut Budget::new(self.limits.conversion))
     }
+}
+
+/// Removes every global not in [`LUA_ALLOWED_GLOBALS`], then asserts none of
+/// [`LUA_FORBIDDEN_GLOBALS`] survived.
+fn strip_globals(lua: &Lua) -> Result<(), Error> {
+    let globals = lua.globals();
+    let mut removed = Vec::new();
+    for pair in globals.pairs::<LuaValue, LuaValue>() {
+        let (key, _) = pair?;
+        let allowed = match &key {
+            LuaValue::String(name) => LUA_ALLOWED_GLOBALS
+                .iter()
+                .any(|allowed| *name.as_bytes() == *allowed.as_bytes()),
+            _ => false,
+        };
+        if !allowed {
+            removed.push(key);
+        }
+    }
+    for key in removed {
+        globals.raw_remove(key)?;
+    }
+    for name in LUA_FORBIDDEN_GLOBALS {
+        if !globals.raw_get::<LuaValue>(*name)?.is_nil() {
+            return Err(Error::RuntimeError(format!(
+                "Lua global `{name}` survived the sandbox allow-list"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Stringifies a value for the `ctx.log.*` functions: Lua strings are
@@ -69,23 +147,164 @@ impl RuntimeAdapter for LuaAdapter {
 /// the encoding rule itself lives in `host_bindings::format_log_value`,
 /// shared with the QuickJS adapter; only the Lua-native string fast path
 /// stays here; see that function's mlua-independent JSON-value contract.
-fn format_log_value(value: &LuaValue) -> String {
+fn format_log_value(lua: &Lua, value: &LuaValue, limits: ConversionLimits) -> String {
     if let LuaValue::String(s) = value {
         return s.to_string_lossy();
     }
-    match serde_json::to_value(value) {
+    match lua_to_json(lua, value, &mut Budget::new(limits)) {
         Ok(json) => super::host_bindings::format_log_value(&json),
-        Err(_) => format!("<unloggable value: {:?}>", value.type_name()),
+        Err(err) => format!("<unloggable value: {:?}: {err}>", value.type_name()),
     }
 }
 
-fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Table, Error> {
+/// Converts a value a module passed to a host binding. A refusal is raised
+/// in the script, where module code can catch it with `pcall`.
+fn binding_arg(lua: &Lua, value: &LuaValue, limits: ConversionLimits) -> mlua::Result<Value> {
+    lua_to_json(lua, value, &mut Budget::new(limits))
+        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))
+}
+
+/// Converts a host binding's answer, or an event, into a value for the
+/// script.
+fn binding_return(lua: &Lua, value: &Value, limits: ConversionLimits) -> mlua::Result<LuaValue> {
+    json_to_lua(lua, value, &mut Budget::new(limits))
+        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))
+}
+
+/// Converts JSON to a Lua value within `budget`, the mirror of
+/// [`lua_to_json`]. Arrays carry mlua's array metatable so an empty one
+/// converts back to an array; `null` becomes mlua's `null` sentinel.
+fn json_to_lua(lua: &Lua, value: &Value, budget: &mut Budget) -> Result<LuaValue, Error> {
+    budget.charge_node()?;
+    match value {
+        Value::Null => Ok(LuaValue::NULL),
+        Value::Bool(b) => Ok(LuaValue::Boolean(*b)),
+        Value::Number(n) => Ok(match n.as_i64() {
+            Some(i) => LuaValue::Integer(i),
+            None => LuaValue::Number(n.as_f64().unwrap_or(f64::NAN)),
+        }),
+        Value::String(s) => {
+            budget.charge_text(s.len())?;
+            Ok(LuaValue::String(lua.create_string(s)?))
+        }
+        Value::Array(items) => budget.nested(|budget| {
+            let table = lua.create_table_with_capacity(items.len(), 0)?;
+            table.set_metatable(Some(lua.array_metatable()));
+            for (index, item) in items.iter().enumerate() {
+                table.raw_set(index + 1, json_to_lua(lua, item, budget)?)?;
+            }
+            Ok(LuaValue::Table(table))
+        }),
+        Value::Object(map) => budget.nested(|budget| {
+            let table = lua.create_table_with_capacity(0, map.len())?;
+            for (key, item) in map {
+                budget.charge_text(key.len())?;
+                table.raw_set(key.as_str(), json_to_lua(lua, item, budget)?)?;
+            }
+            Ok(LuaValue::Table(table))
+        }),
+    }
+}
+
+/// Converts a Lua value to JSON within `budget`. Recursion happens only
+/// inside [`Budget::nested`], so depth is bounded and a cyclic table is
+/// refused as too deep. Functions, threads and userdata have no JSON form
+/// and are refused; mlua's `null` sentinel becomes `null`.
+fn lua_to_json(lua: &Lua, value: &LuaValue, budget: &mut Budget) -> Result<Value, Error> {
+    budget.charge_node()?;
+    match value {
+        LuaValue::Nil => Ok(Value::Null),
+        LuaValue::LightUserData(ud) if ud.0.is_null() => Ok(Value::Null),
+        LuaValue::Boolean(b) => Ok(Value::Bool(*b)),
+        LuaValue::Integer(i) => Ok(Value::Number((*i).into())),
+        LuaValue::Number(n) => Ok(serde_json::Number::from_f64(*n)
+            .map(Value::Number)
+            .unwrap_or(Value::Null)),
+        LuaValue::String(s) => {
+            let text = lua_text(s)?;
+            budget.charge_text(text.len())?;
+            Ok(Value::String(text))
+        }
+        LuaValue::Table(table) => budget.nested(|budget| lua_table_to_json(lua, table, budget)),
+        other => Err(Error::UnsupportedValue {
+            type_name: other.type_name().to_string(),
+        }),
+    }
+}
+
+/// A table whose keys are exactly `1..=n` becomes an array, as does an empty
+/// table carrying mlua's array metatable (how `lua.to_value` marks an empty
+/// JSON array so it round-trips). Any other table becomes an object keyed by
+/// its string and integer keys.
+fn lua_table_to_json(lua: &Lua, table: &mlua::Table, budget: &mut Budget) -> Result<Value, Error> {
+    let len = table.raw_len();
+    let mut entries = 0usize;
+    let mut sequence_entries = 0usize;
+    for pair in table.pairs::<LuaValue, LuaValue>() {
+        let (key, _) = pair?;
+        entries += 1;
+        if let LuaValue::Integer(i) = key
+            && i >= 1
+            && (i as u64) <= len as u64
+        {
+            sequence_entries += 1;
+        }
+    }
+
+    let marked_array = table
+        .metatable()
+        .is_some_and(|meta| meta == lua.array_metatable());
+    if entries == len && sequence_entries == len && (len > 0 || marked_array) {
+        let mut items = Vec::new();
+        for index in 1..=len {
+            let item: LuaValue = table.raw_get(index)?;
+            items.push(lua_to_json(lua, &item, budget)?);
+        }
+        return Ok(Value::Array(items));
+    }
+
+    let mut map = serde_json::Map::new();
+    for pair in table.pairs::<LuaValue, LuaValue>() {
+        let (key, item) = pair?;
+        let key = match key {
+            LuaValue::String(s) => lua_text(&s)?,
+            LuaValue::Integer(i) => i.to_string(),
+            other => {
+                return Err(Error::UnsupportedValue {
+                    type_name: format!("table key of type {}", other.type_name()),
+                });
+            }
+        };
+        budget.charge_text(key.len())?;
+        let item = lua_to_json(lua, &item, budget)?;
+        if map.insert(key.clone(), item).is_some() {
+            return Err(Error::UnsupportedValue {
+                type_name: format!("table with duplicate key {key:?}"),
+            });
+        }
+    }
+    Ok(Value::Object(map))
+}
+
+fn lua_text(s: &mlua::String) -> Result<String, Error> {
+    s.to_str()
+        .map(|text| text.to_string())
+        .map_err(|_| Error::UnsupportedValue {
+            type_name: "non-UTF-8 string".to_string(),
+        })
+}
+
+fn build_lua_ctx(
+    lua: &Lua,
+    invocation: &InvocationContext,
+    limits: ConversionLimits,
+) -> Result<mlua::Table, Error> {
     let ctx = lua.create_table()?;
 
-    let event = lua.to_value(&invocation.event)?;
+    let event = json_to_lua(lua, &invocation.event, &mut Budget::new(limits))?;
     ctx.set("event", event)?;
 
-    let user = lua.to_value(&invocation.user)?;
+    let user = json_to_lua(lua, &invocation.user, &mut Budget::new(limits))?;
     ctx.set("user", user)?;
 
     // crypto namespace — see `runtime::crypto`. Pure computation: no host
@@ -132,7 +351,7 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         let namespace = invocation.module_id.clone();
         let get_fn = lua.create_function(move |lua, key: String| -> mlua::Result<LuaValue> {
             match store.get(&namespace, &key) {
-                Ok(Some(v)) => lua.to_value(&v),
+                Ok(Some(v)) => binding_return(lua, &v, limits),
                 Ok(None) => Ok(LuaValue::Nil),
                 Err(e) => Err(mlua::Error::RuntimeError(e)),
             }
@@ -142,13 +361,10 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         let host = invocation.host.clone();
         let module_id = invocation.module_id.clone();
         let set_fn = lua.create_function(
-            move |_, (key, value, options): (String, LuaValue, Option<LuaValue>)| {
-                let json_val: Value = serde_json::to_value(&value)
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-                let json_options: Option<Value> = options
-                    .map(|o| serde_json::to_value(&o))
-                    .transpose()
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+            move |lua, (key, value, options): (String, LuaValue, Option<LuaValue>)| {
+                let json_val = binding_arg(lua, &value, limits)?;
+                let json_options: Option<Value> =
+                    options.map(|o| binding_arg(lua, &o, limits)).transpose()?;
                 super::host_bindings::storage_set(
                     &host,
                     &module_id,
@@ -172,14 +388,10 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
                 LuaValue,
                 Option<LuaValue>,
             )| {
-                let json_expected: Value = serde_json::to_value(&expected)
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-                let json_val: Value = serde_json::to_value(&value)
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-                let json_options: Option<Value> = options
-                    .map(|o| serde_json::to_value(&o))
-                    .transpose()
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                let json_expected = binding_arg(lua, &expected, limits)?;
+                let json_val = binding_arg(lua, &value, limits)?;
+                let json_options: Option<Value> =
+                    options.map(|o| binding_arg(lua, &o, limits)).transpose()?;
                 let outcome = super::host_bindings::storage_compare_and_set(
                     &host,
                     &module_id,
@@ -189,7 +401,7 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
                     super::host_bindings::parse_storage_set_options(json_options.as_ref()),
                 )
                 .map_err(mlua::Error::RuntimeError)?;
-                lua.to_value(&outcome)
+                binding_return(lua, &outcome, limits)
             },
         )?;
         storage.set("compareAndSet", compare_and_set_fn)?;
@@ -202,10 +414,10 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         let client = invocation.host.http.clone();
         let module_id = invocation.module_id.clone();
         let grants = invocation.permissions.clone();
+        let deadline = invocation.deadline;
         let request_fn = lua.create_function(
             move |lua, (url, method, opts): (String, String, LuaValue)| {
-                let json_opts: Value = serde_json::to_value(&opts)
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                let json_opts = binding_arg(lua, &opts, limits)?;
                 let result = client
                     .request(crate::host::HttpRequest {
                         module_id: &module_id,
@@ -213,9 +425,11 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
                         url: &url,
                         method: &method,
                         opts: json_opts,
+                        enforcement: crate::host::Enforcement::Policy,
+                        deadline: Some(deadline),
                     })
                     .map_err(mlua::Error::RuntimeError)?;
-                lua.to_value(&result)
+                binding_return(lua, &result, limits)
             },
         )?;
         http.set("request", request_fn)?;
@@ -238,10 +452,8 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
                 Option<LuaValue>,
             )| {
                 let display = display_name.unwrap_or_default();
-                let json_settings: Option<Value> = settings
-                    .map(|s| serde_json::to_value(&s))
-                    .transpose()
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                let json_settings: Option<Value> =
+                    settings.map(|s| binding_arg(lua, &s, limits)).transpose()?;
                 match super::host_bindings::resources_create(
                     &host,
                     &module_name,
@@ -250,7 +462,7 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
                     &display,
                     json_settings,
                 ) {
-                    Ok(v) => lua.to_value(&v),
+                    Ok(v) => binding_return(lua, &v, limits),
                     Err(e) => Err(mlua::Error::RuntimeError(e)),
                 }
             },
@@ -268,7 +480,7 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         let host = invocation.host.clone();
         let get_fn = lua.create_function(move |lua, canonical_id: String| {
             match super::host_bindings::resources_get(&host, &canonical_id) {
-                Ok(v) => lua.to_value(&v),
+                Ok(v) => binding_return(lua, &v, limits),
                 Err(e) => Err(mlua::Error::RuntimeError(e)),
             }
         })?;
@@ -278,7 +490,7 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         let list_fn =
             lua.create_function(
                 move |lua, kind: String| match super::host_bindings::resources_list(&host, &kind) {
-                    Ok(v) => lua.to_value(&v),
+                    Ok(v) => binding_return(lua, &v, limits),
                     Err(e) => Err(mlua::Error::RuntimeError(e)),
                 },
             )?;
@@ -290,10 +502,8 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         let deadline = invocation.deadline;
         let run_fn = lua.create_function(
             move |lua, (canonical_id, verb, params): (String, String, Option<LuaValue>)| {
-                let json_params: Option<Value> = params
-                    .map(|p| serde_json::to_value(&p))
-                    .transpose()
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                let json_params: Option<Value> =
+                    params.map(|p| binding_arg(lua, &p, limits)).transpose()?;
                 match super::host_bindings::resources_run(
                     &host,
                     &module_id,
@@ -303,7 +513,7 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
                     &verb,
                     json_params,
                 ) {
-                    Ok(v) => lua.to_value(&v),
+                    Ok(v) => binding_return(lua, &v, limits),
                     Err(e) => Err(mlua::Error::RuntimeError(e)),
                 }
             },
@@ -324,10 +534,8 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
                     LuaValue,
                     LuaValue,
                 )| {
-                    let json_expected: Value = serde_json::to_value(&expected)
-                        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-                    let json_val: Value = serde_json::to_value(&value)
-                        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                    let json_expected = binding_arg(lua, &expected, limits)?;
+                    let json_val = binding_arg(lua, &value, limits)?;
                     let outcome = super::host_bindings::resources_compare_and_set_setting(
                         &host,
                         &module_id,
@@ -337,7 +545,7 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
                         &json_val,
                     )
                     .map_err(mlua::Error::RuntimeError)?;
-                    lua.to_value(&outcome)
+                    binding_return(lua, &outcome, limits)
                 },
             )?;
         resources.set("compareAndSetSetting", compare_and_set_setting_fn)?;
@@ -352,17 +560,15 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         let module_id = invocation.module_id.clone();
         let at_fn =
             lua.create_function(
-                move |_,
+                move |lua,
                       (deadline_id, key, when_ms, params): (
                     String,
                     String,
                     f64,
                     Option<LuaValue>,
                 )| {
-                    let json_params: Option<Value> = params
-                        .map(|p| serde_json::to_value(&p))
-                        .transpose()
-                        .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                    let json_params: Option<Value> =
+                        params.map(|p| binding_arg(lua, &p, limits)).transpose()?;
                     super::host_bindings::schedule_at(
                         &host,
                         &module_id,
@@ -425,10 +631,8 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         let url_settings_for_cas = invocation.url_settings.clone();
         let compare_and_set_setting_fn = lua.create_function(
             move |lua, (key, expected, value): (String, LuaValue, LuaValue)| {
-                let json_expected: Value = serde_json::to_value(&expected)
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
-                let json_val: Value = serde_json::to_value(&value)
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                let json_expected = binding_arg(lua, &expected, limits)?;
+                let json_val = binding_arg(lua, &value, limits)?;
                 let outcome = super::host_bindings::compare_and_set_module_setting(
                     &host_for_cas,
                     &module_id_for_cas,
@@ -438,7 +642,7 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
                     &json_val,
                 )
                 .map_err(mlua::Error::RuntimeError)?;
-                lua.to_value(&outcome)
+                binding_return(lua, &outcome, limits)
             },
         )?;
         module_tbl.set("compareAndSetSetting", compare_and_set_setting_fn)?;
@@ -466,7 +670,7 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
                     super::host_bindings::module_settings_snapshot(&host, &module_id_for_settings);
                 let settings_tbl = lua.create_table()?;
                 for (k, v) in &settings_map {
-                    let lua_val = lua.to_value(v)?;
+                    let lua_val = binding_return(lua, v, limits)?;
                     settings_tbl.set(k.as_str(), lua_val)?;
                 }
                 *cache = Some(settings_tbl);
@@ -481,28 +685,40 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
     }
 
     // log namespace — forwards to the host's `log` crate, prefixed with
-    // the calling module's id. Lua has no host-visible logging facility of
-    // its own (the sandbox's StdLib is NONE), so this is the only way for
-    // a module function to emit a log line.
+    // the calling module's id. `print` is stripped from the globals (see
+    // `LUA_ALLOWED_GLOBALS`), so this is the only way for a module function
+    // to emit a log line.
     let log = lua.create_table()?;
     {
         let module_id = invocation.module_id.clone();
-        let info_fn = lua.create_function(move |_, value: LuaValue| {
-            tracing::info!("[module:{}] {}", module_id, format_log_value(&value));
+        let info_fn = lua.create_function(move |lua, value: LuaValue| {
+            tracing::info!(
+                "[module:{}] {}",
+                module_id,
+                format_log_value(lua, &value, limits)
+            );
             Ok(())
         })?;
         log.set("info", info_fn)?;
 
         let module_id = invocation.module_id.clone();
-        let warn_fn = lua.create_function(move |_, value: LuaValue| {
-            tracing::warn!("[module:{}] {}", module_id, format_log_value(&value));
+        let warn_fn = lua.create_function(move |lua, value: LuaValue| {
+            tracing::warn!(
+                "[module:{}] {}",
+                module_id,
+                format_log_value(lua, &value, limits)
+            );
             Ok(())
         })?;
         log.set("warn", warn_fn)?;
 
         let module_id = invocation.module_id.clone();
-        let error_fn = lua.create_function(move |_, value: LuaValue| {
-            tracing::error!("[module:{}] {}", module_id, format_log_value(&value));
+        let error_fn = lua.create_function(move |lua, value: LuaValue| {
+            tracing::error!(
+                "[module:{}] {}",
+                module_id,
+                format_log_value(lua, &value, limits)
+            );
             Ok(())
         })?;
         log.set("error", error_fn)?;
@@ -517,24 +733,35 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
     // might return for its own purposes.
     let response_fn = lua.create_function(move |lua, (success, message): (bool, String)| {
         let value = super::host_bindings::build_response_value(success, message);
-        lua.to_value(&value)
+        binding_return(lua, &value, limits)
     })?;
     ctx.set("response", response_fn)?;
+
+    // success/failure — response with extra fields; fields are converted to
+    // JSON and validated host-side so the reserved names cannot be overwritten.
+    for (name, success) in [("success", true), ("failure", false)] {
+        let outcome_fn =
+            lua.create_function(move |lua, (message, fields): (String, Option<LuaValue>)| {
+                let fields = fields.map(|v| binding_arg(lua, &v, limits)).transpose()?;
+                let value = super::host_bindings::build_outcome_value(success, message, fields)
+                    .map_err(mlua::Error::RuntimeError)?;
+                binding_return(lua, &value, limits)
+            })?;
+        ctx.set(name, outcome_fn)?;
+    }
 
     // result — a function's result together with events it asks the engine
     // to publish. Pure data constructor; the engine checks and publishes the
     // events once the function returns it (see function_result.rs).
     let result_fn = lua.create_function(move |lua, (value, events): (LuaValue, LuaValue)| {
-        let to_json = |v: &LuaValue| {
-            serde_json::to_value(v).map_err(|e| mlua::Error::RuntimeError(e.to_string()))
-        };
+        let to_json = |v: &LuaValue| binding_arg(lua, v, limits);
         let envelope =
             crate::function_result::build_result_value(to_json(&value)?, to_json(&events)?);
-        lua.to_value(&envelope)
+        binding_return(lua, &envelope, limits)
     })?;
     ctx.set("result", result_fn)?;
 
-    bind_extensions(lua, &ctx, invocation)?;
+    bind_extensions(lua, &ctx, invocation, limits)?;
 
     Ok(ctx)
 }
@@ -582,8 +809,12 @@ fn bind_extensions(
     lua: &Lua,
     ctx: &mlua::Table,
     invocation: &InvocationContext,
+    limits: ConversionLimits,
 ) -> mlua::Result<()> {
-    let raise_on_failure: Function = lua.load(RAISE_ON_FAILURE).eval()?;
+    let raise_on_failure: Function = lua
+        .load(RAISE_ON_FAILURE)
+        .set_mode(ChunkMode::Text)
+        .eval()?;
     let error_meta = lua.create_table()?;
     error_meta.set(
         "__tostring",
@@ -599,10 +830,9 @@ fn bind_extensions(
             let scope = scope.clone();
             let error_meta = error_meta.clone();
             let call = lua.create_function(move |lua, arg: LuaValue| {
-                let value: Value = serde_json::to_value(&arg)
-                    .map_err(|e| mlua::Error::RuntimeError(e.to_string()))?;
+                let value = binding_arg(lua, &arg, limits)?;
                 match func.call(&namespace, &scope, value) {
-                    Ok(result) => Ok((true, lua.to_value(&result)?)),
+                    Ok(result) => Ok((true, binding_return(lua, &result, limits)?)),
                     Err(err) => Ok((
                         false,
                         LuaValue::Table(host_error_table(lua, &err, &error_meta)?),
@@ -647,7 +877,7 @@ mod tests {
             url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
-        let adapter = LuaAdapter::new().unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
         let code = r#"
             function run(ctx)
                 return { env = type(ctx.env) }
@@ -673,7 +903,7 @@ mod tests {
             url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
-        let adapter = LuaAdapter::new().unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
         let code = r#"
             function run(ctx)
                 ctx.schedule.at("timer_end", "t1", 2000, { target = "t1" })
@@ -705,7 +935,7 @@ mod tests {
 
     #[test]
     fn lua_ctx_log_accepts_strings_and_objects() {
-        let adapter = LuaAdapter::new().unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -735,7 +965,7 @@ mod tests {
 
     #[test]
     fn lua_ctx_response_builds_the_standard_shape() {
-        let adapter = LuaAdapter::new().unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -757,6 +987,95 @@ mod tests {
         assert_eq!(result["v"], 1);
         assert_eq!(result["success"], false);
         assert_eq!(result["message"], "nope");
+    }
+
+    fn outcome_test_invocation() -> InvocationContext {
+        InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        }
+    }
+
+    #[test]
+    fn lua_ctx_success_and_failure_build_the_response_with_fields() {
+        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        };
+        // (call, success, message, extra field name, extra field value)
+        let cases = [
+            ("ctx.success('ok')", true, "ok", "", serde_json::Value::Null),
+            (
+                "ctx.success('ok', {})",
+                true,
+                "ok",
+                "",
+                serde_json::Value::Null,
+            ),
+            (
+                "ctx.failure('bad', { code = 7 })",
+                false,
+                "bad",
+                "code",
+                serde_json::json!(7),
+            ),
+            (
+                "ctx.success('hi', { who = 'ann' })",
+                true,
+                "hi",
+                "who",
+                serde_json::json!("ann"),
+            ),
+        ];
+        for (call, success, message, extra, extra_value) in cases {
+            let code = format!("function run(ctx) return {call} end");
+            let result = adapter.execute(&code, "run", &invocation).unwrap();
+            assert_eq!(result["proto"], "woofx3.response", "{call}");
+            assert_eq!(result["v"], 1, "{call}");
+            assert_eq!(result["success"], success, "{call}");
+            assert_eq!(result["message"], message, "{call}");
+            if !extra.is_empty() {
+                assert_eq!(result[extra], extra_value, "{call}");
+            }
+        }
+    }
+
+    #[test]
+    fn lua_ctx_success_and_failure_refuse_bad_fields() {
+        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
+        let invocation = outcome_test_invocation();
+        // (fields argument source, expected error substring)
+        let cases = [
+            ("{ proto = 1 }", "reserved name 'proto'"),
+            ("{ v = 1 }", "reserved name 'v'"),
+            ("{ success = 1 }", "reserved name 'success'"),
+            ("{ message = 1 }", "reserved name 'message'"),
+            ("5", "fields must be an object"),
+            ("'text'", "fields must be an object"),
+            ("{ 1, 2 }", "fields must be an object"),
+        ];
+        for (fields, want) in cases {
+            for func in ["success", "failure"] {
+                let code = format!("function run(ctx) return ctx.{func}('x', {fields}) end");
+                let err = adapter.execute(&code, "run", &invocation).unwrap_err();
+                assert!(err.to_string().contains(want), "{func} {fields}: {err}");
+            }
+        }
     }
 
     struct CountingSettingsClient {
@@ -795,7 +1114,7 @@ mod tests {
             data: std::collections::HashMap::new(),
             writes: Default::default(),
         });
-        let adapter = LuaAdapter::new().unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -828,7 +1147,7 @@ mod tests {
             data,
             writes: Default::default(),
         });
-        let adapter = LuaAdapter::new().unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -868,7 +1187,7 @@ mod tests {
             data: std::collections::HashMap::new(),
             writes: writes.clone(),
         });
-        let adapter = LuaAdapter::new().unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -905,7 +1224,7 @@ mod tests {
     fn lua_ctx_module_id_name_version_still_direct_fields() {
         // Guards against the __index metatable hook accidentally shadowing
         // the plain fields set directly on module_tbl.
-        let adapter = LuaAdapter::new().unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -974,7 +1293,7 @@ mod tests {
         });
         let mut host = noop_host_context();
         host.settings = settings.clone();
-        let adapter = LuaAdapter::new().unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1011,7 +1330,7 @@ mod tests {
         ));
         let mut host = noop_host_context();
         host.resources = instance.clone();
-        let adapter = LuaAdapter::new().unwrap();
+        let adapter = LuaAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,

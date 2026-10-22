@@ -718,10 +718,15 @@ async fn delete_resource_handler(
     }
 }
 
+/// The upload itself, guarded by its grant token rather than the service key:
+/// the browser sends it, through the scene manager's relay.
+pub fn configure_public(cfg: &mut ServiceConfig) {
+    cfg.service(upload_handler);
+}
+
 pub fn configure(cfg: &mut ServiceConfig) {
     cfg.service(upload_url_handler);
     cfg.service(poster_upload_url_handler);
-    cfg.service(upload_handler);
     cfg.service(process_handler);
     cfg.service(delete_resource_handler);
 }
