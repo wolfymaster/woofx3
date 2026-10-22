@@ -287,8 +287,8 @@ export function supportedEngineCapabilities(hosting: EngineHosting | null = null
 /**
  * A `getEngineCapabilities()` answer as read by a client: every id listed,
  * sorted and unique, including ids this contract does not declare (a newer
- * engine lists features an older client has never heard of). Non-string
- * entries are dropped.
+ * engine lists features an older client has never heard of). Entries that
+ * are not strings, and empty strings, are dropped.
  *
  * Throws on an answer that is not the schema-1 shape. A different `schema`
  * means the answer is no longer a flat id list, and guessing at it could

@@ -6,10 +6,11 @@
  * module before or after it is installed.
  *
  * Every reader takes the manifest as `unknown` and is lenient: a missing or
- * malformed list declares nothing, and an entry without its identifying
- * field is skipped. A stored manifest passed barkloader's validation at
- * install, so leniency only matters for an archive not yet installed, where
- * barkloader refuses the whole install over an invalid entry anyway.
+ * malformed list declares nothing, an empty string counts as absent, and an
+ * entry without its identifying field is skipped. A stored manifest passed
+ * barkloader's validation at install, so leniency only matters for an
+ * archive not yet installed, where barkloader refuses the whole install over
+ * an invalid entry anyway.
  */
 
 import type { ManifestResourceKind, MarketplaceLocalEndpoint } from "./api";
@@ -37,7 +38,10 @@ export function manifestPermissions(manifest: unknown): string[] {
  * Deliberately not filtered down to the entries barkloader's `validate_local`
  * accepts: barkloader refuses the whole install over an invalid entry, so
  * counting one here can only ask for an approval the install would not have
- * needed, never skip one it did.
+ * needed, never skip one it did. This makes it a reader for counting what
+ * needs approval, not a validator: a client that shows only the endpoints an
+ * install would accept, or needs each endpoint's settings and discovery,
+ * applies barkloader's rules itself.
  */
 export function manifestLocalEndpoints(manifest: unknown): MarketplaceLocalEndpoint[] {
   const endpoints: MarketplaceLocalEndpoint[] = [];
