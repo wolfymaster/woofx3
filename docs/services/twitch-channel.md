@@ -645,9 +645,11 @@ snoozeNextAd(): Promise<{
 
 Every time is ISO-8601 or null. Helix has sent these fields as RFC3339
 strings, as Unix seconds (number or numeric string), and as `""` when nothing
-is scheduled or the channel is offline; `normalizeHelixTime`
-(`twitch/src/lib/twitch.ts`) maps all of them, and anything unreadable
-becomes null rather than failing the call. `serverNow` lets a countdown
+is scheduled or the channel is offline. `parseHelixAdSchedule` and
+`parseHelixAdSnooze` (`@woofx3/api/twitch-helix-bodies`, the readers a
+dashboard uses on `twitchGetAdSchedule`'s body too) map all of them: an
+unreadable time becomes null and an unreadable count 0, and the rest of the
+schedule is still returned rather than failing the call. `serverNow` lets a countdown
 correct for the difference between the browser's clock and the engine's.
 
 Both are commands on the `twitchapi` NATS request subject, answered from

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import type { HelixAdSchedule } from "@woofx3/api/twitch-helix-bodies";
 import type { AdBreakUpcoming } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { AdBreakScheduler, type SchedulerClock } from "./adBreakScheduler";
-import { type AdSchedule, TwitchApiError } from "./twitch";
+import { TwitchApiError } from "./twitch";
 
 /** Timers fire only when a test advances time past them. */
 class FakeClock implements SchedulerClock {
@@ -74,7 +75,7 @@ const silentLogger = {
   debug() {},
 } as unknown as SharedLogger;
 
-function schedule(nextAdAtMs: number | null): AdSchedule {
+function schedule(nextAdAtMs: number | null): HelixAdSchedule {
   return {
     nextAdAt: nextAdAtMs === null ? null : iso(nextAdAtMs),
     lastAdAt: null,
@@ -94,7 +95,7 @@ function harness(opts: { leadSeconds?: number; live?: boolean } = {}) {
     live: opts.live ?? true,
     fetches: 0,
     leadSeconds: opts.leadSeconds ?? 60,
-    next: schedule(T0 + 5 * 60_000) as AdSchedule | Error,
+    next: schedule(T0 + 5 * 60_000) as HelixAdSchedule | Error,
   };
   const scheduler = new AdBreakScheduler({
     fetchSchedule: async () => {
