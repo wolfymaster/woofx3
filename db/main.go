@@ -36,7 +36,12 @@ func main() {
 	defer sharedLogger.Close()
 	logger := sharedLogger.Slog()
 
-	workersConfig := workers.LoadConfig()
+	workersConfig, err := workers.LoadConfig()
+	if err != nil {
+		logger.Error("db-proxy cannot start", "error", err)
+		sharedLogger.Close()
+		os.Exit(1)
+	}
 	app := NewDatabaseApp(&DatabaseAppConfig{Logger: logger, Workers: workersConfig})
 	natsSvc := service.NewNATS(logger, "nats", "messagebus")
 	natsMonitor := monitor.NewNATS("nats", natsSvc, "db", "HEARTBEAT", 15*time.Second, logger)
