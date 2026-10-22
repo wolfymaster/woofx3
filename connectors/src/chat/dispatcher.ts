@@ -118,12 +118,18 @@ export class ChatDispatcher {
     // A command event in the moment between the first listing and these
     // subscriptions is missed; the store's backstop reload picks it up.
     await this.store.start();
-    for (const subject of COMMAND_EVENT_SUBJECTS) {
-      await this.deps.bus.subscribe(subject, () => this.store.requestReload());
+    try {
+      for (const subject of COMMAND_EVENT_SUBJECTS) {
+        await this.deps.bus.subscribe(subject, () => this.store.requestReload());
+      }
+      await this.deps.bus.subscribe(CHAT_LINE_SUBJECT, async (msg) => {
+        await this.handleLine(msg.data);
+      });
+    } catch (error) {
+      // The backstop would otherwise keep reloading a table nothing reads.
+      await this.store.stop();
+      throw error;
     }
-    await this.deps.bus.subscribe(CHAT_LINE_SUBJECT, async (msg) => {
-      await this.handleLine(msg.data);
-    });
   }
 
   /** Stops reloading. The subscriptions belong to the scope, which its owner closes. */

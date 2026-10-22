@@ -87,8 +87,8 @@ describe("ChatDispatcher", () => {
   let titles: string[];
   let dispatcher: ChatDispatcher;
 
-  async function start(builtins: CommandDefinition[] = [titleBuiltin(titles)]): Promise<void> {
-    const scope = new ScopedBus({
+  function newScope(): ScopedBus {
+    return new ScopedBus({
       scope: "host",
       client: bus,
       grants: CHAT_DISPATCHER_GRANTS,
@@ -97,6 +97,9 @@ describe("ChatDispatcher", () => {
       counters: new ScopeCounters(),
       clock: time,
     });
+  }
+
+  async function start(builtins: CommandDefinition[] = [titleBuiltin(titles)], scope = newScope()): Promise<void> {
     dispatcher = new ChatDispatcher({ config: CONFIG, db, bus: scope, builtins, clock: time, timers: time, logger });
     await dispatcher.start();
   }
@@ -282,5 +285,12 @@ describe("ChatDispatcher", () => {
     db.failListing = true;
     await expect(start()).rejects.toThrow("ListCommands");
     expect(bus.subscriptions).toEqual([]);
+  });
+
+  test("a subscribe that fails during start leaves no reload timer running", async () => {
+    const scope = newScope();
+    await scope.closeAll();
+    await expect(start(undefined, scope)).rejects.toThrow("closed");
+    expect(time.pending).toBe(0);
   });
 });
