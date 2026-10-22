@@ -362,6 +362,24 @@ fn test_cyclic_binding_argument_is_refused_inside_the_script() {
 }
 
 #[test]
+fn test_outcome_fields_nested_past_the_depth_limit_are_refused() {
+    for runtime in RUNTIMES {
+        let body = match runtime {
+            Runtime::Js => "return ctx.success('done', { deep: v });",
+            Runtime::Lua => "return ctx.success('done', { deep = v })",
+        };
+        let err = runtime
+            .invoke(&runtime.build_nested(100_000), body)
+            .expect_err("ctx.success fields deeper than the limit must be refused");
+        let message = err.to_string();
+        assert!(
+            message.contains("value nests deeper than 64 levels"),
+            "{runtime:?}: {message}"
+        );
+    }
+}
+
+#[test]
 fn test_cyclic_log_argument_is_logged_as_unloggable() {
     for runtime in RUNTIMES {
         let body = match runtime {
