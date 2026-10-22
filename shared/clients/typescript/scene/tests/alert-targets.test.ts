@@ -7,7 +7,7 @@ import {
   alertWidgetNamesOf,
   orphanedAlertTargets,
   placedWidgetsOf,
-} from "../alert-targets";
+} from "../model/alert-targets";
 
 const ALERT_WIDGET = "woofx3:widget:alert";
 const TEXT_WIDGET = "woofx3:widget:text";

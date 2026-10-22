@@ -4,21 +4,16 @@
  *
  * An Alert step (a workflow task or command action whose `action` is
  * `alert`) plays on every alert widget whose name equals its `target`, by
- * the routing rules in `@woofx3/scene/model` (alert-names), re-exported here.
- * A dashboard uses these functions to offer only targets something answers
- * to, and to warn when an edit to a scene leaves steps with nowhere to play.
+ * the routing rules in alert-names.ts. A dashboard uses these functions to
+ * offer only targets something answers to, and to warn when an edit to a
+ * scene leaves steps with nowhere to play.
+ *
+ * Input is read leniently: an empty string where an id belongs counts as
+ * absent, and an entry without the field that identifies it is skipped.
  */
 
-import { alertRouteName, alertWidgetName } from "../scene/model/alert-names";
-import { storedWidgetId } from "../scene/model/stored-placement";
-
-export {
-  ALERT_SURFACE,
-  alertRouteName,
-  alertWidgetName,
-  DEFAULT_ALERT_WIDGET_NAME,
-  nextAlertWidgetName,
-} from "../scene/model/alert-names";
+import { alertRouteName, alertWidgetName } from "./alert-names";
+import { storedWidgetId } from "./stored-placement";
 
 /** The workflow engine's Alert action id (workflow/app.go registers it). */
 export const ALERT_ACTION_ID = "alert";
