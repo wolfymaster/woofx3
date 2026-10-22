@@ -124,6 +124,49 @@ absolute path. The relative database, module storage, module and upload paths, c
 log file then live under it. Unset, it has no effect on any path. See
 [The data directory](./runtime.md#the-data-directory).
 
+## Engine secrets
+
+Two secrets keep the engine's services honest with each other and with
+browsers:
+
+| Setting | Signs or authenticates |
+|---------|------------------------|
+| `barkloaderKey` / `WOOFX3_BARKLOADER_KEY` | Requests between the api, barkloader and the other services; upload grants; media proxy URLs. |
+| `sceneManagerTokenSecret` / `WOOFX3_SCENE_MANAGER_TOKEN_SECRET` | Overlay session and scene editor tokens. |
+
+Neither ships in `.woofx3.json`. Before it starts any service, the orchestrator
+resolves each one from the first of these that holds a usable value:
+
+1. the variable, from the environment or `.env`;
+2. the key in `.woofx3.json`;
+3. the file the orchestrator wrote on an earlier run: `data/secrets/<name>`
+   under the [data directory](./runtime.md#the-data-directory), or under the
+   working directory when `WOOFX3_DATA_DIR` is unset (`barkloader-key`,
+   `scene-manager-token-secret`). It sits beside the database, so it lives on
+   the production image's `/app/data` volume and is copied along with the
+   rest of `data/` when a data directory is first set;
+4. a new random 32-byte value, hex-encoded, written to that file with mode
+   `0600` in a `0700` directory.
+
+Every service it starts then gets the resolved values in its environment, over
+whatever it inherited. So a fresh install needs no secrets configured, and the
+values stay the same across restarts as long as `data/` persists.
+
+A usable secret is at least 32 bytes once trimmed and is not a well-known
+placeholder (`CHANGE_ME`, `changeme`, `change-me`, `secret`, `password`,
+`placeholder`, `todo`, `xxx`, `test`, in any case). The orchestrator logs a
+warning naming the setting and passes over a value that fails the rule, so an
+install still configured with the old `CHANGE_ME` template replaces it on
+upgrade instead of failing to start. Replacing `sceneManagerTokenSecret` signs
+out open overlays and editors once; they reconnect with a fresh session.
+
+To supply your own, set both variables to random values of at least 32 bytes,
+for example `openssl rand -hex 32`. Do this for a container without a
+volume at `/app/data`, or the secrets change every time it is recreated. Services run
+without the orchestrator (in development, or one at a time) do not generate
+anything: sceneManager, the api and barkloader refuse to start, naming the
+setting, unless they are given a usable value.
+
 ## Host and Origin checks
 
 The api and sceneManager can refuse requests by their `Host` and `Origin`
