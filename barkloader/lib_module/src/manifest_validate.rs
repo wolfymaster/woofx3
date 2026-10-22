@@ -984,6 +984,7 @@ fn validate_local(manifest: &ModuleManifest) -> Result<()> {
             "text",
             &mut named,
         )?;
+        require_loopback_host_default(manifest, &context, &endpoint.host_setting)?;
         require_local_setting(
             manifest,
             &context,
@@ -1032,6 +1033,37 @@ fn validate_local(manifest: &ModuleManifest) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Whether a host setting default can only ever aim at the engine's own
+/// machine: `localhost` or an IP literal in 127/8 or `::1`.
+fn is_loopback_host(value: &str) -> bool {
+    value.eq_ignore_ascii_case("localhost")
+        || value
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
+/// A local endpoint's host setting may ship a default only if it is empty or
+/// loopback. On a local or opted-in self engine the module path dials whatever
+/// the setting holds, so a default must never point at another device.
+fn require_loopback_host_default(
+    manifest: &ModuleManifest,
+    context: &str,
+    host_setting: &str,
+) -> Result<()> {
+    let default = manifest
+        .settings
+        .iter()
+        .find(|s| s.id == host_setting)
+        .and_then(|s| s.default_value.as_deref())
+        .unwrap_or("");
+    if default.is_empty() || is_loopback_host(default) {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "{context}: the default for hostSetting must be empty or a loopback address, not {default}"
+    ))
 }
 
 /// A setting a local endpoint field names: declared, of the wanted type, and
@@ -5911,6 +5943,47 @@ mod tests {
         validate(&with_local(&none)).expect("no discovery installs");
         let no_password = OBS_LOCAL.replace(r#", "passwordSetting": "password""#, "");
         validate(&with_local(&no_password)).expect("no password installs");
+    }
+
+    #[test]
+    fn test_validate_local_host_default_cases() {
+        let with_default = |default: Option<&str>| {
+            let settings = match default {
+                Some(v) => OBS_SETTINGS.replace(
+                    r#""id": "host", "label": "Host", "type": "text""#,
+                    &format!(
+                        r#""id": "host", "label": "Host", "type": "text", "defaultValue": "{v}""#
+                    ),
+                ),
+                None => OBS_SETTINGS.to_string(),
+            };
+            validate(&minimal(&format!("{settings}, {OBS_LOCAL}")))
+        };
+        for accepted in [
+            None,
+            Some(""),
+            Some("localhost"),
+            Some("LocalHost"),
+            Some("127.0.0.1"),
+            Some("127.1.2.3"),
+            Some("::1"),
+        ] {
+            with_default(accepted).unwrap_or_else(|e| panic!("{accepted:?} should install: {e}"));
+        }
+        for refused in [
+            "192.168.1.1",
+            "10.0.0.2",
+            "obs-pc.lan",
+            "0.0.0.0",
+            "example.com",
+        ] {
+            let err = with_default(Some(refused)).unwrap_err().to_string();
+            assert!(
+                err.contains("local[0] (obs): the default for hostSetting must be empty or a loopback address")
+                    && err.contains(refused),
+                "{refused}: {err}"
+            );
+        }
     }
 
     #[test]

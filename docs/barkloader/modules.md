@@ -1727,7 +1727,7 @@ through the woofx3 companion on the streamer's PC, is the platform's decision
 | `id` | 1-40 lowercase letters, digits, `_` or `-`; unique within the module |
 | `name` | 1-80 characters. Shown in the companion and on the module install page |
 | `protocol` | `websocket` or `http`. Any other value fails the install, because the platform could not carry it |
-| `hostSetting` | A `text` setting holding the host |
+| `hostSetting` | A `text` setting holding the host. Its `defaultValue`, if any, must be empty, `localhost` or a loopback address (`127.0.0.0/8`, `::1`): the module path dials whatever the setting holds, so a default must not aim it at another device on the network |
 | `portSetting` | A `number` setting holding the port |
 | `passwordSetting` | Optional: a `secret` setting holding the endpoint's own password |
 | `discover` | Optional, with exactly one of `mdns` or `known`. `mdns` is a DNS-SD service type such as `_elg._tcp`, browsed by the companion. `known` names a discoverer built into the companion (`obs-websocket` reads OBS's own WebSocket config file); it is checked for shape only, because which discoverers exist depends on the companion's version, not the engine's |
