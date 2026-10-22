@@ -101,8 +101,8 @@ describe("registerClient on an engine with a registration token", () => {
   });
 });
 
-describe("registerClient on an engine without a registration token", () => {
-  it("registers any caller, as bring-your-own engines always have", async () => {
+describe("registerClient on an engine without a registration token or mode", () => {
+  it("registers the first caller", async () => {
     const { gateway: gw } = gateway(null);
 
     const result = await gw.registerClient("ui", {});
@@ -110,11 +110,49 @@ describe("registerClient on an engine without a registration token", () => {
     expect(result.clientId).toBe("c1");
   });
 
-  it("warns once at startup that registration is open", () => {
+  it("refuses a second registration, since there is no token to present", async () => {
+    const { gateway: gw, createClient } = gateway(null);
+    await gw.registerClient("ui", {});
+
+    const err = await refusal(gw.registerClient("intruder", {}));
+
+    expect(err.name).toBe(REGISTRATION_REFUSED);
+    expect(createClient).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not warn that registration is open", () => {
     const { logger } = gateway(null);
 
-    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).not.toHaveBeenCalled();
   });
+});
+
+describe("registerClient callback URLs", () => {
+  const refused = [
+    "file:///etc/passwd",
+    "http://internal.example/hook",
+    "https://user:pass@example.com/hook",
+    "https://example.com/hook#fragment",
+    "gopher://example.com/hook",
+  ];
+  for (const callbackUrl of refused) {
+    it(`refuses ${callbackUrl} before creating a client`, async () => {
+      const { gateway: gw, createClient } = gateway(null);
+
+      const err = await refusal(gw.registerClient("ui", { callbackUrl }));
+
+      expect(err.name).toBe(REGISTRATION_REFUSED);
+      expect(createClient).not.toHaveBeenCalled();
+    });
+  }
+
+  for (const callbackUrl of ["https://example.convex.site/api/webhooks/woofx3", "http://127.0.0.1:3000/hook"]) {
+    it(`accepts ${callbackUrl}`, async () => {
+      const { gateway: gw } = gateway(null, "open");
+
+      expect((await gw.registerClient("ui", { callbackUrl })).clientId).toBe("c1");
+    });
+  }
 });
 
 describe("registerClient in first mode", () => {
@@ -188,5 +226,11 @@ describe("registerClient in an explicit mode", () => {
 
     await gw.registerClient("a", {});
     expect((await gw.registerClient("b", {})).clientId).toBe("c2");
+  });
+
+  it("open mode warns once at startup", () => {
+    const { logger } = gateway(null, "open");
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 });

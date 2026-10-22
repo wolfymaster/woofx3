@@ -26,6 +26,12 @@ afterEach(() => {
 function withEnv(vars: Record<string, string>): void {
   delete process.env.WOOFX3_API_HOST;
   delete process.env.API_HOST;
+  delete process.env.PORT;
+  delete process.env.WOOFX3_BEHIND_EDGE;
+  delete process.env.WOOFX3_REGISTRATION_MODE;
+  delete process.env.WOOFX3_REGISTRATION_TOKEN;
+  delete process.env.WOOFX3_ALLOWED_HOSTS;
+  delete process.env.WOOFX3_ALLOWED_ORIGINS;
   Object.assign(process.env, REQUIRED, vars);
 }
 
@@ -40,6 +46,60 @@ describe("api listener", () => {
     withEnv({ WOOFX3_API_HOST: "0.0.0.0" });
 
     expect(loadConfig().host).toBe("0.0.0.0");
+  });
+});
+
+describe("secure defaults", () => {
+  test("registration is first when neither a mode nor a token is set", () => {
+    withEnv({});
+
+    expect(loadConfig().registration).toEqual({ mode: "first", token: null });
+  });
+
+  test("open registration stops startup behind the edge", () => {
+    withEnv({ WOOFX3_REGISTRATION_MODE: "open", WOOFX3_BEHIND_EDGE: "true" });
+
+    expect(() => loadConfig()).toThrow("WOOFX3_REGISTRATION_MODE=open");
+  });
+
+  test("open registration stops startup on a non-loopback bind", () => {
+    withEnv({ WOOFX3_REGISTRATION_MODE: "open", WOOFX3_API_HOST: "0.0.0.0" });
+
+    expect(() => loadConfig()).toThrow("WOOFX3_REGISTRATION_MODE=open");
+  });
+
+  test("open registration is allowed on a loopback-only engine", () => {
+    withEnv({ WOOFX3_REGISTRATION_MODE: "open" });
+
+    expect(loadConfig().registration.mode).toBe("open");
+  });
+
+  test("a PORT exported by the parent shell does not change the exposure", () => {
+    withEnv({ WOOFX3_REGISTRATION_MODE: "open", PORT: "3000" });
+
+    expect(loadConfig().registration.mode).toBe("open");
+  });
+
+  test("a WOOFX3_BEHIND_EDGE that is not true or false stops startup", () => {
+    withEnv({ WOOFX3_BEHIND_EDGE: "yes" });
+
+    expect(() => loadConfig()).toThrow();
+  });
+
+  test("an unset request guard checks Origin, and Host on a loopback-only engine", () => {
+    withEnv({});
+
+    const { requestGuard } = loadConfig();
+    expect(requestGuard.allowedOrigins).not.toBeNull();
+    expect(requestGuard.allowedHosts).not.toBeNull();
+  });
+
+  test("behind the edge an unset request guard still checks Origin but not Host", () => {
+    withEnv({ WOOFX3_BEHIND_EDGE: "true" });
+
+    const { requestGuard } = loadConfig();
+    expect(requestGuard.allowedOrigins).not.toBeNull();
+    expect(requestGuard.allowedHosts).toBeNull();
   });
 });
 

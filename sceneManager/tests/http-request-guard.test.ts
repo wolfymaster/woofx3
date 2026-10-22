@@ -57,6 +57,9 @@ describe("sceneManager request guard set", () => {
   const policy = parseRequestGuardPolicy({
     allowedHosts: "127.0.0.1",
     allowedOrigins: "http://127.0.0.1:*,null",
+    exposure: "loopback",
+    ownUrls: [],
+    extraDefaultOrigins: [],
   });
 
   test("an unknown Host is 421", async () => {

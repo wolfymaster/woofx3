@@ -2,7 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import { ApiGateway } from "../src/gateway";
 import { Api } from "../src/api";
 import { EngineEventStream } from "../src/engine-event-stream";
-import { WebhookClient } from "../src/webhook-client";
+import { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient } from "../src/webhook-client";
 
 const OPEN = { mode: "open", token: null } as const;
 
@@ -35,26 +35,26 @@ describe("ApiGateway.registerClient", () => {
   it("creates a client with the callback and returns its credentials", async () => {
     const createClient = mock(async () => ({ client: { clientId: "c1", clientSecret: "s1" } }));
     const listClients = mock(async () => ({
-      clients: [{ clientId: "c1", description: "test-ui", callbackUrl: "http://cb", callbackToken: "tok" }],
+      clients: [{ clientId: "c1", description: "test-ui", callbackUrl: "https://cb.example", callbackToken: "tok" }],
     }));
     const db = { createClient, listClients } as any;
     const logger = fakeLogger();
     const api = newApi(db, logger);
-    const webhook = new WebhookClient(db, logger, new EngineEventStream(logger));
+    const webhook = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
     api.setWebhookClient(webhook);
     const auth = { validate: mock(async () => ({ valid: true })) } as any;
     const gateway = new ApiGateway(api, auth, db, logger, OPEN);
     gateway.setWebhookClient(webhook);
 
     const res = await gateway.registerClient("test-ui", {
-      callbackUrl: "http://cb",
+      callbackUrl: "https://cb.example",
       callbackToken: "tok",
     });
 
     expect(res).toEqual({ clientId: "c1", clientSecret: "s1" });
     expect(createClient).toHaveBeenCalledWith({
       description: "test-ui",
-      callbackUrl: "http://cb",
+      callbackUrl: "https://cb.example",
       callbackToken: "tok",
     });
     // The new callback is picked up without a restart.
@@ -69,7 +69,7 @@ describe("ApiGateway.registerClient", () => {
     } as any;
     const logger = fakeLogger();
     const api = newApi(db, logger);
-    const webhook = new WebhookClient(db, logger, new EngineEventStream(logger));
+    const webhook = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
     api.setWebhookClient(webhook);
     const gateway = new ApiGateway(api, { validate: mock(async () => ({ valid: true })) } as any, db, logger, OPEN);
     gateway.setWebhookClient(webhook);

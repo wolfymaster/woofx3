@@ -1,5 +1,5 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
-import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
+import { parseRequestGuardPolicy, type RequestGuardPolicy, resolveExposure } from "@woofx3/common/http/request-guard";
 import { loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
 import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { z } from "zod";
@@ -7,7 +7,7 @@ import { DEFAULT_AUTH_CACHE_TTL_MS } from "./auth";
 import { type BarkloaderWebhookAuth, parseBarkloaderWebhookAuth } from "./barkloader-webhook-auth";
 import { downloadOrigin } from "./guarded-download";
 import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL } from "./marketplace-client";
-import { type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
+import { assertRegistrationExposure, type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
 import { UNVERSIONED } from "./version";
 
 export interface ApiConfig {
@@ -63,7 +63,7 @@ export interface ApiConfig {
   apiUrl: string;
   /**
    * Hosts and origins the HTTP server accepts (`WOOFX3_ALLOWED_HOSTS`,
-   * `WOOFX3_ALLOWED_ORIGINS`); both open unless set. See
+   * `WOOFX3_ALLOWED_ORIGINS`), with their defaults resolved. See
    * shared/common/typescript/http/request-guard.ts.
    */
   requestGuard: RequestGuardPolicy;
@@ -154,6 +154,8 @@ export const ApiEnvSchema = z.looseObject({
   woofx3TwitchPublicClientId: z.union([z.string(), z.number()]).optional(),
   woofx3TwitchClientId: z.union([z.string(), z.number()]).optional(),
   woofx3AuthCacheTtlMs: z.union([z.number(), z.string()]).optional(),
+  // True where the edge listens beyond loopback and forwards to the api; the production image sets it.
+  woofx3BehindEdge: z.boolean().optional(),
   woofx3DbProxyToken: z.string().optional(),
 });
 
@@ -319,9 +321,15 @@ export function loadConfig(): ApiConfig {
   assertValidHttpUrl("sceneManagerUrl (WOOFX3_SCENE_MANAGER_URL)", sceneManagerUrl);
   assertValidHttpUrl("apiUrl (WOOFX3_API_URL)", apiUrl);
 
+  const exposure = resolveExposure(host, config.woofx3BehindEdge === true);
+  assertRegistrationExposure(registration, exposure);
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: config.woofx3AllowedHosts,
     allowedOrigins: config.woofx3AllowedOrigins,
+    exposure,
+    // barkloader calls the api at apiUrl; behind the edge both apps share sceneManagerUrl's origin.
+    ownUrls: [apiUrl, sceneManagerUrl],
+    extraDefaultOrigins: [],
   });
   const marketplaceUrl = config.woofx3MarketplaceUrl ?? config.marketplaceUrl;
   const marketplaceDownloadHosts = config.woofx3MarketplaceDownloadHosts ?? config.marketplaceDownloadHosts;

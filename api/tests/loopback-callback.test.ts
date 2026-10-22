@@ -5,7 +5,7 @@ import { ApiGateway } from "../src/gateway";
 import { resolveRegistrationPolicy } from "../src/registration";
 import { TwitchTokenSource } from "../src/twitch-token-source";
 import { EngineEventStream } from "../src/engine-event-stream";
-import { WebhookClient } from "../src/webhook-client";
+import { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient } from "../src/webhook-client";
 
 /*
  * A desktop shell registers with its local engine as a dashboard client whose
@@ -80,7 +80,7 @@ async function registerShell(callbackUrl: string) {
     logger,
   });
   const gateway = new ApiGateway(api, {} as never, db as never, logger, resolveRegistrationPolicy({}));
-  const webhooks = new WebhookClient(db as never, logger, new EngineEventStream(logger));
+  const webhooks = new WebhookClient(db as never, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
   gateway.setWebhookClient(webhooks);
   const registered = await gateway.registerClient("desktop shell", { callbackUrl, callbackToken: "shell-token" });
   return { db, webhooks, registered };
