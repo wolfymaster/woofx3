@@ -14,11 +14,11 @@ import {
   type ObsOptionsReply,
 } from "@woofx3/common/cloudevents/Obs/commands";
 import { z } from "zod";
+import { OBS_DEFAULTS } from "../../config/obs";
 import type { Logger } from "../../host/deps";
 import {
   groupSceneItems,
   isNotFound,
-  OBS_COMMAND_TIMEOUT_MS,
   OBS_NOT_CONNECTED,
   type ObsControlClient,
   type ObsControlOptions,
@@ -151,7 +151,7 @@ export async function executeObsOptionsRequest(
   if (!obs) {
     return { error: OBS_NOT_CONNECTED };
   }
-  const timeoutMs = options.timeoutMs ?? OBS_COMMAND_TIMEOUT_MS;
+  const timeoutMs = options.timeoutMs ?? OBS_DEFAULTS.commandTimeoutMs;
   try {
     return await withDeadline(LISTERS[list](obs), timeoutMs);
   } catch (err) {

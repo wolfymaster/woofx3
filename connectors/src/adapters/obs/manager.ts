@@ -10,7 +10,12 @@ export default class Manager {
   }
 }
 
-const OBS_CONNECT_TIMEOUT_MS = 3_000;
+export interface ObsSessionTarget {
+  url: string;
+  token?: string;
+  /** How long the WebSocket connect and sign-in may take (OBS_DEFAULTS.connectTimeoutMs). */
+  connectTimeoutMs: number;
+}
 
 /**
  * Open one OBS WebSocket session, or throw. Retrying
@@ -19,7 +24,7 @@ const OBS_CONNECT_TIMEOUT_MS = 3_000;
  * The connect is raced against a timeout because obs-websocket-js does
  * not surface one for a stalled TCP handshake.
  */
-export async function openObsSession(config: { url: string; token?: string }): Promise<ObsSession<Manager>> {
+export async function openObsSession(config: ObsSessionTarget): Promise<ObsSession<Manager>> {
   const ws = new OBSWebSocket();
   // Listened for from the start and latched: the socket can close before the
   // caller has registered anything, and a close nobody heard would leave a
@@ -36,8 +41,8 @@ export async function openObsSession(config: { url: string; token?: string }): P
       ws.connect(config.url, config.token),
       new Promise((_, reject) => {
         timer = setTimeout(
-          () => reject(new Error(`timeout after ${OBS_CONNECT_TIMEOUT_MS}ms`)),
-          OBS_CONNECT_TIMEOUT_MS
+          () => reject(new Error(`timeout after ${config.connectTimeoutMs}ms`)),
+          config.connectTimeoutMs
         );
       }),
     ]);

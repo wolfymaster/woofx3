@@ -30,7 +30,7 @@ const bus = await MessageBus.createMessageBus({ name: "connectors", ...config.bu
 const application = new ConnectorsApplication({
   config,
   logger,
-  adapters: adapterRegistry({ config, clock: systemClock, ids: systemIds }),
+  adapters: adapterRegistry({ config, clock: systemClock, ids: systemIds, random: systemRandom, timers: systemTimers }),
   readers: LINK_READERS,
   clock: systemClock,
   random: systemRandom,

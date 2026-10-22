@@ -46,9 +46,9 @@ export function obsDialTarget(fallback: ObsFallback): DialTarget {
  * or the companion not reaching OBS. It reads as `relay`, so the streamer is
  * pointed at the companion rather than at OBS.
  */
-export async function openObsOverRoute(route: WebSocketRoute): Promise<ObsSession<Manager>> {
+export async function openObsOverRoute(route: WebSocketRoute, connectTimeoutMs: number): Promise<ObsSession<Manager>> {
   try {
-    return await openObsSession({ url: route.url, token: route.password });
+    return await openObsSession({ url: route.url, token: route.password, connectTimeoutMs });
   } catch (err) {
     if (route.route === "companion" && obsFailureKind(err) !== "authentication") {
       const message = err instanceof Error ? err.message : String(err);

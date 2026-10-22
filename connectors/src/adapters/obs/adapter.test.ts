@@ -3,7 +3,8 @@ import { RELAY_CONFIG_UPDATED_SUBJECT } from "@woofx3/common/cloudevents/Relay/r
 import type { EndpointStore } from "../../companion/endpoint-store";
 import { GatewayEnvSchema, gatewayConfig } from "../../config/gateway";
 import { HostEnvSchema, hostConfig } from "../../config/host";
-import { OBS_SERVED_BUDGETS_MS, type ObsConfig } from "../../config/obs";
+import { OBS_SERVED_BUDGETS_MS, type ObsConfig, ObsEnvSchema, obsConfig } from "../../config/obs";
+import { systemTimers } from "../../host/deps";
 import { Host } from "../../host/host";
 import { LINK_READERS, type LinkReader, type LinkState } from "../../host/link-readers";
 import { bytes, countingIds, FakeBus, FakeTime, flush, halfRandom, RecordingLogger, text } from "../../host/testing";
@@ -21,11 +22,16 @@ const emptyStore: EndpointStore = {
   relayConfig: async () => null,
 };
 
-/** A port nothing listens on, as on an engine whose OBS is closed. */
-const CLOSED_OBS: ObsConfig = { host: "127.0.0.1", port: "1", token: undefined };
+/** The shipped OBS configuration, pointed at `port` on this machine. */
+function obsAt(port: number): ObsConfig {
+  return obsConfig(ObsEnvSchema.parse({ woofx3ObsPort: port }));
+}
 
-function newAdapter(fallback: ObsConfig = CLOSED_OBS, latch = new RefreshLatch(), store = emptyStore): ObsAdapter {
-  return new ObsAdapter({ fallback, endpointStore: () => store }, latch);
+/** A port nothing listens on, as on an engine whose OBS is closed. */
+const CLOSED_OBS = obsAt(1);
+
+function newAdapter(config: ObsConfig = CLOSED_OBS, latch = new RefreshLatch(), store = emptyStore): ObsAdapter {
+  return new ObsAdapter({ config, endpointStore: () => store, random: halfRandom, timers: systemTimers }, latch);
 }
 
 const command = (sceneName: string) => bytes(JSON.stringify({ data: { command: "switch_scene", sceneName } }));
@@ -129,7 +135,12 @@ describe("ObsAdapter handlers reached while no run exists", () => {
 
 describe("obsAdapterModule", () => {
   test("builds the refresh latch as host state and hands it to the adapter", () => {
-    const module = obsAdapterModule({ fallback: CLOSED_OBS, endpointStore: () => emptyStore });
+    const module = obsAdapterModule({
+      config: CLOSED_OBS,
+      endpointStore: () => emptyStore,
+      random: halfRandom,
+      timers: systemTimers,
+    });
     const latch = module.hostState?.();
     expect(latch).toBeInstanceOf(RefreshLatch);
     expect(module.create(latch as RefreshLatch)).toBeInstanceOf(ObsAdapter);
@@ -155,16 +166,16 @@ describe("ObsAdapter desired", () => {
  * `link.enabled`, so a test can stop and start it; the host re-reads it on the
  * backstop interval.
  */
-function hosted(fallback: ObsConfig = CLOSED_OBS, store = emptyStore) {
+function hosted(config: ObsConfig = CLOSED_OBS, store = emptyStore) {
   const time = new FakeTime();
   const bus = new FakeBus();
   const link: LinkState = { connected: true, enabled: true };
   const reader: LinkReader = { watches: [], read: async () => ({ ...link, flag: null }) };
   const latch = new RefreshLatch();
-  const adapter = newAdapter(fallback, latch, store);
-  const config = hostConfig(HostEnvSchema.parse({}));
+  const adapter = newAdapter(config, latch, store);
+  const hostDefaults = hostConfig(HostEnvSchema.parse({}));
   const host = new Host({
-    config,
+    config: hostDefaults,
     gateway: gatewayConfig(GatewayEnvSchema.parse({})),
     dbProxy: { baseURL: "http://db.test" },
     bus,
@@ -182,7 +193,7 @@ function hosted(fallback: ObsConfig = CLOSED_OBS, store = emptyStore) {
   /** Sets the link and lets the host's next backstop pass apply it. */
   const setEnabled = async (enabled: boolean) => {
     link.enabled = enabled;
-    await time.advance(config.reconcileIntervalMs);
+    await time.advance(hostDefaults.reconcileIntervalMs);
     await host.settled();
   };
   /** Delivers a request and waits for its one reply. */
@@ -258,7 +269,7 @@ describe("ObsAdapter in the host", () => {
         { name: "Raid", items: [] },
       ],
     });
-    const { host, ask, adapter } = hosted({ host: "127.0.0.1", port: String(fake.port), token: undefined });
+    const { host, ask, adapter } = hosted(obsAt(fake.port));
     running = { host, fake };
     await host.start();
     await host.settled();
@@ -284,7 +295,7 @@ describe("ObsAdapter reconnects", () => {
 
   async function connected(store: EndpointStore = emptyStore) {
     const fake = startFakeObs();
-    const setup = hosted({ host: "127.0.0.1", port: String(fake.port), token: undefined }, store);
+    const setup = hosted(obsAt(fake.port), store);
     running = { host: setup.host, fake };
     await setup.host.start();
     await setup.host.settled();
@@ -346,7 +357,7 @@ describe("overlay refresh through the host", () => {
 
   function withObs() {
     const fake = startFakeObs();
-    const setup = hosted({ host: "127.0.0.1", port: String(fake.port), token: undefined });
+    const setup = hosted(obsAt(fake.port));
     running = { host: setup.host, fake };
     return { fake, ...setup };
   }

@@ -24,7 +24,7 @@ import type {
   ServedSubject,
   Unavailable,
 } from "../../host/adapter";
-import { errorMessage, type Logger } from "../../host/deps";
+import { errorMessage, type Logger, type RandomSource, type Timers } from "../../host/deps";
 import type { LinkState } from "../../host/link-readers";
 import type { BusMessage, ScopedBus } from "../../host/scoped-bus";
 import type { DbProxyClientConfig } from "../../services/db-proxy";
@@ -84,16 +84,20 @@ export function answerRefreshRequest(request: Uint8Array, latch: RefreshLatch): 
 }
 
 export interface ObsAdapterDeps {
-  /** Where OBS is when the OBS module's settings leave a value empty. */
-  fallback: ObsConfig;
+  config: ObsConfig;
   /** Builds the store OBS's route is read from, over the host's db-proxy client. */
   endpointStore(db: DbProxyClientConfig): EndpointStore;
+  /** Jitter for the connection's retry backoff. */
+  random: RandomSource;
+  /** The connection's retry and open-deadline timers. */
+  timers: Timers;
 }
 
-/** One run of the adapter: the OBS service it started and the logger it was given. */
+/** One run of the adapter: the OBS service it started, the logger it was given and the command timeout. */
 interface ObsRun {
   service: ObsService;
   logger: Logger;
+  commandTimeoutMs: number;
 }
 
 /**
@@ -158,26 +162,33 @@ export class ObsAdapter implements Adapter<RefreshLatch> {
   /**
    * Starts the OBS connection and resolves at once, without waiting for OBS:
    * a request while OBS is closed reaches the handler and is answered with
-   * "OBS is not connected (retrying)" straight away.
+   * "OBS is not connected (retrying)" straight away. The host's start signal
+   * stays live for the whole run; once it aborts, the connection dials no
+   * more and schedules nothing.
    */
-  async start(ctx: AdapterContext): Promise<void> {
+  async start(ctx: AdapterContext, signal: AbortSignal): Promise<void> {
     if (this.run !== undefined) {
       throw new Error("the obs adapter is already running; the host never starts it twice");
     }
+    signal.throwIfAborted();
     const service = createObsService({
       store: this.deps.endpointStore(ctx.dbProxy),
       relayCredential: relayCredentialOver(ctx.bus),
-      fallback: this.deps.fallback,
+      fallback: this.deps.config.fallback,
       latch: this.latch,
+      connection: this.deps.config.connection,
+      random: this.deps.random,
+      timers: this.deps.timers,
       logger: ctx.logger,
     });
-    const run: ObsRun = { service, logger: ctx.logger };
+    const run: ObsRun = { service, logger: ctx.logger, commandTimeoutMs: this.deps.config.commandTimeoutMs };
     await ctx.bus.subscribe(MODULE_SETTING_UPDATED_SUBJECT, (msg) => {
       onModuleSettingUpdated(run, msg);
     });
     await ctx.bus.subscribe(RELAY_CONFIG_UPDATED_SUBJECT, () => onRelayConfigUpdated(run));
+    signal.throwIfAborted();
     this.run = run;
-    service.start();
+    service.start(signal);
   }
 
   async stop(): Promise<void> {
@@ -212,12 +223,12 @@ export class ObsAdapter implements Adapter<RefreshLatch> {
       unavailableReply: ({ reason }) => unavailable(UNAVAILABLE_MESSAGES[reason]),
     };
   }
-
 }
 
 async function answerCommand(run: ObsRun, request: Uint8Array): Promise<Uint8Array> {
   const { connection } = run.service;
   const reply = await handleObsControlRequest(connection.current(), request, run.logger, {
+    timeoutMs: run.commandTimeoutMs,
     onTimeout: () => connection.recycle("an OBS request timed out"),
   });
   return json(reply);
@@ -226,6 +237,7 @@ async function answerCommand(run: ObsRun, request: Uint8Array): Promise<Uint8Arr
 async function answerOptions(run: ObsRun, request: Uint8Array): Promise<Uint8Array> {
   const { connection } = run.service;
   const reply = await handleObsOptionsRequest(connection.current(), request, run.logger, {
+    timeoutMs: run.commandTimeoutMs,
     onTimeout: () => connection.recycle("an OBS request timed out"),
   });
   return json(reply);

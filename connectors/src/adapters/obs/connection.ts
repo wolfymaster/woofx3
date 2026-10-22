@@ -9,8 +9,10 @@
 // Logging follows state transitions only. OBS being closed for an evening
 // is one line, not one line per retry.
 
+import { type Backoff, createBackoff } from "@woofx3/common/runtime";
 import { EndpointRelayError } from "../../companion/dialer";
-import type { Logger } from "../../host/deps";
+import type { ObsConnectionConfig } from "../../config/obs";
+import type { Logger, RandomSource, TimerHandle, Timers } from "../../host/deps";
 
 /** One open OBS session: the client to issue requests on, and its lifecycle. */
 export interface ObsSession<TClient> {
@@ -24,24 +26,9 @@ export interface ObsSession<TClient> {
  * - `connecting`: first attempt in progress, never connected yet.
  * - `connected`: a session is open.
  * - `retrying`: not connected; another attempt is scheduled or running.
- * - `stopped`: `stop()` was called; nothing more will happen.
+ * - `stopped`: `stop()` was called or the start signal aborted; nothing more will happen.
  */
 export type ObsConnectionState = "connecting" | "connected" | "retrying" | "stopped";
-
-export interface ObsBackoff {
-  initialMs: number;
-  maxMs: number;
-}
-
-export const DEFAULT_OBS_BACKOFF: ObsBackoff = { initialMs: 1_000, maxMs: 30_000 };
-
-/**
- * How long one attempt may take to open a session, from dialing to a client
- * ready for requests. Opening loads the scene list after the socket connects,
- * and an OBS that accepts the socket and then stops answering would otherwise
- * hold the attempt open forever, with no retry ever scheduled.
- */
-export const DEFAULT_OBS_OPEN_TIMEOUT_MS = 15_000;
 
 export interface ObsConnectionOptions<TClient> {
   /** Open a session or throw. Must not retry on its own. */
@@ -52,23 +39,16 @@ export interface ObsConnectionOptions<TClient> {
    */
   onConnected?: (client: TClient) => Promise<void> | void;
   logger: Logger;
-  backoff?: ObsBackoff;
-  /** Defaults to `DEFAULT_OBS_OPEN_TIMEOUT_MS`. */
-  openTimeoutMs?: number;
-  /** Source of jitter in [0, 1); injectable so tests are deterministic. */
-  random?: () => number;
-  setTimer?: (fn: () => void, ms: number) => unknown;
-  clearTimer?: (handle: unknown) => void;
-}
-
-/**
- * The delay before retry number `attempt` (0-based): doubling from
- * `initialMs`, capped at `maxMs`, then jittered down by up to half so
- * that several processes retrying against one OBS do not stay in step.
- */
-export function obsRetryDelay(attempt: number, backoff: ObsBackoff, random: number): number {
-  const ceiling = Math.min(backoff.maxMs, backoff.initialMs * 2 ** Math.min(attempt, 30));
-  return Math.round(ceiling / 2 + (ceiling / 2) * random);
+  /**
+   * The retry backoff and `openTimeoutMs`: how long one attempt may take to
+   * open a session. Opening loads the scene list after the socket connects,
+   * and an OBS that accepts the socket and then stops answering would
+   * otherwise hold the attempt open forever, with no retry ever scheduled.
+   */
+  config: Pick<ObsConnectionConfig, "backoff" | "openTimeoutMs">;
+  /** Jitter for the backoff, so several engines retrying against one OBS do not stay in step. */
+  random: RandomSource;
+  timers: Timers;
 }
 
 /** obs-websocket v5 WebSocketCloseCode.AuthenticationFailed. */
@@ -91,6 +71,14 @@ export function obsFailureKind(err: unknown): ObsFailureKind {
   return code === OBS_AUTHENTICATION_FAILED ? "authentication" : "unreachable";
 }
 
+/** The attempt in flight when the connection stopped; it is never retried. */
+class ObsConnectionStopped extends Error {
+  constructor() {
+    super("the OBS connection stopped");
+    this.name = "ObsConnectionStopped";
+  }
+}
+
 /** An attempt to open a session did not finish within its deadline. */
 export class ObsOpenTimeout extends Error {
   constructor(readonly timeoutMs: number) {
@@ -102,7 +90,8 @@ export class ObsOpenTimeout extends Error {
 export class ObsConnection<TClient> {
   private state: ObsConnectionState = "connecting";
   private session: ObsSession<TClient> | null = null;
-  private timer: unknown = null;
+  private timer: TimerHandle | null = null;
+  /** Failed attempts since the last session, for the log line that reports the next one. */
   private failures = 0;
   private hasConnected = false;
   private started = false;
@@ -115,41 +104,53 @@ export class ObsConnection<TClient> {
    * whatever it opens rather than installing a session made with old details.
    */
   private attemptSeq = 0;
+  /** Aborted by stop: ends the open deadline of an attempt in flight, so no timer outlives the connection. */
+  private readonly lifetime = new AbortController();
+  private stopOnAbort: (() => void) | null = null;
 
-  private readonly backoff: ObsBackoff;
+  private readonly backoff: Backoff;
   private readonly openTimeoutMs: number;
-  private readonly random: () => number;
-  private readonly setTimer: (fn: () => void, ms: number) => unknown;
-  private readonly clearTimer: (handle: unknown) => void;
+  private readonly timers: Timers;
 
   constructor(private readonly options: ObsConnectionOptions<TClient>) {
-    this.backoff = options.backoff ?? DEFAULT_OBS_BACKOFF;
-    if (this.backoff.initialMs <= 0 || this.backoff.maxMs < this.backoff.initialMs) {
-      throw new Error("ObsConnection: backoff needs 0 < initialMs <= maxMs");
+    this.backoff = createBackoff(options.config.backoff, options.random);
+    this.openTimeoutMs = options.config.openTimeoutMs;
+    if (!(Number.isInteger(this.openTimeoutMs) && this.openTimeoutMs > 0)) {
+      throw new Error(`ObsConnection: openTimeoutMs must be a whole number above 0, got ${this.openTimeoutMs}`);
     }
-    this.openTimeoutMs = options.openTimeoutMs ?? DEFAULT_OBS_OPEN_TIMEOUT_MS;
-    if (this.openTimeoutMs <= 0) {
-      throw new Error("ObsConnection: openTimeoutMs must be positive");
-    }
-    this.random = options.random ?? Math.random;
-    this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
-    this.clearTimer = options.clearTimer ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
+    this.timers = options.timers;
   }
 
-  /** Begin connecting. Returns immediately; the first attempt runs in the background. */
-  start(): void {
+  /**
+   * Begin connecting. Returns immediately; the first attempt runs in the
+   * background. `signal` aborting stops the connection as `stop()` does, and
+   * an already aborted signal means it never dials.
+   */
+  start(signal: AbortSignal): void {
     if (this.started) {
       throw new Error("ObsConnection: start() called twice");
     }
     this.started = true;
+    if (signal.aborted) {
+      void this.stop();
+      return;
+    }
+    const onAbort = () => {
+      void this.stop();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    this.stopOnAbort = () => signal.removeEventListener("abort", onAbort);
     void this.attempt();
   }
 
-  /** Cancel any pending retry and close the open session. Final. */
+  /** Cancel any pending retry or attempt in flight and close the open session. Final. */
   async stop(): Promise<void> {
     this.state = "stopped";
+    this.stopOnAbort?.();
+    this.stopOnAbort = null;
+    this.lifetime.abort();
     if (this.timer !== null) {
-      this.clearTimer(this.timer);
+      this.timers.clearTimeout(this.timer);
       this.timer = null;
     }
     const session = this.session;
@@ -184,7 +185,7 @@ export class ObsConnection<TClient> {
       return;
     }
     if (this.timer !== null) {
-      this.clearTimer(this.timer);
+      this.timers.clearTimeout(this.timer);
       this.timer = null;
     }
     const session = this.session;
@@ -195,6 +196,7 @@ export class ObsConnection<TClient> {
     }
     this.state = this.hasConnected ? "retrying" : "connecting";
     this.failures = 0;
+    this.backoff.reset();
     this.lastFailureKind = null;
     this.options.logger.info(`${reason}; reconnecting to OBS`);
     void this.attempt();
@@ -250,29 +252,45 @@ export class ObsConnection<TClient> {
 
   /**
    * `options.open()`, failed with `ObsOpenTimeout` if it has not settled in
-   * `openTimeoutMs`. A session that arrives after the deadline belongs to no
-   * attempt and is closed as soon as it does.
+   * `openTimeoutMs`, or with `ObsConnectionStopped` as soon as the connection
+   * stops. A session that arrives after either belongs to no attempt and is
+   * closed as soon as it does.
    */
   private openWithinDeadline(): Promise<ObsSession<TClient>> {
     const opening = this.options.open();
+    const { signal } = this.lifetime;
     return new Promise<ObsSession<TClient>>((resolve, reject) => {
-      let timedOut = false;
-      const deadline = this.setTimer(() => {
-        timedOut = true;
-        reject(new ObsOpenTimeout(this.openTimeoutMs));
+      let settled = false;
+      const settle = () => {
+        settled = true;
+        this.timers.clearTimeout(deadline);
+        signal.removeEventListener("abort", onStop);
+      };
+      const onStop = () => {
+        if (!settled) {
+          settle();
+          reject(new ObsConnectionStopped());
+        }
+      };
+      const deadline = this.timers.setTimeout(() => {
+        if (!settled) {
+          settle();
+          reject(new ObsOpenTimeout(this.openTimeoutMs));
+        }
       }, this.openTimeoutMs);
+      signal.addEventListener("abort", onStop, { once: true });
       opening.then(
         (session) => {
-          if (timedOut) {
+          if (settled) {
             void session.close().catch(() => undefined);
             return;
           }
-          this.clearTimer(deadline);
+          settle();
           resolve(session);
         },
         (err: unknown) => {
-          if (!timedOut) {
-            this.clearTimer(deadline);
+          if (!settled) {
+            settle();
             reject(err);
           }
         }
@@ -290,6 +308,7 @@ export class ObsConnection<TClient> {
     this.hasConnected = true;
     logger.info(first ? "Connected to OBS" : "Reconnected to OBS", { afterFailedAttempts: this.failures });
     this.failures = 0;
+    this.backoff.reset();
     this.lastFailureKind = null;
 
     session.onClose(() => {
@@ -359,8 +378,8 @@ export class ObsConnection<TClient> {
     if (this.isStopped() || this.timer !== null) {
       return;
     }
-    const delay = obsRetryDelay(this.failures, this.backoff, this.random());
-    this.timer = this.setTimer(() => {
+    const delay = this.backoff.next();
+    this.timer = this.timers.setTimeout(() => {
       void this.attempt();
     }, delay);
   }

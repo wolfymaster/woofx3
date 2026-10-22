@@ -10,6 +10,7 @@
 import type { ObsControlCommand, ObsControlReply } from "@woofx3/common/cloudevents/Obs/commands";
 import type { OBSRequestTypes, OBSResponseTypes } from "obs-websocket-js";
 import { z } from "zod";
+import { OBS_DEFAULTS } from "../../config/obs";
 import type { Logger } from "../../host/deps";
 
 /** The slice of `manager.ts` a command needs; structural so tests can fake OBS. */
@@ -81,15 +82,14 @@ export function parseObsControlCommand(data: unknown): ParsedObsCommand {
   return { ok: true, command: parsed.data };
 }
 
-/**
- * How long one command may take in OBS. Under the engine's 5s request timeout
- * on purpose, so the step fails with this service's reason rather than a bare
- * "no answer". OBS answers a local request in milliseconds; one that has not
- * answered in this long is hung, and the session is recycled.
- */
-export const OBS_COMMAND_TIMEOUT_MS = 3_500;
-
 export interface ObsControlOptions {
+  /**
+   * How long one command may take in OBS; defaults to
+   * OBS_DEFAULTS.commandTimeoutMs. Under the host's reply budget on purpose,
+   * so the step fails with this service's reason rather than a bare "no
+   * answer". OBS answers a local request in milliseconds; one that has not
+   * answered in this long is hung, and the session is recycled.
+   */
   timeoutMs?: number;
   /** Called when OBS did not answer in time; the caller drops the session. */
   onTimeout?: () => void;
@@ -130,7 +130,7 @@ export async function executeObsControlCommand(
   if (!obs) {
     return { ok: false, error: OBS_NOT_CONNECTED };
   }
-  const timeoutMs = options.timeoutMs ?? OBS_COMMAND_TIMEOUT_MS;
+  const timeoutMs = options.timeoutMs ?? OBS_DEFAULTS.commandTimeoutMs;
   try {
     return await withDeadline(runCommand(obs, command), timeoutMs);
   } catch (err) {

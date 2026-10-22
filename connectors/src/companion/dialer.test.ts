@@ -4,6 +4,7 @@ import { type RelayGrant, requestRelayCredentialOverNats } from "@woofx3/common/
 import { obsFailureKind } from "../adapters/obs/connection";
 import { type FakeObsServer, startFakeObs } from "../adapters/obs/fake-obs-server";
 import { obsDialTarget, openObsOverRoute } from "../adapters/obs/settings";
+import { OBS_DEFAULTS } from "../config/obs";
 import {
   type DialerDeps,
   dialWebSocketEndpoint,
@@ -247,12 +248,15 @@ describe("opening OBS on a route", () => {
 
   it("negotiates the subprotocol, signs in, and asks OBS through the session", async () => {
     fake = startFakeObs({ password: "hunter2" });
-    const session = await openObsOverRoute({
-      route: "direct",
-      url: fake.url,
-      password: "hunter2",
-      address: "127.0.0.1",
-    });
+    const session = await openObsOverRoute(
+      {
+        route: "direct",
+        url: fake.url,
+        password: "hunter2",
+        address: "127.0.0.1",
+      },
+      OBS_DEFAULTS.connectTimeoutMs
+    );
     expect(fake.protocols).toEqual(["obswebsocket.msgpack"]);
     expect(fake.requests).toEqual([]);
     await session.client.request("GetSceneList");
@@ -267,31 +271,38 @@ describe("opening OBS on a route", () => {
       url: `${fake.url}/bridge/woofx3_obs/obs?ticket=${TICKET}`,
       address: "127.0.0.1",
     };
-    const session = await openObsOverRoute(route);
+    const session = await openObsOverRoute(route, OBS_DEFAULTS.connectTimeoutMs);
     expect(fake.upgrades.map((u) => u.pathname)).toEqual(["/bridge/woofx3_obs/obs"]);
     await session.close();
   });
 
   it("reads a refused bridge upgrade as a relay failure, and a direct one as unreachable", async () => {
     fake = startFakeObs({ acceptUrl: () => false });
-    const bridged = await openObsOverRoute({
-      route: "companion",
-      url: `${fake.url}/bridge/woofx3_obs/obs?ticket=spent`,
-      address: "c-x.woofx3.tv",
-    }).catch((e) => e);
+    const bridged = await openObsOverRoute(
+      {
+        route: "companion",
+        url: `${fake.url}/bridge/woofx3_obs/obs?ticket=spent`,
+        address: "c-x.woofx3.tv",
+      },
+      OBS_DEFAULTS.connectTimeoutMs
+    ).catch((e) => e);
     expect(bridged).toBeInstanceOf(EndpointRelayError);
     expect(bridged.address).toBe("c-x.woofx3.tv");
     expect(obsFailureKind(bridged)).toBe("relay");
-    const direct = await openObsOverRoute({ route: "direct", url: fake.url, address: "127.0.0.1" }).catch((e) => e);
+    const direct = await openObsOverRoute(
+      { route: "direct", url: fake.url, address: "127.0.0.1" },
+      OBS_DEFAULTS.connectTimeoutMs
+    ).catch((e) => e);
     expect(obsFailureKind(direct)).toBe("unreachable");
   });
 
   it("reads a wrong password as an authentication failure on either route", async () => {
     fake = startFakeObs({ password: "hunter2" });
     for (const route of ["direct", "companion"] as const) {
-      const err = await openObsOverRoute({ route, url: fake.url, password: "wrong", address: "127.0.0.1" }).catch(
-        (e) => e
-      );
+      const err = await openObsOverRoute(
+        { route, url: fake.url, password: "wrong", address: "127.0.0.1" },
+        OBS_DEFAULTS.connectTimeoutMs
+      ).catch((e) => e);
       expect(err.code).toBe(4009);
       expect(obsFailureKind(err)).toBe("authentication");
     }

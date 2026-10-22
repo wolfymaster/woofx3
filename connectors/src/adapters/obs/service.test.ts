@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import type { EndpointStore } from "../../companion/endpoint-store";
+import { ObsEnvSchema, obsConfig } from "../../config/obs";
+import { systemRandom, systemTimers } from "../../host/deps";
 import { type FakeObsOptions, type FakeObsServer, startFakeObs } from "./fake-obs-server";
 import { RefreshLatch } from "./refresh-latch";
 import { createObsService, type ObsService } from "./service";
@@ -26,9 +28,15 @@ function service(
     },
     fallback,
     latch,
+    connection: obsConfig(ObsEnvSchema.parse({})).connection,
+    random: systemRandom,
+    timers: systemTimers,
     logger,
   });
 }
+
+/** A run that is never aborted by its host; each test stops the service itself. */
+const forever = new AbortController().signal;
 
 const refreshes = (fake: FakeObsServer) => fake.requests.filter((type) => type === "GetInputList").length;
 
@@ -86,7 +94,7 @@ describe("overlay refresh requests", () => {
 
   it("refreshes once when a session is already open", async () => {
     const svc = connect();
-    svc.start();
+    svc.start(forever);
     await until(() => svc.status().state === "connected");
 
     latch.latch({ overlayPort: OVERLAY_PORT, bootId: "boot-1" });
@@ -102,7 +110,7 @@ describe("overlay refresh requests", () => {
     await settle();
     expect(refreshes(fake as FakeObsServer)).toBe(0);
 
-    svc.start();
+    svc.start(forever);
     await until(() => refreshes(fake as FakeObsServer) === 1);
     await settle();
     expect(refreshes(fake as FakeObsServer)).toBe(1);
@@ -112,7 +120,7 @@ describe("overlay refresh requests", () => {
   it("does not refresh again when the connection is re-established without a new request", async () => {
     const svc = connect();
     latch.latch({ overlayPort: OVERLAY_PORT, bootId: "boot-1" });
-    svc.start();
+    svc.start(forever);
     await until(() => refreshes(fake as FakeObsServer) === 1);
 
     svc.connection.reconnectNow("test");
@@ -126,7 +134,7 @@ describe("overlay refresh requests", () => {
   it("keeps the request for the next session when OBS could not be asked", async () => {
     const svc = connect({ failRequests: { type: "GetInputList", times: 1 } });
     latch.latch({ overlayPort: OVERLAY_PORT, bootId: "boot-1" });
-    svc.start();
+    svc.start(forever);
     await until(() => refreshes(fake as FakeObsServer) === 1);
     await settle();
     expect(refreshes(fake as FakeObsServer)).toBe(1);
@@ -144,7 +152,7 @@ describe("overlay refresh requests", () => {
 
   it("changes nothing for a boot id it has already consumed", async () => {
     const svc = connect();
-    svc.start();
+    svc.start(forever);
     await until(() => svc.status().state === "connected");
 
     latch.latch({ overlayPort: OVERLAY_PORT, bootId: "boot-1" });
@@ -160,7 +168,7 @@ describe("overlay refresh requests", () => {
     latch.latch({ overlayPort: OVERLAY_PORT, bootId: "boot-1" });
     latch.latch({ overlayPort: OVERLAY_PORT, bootId: "boot-1" });
 
-    svc.start();
+    svc.start(forever);
     await until(() => refreshes(fake as FakeObsServer) >= 1);
     await settle();
 
@@ -169,7 +177,7 @@ describe("overlay refresh requests", () => {
 
   it("refreshes again for a new boot id", async () => {
     const svc = connect();
-    svc.start();
+    svc.start(forever);
     await until(() => svc.status().state === "connected");
 
     latch.latch({ overlayPort: OVERLAY_PORT, bootId: "boot-1" });
@@ -180,7 +188,7 @@ describe("overlay refresh requests", () => {
 
   it("runs a request made during a refresh once more afterwards", async () => {
     const svc = connect();
-    svc.start();
+    svc.start(forever);
     await until(() => svc.status().state === "connected");
 
     latch.latch({ overlayPort: OVERLAY_PORT, bootId: "boot-1" });
@@ -198,18 +206,18 @@ describe("overlay refresh requests", () => {
     expect(refreshes(fake as FakeObsServer)).toBe(0);
 
     const svc = await restart();
-    svc.start();
+    svc.start(forever);
     await until(() => refreshes(fake as FakeObsServer) === 1);
   });
 
   it("does not refresh a consumed boot id again after a restart", async () => {
     const first = connect();
     latch.latch({ overlayPort: OVERLAY_PORT, bootId: "boot-1" });
-    first.start();
+    first.start(forever);
     await until(() => refreshes(fake as FakeObsServer) === 1);
 
     const second = await restart();
-    second.start();
+    second.start(forever);
     await until(() => second.status().state === "connected");
     expect(latch.latch({ overlayPort: OVERLAY_PORT, bootId: "boot-1" })).toBe("repeat");
     await settle();
@@ -219,7 +227,7 @@ describe("overlay refresh requests", () => {
 
   it("stops acting on new requests once stopped", async () => {
     const svc = connect();
-    svc.start();
+    svc.start(forever);
     await until(() => svc.status().state === "connected");
     await svc.stop();
 
