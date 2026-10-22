@@ -5,6 +5,7 @@ export * from "./config-bundle";
 export * from "./engine-events";
 export * from "./marketplace-catalog";
 export * from "./overlay-events";
+export * from "./resource-values";
 export * from "./rpc";
 export * from "./stream-events";
 export * from "./twitch-device-login";

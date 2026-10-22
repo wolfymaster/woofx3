@@ -1,3 +1,8 @@
+import {
+  canonicalIdForStorageKey,
+  RESOURCE_VALUE_KEY_PREFIX,
+  resourceValueStorageKey,
+} from "@woofx3/api/resource-values";
 import type { Logger } from "@woofx3/common/runtime";
 import type { ModuleStateFrame, StreamFrame } from "../../contract/overlay-stream";
 
@@ -41,7 +46,6 @@ export interface ModuleStateScenes {
   broadcast(sceneId: string, frame: StreamFrame): void;
 }
 
-const RESOURCE_STATE_PREFIX = "state:";
 const RESOURCE_PREFIX = "resource:";
 const MODULE_SETTING_PREFIX = "setting:";
 /** The only setting type served to widgets (see the note at the top). */
@@ -97,7 +101,7 @@ function parseSettings(settingsJson: string): Record<string, unknown> {
 
 /** The canonical id a resource key names, or null for a key that names none. */
 export function resourceKeyInstance(key: string): string | null {
-  for (const prefix of [RESOURCE_STATE_PREFIX, RESOURCE_PREFIX]) {
+  for (const prefix of [RESOURCE_VALUE_KEY_PREFIX, RESOURCE_PREFIX]) {
     if (key.startsWith(prefix)) {
       return key.slice(prefix.length);
     }
@@ -218,10 +222,10 @@ export class ModuleStateWatch {
       return;
     }
     this.push(moduleId, key, this.watchingScenes(moduleId, key), value ?? null);
-    if (!key.startsWith(RESOURCE_STATE_PREFIX)) {
+    const canonicalId = canonicalIdForStorageKey(key);
+    if (canonicalId === null) {
       return;
     }
-    const canonicalId = key.slice(RESOURCE_STATE_PREFIX.length);
     const instanceKey = `${RESOURCE_PREFIX}${canonicalId}`;
     const watching = this.watchingScenes(moduleId, instanceKey);
     if (watching.length === 0) {
@@ -343,7 +347,7 @@ export class ModuleStateWatch {
     }
     const value =
       stored === undefined
-        ? await this.db.getModuleStorageValue(moduleId, `${RESOURCE_STATE_PREFIX}${canonicalId}`)
+        ? await this.db.getModuleStorageValue(moduleId, resourceValueStorageKey(canonicalId))
         : stored;
     return { value: value ?? null, settings: parseSettings(instance.settingsJson), readAt: this.now() };
   }
