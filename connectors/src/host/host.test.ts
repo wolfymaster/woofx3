@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { PLATFORM_GATEWAY_SUBJECTS } from "@woofx3/api/platform-gateway";
 import {
   INTEGRATION_ENABLED_UPDATED_SUBJECT,
   INTEGRATION_TOKEN_UPDATED_SUBJECT,
 } from "@woofx3/common/integrations/integration-settings";
+import { GatewayEnvSchema, gatewayConfig } from "../config/gateway";
 import { HostEnvSchema, hostConfig } from "../config/host";
-import type { ServedSubject } from "./adapter";
+import type { Adapter, EgressHandlers, ServedSubject } from "./adapter";
 import { Host } from "./host";
 import { LINK_READERS, type SettingsReader } from "./link-readers";
 import {
@@ -30,20 +32,25 @@ function event(subject: string, data: Record<string, unknown>): Uint8Array {
   return bytes(JSON.stringify({ specversion: "1.0", id: "e", type: subject, source: "api", data }));
 }
 
-async function setup(served: ServedSubject = twitchapi, env: Record<string, unknown> = {}) {
+const chatSend: EgressHandlers = {
+  "chat.send": { handle: async (payload) => ({ status: "delivered", messageId: `posted ${payload.message}` }) },
+};
+
+async function setup(served: ServedSubject = twitchapi, env: Record<string, unknown> = {}, adapterOverride?: Adapter) {
   const values: Record<string, string> = {};
   const settings: SettingsReader = { getSetting: async (key) => values[key] ?? null };
   const bus = new FakeBus();
-  const adapter = new FakeAdapter("twitch", [served]);
+  const adapter = new FakeAdapter("twitch", [served], chatSend);
   const time = new FakeTime();
   const logger = new RecordingLogger();
   const host = new Host({
     config: hostConfig(HostEnvSchema.parse(env)),
+    gateway: gatewayConfig(GatewayEnvSchema.parse({})),
     dbProxyUrl: "http://db.test",
     bus,
     busConnected: () => true,
     settings,
-    adapters: new Map([["twitch", adapter]]),
+    adapters: new Map([["twitch", adapterOverride ?? adapter]]),
     readers: LINK_READERS,
     clock: time,
     random: halfRandom,
@@ -65,7 +72,21 @@ async function setup(served: ServedSubject = twitchapi, env: Record<string, unkn
     await flush();
     return replies.map(text);
   };
-  return { values, bus, adapter, host, time, logger, announce, ask };
+  let sends = 0;
+  const sendChat = async () => {
+    sends++;
+    const request = {
+      action: "chat.send",
+      target: { kind: "platforms", ids: ["twitch"] },
+      payload: { message: "hi" },
+      idempotencyKey: `key-${sends}`,
+      requestedBy: { kind: "api", ref: "client-1" },
+    };
+    const replies = bus.deliver(PLATFORM_GATEWAY_SUBJECTS.send, bytes(JSON.stringify(request)), "inbox");
+    await flush();
+    return replies.map((reply) => (JSON.parse(text(reply)) as { data: unknown }).data);
+  };
+  return { values, bus, adapter, host, time, logger, announce, ask, sendChat };
 }
 
 describe("Host", () => {
@@ -133,6 +154,36 @@ describe("Host", () => {
     const slow: ServedSubject = { ...twitchapi, budgetMs: 14_000 };
     await expect(setup(slow)).rejects.toThrow("must exceed the db-proxy timeout");
     await expect(setup(slow, { woofx3ConnectorsShutdownDeadlineMs: 16_001 })).resolves.toBeDefined();
+  });
+
+  test("answers platform.gateway.send from the running adapter, and as unavailable once it is disabled", async () => {
+    const { values, host, announce, sendChat } = await setup();
+    await host.start();
+    values.twitch_token = "tok";
+    values["integration.twitch.enabled"] = "true";
+    await announce(true);
+    expect(await sendChat()).toEqual([
+      { ok: true, results: { twitch: { status: "delivered", messageId: "posted hi" } } },
+    ]);
+
+    values["integration.twitch.enabled"] = "false";
+    await announce(false);
+    expect(await sendChat()).toEqual([
+      { ok: false, results: { twitch: { status: "unavailable", reason: "disabled" } } },
+    ]);
+    expect(host.snapshot().gateway.outcomes.twitch?.["chat.send"]).toEqual({ delivered: 1, unavailable: 1 });
+  });
+
+  test("refuses an adapter whose subscriptions cover the gateway's subject", async () => {
+    const greedy: Adapter = {
+      manifest: { id: "twitch", publishes: [], subscribes: ["platform.>"], requests: [], serves: [] },
+      desired: () => false,
+      start: async () => {},
+      stop: async () => {},
+    };
+    await expect(setup(twitchapi, {}, greedy)).rejects.toThrow(
+      'adapter "twitch" subscribes to "platform.>", which covers the host\'s platform.gateway.send'
+    );
   });
 
   test("refuses a second start", async () => {

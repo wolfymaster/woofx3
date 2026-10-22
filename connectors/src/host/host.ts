@@ -1,4 +1,8 @@
+import { PLATFORM_IDS } from "@woofx3/api/platform-gateway";
+import type { GatewayConfig } from "../config/gateway";
 import type { HostConfig } from "../config/host";
+import { EgressRegistry } from "../gateway/egress-registry";
+import { PlatformGateway } from "../gateway/platform-gateway";
 import type { Adapter } from "./adapter";
 import type { AdapterId } from "./adapter-ids";
 import { bounded } from "./bounded";
@@ -6,7 +10,7 @@ import { type Clock, errorMessage, type IdSource, type Logger, type RandomSource
 import type { HealthSnapshot } from "./health";
 import { HostRequests } from "./host-requests";
 import type { LinkReaderRegistry, SettingsReader } from "./link-readers";
-import { type BusClient, ScopeCounters, ScopedBus } from "./scoped-bus";
+import { type BusClient, ScopeCounters, ScopedBus, subjectCovered } from "./scoped-bus";
 import { ServedSubjects } from "./served-subjects";
 import { SETTINGS_SUBJECTS, SettingsWatcher } from "./settings-watcher";
 import { Supervisor } from "./supervisor";
@@ -23,6 +27,7 @@ export const LOOP_STALE_INTERVALS = 2;
 
 export interface HostDeps {
   config: HostConfig;
+  gateway: GatewayConfig;
   dbProxyUrl: string;
   bus: BusClient;
   busConnected: () => boolean;
@@ -48,11 +53,29 @@ export class Host {
   private readonly scope: ScopedBus;
   private readonly served: ServedSubjects;
   private readonly watcher: SettingsWatcher;
+  private readonly gateway: PlatformGateway;
   private running = false;
   /** How long stop gives the adapters and the held requests together: the larger of the stop deadline and any budget. */
   private readonly drainMs: number;
 
   constructor(private readonly deps: HostDeps) {
+    this.requests = new HostRequests({ clock: deps.clock, ids: deps.ids, timers: deps.timers, logger: deps.logger });
+    this.gateway = new PlatformGateway({
+      config: deps.gateway,
+      egress: EgressRegistry.fromManifests(
+        [...deps.adapters.values()].map((adapter) => adapter.manifest),
+        PLATFORM_IDS
+      ),
+      adapters: {
+        status: (id) => this.supervisor.status(id),
+        link: (id) => this.supervisor.link(id),
+        onStatusChange: (listener) => this.supervisor.onStatusChange(listener),
+      },
+      requests: this.requests,
+      clock: deps.clock,
+      logger: deps.logger.child({ component: "platform-gateway" }),
+    });
+    assertNoSecondResponder(deps.adapters, this.gateway.served);
     const longestBudgetMs = Math.max(0, ...this.servedBudgets());
     this.drainMs = Math.max(deps.config.stopDeadlineMs, longestBudgetMs);
     const stopWorstCaseMs = deps.config.dbProxyTimeoutMs + this.drainMs;
@@ -78,7 +101,6 @@ export class Host {
         logger: deps.logger,
       }
     );
-    this.requests = new HostRequests({ clock: deps.clock, ids: deps.ids, timers: deps.timers, logger: deps.logger });
     this.scope = new ScopedBus({
       scope: HOST_SCOPE,
       client: deps.bus,
@@ -125,6 +147,7 @@ export class Host {
     for (const [id, adapter] of this.deps.adapters) {
       await this.served.serveAll(id, adapter.manifest.serves);
     }
+    await this.gateway.serve(this.scope);
     await this.watcher.start();
   }
 
@@ -169,14 +192,38 @@ export class Host {
       adapters: this.supervisor.report(),
       hostRequests: this.requests.snapshot(),
       hostBus: this.hostCounters.snapshot(),
+      gateway: this.gateway.snapshot(),
     };
   }
 
+  /** Every subject the host answers: each adapter's served subjects and the gateway's. */
+  private answered(): Array<{ subject: string; budgetMs: number }> {
+    return [...[...this.deps.adapters.values()].flatMap((adapter) => adapter.manifest.serves), ...this.gateway.served];
+  }
+
   private servedBudgets(): number[] {
-    return [...this.deps.adapters.values()].flatMap((adapter) => adapter.manifest.serves.map((s) => s.budgetMs));
+    return this.answered().map((s) => s.budgetMs);
   }
 
   private servedSubjects(): string[] {
-    return [...this.deps.adapters.values()].flatMap((adapter) => adapter.manifest.serves.map((s) => s.subject));
+    return this.answered().map((s) => s.subject);
+  }
+}
+
+/**
+ * The host is the one responder on the gateway's subjects; an adapter whose
+ * manifest would let it subscribe to one could answer a request first.
+ */
+function assertNoSecondResponder(
+  adapters: ReadonlyMap<AdapterId, Adapter>,
+  served: ReadonlyArray<{ subject: string }>
+): void {
+  for (const [id, adapter] of adapters) {
+    for (const { subject } of served) {
+      const covering = adapter.manifest.subscribes.find((pattern) => subjectCovered(pattern, subject));
+      if (covering !== undefined) {
+        throw new Error(`adapter "${id}" subscribes to "${covering}", which covers the host's ${subject}`);
+      }
+    }
   }
 }

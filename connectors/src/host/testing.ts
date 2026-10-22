@@ -1,6 +1,6 @@
 // Fakes shared by the host's tests: a hand-driven clock and timers, a bus,
 // a recording logger and a scriptable adapter. Not imported by the host.
-import type { Adapter, AdapterContext, AdapterManifest, ServedSubject, Unavailable } from "./adapter";
+import type { Adapter, AdapterContext, AdapterManifest, EgressHandlers, ServedSubject, Unavailable } from "./adapter";
 import type { AdapterId } from "./adapter-ids";
 import type { Clock, IdSource, Logger, LogMetadata, RandomSource, TimerHandle, Timers } from "./deps";
 import type { LinkState } from "./link-readers";
@@ -213,8 +213,8 @@ export class FakeAdapter implements Adapter {
   lastContext: AdapterContext | undefined;
   private release: (() => void) | undefined;
 
-  constructor(id: AdapterId = "twitch", serves: ServedSubject[] = []) {
-    this.manifest = { id, publishes: ["fake.out"], subscribes: ["fake.in"], requests: [], serves };
+  constructor(id: AdapterId = "twitch", serves: ServedSubject[] = [], egress?: EgressHandlers) {
+    this.manifest = { id, publishes: ["fake.out"], subscribes: ["fake.in"], requests: [], serves, egress };
   }
 
   desired(link: LinkState): boolean {
