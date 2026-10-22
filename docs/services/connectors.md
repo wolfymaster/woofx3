@@ -53,8 +53,9 @@ adapters an event names when either settings event arrives, and reads every
 link again on the backstop interval (`WOOFX3_CONNECTORS_RECONCILE_INTERVAL_MS`)
 in case an event was missed. Reads run one pass at a time; events that arrive
 during a pass merge into the next one, so an older read never overrides a newer
-one. A read that fails keeps the adapter on its last link state and logs a
-warning.
+one. A read that fails, or takes longer than
+`WOOFX3_CONNECTORS_DB_PROXY_TIMEOUT_MS`, keeps the adapter on its last link
+state and logs a warning.
 
 ## Adapter states
 
@@ -72,10 +73,11 @@ or stopped in the middle of a start.
 | `stopping` | `stop` and the closing of its bus subscriptions are running. |
 
 - **Start and stop.** A link state the adapter wants starts it; one it does not
-  want aborts a start in progress or stops it. A stop, and the close of its
-  subscriptions, each get `WOOFX3_CONNECTORS_STOP_DEADLINE_MS`; past it the
-  adapter is marked `stopped` anyway and an error is logged. A start that
-  ignores its abort signal gets the same deadline.
+  want aborts a start in progress or stops it. Giving up the start, `stop` and
+  the close of its subscriptions share one `WOOFX3_CONNECTORS_STOP_DEADLINE_MS`,
+  counted from the abort or the stop; past it the adapter is marked `stopped`
+  anyway and an error is logged. Turning an adapter off also clears its failure
+  history and backoff.
 - **Retries.** Retries use capped exponential backoff with full jitter
   (`createBackoff` from the shared runtime), from
   `WOOFX3_CONNECTORS_BACKOFF_BASE_MS` up to `WOOFX3_CONNECTORS_BACKOFF_MAX_MS`.
@@ -88,12 +90,15 @@ or stopped in the middle of a start.
 - **Faults.** A running adapter that loses its connection calls
   `reportFault(reason)`. The host stops it and retries it like a failed start.
   A fault reported by an earlier run is ignored.
+- **A throwing `desired`.** The adapter is treated as not desired and an error
+  is logged.
 
 ## Served subjects
 
 An adapter lists the request/reply subjects it answers in its manifest's
 `serves`. The host, not the adapter, subscribes to each of them once, for the
-life of the process, so a caller always gets exactly one reply:
+life of the process, so a caller always gets exactly one reply. A manifest
+whose `subscribes` covers one of its own served subjects is refused at startup.
 
 | Adapter state | Reply |
 |---|---|
@@ -123,7 +128,7 @@ await requests.serveRequest<Req, Rep>(scope, {
   replyType: "some.subject.result",
   parse: (raw) => /* parsed(value) or parseFailed("why") */,
   handle: async (req, { deadline, signal, arrivedAt }) => /* reply */,
-  errorReply: (code, message) => /* reply for "invalid" or "internal" */,
+  errorReply: (code, message) => /* reply for "invalid", "internal" or "expired" */,
 });
 ```
 
@@ -131,12 +136,16 @@ await requests.serveRequest<Req, Rep>(scope, {
   handled, so a stray publish has no effect.
 - A request that does not parse gets `errorReply("invalid", ...)`. A parser or
   handler that throws gets `errorReply("internal", ...)` and is logged.
-- The deadline is arrival plus `budgetMs`, and `signal` aborts at it.
+- The deadline is arrival plus `budgetMs`, and `signal` aborts at it. Arrival is
+  when the message comes off the bus, so time spent queued behind busy handlers
+  counts. A request still queued at its deadline gets `errorReply("expired", ...)`
+  without being handled; served subjects answer it as unavailable with reason
+  `starting`.
 - In `raw` mode the reply bytes go out unchanged. In `cloudevent` mode the reply
   is the `data` of a CloudEvent with a fresh `id`, the `replyType`, source
   `connectors` and the current `time`.
-- Each subject keeps `received`, `replied`, `invalid`, `internal` and
-  `no_inbox` counts, shown in `/health`. Serving a subject twice is an error.
+- Each subject keeps `received`, `replied`, `invalid`, `internal`, `expired`
+  and `no_inbox` counts, shown in `/health`. Serving a subject twice is an error.
 
 ## The scoped bus
 
@@ -163,10 +172,11 @@ awaited.
 | `WOOFX3_CONNECTORS_BACKOFF_MAX_MS` | `300000` | Retry ceiling cap. |
 | `WOOFX3_CONNECTORS_PARK_AFTER_FAILURES` | `5` | Failures that park an adapter... |
 | `WOOFX3_CONNECTORS_PARK_WINDOW_MS` | `600000` | ...within this window. |
-| `WOOFX3_CONNECTORS_STOP_DEADLINE_MS` | `10000` | How long one adapter's stop may take. |
+| `WOOFX3_CONNECTORS_STOP_DEADLINE_MS` | `10000` | How long one adapter's stop may take, abort and bus close included. |
+| `WOOFX3_CONNECTORS_DB_PROXY_TIMEOUT_MS` | `2000` | Every db-proxy call (the startup ping, each link read) is aborted after this. |
 | `WOOFX3_CONNECTORS_ADAPTER_CONCURRENCY` | `16` | Handlers one subscription runs at once. |
 | `WOOFX3_CONNECTORS_ADAPTER_QUEUE_CAP` | `256` | Messages one subscription queues behind them. |
-| `WOOFX3_CONNECTORS_SHUTDOWN_DEADLINE_MS` | `15000` | Whole-process shutdown before exit code 1. Must exceed the stop deadline. |
+| `WOOFX3_CONNECTORS_SHUTDOWN_DEADLINE_MS` | `15000` | Whole-process shutdown before exit code 1. Must exceed the db-proxy timeout plus the larger of the stop deadline and the longest served budget. |
 
 The host also reads the bus settings (`WOOFX3_MESSAGEBUS_URL`, `_JWT`, `_NKEY`,
 `_TOKEN`) and `WOOFX3_DATABASE_PROXY_URL`. Invalid values stop the process at
@@ -199,7 +209,7 @@ fix what parked it.
     }
   ],
   "counters": {
-    "hostRequests": { "twitchapi": { "received": 3, "replied": 3, "invalid": 0, "internal": 0, "no_inbox": 0 } },
+    "hostRequests": { "twitchapi": { "received": 3, "replied": 3, "invalid": 0, "internal": 0, "expired": 0, "no_inbox": 0 } },
     "hostBus": { "refusals": 0, "subscriptions": {} }
   }
 }
@@ -211,7 +221,11 @@ Any other path or method answers `404` with
 ## Shutdown
 
 SIGTERM, SIGINT and SIGBREAK (Windows) start one graceful shutdown through the
-shared `installShutdown`: the health server closes, the watcher stops, every
-adapter is stopped in parallel under its stop deadline, and the host's
-subscriptions close. A second signal, or `WOOFX3_CONNECTORS_SHUTDOWN_DEADLINE_MS`
+shared `installShutdown`: the health server closes, and the watcher stops once
+any read in flight ends (at most the db-proxy timeout). Then, together, every
+adapter is stopped in parallel under its stop deadline and the host's
+subscriptions close; held requests are answered as their adapters stop, and
+the close waits at most the larger of the stop deadline and the longest served
+budget. The host refuses to start when the shutdown deadline does not cover
+both steps. A second signal, or `WOOFX3_CONNECTORS_SHUTDOWN_DEADLINE_MS`
 elapsing, exits with code 1.
