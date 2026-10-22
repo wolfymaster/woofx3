@@ -1,15 +1,17 @@
 import type { Logger } from "@woofx3/common/runtime";
+import type { AlertDelivery } from "../../contract/alert-delivery";
 import {
   ALERT_EVENT_TYPE,
-  type AlertDelivery,
   alertTarget,
   alertWidgetsNamed,
   hasVisibleWidget,
   parseAlertLayout,
 } from "../scene/alert-layout";
+import type { AlertFraming } from "../scene/frame-catalog";
 import type { OverlayHost } from "../scene/scene-host";
 import { StageTimings } from "../stage-timings";
-import type { DeliveryStore } from "./delivery-store";
+import type { MediaProxy } from "../scene/media-proxy";
+import type { DeliveryStore, PresentDelivery } from "./delivery-store";
 
 /** The `ui.notify.alert` envelope the workflow engine publishes and records. */
 export interface AlertEnvelope {
@@ -41,6 +43,14 @@ export interface AlertReportTarget {
  */
 export interface AlertLifecycleWriter {
   updateAlertLifecycle(req: { id: string; envelopeId: string; status: string; error: string }): Promise<unknown>;
+}
+
+/**
+ * Deliveries as pages are sent them: an alert's external media signed as it
+ * goes out (see `MediaProxy.alertDelivery`), every other delivery as recorded.
+ */
+export function presentAlertDeliveries(media: Pick<MediaProxy, "alertDelivery">): PresentDelivery {
+  return (frame) => (frame.type === ALERT_EVENT_TYPE ? { ...frame, value: media.alertDelivery(frame.value) } : frame);
 }
 
 /** Report `status` for an alert, against its row when the target names one. */
@@ -90,6 +100,8 @@ export interface AlertDispatchDeps {
   db: AlertLifecycleWriter;
   host: Pick<OverlayHost, "loadWidgetCatalog" | "loadSceneById">;
   deliveryStore: Pick<DeliveryStore, "connectedSceneIds" | "recordEvent">;
+  /** Where each layout widget's frame loads from, recorded with the alert. */
+  framing: AlertFraming;
   logger: Logger;
   /** Milliseconds on a monotonic clock, for the dispatch's stage timings; `performance.now` when absent. */
   now?: () => number;
@@ -97,10 +109,10 @@ export interface AlertDispatchDeps {
 
 /**
  * The stages an alert's dispatch is timed by: reading its layout against the
- * widget catalog, finding the alert widgets of each running scene, and
- * recording (then pushing) each scene's delivery.
+ * widget catalog, framing its widgets, finding the alert widgets of each
+ * running scene, and recording (then pushing) each scene's delivery.
  */
-type DispatchStage = "layout" | "scenes" | "record";
+type DispatchStage = "layout" | "frames" | "scenes" | "record";
 
 /** Where an alert went: queued on `scenes` running scenes, or refused with a reason. */
 export type AlertDispatchOutcome = { ok: true; scenes: number } | { ok: false; reason: string };
@@ -163,10 +175,12 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
     return { ok: false, reason };
   }
   const eventType = typeof raw.event?.type === "string" ? raw.event.type : "";
+  const frames = await timings.time("frames", () => deps.framing.frameAlert(parsed.layout));
   const delivery: AlertDelivery = {
     alertId,
     ...(target.rowId ? { rowId: target.rowId } : {}),
     layout: parsed.layout,
+    frames,
     event: eventType ? { type: eventType, data: raw.event?.data ?? null } : null,
   };
   const outcome = await fanOutAlert({ target: alertTarget(parameters), report: target, delivery }, deps, timings);

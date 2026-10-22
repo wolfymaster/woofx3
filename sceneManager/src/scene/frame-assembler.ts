@@ -1,6 +1,6 @@
 import type { Logger } from "@woofx3/common/runtime";
 import { PROTOCOL_VERSION, WIDGET_CAPABILITIES, type WidgetBootPayload, type WidgetSurface } from "@woofx3/module-sdk";
-import { parseWidgetCanonicalId } from "@woofx3/scene/model";
+import { alertCompositionOf, parseWidgetCanonicalId } from "@woofx3/scene/model";
 import {
   FRAME_DOCUMENT_HEADERS,
   type FrameSource,
@@ -11,7 +11,7 @@ import {
 } from "@woofx3/widget-host/frame";
 import { selectedThemeId } from "../../contract/scene-config";
 import { FONT_STYLESHEET_PATH } from "../fonts/google-font-cache";
-import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
+import { ALERT_EVENT_TYPE } from "./alert-layout";
 import { frameVersion } from "./frame-catalog";
 import { frameMediaProxyBase, type MediaProxy } from "./media-proxy";
 import type { OverlayHost } from "./scene-host";
@@ -240,9 +240,9 @@ export class FrameAssembler {
   ): Promise<Response> {
     const timings = new StageTimings<FrameStage>(this.now);
     const event = await timings.time("event", () => this.host.loadSceneEvent(sceneId, eventId));
-    const delivery = event?.type === ALERT_EVENT_TYPE ? parseAlertDelivery(event.value) : null;
-    const widget =
-      delivery && Object.hasOwn(delivery.layout.widgets, widgetId) ? delivery.layout.widgets[widgetId] : undefined;
+    const stored = event?.type === ALERT_EVENT_TYPE ? (event.value as { layout?: unknown } | null) : null;
+    const layout = stored ? alertCompositionOf(stored.layout) : null;
+    const widget = layout && Object.hasOwn(layout.widgets, widgetId) ? layout.widgets[widgetId] : undefined;
     const canonical = widget ? parseWidgetCanonicalId(widget.widget) : null;
     if (!widget || !canonical) {
       return this.blankResponse();

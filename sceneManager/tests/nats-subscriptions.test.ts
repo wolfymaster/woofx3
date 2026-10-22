@@ -155,6 +155,7 @@ describe("alert queue control subjects", () => {
       db: db as any,
       host: {} as any,
       deliveryStore: deliveryStore as any,
+      framing: { frameAlert: async () => ({}) },
       moduleState: {} as any,
       resolver: {} as any,
       sceneDocuments: {
@@ -291,6 +292,7 @@ describe("module setting changes", () => {
       db: {} as any,
       host: {} as any,
       deliveryStore: {} as any,
+      framing: { frameAlert: async () => ({}) },
       moduleState: {
         settingUpdated: async (moduleId: string, key: string) => {
           settingsUpdated.push(`${moduleId}/${key}`);
@@ -373,6 +375,7 @@ describe("module setting changes", () => {
       db: {} as never,
       host: {} as never,
       deliveryStore: {} as never,
+      framing: { frameAlert: async () => ({}) },
       moduleState: {} as never,
       resolver: {} as never,
       sceneDocuments: {

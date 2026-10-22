@@ -7,6 +7,7 @@ import type {
 import { createMessageBus } from "@woofx3/nats";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { SceneManagerRuntimeConfig } from "./config";
+import { presentAlertDeliveries } from "./events/alert-dispatch";
 import { DeliveryStore } from "./events/delivery-store";
 import { closeDeliveriesToRemovedPlacements } from "./events/removed-placements";
 import { GoogleFontCache } from "./fonts/google-font-cache";
@@ -86,7 +87,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const mediaProxy = new MediaProxy(runtimeConfig.mediaProxySecret);
     const sessionTokens = new SessionTokenService(runtimeConfig.tokenSecret);
 
-    const deliveryStore = new DeliveryStore(db, logger);
+    const deliveryStore = new DeliveryStore(db, logger, presentAlertDeliveries(mediaProxy));
     // Edits are written back here, so the database stays each scene's record.
     const sceneDocuments = new SceneDocuments(host, deliveryStore, logger, {
       mediaProxy,
@@ -128,6 +129,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       db,
       host,
       deliveryStore,
+      framing,
       moduleState,
       resolver,
       sceneDocuments,

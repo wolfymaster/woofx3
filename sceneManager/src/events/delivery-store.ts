@@ -34,6 +34,13 @@ export interface OpenDeliveryRef {
 
 type SseController = ReadableStreamDefaultController<Uint8Array>;
 
+/**
+ * A delivery as a page is sent it. The store keeps what was recorded; this
+ * derives what a page sees each time it is sent, for anything that must be
+ * fresh then (signed media URLs).
+ */
+export type PresentDelivery = (frame: DeliveryFrame) => DeliveryFrame;
+
 const REDELIVER_AFTER_MS = 5_000;
 const SWEEP_INTERVAL_MS = 3_000;
 /** The wait before trying a failed hydration again, doubling up to the cap. */
@@ -70,7 +77,8 @@ export class DeliveryStore {
 
   constructor(
     private readonly db: DbClient,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly present: PresentDelivery = (frame) => frame
   ) {}
 
   /**
@@ -533,7 +541,7 @@ export class DeliveryStore {
 
   private sendTo(controller: SseController, frame: DeliveryFrame): void {
     try {
-      controller.enqueue(new TextEncoder().encode(encodeStreamFrame({ kind: "delivery", frame })));
+      controller.enqueue(new TextEncoder().encode(encodeStreamFrame({ kind: "delivery", frame: this.present(frame) })));
     } catch (err) {
       this.logger.warn("delivery-store: SSE push failed", {
         error: err instanceof Error ? err.message : String(err),

@@ -44,7 +44,6 @@ function setup() {
   const acks: string[] = [];
   const alertAreas = new AlertAreas({
     document: { createElement: () => new FakeElement() } as never,
-    sceneBase: "/scene/s1",
     bridges: new Set(),
     queues,
     assets: {} as never,

@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Logger } from "@woofx3/common/runtime";
+import { type CompositionDocument, type NodeId, parseWidgetCanonicalId } from "@woofx3/scene/model";
+import type { AlertWidgetFrame } from "../../contract/alert-delivery";
 import { selectedThemeId } from "../../contract/scene-config";
 import type { BarkloaderFrameClient, BarkloaderFrameInfo } from "./frame-assembler";
 import { frameMediaProxyBase } from "./media-proxy";
@@ -61,13 +63,18 @@ export interface PlacementFraming {
   frame(instances: OverlayWidgetInstance[]): Promise<OverlayWidgetInstance[]>;
 }
 
+/** Frames the widgets of an alert's layout, as they are recorded on its delivery. */
+export interface AlertFraming {
+  frameAlert(layout: CompositionDocument): Promise<Record<NodeId, AlertWidgetFrame>>;
+}
+
 /**
  * Frame URLs, linked resources and media proxy bases for the placements of a
  * scene config. Each distinct widget and theme asks barkloader once per
  * config (which serves it from its frame cache), and each module's settings
  * are read once.
  */
-export class FrameCatalog implements PlacementFraming {
+export class FrameCatalog implements PlacementFraming, AlertFraming {
   constructor(
     private readonly barkloader: BarkloaderFrameClient,
     private readonly logger: Logger,
@@ -99,6 +106,43 @@ export class FrameCatalog implements PlacementFraming {
         };
       })
     );
+  }
+
+  /**
+   * Each widget of an alert layout framed as a placement of it would be, so
+   * an alert's frames load the same cached documents. A layout widget whose
+   * canonical id does not parse cannot be framed; `parseAlertLayout` has
+   * refused any such widget before an alert is framed.
+   */
+  async frameAlert(layout: CompositionDocument): Promise<Record<NodeId, AlertWidgetFrame>> {
+    const framings = new Map<string, Promise<Framing>>();
+    const linked = new Map<string, Promise<Record<string, string>>>();
+    const entries = await Promise.all(
+      Object.entries(layout.widgets).map(async ([widgetId, placement]): Promise<[NodeId, AlertWidgetFrame]> => {
+        const canonical = parseWidgetCanonicalId(placement.widget);
+        if (canonical === null) {
+          throw new Error(`frameAlert: layout widget ${widgetId} has no valid canonical id`);
+        }
+        const themeId = selectedThemeId(placement.settings);
+        const urlKey = `${canonical.moduleKey}\n${canonical.manifestId}\n${themeId ?? ""}`;
+        if (!framings.has(urlKey)) {
+          framings.set(urlKey, this.framing(canonical.moduleKey, canonical.manifestId, themeId));
+        }
+        if (!linked.has(canonical.moduleKey)) {
+          linked.set(canonical.moduleKey, this.moduleLinks(canonical.moduleKey));
+        }
+        const framing = await framings.get(urlKey)!;
+        return [
+          widgetId,
+          {
+            frameUrl: framing.frameUrl,
+            linkedResources: await linked.get(canonical.moduleKey)!,
+            ...(framing.mediaProxyBase === undefined ? {} : { mediaProxyBase: framing.mediaProxyBase }),
+          },
+        ];
+      })
+    );
+    return Object.fromEntries(entries);
   }
 
   /**

@@ -146,11 +146,18 @@ converted on the way in). For each alert, the page plays it with the scene runti
 (`@woofx3/scene/runtime`) inside the alert widget's area, scaled from the layout's
 canvas: each widget is placed, rotated, faded and stacked as its placement says, and
 its transitions and effects play around it. A widget whose placement is hidden does not
-play at all. Each frame loads from `/scene/{sceneId}/alert/{eventId}/widget/{widgetId}`.
-That frame is assembled only from the stored scene event, so it can show nothing the
-scene manager did not validate and deliver to that scene. Each layout widget boots with
-`surface: "alert"` and receives one `alert` event whose `data` is the triggering
-CloudEvent (`{ type, data }`, or `null` when nothing triggered the workflow).
+play at all. The scene manager frames each layout widget as it dispatches the alert,
+the same way it frames a scene placement, and records where it loads from with the
+delivery (`frames`, see `sceneManager/contract/alert-delivery.ts`). Each frame loads
+the widget's own document, `/frames/{moduleId}/{manifestId}?theme={id}&v={version}`,
+which every placement and alert showing that widget shares and the browser caches, so
+an alert's frames need no request to the scene manager once the widget has been shown.
+The alert's half of the boot (instance id, settings, linked resources, entrance) rides in
+the frame URL's fragment and never reaches the server. External media in the settings
+of a widget under the theme policy is signed each time the delivery is sent to a page,
+never when it is stored. Each layout widget boots with `surface: "alert"` and receives
+one `alert` event whose `data` is the triggering CloudEvent (`{ type, data }`, or
+`null` when nothing triggered the workflow).
 
 A layout widget that subscribes with `autoComplete: false` has a length of its own and
 holds the alert until it calls `complete()`; one that completes on handler return has
@@ -164,7 +171,8 @@ Where an alert's time goes is recorded at both ends, so a slow alert can be trac
 without adding logging:
 
 - **Dispatch.** The scene manager logs `ui.notify.alert: dispatched` once per alert it
-  delivers, with `layoutMs` (reading the layout against the widget catalog), `scenesMs`
+  delivers, with `layoutMs` (reading the layout against the widget catalog), `framesMs`
+  (framing its widgets), `scenesMs`
   (finding each running scene's alert widgets), `recordMs` (recording and pushing each
   scene's delivery) and `totalMs`, timed from the moment the alert arrived on the bus.
 - **Frame documents.** Every widget frame document carries a `Server-Timing` header:

@@ -246,6 +246,44 @@ describe("MediaProxy", () => {
     expect(proxy.sceneConfig(null)).toEqual({ scene: null, mediaUrls: {} });
   });
 
+  it("signs an alert delivery's settings only for widgets framed with a media proxy base", () => {
+    const placementOf = <T>(settings: T) => ({
+      widget: "woofx3:widget:image",
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      visible: true,
+      z: "a0",
+      settings,
+      name: "",
+      rotation: 0,
+      opacity: 1,
+      locked: false,
+      extra: {},
+    });
+    const delivery = {
+      alertId: "a1",
+      layout: {
+        layout: { width: 10, height: 10 },
+        widgets: { themed: placementOf({ image: external() }), plain: placementOf({ image: external() }) },
+        behaviors: {},
+      },
+      frames: {
+        themed: { frameUrl: "/frames/woofx3/timer?v=1", linkedResources: {}, mediaProxyBase: BASE },
+        plain: { frameUrl: "/frames/woofx3/image?v=1", linkedResources: {} },
+      },
+      event: null,
+    };
+
+    const sent = proxy.alertDelivery(delivery) as typeof delivery;
+
+    expect(sent.layout.widgets.themed.settings.image.url).toBe(EXTERNAL_PROXIED);
+    expect(sent.layout.widgets.plain.settings.image.url).toBe(EXTERNAL);
+    expect(delivery.layout.widgets.themed.settings.image.url).toBe(EXTERNAL);
+    expect(proxy.alertDelivery({ alertId: "nope" })).toEqual({ alertId: "nope" });
+  });
+
   it("passes a scene config whose widgets are not a list through", () => {
     const scene = { id: "s1", layout: {}, widgets: "nope" };
     expect(proxy.sceneConfig(scene)).toEqual({ scene, mediaUrls: {} });
