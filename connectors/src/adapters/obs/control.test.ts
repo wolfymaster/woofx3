@@ -5,7 +5,7 @@ import {
   handleObsControlRequest,
   type ObsControlClient,
   parseObsControlCommand,
-} from "../../src/obs/control";
+} from "./control";
 import { type FakeInput, fakeObs, groupedScenes, logger, scenes } from "./fake-obs";
 
 describe("parseObsControlCommand", () => {

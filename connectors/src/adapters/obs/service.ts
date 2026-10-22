@@ -10,28 +10,34 @@ import {
   readStoredRelayConfig,
   requestRelayCredentialOverNats,
 } from "@woofx3/common/cloudevents/Relay/relay";
-import type { Logger } from "@woofx3/common/runtime";
-import type NATSClient from "@woofx3/nats/src/client";
-import type { SceneManagerRuntimeConfig } from "../config";
-import type { DbClient } from "../db";
 import {
   type DialerDeps,
   dialWebSocketEndpoint,
   EndpointRelayError,
   endpointKeysFromManifest,
   relayChangeMovesEndpoint,
-} from "../endpoints/dialer";
+} from "../../companion/dialer";
+import type { Logger } from "../../host/deps";
+import type { BusClient } from "../../host/scoped-bus";
 import { ObsConnection } from "./connection";
 import type Manager from "./manager";
 import { refreshOverlayBrowserSources } from "./refresh-overlays";
-import { obsDialTarget, openObsOverRoute } from "./settings";
+import { type ObsFallback, obsDialTarget, openObsOverRoute } from "./settings";
 import { type ObsLastRoute, type ObsStatusReply, obsStatusReply } from "./status";
 
+/** The stored records OBS's route is read from on every connect attempt. */
+export interface ObsEndpointReads {
+  getSetting(key: string): Promise<string | null>;
+  getModuleManifest(moduleId: string): Promise<string | null>;
+  listModuleSettings(moduleId: string): Promise<{ key: string; value: string }[]>;
+  getModuleSecretValues(moduleId: string): Promise<Record<string, string>>;
+}
+
 export interface ObsServiceDeps {
-  db: DbClient;
+  db: ObsEndpointReads;
   /** The bus the api is asked for a relay credential on; null when there is none. */
-  nats: Pick<NATSClient, "request"> | null;
-  obs: SceneManagerRuntimeConfig["obs"];
+  nats: Pick<BusClient, "request"> | null;
+  obs: ObsFallback;
   logger: Logger;
 }
 
@@ -58,7 +64,12 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
   const readRelayConfig = async () => readStoredRelayConfig(await db.getSetting(RELAY_CONFIG_SETTING));
   const bus = deps.nats;
   const requestRelayCredential = bus
-    ? requestRelayCredentialOverNats((subject, data, opts) => bus.request(subject, data, opts))
+    ? requestRelayCredentialOverNats((subject, data, opts) => {
+        if (opts?.timeout === undefined) {
+          throw new Error(`${subject}: a request needs a timeout`);
+        }
+        return bus.request(subject, data, { timeout: opts.timeout });
+      })
     : null;
   const dialer: DialerDeps = {
     endpointKeys: async (moduleId, endpointId) =>
@@ -88,7 +99,7 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
       try {
         const route = await dialWebSocketEndpoint(dialer, target);
         last = { route: route.route, address: route.address };
-        return await openObsOverRoute(route, logger);
+        return await openObsOverRoute(route);
       } catch (err) {
         if (err instanceof EndpointRelayError) {
           last = { route: "companion", address: err.address };

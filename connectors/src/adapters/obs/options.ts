@@ -13,8 +13,8 @@ import {
   type ObsOptionsList,
   type ObsOptionsReply,
 } from "@woofx3/common/cloudevents/Obs/commands";
-import type { Logger } from "@woofx3/common/runtime";
 import { z } from "zod";
+import type { Logger } from "../../host/deps";
 import {
   groupSceneItems,
   isNotFound,

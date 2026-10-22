@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { obsAddressOf, obsStatusReply } from "../../src/obs/status";
+import { obsAddressOf, obsStatusReply } from "./status";
 
 describe("obsStatusReply", () => {
   it("reports the state, the last failure, and where and how OBS was looked for", () => {

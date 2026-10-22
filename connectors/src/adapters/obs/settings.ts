@@ -5,8 +5,7 @@
 // module does not say, which keeps an engine without the module connecting as
 // it always has.
 
-import type { Logger } from "@woofx3/common/runtime";
-import { type DialTarget, type EndpointKeys, EndpointRelayError, type WebSocketRoute } from "../endpoints/dialer";
+import { type DialTarget, type EndpointKeys, EndpointRelayError, type WebSocketRoute } from "../../companion/dialer";
 import { type ObsSession, obsFailureKind } from "./connection";
 import type Manager from "./manager";
 import { openObsSession } from "./manager";
@@ -47,7 +46,7 @@ export function obsDialTarget(fallback: ObsFallback): DialTarget {
  * or the companion not reaching OBS. It reads as `relay`, so the streamer is
  * pointed at the companion rather than at OBS.
  */
-export async function openObsOverRoute(route: WebSocketRoute, logger: Logger): Promise<ObsSession<Manager>> {
+export async function openObsOverRoute(route: WebSocketRoute): Promise<ObsSession<Manager>> {
   try {
     return await openObsSession({ url: route.url, token: route.password });
   } catch (err) {

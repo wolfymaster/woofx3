@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import type { ObsControlClient } from "../../src/obs/control";
-import { answerObsOptions, executeObsOptionsRequest, handleObsOptionsRequest } from "../../src/obs/options";
+import type { ObsControlClient } from "./control";
 import { fakeObs, groupedScenes, logger, ObsNotFound, scenes } from "./fake-obs";
+import { answerObsOptions, executeObsOptionsRequest, handleObsOptionsRequest } from "./options";
 
 const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
 

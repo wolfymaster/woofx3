@@ -6,7 +6,7 @@
 
 import type { RelayConfig } from "@woofx3/api";
 import { type RelayGrant, routesEndpoint } from "@woofx3/common/cloudevents/Relay/relay";
-import type { Logger } from "@woofx3/common/runtime";
+import type { Logger } from "../host/deps";
 
 /** The settings a `local[]` entry names for an endpoint's address and password. */
 export interface EndpointKeys {

@@ -9,8 +9,8 @@
 // Logging follows state transitions only. OBS being closed for an evening
 // is one line, not one line per retry.
 
-import type { Logger } from "@woofx3/common/runtime";
-import { EndpointRelayError } from "../endpoints/dialer";
+import { EndpointRelayError } from "../../companion/dialer";
+import type { Logger } from "../../host/deps";
 
 /** One open OBS session: the client to issue requests on, and its lifecycle. */
 export interface ObsSession<TClient> {

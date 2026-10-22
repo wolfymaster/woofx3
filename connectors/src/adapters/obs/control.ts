@@ -8,9 +8,9 @@
 // streamer can act on -- the reason becomes the step's error in the run log.
 
 import type { ObsControlCommand, ObsControlReply } from "@woofx3/common/cloudevents/Obs/commands";
-import type { Logger } from "@woofx3/common/runtime";
 import type { OBSRequestTypes, OBSResponseTypes } from "obs-websocket-js";
 import { z } from "zod";
+import type { Logger } from "../../host/deps";
 
 /** The slice of `obs/manager.ts` a command needs; structural so tests can fake OBS. */
 export interface ObsControlClient {

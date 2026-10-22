@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { createObsService, type ObsService } from "../../src/obs/service";
 import { type FakeObsOptions, type FakeObsServer, startFakeObs } from "./fake-obs-server";
+import { createObsService, type ObsService } from "./service";
 
 const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as never;
 

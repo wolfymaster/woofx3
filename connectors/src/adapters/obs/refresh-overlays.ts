@@ -17,7 +17,7 @@
 // started after us, a scene open in a plain browser tab, or a drop that
 // isn't a restart.
 
-import type { Logger } from "@woofx3/common/runtime";
+import type { Logger } from "../../host/deps";
 
 const BROWSER_SOURCE_KIND = "browser_source";
 const REFRESH_BUTTON = "refreshnocache";
