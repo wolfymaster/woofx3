@@ -27,16 +27,6 @@ import (
 // a test reads back exactly the snapshots the api would project to callbacks.
 func newAlertSvc(t *testing.T, db *gorm.DB) client.AlertService {
 	t.Helper()
-	// The outbox row's id comes from a Postgres column default that the
-	// SQLite schema lacks, so the test supplies one.
-	err := db.Callback().Create().Before("gorm:create").Register("test:worker_event_id", func(tx *gorm.DB) {
-		if event, ok := tx.Statement.Dest.(*models.WorkerEvent); ok && event.ID == "" {
-			event.ID = uuid.NewString()
-		}
-	})
-	if err != nil {
-		t.Fatalf("register outbox id callback: %v", err)
-	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	publisher := workers.NewEventPublisher(repo.NewDbEventRepository(db), logger)
 	svc, err := NewAlertService(repo.NewAlertRepository(db), publisher, testAlertRetention)

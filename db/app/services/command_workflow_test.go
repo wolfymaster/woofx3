@@ -334,15 +334,6 @@ func withOutbox(t *testing.T, f *commandPermFixture) func() []models.WorkerEvent
 	if err := f.db.Exec(ddl).Error; err != nil {
 		t.Fatalf("create outbox: %v", err)
 	}
-	// The outbox row's id comes from a Postgres column default.
-	err := f.db.Callback().Create().Before("gorm:create").Register("test:worker_event_id", func(tx *gorm.DB) {
-		if event, ok := tx.Statement.Dest.(*models.WorkerEvent); ok && event.ID == "" {
-			event.ID = uuid.NewString()
-		}
-	})
-	if err != nil {
-		t.Fatalf("register outbox id callback: %v", err)
-	}
 	f.svc.publisher = workers.NewEventPublisher(repo.NewDbEventRepository(f.db), slog.New(slog.DiscardHandler))
 	return func() []models.WorkerEvent {
 		t.Helper()
