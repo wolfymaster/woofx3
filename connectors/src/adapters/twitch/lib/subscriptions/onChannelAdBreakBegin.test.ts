@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
-import type { Context } from "src/types";
+import type { Context } from "../../types";
 import { AdBreakAnnouncer, type AdBreakTimers } from "./onChannelAdBreakBegin";
 
 interface Published {

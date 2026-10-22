@@ -2,6 +2,11 @@
   "name": "connectors",
   "private": true,
   "dependencies": {
+    "@twurple/api": "^8.0.0",
+    "@twurple/api-call": "^8.1.4",
+    "@twurple/auth": "^8.0.0",
+    "@twurple/eventsub-base": "^8.0.0",
+    "@twurple/eventsub-ws": "^8.0.0",
     "zod": "^4.6.6"
   },
   "scripts": {

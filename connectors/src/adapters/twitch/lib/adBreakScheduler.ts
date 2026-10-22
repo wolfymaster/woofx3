@@ -1,5 +1,5 @@
 import type { AdBreakUpcoming } from "@woofx3/common/cloudevents/Twitch/events";
-import type { SharedLogger } from "@woofx3/common/logging";
+import type { Logger } from "../../../host/deps";
 import { type AdSchedule, TwitchApiError, type TwitchApiErrorCode } from "./twitch";
 
 const POLL_INTERVAL_MS = 60_000;
@@ -31,7 +31,7 @@ const REAL_CLOCK: SchedulerClock = {
 export interface AdBreakSchedulerDeps {
   fetchSchedule(): Promise<AdSchedule>;
   publishUpcoming(event: AdBreakUpcoming): void;
-  logger: SharedLogger;
+  logger: Logger;
   /**
    * Seconds before an ad to announce it, read on every poll so a changed
    * setting applies within a minute. Must resolve to positive whole seconds.

@@ -2,7 +2,7 @@
 // module declares it as a setting, so a streamer changes it on the module's
 // page rather than in the engine's deployment configuration.
 
-import type { SharedLogger } from "@woofx3/common/logging";
+import type { Logger } from "../../../host/deps";
 
 /** The Twitch module's manifest id. Must match `id` in woofx3-modules' modules/platform/twitch/manifest.json. */
 export const TWITCH_MODULE_ID = "woofx3_twitch";
@@ -37,7 +37,7 @@ export class AdBreakLeadSetting {
 
   constructor(
     private readonly db: ModuleSettingsReader,
-    private readonly logger: SharedLogger
+    private readonly logger: Logger
   ) {}
 
   async read(): Promise<number> {

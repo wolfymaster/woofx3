@@ -1,6 +1,6 @@
 import type { EventSubStreamOnlineEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
-import type { Context } from "src/types";
+import type { Context } from "../../types";
 
 export default function onStreamOnline(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onStreamOnline(ctx.broadcaster.id, async (event: EventSubStreamOnlineEvent) => {

@@ -1,7 +1,7 @@
 import type { EventSubChannelHypeTrainBeginV2Event, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { HypeTrainBegin } from "@woofx3/common/cloudevents/Twitch";
-import type { Context } from "src/types";
+import type { Context } from "../../types";
 
 /**
  * Copies the hype train's fields out of Twurple's event. The event itself must

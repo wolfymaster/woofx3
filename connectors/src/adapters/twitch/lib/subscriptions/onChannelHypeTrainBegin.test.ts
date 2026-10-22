@@ -3,7 +3,7 @@ import type { HelixUser } from "@twurple/api";
 import { EventSubChannelHypeTrainBeginV2Event } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
-import type { Context } from "src/types";
+import type { Context } from "../../types";
 import onChannelHypeTrainBegin from "./onChannelHypeTrainBegin";
 
 const CLIENT_SECRET = "hype-train-client-secret";

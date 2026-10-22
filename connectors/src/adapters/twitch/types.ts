@@ -1,13 +1,20 @@
 import type { HelixUser } from "@twurple/api";
 import type EventFactory from "@woofx3/common/cloudevents/EventFactory";
-import type { SharedLogger } from "@woofx3/common/logging";
-import type NATSClient from "@woofx3/nats/src/client";
+import type { Logger } from "../../host/deps";
 import type { ChatterMembershipEnricher } from "./lib/chatterMembership";
+
+/**
+ * Where the adapter's events go. The adapter's scoped bus satisfies it, and
+ * refuses any subject its manifest does not list.
+ */
+export interface EventPublisher {
+  publish(subject: string, data: Uint8Array): Promise<void>;
+}
 
 export interface Context {
   broadcaster: HelixUser;
-  logger: SharedLogger;
-  messageBus: NATSClient;
+  logger: Logger;
+  messageBus: EventPublisher;
   events: EventFactory;
   /**
    * Fills in the membership fields Twitch does not stamp on a message.
@@ -18,28 +25,3 @@ export interface Context {
   /** Told when stream.online / stream.offline arrives, after it is published. */
   onStreamLiveChange?: (live: boolean) => void;
 }
-
-export interface TwitchContext {
-  apiUrl: string;
-  clientId: string;
-  clientSecret: string;
-  accessToken: string;
-  logger: SharedLogger;
-}
-
-export interface TwitchApiRequestMessage {
-  command: string;
-  args: Record<string, string>;
-}
-
-export type HandlerResponse<T> = SuccessHandlerResponse<T> | ErrorHandlerResponse;
-
-export type SuccessHandlerResponse<T> = {
-  error: false;
-  payload?: T;
-};
-
-export type ErrorHandlerResponse = {
-  error: true;
-  errorMsg: string;
-};

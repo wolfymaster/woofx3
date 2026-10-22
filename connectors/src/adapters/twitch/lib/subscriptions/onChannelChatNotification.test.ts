@@ -4,7 +4,7 @@ import type { EventSubChannelChatNotificationEvent } from "@twurple/eventsub-bas
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
-import type { Context } from "src/types";
+import type { Context } from "../../types";
 import onChannelChatNotification from "./onChannelChatNotification";
 
 type Handler = (event: EventSubChannelChatNotificationEvent) => Promise<void>;

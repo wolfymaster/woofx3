@@ -1,6 +1,6 @@
 import type { EventSubChannelCheerEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
-import type { Context } from "src/types";
+import type { Context } from "../../types";
 
 export default function onChannelCheer(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onChannelCheer(ctx.broadcaster.id, async (event: EventSubChannelCheerEvent) => {

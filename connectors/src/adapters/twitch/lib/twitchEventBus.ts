@@ -1,6 +1,6 @@
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
-import type { Context } from "src/types";
+import type { Context } from "../types";
 import onChannelAdBreakBegin, { AdBreakAnnouncer } from "./subscriptions/onChannelAdBreakBegin";
 import onChannelBan from "./subscriptions/onChannelBan";
 import onChannelChatmessage from "./subscriptions/onChannelChatMessage";

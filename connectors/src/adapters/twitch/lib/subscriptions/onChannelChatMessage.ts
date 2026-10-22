@@ -1,7 +1,7 @@
 import type { EventSubChannelChatMessageEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
-import type { Context } from "src/types";
+import type { Context } from "../../types";
 
 /**
  * Map Twitch's badges onto the platform-neutral ChatterMembership shape.

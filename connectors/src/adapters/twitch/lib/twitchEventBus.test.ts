@@ -2,7 +2,7 @@ import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import type { Context } from "src/types";
+import type { Context } from "../types";
 import TwitchEventBus from "./twitchEventBus";
 
 let stubCounter = 0;
