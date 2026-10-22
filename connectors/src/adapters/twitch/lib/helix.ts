@@ -5,6 +5,7 @@ import type {
   HelixCommandResult,
   HelixOperationName,
 } from "@woofx3/common/cloudevents/Twitch/commands";
+import { COMMAND_PREFIX } from "../../../chat/command-prefix";
 import { TwitchApiError } from "./twitchApiError";
 
 // Twurple passes these straight to fetch and leaves declaring the ones a
@@ -48,12 +49,6 @@ interface HelixOperation {
    */
   chatLine?: string;
 }
-
-/**
- * The character a chat line starts with to run a command. Must match
- * COMMAND_PREFIX in woofwoofwoof/src/sentLines.ts, the commander's prefix.
- */
-const COMMAND_PREFIX = "!";
 
 /** U+200B ZERO WIDTH SPACE. */
 const ZERO_WIDTH_SPACE = "\u200b";
