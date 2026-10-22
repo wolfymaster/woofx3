@@ -1741,13 +1741,17 @@ in `modules.manifest`, where the dashboard and sceneManager read it.
 Module code cannot write an endpoint's host, port or password setting:
 `ctx.module.setSetting` and `compareAndSetSetting` refuse them, because those
 values decide where the engine connects. Only the streamer, in the dashboard,
-or the companion that found the device sets them.
+or the companion that found the device sets them. The check is made when the
+write is attempted, against the installed version's endpoints, so code of an
+older version that is still running when an upgrade lands is refused too.
 
 An upgrade that makes a setting an endpoint's host or port setting for the
 first time (a new endpoint, or an endpoint whose `hostSetting` or
 `portSetting` now names a different setting) puts that setting back to its
-manifest default once every other install step has succeeded, and logs each
-setting it reset. A fresh install does the same for every endpoint. Until
+manifest default once every other install step has succeeded, and again once
+the engine has loaded the new version, which closes the moment in between when
+the old version's code could still write it. Each reset is logged. A fresh
+install does the same for every endpoint. Until
 then the setting was an ordinary one that module code could write, so a value
 already stored there cannot be trusted as an address. A setting that keeps its
 role across the upgrade keeps its value. The cost: a value the streamer typed
