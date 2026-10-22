@@ -516,29 +516,36 @@ export interface AvailableFunction {
 }
 
 /**
- * A resource kind an installed module declares in its manifest's
- * `resources[]`: the definition an instance is created from. Two modules may
- * each declare a kind of the same name; `moduleName` tells them apart.
+ * A resource kind a module declares in its manifest's `resources[]`: the
+ * definition an instance is created from. `module-manifest.ts` reads it.
  */
-export interface DeclaredResourceKind {
-  /** The declaring module's manifest id, the first segment of its instances' canonical ids. */
-  moduleName: string;
+export interface ManifestResourceKind {
   kind: string;
   name: string;
   description: string;
   /** A lucide icon name, when the module chose one. */
   icon?: string;
   /**
+   * Where in an instance's value the reading shown beside its name is: object
+   * keys and list indexes joined by `.` (`display.summary`). Absent means the
+   * whole value.
+   */
+  summaryPath?: string;
+  /**
    * The create-instance form, as config fields: the vocabulary actions and
    * triggers declare. Passed through as the manifest holds it; the engine
    * never reads it.
    */
   schema: unknown[];
-  /**
-   * Where in an instance's value the reading shown beside its name is: object
-   * keys and list indexes joined by `.`. Absent means the whole value.
-   */
-  summaryPath?: string;
+}
+
+/**
+ * A resource kind an installed module declares. Two modules may each declare
+ * a kind of the same name; `moduleName` tells them apart.
+ */
+export interface DeclaredResourceKind extends ManifestResourceKind {
+  /** The declaring module's manifest id, the first segment of its instances' canonical ids. */
+  moduleName: string;
 }
 
 /**

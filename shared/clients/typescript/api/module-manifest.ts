@@ -12,8 +12,10 @@
  * barkloader refuses the whole install over an invalid entry anyway.
  */
 
-import type { MarketplaceLocalEndpoint } from "./api";
+import type { ManifestResourceKind, MarketplaceLocalEndpoint } from "./api";
 import { type ConfigField, LIST_ITEM_FIELD_TYPES, parseFieldEntries } from "./ui-schema";
+
+export type { ManifestResourceKind } from "./api";
 
 /**
  * The permission ids the manifest declares (`permissions[]`), in declaration
@@ -53,23 +55,6 @@ export function manifestLocalEndpoints(manifest: unknown): MarketplaceLocalEndpo
     });
   }
   return endpoints;
-}
-
-/** A resource kind the manifest declares (`resources[]`): what an instance is created from. */
-export interface ManifestResourceKind {
-  kind: string;
-  name: string;
-  description: string;
-  /** A lucide icon name, when the module chose one. */
-  icon?: string;
-  /**
-   * Where in an instance's value the reading shown beside its name is: object
-   * keys and list indexes joined by `.` (`display.summary`). Absent means the
-   * whole value.
-   */
-  summaryPath?: string;
-  /** The create-instance form, as config fields. The engine keeps what it produced without reading it. */
-  schema: unknown[];
 }
 
 /** One `resources[]` entry as a kind; null for an entry that names no kind. */
