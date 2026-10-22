@@ -537,3 +537,191 @@ func TestChatReplyDryRun(t *testing.T) {
 		}
 	}
 }
+
+func TestChatAnnounceActionForwardsTheColour(t *testing.T) {
+	tests := []struct {
+		name        string
+		params      map[string]any
+		wantOptions string
+	}{
+		{"no colour sends no options", map[string]any{"message": "hi"}, ""},
+		{"an empty colour sends no options", map[string]any{"message": "hi", "twitchColor": ""}, ""},
+		{"a colour goes to twitch", map[string]any{"message": "hi", "twitchColor": "blue"}, `{"twitch":{"color":"blue"}}`},
+		{"the colour rides along with any target", map[string]any{"message": "hi", "platform": "all", "twitchColor": "purple"}, `{"twitch":{"color":"purple"}}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gateway := &fakeGateway{reply: deliveredOn(platformgateway.PlatformTwitch)}
+
+			output, err := NewChatAnnounceAction()(chatStepContext(gateway, chatLine()), tt.params)
+			if err != nil {
+				t.Fatalf("chat.announce: %v", err)
+			}
+
+			request := gateway.requests[0]
+			if request.Action != platformgateway.ActionChatAnnounce || string(request.Payload) != `{"message":"hi"}` {
+				t.Errorf("request = %+v", request)
+			}
+			if request.IdempotencyKey != "exec-1:say" || request.WorkflowChain != "wf-b" {
+				t.Errorf("key = %q, chain = %q", request.IdempotencyKey, request.WorkflowChain)
+			}
+			gotOptions, err := json.Marshal(request.Options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tt.wantOptions == "" && request.Options != nil {
+				t.Errorf("options = %s, want none", gotOptions)
+			}
+			if tt.wantOptions != "" && string(gotOptions) != tt.wantOptions {
+				t.Errorf("options = %s, want %s", gotOptions, tt.wantOptions)
+			}
+			if err := request.Validate(); err != nil {
+				t.Errorf("request breaks the contract: %v", err)
+			}
+			if output["ok"] != true || output["message"] != "hi" {
+				t.Errorf("output = %v", output)
+			}
+		})
+	}
+}
+
+func TestChatAnnounceActionFailures(t *testing.T) {
+	tests := []struct {
+		name    string
+		params  map[string]any
+		reply   platformgateway.GatewayReply
+		wantErr string
+	}{
+		{"an unknown colour", map[string]any{"message": "hi", "twitchColor": "pink"}, deliveredOn(platformgateway.PlatformTwitch), "twitchColor must be one of primary, blue, green, orange, purple"},
+		{"a colour that is not text", map[string]any{"message": "hi", "twitchColor": 3.0}, deliveredOn(platformgateway.PlatformTwitch), "twitchColor must be text"},
+		{"no message", map[string]any{"twitchColor": "blue"}, deliveredOn(platformgateway.PlatformTwitch), "message parameter is required"},
+		{
+			"a platform that cannot announce fails the step",
+			map[string]any{"message": "hi"},
+			platformgateway.GatewayReply{Results: map[platformgateway.PlatformID]platformgateway.PlatformOutcome{
+				platformgateway.PlatformTwitch: {Status: platformgateway.OutcomeUnsupported},
+			}},
+			"chat.announce did not go through: twitch: cannot do this",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gateway := &fakeGateway{reply: tt.reply}
+			_, err := NewChatAnnounceAction()(chatStepContext(gateway, chatLine()), tt.params)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want one containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestChatPinActionDuration(t *testing.T) {
+	tests := []struct {
+		name        string
+		params      map[string]any
+		wantPayload string
+		wantErr     string
+	}{
+		{"no duration keeps the platform's own", map[string]any{"message": "hi"}, `{"message":"hi"}`, ""},
+		{"lower bound", map[string]any{"message": "hi", "durationSeconds": 30.0}, `{"message":"hi","durationSeconds":30}`, ""},
+		{"upper bound", map[string]any{"message": "hi", "durationSeconds": 1200.0}, `{"message":"hi","durationSeconds":1200}`, ""},
+		{"text from an expression", map[string]any{"message": "hi", "durationSeconds": "90"}, `{"message":"hi","durationSeconds":90}`, ""},
+		{"blank text means unset", map[string]any{"message": "hi", "durationSeconds": " "}, `{"message":"hi"}`, ""},
+		{"below the bound", map[string]any{"message": "hi", "durationSeconds": 29.0}, "", "durationSeconds must be between 30 and 1200, got 29"},
+		{"above the bound", map[string]any{"message": "hi", "durationSeconds": 1201.0}, "", "durationSeconds must be between 30 and 1200, got 1201"},
+		{"a fraction", map[string]any{"message": "hi", "durationSeconds": 30.5}, "", "whole number of seconds"},
+		{"words", map[string]any{"message": "hi", "durationSeconds": "soon"}, "", "whole number of seconds"},
+		{"not a number", map[string]any{"message": "hi", "durationSeconds": true}, "", "durationSeconds must be a number"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gateway := &fakeGateway{reply: deliveredOn(platformgateway.PlatformTwitch)}
+
+			_, err := NewChatPinAction()(chatStepContext(gateway, chatLine()), tt.params)
+
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want one containing %q", err, tt.wantErr)
+				}
+				if len(gateway.requests) != 0 {
+					t.Errorf("sent %d requests for a refused step", len(gateway.requests))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("chat.pin: %v", err)
+			}
+			request := gateway.requests[0]
+			if request.Action != platformgateway.ActionChatPin || string(request.Payload) != tt.wantPayload {
+				t.Errorf("request = %s %s, want payload %s", request.Action, request.Payload, tt.wantPayload)
+			}
+			if err := request.Validate(); err != nil {
+				t.Errorf("request breaks the contract: %v", err)
+			}
+		})
+	}
+}
+
+func TestChatPinActionFailsWhenPostedButNotPinned(t *testing.T) {
+	gateway := &fakeGateway{reply: platformgateway.GatewayReply{Results: map[platformgateway.PlatformID]platformgateway.PlatformOutcome{
+		platformgateway.PlatformTwitch: {Status: platformgateway.OutcomeFailed, Code: "upstream", Message: "posted but not pinned: forbidden"},
+	}}}
+	_, err := NewChatPinAction()(chatStepContext(gateway, chatLine()), map[string]any{"message": "hi"})
+	if err == nil || !strings.Contains(err.Error(), "chat.pin did not go through: twitch: failed (upstream): posted but not pinned: forbidden") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+// Registration is template-tolerant: a value that only resolves when the step
+// runs is never refused, and one that can never be valid is.
+func TestValidateAnnounceAndPinParams(t *testing.T) {
+	tests := []struct {
+		name     string
+		validate func(map[string]any) error
+		params   map[string]any
+		wantErr  bool
+	}{
+		{"announce: nothing set", validateAnnouncementParams, map[string]any{"message": "hi"}, false},
+		{"announce: a colour", validateAnnouncementParams, map[string]any{"twitchColor": "green"}, false},
+		{"announce: an expression", validateAnnouncementParams, map[string]any{"twitchColor": "${steps.pick.color}"}, false},
+		{"announce: an unknown colour", validateAnnouncementParams, map[string]any{"twitchColor": "pink"}, true},
+		{"announce: a bad platform", validateAnnouncementParams, map[string]any{"platform": "Twitch"}, true},
+		{"pin: nothing set", validatePinParams, map[string]any{"message": "hi"}, false},
+		{"pin: in bounds", validatePinParams, map[string]any{"durationSeconds": 600.0}, false},
+		{"pin: an expression", validatePinParams, map[string]any{"durationSeconds": "${trigger.data.seconds}"}, false},
+		{"pin: out of bounds", validatePinParams, map[string]any{"durationSeconds": 5.0}, true},
+		{"pin: a bad platform", validatePinParams, map[string]any{"platform": "2x"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := tt.validate(tt.params); (err != nil) != tt.wantErr {
+				t.Errorf("error = %v, want error %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestAnnounceAndPinDryRun(t *testing.T) {
+	tests := []struct {
+		name    string
+		spec    tasks.ActionSpec
+		params  map[string]any
+		want    string
+		wantErr bool
+	}{
+		{"announce", chatAnnounceActionSpec, map[string]any{"message": "hi", "platform": "all"}, `would announce "hi" in every linked platform's chat`, false},
+		{"announce with a bad colour", chatAnnounceActionSpec, map[string]any{"message": "hi", "twitchColor": "pink"}, "", true},
+		{"pin", chatPinActionSpec, map[string]any{"message": "hi"}, `would send "hi" to the chat the trigger came from and pin it`, false},
+		{"pin with a duration", chatPinActionSpec, map[string]any{"message": "hi", "platform": "twitch", "durationSeconds": 60.0}, `would send "hi" to twitch chat and pin it for 60 seconds`, false},
+		{"pin out of bounds", chatPinActionSpec, map[string]any{"message": "hi", "durationSeconds": 2000.0}, "", true},
+		{"pin without a message", chatPinActionSpec, map[string]any{}, "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.spec.DryRun(tt.params)
+			if (err != nil) != tt.wantErr || got != tt.want {
+				t.Errorf("DryRun(%v) = %q, %v; want %q", tt.params, got, err, tt.want)
+			}
+		})
+	}
+}

@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -33,28 +36,96 @@ import (
 // `woofx3:action:chat.reply`.
 func NewChatReplyAction() tasks.ActionFunc[AppServices] {
 	return func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
-		message, err := chatMessageParam(params)
+		message, target, err := chatStepTarget(ctx, params)
 		if err != nil {
 			return nil, err
 		}
-		platform, err := chatPlatformParam(params)
+		reply, err := sendThroughGateway(ctx, platformgateway.ActionChatSend, target, platformgateway.ChatSendPayload{Message: message}, nil)
 		if err != nil {
 			return nil, err
 		}
-		target, err := resolveChatTarget(platform, ctx.TriggerEvent)
-		if err != nil {
-			return nil, err
-		}
-		reply, err := sendThroughGateway(ctx, platformgateway.ActionChatSend, target, platformgateway.ChatSendPayload{Message: message})
-		if err != nil {
-			return nil, err
-		}
-		results, err := gatewayResultsOutput(reply)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"message": message, "ok": reply.OK, "results": results}, nil
+		return chatStepOutput(message, reply)
 	}
+}
+
+// NewChatAnnounceAction is the engine handler registered as `chat.announce`,
+// the "Send announcement" action: a highlighted chat line, where the platform
+// has one. The optional `twitchColor` reaches the gateway as Twitch's options
+// and is left out when unset, so Twitch uses the channel's accent colour.
+//
+// Canonical id of the corresponding action declaration row:
+// `woofx3:action:chat.announce`.
+func NewChatAnnounceAction() tasks.ActionFunc[AppServices] {
+	return func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
+		message, target, err := chatStepTarget(ctx, params)
+		if err != nil {
+			return nil, err
+		}
+		color, err := announcementColorParam(params)
+		if err != nil {
+			return nil, err
+		}
+		options, err := announceOptions(color)
+		if err != nil {
+			return nil, err
+		}
+		reply, err := sendThroughGateway(ctx, platformgateway.ActionChatAnnounce, target, platformgateway.ChatAnnouncePayload{Message: message}, options)
+		if err != nil {
+			return nil, err
+		}
+		return chatStepOutput(message, reply)
+	}
+}
+
+// NewChatPinAction is the engine handler registered as `chat.pin`, the "Pin
+// message" action: posts a message and pins it. Only the send-and-pin form of
+// the gateway action is offered; pinning an existing line needs a message id a
+// step has no way to name.
+//
+// Canonical id of the corresponding action declaration row:
+// `woofx3:action:chat.pin`.
+func NewChatPinAction() tasks.ActionFunc[AppServices] {
+	return func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
+		message, target, err := chatStepTarget(ctx, params)
+		if err != nil {
+			return nil, err
+		}
+		duration, err := pinDurationParam(params)
+		if err != nil {
+			return nil, err
+		}
+		reply, err := sendThroughGateway(ctx, platformgateway.ActionChatPin, target, platformgateway.ChatPinNewPayload{Message: message, DurationSeconds: duration}, nil)
+		if err != nil {
+			return nil, err
+		}
+		return chatStepOutput(message, reply)
+	}
+}
+
+// chatStepTarget reads the parameters every chat step shares, `message` and
+// `platform`, and resolves where the step sends.
+func chatStepTarget(ctx tasks.ActionContext[AppServices], params map[string]any) (string, platformgateway.Target, error) {
+	message, err := chatMessageParam(params)
+	if err != nil {
+		return "", platformgateway.Target{}, err
+	}
+	platform, err := chatPlatformParam(params)
+	if err != nil {
+		return "", platformgateway.Target{}, err
+	}
+	target, err := resolveChatTarget(platform, ctx.TriggerEvent)
+	if err != nil {
+		return "", platformgateway.Target{}, err
+	}
+	return message, target, nil
+}
+
+func chatStepOutput(message string, reply platformgateway.GatewayReply) (map[string]any, error) {
+	results, err := gatewayResultsOutput(reply)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"message": message, "ok": reply.OK, "results": results}, nil
 }
 
 // Values of a chat step's `platform` parameter besides a platform id. Must
@@ -178,8 +249,118 @@ func describeChatPlatform(platform string) (string, error) {
 	return platform + " chat", nil
 }
 
+// Bounds of a pin's duration in seconds, as the chat.pin contract states them
+// and Twitch enforces them.
+const (
+	pinDurationMinSeconds = 30
+	pinDurationMaxSeconds = 1200
+)
+
+// announcementColors are the colours Twitch's announcements take, the options
+// of the `twitchColor` select in modules/woofx3/manifest.json. Must match
+// ANNOUNCEMENT_COLORS in connectors/src/adapters/twitch/egress.ts.
+func announcementColors() []string {
+	return []string{"primary", "blue", "green", "orange", "purple"}
+}
+
+// announcementColorParam is the `twitchColor` parameter, "" when unset.
+func announcementColorParam(params map[string]any) (string, error) {
+	raw, present := params["twitchColor"]
+	if !present || raw == nil {
+		return "", nil
+	}
+	color, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("twitchColor must be text, got %s", describeParam(raw))
+	}
+	if color == "" || slices.Contains(announcementColors(), color) {
+		return color, nil
+	}
+	return "", fmt.Errorf("twitchColor must be one of %s, got %s", strings.Join(announcementColors(), ", "), describeParam(raw))
+}
+
+// validateAnnouncementParams is the registration check of a chat.announce
+// step: the platform as for any chat step, and a colour that is unset, one of
+// Twitch's, or an expression resolved when the step runs.
+func validateAnnouncementParams(params map[string]any) error {
+	if err := validateChatPlatformParam(params); err != nil {
+		return err
+	}
+	if color, ok := params["twitchColor"].(string); ok && expression.HasExpression(color) {
+		return nil
+	}
+	_, err := announcementColorParam(params)
+	return err
+}
+
+// announceOptions is the request options for a colour: Twitch's, or none when
+// the step sets no colour.
+func announceOptions(color string) (map[platformgateway.PlatformID]json.RawMessage, error) {
+	if color == "" {
+		return nil, nil
+	}
+	encoded, err := json.Marshal(struct {
+		Color string `json:"color"`
+	}{Color: color})
+	if err != nil {
+		return nil, fmt.Errorf("marshal twitch announcement options: %w", err)
+	}
+	return map[platformgateway.PlatformID]json.RawMessage{platformgateway.PlatformTwitch: encoded}, nil
+}
+
+// pinDurationParam is the `durationSeconds` parameter, nil when unset so the
+// platform keeps its own default. Text is accepted because a step reading the
+// number from another step's output resolves to text.
+func pinDurationParam(params map[string]any) (*int, error) {
+	var seconds int
+	switch v := params["durationSeconds"].(type) {
+	case nil:
+		return nil, nil
+	case int:
+		seconds = v
+	case int64:
+		seconds = int(v)
+	case float64:
+		if v != math.Trunc(v) {
+			return nil, fmt.Errorf("durationSeconds must be a whole number of seconds, got number %v", v)
+		}
+		seconds = int(v)
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return nil, nil
+		}
+		parsed, err := strconv.Atoi(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("durationSeconds must be a whole number of seconds, got %s", describeParam(v))
+		}
+		seconds = parsed
+	default:
+		return nil, fmt.Errorf("durationSeconds must be a number, got %s", describeParam(v))
+	}
+	if seconds < pinDurationMinSeconds || seconds > pinDurationMaxSeconds {
+		return nil, fmt.Errorf("durationSeconds must be between %d and %d, got %d", pinDurationMinSeconds, pinDurationMaxSeconds, seconds)
+	}
+	return &seconds, nil
+}
+
+// validatePinParams is the registration check of a chat.pin step: the platform
+// as for any chat step, and a duration that is unset, in bounds, or an
+// expression resolved when the step runs.
+func validatePinParams(params map[string]any) error {
+	if err := validateChatPlatformParam(params); err != nil {
+		return err
+	}
+	if duration, ok := params["durationSeconds"].(string); ok && expression.HasExpression(duration) {
+		return nil
+	}
+	_, err := pinDurationParam(params)
+	return err
+}
+
 // sendThroughGateway performs one gateway action for the running step and
-// returns the reply, or an error unless the reply is ok.
+// returns the reply, or an error unless the reply is ok. Options are the
+// per-platform extras of the request, nil for none.
 //
 // The idempotency key is the run and the step, `ExecutionID:TaskID`. The
 // engine never retries a task (each step's attempt is always 1), so the key is
@@ -191,7 +372,7 @@ func describeChatPlatform(platform string) (string, error) {
 // The request carries the run's workflowChain, so a line it posts comes back
 // on the platform's chat feed carrying the chain, and the loop guard sees a
 // workflow answering its own lines.
-func sendThroughGateway(ctx tasks.ActionContext[AppServices], action platformgateway.ActionID, target platformgateway.Target, payload any) (platformgateway.GatewayReply, error) {
+func sendThroughGateway(ctx tasks.ActionContext[AppServices], action platformgateway.ActionID, target platformgateway.Target, payload any, options map[platformgateway.PlatformID]json.RawMessage) (platformgateway.GatewayReply, error) {
 	if ctx.ExecutionID == "" || ctx.TaskID == "" || ctx.WorkflowID == "" {
 		return platformgateway.GatewayReply{}, fmt.Errorf("%s needs the run's execution, task and workflow ids", action)
 	}
@@ -207,6 +388,7 @@ func sendThroughGateway(ctx tasks.ActionContext[AppServices], action platformgat
 		Action:         action,
 		Target:         target,
 		Payload:        encoded,
+		Options:        options,
 		IdempotencyKey: ctx.ExecutionID + ":" + ctx.TaskID,
 		RequestedBy:    platformgateway.RequestedBy{Kind: platformgateway.RequesterWorkflow, Ref: ctx.WorkflowID},
 		WorkflowChain:  ctx.TriggerEvent.ChainThrough(ctx.WorkflowID),
@@ -676,18 +858,64 @@ var chatReplyActionSpec = tasks.ActionSpec{
 	SideEffect: true,
 	Validate:   validateChatPlatformParam,
 	DryRun: func(params map[string]any) (string, error) {
-		message, err := chatMessageParam(params)
-		if err != nil {
-			return "", err
-		}
-		platform, err := chatPlatformParam(params)
-		if err != nil {
-			return "", err
-		}
-		where, err := describeChatPlatform(platform)
+		message, where, err := dryRunChatStep(params)
 		if err != nil {
 			return "", err
 		}
 		return fmt.Sprintf("would send %q to %s", message, where), nil
 	},
+}
+
+// chatAnnounceActionSpec checks the step as the real action would. A dry run
+// does not ask the gateway whether the platform is linked, or whether it has
+// announcements.
+var chatAnnounceActionSpec = tasks.ActionSpec{
+	SideEffect: true,
+	Validate:   validateAnnouncementParams,
+	DryRun: func(params map[string]any) (string, error) {
+		message, where, err := dryRunChatStep(params)
+		if err != nil {
+			return "", err
+		}
+		if _, err := announcementColorParam(params); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("would announce %q in %s", message, where), nil
+	},
+}
+
+// chatPinActionSpec checks the step as the real action would.
+var chatPinActionSpec = tasks.ActionSpec{
+	SideEffect: true,
+	Validate:   validatePinParams,
+	DryRun: func(params map[string]any) (string, error) {
+		message, where, err := dryRunChatStep(params)
+		if err != nil {
+			return "", err
+		}
+		duration, err := pinDurationParam(params)
+		if err != nil {
+			return "", err
+		}
+		if duration == nil {
+			return fmt.Sprintf("would send %q to %s and pin it", message, where), nil
+		}
+		return fmt.Sprintf("would send %q to %s and pin it for %d seconds", message, where, *duration), nil
+	},
+}
+
+func dryRunChatStep(params map[string]any) (string, string, error) {
+	message, err := chatMessageParam(params)
+	if err != nil {
+		return "", "", err
+	}
+	platform, err := chatPlatformParam(params)
+	if err != nil {
+		return "", "", err
+	}
+	where, err := describeChatPlatform(platform)
+	if err != nil {
+		return "", "", err
+	}
+	return message, where, nil
 }
