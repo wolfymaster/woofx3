@@ -344,8 +344,9 @@ pub struct InvocationContext {
     /// The settings module code may not write (`ctx.module.setSetting`),
     /// with the reason: a `url` setting's value grants `ctx.http` its origin,
     /// and a local endpoint's host, port and password decide where the engine
-    /// connects, so only the streamer (or the companion) may set them.
-    pub protected_settings: crate::protected_settings::ProtectedSettings,
+    /// connects, so only the streamer (or the companion) may set them. Live:
+    /// it follows a re-registration of the module mid-invocation.
+    pub protected_settings: crate::protected_settings::LiveProtectedSettings,
     /// The invoking module's `local[]` endpoints. Empty for builtin
     /// invocations.
     pub local_endpoints: Vec<crate::protected_settings::RegisteredLocalEndpoint>,

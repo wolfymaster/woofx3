@@ -21,7 +21,7 @@
 //! for those, same as before.
 
 use crate::host::{HostContext, StorageSetOptions};
-use crate::protected_settings::ProtectedSettings;
+use crate::protected_settings::LiveProtectedSettings;
 use crate::resource_access::ResourceAccess;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -344,7 +344,7 @@ fn require_schedule_identity(module_id: &str, deadline_id: &str, key: &str) -> R
 pub fn set_module_setting(
     host: &HostContext,
     module_id: &str,
-    protected_settings: &ProtectedSettings,
+    protected_settings: &LiveProtectedSettings,
     resource_link_settings: &HashSet<String>,
     key: &str,
     value: &str,
@@ -377,7 +377,7 @@ pub fn set_module_setting(
 pub fn compare_and_set_module_setting(
     host: &HostContext,
     module_id: &str,
-    protected_settings: &ProtectedSettings,
+    protected_settings: &LiveProtectedSettings,
     resource_link_settings: &HashSet<String>,
     key: &str,
     expected: &Value,
@@ -791,12 +791,12 @@ mod tests {
         assert!(err.contains("reserved"), "{err}");
     }
 
-    fn obs_protected_settings() -> ProtectedSettings {
+    fn obs_protected_settings() -> LiveProtectedSettings {
         use crate::protected_settings::ProtectedReason;
         let address = || ProtectedReason::LocalEndpointAddress {
             endpoint_id: "obs".into(),
         };
-        [
+        let settings: crate::protected_settings::ProtectedSettings = [
             ("server".to_string(), ProtectedReason::Url),
             ("obs_host".to_string(), address()),
             ("obs_port".to_string(), address()),
@@ -807,7 +807,68 @@ mod tests {
                 },
             ),
         ]
-        .into()
+        .into();
+        LiveProtectedSettings::new(settings)
+    }
+
+    #[test]
+    fn test_set_module_setting_refuses_a_key_protected_after_the_invocation_started() {
+        use crate::module_registry::{
+            ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule,
+        };
+        use crate::protected_settings::ProtectedReason;
+        let module = |protected_settings| RegisteredModule {
+            metadata: ModuleMetadata {
+                name: "obs".into(),
+                version: "1.0.0".into(),
+                installed_at: 0,
+                updated_at: 0,
+            },
+            functions: Default::default(),
+            state: ModuleState::Active,
+            event_types: Default::default(),
+            permissions: Default::default(),
+            protected_settings,
+            local_endpoints: Default::default(),
+            resource_link_settings: Default::default(),
+            oauth: Default::default(),
+            actions: Default::default(),
+        };
+        let registry = ModuleRegistry::new();
+        registry
+            .register_module("obs".into(), module(Default::default()))
+            .unwrap();
+        // An invocation of the version being upgraded away from, still running.
+        let held_by_invocation = registry.protected_settings("obs");
+
+        registry
+            .register_module(
+                "obs".into(),
+                module(
+                    [(
+                        "obs_address".to_string(),
+                        ProtectedReason::LocalEndpointAddress {
+                            endpoint_id: "obs".into(),
+                        },
+                    )]
+                    .into(),
+                ),
+            )
+            .unwrap();
+
+        let err = set_module_setting(
+            &noop_host_context(),
+            "obs",
+            &held_by_invocation,
+            &Default::default(),
+            "obs_address",
+            "10.0.0.66",
+        )
+        .unwrap_err();
+        assert!(
+            err.contains("decides where the engine connects for endpoint obs"),
+            "{err}"
+        );
     }
 
     #[test]

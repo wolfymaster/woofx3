@@ -1,6 +1,8 @@
 use crate::error::Error;
 use crate::models::function::Function;
-use crate::protected_settings::{ProtectedReason, ProtectedSettings, RegisteredLocalEndpoint};
+use crate::protected_settings::{
+    LiveProtectedSettings, ProtectedReason, ProtectedSettings, RegisteredLocalEndpoint,
+};
 use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
@@ -49,6 +51,12 @@ pub struct RegisteredModule {
 
 pub struct ModuleRegistry {
     modules: RwLock<HashMap<String, RegisteredModule>>,
+    /// Each module's protected settings as invocations see them. Kept apart
+    /// from `modules` and never removed, so the handle a running invocation
+    /// holds stays the one a later registration updates: a module that is
+    /// unregistered keeps its last protections until it is registered again.
+    /// Lock order: `modules` before `protections`.
+    protections: RwLock<HashMap<String, LiveProtectedSettings>>,
 }
 
 impl Default for ModuleRegistry {
@@ -61,6 +69,7 @@ impl ModuleRegistry {
     pub fn new() -> Self {
         Self {
             modules: RwLock::new(HashMap::new()),
+            protections: RwLock::new(HashMap::new()),
         }
     }
 
@@ -98,8 +107,20 @@ impl ModuleRegistry {
 
     pub fn register_module(&self, name: String, module: RegisteredModule) -> Result<(), Error> {
         let mut modules = self.modules.write().unwrap();
+        self.publish_protections(&name, &module);
         modules.insert(name, module);
         Ok(())
+    }
+
+    /// Swaps `module`'s protected settings into the handle every invocation
+    /// of `name` holds. Called with the `modules` write lock held, so a new
+    /// invocation never sees the new module with the old protections.
+    fn publish_protections(&self, name: &str, module: &RegisteredModule) {
+        let mut protections = self.protections.write().unwrap();
+        protections
+            .entry(name.to_string())
+            .or_default()
+            .replace(module.protected_settings.clone());
     }
 
     pub fn unregister_module(&self, name: &str) -> Result<(), Error> {
@@ -115,6 +136,7 @@ impl ModuleRegistry {
         if !modules.contains_key(&name) {
             return Err(Error::ModuleNotFound(name));
         }
+        self.publish_protections(&name, &module);
         modules.insert(name, module);
         Ok(())
     }
@@ -206,14 +228,12 @@ impl ModuleRegistry {
             .unwrap_or_default()
     }
 
-    /// The settings the module's code may not write; none for a module that
-    /// is not registered.
-    pub fn protected_settings(&self, name: &str) -> ProtectedSettings {
-        let modules = self.modules.read().unwrap();
-        modules
-            .get(name)
-            .map(|m| m.protected_settings.clone())
-            .unwrap_or_default()
+    /// The settings the module's code may not write, as a handle that follows
+    /// later registrations of the module (`LiveProtectedSettings`); empty for
+    /// a module that has never been registered.
+    pub fn protected_settings(&self, name: &str) -> LiveProtectedSettings {
+        let protections = self.protections.read().unwrap();
+        protections.get(name).cloned().unwrap_or_default()
     }
 
     /// The module's `local[]` endpoints; none for a module that is not
@@ -383,9 +403,42 @@ mod tests {
                 protocol: LocalEndpointProtocol::Websocket,
             }]
         );
-        assert_eq!(registry.protected_settings("obs").len(), 2);
+        assert_eq!(registry.protected_settings("obs").snapshot().len(), 2);
         assert_eq!(registry.url_settings("obs"), ["server".to_string()].into());
         assert!(registry.local_endpoints("missing").is_empty());
-        assert!(registry.protected_settings("missing").is_empty());
+        assert!(registry.protected_settings("missing").snapshot().is_empty());
+    }
+
+    #[test]
+    fn test_reregistering_a_module_protects_keys_for_running_invocations() {
+        let registry = ModuleRegistry::new();
+        registry
+            .register_module("obs".to_string(), test_module("obs"))
+            .unwrap();
+        // Taken when an invocation of the installed version starts.
+        let held_by_invocation = registry.protected_settings("obs");
+        assert_eq!(held_by_invocation.get("obs_address"), None);
+
+        let mut upgraded = test_module("obs");
+        upgraded.protected_settings = [(
+            "obs_address".to_string(),
+            ProtectedReason::LocalEndpointAddress {
+                endpoint_id: "obs".into(),
+            },
+        )]
+        .into();
+        registry
+            .register_module("obs".to_string(), upgraded)
+            .unwrap();
+
+        assert_eq!(
+            held_by_invocation.get("obs_address"),
+            Some(ProtectedReason::LocalEndpointAddress {
+                endpoint_id: "obs".into(),
+            })
+        );
+
+        registry.unregister_module("obs").unwrap();
+        assert!(held_by_invocation.get("obs_address").is_some());
     }
 }

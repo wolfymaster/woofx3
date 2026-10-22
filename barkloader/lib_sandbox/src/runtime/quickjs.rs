@@ -1503,6 +1503,8 @@ mod tests {
         items: serde_json::Value,
         protected_settings: crate::protected_settings::ProtectedSettings,
     ) -> (InvocationContext, Arc<ListSettings>) {
+        let protected_settings =
+            crate::protected_settings::LiveProtectedSettings::new(protected_settings);
         let settings = Arc::new(ListSettings {
             items: std::sync::Mutex::new(items),
         });

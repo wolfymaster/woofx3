@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::{Arc, RwLock};
 
 /// Why module code may not write a setting. Its `Display` completes a
 /// sentence that starts with the setting's key.
@@ -37,6 +38,36 @@ impl fmt::Display for ProtectedReason {
 
 /// Setting key to the reason module code may not write it.
 pub type ProtectedSettings = HashMap<String, ProtectedReason>;
+
+/// A module's protected settings as the registry holds them at this moment.
+/// Every invocation holds a clone, and registering the module again swaps
+/// the contents in place (`ModuleRegistry::register_module`), so a write is
+/// checked against the protections in force when it is made, not when the
+/// invocation started. Without that, code of a version being upgraded away
+/// from could keep writing a key the new version protects, for as long as
+/// an invocation that started before the upgrade lasts.
+#[derive(Debug, Clone, Default)]
+pub struct LiveProtectedSettings(Arc<RwLock<ProtectedSettings>>);
+
+impl LiveProtectedSettings {
+    pub fn new(settings: ProtectedSettings) -> Self {
+        Self(Arc::new(RwLock::new(settings)))
+    }
+
+    /// Why module code may not write `key` now; `None` when it may.
+    pub fn get(&self, key: &str) -> Option<ProtectedReason> {
+        self.0.read().unwrap().get(key).cloned()
+    }
+
+    /// A copy of the protections in force now.
+    pub fn snapshot(&self) -> ProtectedSettings {
+        self.0.read().unwrap().clone()
+    }
+
+    pub(crate) fn replace(&self, settings: ProtectedSettings) {
+        *self.0.write().unwrap() = settings;
+    }
+}
 
 /// How the engine talks to a local endpoint. Mirrors the manifest's closed
 /// `local[].protocol` list (`lib_module::local_endpoint::LocalProtocol`).
@@ -82,5 +113,29 @@ mod tests {
         for (reason, expected) in cases {
             assert_eq!(reason.to_string(), expected);
         }
+    }
+
+    #[test]
+    fn test_live_protected_settings_clones_see_a_replace() {
+        let live = LiveProtectedSettings::default();
+        let held_by_invocation = live.clone();
+        assert_eq!(held_by_invocation.get("obs_host"), None);
+
+        live.replace(
+            [(
+                "obs_host".to_string(),
+                ProtectedReason::LocalEndpointAddress {
+                    endpoint_id: "obs".into(),
+                },
+            )]
+            .into(),
+        );
+
+        assert_eq!(
+            held_by_invocation.get("obs_host"),
+            Some(ProtectedReason::LocalEndpointAddress {
+                endpoint_id: "obs".into(),
+            })
+        );
     }
 }
