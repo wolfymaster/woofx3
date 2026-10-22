@@ -43,7 +43,7 @@ func assertUpsertKeepsIdentity(t *testing.T, upsert func(candidate uuid.UUID) (u
 
 func TestModuleRegistrationUpsertsInsertThenUpdateOnEveryDialect(t *testing.T) {
 	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
-		r := NewModuleRepository(db)
+		r := NewModuleRepository(db, time.Now)
 		module := installTestModule(t, db)
 
 		t.Run("function", func(t *testing.T) {
@@ -100,7 +100,7 @@ func TestModuleRegistrationUpsertsInsertThenUpdateOnEveryDialect(t *testing.T) {
 
 func TestModuleResourceArchivesStampArchivedAtOnEveryDialect(t *testing.T) {
 	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
-		r := NewModuleRepository(db)
+		r := NewModuleRepository(db, time.Now)
 		module := installTestModule(t, db)
 		f := &models.ModuleFunction{ID: uuid.New(), ModuleID: module.ID, ManifestID: "spin", Name: "spin", FileName: "spin.js", FileKey: "k", EntryPoint: "main", Runtime: "js"}
 		tr := &models.Trigger{ID: uuid.New(), Taxonomy: "[]", Name: "Spun", Event: "wheel.spun", ConfigSchema: "[]", CreatedByType: "MODULE", CreatedByRef: "wheel", ManifestID: "spun", Transport: "eventbus"}

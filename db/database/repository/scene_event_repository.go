@@ -3,6 +3,7 @@ package repository
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
@@ -12,12 +13,16 @@ import (
 // SceneEventRepository backs the durable, at-least-once scene event
 // delivery pipeline (see `scene_event.proto`). Same pattern as
 // `WidgetStatusRepository` / `AlertRepository`.
+//
+// It stamps acks from `now` rather than a SQL time function, for the reason
+// ModuleRepository gives.
 type SceneEventRepository struct {
-	db *gorm.DB
+	db  *gorm.DB
+	now func() time.Time
 }
 
-func NewSceneEventRepository(db *gorm.DB) *SceneEventRepository {
-	return &SceneEventRepository{db: db}
+func NewSceneEventRepository(db *gorm.DB, now func() time.Time) *SceneEventRepository {
+	return &SceneEventRepository{db: db, now: now}
 }
 
 // RecordSceneEvent persists the parent row plus one open delivery row
@@ -59,12 +64,12 @@ func (r *SceneEventRepository) RecordSceneEvent(event *models.SceneEvent, target
 // treated as a no-op — the caller's ack arrived late or twice, not an
 // error.
 func (r *SceneEventRepository) RecordDelivery(sceneEventID uuid.UUID, instanceID string) error {
-	return r.appendLog(sceneEventID, instanceID, "delivered", func(tx *gorm.DB, delivery *models.SceneEventDelivery) error {
+	return r.appendLog(sceneEventID, instanceID, "delivered", func(tx *gorm.DB, delivery *models.SceneEventDelivery, at time.Time) error {
 		return tx.Model(&models.SceneEventDelivery{}).
 			Where("scene_event_id = ? AND instance_id = ?", sceneEventID, instanceID).
 			Updates(map[string]interface{}{
-				"delivered_at":    gorm.Expr("CURRENT_TIMESTAMP"),
-				"last_attempt_at": gorm.Expr("CURRENT_TIMESTAMP"),
+				"delivered_at":    at,
+				"last_attempt_at": at,
 			}).Error
 	})
 }
@@ -74,7 +79,7 @@ func (r *SceneEventRepository) RecordDelivery(sceneEventID uuid.UUID, instanceID
 // log row is the permanent record. Idempotent: completing an
 // already-completed (deleted) delivery is a no-op, not an error.
 func (r *SceneEventRepository) RecordCompletion(sceneEventID uuid.UUID, instanceID string) error {
-	return r.appendLog(sceneEventID, instanceID, "completed", func(tx *gorm.DB, delivery *models.SceneEventDelivery) error {
+	return r.appendLog(sceneEventID, instanceID, "completed", func(tx *gorm.DB, delivery *models.SceneEventDelivery, _ time.Time) error {
 		return tx.Where("scene_event_id = ? AND instance_id = ?", sceneEventID, instanceID).
 			Delete(&models.SceneEventDelivery{}).Error
 	})
@@ -88,7 +93,7 @@ func (r *SceneEventRepository) appendLog(
 	sceneEventID uuid.UUID,
 	instanceID string,
 	kind string,
-	mutate func(tx *gorm.DB, delivery *models.SceneEventDelivery) error,
+	mutate func(tx *gorm.DB, delivery *models.SceneEventDelivery, at time.Time) error,
 ) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		var delivery models.SceneEventDelivery
@@ -99,23 +104,26 @@ func (r *SceneEventRepository) appendLog(
 		if err != nil {
 			return err
 		}
-		// A raw insert runs no model hooks, so the id is set here; the
-		// SQLite schema has no column default for it.
+		// The id is a time-ordered UUIDv7, so two entries stamped with the
+		// same time still list in the order they were written (see
+		// ListSceneEventLog).
+		id, err := uuid.NewV7()
+		if err != nil {
+			return fmt.Errorf("scene event log id: %w", err)
+		}
+		at := r.now().UTC()
 		entry := &models.SceneEventLogEntry{
-			ID:           uuid.New(),
+			ID:           id,
 			SceneEventID: sceneEventID,
 			SceneID:      delivery.SceneID,
 			InstanceID:   instanceID,
 			Kind:         kind,
+			OccurredAt:   at,
 		}
-		if err := tx.Exec(
-			`INSERT INTO scene_event_log (id, scene_event_id, scene_id, instance_id, kind, occurred_at)
-			 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-			entry.ID, entry.SceneEventID, entry.SceneID, entry.InstanceID, entry.Kind,
-		).Error; err != nil {
+		if err := tx.Create(entry).Error; err != nil {
 			return err
 		}
-		return mutate(tx, &delivery)
+		return mutate(tx, &delivery, at)
 	})
 }
 
@@ -157,7 +165,9 @@ func (r *SceneEventRepository) ListSceneEventLog(sceneEventID, sceneID *uuid.UUI
 	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	q = q.Order("occurred_at ASC")
+	// The id breaks ties between entries stamped with the same time; it is
+	// time-ordered, so they keep the order they were written in.
+	q = q.Order("occurred_at ASC").Order("id ASC")
 	if limit > 0 {
 		q = q.Limit(limit).Offset(offset)
 	}

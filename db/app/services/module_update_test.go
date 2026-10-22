@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	client "github.com/wolfymaster/woofx3/clients/db"
@@ -24,7 +25,7 @@ func TestUpdateModuleReplacesItsFunctionsOnEveryDialect(t *testing.T) {
 		if err := db.Create(module).Error; err != nil {
 			t.Fatalf("install module: %v", err)
 		}
-		svc := NewModuleService(repo.NewModuleRepository(db), nil, nil, nil)
+		svc := NewModuleService(repo.NewModuleRepository(db, time.Now), nil, nil, nil)
 
 		resp, err := svc.UpdateModule(context.Background(), &client.UpdateModuleRequest{
 			Id:      module.ID.String(),

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/google/uuid"
@@ -54,7 +55,7 @@ func newInstanceSvc(t *testing.T) (*moduleService, *gorm.DB) {
 	}
 	publisher := workers.NewEventPublisher(repo.NewDbEventRepository(db), slog.New(slog.DiscardHandler))
 	svc := NewModuleService(
-		repo.NewModuleRepository(db),
+		repo.NewModuleRepository(db, time.Now),
 		repo.NewResourceReferenceRepository(db),
 		repo.NewModuleResourceInstanceRepository(db),
 		publisher,

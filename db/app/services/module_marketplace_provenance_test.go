@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/twitchtv/twirp"
@@ -26,7 +27,7 @@ func newProvenanceSvc(t *testing.T) *moduleService {
 		t.Fatalf("migrate: %v", err)
 	}
 	return NewModuleService(
-		repo.NewModuleRepository(db),
+		repo.NewModuleRepository(db, time.Now),
 		repo.NewResourceReferenceRepository(db),
 		repo.NewModuleResourceInstanceRepository(db),
 		nil,

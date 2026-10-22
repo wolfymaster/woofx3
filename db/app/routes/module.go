@@ -2,6 +2,7 @@ package routes
 
 import (
 	"net/http"
+	"time"
 
 	client "github.com/wolfymaster/woofx3/clients/db"
 	svc "github.com/wolfymaster/woofx3/db/app/services"
@@ -10,7 +11,7 @@ import (
 )
 
 func ModuleRoutes(mux *http.ServeMux, app *types.App) {
-	moduleRepository := repo.NewModuleRepository(app.Db)
+	moduleRepository := repo.NewModuleRepository(app.Db, time.Now)
 	refRepository := repo.NewResourceReferenceRepository(app.Db)
 	instanceRepository := repo.NewModuleResourceInstanceRepository(app.Db)
 	moduleService := svc.NewModuleService(moduleRepository, refRepository, instanceRepository, app.EventPublisher)
