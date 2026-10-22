@@ -105,3 +105,20 @@ jobs:
         env:
           WOOFX3_MIGRATION_TEST_POSTGRES_URL: postgres://woofx3:migration-test@127.0.0.1:5432/woofx3_migration_test?sslmode=disable
         run: go test -p 1 -count=1 ./database/migrate/migrations/postgres/...
+
+      # The db services' Postgres cases (alert counts, aggregates, scene editor
+      # state) skip without the database URL, so they run here too. The first
+      # grep fails the step if any case skipped for want of the URL; a case
+      # that skips one dialect on purpose says why and is not caught.
+      - name: Test db services against postgres
+        working-directory: db
+        shell: bash
+        env:
+          WOOFX3_MIGRATION_TEST_POSTGRES_URL: postgres://woofx3:migration-test@127.0.0.1:5432/woofx3_migration_test?sslmode=disable
+        run: |
+          go test -p 1 -count=1 -v ./app/services/... | tee "$RUNNER_TEMP/services.log"
+          if grep -F -- 'WOOFX3_MIGRATION_TEST_POSTGRES_URL not set' "$RUNNER_TEMP/services.log"; then
+            echo "a Postgres case skipped without the database URL"
+            exit 1
+          fi
+          grep -E -- '--- PASS: TestCountAlertsByHourCountsEachHourByOutcome/postgres' "$RUNNER_TEMP/services.log"

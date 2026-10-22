@@ -137,6 +137,48 @@ pub struct ListAlertsResponse {
     #[prost(int32, tag="5")]
     pub offset: i32,
 }
+/// Counts the alerts created in `hours` whole hours from `since`, by hour and
+/// outcome. `since` is on the hour, and `hours` is 1 to 168 (must match
+/// MaxAlertCountHours in database/repository/alert_repository.go); anything
+/// else is INVALID_ARGUMENT.
+///
+/// An alert still on its way is UNCONFIRMED, rather than IN_FLIGHT, when it
+/// was last written before `unconfirmed_before`: nothing has reported on it
+/// for long enough that no report is coming. The caller chooses the bound,
+/// since it owns the clock.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CountAlertsByHourRequest {
+    #[prost(message, optional, tag="1")]
+    pub since: ::core::option::Option<::pbjson_types::Timestamp>,
+    #[prost(int32, tag="2")]
+    pub hours: i32,
+    #[prost(message, optional, tag="3")]
+    pub unconfirmed_before: ::core::option::Option<::pbjson_types::Timestamp>,
+}
+/// How many alerts created in hour `hour` of the window (0 is the hour that
+/// starts at `since`) count as `outcome`. Only pairs with a count above zero
+/// are listed.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AlertHourCount {
+    #[prost(int32, tag="1")]
+    pub hour: i32,
+    #[prost(enumeration="AlertOutcome", tag="2")]
+    pub outcome: i32,
+    #[prost(int64, tag="3")]
+    pub count: i64,
+}
+/// `truncated` is true when the window starts before the alert retention
+/// horizon (EVENT_DETAIL_RETENTION_PERIOD): settled alerts older than it have
+/// been pruned, so the earliest hours count only those still on their way.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CountAlertsByHourResponse {
+    #[prost(message, optional, tag="1")]
+    pub status: ::core::option::Option<super::common::ResponseStatus>,
+    #[prost(message, repeated, tag="2")]
+    pub counts: ::prost::alloc::vec::Vec<AlertHourCount>,
+    #[prost(bool, tag="3")]
+    pub truncated: bool,
+}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct UpdateAlertStatusRequest {
     #[prost(string, tag="1")]
@@ -148,6 +190,50 @@ pub struct UpdateAlertStatusRequest {
 pub struct DeleteAlertRequest {
     #[prost(string, tag="1")]
     pub id: ::prost::alloc::string::String,
+}
+/// What an alert counts as. db-proxy owns the rule from status to outcome:
+/// `timed_out` is FAILED, and `replayed` (an operator replayed it as a row of
+/// its own) is neither a success nor a failure.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum AlertOutcome {
+    Unspecified = 0,
+    Completed = 1,
+    Failed = 2,
+    Skipped = 3,
+    Replayed = 4,
+    InFlight = 5,
+    Unconfirmed = 6,
+}
+impl AlertOutcome {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "ALERT_OUTCOME_UNSPECIFIED",
+            Self::Completed => "ALERT_OUTCOME_COMPLETED",
+            Self::Failed => "ALERT_OUTCOME_FAILED",
+            Self::Skipped => "ALERT_OUTCOME_SKIPPED",
+            Self::Replayed => "ALERT_OUTCOME_REPLAYED",
+            Self::InFlight => "ALERT_OUTCOME_IN_FLIGHT",
+            Self::Unconfirmed => "ALERT_OUTCOME_UNCONFIRMED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "ALERT_OUTCOME_UNSPECIFIED" => Some(Self::Unspecified),
+            "ALERT_OUTCOME_COMPLETED" => Some(Self::Completed),
+            "ALERT_OUTCOME_FAILED" => Some(Self::Failed),
+            "ALERT_OUTCOME_SKIPPED" => Some(Self::Skipped),
+            "ALERT_OUTCOME_REPLAYED" => Some(Self::Replayed),
+            "ALERT_OUTCOME_IN_FLIGHT" => Some(Self::InFlight),
+            "ALERT_OUTCOME_UNCONFIRMED" => Some(Self::Unconfirmed),
+            _ => None,
+        }
+    }
 }
 include!("alert.serde.rs");
 include!("alert.tonic.rs");
