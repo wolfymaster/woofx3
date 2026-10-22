@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -285,6 +286,7 @@ const clientSecretSettleAttempts = 3
 // table.
 type clientSecretStore interface {
 	ListPlaintextSecretIDs() ([]int, error)
+	ErasePending() (bool, error)
 	EraseFreedSpace() error
 	GetByID(id int) (*models.Client, error)
 	ReplacePlaintextSecret(id int, plaintext string, expectedHash *string, hash string) (bool, error)
@@ -295,9 +297,9 @@ type clientSecretStore interface {
 // secrets issued before secrets were hashed, and from an older release run on
 // this schema after a rollback. Each row is swapped only while it still holds
 // the values read, so running it again, or beside a write, changes nothing it
-// should not. When it changed any client, the space the plain text occupied is
-// erased from the database file (EraseFreedSpace).
-func HashStoredClientSecrets(store clientSecretStore) (int, error) {
+// should not. Any erase of the database file still owed, by this start or an
+// earlier one that failed before finishing it, runs last (EraseFreedSpace).
+func HashStoredClientSecrets(store clientSecretStore, logger *slog.Logger) (int, error) {
 	ids, err := store.ListPlaintextSecretIDs()
 	if err != nil {
 		return 0, fmt.Errorf("reading clients with plain-text secrets: %w", err)
@@ -312,11 +314,20 @@ func HashStoredClientSecrets(store clientSecretStore) (int, error) {
 			settled++
 		}
 	}
-	if settled > 0 {
-		if err := store.EraseFreedSpace(); err != nil {
-			return settled, fmt.Errorf("erasing cleared client secrets from the database file: %w", err)
-		}
+	pending, err := store.ErasePending()
+	if err != nil {
+		return settled, err
 	}
+	if !pending {
+		return settled, nil
+	}
+	// It rewrites the whole file and runs before db-proxy serves, so a large
+	// database holds the engine's readiness back meanwhile. The log says why.
+	logger.Info("Erasing cleared client secrets from the database file; this rewrites the whole file once and can take a while on a large database")
+	if err := store.EraseFreedSpace(); err != nil {
+		return settled, fmt.Errorf("erasing cleared client secrets from the database file: %w", err)
+	}
+	logger.Info("Erased cleared client secrets from the database file")
 	return settled, nil
 }
 

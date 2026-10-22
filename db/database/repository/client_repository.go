@@ -88,17 +88,49 @@ func (r *ClientRepository) RecordAuthentication(clientID uuid.UUID, at time.Time
 	return res.RowsAffected > 0, nil
 }
 
-// EraseFreedSpace makes sure values the clients table no longer holds are not
-// left in the database file. On SQLite an UPDATE or a table rebuild frees the
-// old row's bytes without overwriting them, so the file is rewritten with
-// VACUUM, which copies only live content. VACUUM cannot run inside a
-// transaction. On Postgres old row versions stay until vacuum reclaims them,
-// which is the server's to schedule; nothing is done here.
+// ClientSecretErasePendingKey is the setting that records, on SQLite, that a
+// plain-text client secret was cleared and the database file has not been
+// rewritten since. It is written in the same transaction as the clear and
+// removed only after a VACUUM succeeds, so an interrupted or failed VACUUM
+// is retried on the next start.
+const ClientSecretErasePendingKey = "db.client_secrets.erase_pending"
+
+func (r *ClientRepository) isSQLite() bool {
+	return r.db.Dialector.Name() == "sqlite"
+}
+
+// ErasePending reports whether cleared plain-text secrets are owed an erase
+// from the database file (ClientSecretErasePendingKey is set). Always false
+// on Postgres, where the setting is never written.
+func (r *ClientRepository) ErasePending() (bool, error) {
+	if !r.isSQLite() {
+		return false, nil
+	}
+	var pending int64
+	if err := r.db.Model(&models.Setting{}).Where("key = ?", ClientSecretErasePendingKey).Count(&pending).Error; err != nil {
+		return false, fmt.Errorf("reading %s: %w", ClientSecretErasePendingKey, err)
+	}
+	return pending > 0, nil
+}
+
+// EraseFreedSpace rewrites a SQLite database file with VACUUM, which copies
+// only live content, and then removes ClientSecretErasePendingKey. An UPDATE
+// or a table rebuild frees the old row's bytes without overwriting them, so
+// this is what takes cleared plain-text secrets out of the file. VACUUM cannot
+// run inside a transaction; if it fails, the setting stays and the erase is
+// owed on the next start. On Postgres old row versions stay until the
+// server's vacuum reclaims them, so this does nothing there.
 func (r *ClientRepository) EraseFreedSpace() error {
-	if r.db.Dialector.Name() != "sqlite" {
+	if !r.isSQLite() {
 		return nil
 	}
-	return r.db.Exec("VACUUM").Error
+	if err := r.db.Exec("VACUUM").Error; err != nil {
+		return fmt.Errorf("vacuum: %w", err)
+	}
+	if err := r.db.Where("key = ?", ClientSecretErasePendingKey).Delete(&models.Setting{}).Error; err != nil {
+		return fmt.Errorf("clearing %s: %w", ClientSecretErasePendingKey, err)
+	}
+	return nil
 }
 
 // ListPlaintextSecretIDs returns the ids of the clients that still have a
@@ -113,16 +145,31 @@ func (r *ClientRepository) ListPlaintextSecretIDs() ([]int, error) {
 // the client with `id`, only while the row still holds `plaintext` and
 // `expectedHash` (nil for no hash), and reports whether it did. A write
 // landing between the caller's read and this one is kept.
+//
+// On SQLite the same transaction sets ClientSecretErasePendingKey, so the
+// freed bytes are owed an erase (EraseFreedSpace) however the start ends.
 func (r *ClientRepository) ReplacePlaintextSecret(id int, plaintext string, expectedHash *string, hash string) (bool, error) {
-	query := r.db.Model(&models.Client{}).Where("id = ? AND client_secret = ?", id, plaintext)
-	if expectedHash == nil {
-		query = query.Where("client_secret_hash IS NULL")
-	} else {
-		query = query.Where("client_secret_hash = ?", *expectedHash)
+	swapped := false
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		query := tx.Model(&models.Client{}).Where("id = ? AND client_secret = ?", id, plaintext)
+		if expectedHash == nil {
+			query = query.Where("client_secret_hash IS NULL")
+		} else {
+			query = query.Where("client_secret_hash = ?", *expectedHash)
+		}
+		res := query.Updates(map[string]interface{}{"client_secret": nil, "client_secret_hash": hash})
+		if res.Error != nil {
+			return res.Error
+		}
+		swapped = res.RowsAffected == 1
+		if !swapped || !r.isSQLite() {
+			return nil
+		}
+		marker := models.Setting{Key: ClientSecretErasePendingKey, Value: "true"}
+		return tx.Where("key = ?", ClientSecretErasePendingKey).FirstOrCreate(&marker).Error
+	})
+	if err != nil {
+		return false, err
 	}
-	res := query.Updates(map[string]interface{}{"client_secret": nil, "client_secret_hash": hash})
-	if res.Error != nil {
-		return false, res.Error
-	}
-	return res.RowsAffected == 1, nil
+	return swapped, nil
 }

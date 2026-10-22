@@ -163,7 +163,7 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 		// Before serving, so no plain-text secret stays at rest and
 		// ValidateClient finds a hash for every client, including one an
 		// older release created on this schema after a rollback.
-		hashed, err := svc.HashStoredClientSecrets(repository.NewClientRepository(a.db))
+		hashed, err := svc.HashStoredClientSecrets(repository.NewClientRepository(a.db), a.logger)
 		if err != nil {
 			a.logger.Error("Failed to hash stored client secrets", "error", err)
 			return err

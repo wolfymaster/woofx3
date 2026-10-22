@@ -13,6 +13,7 @@ import (
 	gsqlite "github.com/libtnb/sqlite"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"gorm.io/gorm"
 )
@@ -135,11 +136,11 @@ func TestHashStoredClientSecretsHashesAndClearsPlainTextOnce(t *testing.T) {
 		legacy := insertLegacyClient(t, db, "legacy-plain-text")
 		createClient(t, svc, &client.CreateClientRequest{Description: "new", Kind: client.ClientKind_CLIENT_KIND_REGISTERED})
 
-		first, err := HashStoredClientSecrets(clients)
+		first, err := HashStoredClientSecrets(clients, discardLogger())
 		if err != nil {
 			t.Fatalf("HashStoredClientSecrets: %v", err)
 		}
-		second, err := HashStoredClientSecrets(clients)
+		second, err := HashStoredClientSecrets(clients, discardLogger())
 		if err != nil {
 			t.Fatalf("HashStoredClientSecrets again: %v", err)
 		}
@@ -172,7 +173,7 @@ func TestHashStoredClientSecretsKeepsAStoredHashOverPlainTextBesideIt(t *testing
 			t.Fatalf("older release's save: %v", err)
 		}
 
-		settled, err := HashStoredClientSecrets(repo.NewClientRepository(db))
+		settled, err := HashStoredClientSecrets(repo.NewClientRepository(db), discardLogger())
 		if err != nil {
 			t.Fatalf("HashStoredClientSecrets: %v", err)
 		}
@@ -233,7 +234,7 @@ func TestHashStoredClientSecretsRereadsARowThatChangedMeanwhile(t *testing.T) {
 		legacy := insertLegacyClient(t, db, "first")
 		store := &racingStore{ClientRepository: repo.NewClientRepository(db), db: db, races: 1}
 
-		settled, err := HashStoredClientSecrets(store)
+		settled, err := HashStoredClientSecrets(store, discardLogger())
 		if err != nil {
 			t.Fatalf("HashStoredClientSecrets: %v", err)
 		}
@@ -252,7 +253,7 @@ func TestHashStoredClientSecretsGivesUpOnARowThatNeverSettles(t *testing.T) {
 		insertLegacyClient(t, db, "moving")
 		store := &racingStore{ClientRepository: repo.NewClientRepository(db), db: db, races: clientSecretSettleAttempts}
 
-		if _, err := HashStoredClientSecrets(store); err == nil {
+		if _, err := HashStoredClientSecrets(store, discardLogger()); err == nil {
 			t.Error("a row that changed on every attempt was reported as settled")
 		}
 	})
@@ -277,15 +278,33 @@ func TestHashStoredClientSecretsRefusesAnEmptySecretWithNoHash(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		insertLegacyClient(t, db, "")
 
-		if _, err := HashStoredClientSecrets(repo.NewClientRepository(db)); err == nil {
+		if _, err := HashStoredClientSecrets(repo.NewClientRepository(db), discardLogger()); err == nil {
 			t.Error("an empty plain-text secret was hashed into a credential")
 		}
 	})
 }
 
-func TestHashStoredClientSecretsLeavesNoPlainTextInTheSQLiteFile(t *testing.T) {
-	const secret = "plain-text-secret-that-must-leave-the-file"
+// upgradedSQLiteFile is an engine's SQLite file that had a client with
+// `secret` in plain text before migration 0071, migrated to the latest.
+func upgradedSQLiteFile(t *testing.T, secret string) (*gorm.DB, string) {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "woofx3.db")
+	db := openSQLiteFile(t, path)
+	// The client exists before 0071, as on an engine upgrading to it: the
+	// migration's table rebuild then leaves a freed copy of the row behind.
+	migrator := gormigrate.New(db, gormigrate.DefaultOptions, sqliteChain(t))
+	if err := migrator.MigrateTo("0070_client_kind_origin"); err != nil {
+		t.Fatalf("migrate to 0070: %v", err)
+	}
+	insertLegacyClient(t, db, secret)
+	if err := migrator.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	return db, path
+}
+
+func openSQLiteFile(t *testing.T, path string) *gorm.DB {
+	t.Helper()
 	db, err := gorm.Open(gsqlite.Open(path), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -300,26 +319,89 @@ func TestHashStoredClientSecretsLeavesNoPlainTextInTheSQLiteFile(t *testing.T) {
 			t.Errorf("close sqlite: %v", err)
 		}
 	})
-	// The client exists before 0071, as on an engine upgrading to it: the
-	// migration's table rebuild then leaves a freed copy of the row behind.
-	migrator := gormigrate.New(db, gormigrate.DefaultOptions, sqliteChain(t))
-	if err := migrator.MigrateTo("0070_client_kind_origin"); err != nil {
-		t.Fatalf("migrate to 0070: %v", err)
-	}
-	insertLegacyClient(t, db, secret)
-	if err := migrator.Migrate(); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	return db
+}
 
-	if _, err := HashStoredClientSecrets(repo.NewClientRepository(db)); err != nil {
-		t.Fatalf("HashStoredClientSecrets: %v", err)
-	}
-
+func fileContains(t *testing.T, path, secret string) bool {
+	t.Helper()
 	contents, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read database file: %v", err)
 	}
-	if bytes.Contains(contents, []byte(secret)) {
+	return bytes.Contains(contents, []byte(secret))
+}
+
+func TestHashStoredClientSecretsLeavesNoPlainTextInTheSQLiteFile(t *testing.T) {
+	const secret = "plain-text-secret-that-must-leave-the-file"
+	db, path := upgradedSQLiteFile(t, secret)
+	clients := repo.NewClientRepository(db)
+
+	if _, err := HashStoredClientSecrets(clients, discardLogger()); err != nil {
+		t.Fatalf("HashStoredClientSecrets: %v", err)
+	}
+
+	if fileContains(t, path, secret) {
 		t.Error("the cleared plain-text secret is still in the database file")
 	}
+	if pending, err := clients.ErasePending(); err != nil || pending {
+		t.Errorf("erase still pending after a successful VACUUM: %v, %v", pending, err)
+	}
+}
+
+// failingErase is the real clients table whose file erase fails, as when the
+// disk is full or the process is killed during the VACUUM.
+type failingErase struct {
+	*repo.ClientRepository
+}
+
+func (failingErase) EraseFreedSpace() error {
+	return errors.New("database or disk is full")
+}
+
+func TestAFailedEraseIsRetriedOnTheNextStart(t *testing.T) {
+	const secret = "plain-text-secret-whose-erase-fails-once"
+	db, path := upgradedSQLiteFile(t, secret)
+	clients := repo.NewClientRepository(db)
+
+	if _, err := HashStoredClientSecrets(failingErase{clients}, discardLogger()); err == nil {
+		t.Fatal("a failed erase did not stop startup")
+	}
+	if pending, err := clients.ErasePending(); err != nil || !pending {
+		t.Fatalf("the failed erase is not recorded as owed: %v, %v", pending, err)
+	}
+
+	// The next start: nothing is left to clear, but the erase is still owed.
+	settled, err := HashStoredClientSecrets(clients, discardLogger())
+	if err != nil {
+		t.Fatalf("HashStoredClientSecrets on the next start: %v", err)
+	}
+
+	if settled != 0 {
+		t.Errorf("settled %d clients on the next start, want 0", settled)
+	}
+	if fileContains(t, path, secret) {
+		t.Error("the cleared plain-text secret is still in the database file")
+	}
+	if pending, err := clients.ErasePending(); err != nil || pending {
+		t.Errorf("erase still pending after the retry: %v, %v", pending, err)
+	}
+}
+
+func TestPostgresNeverOwesAFileErase(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		clients := repo.NewClientRepository(db)
+		insertLegacyClient(t, db, "cleared-on-either-dialect")
+
+		if _, err := HashStoredClientSecrets(clients, discardLogger()); err != nil {
+			t.Fatalf("HashStoredClientSecrets: %v", err)
+		}
+
+		var markers int64
+		if err := db.Model(&models.Setting{}).Where("key = ?", repo.ClientSecretErasePendingKey).Count(&markers).Error; err != nil {
+			t.Fatalf("count markers: %v", err)
+		}
+		if markers != 0 {
+			t.Errorf("%d erase markers left after the pass", markers)
+		}
+	})
 }

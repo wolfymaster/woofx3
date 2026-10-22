@@ -195,15 +195,28 @@ A dashboard or desktop shell becomes a client of the engine by calling
 `registerClient` over `/api`, which returns the client id and secret it
 authenticates with from then on. That response is the only place the secret
 appears: the db proxy stores only its SHA-256 hash, so a client that loses its
-secret registers again. A secret stored in plain text, issued before secrets
-were hashed, is hashed and its plain text cleared when the db proxy starts,
-before it serves. On SQLite the db proxy then rewrites the database file with
-`VACUUM`, once, so the cleared bytes do not linger in its free pages. On
-Postgres the old row versions stay on disk until the server's (auto)vacuum
+secret registers again.
+
+A secret stored in plain text, issued before secrets were hashed, is hashed and
+its plain text cleared when the db proxy starts, before it serves. Rolling back
+to a release from before hashing therefore refuses every existing client; see
+"Rollback compatibility" in `docs/operations/releases.md`.
+
+On SQLite, clearing a secret leaves its bytes in the file's free pages, so the
+db proxy then rewrites the database file with `VACUUM`. It records that the
+rewrite is owed in the same transaction that clears a secret, and forgets it
+only once the `VACUUM` succeeds: a start that fails or is stopped during the
+rewrite leaves it owed, and the next start does it. The rewrite runs once,
+before the db proxy serves, and on a large database it can take a while; the
+db proxy logs when it starts and ends it. Until then the api's `/ready`
+answers 503, and the orchestrator reports the api unhealthy after its health
+timeout but keeps it running and reports it healthy once it is ready.
+
+On Postgres the old row versions stay on disk until the server's (auto)vacuum
 reclaims them. On either, a backup taken before the upgrade still holds the
-plain text; replace or destroy it as you would any copy of a credential. Rolling back to a release from before hashing therefore
-refuses every existing client; see "Rollback compatibility" in
-`docs/operations/releases.md`. Who may register is set by `WOOFX3_REGISTRATION_MODE`:
+plain text; replace or destroy it as you would any copy of a credential.
+
+Who may register is set by `WOOFX3_REGISTRATION_MODE`:
 
 | Mode | Who may register |
 |---|---|
