@@ -11,6 +11,7 @@ var reservedSubjects = reservedSubjectsContract{
 		"message.send",
 		"ui.notify.",
 		"ui.alert.",
+		"platform.gateway.",
 		"widget.queue.",
 		"workflow.execute",
 		"workflow.replay",
