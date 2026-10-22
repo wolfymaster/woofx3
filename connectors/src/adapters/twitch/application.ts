@@ -381,6 +381,11 @@ export default class TwitchApplication {
     }
 
     if (!ctx.twitchApi) {
+      // A relink to another account reconnects in place; Twitch is linked, so
+      // that window answers like the host's "starting" reply, for every command.
+      if (this.link === "connecting") {
+        return this.errorReply("Twitch is still connecting", "integration_unavailable");
+      }
       // Only `helix` carries a code here: every other command's contract,
       // and `ctx.twitch`'s with it, documents this refusal as uncoded.
       return this.errorReply(

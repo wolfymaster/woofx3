@@ -364,20 +364,14 @@ export default class TwitchApi {
    * default `useFieldOptions` transform doesn't need overriding.
    */
   async listChannelPointRewards(_args: unknown): Promise<ChannelPointRewardOption[]> {
-    try {
-      const rewards = await this.apiClient.channelPoints.getCustomRewards(this.broadcaster, false);
-      return rewards.map((r) => ({
-        value: r.id,
-        label: r.title,
-        cost: r.cost,
-        prompt: r.prompt,
-        isEnabled: r.isEnabled,
-      }));
-    } catch (err) {
-      const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ""}` : String(err);
-      console.error(`[twitchapi] listChannelPointRewards: getCustomRewards threw — ${msg}`);
-      throw err;
-    }
+    const rewards = await this.apiClient.channelPoints.getCustomRewards(this.broadcaster, false);
+    return rewards.map((r) => ({
+      value: r.id,
+      label: r.title,
+      cost: r.cost,
+      prompt: r.prompt,
+      isEnabled: r.isEnabled,
+    }));
   }
 
   /**

@@ -52,6 +52,9 @@ let instances: MockTwitchClient[] = [];
 /** What the next `reloadToken` reports, as a relink in the UI would. */
 let nextReload = { userId: "42", userChanged: false, providerChanged: false };
 
+/** Holds every `init` open until released, to observe a reconnect mid-way. */
+let initGate: Promise<void> | null = null;
+
 function linkTwitch() {
   linked = true;
 }
@@ -77,6 +80,7 @@ class MockTwitchClient {
     if (!linked) {
       throw new NotLinkedError();
     }
+    await initGate;
   });
   ApiClient = mock(() => ({}));
   EventBusListener = mock(() => this.listener);
@@ -141,6 +145,7 @@ function reset() {
   linked = false;
   constructedWith = [];
   instances = [];
+  initGate = null;
   nextReload = { userId: "42", userChanged: false, providerChanged: false };
 }
 
@@ -294,6 +299,33 @@ describe("TwitchApplication relinked while connected", () => {
     expect(instances[1]?.init).toHaveBeenCalledTimes(1);
     expect(ctx.twitchEventBus).toBeDefined();
     expect(app.eventSubStatus().ready).toBe(true);
+  });
+
+  test("answers every command integration_unavailable while a relink reconnects", async () => {
+    reset();
+    linkTwitch();
+    const { ctx, handlers } = context();
+    const app = newApp();
+    await app.start(ctx);
+
+    let release = () => {};
+    initGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    nextReload = { userId: "42", userChanged: false, providerChanged: true };
+    const relinking = handlers.get(TOKEN_UPDATED)?.(tokenUpdated);
+    await Bun.sleep(0);
+
+    const codes = [];
+    for (const command of ["helix", "getStreamInfo"]) {
+      const reply = await ask(app, ctx, { command, args: {} });
+      codes.push(reply.data.code);
+    }
+    initGate = null;
+    release();
+    await relinking;
+
+    expect(codes).toEqual(["integration_unavailable", "integration_unavailable"]);
   });
 
   test("keeps the connection for a different account when a channel is configured", async () => {

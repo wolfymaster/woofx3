@@ -37,7 +37,7 @@ message:
 | `missing_scope` | An ad command whose scope the link does not carry. Relinking Twitch fixes it. |
 | `unauthorized` | An ad command whose token Twitch refused. |
 | `invalid_arguments` | `helix` refused its arguments before calling Twitch: an unknown operation, or a parameter the operation does not declare, is missing, or has the wrong type. |
-| `not_linked` | No Twitch account is linked. While the adapter is stopped, the connectors host answers every command with this code; a running adapter that finds no account sends it for `helix` only. |
+| `not_linked` | No Twitch account is linked. While the adapter is stopped, the connectors host answers every command with this code; a running adapter that finds no account sends it for `helix` only. While a running adapter reconnects after a relink to another account, it answers every command `integration_unavailable`. |
 | `integration_unavailable` | Twitch is linked, but the adapter is turned off (`integration.twitch.enabled` is false), still connecting, or parked after failing repeatedly. The connectors host sends it for every command. See [Connectors host](./connectors.md). |
 
 Only the commands below are served (`TWITCH_API_COMMANDS` in

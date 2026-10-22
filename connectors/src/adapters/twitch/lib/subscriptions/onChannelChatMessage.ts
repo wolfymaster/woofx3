@@ -76,7 +76,9 @@ export default function onChannelChatmessage(ctx: Context, listener: EventSubWsL
       try {
         ctx.messageBus.publish(topic, data);
       } catch (err) {
-        console.error(err);
+        ctx.logger.error("twitch: failed to publish chat message", {
+          err: err instanceof Error ? err.message : String(err),
+        });
       }
     }
   );
