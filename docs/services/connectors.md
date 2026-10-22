@@ -254,6 +254,47 @@ it for the host:
   confirmed. A subscription Twitch refused delivers no events at all, so a
   shortfall here is worth investigating even while the adapter is `connected`.
 
+### Chat egress
+
+The Twitch adapter performs the [platform gateway](./platform-gateway.md)'s
+chat actions (`egress.ts`), each as one Helix call made as the broadcaster
+through the same `helix` path the dashboard uses:
+
+| Action | Helix call | Delivered when |
+|---|---|---|
+| `chat.send` | Send Chat Message, with `reply_parent_message_id` from `replyToMessageId` | Twitch posts the line; the outcome carries its `messageId`. A line Twitch did not post (AutoMod, a blocked term, a chat mode) is `dropped` with Twitch's reason. |
+| `chat.announce` | Send Chat Announcement | Twitch answers 2xx (it sends 204). `options.twitch` is `{ color? }`, one of `primary`, `blue`, `green`, `orange` or `purple`; `primary` when absent. Any other key or colour fails the request for Twitch as `invalid`. |
+| `chat.pin` | Pin Chat Message for `{ messageId }`; Send Chat Message then Pin Chat Message for `{ message, durationSeconds? }`, with `durationSeconds` as `duration` | Twitch pins the line. A line posted but not pinned is `failed` with the message "posted but not pinned: ..." and still carries its `messageId`, so a caller can pin it again instead of posting it twice. |
+
+Every line goes through `guardChatLine`: a line that starts with the command
+prefix (`!`, from `connectors/src/chat/command-prefix.ts`) gets a zero-width
+space in front, so the engine's own line, which comes back on the chat feed as
+the broadcaster's, never runs a command. The legacy `twitchapi` `helix` chat
+operations get the same guard, since both paths build the request in one place.
+
+Twitch's error statuses map to failure codes in one table:
+
+| Helix status | Failure code |
+|---|---|
+| 400, 422 | `invalid` |
+| 401, 403 | `forbidden` |
+| 429 | `rate_limited` |
+| anything else | `upstream` |
+
+A call that gets no answer is `unconfirmed` if the request had left for
+Twitch (Twitch may have acted, so it is never resent), else `failed`/`upstream`
+"did not reach Twitch before the deadline". Each call gets the smaller of
+Helix's 8 s deadline and the time left in the gateway's budget.
+
+All writes wait their turn in one send queue, which runs them one at a time
+in arrival order, so lines reach chat in the order they were sent. The queue
+lives as long as the adapter, so its order holds across a restart. A write
+still waiting when its request's deadline passes is dropped without being
+sent. Once `WOOFX3_TWITCH_SEND_QUEUE_CAP` writes are waiting, the next is
+`failed`/`rate_limited` at once. Nothing is retried, a 429 included. A write
+whose turn comes while the adapter is stopped or reconnecting after a relink
+is `unavailable` with `stopped` or `starting`.
+
 connectors pins its `@twurple/*` packages to the release
 `shared/clients/typescript/twitch` resolves. TypeScript only treats the two
 copies' classes as one type when name and version match, so upgrade both
@@ -295,6 +336,7 @@ The Twitch adapter reads:
 | `WOOFX3_TWITCH_MEMBERSHIP_ENRICHMENT_ENABLED` | `true` | Look up follower status and subscription tier for chatters. |
 | `WOOFX3_TWITCH_MEMBERSHIP_TTL_MS` | `600000` | How long a looked-up answer is kept. |
 | `WOOFX3_TWITCH_MEMBERSHIP_DEADLINE_MS` | `250` | How long a chat message waits on a lookup before it is published without it. |
+| `WOOFX3_TWITCH_SEND_QUEUE_CAP` | `100` | How many platform gateway chat writes may wait behind the one being sent; one more is refused as rate limited. |
 
 The host also reads the bus settings (`WOOFX3_MESSAGEBUS_URL`, `_JWT`, `_NKEY`,
 `_TOKEN`), `WOOFX3_DATABASE_PROXY_URL` and `WOOFX3_DB_PROXY_TOKEN`, the
