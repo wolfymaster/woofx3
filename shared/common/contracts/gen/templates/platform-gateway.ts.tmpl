@@ -7,6 +7,16 @@ export const PLATFORM_GATEWAY_SUBJECTS = {
   fieldOptions: "{{.Subjects.FieldOptions}}",
 } as const;
 
+/**
+ * The CloudEvent type of each subject's replies; the reply's data is the
+ * subject's reply shape: GatewayReply, CapabilitiesReply or FieldOptionsReply.
+ */
+export const PLATFORM_GATEWAY_REPLY_TYPES = {
+  send: "{{.ReplyTypes.Send}}",
+  capabilities: "{{.ReplyTypes.Capabilities}}",
+  fieldOptions: "{{.ReplyTypes.FieldOptions}}",
+} as const;
+
 /** Bounds idempotency keys, requester refs and origin ids, in characters (Unicode code points). */
 export const MAX_REF_LENGTH = 200;
 
@@ -120,6 +130,40 @@ export interface GatewayReply {
   results: PlatformResults;
   error?: GatewayError;
 }
+
+/**
+ * One platform in a capabilities reply. `connected` and `enabled` are the
+ * platform's last link reading, both false before the first one; `actions`
+ * are the actions its adapter can perform whatever its state.
+ */
+export interface PlatformCapability {
+  id: PlatformId;
+  displayName: string;
+  state: PlatformState;
+  connected: boolean;
+  enabled: boolean;
+  actions: EgressActionId[];
+}
+
+/**
+ * The reply to a capabilities request, whose body the gateway ignores: one
+ * entry per platform the gateway has an adapter for, or why it could not answer.
+ */
+export type CapabilitiesReply = { platforms: PlatformCapability[] } | { error: string };
+
+/** Asks which platforms can perform `action` now, as the options of a select field. */
+export interface FieldOptionsRequest {
+  action: EgressActionId;
+}
+
+/** One choice of a select field: a platform and its display name. */
+export interface FieldOption {
+  value: PlatformId;
+  label: string;
+}
+
+/** The options of a select field, or the reason there are none. */
+export type FieldOptionsReply = FieldOption[] | { error: string };
 
 /**
  * The part of a request or reply that is wrong. `field` is a JSON path such
@@ -626,5 +670,166 @@ function requireMember<T extends string>(
   if (!isMember(value)) {
     return fail(`${field}.${name}`, `unknown value ${JSON.stringify(value)}`);
   }
+  return ok(value);
+}
+
+/**
+ * Parses a capabilities reply as a requester receives it: either an error and
+ * no platforms, or platforms that are known, named once, with a display name,
+ * a known state, and known actions named once. Unknown keys are ignored; JSON
+ * null and an empty error count as absent, as they do in Go.
+ */
+export function parseCapabilitiesReply(value: unknown): GatewayParseResult<CapabilitiesReply> {
+  const object = asObject(value);
+  if (object === undefined) {
+    return fail("reply", "must be an object");
+  }
+  const error = object.error ?? "";
+  if (typeof error !== "string") {
+    return fail("error", "must be a string");
+  }
+  const platforms = object.platforms ?? undefined;
+  if (error !== "") {
+    if (platforms !== undefined) {
+      return fail("platforms", "must be absent when error is set");
+    }
+    return ok({ error });
+  }
+  if (platforms === undefined) {
+    return fail("platforms", "is required");
+  }
+  if (!Array.isArray(platforms)) {
+    return fail("platforms", "must be an array");
+  }
+  const parsed: PlatformCapability[] = [];
+  const seen: PlatformId[] = [];
+  for (const [index, entry] of platforms.entries()) {
+    const capability = parsePlatformCapability(entry, `platforms[${index}]`, seen);
+    if (!capability.ok) {
+      return capability;
+    }
+    parsed.push(capability.value);
+  }
+  return ok({ platforms: parsed });
+}
+
+function parsePlatformCapability(
+  value: unknown,
+  field: string,
+  seen: PlatformId[]
+): GatewayParseResult<PlatformCapability> {
+  const object = asObject(value);
+  if (object === undefined) {
+    return fail(field, "must be an object");
+  }
+  const id = readListedPlatform(object.id, `${field}.id`, seen);
+  if (!id.ok) {
+    return id;
+  }
+  const displayName = requireText(object, field, "displayName");
+  if (!displayName.ok) {
+    return displayName;
+  }
+  if (!isPlatformState(object.state)) {
+    return fail(`${field}.state`, `unknown platform state ${JSON.stringify(object.state)}`);
+  }
+  for (const name of ["connected", "enabled"] as const) {
+    if (typeof object[name] !== "boolean") {
+      return fail(`${field}.${name}`, "must be a boolean");
+    }
+  }
+  const actions = object.actions ?? undefined;
+  if (actions === undefined) {
+    return fail(`${field}.actions`, "is required");
+  }
+  if (!Array.isArray(actions)) {
+    return fail(`${field}.actions`, "must be an array");
+  }
+  const parsedActions: EgressActionId[] = [];
+  for (const [index, action] of actions.entries()) {
+    if (!isEgressActionId(action)) {
+      return fail(`${field}.actions[${index}]`, `unknown action ${JSON.stringify(action)}`);
+    }
+    if (parsedActions.includes(action)) {
+      return fail(`${field}.actions[${index}]`, `names "${action}" twice`);
+    }
+    parsedActions.push(action);
+  }
+  return ok({
+    id: id.value,
+    displayName: displayName.value,
+    state: object.state,
+    connected: object.connected === true,
+    enabled: object.enabled === true,
+    actions: parsedActions,
+  });
+}
+
+/**
+ * Parses a field-options request: an object naming an action in the
+ * catalog. Unknown keys are ignored.
+ */
+export function parseFieldOptionsRequest(value: unknown): GatewayParseResult<FieldOptionsRequest> {
+  const object = asObject(value);
+  if (object === undefined) {
+    return fail("request", "must be an object");
+  }
+  const action = object.action;
+  if (action === undefined || action === null || action === "") {
+    return fail("action", "is required");
+  }
+  if (!isEgressActionId(action)) {
+    return fail("action", `unknown action ${JSON.stringify(action)}`);
+  }
+  return ok({ action });
+}
+
+/**
+ * Parses a field-options reply as a requester receives it: an array of
+ * options, each naming a known platform once with a label, or an object with
+ * a non-empty error.
+ */
+export function parseFieldOptionsReply(value: unknown): GatewayParseResult<FieldOptionsReply> {
+  if (Array.isArray(value)) {
+    const options: FieldOption[] = [];
+    const seen: PlatformId[] = [];
+    for (const [index, entry] of value.entries()) {
+      const field = `[${index}]`;
+      const object = asObject(entry);
+      if (object === undefined) {
+        return fail(field, "must be an object");
+      }
+      const id = readListedPlatform(object.value, `${field}.value`, seen);
+      if (!id.ok) {
+        return id;
+      }
+      const label = requireText(object, field, "label");
+      if (!label.ok) {
+        return label;
+      }
+      options.push({ value: id.value, label: label.value });
+    }
+    return ok(options);
+  }
+  const object = asObject(value);
+  if (object === undefined) {
+    return fail("reply", "must be an array or an object");
+  }
+  const error = object.error;
+  if (typeof error !== "string" || error === "") {
+    return fail("error", "is required");
+  }
+  return ok({ error });
+}
+
+/** Refuses an unknown platform, or one already in `seen`, and records it. */
+function readListedPlatform(value: unknown, field: string, seen: PlatformId[]): GatewayParseResult<PlatformId> {
+  if (!isPlatformId(value)) {
+    return fail(field, `unknown platform ${JSON.stringify(value)}`);
+  }
+  if (seen.includes(value)) {
+    return fail(field, `names "${value}" twice`);
+  }
+  seen.push(value);
   return ok(value);
 }

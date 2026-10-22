@@ -70,17 +70,18 @@ type tsReaders struct {
 }
 
 type tsData struct {
-	Readers   tsReaders
-	Source    string
-	Subjects  gatewaySubjects
-	Enums     []tsEnum
-	Platforms []tsPlatform
-	Actions   []tsAction
-	Outcomes  []tsOutcome
+	Readers    tsReaders
+	Source     string
+	Subjects   gatewaySubjects
+	ReplyTypes gatewaySubjects
+	Enums      []tsEnum
+	Platforms  []tsPlatform
+	Actions    []tsAction
+	Outcomes   []tsOutcome
 }
 
 func emitTS(c platformGateway) ([]byte, error) {
-	data := tsData{Source: platformGatewaySource, Subjects: c.Subjects}
+	data := tsData{Source: platformGatewaySource, Subjects: c.Subjects, ReplyTypes: c.ReplyTypes}
 
 	platformIDs := make([]string, 0, len(c.Platforms))
 	for _, p := range c.Platforms {
@@ -94,6 +95,7 @@ func emitTS(c platformGateway) ([]byte, error) {
 		tsEnumOf("OUTCOME_STATUSES", "OutcomeStatus", "isOutcomeStatus", "What happened on one platform.", c.OutcomeStatuses),
 		tsEnumOf("FAILURE_CODES", "FailureCode", "isFailureCode", "Classifies a failed outcome or a refused request.", c.FailureCodes),
 		tsEnumOf("UNAVAILABLE_REASONS", "UnavailableReason", "isUnavailableReason", "Why a platform could not take a request.", c.UnavailableReasons),
+		tsEnumOf("PLATFORM_STATES", "PlatformState", "isPlatformState", "A platform adapter's lifecycle state, as a capabilities reply reports it.", c.PlatformStates),
 	}
 
 	for _, a := range c.Actions {

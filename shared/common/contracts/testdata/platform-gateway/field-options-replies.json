@@ -1,0 +1,22 @@
+{
+  "cases": [
+    { "name": "one option", "invalidField": null, "reply": [{ "value": "twitch", "label": "Twitch" }] },
+    { "name": "no options", "invalidField": null, "reply": [] },
+    { "name": "an error", "invalidField": null, "reply": { "error": "unknown action \"chat.shout\"" } },
+    {
+      "name": "an unknown key on an option is ignored",
+      "invalidField": null,
+      "reply": [{ "value": "twitch", "label": "Twitch", "icon": "t" }]
+    },
+    { "name": "an object without an error", "invalidField": "error", "reply": { "options": [] } },
+    { "name": "an empty error", "invalidField": "error", "reply": { "error": "" } },
+    { "name": "neither an array nor an object", "invalidField": "reply", "reply": "twitch" },
+    { "name": "an unknown platform", "invalidField": "[0].value", "reply": [{ "value": "kick", "label": "Kick" }] },
+    {
+      "name": "a platform offered twice",
+      "invalidField": "[1].value",
+      "reply": [{ "value": "twitch", "label": "Twitch" }, { "value": "twitch", "label": "Twitch" }]
+    },
+    { "name": "no label", "invalidField": "[0].label", "reply": [{ "value": "twitch" }] }
+  ]
+}
