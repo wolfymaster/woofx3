@@ -42,6 +42,8 @@ export interface AdapterReport {
   link: LinkState | null;
   counts: AdapterCounts;
   bus: ReturnType<ScopeCounters["snapshot"]>;
+  /** What the adapter's own detail() returned; null when it has none or it threw. Not yet redacted. */
+  detail: Record<string, unknown> | null;
 }
 
 export type StatusListener = (id: AdapterId, status: AdapterStatus) => void;
@@ -64,6 +66,8 @@ class Slot {
   retryTimer: TimerHandle | undefined;
   /** Set when the retry timer fires, so a timer firing a little before `retryAt` on the clock still retries. */
   retryDue = false;
+  /** Set once detail() has failed, so a broken one logs once instead of on every /health read. */
+  detailFailed = false;
   busy = false;
   again = false;
   idle: Promise<void> = Promise.resolve();
@@ -170,7 +174,27 @@ export class Supervisor {
       link: slot.link ?? null,
       counts: { ...slot.counts },
       bus: slot.busCounters.snapshot(),
+      detail: this.detail(slot),
     }));
+  }
+
+  /** An adapter's detail() is its own code: a throw there must not take /health down with it. */
+  private detail(slot: Slot): Record<string, unknown> | null {
+    if (slot.adapter.detail === undefined) {
+      return null;
+    }
+    try {
+      // Plain JSON now, so a cyclic or BigInt value fails here instead of while /health is answering.
+      const detail = JSON.parse(JSON.stringify(slot.adapter.detail())) as Record<string, unknown>;
+      slot.detailFailed = false;
+      return detail;
+    } catch (error) {
+      if (!slot.detailFailed) {
+        slot.detailFailed = true;
+        this.deps.logger.warn("adapter detail failed", { adapter: slot.id, error: errorMessage(error) });
+      }
+      return null;
+    }
   }
 
   /**

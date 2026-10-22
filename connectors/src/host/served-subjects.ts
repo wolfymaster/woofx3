@@ -19,6 +19,8 @@ export interface ServedSubjectsDeps {
   /** The host's own scope: adapters never subscribe to the subjects they serve. */
   scope: ScopedBus;
   adapters: AdapterStatusSource;
+  /** Each adapter module's host state, passed to its served handlers. */
+  hostStates: ReadonlyMap<AdapterId, unknown>;
   logger: Logger;
 }
 
@@ -36,6 +38,9 @@ type Settled = { kind: "handle" } | { kind: "unavailable"; reason: UnavailableRe
  * - starting, degraded or stopping: held until the adapter connects (handler
  *   answers), settles stopped or parked (unavailable at once), or the
  *   subject's budget runs out (unavailable, `starting`).
+ *
+ * A subject whose availability is "always" skips all of that: its handler
+ * answers in every state, with the module's host state.
  */
 export class ServedSubjects {
   constructor(private readonly deps: ServedSubjectsDeps) {}
@@ -67,12 +72,18 @@ export class ServedSubjects {
     request: Uint8Array,
     ctx: RequestContext
   ): Promise<Uint8Array> {
-    const settled = await this.settle(id, ctx.signal);
-    if (settled.kind === "unavailable") {
-      return served.unavailableReply(this.unavailable(id, settled.reason));
+    if (served.availability !== "always") {
+      const settled = await this.settle(id, ctx.signal);
+      if (settled.kind === "unavailable") {
+        return served.unavailableReply(this.unavailable(id, settled.reason));
+      }
     }
     try {
-      return await served.handle(request, { deadline: ctx.deadline, signal: ctx.signal });
+      return await served.handle(request, {
+        deadline: ctx.deadline,
+        signal: ctx.signal,
+        hostState: this.hostStateFor(id),
+      });
     } catch (error) {
       this.deps.adapters.recordServedError(id);
       this.deps.logger.error("served subject handler failed", {
@@ -112,6 +123,14 @@ export class ServedSubjects {
       }
       signal.addEventListener("abort", onAbort, { once: true });
     });
+  }
+
+  /** A missing entry is a wiring mistake, never "a module without host state" (that is an entry holding undefined). */
+  private hostStateFor(id: AdapterId): unknown {
+    if (!this.deps.hostStates.has(id)) {
+      throw new Error(`no host state entry for the adapter "${id}"`);
+    }
+    return this.deps.hostStates.get(id);
   }
 
   private unavailable(id: AdapterId, reason: UnavailableReason): Unavailable {

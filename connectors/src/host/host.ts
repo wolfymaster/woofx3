@@ -28,6 +28,7 @@ export interface HostDeps {
   busConnected: () => boolean;
   settings: SettingsReader;
   adapters: ReadonlyMap<AdapterId, Adapter>;
+  hostStates: ReadonlyMap<AdapterId, unknown>;
   readers: LinkReaderRegistry;
   clock: Clock;
   random: RandomSource;
@@ -53,6 +54,11 @@ export class Host {
   private readonly drainMs: number;
 
   constructor(private readonly deps: HostDeps) {
+    for (const id of deps.adapters.keys()) {
+      if (!deps.hostStates.has(id)) {
+        throw new Error(`the adapter "${id}" has no host state entry; loadAdapters builds both together`);
+      }
+    }
     const longestBudgetMs = Math.max(0, ...this.servedBudgets());
     this.drainMs = Math.max(deps.config.stopDeadlineMs, longestBudgetMs);
     const stopWorstCaseMs = deps.config.dbProxyTimeoutMs + this.drainMs;
@@ -96,6 +102,7 @@ export class Host {
       requests: this.requests,
       scope: this.scope,
       adapters: this.supervisor,
+      hostStates: deps.hostStates,
       logger: deps.logger,
     });
     this.watcher = new SettingsWatcher({
