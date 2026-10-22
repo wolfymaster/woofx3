@@ -320,9 +320,11 @@ who is asking. The answer never rejects for a send that did not happen:
 | `{ ok: false, code: "failed" }` | The bus failed, or the reply was unreadable. | maybe |
 
 The api waits `WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` (default 12000, the
-callers' window in the table above) for the reply. Retry a `timeout` or
-`failed` result with the same `idempotencyKey` and the gateway replays the
-first reply rather than sending twice.
+callers' window in the table above, and the lowest value accepted) for the
+reply. Retry a `timeout` or `failed` result with the same `idempotencyKey`: the
+gateway replays a reply that reached a platform, or joins a send still running,
+rather than sending twice. A reply where nothing reached a platform is not
+held, so a retry sends again.
 
 ### Adding egress to an adapter
 

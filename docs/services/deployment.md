@@ -386,8 +386,8 @@ the answer for another secret. Failed checks are never reused. Deleting a
 client drops its cached checks at once.
 
 `WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` (default `12000`) is how long
-`sendToPlatforms` waits for the platform gateway's reply; it must stay above
-the gateway's own deadline (see [Platform gateway](./platform-gateway.md)).
+`sendToPlatforms` waits for the platform gateway's reply; it cannot be set below
+`12000`, the gateway's caller window (see [Platform gateway](./platform-gateway.md)).
 
 ### Refusals
 

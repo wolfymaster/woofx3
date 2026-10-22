@@ -2578,7 +2578,9 @@ export interface Woofx3EngineApi {
    * that did not happen: `ok: false` carries `unavailable` or `invalid` (not
    * sent), or `timeout` or `failed` (may have been sent). With `ok: true`,
    * `reply.results` holds each platform's own outcome. Repeating an
-   * `idempotencyKey` replays the first reply instead of sending again.
+   * `idempotencyKey` within the gateway's idempotency window replays a reply
+   * that reached a platform (or joins a send still running); a reply where
+   * nothing reached a platform is not held, so a retry sends again.
    * Requires the `platform.gateway` capability.
    */
   sendToPlatforms(params: SendToPlatformsParams): Promise<PlatformGatewayResult>;

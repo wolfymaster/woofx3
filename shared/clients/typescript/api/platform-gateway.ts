@@ -58,7 +58,10 @@ export type SendToPlatformsParams = {
     platforms: PlatformId[];
     payload: EgressPayloads[A];
     options?: PlatformOptions;
-    /** Repeating a key replays the first reply instead of sending again. */
+    /**
+     * Within the gateway's idempotency window, repeating a key replays a reply
+     * that reached a platform; a reply where nothing did is not held.
+     */
     idempotencyKey: string;
   };
 }[EgressActionId];
