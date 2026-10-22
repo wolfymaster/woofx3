@@ -26,9 +26,15 @@ export const COMMAND_PERMISSION_ACTION = "read";
  * - anyone else, a permission grant on the command.
  *
  * Grants are read from db-proxy by the speaker's login, which is what
- * permission rows key on. The decision is cached per viewer id and command,
- * so repeat invocations skip the round trip, and two accounts showing the
- * same display name never share one.
+ * permission rows key on. The decision is cached by everything it was read
+ * with: whether the line was trusted, the viewer id, the login and the
+ * command. An untrusted line names its own id and login, and they need not
+ * belong together, so it can never fill in a decision a trusted line reads.
+ *
+ * An untrusted line's login is still taken at its word for the grant
+ * lookup, so a bus publisher naming a granted login runs that command. Bus
+ * publishers are not authenticated per identity yet; until they are, a
+ * grant only holds as far as the bus is trusted.
  */
 export class CommandPermissions {
   private readonly cache: BoundedMap<string, PermissionDecision>;
@@ -54,7 +60,7 @@ export class CommandPermissions {
     if (hasRole(line, definition)) {
       return "granted";
     }
-    const key = `${viewerKeyString(line.viewer)} ${commandName}`;
+    const key = permissionCacheKey(line, commandName);
     const cached = this.cache.get(key);
     if (cached !== undefined) {
       return cached;
@@ -67,6 +73,11 @@ export class CommandPermissions {
     this.cache.set(key, decision);
     return decision;
   }
+}
+
+function permissionCacheKey(line: ChatLine, commandName: string): string {
+  const trust = line.trusted ? "trusted" : "untrusted";
+  return `${trust} ${viewerKeyString(line.viewer)} ${line.chatterLogin} ${commandName}`;
 }
 
 /** Only a trusted line has membership; an untrusted line's badges never pass a role. */

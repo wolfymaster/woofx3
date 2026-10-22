@@ -383,10 +383,12 @@ for the message, or the CloudEvent id for an untrusted line, and it is
 Nothing is retried; an undelivered reply is logged.
 
 **Who a viewer is.** In-memory state is keyed by the platform and that
-platform's user id, never by a display name. The permission cache and the
-memory of written groups are keyed this way, so two accounts that show the
-same name never share a decision. Permission and group rows in db-proxy are
-keyed by the speaker's login, lowercased. That is what the database keys on
+platform's user id, never by a display name. The memory of written groups
+is keyed this way, and the permission cache by that, the login and whether
+the line was trusted, so two accounts that show the same name never share a
+decision and an untrusted line never fills in one a trusted line reads.
+Permission and group rows in db-proxy are keyed by the speaker's login,
+lowercased. That is what the database keys on
 today.
 
 **Stored commands** are read from db-proxy, the owner of the data.
@@ -437,7 +439,7 @@ The chat command dispatcher reads:
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `WOOFX3_CONNECTORS_DISPATCHER_AUTH_CACHE_CAPACITY` | `2048` | Permission decisions remembered, per viewer and command. |
+| `WOOFX3_CONNECTORS_DISPATCHER_AUTH_CACHE_CAPACITY` | `2048` | Permission decisions remembered, per viewer, login, trust and command. |
 | `WOOFX3_CONNECTORS_DISPATCHER_AUTH_CACHE_TTL_MS` | `5000` | How stale a remembered decision may be after a grant changes. |
 | `WOOFX3_CONNECTORS_DISPATCHER_GROUP_LAST_SEEN_CAPACITY` | `4096` | Viewers whose last written group membership is remembered; a forgotten viewer is rewritten on their next line. |
 | `WOOFX3_CONNECTORS_DISPATCHER_GROUP_CATALOG_TTL_MS` | `300000` | How long the built-in group catalog is used before it is read again. |

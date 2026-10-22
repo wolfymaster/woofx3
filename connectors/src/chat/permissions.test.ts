@@ -56,6 +56,32 @@ describe("CommandPermissions", () => {
     expect(await permissions.authorize(command, "title", lookalike)).toBe("denied");
   });
 
+  const forgeries = [
+    {
+      name: "a forged denial does not refuse the real viewer",
+      forged: { platformUserId: "v-1", chatterLogin: "nobody" },
+      forgedDecision: "denied",
+      real: { platformUserId: "v-1", chatterLogin: "wolf" },
+      realDecision: "granted",
+    },
+    {
+      name: "a forged grant does not admit the real viewer",
+      forged: { platformUserId: "v-2", chatterLogin: "wolf" },
+      forgedDecision: "granted",
+      real: { platformUserId: "v-2", chatterLogin: "pup" },
+      realDecision: "denied",
+    },
+  ] as const;
+  for (const { name, forged, forgedDecision, real, realDecision } of forgeries) {
+    test(`an untrusted line naming a real viewer's id: ${name}`, async () => {
+      const command = { ...restricted, allowRoles: [] };
+      db.grants.add(`wolf ${commandResource("title")}`);
+      const forgedLine = chatLine({ ...forged, trusted: false, membership: undefined });
+      expect(await permissions.authorize(command, "title", forgedLine)).toBe(forgedDecision);
+      expect(await permissions.authorize(command, "title", chatLine(real))).toBe(realDecision);
+    });
+  }
+
   test("a decision is cached until its TTL", async () => {
     const command = { ...restricted, allowRoles: [] };
     await permissions.authorize(command, "title", chatLine());
