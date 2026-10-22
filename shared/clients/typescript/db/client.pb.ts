@@ -16,6 +16,12 @@ import * as common from "./common.pb";
 //                 Types                  //
 //========================================//
 
+/**
+ * How a client came to exist.
+ */
+export type ClientKind =
+  "CLIENT_KIND_UNSPECIFIED" | "CLIENT_KIND_REGISTERED" | "CLIENT_KIND_PAIRED";
+
 export interface Client {
   id: string;
   description: string;
@@ -23,12 +29,27 @@ export interface Client {
   clientSecret: string;
   callbackUrl: string;
   callbackToken: string;
+  kind: ClientKind;
+  /**
+   * The web origin a paired client is bound to; empty for a registered one.
+   */
+  origin: string;
+  createdAt: protoscript.Timestamp;
+  /**
+   * Unset until an authentication is recorded.
+   */
+  lastAuthenticatedAt: protoscript.Timestamp;
 }
 
 export interface CreateClientRequest {
   description: string;
   callbackUrl: string;
   callbackToken: string;
+  /**
+   * Required. A paired client needs an origin; a registered one must not have one.
+   */
+  kind: ClientKind;
+  origin: string;
 }
 
 export interface GetClientRequest {
@@ -51,6 +72,10 @@ export interface DeleteClientRequest {
 export interface ValidateClientRequest {
   clientId: string;
   clientSecret: string;
+}
+
+export interface RecordClientAuthenticationRequest {
+  clientId: string;
 }
 
 export interface ClientResponse {
@@ -139,6 +164,18 @@ export async function ValidateClient(
   return ClientResponse.decode(response);
 }
 
+export async function RecordClientAuthentication(
+  recordClientAuthenticationRequest: RecordClientAuthenticationRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/client.ClientService/RecordClientAuthentication",
+    RecordClientAuthenticationRequest.encode(recordClientAuthenticationRequest),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
+}
+
 //========================================//
 //       ClientService JSON Client        //
 //========================================//
@@ -215,6 +252,20 @@ export async function ValidateClientJSON(
   return ClientResponseJSON.decode(response);
 }
 
+export async function RecordClientAuthenticationJSON(
+  recordClientAuthenticationRequest: RecordClientAuthenticationRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/client.ClientService/RecordClientAuthentication",
+    RecordClientAuthenticationRequestJSON.encode(
+      recordClientAuthenticationRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
 //========================================//
 //             ClientService              //
 //========================================//
@@ -244,6 +295,10 @@ export interface ClientService<Context = unknown> {
     validateClientRequest: ValidateClientRequest,
     context: Context,
   ) => Promise<ClientResponse> | ClientResponse;
+  RecordClientAuthentication: (
+    recordClientAuthenticationRequest: RecordClientAuthenticationRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
 }
 
 export function createClientService<Context>(service: ClientService<Context>) {
@@ -295,6 +350,18 @@ export function createClientService<Context>(service: ClientService<Context>) {
         },
         output: { protobuf: ClientResponse, json: ClientResponseJSON },
       },
+      RecordClientAuthentication: {
+        name: "RecordClientAuthentication",
+        handler: service.RecordClientAuthentication,
+        input: {
+          protobuf: RecordClientAuthenticationRequest,
+          json: RecordClientAuthenticationRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
     },
   } as const;
 }
@@ -302,6 +369,58 @@ export function createClientService<Context>(service: ClientService<Context>) {
 //========================================//
 //        Protobuf Encode / Decode        //
 //========================================//
+
+export const ClientKind = {
+  CLIENT_KIND_UNSPECIFIED: "CLIENT_KIND_UNSPECIFIED",
+  /**
+   * Called registerClient: a desktop shell, a cloud dashboard, a CLI.
+   */
+  CLIENT_KIND_REGISTERED: "CLIENT_KIND_REGISTERED",
+  /**
+   * Obtained by a browser through pairing; bound to its origin.
+   */
+  CLIENT_KIND_PAIRED: "CLIENT_KIND_PAIRED",
+  /**
+   * @private
+   */
+  _fromInt: function (i: number): ClientKind {
+    switch (i) {
+      case 0: {
+        return "CLIENT_KIND_UNSPECIFIED";
+      }
+      case 1: {
+        return "CLIENT_KIND_REGISTERED";
+      }
+      case 2: {
+        return "CLIENT_KIND_PAIRED";
+      }
+      // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+      default: {
+        return i as unknown as ClientKind;
+      }
+    }
+  },
+  /**
+   * @private
+   */
+  _toInt: function (i: ClientKind): number {
+    switch (i) {
+      case "CLIENT_KIND_UNSPECIFIED": {
+        return 0;
+      }
+      case "CLIENT_KIND_REGISTERED": {
+        return 1;
+      }
+      case "CLIENT_KIND_PAIRED": {
+        return 2;
+      }
+      // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+      default: {
+        return i as unknown as number;
+      }
+    }
+  },
+} as const;
 
 export const Client = {
   /**
@@ -335,6 +454,10 @@ export const Client = {
       clientSecret: "",
       callbackUrl: "",
       callbackToken: "",
+      kind: ClientKind._fromInt(0),
+      origin: "",
+      createdAt: protoscript.Timestamp.initialize(),
+      lastAuthenticatedAt: protoscript.Timestamp.initialize(),
       ...msg,
     };
   },
@@ -363,6 +486,26 @@ export const Client = {
     }
     if (msg.callbackToken) {
       writer.writeString(7, msg.callbackToken);
+    }
+    if (msg.kind && ClientKind._toInt(msg.kind)) {
+      writer.writeEnum(8, ClientKind._toInt(msg.kind));
+    }
+    if (msg.origin) {
+      writer.writeString(9, msg.origin);
+    }
+    if (msg.createdAt) {
+      writer.writeMessage(
+        10,
+        msg.createdAt,
+        protoscript.Timestamp._writeMessage,
+      );
+    }
+    if (msg.lastAuthenticatedAt) {
+      writer.writeMessage(
+        11,
+        msg.lastAuthenticatedAt,
+        protoscript.Timestamp._writeMessage,
+      );
     }
     return writer;
   },
@@ -399,6 +542,25 @@ export const Client = {
         }
         case 7: {
           msg.callbackToken = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.kind = ClientKind._fromInt(reader.readEnum());
+          break;
+        }
+        case 9: {
+          msg.origin = reader.readString();
+          break;
+        }
+        case 10: {
+          reader.readMessage(msg.createdAt, protoscript.Timestamp._readMessage);
+          break;
+        }
+        case 11: {
+          reader.readMessage(
+            msg.lastAuthenticatedAt,
+            protoscript.Timestamp._readMessage,
+          );
           break;
         }
         default: {
@@ -442,6 +604,8 @@ export const CreateClientRequest = {
       description: "",
       callbackUrl: "",
       callbackToken: "",
+      kind: ClientKind._fromInt(0),
+      origin: "",
       ...msg,
     };
   },
@@ -461,6 +625,12 @@ export const CreateClientRequest = {
     }
     if (msg.callbackToken) {
       writer.writeString(4, msg.callbackToken);
+    }
+    if (msg.kind && ClientKind._toInt(msg.kind)) {
+      writer.writeEnum(5, ClientKind._toInt(msg.kind));
+    }
+    if (msg.origin) {
+      writer.writeString(6, msg.origin);
     }
     return writer;
   },
@@ -485,6 +655,14 @@ export const CreateClientRequest = {
         }
         case 4: {
           msg.callbackToken = reader.readString();
+          break;
+        }
+        case 5: {
+          msg.kind = ClientKind._fromInt(reader.readEnum());
+          break;
+        }
+        case 6: {
+          msg.origin = reader.readString();
           break;
         }
         default: {
@@ -852,6 +1030,78 @@ export const ValidateClientRequest = {
   },
 };
 
+export const RecordClientAuthenticationRequest = {
+  /**
+   * Serializes RecordClientAuthenticationRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<RecordClientAuthenticationRequest>,
+  ): Uint8Array {
+    return RecordClientAuthenticationRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes RecordClientAuthenticationRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): RecordClientAuthenticationRequest {
+    return RecordClientAuthenticationRequest._readMessage(
+      RecordClientAuthenticationRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes RecordClientAuthenticationRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<RecordClientAuthenticationRequest>,
+  ): RecordClientAuthenticationRequest {
+    return {
+      clientId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<RecordClientAuthenticationRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.clientId) {
+      writer.writeString(1, msg.clientId);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: RecordClientAuthenticationRequest,
+    reader: protoscript.BinaryReader,
+  ): RecordClientAuthenticationRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.clientId = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 export const ClientResponse = {
   /**
    * Serializes ClientResponse to protobuf.
@@ -1012,6 +1262,58 @@ export const ListClientsResponse = {
 //          JSON Encode / Decode          //
 //========================================//
 
+export const ClientKindJSON = {
+  CLIENT_KIND_UNSPECIFIED: "CLIENT_KIND_UNSPECIFIED",
+  /**
+   * Called registerClient: a desktop shell, a cloud dashboard, a CLI.
+   */
+  CLIENT_KIND_REGISTERED: "CLIENT_KIND_REGISTERED",
+  /**
+   * Obtained by a browser through pairing; bound to its origin.
+   */
+  CLIENT_KIND_PAIRED: "CLIENT_KIND_PAIRED",
+  /**
+   * @private
+   */
+  _fromInt: function (i: number): ClientKind {
+    switch (i) {
+      case 0: {
+        return "CLIENT_KIND_UNSPECIFIED";
+      }
+      case 1: {
+        return "CLIENT_KIND_REGISTERED";
+      }
+      case 2: {
+        return "CLIENT_KIND_PAIRED";
+      }
+      // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+      default: {
+        return i as unknown as ClientKind;
+      }
+    }
+  },
+  /**
+   * @private
+   */
+  _toInt: function (i: ClientKind): number {
+    switch (i) {
+      case "CLIENT_KIND_UNSPECIFIED": {
+        return 0;
+      }
+      case "CLIENT_KIND_REGISTERED": {
+        return 1;
+      }
+      case "CLIENT_KIND_PAIRED": {
+        return 2;
+      }
+      // unknown values are preserved as numbers. this occurs when new enum values are introduced and the generated code is out of date.
+      default: {
+        return i as unknown as number;
+      }
+    }
+  },
+} as const;
+
 export const ClientJSON = {
   /**
    * Serializes Client to JSON.
@@ -1038,6 +1340,10 @@ export const ClientJSON = {
       clientSecret: "",
       callbackUrl: "",
       callbackToken: "",
+      kind: ClientKind._fromInt(0),
+      origin: "",
+      createdAt: protoscript.TimestampJSON.initialize(),
+      lastAuthenticatedAt: protoscript.TimestampJSON.initialize(),
       ...msg,
     };
   },
@@ -1064,6 +1370,23 @@ export const ClientJSON = {
     }
     if (msg.callbackToken) {
       json["callbackToken"] = msg.callbackToken;
+    }
+    if (msg.kind && ClientKindJSON._toInt(msg.kind)) {
+      json["kind"] = msg.kind;
+    }
+    if (msg.origin) {
+      json["origin"] = msg.origin;
+    }
+    if (msg.createdAt && (msg.createdAt.seconds || msg.createdAt.nanos)) {
+      json["createdAt"] = protoscript.serializeTimestamp(msg.createdAt);
+    }
+    if (
+      msg.lastAuthenticatedAt &&
+      (msg.lastAuthenticatedAt.seconds || msg.lastAuthenticatedAt.nanos)
+    ) {
+      json["lastAuthenticatedAt"] = protoscript.serializeTimestamp(
+        msg.lastAuthenticatedAt,
+      );
     }
     return json;
   },
@@ -1095,6 +1418,25 @@ export const ClientJSON = {
     const _callbackToken_ = json["callbackToken"] ?? json["callback_token"];
     if (_callbackToken_) {
       msg.callbackToken = _callbackToken_;
+    }
+    const _kind_ = json["kind"];
+    if (_kind_) {
+      msg.kind = ClientKind._fromInt(_kind_);
+    }
+    const _origin_ = json["origin"];
+    if (_origin_) {
+      msg.origin = _origin_;
+    }
+    const _createdAt_ = json["createdAt"] ?? json["created_at"];
+    if (_createdAt_) {
+      msg.createdAt = protoscript.parseTimestamp(_createdAt_);
+    }
+    const _lastAuthenticatedAt_ =
+      json["lastAuthenticatedAt"] ?? json["last_authenticated_at"];
+    if (_lastAuthenticatedAt_) {
+      msg.lastAuthenticatedAt = protoscript.parseTimestamp(
+        _lastAuthenticatedAt_,
+      );
     }
     return msg;
   },
@@ -1128,6 +1470,8 @@ export const CreateClientRequestJSON = {
       description: "",
       callbackUrl: "",
       callbackToken: "",
+      kind: ClientKind._fromInt(0),
+      origin: "",
       ...msg,
     };
   },
@@ -1147,6 +1491,12 @@ export const CreateClientRequestJSON = {
     }
     if (msg.callbackToken) {
       json["callbackToken"] = msg.callbackToken;
+    }
+    if (msg.kind && ClientKindJSON._toInt(msg.kind)) {
+      json["kind"] = msg.kind;
+    }
+    if (msg.origin) {
+      json["origin"] = msg.origin;
     }
     return json;
   },
@@ -1169,6 +1519,14 @@ export const CreateClientRequestJSON = {
     const _callbackToken_ = json["callbackToken"] ?? json["callback_token"];
     if (_callbackToken_) {
       msg.callbackToken = _callbackToken_;
+    }
+    const _kind_ = json["kind"];
+    if (_kind_) {
+      msg.kind = ClientKind._fromInt(_kind_);
+    }
+    const _origin_ = json["origin"];
+    if (_origin_) {
+      msg.origin = _origin_;
     }
     return msg;
   },
@@ -1472,6 +1830,68 @@ export const ValidateClientRequestJSON = {
     const _clientSecret_ = json["clientSecret"] ?? json["client_secret"];
     if (_clientSecret_) {
       msg.clientSecret = _clientSecret_;
+    }
+    return msg;
+  },
+};
+
+export const RecordClientAuthenticationRequestJSON = {
+  /**
+   * Serializes RecordClientAuthenticationRequest to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<RecordClientAuthenticationRequest>,
+  ): string {
+    return JSON.stringify(
+      RecordClientAuthenticationRequestJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes RecordClientAuthenticationRequest from JSON.
+   */
+  decode: function (json: string): RecordClientAuthenticationRequest {
+    return RecordClientAuthenticationRequestJSON._readMessage(
+      RecordClientAuthenticationRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes RecordClientAuthenticationRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<RecordClientAuthenticationRequest>,
+  ): RecordClientAuthenticationRequest {
+    return {
+      clientId: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<RecordClientAuthenticationRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.clientId) {
+      json["clientId"] = msg.clientId;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: RecordClientAuthenticationRequest,
+    json: any,
+  ): RecordClientAuthenticationRequest {
+    const _clientId_ = json["clientId"] ?? json["client_id"];
+    if (_clientId_) {
+      msg.clientId = _clientId_;
     }
     return msg;
   },
