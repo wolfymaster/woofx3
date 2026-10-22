@@ -511,12 +511,12 @@ mod tests {
     use std::time::Instant;
 
     /// Answers every request with `reply` and records what was asked.
-    struct FakeSceneManager {
+    struct FakeConnectorsHost {
         reply: Result<Value, RequestError>,
         requests: Mutex<Vec<(String, Value, Duration)>>,
     }
 
-    impl FakeSceneManager {
+    impl FakeConnectorsHost {
         fn answering(reply: Result<Value, RequestError>) -> Arc<Self> {
             Arc::new(Self {
                 reply,
@@ -529,7 +529,7 @@ mod tests {
         }
     }
 
-    impl NatsRequester for FakeSceneManager {
+    impl NatsRequester for FakeConnectorsHost {
         fn request(
             &self,
             subject: &str,
@@ -570,7 +570,7 @@ mod tests {
 
     #[test]
     fn exposes_the_module_functions_with_their_permissions() {
-        let ext = ObsExtension::new(FakeSceneManager::answering(Ok(Value::Null)));
+        let ext = ObsExtension::new(FakeConnectorsHost::answering(Ok(Value::Null)));
         let table: Vec<(&str, Option<&str>)> = ext
             .functions()
             .iter()
@@ -592,7 +592,7 @@ mod tests {
 
     #[test]
     fn switch_scene_sends_the_command_as_a_cloudevent_and_returns_ok() {
-        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let nats = FakeConnectorsHost::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
 
         let result = call(
@@ -619,7 +619,7 @@ mod tests {
 
     #[test]
     fn set_source_visibility_reads_visible_as_visible_or_hidden_and_leaves_off_an_absent_scene() {
-        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let nats = FakeConnectorsHost::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
 
         call(
@@ -666,7 +666,7 @@ mod tests {
 
     #[test]
     fn set_source_visibility_sends_a_visibility_and_prefers_it_over_visible() {
-        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let nats = FakeConnectorsHost::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
 
         for args in [
@@ -695,7 +695,7 @@ mod tests {
 
     #[test]
     fn set_input_mute_defaults_muted_to_true() {
-        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let nats = FakeConnectorsHost::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
 
         call(
@@ -714,7 +714,7 @@ mod tests {
 
     #[test]
     fn show_browser_source_defaults_the_size_and_leaves_off_an_absent_scene() {
-        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let nats = FakeConnectorsHost::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
 
         let result = call(
@@ -782,7 +782,7 @@ mod tests {
 
     #[test]
     fn show_browser_source_refuses_a_url_that_is_not_http_or_https() {
-        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let nats = FakeConnectorsHost::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
 
         for url in [
@@ -811,7 +811,7 @@ mod tests {
 
     #[test]
     fn show_browser_source_refuses_a_size_that_is_not_a_sensible_whole_number() {
-        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let nats = FakeConnectorsHost::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
 
         for (key, value) in [
@@ -842,7 +842,7 @@ mod tests {
 
     #[test]
     fn bad_arguments_are_refused_with_the_reason_before_sending() {
-        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let nats = FakeConnectorsHost::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
 
         for (name, args, reason) in [
@@ -896,7 +896,7 @@ mod tests {
 
     #[test]
     fn changes_are_refused_without_obs_control_before_sending() {
-        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let nats = FakeConnectorsHost::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
 
         for name in [
@@ -914,7 +914,7 @@ mod tests {
 
     #[test]
     fn a_refusal_from_the_scene_manager_is_thrown_unchanged() {
-        let nats = FakeSceneManager::answering(Ok(json!({
+        let nats = FakeConnectorsHost::answering(Ok(json!({
             "ok": false,
             "error": "OBS has no scene named \"BRB\""
         })));
@@ -934,7 +934,7 @@ mod tests {
 
     #[test]
     fn a_command_reply_without_an_ok_flag_is_a_failed_request() {
-        let ext = ObsExtension::new(FakeSceneManager::answering(Ok(json!({ "weird": 1 }))));
+        let ext = ObsExtension::new(FakeConnectorsHost::answering(Ok(json!({ "weird": 1 }))));
         let err = call(
             &ext,
             "switchScene",
@@ -949,7 +949,7 @@ mod tests {
     fn listing_needs_no_permission_and_returns_the_options() {
         let options =
             json!([{ "value": "BRB", "label": "BRB" }, { "value": "Game", "label": "Game" }]);
-        let nats = FakeSceneManager::answering(Ok(options.clone()));
+        let nats = FakeConnectorsHost::answering(Ok(options.clone()));
         let ext = ObsExtension::new(nats.clone());
 
         for (name, list) in [
@@ -967,7 +967,7 @@ mod tests {
 
     #[test]
     fn a_listing_the_scene_manager_cannot_give_throws_its_reason() {
-        let ext = ObsExtension::new(FakeSceneManager::answering(Ok(json!({
+        let ext = ObsExtension::new(FakeConnectorsHost::answering(Ok(json!({
             "error": "OBS is not connected (retrying)"
         }))));
         let err = call(&ext, "listScenes", &granted(&[]), Value::Null).unwrap_err();
@@ -994,7 +994,7 @@ mod tests {
                 "broken pipe",
             ),
         ] {
-            let ext = ObsExtension::new(FakeSceneManager::answering(reply));
+            let ext = ObsExtension::new(FakeConnectorsHost::answering(reply));
             let err = call(
                 &ext,
                 "switchScene",
@@ -1009,7 +1009,7 @@ mod tests {
 
     #[test]
     fn a_listing_that_times_out_does_not_claim_obs_acted() {
-        let ext = ObsExtension::new(FakeSceneManager::answering(Err(RequestError::TimedOut)));
+        let ext = ObsExtension::new(FakeConnectorsHost::answering(Err(RequestError::TimedOut)));
         let err = call(&ext, "listInputs", &granted(&[]), Value::Null).unwrap_err();
         assert_eq!(err.code.as_deref(), Some(TIMEOUT));
         assert!(!err.message.contains("applied"), "{err}");
@@ -1018,7 +1018,7 @@ mod tests {
     #[test]
     fn a_run_may_make_only_so_many_calls() {
         let ext = ObsExtension::with_limits(
-            FakeSceneManager::answering(Ok(json!([]))),
+            FakeConnectorsHost::answering(Ok(json!([]))),
             Limits {
                 max_calls_per_invocation: 2,
                 ..Limits::default()
@@ -1034,7 +1034,7 @@ mod tests {
 
     #[test]
     fn a_call_never_waits_past_the_invocation_deadline() {
-        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let nats = FakeConnectorsHost::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
         let scope = CallScope::new(
             [OBS_CONTROL.to_string()].into_iter().collect(),
@@ -1048,7 +1048,7 @@ mod tests {
 
     #[test]
     fn a_spent_invocation_is_refused_without_sending() {
-        let nats = FakeSceneManager::answering(Ok(json!({ "ok": true })));
+        let nats = FakeConnectorsHost::answering(Ok(json!({ "ok": true })));
         let ext = ObsExtension::new(nats.clone());
         let scope = CallScope::new(
             [OBS_CONTROL.to_string()].into_iter().collect(),
