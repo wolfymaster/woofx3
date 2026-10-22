@@ -40,6 +40,25 @@ export interface AdapterHealth {
   link: AdapterReport["link"];
   counts: AdapterReport["counts"];
   bus: AdapterReport["bus"];
+  detail: Record<string, unknown> | null;
+}
+
+const REDACTED = "[redacted]";
+
+/** A key containing any of these words is treated as holding a secret. */
+const SECRET_KEY = /password|token|ticket|credential/i;
+
+/** Copies `value` with every secret-named key's value replaced, at any depth. */
+export function redactDetail(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(redactDetail);
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, inner]) => [key, SECRET_KEY.test(key) ? REDACTED : redactDetail(inner)])
+    );
+  }
+  return value;
 }
 
 /**
@@ -70,6 +89,7 @@ function adapterHealth(report: AdapterReport): AdapterHealth {
     link: report.link,
     counts: report.counts,
     bus: report.bus,
+    detail: report.detail === null ? null : (redactDetail(report.detail) as Record<string, unknown>),
   };
 }
 

@@ -23,6 +23,7 @@ async function runningHost(adapter: FakeAdapter, busUp = { value: true }) {
     busConnected: () => busUp.value,
     settings: linkedSettings,
     adapters: new Map([["twitch", adapter]]),
+    hostStates: new Map([["twitch", undefined]]),
     readers: LINK_READERS,
     clock: time,
     random: halfRandom,
@@ -87,6 +88,7 @@ describe("health", () => {
       busConnected: () => true,
       settings: linkedSettings,
       adapters: new Map(),
+      hostStates: new Map(),
       readers: LINK_READERS,
       clock: time,
       random: halfRandom,
@@ -141,5 +143,57 @@ describe("health", () => {
     } finally {
       await server.stop();
     }
+  });
+
+  test("shows an adapter's detail with secret-named keys redacted at any depth", async () => {
+    const adapter = new FakeAdapter();
+    adapter.detail = () => ({
+      channel: "wolfy",
+      accessToken: "abc",
+      nested: { Password: "p", ok: 1, list: [{ ticket: "t", name: "n" }] },
+      credentialId: "c",
+    });
+    const { host } = await runningHost(adapter);
+
+    const { body } = await getHealth(host);
+    expect(body.adapters[0].detail).toEqual({
+      channel: "wolfy",
+      accessToken: "[redacted]",
+      nested: { Password: "[redacted]", ok: 1, list: [{ ticket: "[redacted]", name: "n" }] },
+      credentialId: "[redacted]",
+    });
+  });
+
+  test("detail is null for an adapter without one, and when it throws", async () => {
+    const quiet = await runningHost(new FakeAdapter());
+    expect((await getHealth(quiet.host)).body.adapters[0].detail).toBeNull();
+
+    const broken = new FakeAdapter();
+    broken.detail = () => {
+      throw new Error("no detail today");
+    };
+    const { host } = await runningHost(broken);
+    const { status, body } = await getHealth(host);
+    expect(status).toBe(200);
+    expect(body.adapters[0].detail).toBeNull();
+  });
+
+  test.each([
+    [
+      "a cyclic object",
+      () => {
+        const loop: Record<string, unknown> = {};
+        loop.self = loop;
+        return loop;
+      },
+    ],
+    ["a BigInt", () => ({ big: 10n })],
+  ])("detail is null and /health still answers when detail() returns %s", async (_name, make) => {
+    const adapter = new FakeAdapter();
+    adapter.detail = make;
+    const { host } = await runningHost(adapter);
+    const { status, body } = await getHealth(host);
+    expect(status).toBe(200);
+    expect(body.adapters[0].detail).toBeNull();
   });
 });

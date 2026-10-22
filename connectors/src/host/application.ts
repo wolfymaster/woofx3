@@ -2,9 +2,7 @@ import type { IApplication } from "@woofx3/common/runtime";
 import type { ConnectorsConfig } from "../config";
 import type DbProxyService from "../services/db-proxy";
 import type MessageBusService from "../services/message-bus";
-import type { Adapter } from "./adapter";
-import type { AdapterId } from "./adapter-ids";
-import { type AdapterRegistry, loadAdapters } from "./adapters";
+import { type AdapterRegistry, type LoadedAdapters, loadAdapters } from "./adapters";
 import { dbProxySettings } from "./db-settings";
 import type { Clock, IdSource, Logger, RandomSource, Timers } from "./deps";
 import { type HealthServer, startHealthServer } from "./health";
@@ -38,7 +36,7 @@ export interface ConnectorsApplicationDeps {
  */
 export default class ConnectorsApplication implements IApplication<ConnectorsContext, ConnectorsServices> {
   readonly context: ConnectorsContext;
-  private adapters: Map<AdapterId, Adapter> | undefined;
+  private loaded: LoadedAdapters | undefined;
   private host: Host | undefined;
   private health: HealthServer | undefined;
 
@@ -49,11 +47,11 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
   /** Loads the adapter modules once per process and checks every adapter id has a link reader. */
   async init(): Promise<void> {
     assertLinkReaders(this.deps.readers);
-    this.adapters ??= await loadAdapters(this.deps.adapters);
+    this.loaded ??= await loadAdapters(this.deps.adapters);
   }
 
   async run(ctx: ConnectorsContext): Promise<void> {
-    if (this.adapters === undefined) {
+    if (this.loaded === undefined) {
       throw new Error("run before init: the adapters are not loaded");
     }
     const { messageBus, dbProxy } = ctx.services;
@@ -64,7 +62,8 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
       bus: messageBus.client,
       busConnected: () => messageBus.isUp(),
       settings: dbProxySettings(dbProxy.client),
-      adapters: this.adapters,
+      adapters: this.loaded.adapters,
+      hostStates: this.loaded.hostStates,
       readers: assertLinkReaders(this.deps.readers),
       clock: this.deps.clock,
       random: this.deps.random,
@@ -83,7 +82,7 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
       throw error;
     }
     this.deps.logger.info("connectors host running", {
-      adapters: [...this.adapters.keys()],
+      adapters: [...this.loaded.adapters.keys()],
       healthPort: this.health.port,
     });
   }

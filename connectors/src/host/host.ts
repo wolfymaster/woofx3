@@ -33,6 +33,7 @@ export interface HostDeps {
   busConnected: () => boolean;
   settings: SettingsReader;
   adapters: ReadonlyMap<AdapterId, Adapter>;
+  hostStates: ReadonlyMap<AdapterId, unknown>;
   readers: LinkReaderRegistry;
   clock: Clock;
   random: RandomSource;
@@ -59,6 +60,11 @@ export class Host {
   private readonly drainMs: number;
 
   constructor(private readonly deps: HostDeps) {
+    for (const id of deps.adapters.keys()) {
+      if (!deps.hostStates.has(id)) {
+        throw new Error(`the adapter "${id}" has no host state entry; loadAdapters builds both together`);
+      }
+    }
     this.requests = new HostRequests({ clock: deps.clock, ids: deps.ids, timers: deps.timers, logger: deps.logger });
     this.gateway = new PlatformGateway({
       config: deps.gateway,
@@ -118,6 +124,7 @@ export class Host {
       requests: this.requests,
       scope: this.scope,
       adapters: this.supervisor,
+      hostStates: deps.hostStates,
       logger: deps.logger,
     });
     this.watcher = new SettingsWatcher({

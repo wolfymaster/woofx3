@@ -40,23 +40,38 @@ export interface Unavailable {
   link: LinkState | null;
 }
 
-export interface ServedRequestContext {
+export interface ServedRequestContext<S = unknown> {
   /** Clock time the reply is due by. */
   deadline: number;
   /** Aborts at the deadline. */
   signal: AbortSignal;
+  /** The adapter module's host state: the same object for the life of the process. */
+  hostState: S;
 }
+
+/**
+ * When the host hands a served subject to its handler.
+ *
+ * - whenRunning: only while the adapter is connected. Otherwise the caller
+ *   gets `unavailableReply`, or waits while the adapter is on its way up.
+ * - always: whatever the adapter's status. For requests that must not be lost
+ *   while the adapter is stopped, parked or restarting; the handler keeps what
+ *   it needs in the host state, which outlives every start and stop.
+ */
+export type ServedAvailability = "whenRunning" | "always";
 
 /**
  * A request/reply subject an adapter answers. The host subscribes to it for
  * the whole life of the process and answers for the adapter while it is not
  * running, so a caller always gets a reply and never a timeout.
  */
-export interface ServedSubject {
+export interface ServedSubject<S = unknown> {
   subject: string;
   /** Reply budget, set below the callers' own timeout for this subject. */
   budgetMs: number;
-  handle(request: Uint8Array, ctx: ServedRequestContext): Promise<Uint8Array>;
+  /** Defaults to whenRunning. */
+  availability?: ServedAvailability;
+  handle(request: Uint8Array, ctx: ServedRequestContext<S>): Promise<Uint8Array>;
   /** The reply a caller gets while the adapter cannot answer, in this subject's own wire format. */
   unavailableReply(unavailable: Unavailable): Uint8Array;
 }
@@ -94,12 +109,12 @@ export interface EgressHandlerSpec<A extends EgressActionId, O = unknown> {
 export type EgressHandlers = { [A in EgressActionId]?: EgressHandlerSpec<A> };
 
 /** Every subject an adapter touches. Its ScopedBus refuses anything else. */
-export interface AdapterManifest {
+export interface AdapterManifest<S = unknown> {
   id: AdapterId;
   publishes: readonly string[];
   subscribes: readonly string[];
   requests: readonly string[];
-  serves: readonly ServedSubject[];
+  serves: readonly ServedSubject<S>[];
   /** Only a platform adapter (its id is a PlatformId) may declare egress; the platform is its id. */
   egress?: EgressHandlers;
 }
@@ -130,14 +145,28 @@ export interface AdapterContext {
  * One instance lives for the whole process and is started and stopped any
  * number of times, never two starts at once.
  */
-export interface Adapter {
-  readonly manifest: AdapterManifest;
+export interface Adapter<S = unknown> {
+  readonly manifest: AdapterManifest<S>;
   /** Whether it should run, given its link state. */
   desired(link: LinkState): boolean;
   /** Resolves once connected; rejects when the connection could not be made. Gives up when `signal` aborts. */
   start(ctx: AdapterContext, signal: AbortSignal): Promise<void>;
   /** Releases everything start acquired. The host stops waiting after its stop deadline. */
   stop(reason: string): Promise<void>;
+  /**
+   * Extra facts shown under the adapter in /health. The host redacts keys that
+   * name a secret, but an adapter must still never put one here.
+   */
+  detail?(): Record<string, unknown>;
 }
 
-export type AdapterFactory = () => Adapter;
+/**
+ * What a registry entry loads. `hostState` runs once at host startup and its
+ * result is handed to `create` and to every served handler for the life of the
+ * process, so state a served subject must keep across adapter stops and
+ * restarts lives there and not in the adapter. `create` runs once, too.
+ */
+export interface AdapterModule<S = unknown> {
+  hostState?(): S;
+  create(hostState: S): Adapter<S>;
+}
