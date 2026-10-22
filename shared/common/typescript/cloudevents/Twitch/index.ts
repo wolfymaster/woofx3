@@ -7,6 +7,93 @@ export * from "./messages";
 
 type EventTuple = [string, Uint8Array];
 
+/** The payload each event type carries. A new event type does not compile until it is listed here. */
+export interface TwitchEventPayloads {
+  [TwitchEvent.EventType.ChatMessage]: TwitchEvent.ChatMessage;
+  [TwitchEvent.EventType.Cheer]: TwitchEvent.Cheer;
+  [TwitchEvent.EventType.Follow]: TwitchEvent.Follow;
+  [TwitchEvent.EventType.HypeTrainBegin]: TwitchEvent.HypeTrainBegin;
+  [TwitchEvent.EventType.Raid]: TwitchEvent.Raid;
+  [TwitchEvent.EventType.Redeem]: TwitchEvent.Redeem;
+  [TwitchEvent.EventType.StreamOnline]: TwitchEvent.StreamOnline;
+  [TwitchEvent.EventType.StreamOffline]: TwitchEvent.StreamOffline;
+  [TwitchEvent.EventType.Subscribe]: TwitchEvent.Subscribe;
+  [TwitchEvent.EventType.SubscriptionGift]: TwitchEvent.SubscriptionGift;
+  [TwitchEvent.EventType.Resub]: TwitchEvent.Resub;
+  [TwitchEvent.EventType.GiftPaidUpgrade]: TwitchEvent.GiftPaidUpgrade;
+  [TwitchEvent.EventType.PrimePaidUpgrade]: TwitchEvent.PrimePaidUpgrade;
+  [TwitchEvent.EventType.Unraid]: TwitchEvent.Unraid;
+  [TwitchEvent.EventType.PayItForward]: TwitchEvent.PayItForward;
+  [TwitchEvent.EventType.Announcement]: TwitchEvent.Announcement;
+  [TwitchEvent.EventType.CharityDonation]: TwitchEvent.CharityDonation;
+  [TwitchEvent.EventType.BitsBadgeTier]: TwitchEvent.BitsBadgeTier;
+  [TwitchEvent.EventType.WatchStreak]: TwitchEvent.WatchStreak;
+  [TwitchEvent.EventType.SharedSubscribe]: TwitchEvent.SharedSubscribe;
+  [TwitchEvent.EventType.SharedSubscriptionGift]: TwitchEvent.SharedSubscriptionGift;
+  [TwitchEvent.EventType.SharedRaid]: TwitchEvent.SharedRaid;
+  [TwitchEvent.EventType.SharedResub]: TwitchEvent.SharedResub;
+  [TwitchEvent.EventType.SharedGiftPaidUpgrade]: TwitchEvent.SharedGiftPaidUpgrade;
+  [TwitchEvent.EventType.SharedPrimePaidUpgrade]: TwitchEvent.SharedPrimePaidUpgrade;
+  [TwitchEvent.EventType.SharedPayItForward]: TwitchEvent.SharedPayItForward;
+  [TwitchEvent.EventType.SharedAnnouncement]: TwitchEvent.SharedAnnouncement;
+  [TwitchEvent.EventType.AdBreakUpcoming]: TwitchEvent.AdBreakUpcoming;
+  [TwitchEvent.EventType.AdBreakBegin]: TwitchEvent.AdBreakBegin;
+  [TwitchEvent.EventType.AdBreakEnd]: TwitchEvent.AdBreakEnd;
+}
+
+/**
+ * Throws unless `value` is JSON data built from plain objects, arrays and
+ * primitives.
+ *
+ * Platform SDK events are class instances whose real fields sit behind
+ * getters while the API client, and the credentials it holds, are own
+ * properties. Serializing one directly publishes the credentials and drops the
+ * data, so every payload must be mapped field by field into a plain object
+ * first, and this check makes forgetting to do so fail at the publish call.
+ */
+export function assertPlainPayload(value: unknown): void {
+  walkPayload(value, "payload", []);
+}
+
+function walkPayload(value: unknown, path: string, ancestors: object[]): void {
+  if (value === null) {
+    return;
+  }
+  const kind = typeof value;
+  if (kind === "number") {
+    // JSON turns NaN and Infinity into null without warning.
+    if (!Number.isFinite(value)) {
+      throw new TypeError(`${path} is ${String(value)}; event payloads may only hold finite numbers`);
+    }
+    return;
+  }
+  if (kind === "string" || kind === "boolean" || kind === "undefined") {
+    return;
+  }
+  if (kind !== "object") {
+    throw new TypeError(`${path} is a ${kind}; event payloads may only hold JSON data`);
+  }
+  const object = value as object;
+  if (ancestors.includes(object)) {
+    throw new TypeError(`${path} refers back to one of its own ancestors; event payloads must be trees`);
+  }
+  const nested = [...ancestors, object];
+  if (Array.isArray(object)) {
+    object.forEach((item, index) => {
+      walkPayload(item, `${path}[${index}]`, nested);
+    });
+    return;
+  }
+  const prototype = Object.getPrototypeOf(object);
+  if (prototype !== Object.prototype && prototype !== null) {
+    const name = (prototype?.constructor as { name?: string } | undefined)?.name ?? "unknown";
+    throw new TypeError(`${path} is an instance of ${name}; map it into a plain object before publishing`);
+  }
+  for (const [key, field] of Object.entries(object)) {
+    walkPayload(field, `${path}.${key}`, nested);
+  }
+}
+
 /** Provenance stamped on every event this builder emits. */
 const PLATFORM = "twitch";
 
@@ -137,7 +224,8 @@ export default class TwitchEvents {
    *  event type. Every event this class builds is stamped with its platform
    *  here rather than at each call site, so a new event cannot be added
    *  without provenance. */
-  private encodeEvent(type: TwitchEvent.EventType, event: any): EventTuple {
+  private encodeEvent<T extends TwitchEvent.EventType>(type: T, event: TwitchEventPayloads[T]): EventTuple {
+    assertPlainPayload(event);
     return [type, encode(Event({ type, source: this.source, platform: PLATFORM }, event))];
   }
 }

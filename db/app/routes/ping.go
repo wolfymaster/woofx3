@@ -10,8 +10,9 @@ import (
 )
 
 // PingRoutes sets up the ping/health check and migration status routes using
-// Twirp. Neither requires authentication: they report liveness and readiness,
-// nothing an operator owns, and db-proxy listens on loopback only.
+// Twirp. Neither has a Casbin hook: they report liveness and readiness,
+// nothing an operator owns. Like every route, they still require the service
+// token (middleware.ServiceAuth).
 func PingRoutes(mux *http.ServeMux, app *types.App) {
 	commonService := svc.NewCommonService(app.Db)
 	commonHandler := client.NewCommonServiceServer(

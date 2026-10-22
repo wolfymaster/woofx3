@@ -1,4 +1,5 @@
 import type { Service } from "@woofx3/common/runtime";
+import type { DbProxyClientConfig } from "@woofx3/db/service-auth";
 import { DbClient } from "../db";
 
 export default class DatabaseService implements Service<DbClient> {
@@ -8,11 +9,11 @@ export default class DatabaseService implements Service<DbClient> {
   client: DbClient;
   connected: boolean;
 
-  constructor(baseUrl: string) {
+  constructor(config: DbProxyClientConfig) {
     this.healthcheck = false;
     this.name = "db";
     this.type = "database";
-    this.client = new DbClient(baseUrl);
+    this.client = new DbClient(config);
     this.connected = false;
   }
 

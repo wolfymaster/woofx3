@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 
-	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/workers"
@@ -28,11 +27,7 @@ func NewUserService(repo *repo.UserRepository, publisher *workers.EventPublisher
 
 // CreateUser creates a new user in the database
 func (s *UserService) CreateUser(ctx context.Context, req *client.CreateUserRequest) (*client.UserResponse, error) {
-	// Generate a new UUID for the user
-	id := uuid.New().String()
-
 	user := &models.User{
-		ID:       id,
 		Username: req.Username,
 		UserID:   req.UserId,
 		Platform: req.Platform,

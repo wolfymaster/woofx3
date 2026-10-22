@@ -114,16 +114,11 @@ func TestStopAbandonsAParentAndTheSubWorkflowItWaitsOn(t *testing.T) {
 
 	stopWithin(t, h, 2*time.Second)
 
-	h.engine.executionsMu.RLock()
-	ids := make([]string, 0, len(h.engine.executions))
-	for id := range h.engine.executions {
-		ids = append(ids, id)
+	held := h.engine.runs.executions()
+	if len(held) != 2 {
+		t.Fatalf("engine holds %d runs, want the parent and its sub-workflow", len(held))
 	}
-	h.engine.executionsMu.RUnlock()
-	if len(ids) != 2 {
-		t.Fatalf("engine holds %d runs, want the parent and its sub-workflow", len(ids))
-	}
-	for _, id := range ids {
+	for id := range held {
 		if got := h.log.settlements(id); len(got) != 1 || got[0] != types.ExecutionStatusFailed {
 			t.Errorf("run %s settlements = %v, want [failed]", id, got)
 		}

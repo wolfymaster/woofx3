@@ -544,6 +544,7 @@ fn build_http_namespace<'js>(
     let client = invocation.host.http.clone();
     let module_id = invocation.module_id.clone();
     let grants = invocation.permissions.clone();
+    let deadline = invocation.deadline;
     let request_fn = JsFunction::new(
         ctx.clone(),
         move |ctx, url: String, method: String, opts: rquickjs::Value<'_>| {
@@ -555,6 +556,8 @@ fn build_http_namespace<'js>(
                     url: &url,
                     method: &method,
                     opts: json_opts,
+                    enforcement: crate::host::Enforcement::Policy,
+                    deadline: Some(deadline),
                 })
                 .map_err(host_err)?;
             binding_return(&ctx, &response, limits)
@@ -988,16 +991,17 @@ fn build_log_namespace<'js>(
     Ok(())
 }
 
-/// `ctx.response(success, message)` — the standard shape a module function
-/// returns to report an outcome and a message, which becomes the calling
-/// step's output. A pure data constructor (no host state, unlike the other
-/// `build_*` functions): it only builds and returns `{ proto:
-/// "woofx3.response", v: 1, success, message }`; the sandboxed function
-/// still has to actually `return` the result for it to reach the step.
-/// Tagged with `proto`/`v` (mirroring
-/// the `woofx3.widget`/`woofx3.overlay-events` envelope convention) so a
-/// caller can reliably distinguish "this is a deliberate response" from any
-/// other object a function might return for its own purposes.
+/// `ctx.response`, `ctx.success` and `ctx.failure` — the standard shape a
+/// module function returns to report an outcome and a message, which becomes
+/// the calling step's output. Pure data constructors (no host state, unlike
+/// the other `build_*` functions): each only builds and returns `{ proto:
+/// "woofx3.response", v: 1, success, message, ...fields }`; the sandboxed
+/// function still has to actually `return` the result for it to reach the
+/// step. `ctx.success`/`ctx.failure` accept extra fields, validated by
+/// `build_outcome_value`. Tagged with `proto`/`v` (mirroring the
+/// `woofx3.widget`/`woofx3.overlay-events` envelope convention) so a caller
+/// can reliably distinguish "this is a deliberate response" from any other
+/// object a function might return for its own purposes.
 fn build_response_fn<'js>(
     ctx: &Ctx<'js>,
     ctx_obj: &Object<'js>,
@@ -1010,6 +1014,22 @@ fn build_response_fn<'js>(
     })
     .map_err(map)?;
     ctx_obj.set("response", response_fn).map_err(map)?;
+
+    // success/failure share one constructor: `fields` is converted to JSON
+    // and validated host-side, so the sandbox cannot bypass the reserved names.
+    for (name, success) in [("success", true), ("failure", false)] {
+        let outcome_fn = JsFunction::new(
+            ctx.clone(),
+            move |ctx, message: String, fields: Opt<JsValue<'_>>| {
+                let fields = fields.0.map(|v| binding_arg(&v, limits)).transpose()?;
+                let value = super::host_bindings::build_outcome_value(success, message, fields)
+                    .map_err(host_err)?;
+                binding_return(&ctx, &value, limits)
+            },
+        )
+        .map_err(map)?;
+        ctx_obj.set(name, outcome_fn).map_err(map)?;
+    }
     Ok(())
 }
 
@@ -1250,6 +1270,97 @@ mod tests {
         assert_eq!(result["v"], 1);
         assert_eq!(result["success"], false);
         assert_eq!(result["message"], "nope");
+    }
+
+    fn outcome_test_invocation() -> InvocationContext {
+        InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings: Default::default(),
+            resource_link_settings: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        }
+    }
+
+    #[test]
+    fn quickjs_ctx_success_and_failure_build_the_response_with_fields() {
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings: Default::default(),
+            resource_link_settings: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        };
+        // (call, success, message, extra field name, extra field value)
+        let cases = [
+            ("ctx.success('ok')", true, "ok", "", serde_json::Value::Null),
+            (
+                "ctx.success('ok', {})",
+                true,
+                "ok",
+                "",
+                serde_json::Value::Null,
+            ),
+            (
+                "ctx.failure('bad', { code: 7 })",
+                false,
+                "bad",
+                "code",
+                serde_json::json!(7),
+            ),
+            (
+                "ctx.success('hi', { who: 'ann' })",
+                true,
+                "hi",
+                "who",
+                serde_json::json!("ann"),
+            ),
+        ];
+        for (call, success, message, extra, extra_value) in cases {
+            let code = format!("function run(ctx) {{ return {call}; }}");
+            let result = adapter.execute(&code, "run", &invocation).unwrap();
+            assert_eq!(result["proto"], "woofx3.response", "{call}");
+            assert_eq!(result["v"], 1, "{call}");
+            assert_eq!(result["success"], success, "{call}");
+            assert_eq!(result["message"], message, "{call}");
+            if !extra.is_empty() {
+                assert_eq!(result[extra], extra_value, "{call}");
+            }
+        }
+    }
+
+    #[test]
+    fn quickjs_ctx_success_and_failure_refuse_bad_fields() {
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
+        let invocation = outcome_test_invocation();
+        // (fields argument source, expected error substring)
+        let cases = [
+            ("{ proto: 1 }", "reserved name 'proto'"),
+            ("{ v: 1 }", "reserved name 'v'"),
+            ("{ success: 1 }", "reserved name 'success'"),
+            ("{ message: 1 }", "reserved name 'message'"),
+            ("5", "fields must be an object"),
+            ("'text'", "fields must be an object"),
+            ("[1, 2]", "fields must be an object"),
+        ];
+        for (fields, want) in cases {
+            for func in ["success", "failure"] {
+                let code = format!("function run(ctx) {{ return ctx.{func}('x', {fields}); }}");
+                let err = adapter.execute(&code, "run", &invocation).unwrap_err();
+                assert!(err.to_string().contains(want), "{func} {fields}: {err}");
+            }
+        }
     }
 
     struct CountingSettingsClient {

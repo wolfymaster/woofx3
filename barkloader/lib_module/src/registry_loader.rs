@@ -4,7 +4,9 @@
 use crate::db_proxy::{
     BackgroundTaskJson, ModuleRecord, fetch_module_by_name, list_background_tasks, list_modules,
 };
+use crate::manifest_validate::{InstallProvenance, SYSTEM_MODULE_ID};
 use crate::module_manifest::{ManifestBackgroundTask, ManifestDeadline, ModuleManifest};
+use crate::reserved_subjects::declared_event_reservation;
 use lib_repository::Repository;
 use lib_sandbox::models::function::Function;
 use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule};
@@ -381,14 +383,36 @@ fn function_actions(module: &ModuleRecord) -> HashMap<String, String> {
 /// The events of the module's eventbus triggers, read from its stored
 /// manifest. A manifest that is missing or unreadable yields none, so the
 /// module's functions can publish nothing rather than anything.
+///
+/// The stored manifest is held to the current reserved-subjects contract, not
+/// the one in force when it was installed: an event it declares that the
+/// contract now reserves is left out, so a module installed before a subject
+/// was reserved cannot publish it. Only the bundled system module, the one
+/// manifest whose id is `SYSTEM_MODULE_ID` (uploads cannot claim it), is held
+/// to the system rules.
 fn eventbus_event_types(module: &ModuleRecord) -> HashSet<String> {
     let Some(manifest) = stored_manifest(module) else {
         return HashSet::new();
+    };
+    let provenance = if manifest.id == SYSTEM_MODULE_ID {
+        InstallProvenance::System
+    } else {
+        InstallProvenance::User
     };
     manifest
         .triggers
         .into_iter()
         .filter(|trigger| trigger.trigger_type == "eventbus" && !trigger.event.is_empty())
+        .filter(|trigger| {
+            let reservation = declared_event_reservation(&trigger.event, &manifest.id, provenance);
+            if let Some(prefix) = reservation {
+                warn!(
+                    "Module {} declares event {:?} under reserved subject {:?}; its functions may not publish it",
+                    module.name, trigger.event, prefix
+                );
+            }
+            reservation.is_none()
+        })
         .map(|trigger| trigger.event)
         .collect()
 }
@@ -543,6 +567,33 @@ mod tests {
                 .into_iter()
                 .collect()
         );
+    }
+
+    #[test]
+    fn a_stored_manifest_is_held_to_the_current_reserved_subjects() {
+        let manifest = r#"{ "id": "mymod", "name": "mymod", "triggers": [
+            { "id": "a", "name": "A", "type": "eventbus", "event": "command.created" },
+            { "id": "b", "name": "B", "type": "eventbus", "event": "session.started" },
+            { "id": "c", "name": "C", "type": "eventbus", "event": "module.other.x" },
+            { "id": "d", "name": "D", "type": "eventbus", "event": "module.mymod.x" },
+            { "id": "e", "name": "E", "type": "eventbus", "event": "counter.changed" }
+        ] }"#;
+        let events = eventbus_event_types(&module_with_manifest(Some(manifest)));
+        assert_eq!(
+            events,
+            ["module.mymod.x".to_string(), "counter.changed".to_string()]
+                .into_iter()
+                .collect()
+        );
+    }
+
+    #[test]
+    fn the_system_module_keeps_the_triggers_it_binds() {
+        let manifest = r#"{ "id": "woofx3", "name": "woofx3", "triggers": [
+            { "id": "a", "name": "A", "type": "eventbus", "event": "chat.command.sr" }
+        ] }"#;
+        let events = eventbus_event_types(&module_with_manifest(Some(manifest)));
+        assert!(events.contains("chat.command.sr"));
     }
 
     #[test]

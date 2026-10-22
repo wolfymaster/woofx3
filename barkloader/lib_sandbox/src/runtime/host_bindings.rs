@@ -442,10 +442,45 @@ pub fn build_response_value(success: bool, message: String) -> Value {
     })
 }
 
+/// Keys of the response envelope. `ctx.success`/`ctx.failure` refuse extra
+/// fields with these names so a module cannot forge or overwrite the tag
+/// or outcome that callers rely on.
+pub const RESERVED_RESPONSE_FIELDS: [&str; 4] = ["proto", "v", "success", "message"];
+
+/// `ctx.success(message, fields?)` / `ctx.failure(message, fields?)` — the
+/// response envelope plus extra fields the calling step can read as
+/// `${step.<field>}`. `fields` must be an object (or absent) and may not
+/// set any of [`RESERVED_RESPONSE_FIELDS`].
+pub fn build_outcome_value(
+    success: bool,
+    message: String,
+    fields: Option<Value>,
+) -> Result<Value, String> {
+    let extra = match fields {
+        None | Some(Value::Null) => serde_json::Map::new(),
+        Some(Value::Object(map)) => map,
+        Some(_) => return Err("ctx.success/ctx.failure: fields must be an object".to_string()),
+    };
+    if let Some(reserved) = RESERVED_RESPONSE_FIELDS
+        .iter()
+        .find(|name| extra.contains_key(**name))
+    {
+        return Err(format!(
+            "ctx.success/ctx.failure: fields may not set reserved name '{reserved}'"
+        ));
+    }
+    let Value::Object(mut envelope) = build_response_value(success, message) else {
+        unreachable!("build_response_value always returns an object");
+    };
+    envelope.extend(extra);
+    Ok(Value::Object(envelope))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::host::noop::noop_host_context;
+    use serde_json::json;
 
     use crate::host::{CompareAndSetOutcome, NatsPublisher, StorageClient};
     use std::sync::{Arc, Mutex};
@@ -621,6 +656,96 @@ mod tests {
             format_log_value(&serde_json::json!({"code": 42})),
             r#"{"code":42}"#
         );
+    }
+
+    #[test]
+    fn build_outcome_value_table() {
+        let ok_envelope = |success: bool| json!({"proto":"woofx3.response","v":1,"success":success,"message":"m"});
+        // (name, success, fields, expected envelope or error substring)
+        type Case<'a> = (&'a str, bool, Option<Value>, Result<Value, &'a str>);
+        let cases: Vec<Case> = vec![
+            ("no fields", true, None, Ok(ok_envelope(true))),
+            (
+                "null fields",
+                true,
+                Some(Value::Null),
+                Ok(ok_envelope(true)),
+            ),
+            (
+                "extra fields",
+                true,
+                Some(json!({"a":1})),
+                Ok(json!({"proto":"woofx3.response","v":1,"success":true,"message":"m","a":1})),
+            ),
+            (
+                "failure with fields",
+                false,
+                Some(json!({"a":1})),
+                Ok(json!({"proto":"woofx3.response","v":1,"success":false,"message":"m","a":1})),
+            ),
+            ("failure no fields", false, None, Ok(ok_envelope(false))),
+            (
+                "reserved proto",
+                true,
+                Some(json!({"proto":"x"})),
+                Err("reserved name 'proto'"),
+            ),
+            (
+                "reserved v",
+                true,
+                Some(json!({"v":2})),
+                Err("reserved name 'v'"),
+            ),
+            (
+                "reserved success",
+                true,
+                Some(json!({"success":false})),
+                Err("reserved name 'success'"),
+            ),
+            (
+                "reserved message",
+                true,
+                Some(json!({"message":"x"})),
+                Err("reserved name 'message'"),
+            ),
+            (
+                "array fields",
+                true,
+                Some(json!([1])),
+                Err("fields must be an object"),
+            ),
+            (
+                "number fields",
+                true,
+                Some(json!(5)),
+                Err("fields must be an object"),
+            ),
+            (
+                "string fields",
+                true,
+                Some(json!("x")),
+                Err("fields must be an object"),
+            ),
+        ];
+        for (name, success, fields, want) in cases {
+            let got = build_outcome_value(success, "m".to_string(), fields);
+            match want {
+                Ok(v) => assert_eq!(got.unwrap(), v, "{name}"),
+                Err(substr) => assert!(got.unwrap_err().contains(substr), "{name}"),
+            }
+        }
+    }
+
+    #[test]
+    fn reserved_response_fields_are_the_envelope_keys() {
+        let Value::Object(envelope) = build_response_value(true, String::new()) else {
+            panic!("envelope is an object");
+        };
+        let mut keys: Vec<&str> = envelope.keys().map(String::as_str).collect();
+        let mut reserved = RESERVED_RESPONSE_FIELDS.to_vec();
+        keys.sort_unstable();
+        reserved.sort_unstable();
+        assert_eq!(keys, reserved);
     }
 
     #[test]
