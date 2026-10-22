@@ -63,6 +63,11 @@ export function parseTwitchApiRequest(body: unknown): TwitchApiRequest | null {
  */
 const TWITCH_NOT_LINKED = "TwitchNotLinked";
 
+/** Whether `err` is TwitchClient's refusal for a missing or blank stored token. */
+function isNotLinked(err: unknown): boolean {
+  return err instanceof Error && err.name === TWITCH_NOT_LINKED;
+}
+
 /** The CloudEvent type of every `twitchapi` refusal. Must match ERROR_REPLY_TYPE in barkloader's twitch extension. */
 export const TWITCHAPI_ERROR_TYPE = "twitchapi.error";
 
@@ -183,8 +188,21 @@ export default class TwitchApplication {
       return;
     }
     const signal = this.lifetime.signal;
-    const { userChanged, providerChanged } = await connection.client.reloadToken();
+    let reloaded: { userChanged: boolean; providerChanged: boolean };
+    try {
+      reloaded = await connection.client.reloadToken();
+    } catch (err) {
+      // An unlink clears the token and announces it like a relink. The host
+      // stops this adapter once it reads the link, so the running
+      // connection is left alone until then.
+      if (isNotLinked(err)) {
+        ctx.logger.debug("twitch: ignoring a Twitch token update that left no token stored");
+        return;
+      }
+      throw err;
+    }
     signal.throwIfAborted();
+    const { userChanged, providerChanged } = reloaded;
     const broadcasterChanged = userChanged && ctx.config.channel === undefined;
     if (providerChanged || broadcasterChanged) {
       ctx.logger.info("twitch: Twitch was relinked with a token this connection cannot take; reconnecting", {
@@ -271,7 +289,7 @@ export default class TwitchApplication {
     } catch (err) {
       this.link = "waiting";
       this.relinkPending = false;
-      if (err instanceof Error && err.name === TWITCH_NOT_LINKED) {
+      if (isNotLinked(err)) {
         ctx.logger.info("twitch: no Twitch account linked yet; waiting for a Twitch link");
         return "not_linked";
       }

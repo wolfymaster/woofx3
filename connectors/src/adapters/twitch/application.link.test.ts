@@ -84,7 +84,12 @@ class MockTwitchClient {
   }
 
   listener = confirmingListener();
-  reloadToken = mock(async () => nextReload);
+  reloadToken = mock(async () => {
+    if (!linked) {
+      throw new NotLinkedError();
+    }
+    return nextReload;
+  });
   close = mock(async () => {});
 
   init = mock(async () => {
@@ -341,6 +346,28 @@ describe("TwitchApplication relinked while connected", () => {
     await relinking;
 
     expect(codes).toEqual(["integration_unavailable", "integration_unavailable"]);
+  });
+
+  test("ignores an update that left no token stored, keeping the connection for the host to stop", async () => {
+    reset();
+    linkTwitch();
+    const { ctx, handlers, logger } = context();
+    const app = newApp();
+    await app.start(ctx, running);
+    const bus = ctx.twitchEventBus;
+    const subscriptionsBefore = instances[0]?.listener.subscribeCount as number;
+
+    linked = false;
+    await handlers.get(TOKEN_UPDATED)?.(tokenUpdated);
+
+    expect(instances).toHaveLength(1);
+    expect(instances[0]?.close).not.toHaveBeenCalled();
+    expect(ctx.twitchEventBus).toBe(bus);
+    expect(instances[0]?.listener.subscribeCount).toBe(subscriptionsBefore);
+    expect(logger.at("error")).toEqual([]);
+    expect(logger.at("debug").map((entry) => entry.message)).toContainEqual(
+      expect.stringContaining("left no token stored")
+    );
   });
 
   test("keeps the connection for a different account when a channel is configured", async () => {
