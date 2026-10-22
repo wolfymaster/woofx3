@@ -99,6 +99,15 @@ describe("parsed values", () => {
     });
   });
 
+  // JSON.parse yields the integer 1000 for `1000.0`, so TypeScript cannot tell
+  // it from `1000`; barkloader's Rust refuses it (companion_gateway_contract.rs).
+  test("an integral float reads as an integer", () => {
+    const parsed = parseModuleEndpointRequest(
+      JSON.parse('{"op":"send","moduleId":"vtube_studio","endpointId":"vts","message":"x","budgetMs":1000.0}')
+    );
+    expect(parsed.ok).toBe(true);
+  });
+
   test("the subject and failure codes come from the contract", () => {
     expect(COMPANION_GATEWAY_SUBJECTS.moduleRequest).toBe("engine.companion.module.request");
     expect(MODULE_ENDPOINT_FAILURE_CODES).toContain("adapter_owned");

@@ -5,8 +5,10 @@
 //! for the values barkloader builds and reads.
 //!
 //! Rust refuses a wrong JSON type, a missing required field or an unknown key
-//! while decoding, before validation runs, so those cases carry no field
-//! name here; a case validation refuses must name the fixture's field.
+//! while decoding, before validation runs. serde names the field of an
+//! unknown or missing key, which must be the fixture's field; a wrong type
+//! carries no field name from serde. A case validation refuses must name the
+//! fixture's whole dotted field.
 
 use lib_sandbox::contracts::companion_gateway::{
     DecodeError, ModuleEndpointFailed, ModuleEndpointFailureCode, ModuleEndpointMatch,
@@ -54,7 +56,27 @@ fn check_case<T>(fixture: &Fixture, outcome: Result<T, DecodeError>) -> Option<S
             "{}: refused at {}, want {field}",
             fixture.name, e.field
         )),
-        (Some(_), Err(_)) => None,
+        (Some(_), Err(DecodeError::Invalid(_))) => None,
+        (Some(field), Err(DecodeError::Json(e))) => serde_field_mismatch(&fixture.name, field, &e),
+    }
+}
+
+/// serde names the offending field of an unknown or missing key in backticks
+/// ("unknown field `match`", "missing field `budgetMs`"); that name must be
+/// the leaf of the fixture's field. A wrong type or an unknown discriminant
+/// carries no field name, so those are only known to be refused.
+fn serde_field_mismatch(name: &str, field: &str, error: &serde_json::Error) -> Option<String> {
+    let message = error.to_string();
+    let named = ["unknown field `", "missing field `"]
+        .iter()
+        .find_map(|prefix| message.strip_prefix(prefix))
+        .and_then(|rest| rest.split('`').next());
+    let leaf = field.rsplit('.').next().unwrap_or(field);
+    match named {
+        Some(found) if found != leaf => Some(format!(
+            "{name}: serde refused field {found}, want {field}: {message}"
+        )),
+        _ => None,
     }
 }
 
@@ -89,6 +111,19 @@ fn send_with_message(message: String) -> Vec<u8> {
         "budgetMs": 1000,
     }))
     .unwrap()
+}
+
+/// JSON.parse turns `1000.0` into the integer 1000, so connectors' TypeScript
+/// accepts it where serde refuses a float for an integer field. barkloader
+/// writes plain integers, so the difference is never exercised; it is pinned
+/// here, and in module-request.test.ts, rather than papered over.
+#[test]
+fn test_companion_gateway_integral_float_is_refused() {
+    let raw = br#"{"op":"send","moduleId":"vtube_studio","endpointId":"vts","message":"x","budgetMs":1000.0}"#;
+    assert!(matches!(
+        ModuleEndpointRequest::decode(raw),
+        Err(DecodeError::Json(_))
+    ));
 }
 
 #[test]

@@ -97,6 +97,11 @@ A request is picked by its `op`:
 | `match.field` | `^[A-Za-z0-9_]{1,40}$`. Only on `request`. |
 | `match.value` | A non-empty string of at most 200 characters, or an integer within JavaScript's safe range. |
 
+One difference between the languages: `JSON.parse` reads `1000.0` as the
+integer 1000, so the TypeScript parser accepts an integral float where
+barkloader's Rust refuses it. barkloader writes plain integers, and both
+sides have a test pinning their behaviour.
+
 The id patterns are the ones the relay configuration accepts
 (`shared/common/typescript/cloudevents/Relay/relay.ts`), so any endpoint a
 request names can be routed through the companion bridge. The relay also
