@@ -61,6 +61,7 @@ describe("connectorsConfig", () => {
       authCache: { capacity: 2_048, ttlMs: 5_000 },
       groups: { lastSeenCapacity: CHAT_DEFAULTS.groupLastSeenCapacity, catalogTtlMs: 300_000 },
       store: { reloadDebounceMs: 250, reloadBackstopMs: 300_000 },
+      twitchApi: { timeoutMs: 10_000 },
       replyTimeoutMs: GATEWAY_CALLER_TIMEOUT_MS,
     });
   });

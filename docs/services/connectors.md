@@ -408,6 +408,28 @@ reload keeps the last good table, and a backstop reloads every
 command's cooldown keeps running when the command is reloaded. Starting the
 dispatcher fails if its first listing fails.
 
+**Built-in commands** (`connectors/src/chat/builtins.ts`) are handed to the
+dispatcher as its `builtins`. Each runs only for a line from the platform
+itself: a simulated line is ignored and logged.
+
+| Command | Platforms | Who | What it does |
+|---|---|---|---|
+| `!grantcommands <login>` | all | a grant on the command | Gives the login the moderator role on every command. |
+| `!revokecommands <login>` | all | a grant on the command | Takes it back. |
+| `!vanish` | Twitch | a grant on the command | Times the speaker out for 1 to 600 seconds. A broadcaster or moderator is spared. |
+| `!title <text>` | Twitch | broadcaster, moderator, or a grant | Sets the stream title. |
+| `!category <name>` | Twitch | broadcaster, moderator, or a grant | Sets the stream category. |
+| `!marker [text]` | Twitch | broadcaster, moderator, or a grant | Places a stream marker and says its position. |
+
+The login of a grant command must match `^[a-z0-9_]{1,25}$` after the `@` is
+dropped and case is folded; anything else gets a usage line and changes
+nothing. The Twitch commands call the Twitch adapter on the `twitchapi`
+subject and wait `WOOFX3_CONNECTORS_DISPATCHER_TWITCH_API_TIMEOUT_MS`. A
+failure becomes a chat line: no answer in time is reported as unknown (Twitch
+may still apply the change), a Twitch adapter that is off or not linked says
+so, and any other refusal gives Twitch's reason. `CHAT_DISPATCHER_GRANTS`
+includes `twitchapi` among its requests.
+
 ## Configuration
 
 | Variable | Default | Meaning |
@@ -451,6 +473,7 @@ The chat command dispatcher reads:
 | `WOOFX3_CONNECTORS_DISPATCHER_GROUP_CATALOG_TTL_MS` | `300000` | How long the built-in group catalog is used before it is read again. |
 | `WOOFX3_CONNECTORS_DISPATCHER_RELOAD_DEBOUNCE_MS` | `250` | How long a command event waits for more before the commands reload. |
 | `WOOFX3_CONNECTORS_DISPATCHER_RELOAD_BACKSTOP_MS` | `300000` | How often the commands reload with no event. |
+| `WOOFX3_CONNECTORS_DISPATCHER_TWITCH_API_TIMEOUT_MS` | `10000` | How long a built-in Twitch command waits for the Twitch adapter's answer. |
 
 The host also reads the bus settings (`WOOFX3_MESSAGEBUS_URL`, `_JWT`, `_NKEY`,
 `_TOKEN`), `WOOFX3_DATABASE_PROXY_URL` and `WOOFX3_DB_PROXY_TOKEN`, the

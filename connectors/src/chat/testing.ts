@@ -71,6 +71,8 @@ export class FakeDispatcherDb implements DispatcherDb {
     ["subscriber_tier3", "g-t3"],
   ]);
   readonly memberships = new Set<string>();
+  /** Resource grants as `${username} ${resource} ${role}`. */
+  readonly resourceRoles = new Set<string>();
   readonly writes: Array<{ op: "add" | "remove"; groupId: string; username: string }> = [];
   permissionChecks: Array<{ username: string; resource: string }> = [];
   listings = 0;
@@ -122,5 +124,19 @@ export class FakeDispatcherDb implements DispatcherDb {
     }
     this.writes.push({ op: "remove", groupId, username });
     this.memberships.delete(`${groupId} ${username}`);
+  }
+
+  async addUserToResource(username: string, resource: string, role: string): Promise<void> {
+    if (this.failWrites) {
+      throw new Error("db-proxy AddUserToResource: INTERNAL: down");
+    }
+    this.resourceRoles.add(`${username} ${resource} ${role}`);
+  }
+
+  async removeUserFromResource(username: string, resource: string, role: string): Promise<void> {
+    if (this.failWrites) {
+      throw new Error("db-proxy RemoveUserFromResource: INTERNAL: down");
+    }
+    this.resourceRoles.delete(`${username} ${resource} ${role}`);
   }
 }
