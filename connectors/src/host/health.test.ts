@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { type GatewayConfig, GatewayEnvSchema, gatewayConfig } from "../config/gateway";
 import { HOST_DEFAULTS, type HostConfig, HostEnvSchema, hostConfig } from "../config/host";
 import { type HealthBody, handleHealthRequest, startHealthServer } from "./health";
 import { Host } from "./host";
@@ -6,6 +7,7 @@ import { LINK_READERS, type SettingsReader } from "./link-readers";
 import { countingIds, FakeAdapter, FakeBus, FakeTime, halfRandom, RecordingLogger } from "./testing";
 
 const config: HostConfig = hostConfig(HostEnvSchema.parse({}));
+const gateway: GatewayConfig = gatewayConfig(GatewayEnvSchema.parse({}));
 
 const linkedSettings: SettingsReader = {
   getSetting: async (key) => ({ twitch_token: "tok", "integration.twitch.enabled": "true" })[key] ?? null,
@@ -15,6 +17,7 @@ async function runningHost(adapter: FakeAdapter, busUp = { value: true }) {
   const time = new FakeTime();
   const host = new Host({
     config,
+    gateway,
     dbProxyUrl: "http://db.test",
     bus: new FakeBus(),
     busConnected: () => busUp.value,
@@ -69,12 +72,17 @@ describe("health", () => {
       expired: 0,
       no_inbox: 0,
     });
+    expect(body.counters.gateway).toEqual({
+      outcomes: {},
+      idempotency: { replayed: 0, coalesced: 0, mismatched: 0, held: 0 },
+    });
   });
 
   test("a host with no adapters answers 200", async () => {
     const time = new FakeTime();
     const host = new Host({
       config,
+      gateway,
       dbProxyUrl: "http://db.test",
       bus: new FakeBus(),
       busConnected: () => true,

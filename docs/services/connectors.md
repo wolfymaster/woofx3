@@ -19,7 +19,10 @@ caller ── request (e.g. twitchapi) ──▶ served subjects ──▶ adapt
 ```
 
 Code lives in `connectors/src/host/`; `server.ts` only wires it to the shared
-runtime (see [Runtime](./runtime.md)).
+runtime (see [Runtime](./runtime.md)). The host also serves the
+[platform gateway](./platform-gateway.md) (`connectors/src/gateway/`), the
+engine's platform-neutral way to post, announce and pin, which fans each
+request out to the platform adapters' egress handlers.
 
 ## Linked and enabled
 
@@ -201,7 +204,10 @@ awaited.
 | `WOOFX3_CONNECTORS_DB_PROXY_TIMEOUT_MS` | `2000` | Every db-proxy call (the startup ping, each link read) is aborted after this. |
 | `WOOFX3_CONNECTORS_ADAPTER_CONCURRENCY` | `16` | Handlers one subscription runs at once. |
 | `WOOFX3_CONNECTORS_ADAPTER_QUEUE_CAP` | `256` | Messages one subscription queues behind them. |
-| `WOOFX3_CONNECTORS_SHUTDOWN_DEADLINE_MS` | `15000` | Whole-process shutdown before exit code 1. Must exceed the db-proxy timeout plus the larger of the stop deadline and the longest served budget. |
+| `WOOFX3_CONNECTORS_SHUTDOWN_DEADLINE_MS` | `15000` | Whole-process shutdown before exit code 1. Must exceed the db-proxy timeout plus the larger of the stop deadline and the longest served budget, the platform gateway's included. |
+
+The platform gateway's own settings (`WOOFX3_CONNECTORS_GATEWAY_*`) are listed
+in [Platform gateway contract](./platform-gateway.md#configuration-and-health).
 
 The host also reads the bus settings (`WOOFX3_MESSAGEBUS_URL`, `_JWT`, `_NKEY`,
 `_TOKEN`) and `WOOFX3_DATABASE_PROXY_URL`. Invalid values stop the process at
@@ -236,7 +242,11 @@ fix what parked it.
   ],
   "counters": {
     "hostRequests": { "twitchapi": { "received": 3, "replied": 3, "invalid": 0, "internal": 0, "expired": 0, "no_inbox": 0 } },
-    "hostBus": { "refusals": 0, "subscriptions": {} }
+    "hostBus": { "refusals": 0, "subscriptions": {} },
+    "gateway": {
+      "outcomes": { "twitch": { "chat.send": { "delivered": 12, "unavailable": 1 } } },
+      "idempotency": { "replayed": 0, "coalesced": 0, "mismatched": 0, "held": 13 }
+    }
   }
 }
 ```

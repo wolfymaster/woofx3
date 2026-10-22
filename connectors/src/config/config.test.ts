@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { connectorsConfig } from "../config";
+import { GATEWAY_DEFAULTS } from "./gateway";
 import { HOST_DEFAULTS } from "./host";
 
 const required = {
@@ -39,6 +40,13 @@ describe("connectorsConfig", () => {
     });
   });
 
+  test("fills the gateway tunables from their named defaults", () => {
+    expect(connectorsConfig(required).gateway).toEqual({
+      adapterDeadlineMs: 9_000,
+      idempotency: { capacity: GATEWAY_DEFAULTS.idempotencyCapacity, ttlMs: GATEWAY_DEFAULTS.idempotencyTtlMs },
+    });
+  });
+
   test("takes overrides for the host tunables", () => {
     const config = connectorsConfig({ ...required, woofx3ConnectorsPort: 20106, woofx3ConnectorsAdapterQueueCap: 0 });
     expect(config.host.port).toBe(20106);
@@ -71,6 +79,21 @@ describe("connectorsConfig", () => {
       "must exceed woofx3ConnectorsDbProxyTimeoutMs plus woofx3ConnectorsStopDeadlineMs (12000)",
     ],
     ["zero db-proxy timeout", { ...required, woofx3ConnectorsDbProxyTimeoutMs: 0 }, "woofx3ConnectorsDbProxyTimeoutMs"],
+    [
+      "a gateway deadline the callers would not wait for",
+      { ...required, woofx3ConnectorsGatewayAdapterDeadlineMs: 12_000 },
+      "woofx3ConnectorsGatewayAdapterDeadlineMs",
+    ],
+    [
+      "zero idempotency capacity",
+      { ...required, woofx3ConnectorsGatewayIdempotencyCapacity: 0 },
+      "woofx3ConnectorsGatewayIdempotencyCapacity",
+    ],
+    [
+      "zero idempotency TTL",
+      { ...required, woofx3ConnectorsGatewayIdempotencyTtlMs: 0 },
+      "woofx3ConnectorsGatewayIdempotencyTtlMs",
+    ],
   ];
   for (const [name, env, problem] of invalid) {
     test(`refuses ${name}`, () => {

@@ -25,7 +25,7 @@ export interface ServedSubjectsDeps {
 }
 
 /** What a held request ends up doing once its adapter's state settles, or its budget runs out. */
-type Settled = { kind: "handle" } | { kind: "unavailable"; reason: UnavailableReason };
+export type Settled = { kind: "handle" } | { kind: "unavailable"; reason: UnavailableReason };
 
 /**
  * Answers every adapter's served subjects for the whole life of the process.
@@ -73,7 +73,7 @@ export class ServedSubjects {
     ctx: RequestContext
   ): Promise<Uint8Array> {
     if (served.availability !== "always") {
-      const settled = await this.settle(id, ctx.signal);
+      const settled = await whenSettled(this.deps.adapters, id, ctx.signal);
       if (settled.kind === "unavailable") {
         return served.unavailableReply(this.unavailable(id, settled.reason));
       }
@@ -95,36 +95,6 @@ export class ServedSubjects {
     }
   }
 
-  /** Resolves at once for a settled state; otherwise on the next settled state or when `signal` aborts. */
-  private settle(id: AdapterId, signal: AbortSignal): Promise<Settled> {
-    const now = settledFor(this.deps.adapters.status(id));
-    if (now !== undefined) {
-      return Promise.resolve(now);
-    }
-    return new Promise<Settled>((resolve) => {
-      const finish = (outcome: Settled) => {
-        unsubscribe();
-        signal.removeEventListener("abort", onAbort);
-        resolve(outcome);
-      };
-      const onAbort = () => finish({ kind: "unavailable", reason: "starting" });
-      const unsubscribe = this.deps.adapters.onStatusChange((changed, status) => {
-        if (changed !== id) {
-          return;
-        }
-        const outcome = settledFor(status);
-        if (outcome !== undefined) {
-          finish(outcome);
-        }
-      });
-      if (signal.aborted) {
-        onAbort();
-        return;
-      }
-      signal.addEventListener("abort", onAbort, { once: true });
-    });
-  }
-
   /** A missing entry is a wiring mistake, never "a module without host state" (that is an entry holding undefined). */
   private hostStateFor(id: AdapterId): unknown {
     if (!this.deps.hostStates.has(id)) {
@@ -136,6 +106,43 @@ export class ServedSubjects {
   private unavailable(id: AdapterId, reason: UnavailableReason): Unavailable {
     return { reason, link: this.deps.adapters.link(id) };
   }
+}
+
+/**
+ * Resolves at once for a settled state; otherwise on the adapter's next
+ * settled state, or with unavailable `starting` when `signal` aborts.
+ */
+export function whenSettled(
+  adapters: Pick<AdapterStatusSource, "status" | "onStatusChange">,
+  id: AdapterId,
+  signal: AbortSignal
+): Promise<Settled> {
+  const now = settledFor(adapters.status(id));
+  if (now !== undefined) {
+    return Promise.resolve(now);
+  }
+  return new Promise<Settled>((resolve) => {
+    const finish = (outcome: Settled) => {
+      unsubscribe();
+      signal.removeEventListener("abort", onAbort);
+      resolve(outcome);
+    };
+    const onAbort = () => finish({ kind: "unavailable", reason: "starting" });
+    const unsubscribe = adapters.onStatusChange((changed, status) => {
+      if (changed !== id) {
+        return;
+      }
+      const outcome = settledFor(status);
+      if (outcome !== undefined) {
+        finish(outcome);
+      }
+    });
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 /** Undefined while the adapter is on its way somewhere: a request waits for it to arrive. */

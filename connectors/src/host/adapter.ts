@@ -1,5 +1,13 @@
+import type {
+  EgressActionId,
+  EgressPayloads,
+  PlatformId,
+  PlatformOutcome,
+  RequestedBy,
+} from "@woofx3/api/platform-gateway";
 import type { AdapterId } from "./adapter-ids";
 import type { Logger } from "./deps";
+import type { ParseResult } from "./host-requests";
 import type { LinkState } from "./link-readers";
 import type { ScopedBus } from "./scoped-bus";
 
@@ -68,6 +76,38 @@ export interface ServedSubject<S = unknown> {
   unavailableReply(unavailable: Unavailable): Uint8Array;
 }
 
+/** What a platform adapter's egress handler gets with each request, besides the payload and options. */
+export interface EgressContext {
+  /** Aborts at the deadline. A handler stops waiting on the platform then. */
+  signal: AbortSignal;
+  /** Clock time the outcome is due by. */
+  deadline: number;
+  /** Who asked, for the adapter's own logs. Not authenticated. */
+  requestedBy: RequestedBy;
+  /** The sending workflow run's chain, for the adapter to attach to the platform's echo of the line. */
+  workflowChain?: string;
+  /**
+   * Call just before the request leaves for the platform. Past this point a
+   * deadline is reported as `unconfirmed` (the platform may have acted)
+   * instead of "did not reach the platform", so a caller never resends it.
+   */
+  markSent(): void;
+}
+
+/**
+ * How one platform performs one action. `parseOptions` validates the
+ * request's `options[platform]` when it is present; without it, options for
+ * this platform are refused. `handle` gets the parsed options, or undefined
+ * when the request carried none.
+ */
+export interface EgressHandlerSpec<A extends EgressActionId, O = unknown> {
+  parseOptions?(raw: unknown): ParseResult<O>;
+  handle(payload: EgressPayloads[A], options: O | undefined, ctx: EgressContext): Promise<PlatformOutcome>;
+}
+
+/** A platform adapter's egress handlers, at most one per action. An action without one is `unsupported`. */
+export type EgressHandlers = { [A in EgressActionId]?: EgressHandlerSpec<A> };
+
 /** Every subject an adapter touches. Its ScopedBus refuses anything else. */
 export interface AdapterManifest<S = unknown> {
   id: AdapterId;
@@ -75,6 +115,17 @@ export interface AdapterManifest<S = unknown> {
   subscribes: readonly string[];
   requests: readonly string[];
   serves: readonly ServedSubject<S>[];
+  /** Only a platform adapter (its id is a PlatformId) may declare egress; the platform is its id. */
+  egress?: EgressHandlers;
+}
+
+/**
+ * The adapter that speaks for a platform. Compiles only while every
+ * PlatformId is also an AdapterId, so the gateway can always find a
+ * platform's adapter by its id.
+ */
+export function platformAdapterId(platform: PlatformId): AdapterId {
+  return platform;
 }
 
 export interface AdapterContext {

@@ -8,8 +8,8 @@ Callers never branch on the platform; adding a platform or an action changes
 the contract and the adapters, not the callers.
 
 This page describes the wire contract every side shares: the subjects, the
-action catalog, the request and reply shapes, how each is validated, and how
-per-platform outcomes become a reply's `ok`.
+action catalog, the request and reply shapes, how each is validated, how
+per-platform outcomes become a reply's `ok`, and how connectors serves it.
 
 ## One contract, generated
 
@@ -170,6 +170,147 @@ cannot tell a missing `ok` from `false`.
 
 Only `delivered` counts (`outcomeCountsAsDelivered`). An `unconfirmed` line
 may have posted, but counting it would report success nobody can confirm.
+
+## The gateway in connectors
+
+The [connectors host](./connectors.md) serves `platform.gateway.send` itself,
+for the whole life of the process, whatever its adapters are doing. The
+request is the bare request JSON above; the reply is the `data` of a
+CloudEvent of type `platform.gateway.send.result` with source `connectors`.
+A message published without a reply inbox is counted and ignored, so a stray
+publish never posts anything.
+
+### Resolving the target
+
+| Target | Platforms it goes to |
+| --- | --- |
+| `all` | Every platform whose account is linked and enabled. One whose adapter cannot perform the action is reported `unsupported`; unlinked and disabled ones are left out. With none left the reply is `{ ok: false, results: {} }`. |
+| `platforms` | Exactly the named ones. Naming a platform whose adapter cannot perform the action (or is not loaded) refuses the whole request as `invalid`: the caller chose it. |
+| `origin` | The origin's platform. One that cannot perform the action is reported `unsupported`, since the event chose it. For `chat.send`, the origin's `messageId` becomes the payload's `replyToMessageId` unless the payload names one. `channelId` is not used: an adapter speaks for one channel. |
+
+### Each platform's outcome
+
+The action goes to every platform at once, and the reply waits for all of
+them, so a slow platform never delays a fast one beyond its own answer. For
+each platform:
+
+1. Options for it (`options[platform]`) are checked by its adapter. Bad
+   options, or options for an adapter that takes none, fail only that
+   platform, with `failed`/`invalid`.
+2. An unlinked platform is `unavailable`/`not_linked`, a disabled one
+   `unavailable`/`disabled`.
+3. A stopped or parked adapter is `unavailable` with that reason at once. One
+   that is starting, retrying or stopping is waited for until the deadline;
+   if it connects in time it gets the request, otherwise it is
+   `unavailable`/`starting`.
+4. The adapter's handler answers with an outcome. A handler that throws, or
+   returns something outside the contract, is `failed`/`upstream`.
+5. At the deadline a handler still running is cut off. If it had already
+   sent the request to the platform it is `unconfirmed` (the platform may
+   have acted, so it must not be resent); if not, it is `failed`/`upstream`,
+   "did not reach the platform before the deadline".
+
+The gateway never retries a platform. The reply's `ok` follows `replyOk`.
+
+### Deadlines
+
+| Who | Waits |
+| --- | --- |
+| A platform adapter's own call (Twitch Helix) | 8 s |
+| The gateway, for every platform of one request | 9 s (`WOOFX3_CONNECTORS_GATEWAY_ADAPTER_DEADLINE_MS`) |
+| Callers of `platform.gateway.send` | 12 s |
+
+The deadline runs from when the request arrives, so time spent queued behind
+busy requests counts. Each layer waits longer than the one below it, so a
+caller always gets per-platform results rather than a timeout. The gateway
+deadline must stay below 12 s; a higher value stops connectors at startup.
+
+### Idempotency
+
+The gateway keeps the replies it sent, keyed by `requestedBy.kind` plus
+`idempotencyKey`, together with a hash of the whole request:
+
+- The same key and the same request within the TTL gets the stored reply
+  again, without reaching any platform. This holds for a reply that was not
+  ok, too, as long as some platform delivered, dropped or left it unconfirmed.
+  A reply in which nothing reached a platform (every platform unavailable,
+  unsupported or failed) is not stored, so retrying the key after a transient
+  outage makes a real attempt.
+- The same key with a different request is refused as `invalid`.
+- A repeat that arrives while the first is still running waits for it and
+  gets its reply.
+- A request refused as a whole (an invalid request or target) is not stored,
+  so its key stays free.
+
+Replies are held in memory, at most
+`WOOFX3_CONNECTORS_GATEWAY_IDEMPOTENCY_CAPACITY` of them (the least recently
+used goes first) for `WOOFX3_CONNECTORS_GATEWAY_IDEMPOTENCY_TTL_MS`. A restart
+of connectors forgets every key.
+
+### Whole-request refusals
+
+| Code | When |
+| --- | --- |
+| `invalid` | The request does not parse, its target names a platform that cannot perform the action, or its idempotency key was used for a different request. |
+| `rate_limited` | The request waited behind busy requests until its deadline passed; nothing was attempted. |
+| `upstream` | The gateway itself failed; the error is logged. |
+
+### Discovery
+
+`platform.gateway.capabilities` and `platform.gateway.field_options` answer
+from the loaded adapters' manifests and the supervisor's current state, with a
+budget of 2000 ms. Both reply as a CloudEvent (types
+`platform.gateway.capabilities.result` and
+`platform.gateway.field_options.result`) whose `data` is:
+
+- **capabilities** (the request body is ignored):
+  `{ platforms: [{ id, displayName, state, connected, enabled, actions }] }`,
+  one entry per platform with an adapter. `state` is the adapter's lifecycle
+  state, `connected` and `enabled` its last link reading (both false before the
+  first read), and `actions` the actions it can perform whatever its state.
+- **field_options**: the request is `{ action }`; the envelope form
+  `{ data: { action } }`, which the api sends for a module field, is read the
+  same way. The reply is `[{ value, label }]`, one per platform that is
+  connected, enabled and able to perform the action. `all` and `origin` are not
+  listed, since a field's manifest pins them. An unknown action, or a request
+  without one, gets `{ error }`, the failure shape the api relays to the UI as
+  the reason a picker is empty.
+
+### Adding egress to an adapter
+
+A platform adapter (one whose id is a platform id) declares its handlers in
+its manifest's `egress`, at most one per action:
+
+```ts
+egress: {
+  "chat.send": {
+    parseOptions: (raw) => /* parsed(options) or parseFailed("why") */,
+    handle: async (payload, options, ctx) => {
+      ctx.markSent();               // just before the call leaves for the platform
+      return { status: "delivered", messageId };
+    },
+  },
+}
+```
+
+`ctx` carries the abort `signal` and `deadline`, `requestedBy`, and the
+request's `workflowChain` for the adapter to attach to the platform's echo of
+the line. An adapter that is not a platform declaring egress, an unknown
+action, or an action registered twice stops connectors at startup.
+
+### Configuration and health
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `WOOFX3_CONNECTORS_GATEWAY_ADAPTER_DEADLINE_MS` | `9000` | Reply budget of one request, and so of each platform it reaches. Must be below 12000. |
+| `WOOFX3_CONNECTORS_GATEWAY_IDEMPOTENCY_CAPACITY` | `1024` | Replies kept for replay. |
+| `WOOFX3_CONNECTORS_GATEWAY_IDEMPOTENCY_TTL_MS` | `600000` | How long a reply is replayed. |
+
+`/health` lists, under `counters.gateway`, the outcomes the gateway produced
+per platform, action and status (replays are not counted again), and how many
+requests were replayed, coalesced or refused for a reused key. Every request
+is logged at info with its action, target kind, idempotency key, requester
+and each platform's status. `requestedBy` is logged, not authenticated.
 
 ## Shared fixtures
 
