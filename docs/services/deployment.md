@@ -136,10 +136,22 @@ so an engine that sets neither accepts every request and answers CORS with
 |---|---|
 | `WOOFX3_ALLOWED_HOSTS` | A request whose `Host` is not listed is answered `421 Misdirected Request`. This stops DNS rebinding: a page on a hostile name that resolves to the engine still sends its own name as the Host. |
 | `WOOFX3_ALLOWED_ORIGINS` | A request that sends an `Origin` not listed is answered `403`, WebSocket upgrades and CORS preflights included. A request with no `Origin` is allowed. CORS echoes the request's origin with `Vary: Origin` instead of `*`. |
+| `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` (`sceneManagerAllowedOrigins` in `.woofx3.json`) | sceneManager's own origin list, checked the same way. When it is not blank, sceneManager uses it instead of `WOOFX3_ALLOWED_ORIGINS`; the api never reads it. |
 
-Each is a comma-separated list, read by both services, and each works without
-the other. A malformed entry stops the service at startup, and so does a value
-that is not a list at all, such as `true`.
+Each is a comma-separated list. `WOOFX3_ALLOWED_HOSTS` and
+`WOOFX3_ALLOWED_ORIGINS` are read by both services, and each works without the
+other. Unset or blank, a list turns its check off. A malformed entry stops the
+service at startup, naming the setting it came from, and so does a value that
+is not a list at all, such as `true`, or one that is set but lists nothing,
+such as `,`. The api also refuses to start when its origin list contains
+`null`: nothing that calls the api sends it, and a listed `null` would admit
+every sandboxed page.
+
+sceneManager's own list replaces the shared one; it does not add to it, so
+repeat the shared origins in it. Each setting is looked up on its own (the
+environment, then `.env`, then `.woofx3.json`), and then the own list wins
+whatever its source: a `sceneManagerAllowedOrigins` in `.woofx3.json` takes
+precedence over a `WOOFX3_ALLOWED_ORIGINS` set in the environment.
 
 Matching rules:
 
@@ -162,31 +174,44 @@ Matching rules:
 
 A browser sends no `Origin` on a top-level navigation or a same-origin `GET`,
 which is why an absent Origin is allowed; OBS, the CLI and peer services send
-none either. What an overlay sends when `WOOFX3_ALLOWED_ORIGINS` is set on
-sceneManager:
+none either. What an overlay sends when sceneManager's origin list is set:
 
 - An **OBS browser source** loads `/scene/{id}` as a navigation (no Origin), and
   its same-origin `GET`s, the `/events` SSE stream included, send none. Its
   `POST`s (delivery acknowledgements, widget status, session refresh) send the
   page's own origin, so list sceneManager's public origin, as OBS reaches it.
 - **Widget frames** are sandboxed with an opaque origin. Their CORS-mode loads
-  from sceneManager (web fonts, module scripts) send `Origin: null`, so list
-  `null` when widgets load anything from sceneManager. A listed `null` cannot
-  tell one sandboxed page from another; the Host check and the session tokens
-  remain the protection there. The api has no such caller, so give `null` to
-  sceneManager alone, through its own environment rather than the shared
-  `.woofx3.json`.
+  from sceneManager send `Origin: null`: module scripts and `@font-face` fonts
+  from the module's files (`/assets/modules/...`) and the asset library
+  (`/assets/user/...`), and the font files (`/fonts/files/...`) a widget's
+  font stylesheet names. Frame documents, the widget host shim, stylesheets
+  and images load without CORS and send no Origin. So list `null` when
+  widgets load anything from sceneManager. The api has no such caller and
+  refuses `null`, so list it in `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` (with
+  the rest of sceneManager's origins), never in `WOOFX3_ALLOWED_ORIGINS`.
+
+  A listed `null` is admitted only on those three paths; every other route,
+  the overlay page, its session and event routes, frame documents, uploads,
+  the editor WebSocket and `/health` included, answers `Origin: null` with
+  `403`. A listed `null` cannot tell one sandboxed page from another, though,
+  and those paths take no token: any sandboxed page, on any site, opened in a
+  browser that can reach sceneManager's Host can read a module's files, an
+  asset library file or a cached font file, if it knows the path. The asset
+  library is the one piece of user data among them. Keep the Host check on,
+  and keep sceneManager on loopback or behind the edge, where that browser is
+  the streamer's own.
 - The **scene editor** WebSocket sends the dashboard's origin.
 
-For a desktop engine on loopback, for example:
+For a desktop engine on loopback, for example, all set in the one environment
+the orchestrator passes to every service:
 
 ```bash
 # both services
 WOOFX3_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
-# api (the tauri origins admit the desktop app's webview)
+# the api (the tauri origins admit the desktop app's webview)
 WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost
-# sceneManager
-WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost,null
+# sceneManager: the same origins, plus null for widget frames
+WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost,null
 ```
 
 ## Client registration

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  ALLOWED_ORIGINS_SETTING,
   OPEN_REQUEST_GUARD_POLICY,
   parseRequestGuardPolicy,
   type RequestGuardPolicy,
@@ -57,6 +58,8 @@ describe("sceneManager request guard set", () => {
   const policy = parseRequestGuardPolicy({
     allowedHosts: "127.0.0.1",
     allowedOrigins: "http://127.0.0.1:*,null",
+    allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
+    opaqueOrigin: "allow",
   });
 
   test("an unknown Host is 421", async () => {
@@ -72,12 +75,52 @@ describe("sceneManager request guard set", () => {
     expect(res.headers.get("vary")).toBe("Origin");
   });
 
-  test("the page's own origin and a sandboxed frame's null origin are echoed", async () => {
+  test("the page's own origin is echoed", async () => {
     const base = start(policy);
     const own = await fetch(`${base}/health`, { headers: { origin: base } });
     expect(own.headers.get("access-control-allow-origin")).toBe(base);
-    const frame = await fetch(`${base}/health`, { headers: { origin: "null" } });
-    expect(frame.headers.get("access-control-allow-origin")).toBe("null");
+  });
+
+  // What a sandboxed widget frame loads in CORS mode: its module's scripts
+  // and fonts, library fonts, and the Google font files its font stylesheet
+  // names. Preflights, so no route's dependencies are needed.
+  test("a sandboxed frame's null origin is admitted, and echoed, where frames load from", async () => {
+    const base = start(policy);
+    for (const path of ["/assets/modules/m1/widget.js", "/assets/user/lib-1/font.woff2", "/fonts/files/abc.woff2"]) {
+      const res = await fetch(`${base}${path}`, { method: "OPTIONS", headers: { origin: "null" } });
+      expect(res.status).toBe(204);
+      expect(res.headers.get("access-control-allow-origin")).toBe("null");
+    }
+  });
+
+  test("a listed null is refused on every route frames do not load from", async () => {
+    const base = start(policy);
+    const refused: [string, string][] = [
+      ["GET", "/health"],
+      ["GET", "/scene/s1"],
+      ["GET", "/scene/s1/events"],
+      ["OPTIONS", "/scene/s1/events/e1/delivered"],
+      ["OPTIONS", "/scene/s1/widget/w1/status"],
+      ["GET", "/frames/m1/widget"],
+      ["GET", "/assets/widget-host-shim.js"],
+      ["OPTIONS", "/assets/upload/grant-1"],
+      ["GET", "/fonts/css?family=Inter"],
+    ];
+    for (const [method, path] of refused) {
+      const res = await fetch(`${base}${path}`, { method, headers: { origin: "null" } });
+      expect([method, path, res.status]).toEqual([method, path, 403]);
+      expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    }
+    const upgrade = await fetch(`${base}/scene/s1/edit?token=t&protocol=2`, {
+      headers: {
+        origin: "null",
+        upgrade: "websocket",
+        connection: "Upgrade",
+        "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+        "sec-websocket-version": "13",
+      },
+    });
+    expect(upgrade.status).toBe(403);
   });
 
   test("an unknown Origin is 403 on the SSE stream and the editor upgrade", async () => {

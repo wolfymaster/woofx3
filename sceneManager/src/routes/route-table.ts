@@ -3,6 +3,7 @@
 // dispatcher derives the rest (the preflight, 404, 405 with `Allow`, CORS on
 // every answer, and a 500 for a handler that throws) the same way for all.
 
+import { OPEN_REQUEST_GUARD_POLICY, type OpaqueOriginPolicy, RequestGuard } from "@woofx3/common/http/request-guard";
 import type { Logger } from "@woofx3/common/runtime";
 import { jsonError } from "./http-kit";
 
@@ -30,6 +31,14 @@ export interface Route<TDeps> {
   path: string;
   methods: readonly string[];
   cors: CorsPolicy;
+  /**
+   * Whether the route admits `Origin: null` when the origin list names it.
+   * Only what sandboxed widget frames load with CORS (module scripts and
+   * fonts from module and library assets, font files) says "allow";
+   * everything else refuses it, so a listed `null` opens no more of the
+   * service than frames need. With no origin list every origin is admitted.
+   */
+  opaqueOrigin: OpaqueOriginPolicy;
   handle(req: Request, context: RouteContext<TDeps>): Promise<Response> | Response;
 }
 
@@ -157,15 +166,22 @@ export function corsHeadersForPath<TDeps>(
     : corsHeaders(match.route.cors, match.route.methods, origin);
 }
 
-/** Answer `req` from `table`. */
+const OPEN_REQUEST_GUARD = new RequestGuard(OPEN_REQUEST_GUARD_POLICY);
+
+/**
+ * Answer `req` from `table`, once `guard.reject` has let it through: a route
+ * that refuses the opaque origin answers `Origin: null` with the guard's 403,
+ * without CORS headers, before its preflight or handler.
+ */
 export async function dispatchRoute<TDeps>(
   table: RouteTable<TDeps>,
   req: Request,
   url: URL,
   deps: TDeps,
   logger: Logger,
-  origin: CorsOrigin = ANY_ORIGIN
+  guard: RequestGuard = OPEN_REQUEST_GUARD
 ): Promise<Response> {
+  const origin = guard.corsOriginHeaders(req);
   const match = matchRoute(table, url.pathname);
   if (match.route === null) {
     return withHeaders(
@@ -174,6 +190,16 @@ export async function dispatchRoute<TDeps>(
     );
   }
   const { route, params } = match;
+  if (route.opaqueOrigin === "refuse") {
+    const refused = guard.rejectOpaqueOrigin(req);
+    if (refused) {
+      logger.warn("Request refused: the route does not admit the opaque origin", {
+        route: route.path,
+        method: req.method,
+      });
+      return refused;
+    }
+  }
   const cors = corsHeaders(route.cors, route.methods, origin);
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: cors });
