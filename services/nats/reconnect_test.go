@@ -115,9 +115,12 @@ func TestTheGoClientKeepsItsSubscriptionsAcrossABusRestart(t *testing.T) {
 
 	startTCPServer(t, port)
 	waitFor(t, "the client to reconnect", func() bool { return client.AsNATS().IsConnected() })
-	if _, ok := logs.find("NATS reconnected"); !ok {
-		t.Error("the reconnect was not logged")
-	}
+	// nats.go runs the reconnect handler on its callback goroutine after the
+	// connection reports connected, so the log line can trail IsConnected.
+	waitFor(t, "the reconnect to be logged", func() bool {
+		_, ok := logs.find("NATS reconnected")
+		return ok
+	})
 
 	publisher, err := nats.Connect(url)
 	if err != nil {
