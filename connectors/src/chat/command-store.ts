@@ -44,7 +44,7 @@ export function storedCommandDefinition(
             workflowId,
             error: errorMessage(error),
           });
-          return `Could not run !${stored.command}: ${errorMessage(error)}`;
+          return `Could not run !${stored.command} right now`;
         }
         return "";
       },

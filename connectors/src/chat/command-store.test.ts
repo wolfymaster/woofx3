@@ -182,7 +182,7 @@ describe("storedCommandDefinition", () => {
     expect(runs).toEqual([{ workflowId: "wf-1", event }]);
   });
 
-  test("a workflow that could not be started is told to chat", async () => {
+  test("a workflow that could not be started is told to chat, without the error's detail", async () => {
     const definition = storedCommandDefinition(
       storedCommand({ workflowId: "wf-1" }),
       {
@@ -193,7 +193,7 @@ describe("storedCommandDefinition", () => {
       },
       new RecordingLogger()
     );
-    expect(await definition.handler(invocation)).toBe("Could not run !hug: bus down");
+    expect(await definition.handler(invocation)).toBe("Could not run !hug right now");
   });
 
   test("a command's own actions run under its label", async () => {
