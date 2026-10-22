@@ -1,6 +1,7 @@
 import {
   type EngineRequest,
   EngineRequestType,
+  type TwitchLinkStatus,
   type TwitchTokenGrant,
   type TwitchTokenRequestedResponse,
 } from "@woofx3/api/webhooks";
@@ -53,10 +54,33 @@ type StoredDashboardToken = TwitchTokenGrant & { dashboardClientId: string };
  * value, so the access token and the refresh token that goes with it are
  * always written together.
  */
-export type StoredPublicToken = PublicClientToken & { userId: string; publicClientId: string };
+export type StoredPublicToken = Omit<PublicClientToken, "scope"> & {
+  scope: string[];
+  userId: string;
+  publicClientId: string;
+};
 
 /** What `TwitchTokenSource` needs to refresh a public app's token; `TwitchOAuthClient` provides it. */
 export type PublicClientRefresher = Pick<TwitchOAuthClient, "refresh">;
+
+/** The linked account as the stored row and this source know it: no profile, and never a token. */
+export interface StoredTwitchLinkAccount {
+  userId: string;
+  scopes: string[];
+  /** Milliseconds since the epoch; null when the token does not expire. */
+  expiresAt: number | null;
+  /** When renewing the token was refused, in milliseconds since the epoch; null while it works. */
+  authFailedAt: number | null;
+}
+
+/** The link at one revision; `account` is null when nothing is linked. */
+export interface StoredTwitchLink {
+  revision: number;
+  account: StoredTwitchLinkAccount | null;
+}
+
+/** A change to the link, as the `twitch.link.changed` webhook carries it. */
+export type TwitchLinkChange = { revision: number } & TwitchLinkStatus;
 
 export interface TwitchTokenSourceOptions {
   db: Pick<DbClient, "getSetting" | "setSetting">;
@@ -65,6 +89,11 @@ export interface TwitchTokenSourceOptions {
   /** The engine's confidential Twitch app (`WOOFX3_TWITCH_CLIENT_ID`), or null when it has none. */
   ownClientId: string | null;
   publicClient: PublicClientRefresher;
+  /**
+   * Told of every change to the link, after the write that made it, in the
+   * order of the writes. Must not throw.
+   */
+  onLinkChanged: (change: TwitchLinkChange) => void;
   now?: () => number;
 }
 
@@ -100,12 +129,24 @@ export class TwitchTokenSource implements TwitchCredentials {
   private unsaved: { spentRefreshToken: string; token: StoredPublicToken } | null = null;
   /** A refresh token Twitch refused. It never works again, so it is not sent again. */
   private refusedRefreshToken: string | null = null;
+  /**
+   * When renewing the stored link's token was refused, so it no longer
+   * works; null while it works. Only this process renews such a token, so
+   * memory is enough: after a restart the next renewal finds out again.
+   */
+  private authFailedAt: number | null = null;
+  /**
+   * The link's revision: raised on every change, and never below the clock,
+   * so it keeps rising across a restart (a restart starts at the clock).
+   */
+  private revision: number;
   /** The tail of the `twitch_token` writes, each started once the one before it settled. */
   private writes: Promise<void> = Promise.resolve();
   private readonly db: TwitchTokenSourceOptions["db"];
   private readonly dashboard: TwitchTokenSourceOptions["dashboard"];
   private readonly ownClientId: string | null;
   private readonly publicClient: PublicClientRefresher;
+  private readonly onLinkChanged: (change: TwitchLinkChange) => void;
   private readonly now: () => number;
 
   constructor(opts: TwitchTokenSourceOptions) {
@@ -113,20 +154,99 @@ export class TwitchTokenSource implements TwitchCredentials {
     this.dashboard = opts.dashboard;
     this.ownClientId = opts.ownClientId;
     this.publicClient = opts.publicClient;
+    this.onLinkChanged = opts.onLinkChanged;
     this.now = opts.now ?? (() => Date.now());
+    this.revision = this.now();
   }
 
   /**
    * Store a new link: `setTwitchToken` or a device login. `engineUserId`
    * scopes the row to the engine user who linked it, when known.
    */
-  async store(stored: object, engineUserId?: string): Promise<void> {
-    await this.serialized(() => this.db.setSetting(TWITCH_TOKEN_SETTING, JSON.stringify(stored), engineUserId));
+  async store<T extends { userId: string }>(stored: T, engineUserId?: string): Promise<void> {
+    if (typeof stored.userId !== "string" || stored.userId === "") {
+      throw new Error("A Twitch token to store must name its Twitch user");
+    }
+    await this.serialized(async () => {
+      await this.db.setSetting(TWITCH_TOKEN_SETTING, JSON.stringify(stored), engineUserId);
+      this.authFailedAt = null;
+      this.announce({ linked: true, userId: stored.userId, authFailedAt: null });
+    });
   }
 
   /** Forget the link. An empty value, not a deleted row, so readers see "not linked". */
   async clear(): Promise<void> {
-    await this.serialized(() => this.db.setSetting(TWITCH_TOKEN_SETTING, ""));
+    await this.serialized(async () => {
+      await this.db.setSetting(TWITCH_TOKEN_SETTING, "");
+      this.authFailedAt = null;
+      this.announce({ linked: false });
+    });
+  }
+
+  /**
+   * The link and its revision, read in the write queue so the two agree.
+   * Throws when the stored row names no user or no scopes: it cannot be
+   * described, and linking Twitch again replaces it.
+   */
+  async link(): Promise<StoredTwitchLink> {
+    return this.serialized(async () => {
+      const stored = await this.read();
+      if (!stored) {
+        return { revision: this.revision, account: null };
+      }
+      const { userId, scope, expiresIn, obtainmentTimestamp } = stored;
+      if (typeof userId !== "string" || userId === "") {
+        throw new Error("twitch_token names no Twitch user; link Twitch again");
+      }
+      if (!isScopeList(scope)) {
+        throw new Error("twitch_token has no scope list; link Twitch again");
+      }
+      const expiresAt =
+        typeof expiresIn === "number" && typeof obtainmentTimestamp === "number"
+          ? obtainmentTimestamp + expiresIn * 1000
+          : null;
+      return {
+        revision: this.revision,
+        account: { userId, scopes: scope, expiresAt, authFailedAt: this.authFailedAt },
+      };
+    });
+  }
+
+  /** Raise the revision and tell the listener. Called in the write queue, after the write. */
+  private announce(status: TwitchLinkStatus): void {
+    this.revision = Math.max(this.revision + 1, this.now());
+    this.onLinkChanged({ revision: this.revision, ...status });
+  }
+
+  /**
+   * Record that Twitch or the dashboard refused to renew the token `refused`
+   * was read as, unless the row has moved on to another link meanwhile.
+   * Announced once, when the link stops working.
+   */
+  private async markAuthFailed(refused: { accessToken: string }, userId: string): Promise<void> {
+    await this.serialized(async () => {
+      const stored = await this.read();
+      if (!stored || stored.accessToken !== refused.accessToken || this.authFailedAt !== null) {
+        return;
+      }
+      this.authFailedAt = this.now();
+      this.announce({ linked: true, userId, authFailedAt: this.authFailedAt });
+    });
+  }
+
+  /**
+   * After a renewal's write: announce it when it changed what the link
+   * describes (another account, other scopes) or brought a refused link
+   * back. A dashboard answers with whatever account it links now, which can
+   * differ from the one it linked before.
+   */
+  private noteRenewal(before: Record<string, unknown>, after: { userId: string; scope: string[] }): void {
+    const sameAccount = before.userId === after.userId && sameScopes(before.scope, after.scope);
+    if (sameAccount && this.authFailedAt === null) {
+      return;
+    }
+    this.authFailedAt = null;
+    this.announce({ linked: true, userId: after.userId, authFailedAt: null });
   }
 
   async helix(): Promise<HelixCredentials | string> {
@@ -230,11 +350,17 @@ export class TwitchTokenSource implements TwitchCredentials {
     } catch (err) {
       if (err instanceof TwitchOAuthError && err.refused) {
         this.refusedRefreshToken = current.refreshToken;
+        await this.markAuthFailed(current, current.userId);
         throw new Error(`Twitch no longer accepts this link's refresh token (${err.message}); link Twitch again`);
       }
       throw new Error(`could not refresh the Twitch token: ${errorMessage(err)}`);
     }
-    const next: StoredPublicToken = { ...refreshed, userId: current.userId, publicClientId: current.publicClientId };
+    const next: StoredPublicToken = {
+      ...refreshed,
+      scope: refreshed.scope ?? current.scope,
+      userId: current.userId,
+      publicClientId: current.publicClientId,
+    };
     let saved: boolean;
     try {
       saved = await this.savePublicToken(current.refreshToken, next);
@@ -259,10 +385,11 @@ export class TwitchTokenSource implements TwitchCredentials {
     return this.serialized(async () => {
       const stored = await this.read();
       const storedRefreshToken = stored && typeof stored.refreshToken === "string" ? stored.refreshToken : null;
-      if (storedRefreshToken !== spentRefreshToken) {
+      if (!stored || storedRefreshToken !== spentRefreshToken) {
         return false;
       }
       await this.db.setSetting(TWITCH_TOKEN_SETTING, JSON.stringify(next));
+      this.noteRenewal(stored, next);
       return true;
     });
   }
@@ -367,6 +494,7 @@ export class TwitchTokenSource implements TwitchCredentials {
       await dashboard.request({ type: EngineRequestType.TWITCH_TOKEN_REQUESTED }, from.dashboardClientId)
     );
     if (answer.token === null) {
+      await this.markAuthFailed(from, from.userId);
       throw new Error(`the dashboard has no Twitch token to give (${answer.reason})`);
     }
     const renewed: StoredDashboardToken = { ...answer.token, dashboardClientId: from.dashboardClientId };
@@ -376,6 +504,7 @@ export class TwitchTokenSource implements TwitchCredentials {
         return false;
       }
       await this.db.setSetting(TWITCH_TOKEN_SETTING, JSON.stringify(renewed));
+      this.noteRenewal(stored, renewed);
       return true;
     });
     if (!saved) {
@@ -426,6 +555,19 @@ function asDashboardToken(stored: Record<string, unknown>): StoredDashboardToken
     return "twitch_token came from a dashboard but its grant is incomplete; relink Twitch from the dashboard";
   }
   return { ...grant, dashboardClientId: stored.dashboardClientId };
+}
+
+function isScopeList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((s) => typeof s === "string");
+}
+
+/** Whether two stored scope lists grant the same scopes, in any order. */
+function sameScopes(a: unknown, b: unknown): boolean {
+  if (!isScopeList(a) || !isScopeList(b) || a.length !== b.length) {
+    return false;
+  }
+  const granted = new Set(a);
+  return b.every((s) => granted.has(s));
 }
 
 function asGrant(value: Record<string, unknown>): TwitchTokenGrant | null {

@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { AUTH_UNAVAILABLE } from "@woofx3/api/rpc";
+import { AUTH_UNAVAILABLE, isAuthenticationRefused, refusalReason } from "@woofx3/api/rpc";
 import { type AuthResult, ClientAuth, DEFAULT_AUTH_CACHE_TTL_MS } from "../src/auth";
 import { resolveAuthCacheTtlMs } from "../src/config";
 import { ApiGateway } from "../src/gateway";
@@ -211,6 +211,17 @@ describe("ClientAuth.validate", () => {
     expect(h.auth["keysByClient"].get("c1")?.size).toBe(1);
   });
 
+  test("a db proxy answer that is not a verdict is auth_unavailable and not cached", async () => {
+    const h = harness();
+    h.validateClient.mockImplementationOnce(async () => ({
+      status: { code: "INTERNAL", message: "database is locked" },
+    }));
+
+    expect(outcome(await h.auth.validate("c1", RIGHT))).toBe("auth_unavailable");
+    expect(outcome(await h.auth.validate("c1", RIGHT))).toBe("valid");
+    expect(h.validateClient).toHaveBeenCalledTimes(2);
+  });
+
   test("refuses a TTL that is not a positive integer", () => {
     const { db } = fakeDb();
     for (const ttlMs of [0, -1, 1.5, Number.NaN]) {
@@ -240,13 +251,15 @@ describe("ApiGateway.authenticate", () => {
   test("rejects a wrong secret as invalid credentials", async () => {
     const err = await rejection(gateway(false).authenticate("c1", WRONG));
 
-    expect(err.message).toBe("Invalid client credentials");
+    expect(isAuthenticationRefused(err)).toBe(true);
+    expect(refusalReason(err)).toBe("Invalid client credentials");
   });
 
   test("rejects with a retryable AuthUnavailable when the db proxy is down", async () => {
     const err = await rejection(gateway(true).authenticate("c1", RIGHT));
 
     expect(err.name).toBe(AUTH_UNAVAILABLE);
+    expect(isAuthenticationRefused(err)).toBe(false);
     expect(err.message).not.toContain("Invalid client credentials");
   });
 });

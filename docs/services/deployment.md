@@ -381,10 +381,32 @@ callers racing on a new engine cannot both be first.
 A client then calls `authenticate` with its id and secret. The api asks the db
 proxy to check them and reuses a successful check for
 `WOOFX3_AUTH_CACHE_TTL_MS` milliseconds (default `60000`), keyed on the id and
-a hash of the secret. Failed checks are never reused. When the db proxy cannot
-be reached, `authenticate` rejects with an error named `AuthUnavailable`
-rather than `Invalid client credentials`, so the caller can retry. Deleting a
+a hash of the secret, so neither a wrong secret nor an earlier success changes
+the answer for another secret. Failed checks are never reused. Deleting a
 client drops its cached checks at once.
+
+### Refusals
+
+capnweb sends a rejected call's error name and message, but the receiving side
+rebuilds any name it does not know as a plain `Error`. So each refusal is
+carried in its message, which starts with a marker that a guard from
+`@woofx3/api/rpc` recognises:
+
+| Call | Message starts with | Guard |
+|---|---|---|
+| `registerClient` | `RegistrationRefused: ` | `isRegistrationRefused` |
+| `authenticate` | `AuthenticationRefused: ` | `isAuthenticationRefused` |
+
+The marker is for code, not people: `refusalReason(err)` returns the sentence
+after it, to show to a user, or null when the error is not a refusal.
+
+An authentication refusal means db-proxy does not know the client id and
+secret (`AuthenticationRefused: Invalid client credentials`). Retrying the same
+credentials cannot succeed, so a client stops and asks for new ones instead of
+backing off. When the api cannot reach db-proxy, or db-proxy answers with
+anything but a verdict, `authenticate` rejects with an error named
+`AuthUnavailable` on the engine side and no refusal marker, which a client
+retries.
 
 ## Barkloader processing callbacks
 

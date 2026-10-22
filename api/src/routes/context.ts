@@ -37,7 +37,8 @@ import type { MarketplaceClient } from "../marketplace-client";
 import { RelayCredentialSource } from "../relay-credential-source";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchDeviceLogins } from "../twitch-device-login";
-import { TwitchTokenSource } from "../twitch-token-source";
+import { TwitchProfiles } from "../twitch-profiles";
+import { type TwitchLinkChange, TwitchTokenSource } from "../twitch-token-source";
 import { UNVERSIONED } from "../version";
 import type { WebhookClient } from "../webhook-client";
 import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
@@ -83,6 +84,8 @@ export interface ApiOptions {
   twitchClientId?: string | null;
   /** Twitch's OAuth endpoints; Twitch itself when absent. */
   twitchOAuth?: TwitchOAuthClient;
+  /** Epoch milliseconds now; `Date.now` when absent. */
+  clock?: () => number;
 }
 
 async function barkloaderRequestError(response: Response): Promise<Error> {
@@ -111,6 +114,8 @@ export class ApiRouteHost extends RpcTarget {
   readonly relayCredential: RelayCredentialSource;
   /** Twitch device logins in progress. An instance property for the same reason as `twitchToken`. */
   readonly twitchDeviceLogins: TwitchDeviceLogins;
+  /** The linked account's Helix profile. An instance property for the same reason as `twitchToken`. */
+  readonly twitchProfiles: TwitchProfiles;
 
   protected db: DbClient;
   protected nats: NATSClient | null;
@@ -125,6 +130,7 @@ export class ApiRouteHost extends RpcTarget {
   protected version: string;
   protected hosting: EngineHosting | null;
   protected marketplace: MarketplaceClient | null;
+  protected readonly clock: () => number;
 
   protected getBarkloaderBaseUrl(): string {
     return this.barkloaderUrl.endsWith("/") ? this.barkloaderUrl.slice(0, -1) : this.barkloaderUrl;
@@ -237,11 +243,23 @@ export class ApiRouteHost extends RpcTarget {
   }
 
   /**
+   * Forgets the old account's profile and announces the change. The webhook
+   * is best effort: a reader that missed it reads `getTwitchLink`.
+   */
+  private onTwitchLinkChanged(change: TwitchLinkChange): void {
+    this.twitchProfiles.forget();
+    void this.emitWebhook(
+      { type: EngineEventType.TWITCH_LINK_CHANGED, ...change },
+      { revision: change.revision, twitchUserId: change.linked ? change.userId : null }
+    );
+  }
+
+  /**
    * Write the linked Twitch account's token and tell the services that hold
    * one to reload it (`setting.integration.token.updated`). `engineUserId`
    * scopes the row to the engine user who linked it, when known.
    */
-  protected async storeTwitchToken(stored: object, engineUserId?: string): Promise<void> {
+  protected async storeTwitchToken<T extends { userId: string }>(stored: T, engineUserId?: string): Promise<void> {
     await this.twitchToken.store(stored, engineUserId);
     // Best effort: the row is already written, so a missed event only delays
     // the pickup until the services next read it.
@@ -422,7 +440,10 @@ export class ApiRouteHost extends RpcTarget {
       dashboard: () => this.webhookClient,
       ownClientId: opts.twitchClientId ?? null,
       publicClient: twitchOAuth,
+      onLinkChanged: (change) => this.onTwitchLinkChanged(change),
+      now: opts.clock,
     });
+    this.twitchProfiles = new TwitchProfiles({ logger: opts.logger, now: opts.clock });
     this.twitchDeviceLogins = new TwitchDeviceLogins({
       clientId: opts.twitchPublicClientId ?? null,
       oauth: twitchOAuth,
@@ -447,6 +468,7 @@ export class ApiRouteHost extends RpcTarget {
     this.version = opts.version ?? UNVERSIONED;
     this.hosting = opts.hosting ?? null;
     this.marketplace = opts.marketplace ?? null;
+    this.clock = opts.clock ?? (() => Date.now());
   }
 }
 

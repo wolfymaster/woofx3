@@ -158,6 +158,7 @@ describe("subscribeEngineEvents over a WebSocket session", () => {
       db: settings,
       dashboard: () => webhooks,
       ownClientId: null,
+      onLinkChanged: () => {},
       publicClient: {
         refresh: async () => {
           throw new Error("this test has no public Twitch app");

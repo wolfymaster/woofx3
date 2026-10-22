@@ -1,8 +1,11 @@
 import {
-  type ApiGatewayContract,
   AUTH_UNAVAILABLE,
+  AUTHENTICATION_REFUSED,
+  type ApiGatewayContract,
+  authenticationRefusedMessage,
   REGISTRATION_REFUSED,
   type RegisterClientOptions,
+  registrationRefusedMessage,
 } from "@woofx3/api/rpc";
 import { secretsMatch } from "@woofx3/common/http/secrets";
 import type { SharedLogger } from "@woofx3/common/logging";
@@ -15,20 +18,33 @@ import type { RegistrationPolicy } from "./registration";
 import { callbackUrlRefusal, type WebhookClient } from "./webhook-client";
 
 /**
- * A registration the engine will not accept. Named so the refusal is
- * recognisable across the capnweb boundary; see REGISTRATION_REFUSED.
+ * A registration the engine will not accept. Its message carries the
+ * REGISTRATION_REFUSED marker, so a capnweb client can tell the refusal from
+ * a transient failure.
  */
 export class RegistrationRefused extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(reason: string) {
+    super(registrationRefusedMessage(reason));
     this.name = REGISTRATION_REFUSED;
   }
 }
 
 /**
- * Credentials the engine could not check because the db proxy did not answer.
- * Named so a caller can tell it from a rejection and retry; see
- * AUTH_UNAVAILABLE.
+ * Credentials the engine does not accept. Its message carries the
+ * AUTHENTICATION_REFUSED marker, so a capnweb client can tell the refusal
+ * from a transient failure and stop retrying.
+ */
+export class AuthenticationRefused extends Error {
+  constructor(reason: string) {
+    super(authenticationRefusedMessage(reason));
+    this.name = AUTHENTICATION_REFUSED;
+  }
+}
+
+/**
+ * Credentials the engine could not check because the db proxy gave no
+ * verdict. Its message carries no refusal marker, so a capnweb client sees a
+ * transient failure and may retry; see AUTH_UNAVAILABLE.
  */
 export class AuthUnavailable extends Error {
   constructor(message: string) {
@@ -83,8 +99,8 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
       if (result.error.kind === "auth_unavailable") {
         throw new AuthUnavailable("The engine could not check client credentials right now; try again.");
       }
-      // woofx3-ui matches this exact text to tell a rejected client from a failed call.
-      throw new Error("Invalid client credentials");
+      // woofx3-ui matches this text inside the message to tell a rejected client from a failed call.
+      throw new AuthenticationRefused("Invalid client credentials");
     }
     this.logger.debug("Authenticated client", {
       clientId,

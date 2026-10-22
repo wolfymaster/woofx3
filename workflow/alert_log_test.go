@@ -41,6 +41,10 @@ func (s *stubAlertService) ListAlerts(context.Context, *dbv1.ListAlertsRequest) 
 	return nil, fmt.Errorf("not exercised")
 }
 
+func (s *stubAlertService) CountAlertsByHour(context.Context, *dbv1.CountAlertsByHourRequest) (*dbv1.CountAlertsByHourResponse, error) {
+	return nil, fmt.Errorf("not exercised")
+}
+
 func (s *stubAlertService) UpdateAlertStatus(context.Context, *dbv1.UpdateAlertStatusRequest) (*dbv1.AlertResponse, error) {
 	return nil, fmt.Errorf("not exercised")
 }

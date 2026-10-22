@@ -29,10 +29,18 @@ type WorkerService struct {
 	cleanupWorker   *workers.CleanupWorker
 	metricsWorker   *workers.MetricsWorker
 	eventPublisher  *workers.EventPublisher
+	config          workers.Config
 }
 
-func NewWorkerService(logger *slog.Logger, databaseSvc *DatabaseService, natsSvc *service.NATSService, ids database.IDSource) *WorkerService {
+func NewWorkerService(
+	logger *slog.Logger,
+	databaseSvc *DatabaseService,
+	natsSvc *service.NATSService,
+	ids database.IDSource,
+	config workers.Config,
+) *WorkerService {
 	svc := &WorkerService{
+		config:      config,
 		BaseService: runtime.NewBaseServiceWithDeps[*WorkerService]("workers", "workers", nil, false, []string{"database", "nats"}),
 		logger:      logger,
 		databaseSvc: databaseSvc,
@@ -72,7 +80,7 @@ func (s *WorkerService) initializeWorkers() error {
 	workersRepo := repository.NewDbEventRepository(s.db)
 	eventCache := workers.NewEventCache()
 	eventPublisher := workers.NewEventPublisher(workersRepo, s.logger)
-	workersConfig := workers.LoadConfig()
+	workersConfig := s.config
 
 	s.publisherWorker = workers.NewPublisherWorker(workersRepo, s.natsConn, eventCache, s.logger, workersConfig)
 	s.ackWorker = workers.NewAckWorker(workersRepo, s.natsConn, eventCache, s.logger)
