@@ -1,7 +1,7 @@
-// Where sceneManager connects to OBS. The OBS marketplace module declares the
+// Where the OBS adapter connects to OBS. The OBS marketplace module declares the
 // connection as a `local[]` endpoint whose settings a streamer (or the
 // companion) fills in on the module's page; the endpoint dialer reads them and
-// picks the route. sceneManager's own configuration fills in whatever the
+// picks the route. connectors' own configuration (WOOFX3_OBS_*) fills in whatever the
 // module does not say, which keeps an engine without the module connecting as
 // it always has.
 
@@ -29,7 +29,7 @@ export interface ObsFallback {
   token?: string;
 }
 
-/** The dialer target for OBS's connection, falling back to sceneManager's configuration. */
+/** The dialer target for OBS's connection, falling back to connectors' configuration. */
 export function obsDialTarget(fallback: ObsFallback): DialTarget {
   return {
     moduleId: OBS_MODULE_ID,

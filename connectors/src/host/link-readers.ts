@@ -17,7 +17,8 @@ export interface LinkState {
 
 /** A link state plus how its enabled flag was read, so the watcher can report a missing or bad flag. */
 export interface LinkReading extends LinkState {
-  flag: IntegrationEnabled;
+  /** Null for an adapter that has no enabled setting to read. */
+  flag: IntegrationEnabled | null;
 }
 
 /** Engine settings, read through db-proxy. A missing setting reads as null. */
@@ -48,10 +49,22 @@ export const twitchLinkReader: LinkReader = {
   },
 };
 
+/**
+ * OBS always runs: an engine whose OBS is closed keeps retrying in the
+ * background, as it always has, and there is no OBS enabled setting.
+ */
+export const obsLinkReader: LinkReader = {
+  watches: [],
+  async read() {
+    return { connected: true, enabled: true, flag: null };
+  },
+};
+
 export type LinkReaderRegistry = Record<AdapterId, LinkReader>;
 
 export const LINK_READERS: LinkReaderRegistry = {
   twitch: twitchLinkReader,
+  obs: obsLinkReader,
 };
 
 /**

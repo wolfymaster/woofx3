@@ -1,15 +1,10 @@
 // OBS as one unit: where to find it (directly or through the companion),
 // the connection that keeps a session open, what the latest attempt looked
-// like, and the answers the rest of the service asks of it. The application
-// creates it, starts it once the HTTP server listens, and stops it on
-// shutdown; the bus subscriptions read its status and relay answers.
+// like, and the overlay refreshes it owes. The OBS adapter creates one per
+// run, starts it, and stops it when the run ends; its served subjects read
+// the connection and status, and its subscriptions ask it to reconnect.
 
-import type { ObsBrowserSourceRefresh } from "@woofx3/common/cloudevents/Obs/commands";
-import {
-  RELAY_CONFIG_SETTING,
-  readStoredRelayConfig,
-  requestRelayCredentialOverNats,
-} from "@woofx3/common/cloudevents/Relay/relay";
+import type { RelayGrant } from "@woofx3/common/cloudevents/Relay/relay";
 import {
   type DialerDeps,
   dialWebSocketEndpoint,
@@ -17,83 +12,65 @@ import {
   endpointKeysFromManifest,
   relayChangeMovesEndpoint,
 } from "../../companion/dialer";
+import type { EndpointStore } from "../../companion/endpoint-store";
 import type { Logger } from "../../host/deps";
-import type { BusClient } from "../../host/scoped-bus";
 import { ObsConnection } from "./connection";
 import type Manager from "./manager";
+import type { RefreshLatch } from "./refresh-latch";
 import { refreshOverlayBrowserSources } from "./refresh-overlays";
 import { type ObsFallback, obsDialTarget, openObsOverRoute } from "./settings";
 import { type ObsLastRoute, type ObsStatusReply, obsStatusReply } from "./status";
 
-/** The stored records OBS's route is read from on every connect attempt. */
-export interface ObsEndpointReads {
-  getSetting(key: string): Promise<string | null>;
-  getModuleManifest(moduleId: string): Promise<string | null>;
-  listModuleSettings(moduleId: string): Promise<{ key: string; value: string }[]>;
-  getModuleSecretValues(moduleId: string): Promise<Record<string, string>>;
-}
-
 export interface ObsServiceDeps {
-  db: ObsEndpointReads;
-  /** The bus the api is asked for a relay credential on; null when there is none. */
-  nats: Pick<BusClient, "request"> | null;
-  obs: ObsFallback;
+  store: EndpointStore;
+  /**
+   * The bridge credential, from the api; `force` asks for a fresh one in place
+   * of a cached one. Throws when none can be had.
+   */
+  relayCredential(force: boolean): Promise<RelayGrant | null>;
+  /** Where OBS is when the OBS module's settings leave a value empty. */
+  fallback: ObsFallback;
+  /** The overlay refresh sceneManager asked for; outlives this service. */
+  latch: RefreshLatch;
   logger: Logger;
 }
 
 export interface ObsService {
-  /** The connection to OBS: its current session, and the controls the bus subscriptions use. */
+  /** The connection to OBS: its current session, and the controls the adapter uses. */
   readonly connection: ObsConnection<Manager>;
   /** The connection's state for `engine.obs.status`, without touching OBS. */
   status(): ObsStatusReply;
-  /**
-   * Latches a request to refresh the OBS browser sources showing the overlays.
-   * It runs now when a session is open and otherwise on the next one, once:
-   * a boot id already latched or consumed changes nothing, and a plain
-   * reconnect without a new request refreshes nothing.
-   */
-  requestOverlayRefresh(request: ObsBrowserSourceRefresh): void;
   /** Whether the stored relay configuration moves OBS off the route its latest attempt took. */
   relayConfigMovesObs(): Promise<boolean>;
+  /**
+   * Starts connecting in the background and acts on the latched refresh on
+   * the current or next session, and on every request latched until stop.
+   */
   start(): void;
   stop(): Promise<void>;
 }
 
 export function createObsService(deps: ObsServiceDeps): ObsService {
-  const { db, logger } = deps;
-  const readRelayConfig = async () => readStoredRelayConfig(await db.getSetting(RELAY_CONFIG_SETTING));
-  const bus = deps.nats;
-  const requestRelayCredential = bus
-    ? requestRelayCredentialOverNats((subject, data, opts) => {
-        if (opts?.timeout === undefined) {
-          throw new Error(`${subject}: a request needs a timeout`);
-        }
-        return bus.request(subject, data, { timeout: opts.timeout });
-      })
-    : null;
+  const { store, latch, logger } = deps;
   const dialer: DialerDeps = {
     endpointKeys: async (moduleId, endpointId) =>
-      endpointKeysFromManifest(await db.getModuleManifest(moduleId), endpointId),
-    settings: (moduleId) => db.listModuleSettings(moduleId),
-    secrets: (moduleId) => db.getModuleSecretValues(moduleId),
+      endpointKeysFromManifest(await store.moduleManifest(moduleId), endpointId),
+    settings: (moduleId) => store.moduleSettings(moduleId),
+    secrets: (moduleId) => store.moduleSecrets(moduleId),
     // Read on every attempt, like the module settings, so a missed
     // `engine.relay.config.updated` is picked up on the next retry.
-    relayConfig: readRelayConfig,
-    relayCredential: async (force) => {
-      if (!requestRelayCredential) {
-        throw new Error("no message bus to ask the api for a relay credential");
-      }
-      return requestRelayCredential(force);
-    },
+    relayConfig: () => store.relayConfig(),
+    relayCredential: (force) => deps.relayCredential(force),
     fetch: (url, init) => fetch(url, init),
     logger,
   };
-  const target = obsDialTarget(deps.obs);
+  const target = obsDialTarget(deps.fallback);
   // Where and how the latest attempt looked for OBS, for the status reply.
   // The password and any bridge ticket stay inside the attempt.
   let last: ObsLastRoute | null = null;
+  let stopListening: (() => void) | null = null;
 
-  const refresh = new OverlayRefreshLatch(() => connection.current(), logger);
+  const refreshes = new RefreshDrain(latch, () => connection.current(), logger);
   const connection: ObsConnection<Manager> = new ObsConnection<Manager>({
     open: async () => {
       try {
@@ -107,74 +84,84 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
         throw err;
       }
     },
-    onConnected: () => refresh.drain(),
+    onConnected: () => refreshes.drain(),
     logger,
   });
 
   return {
     connection,
     status: () => obsStatusReply(connection, last),
-    requestOverlayRefresh: (request) => {
-      refresh.latch(request);
-      void refresh.drain();
+    relayConfigMovesObs: async () => relayChangeMovesEndpoint(await store.relayConfig(), target, last),
+    start: () => {
+      stopListening = latch.onLatched(() => {
+        void refreshes.drain();
+      });
+      connection.start();
+      void refreshes.drain();
     },
-    relayConfigMovesObs: async () => relayChangeMovesEndpoint(await readRelayConfig(), target, last),
-    start: () => connection.start(),
-    stop: () => connection.stop(),
+    stop: async () => {
+      stopListening?.();
+      stopListening = null;
+      await connection.stop();
+    },
   };
 }
 
 /**
- * Holds the latest overlay refresh request until a session can act on it.
- *
- * A refresh exists to recover overlays after the requesting process
- * restarted; after a mere reconnect their streams are intact, and a refresh
- * would cut off whatever is playing. So each boot id refreshes at most once
- * once OBS has been asked, and only a request, never a connection, causes one.
+ * Carries latched refresh requests to OBS, one at a time, on whichever
+ * session is open at each step. With no session, or when OBS could not be
+ * asked, the request goes back to the latch for the next session.
  */
-class OverlayRefreshLatch {
-  private pending: ObsBrowserSourceRefresh | null = null;
-  private readonly consumed = new Set<string>();
+class RefreshDrain {
   private draining = false;
+  /** A request was latched while a drain ran, so the drain looks again before it ends. */
+  private again = false;
 
   constructor(
+    private readonly latch: RefreshLatch,
     private readonly session: () => Manager | null,
     private readonly logger: Logger
   ) {}
 
-  latch(request: ObsBrowserSourceRefresh): void {
-    if (this.consumed.has(request.bootId) || this.pending?.bootId === request.bootId) {
-      return;
-    }
-    this.pending = request;
-  }
-
-  /**
-   * Refreshes for the latched request, and for any latched while it runs,
-   * on whichever session is open at each step; with none, the request stays
-   * latched. One drain at a time, so a request during a refresh runs once
-   * more after it.
-   */
   async drain(): Promise<void> {
     if (this.draining) {
+      this.again = true;
       return;
     }
     this.draining = true;
     try {
-      for (let client = this.session(); client && this.pending; client = this.session()) {
-        const request = this.pending;
-        this.pending = null;
-        const refreshed = await refreshOverlayBrowserSources(client, request.overlayPort, this.logger);
-        if (refreshed === null) {
-          // OBS was never asked, so the request still stands for the next
-          // session, unless a newer one arrived meanwhile.
-          this.pending ??= request;
+      do {
+        this.again = false;
+        if (!(await this.drainOnce())) {
           return;
         }
-        this.consumed.add(request.bootId);
-      }
+      } while (this.again);
     } finally {
       this.draining = false;
     }
+  }
+
+  /** False when OBS could not be asked, so the drain waits for the next session instead of looking again. */
+  private async drainOnce(): Promise<boolean> {
+    for (let client = this.session(); client; client = this.session()) {
+      const request = this.latch.take();
+      if (request === null) {
+        return true;
+      }
+      let refreshed: number | null = null;
+      try {
+        refreshed = await refreshOverlayBrowserSources(client, request.overlayPort, this.logger);
+      } finally {
+        if (refreshed === null) {
+          this.latch.release(request);
+        } else {
+          this.latch.consume(request);
+        }
+      }
+      if (refreshed === null) {
+        return false;
+      }
+    }
+    return true;
   }
 }

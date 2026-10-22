@@ -12,14 +12,14 @@ import type { OBSRequestTypes, OBSResponseTypes } from "obs-websocket-js";
 import { z } from "zod";
 import type { Logger } from "../../host/deps";
 
-/** The slice of `obs/manager.ts` a command needs; structural so tests can fake OBS. */
+/** The slice of `manager.ts` a command needs; structural so tests can fake OBS. */
 export interface ObsControlClient {
   request<T extends keyof OBSRequestTypes>(cmd: T, args?: OBSRequestTypes[T]): Promise<OBSResponseTypes[T]>;
 }
 
 /**
  * The answer while no OBS session is open. "Retrying" is always true while
- * this service runs: `obs/connection.ts` keeps trying until it is stopped.
+ * the adapter runs: `connection.ts` keeps trying until it is stopped.
  */
 export const OBS_NOT_CONNECTED = "OBS is not connected (retrying)";
 

@@ -1,4 +1,4 @@
-// A fake obs-websocket client for the scene manager's OBS handler tests.
+// A fake obs-websocket client for the OBS adapter's handler tests.
 
 import type { Logger } from "../../host/deps";
 import type { ObsControlClient } from "./control";

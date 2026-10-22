@@ -5,7 +5,7 @@
 import type { ObsStatus } from "@woofx3/api";
 import type { ObsConnectionState, ObsFailureKind } from "./connection";
 
-/** What the scene manager can say itself; `unanswered` is the api's to report. */
+/** What the OBS adapter can say itself; `unanswered` is the api's to report. */
 export type ObsStatusReply = Omit<ObsStatus, "state"> & { state: ObsConnectionState };
 
 export interface ObsConnectionView {

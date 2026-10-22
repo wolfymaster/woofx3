@@ -1,4 +1,4 @@
-// Picks how sceneManager reaches a module's local endpoint: straight to the
+// Picks how connectors reaches a module's local endpoint: straight to the
 // address in the module's settings, or through the companion's bridge when the
 // dashboard routed that endpoint there. The companion owns the actual address
 // on the streamer's network, so the bridge path names the endpoint, never a
@@ -59,7 +59,7 @@ export interface DialTarget {
   endpointId: string;
   /** Used when the installed module's manifest has no `local[]` entry for the endpoint. */
   fallbackKeys: EndpointKeys;
-  /** sceneManager's own configuration, for each value the settings leave empty. */
+  /** connectors' own configuration, for each value the settings leave empty. */
   fallback: { host: string; port: string; password?: string };
 }
 
@@ -152,7 +152,7 @@ async function requestTicket(deps: DialerDeps, url: URL, credential: string): Pr
 
 /**
  * The address in the module's settings, each value falling back to
- * sceneManager's configuration when empty. A port that is not a port falls
+ * connectors' configuration when empty. A port that is not a port falls
  * back too, rather than producing a URL that can never connect. When db-proxy
  * cannot be read, the configuration is used: a local endpoint is best-effort
  * and must not stop on a db outage.
@@ -165,7 +165,7 @@ export async function directRoute(deps: DialerDeps, target: DialTarget): Promise
     keys = (await deps.endpointKeys(target.moduleId, target.endpointId)) ?? target.fallbackKeys;
     [settings, secrets] = await Promise.all([deps.settings(target.moduleId), deps.secrets(target.moduleId)]);
   } catch (err) {
-    deps.logger.debug(`${target.moduleId} settings unreadable; using sceneManager's configuration`, {
+    deps.logger.debug(`${target.moduleId} settings unreadable; using connectors' configuration`, {
       error: err instanceof Error ? err.message : String(err),
     });
     settings = [];
