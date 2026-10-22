@@ -10,7 +10,7 @@ import {
 import MessageBus from "@woofx3/nats";
 import { ConnectorsEnvSchema, connectorsConfig } from "./config";
 import { RUNTIME_HEARTBEAT_INTERVAL_MS, RUNTIME_LIVENESS_INTERVAL_MS } from "./config/host";
-import { ADAPTERS } from "./host/adapters";
+import { adapterRegistry } from "./host/adapters";
 import ConnectorsApplication from "./host/application";
 import { systemClock, systemIds, systemRandom, systemTimers } from "./host/deps";
 import { LINK_READERS } from "./host/link-readers";
@@ -30,7 +30,7 @@ const bus = await MessageBus.createMessageBus({ name: "connectors", ...config.bu
 const application = new ConnectorsApplication({
   config,
   logger,
-  adapters: ADAPTERS,
+  adapters: adapterRegistry({ config, clock: systemClock, ids: systemIds }),
   readers: LINK_READERS,
   clock: systemClock,
   random: systemRandom,

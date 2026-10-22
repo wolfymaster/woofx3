@@ -1,7 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
-import type { TwitchApiContext } from "./application";
+import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
+import { countingIds, FakeTime, RecordingLogger } from "../../host/testing";
+import type { TwitchAppContext } from "./application";
 
 /**
  * An EventSub listener that confirms every subscription as it is created, so
@@ -89,37 +91,50 @@ mock.module("@woofx3/twitch", () => ({
   TWITCH_NOT_LINKED: "TwitchNotLinked",
 }));
 
-const { default: TwitchApiApplication } = await import("./application");
+const { default: TwitchApplication } = await import("./application");
 
-type Handler = (msg: unknown) => unknown;
+type Handler = (msg: { data: Uint8Array }) => unknown;
 
-function context(config: Record<string, string | undefined>) {
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+function newApp(): InstanceType<typeof TwitchApplication> {
+  return new TwitchApplication({ clock: new FakeTime(), ids: countingIds() });
+}
+
+function context(config: Partial<TwitchConfig> = {}) {
   const handlers = new Map<string, Handler>();
   const subscribe = mock(async (subject: string, handler: Handler) => {
     handlers.set(subject, handler);
   });
-  const logger = {
-    info: mock(() => {}),
-    error: mock(() => {}),
-    warn: mock(() => {}),
-    debug: mock(() => {}),
-    child: mock(() => ({ info: mock(() => {}) })),
-  };
-  const ctx = {
-    services: {
-      dbProxy: { client: { baseURL: "http://db-proxy" } },
-      messageBus: { client: { subscribe, publish: mock(() => {}) } },
-    },
-    config: { getConfig: (key: string) => config[key] },
+  const logger = new RecordingLogger();
+  const ctx: TwitchAppContext = {
     logger,
-  } as unknown as TwitchApiContext;
+    bus: {
+      subscribe,
+      publish: mock(async () => {}),
+      request: mock(async () => ({ subject: "", data: new Uint8Array() })),
+    },
+    db: { baseURL: "http://db-proxy" },
+    config: { ...CREDENTIALS, ...config },
+  } as unknown as TwitchAppContext;
   return { ctx, handlers, logger };
 }
 
-const CREDENTIALS = {
-  woofx3TwitchClientId: "cid",
-  woofx3TwitchClientSecret: "sec",
-  woofx3TwitchRedirectUrl: "http://localhost/oauth",
+function event(body: unknown): { data: Uint8Array } {
+  return { data: encoder.encode(JSON.stringify(body)) };
+}
+
+/** Asks for `command` as the sandbox does, with a bare `{ command, args }`, and decodes the reply. */
+async function ask(app: InstanceType<typeof TwitchApplication>, ctx: TwitchAppContext, body: unknown) {
+  const reply = await app.handleTwitchApiRequest(ctx, encoder.encode(JSON.stringify(body)), Number.MAX_SAFE_INTEGER);
+  return JSON.parse(decoder.decode(reply)) as { type: string; source: string; data: { error: string; code?: string } };
+}
+
+const CREDENTIALS: TwitchConfig = {
+  channel: undefined,
+  app: { clientId: "cid", clientSecret: "sec", redirectUri: "http://localhost/oauth" },
+  membership: { ttlMs: TWITCH_DEFAULTS.membershipTtlMs, deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs },
 };
 
 function reset() {
@@ -129,98 +144,83 @@ function reset() {
   nextReload = { userId: "42", userChanged: false, providerChanged: false };
 }
 
-describe("TwitchApi before Twitch is linked", () => {
-  test("starts idle and reports ready instead of failing", async () => {
-    reset();
-    const { ctx, logger } = context(CREDENTIALS);
-    const app = new TwitchApiApplication();
+const TOKEN_UPDATED = "setting.integration.token.updated";
 
-    await app.init(ctx);
+describe("TwitchApplication before Twitch is linked", () => {
+  test("start reports not_linked instead of failing, and runs nothing", async () => {
+    reset();
+    const { ctx, logger } = context();
+    const app = newApp();
+
+    expect(await app.start(ctx)).toBe("not_linked");
 
     expect(ctx.twitchEventBus).toBeUndefined();
-    expect(app.isReady()).toBe(true);
-    expect(logger.info).toHaveBeenCalledWith(expect.stringContaining("waiting for a Twitch link"));
+    expect(app.eventSubStatus().ready).toBe(false);
+    expect(logger.at("info").map((entry) => entry.message)).toContainEqual(
+      expect.stringContaining("waiting for a Twitch link")
+    );
   });
 
   test("needs no channel configured", async () => {
     reset();
-    const { ctx } = context(CREDENTIALS);
+    const { ctx } = context();
 
-    await new TwitchApiApplication().init(ctx);
+    await newApp().start(ctx);
 
     expect(constructedWith[0]?.channel).toBeUndefined();
   });
 
   test("connects when the Twitch link arrives", async () => {
     reset();
-    const { ctx, handlers } = context(CREDENTIALS);
-    const app = new TwitchApiApplication();
-    await app.init(ctx);
+    const { ctx, handlers } = context();
+    const app = newApp();
+    await app.start(ctx);
 
     linkTwitch();
-    await handlers.get("setting.integration.token.updated")?.({
-      json: () => ({ data: { integration: "twitch" } }),
-    });
+    await handlers.get(TOKEN_UPDATED)?.(event({ data: { integration: "twitch" } }));
 
     expect(ctx.twitchEventBus).toBeDefined();
     expect(ctx.broadcaster?.id).toBe("broadcaster-1");
-    expect(app.isReady()).toBe(true);
+    expect(app.eventSubStatus().ready).toBe(true);
   });
 
-  test("ignores token updates for other integrations", async () => {
+  test("ignores token updates for other integrations, and bodies that are not events", async () => {
     reset();
-    const { ctx, handlers } = context(CREDENTIALS);
-    await new TwitchApiApplication().init(ctx);
+    const { ctx, handlers } = context();
+    await newApp().start(ctx);
 
     linkTwitch();
-    await handlers.get("setting.integration.token.updated")?.({
-      json: () => ({ data: { integration: "spotify" } }),
-    });
+    await handlers.get(TOKEN_UPDATED)?.(event({ data: { integration: "spotify" } }));
+    await handlers.get(TOKEN_UPDATED)?.({ data: encoder.encode("not json") });
 
     expect(ctx.twitchEventBus).toBeUndefined();
   });
 
   test("answers a twitchapi request with an error rather than failing", async () => {
     reset();
-    const { ctx, handlers } = context(CREDENTIALS);
-    await new TwitchApiApplication().init(ctx);
-    const respond = mock(() => true);
+    const { ctx } = context();
+    const app = newApp();
+    await app.start(ctx);
 
-    await handlers.get("twitchapi")?.({
-      reply: "inbox.1",
-      json: () => ({ data: { command: "getStreamInfo" } }),
-      respond,
-    });
-    // The handler answers inside a tracing span it does not await.
-    await Bun.sleep(0);
+    const reply = await ask(app, ctx, { data: { command: "getStreamInfo" } });
 
-    expect(respond).toHaveBeenCalledTimes(1);
-    const [payload] = respond.mock.calls[0] as unknown as [Uint8Array];
-    expect(new TextDecoder().decode(payload)).toContain("not linked");
+    expect(reply.type).toBe("twitchapi.error");
+    expect(reply.source).toBe("twitchapi");
+    expect(reply.data.error).toContain("not linked");
   });
 
   test("codes the not-linked refusal for helix only, as the other commands' contract has no code for it", async () => {
     reset();
-    const { ctx, handlers } = context(CREDENTIALS);
-    await new TwitchApiApplication().init(ctx);
-    const answer = async (command: string) => {
-      const respond = mock(() => true);
-      await handlers.get("twitchapi")?.({
-        reply: "inbox.1",
-        json: () => ({ command, args: { operation: "getChannelInformation" } }),
-        respond,
-      });
-      await Bun.sleep(0);
-      const [payload] = respond.mock.calls[0] as unknown as [Uint8Array];
-      return JSON.parse(new TextDecoder().decode(payload)) as { type: string; data: { error: string; code?: string } };
-    };
+    const { ctx } = context();
+    const app = newApp();
+    await app.start(ctx);
 
-    const helix = await answer("helix");
+    const helix = await ask(app, ctx, { command: "helix", args: { operation: "getChannelInformation" } });
     expect(helix.type).toBe("twitchapi.error");
     expect(helix.data.code).toBe("not_linked");
     expect(helix.data.error).toContain("not linked");
 
-    const other = await answer("getStreamInfo");
+    const other = await ask(app, ctx, { command: "getStreamInfo", args: { operation: "getChannelInformation" } });
     expect(other.data.code).toBeUndefined();
   });
 
@@ -228,89 +228,95 @@ describe("TwitchApi before Twitch is linked", () => {
   // CloudEvent around it; it must reach the dispatcher all the same.
   test("reads a bare { command, args } request as well as a CloudEvent one", async () => {
     reset();
-    const { ctx, handlers } = context(CREDENTIALS);
-    await new TwitchApiApplication().init(ctx);
-    const respond = mock(() => true);
+    const { ctx } = context();
+    const app = newApp();
+    await app.start(ctx);
 
-    await handlers.get("twitchapi")?.({
-      reply: "inbox.1",
-      json: () => ({ command: "getStreamInfo", args: {} }),
-      respond,
-    });
-    await Bun.sleep(0);
+    const reply = await ask(app, ctx, { command: "getStreamInfo", args: {} });
 
-    const [payload] = respond.mock.calls[0] as unknown as [Uint8Array];
-    const body = new TextDecoder().decode(payload);
-    expect(body).not.toContain("Missing command");
-    expect(body).toContain("not linked");
+    expect(reply.data.error).not.toContain("Missing command");
+    expect(reply.data.error).toContain("not linked");
   });
 });
 
-describe("TwitchApi relinked while connected", () => {
-  const tokenUpdated = { json: () => ({ data: { integration: "twitch" } }) };
+describe("TwitchApplication relinked while connected", () => {
+  const tokenUpdated = event({ data: { integration: "twitch" } });
 
   test("swaps the token in place and requests every subscription again", async () => {
     reset();
     linkTwitch();
-    const { ctx, handlers } = context(CREDENTIALS);
-    const app = new TwitchApiApplication();
-    await app.init(ctx);
+    const { ctx, handlers } = context();
+    const app = newApp();
+    expect(await app.start(ctx)).toBe("connected");
     const client = instances[0];
     const bus = ctx.twitchEventBus;
     const subscriptionsBefore = client?.listener.subscribeCount as number;
 
-    await handlers.get("setting.integration.token.updated")?.(tokenUpdated);
+    await handlers.get(TOKEN_UPDATED)?.(tokenUpdated);
 
     expect(instances).toHaveLength(1);
     expect(client?.reloadToken).toHaveBeenCalledTimes(1);
     expect(ctx.twitchEventBus).toBe(bus);
     expect(client?.listener.subscribeCount).toBe(subscriptionsBefore * 2);
-    expect(app.isReady()).toBe(true);
+    expect(app.eventSubStatus().ready).toBe(true);
   });
 
   test("reconnects from scratch when a different account was linked", async () => {
     reset();
     linkTwitch();
-    const { ctx, handlers } = context(CREDENTIALS);
-    const app = new TwitchApiApplication();
-    await app.init(ctx);
+    const { ctx, handlers } = context();
+    const app = newApp();
+    await app.start(ctx);
     const first = instances[0];
 
     nextReload = { userId: "99", userChanged: true, providerChanged: false };
-    await handlers.get("setting.integration.token.updated")?.(tokenUpdated);
+    await handlers.get(TOKEN_UPDATED)?.(tokenUpdated);
 
     expect(first?.close).toHaveBeenCalledTimes(1);
     expect(instances).toHaveLength(2);
     expect(ctx.twitchEventBus).toBeDefined();
-    expect(app.isReady()).toBe(true);
+    expect(app.eventSubStatus().ready).toBe(true);
   });
 
   test("reconnects from scratch when the relinked token is renewed another way", async () => {
     reset();
     linkTwitch();
-    const { ctx, handlers } = context(CREDENTIALS);
-    const app = new TwitchApiApplication();
-    await app.init(ctx);
+    const { ctx, handlers } = context();
+    const app = newApp();
+    await app.start(ctx);
     const first = instances[0];
 
     nextReload = { userId: "42", userChanged: false, providerChanged: true };
-    await handlers.get("setting.integration.token.updated")?.(tokenUpdated);
+    await handlers.get(TOKEN_UPDATED)?.(tokenUpdated);
 
     expect(first?.close).toHaveBeenCalledTimes(1);
     expect(instances).toHaveLength(2);
     expect(instances[1]?.init).toHaveBeenCalledTimes(1);
     expect(ctx.twitchEventBus).toBeDefined();
-    expect(app.isReady()).toBe(true);
+    expect(app.eventSubStatus().ready).toBe(true);
+  });
+
+  test("keeps the connection for a different account when a channel is configured", async () => {
+    reset();
+    linkTwitch();
+    const { ctx, handlers } = context({ channel: "stream" });
+    await newApp().start(ctx);
+
+    nextReload = { userId: "99", userChanged: true, providerChanged: false };
+    await handlers.get(TOKEN_UPDATED)?.(tokenUpdated);
+
+    expect(instances).toHaveLength(1);
+    expect(instances[0]?.close).not.toHaveBeenCalled();
   });
 
   test("reconnects for a token renewed another way even with a channel configured", async () => {
     reset();
     linkTwitch();
-    const { ctx, handlers } = context({ ...CREDENTIALS, woofx3TwitchChannelName: "stream" });
-    await new TwitchApiApplication().init(ctx);
+    const { ctx, handlers } = context({ channel: "stream" });
+    await newApp().start(ctx);
 
     nextReload = { userId: "42", userChanged: false, providerChanged: true };
-    await handlers.get("setting.integration.token.updated")?.(tokenUpdated);
+    await handlers.get(TOKEN_UPDATED)?.(tokenUpdated);
 
     expect(instances[0]?.close).toHaveBeenCalledTimes(1);
     expect(instances).toHaveLength(2);

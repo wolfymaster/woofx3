@@ -42,6 +42,12 @@ describe("connectorsConfig", () => {
     });
   });
 
+  test("reads the Twitch adapter's settings under their existing names", () => {
+    const config = connectorsConfig({ ...required, woofx3TwitchChannelName: "mychannel" });
+    expect(config.twitch.channel).toBe("mychannel");
+    expect(config.twitch.app).toBeUndefined();
+  });
+
   test("fills the gateway tunables from their named defaults", () => {
     expect(connectorsConfig(required).gateway).toEqual({
       adapterDeadlineMs: 9_000,

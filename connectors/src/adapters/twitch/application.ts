@@ -1,24 +1,29 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
 import type { AuthProvider } from "@twurple/auth";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
-import { subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
-import { HELIX_COMMAND } from "@woofx3/common/cloudevents/Twitch/commands";
-import { type SharedLogger, type Span, SpanKind, withSpan } from "@woofx3/common/logging";
-import type { Application, IApplication } from "@woofx3/common/runtime";
+import { HELIX_COMMAND, TWITCHAPI_SUBJECT } from "@woofx3/common/cloudevents/Twitch/commands";
+import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/integration-settings";
+import { type Span, SpanKind, withSpan } from "@woofx3/common/logging";
 import { ListModuleSettings } from "@woofx3/db/module_setting.pb";
 import { GetSetting, SetSetting } from "@woofx3/db/setting.pb";
-import type { Msg } from "@woofx3/nats/src/types";
 import TwitchClient, { requestTokenOverNats } from "@woofx3/twitch";
-import chalk from "chalk";
+import type { TwitchConfig } from "../../config/twitch";
+import { type Clock, errorMessage, type IdSource, type Logger } from "../../host/deps";
+import type { BusMessage, ScopedBus } from "../../host/scoped-bus";
+import type { DbProxyClientConfig } from "../../services/db-proxy";
 import { AdBreakScheduler } from "./lib/adBreakScheduler";
 import { AdBreakLeadSetting } from "./lib/adBreakSettings";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
+import { HELIX_DEADLINE_MS } from "./lib/helix";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
 import type TwitchApiClient from "./lib/twitch";
-import TwitchApiClientImpl, { isTwitchApiCommand, type TwitchApiReplyCode, twitchApiErrorCodeOf } from "./lib/twitch";
+import TwitchApiClientImpl, {
+  isTwitchApiCommand,
+  type TwitchApiCall,
+  type TwitchApiReplyCode,
+  twitchApiErrorCodeOf,
+} from "./lib/twitch";
 import TwitchEventBus from "./lib/twitchEventBus";
-import type DbProxyService from "./services/dbProxy";
-import type MessageBusService from "./services/messageBus";
 
 /**
  * Inbound request on the `twitchapi` subject: `{ command, args? }`.
@@ -56,38 +61,48 @@ export function parseTwitchApiRequest(body: unknown): TwitchApiRequest | null {
  */
 const TWITCH_NOT_LINKED = "TwitchNotLinked";
 
-export type TwitchApiServices = {
-  dbProxy: DbProxyService;
-  messageBus: MessageBusService;
-};
+/** The CloudEvent type of every `twitchapi` refusal. Must match ERROR_REPLY_TYPE in barkloader's twitch extension. */
+export const TWITCHAPI_ERROR_TYPE = "twitchapi.error";
 
-export type TwitchApiContext = {
-  /** Absent until a Twitch account is linked; see `TwitchApi.connect`. */
+/** The slice of the adapter's scoped bus the twitch application uses. */
+export type TwitchBus = Pick<ScopedBus, "publish" | "subscribe" | "request">;
+
+/** What one start of the twitch application runs with, and what it builds while connected. */
+export type TwitchAppContext = {
+  logger: Logger;
+  bus: TwitchBus;
+  db: DbProxyClientConfig;
+  config: TwitchConfig;
+  /** Absent until connected. */
   broadcaster?: HelixUser;
-  logger: SharedLogger;
-  services: TwitchApiServices;
   twitchEventBus?: TwitchEventBus;
-  /** Absent until a Twitch account is linked. */
+  /** Absent until connected. */
   twitchApi?: TwitchApiClient;
-  config: {
-    getConfig: (key: string) => unknown;
-  };
 };
 
-export type TwitchApiApplication = Application<TwitchApiContext, TwitchApiServices>;
+/** Stamps `twitchapi` replies. */
+export interface TwitchReplyDeps {
+  clock: Clock;
+  ids: IdSource;
+}
 
-export default class TwitchApi implements IApplication<TwitchApiContext, TwitchApiServices> {
-  readonly context: TwitchApiContext;
-  readonly __finalContextType!: TwitchApiContext;
+/** How a connect attempt ended. `not_linked`: no Twitch token is stored. */
+export type ConnectOutcome = "connected" | "not_linked";
 
-  constructor() {
-    this.context = { services: {} } as unknown as TwitchApiContext;
-  }
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+/**
+ * Twitch for one adapter run: EventSub to bus events, and the `twitchapi`
+ * commands. The adapter builds one per start and stops it on stop.
+ */
+export default class TwitchApplication {
+  constructor(private readonly deps: TwitchReplyDeps) {}
 
   /**
-   * "waiting" until a Twitch account is linked, then "connected". A fresh
-   * engine exists before its streamer links Twitch, so waiting is a normal,
-   * healthy state rather than a failure to restart out of.
+   * "waiting" while no Twitch account is linked, then "connected". The
+   * adapter only starts once a token is stored, so waiting is brief: a race
+   * with an unlink, or a relink that arrives mid-connect.
    */
   private link: "waiting" | "connecting" | "connected" = "waiting";
   private eventBus: TwitchEventBus | null = null;
@@ -96,7 +111,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
   /** A token update arrived mid-connect; applied once the connect finishes. */
   private relinkPending = false;
 
-  private async onTokenUpdated(ctx: TwitchApiContext): Promise<void> {
+  private async onTokenUpdated(ctx: TwitchAppContext): Promise<void> {
     switch (this.link) {
       case "waiting": {
         await this.connect(ctx);
@@ -125,14 +140,14 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
    * confidential app, or the reverse) needs a different auth provider.
    * Neither is covered by a token swap, so both reconnect from scratch.
    */
-  private async relink(ctx: TwitchApiContext): Promise<void> {
+  private async relink(ctx: TwitchAppContext): Promise<void> {
     const client = this.twitchClient;
     const eventBus = this.eventBus;
     if (!client || !eventBus) {
       return;
     }
     const { userChanged, providerChanged } = await client.reloadToken();
-    const broadcasterChanged = userChanged && !ctx.config.getConfig("woofx3TwitchChannelName");
+    const broadcasterChanged = userChanged && ctx.config.channel === undefined;
     if (providerChanged || broadcasterChanged) {
       ctx.logger.info("twitch: Twitch was relinked with a token this connection cannot take; reconnecting", {
         providerChanged,
@@ -157,40 +172,26 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     });
   }
 
-  async init(ctx: TwitchApiContext) {
-    // Before anything starts publishing. Every event this service emits is
-    // stamped with the session this holder learns from the bus, and
-    // TwitchEventBus begins emitting the moment it starts.
-    await subscribeToSessionUpdates(ctx.services.messageBus.client, ctx.logger);
-
-    await ctx.services.messageBus.client.subscribe("twitchapi", (msg: Msg) => {
-      void withSpan("twitchapi.request", (span) => this.handleTwitchApiRequest(ctx, msg, span), {
-        attributes: { "messaging.destination.name": "twitchapi", "messaging.system": "nats" },
-        kind: SpanKind.CONSUMER,
-      }).catch((err) => {
-        ctx.logger.error("twitchapi: request handling failed", { err });
-      });
-    });
-
+  /**
+   * Listens for relinks, then connects. On `not_linked` nothing runs but that
+   * listener, which the adapter's stop closes with the rest of its bus scope.
+   */
+  async start(ctx: TwitchAppContext): Promise<ConnectOutcome> {
     // Published when the streamer links (or relinks) Twitch in the UI. A
-    // first link moves a waiting service to connected; a relink while
-    // connected swaps the token in place (see `relink`). Both without a
-    // restart.
-    await ctx.services.messageBus.client.subscribe("setting.integration.token.updated", async (msg: Msg) => {
-      const integration = msg.json<{ data?: { integration?: string } }>()?.data?.integration;
-      if (integration !== "twitch") {
+    // relink while connected swaps the token in place (see `relink`),
+    // without a restart.
+    await ctx.bus.subscribe(INTEGRATION_TOKEN_UPDATED_SUBJECT, async (msg: BusMessage) => {
+      if (integrationOf(msg) !== "twitch") {
         return;
       }
       try {
         await this.onTokenUpdated(ctx);
       } catch (err) {
-        ctx.logger.error("twitch: failed to apply the updated Twitch token", {
-          err: err instanceof Error ? err.message : String(err),
-        });
+        ctx.logger.error("twitch: failed to apply the updated Twitch token", { err: errorMessage(err) });
       }
     });
 
-    await this.connect(ctx);
+    return this.connect(ctx);
   }
 
   /**
@@ -198,12 +199,11 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
    * linked. The channel is the configured one when set, else the account
    * that linked Twitch.
    */
-  private async connect(ctx: TwitchApiContext): Promise<void> {
+  private async connect(ctx: TwitchAppContext): Promise<ConnectOutcome> {
     this.link = "connecting";
-    const db = ctx.services.dbProxy.client;
-    const channel = ctx.config.getConfig("woofx3TwitchChannelName") as string | undefined;
+    const db = ctx.db;
     const twitchClient = new TwitchClient({
-      channel: channel || undefined,
+      channel: ctx.config.channel,
       getSetting: async (key) => {
         const response = await GetSetting({ key }, db);
         return response.setting.value.stringValue ?? undefined;
@@ -211,28 +211,20 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       setSetting: async (key, value) => {
         await SetSetting({ key, value: { stringValue: value }, userId: "" }, db);
       },
-      requestToken: requestTokenOverNats((subject, data, opts) =>
-        ctx.services.messageBus.client.request(subject, data, opts)
-      ),
+      requestToken: requestTokenOverNats(busRequest(ctx.bus)),
     });
 
     // Only an engine that refreshes Twitch tokens itself has an app of its
     // own; one whose token comes from a dashboard asks the dashboard instead.
-    const clientId = ctx.config.getConfig("woofx3TwitchClientId") as string | undefined;
-    const clientSecret = ctx.config.getConfig("woofx3TwitchClientSecret") as string | undefined;
     let authProvider: AuthProvider;
     try {
-      authProvider = await twitchClient.init(
-        clientId && clientSecret
-          ? { clientId, clientSecret, redirectUri: ctx.config.getConfig("woofx3TwitchRedirectUrl") as string }
-          : undefined
-      );
+      authProvider = await twitchClient.init(ctx.config.app);
     } catch (err) {
       if (err instanceof Error && err.name === TWITCH_NOT_LINKED) {
         this.link = "waiting";
         this.relinkPending = false;
         ctx.logger.info("twitch: no Twitch account linked yet; waiting for a Twitch link");
-        return;
+        return "not_linked";
       }
       this.link = "waiting";
       throw err;
@@ -246,10 +238,10 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       apiClient,
       broadcaster,
       authProvider,
-      enqueueShoutoutOverNats((subject, data, opts) => ctx.services.messageBus.client.request(subject, data, opts))
+      enqueueShoutoutOverNats(busRequest(ctx.bus))
     );
     const events = new EventFactory({ source: "twitch" });
-    const messageBus = ctx.services.messageBus.client;
+    const messageBus = ctx.bus;
     const adBreakLeadSetting = new AdBreakLeadSetting(
       {
         listModuleSettings: async (moduleId) => (await ListModuleSettings({ moduleId }, db)).settings,
@@ -279,10 +271,8 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     if (!twitchEventBus.isReady()) {
       // Deliberately not fatal: the `twitchapi` request/reply surface is
       // still worth serving, and Twurple keeps retrying refused
-      // subscriptions. But the service must not claim to be healthy while
-      // it is receiving no Twitch events — see `isReady`, which feeds the
-      // heartbeat's `ready` flag.
-      ctx.logger.error("Twitch EventSub subscriptions incomplete; service is NOT ready", {
+      // subscriptions. The adapter's /health detail shows the shortfall.
+      ctx.logger.error("Twitch EventSub subscriptions incomplete; no events arrive for the missing ones", {
         established: twitchEventBus.establishedCount(),
         expected: TwitchEventBus.expectedSubscriptionCount,
         failures: twitchEventBus.failedSubscriptions(),
@@ -302,6 +292,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       this.relinkPending = false;
       await this.relink(ctx);
     }
+    return "connected";
   }
 
   /**
@@ -311,7 +302,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
    * a missed heads-up is better than polling a stream that is not live.
    */
   private async seedLiveState(
-    ctx: TwitchApiContext,
+    ctx: TwitchAppContext,
     apiClient: ApiClient,
     broadcasterId: string,
     scheduler: AdBreakScheduler
@@ -321,7 +312,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
       scheduler.seedLive(stream !== null);
     } catch (err) {
       ctx.logger.warn("twitch: could not read whether the stream is live; ad heads-up waits for stream.online", {
-        err: err instanceof Error ? err.message : String(err),
+        err: errorMessage(err),
       });
     }
   }
@@ -332,127 +323,152 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
    * in which case both fields stay absent and grants against the follower and
    * tier groups simply match nobody, rather than matching everybody.
    */
-  private buildMembershipEnricher(ctx: TwitchApiContext, apiClient: ApiClient): ChatterMembershipEnricher | undefined {
-    if (ctx.config.getConfig("woofx3TwitchMembershipEnrichmentEnabled") === false) {
+  private buildMembershipEnricher(ctx: TwitchAppContext, apiClient: ApiClient): ChatterMembershipEnricher | undefined {
+    const membership = ctx.config.membership;
+    if (membership === undefined) {
       ctx.logger.info("twitch: chatter membership enrichment disabled by config");
       return undefined;
     }
     return new ChatterMembershipEnricher(new TwurpleMembershipLookup(apiClient), ctx.logger, {
       ...DEFAULT_ENRICHER_OPTIONS,
-      ttlMs: ctx.config.getConfig("woofx3TwitchMembershipTtlMs") as number,
-      deadlineMs: ctx.config.getConfig("woofx3TwitchMembershipDeadlineMs") as number,
+      ttlMs: membership.ttlMs,
+      deadlineMs: membership.deadlineMs,
     });
   }
 
   /**
-   * Readiness reported on the heartbeat. Waiting for a Twitch link is ready:
-   * nothing is wrong, there is only nothing to connect to yet. Once
-   * connecting, false until Twitch has confirmed every EventSub
-   * subscription: an unsubscribed listener is silent, not merely degraded,
-   * so reporting ready would hide a total outage of the Twitch integration.
+   * How many EventSub subscriptions Twitch has confirmed. An unsubscribed
+   * listener is silent, not merely degraded, so a shortfall here means some
+   * Twitch events are not reaching the engine at all.
    */
-  isReady(): boolean {
-    if (this.link === "waiting") {
-      return true;
-    }
-    return this.eventBus?.isReady() ?? false;
+  eventSubStatus(): { established: number; expected: number; ready: boolean } {
+    return {
+      established: this.eventBus?.establishedCount() ?? 0,
+      expected: TwitchEventBus.expectedSubscriptionCount,
+      ready: this.eventBus?.isReady() ?? false,
+    };
   }
 
-  async run(ctx: TwitchApiContext) {
-    console.log(chalk.redBright(`===================== STARTING TWITCH ===========================  `));
-    console.log(chalk.redBright(`Broadcaster Id: ${ctx.broadcaster?.id ?? "(waiting for a Twitch link)"}`));
-  }
-
-  async terminate(ctx: TwitchApiContext) {
+  async stop(ctx: TwitchAppContext): Promise<void> {
     this.adBreakScheduler?.stop();
     this.adBreakScheduler = null;
     ctx.twitchEventBus?.disconnect();
   }
 
-  private async handleTwitchApiRequest(ctx: TwitchApiContext, msg: Msg, span?: Span) {
-    const isRequest = !!msg.reply;
-    let request: TwitchApiRequest | null = null;
+  /**
+   * Answers one `twitchapi` request with the reply bytes. `deadline` is the
+   * clock time the reply is due by; a `helix` call gives up at it, or at its
+   * own deadline when that comes first.
+   */
+  async handleTwitchApiRequest(ctx: TwitchAppContext, body: Uint8Array, deadline: number): Promise<Uint8Array> {
+    return withSpan("twitchapi.request", (span) => this.answer(ctx, body, deadline, span), {
+      attributes: { "messaging.destination.name": TWITCHAPI_SUBJECT, "messaging.system": "nats" },
+      kind: SpanKind.CONSUMER,
+    });
+  }
+
+  private async answer(ctx: TwitchAppContext, body: Uint8Array, deadline: number, span: Span): Promise<Uint8Array> {
+    let request: TwitchApiRequest | null;
     try {
-      request = parseTwitchApiRequest(msg.json<unknown>());
+      request = parseTwitchApiRequest(JSON.parse(decoder.decode(body)));
     } catch (err) {
-      ctx.logger.error("twitchapi: failed to parse request", { err });
-      if (isRequest) {
-        this.respondError(msg, "Invalid request payload");
-      }
-      return;
+      ctx.logger.error("twitchapi: failed to parse request", { err: errorMessage(err) });
+      return this.errorReply("Invalid request payload");
     }
 
     if (!request?.command) {
-      if (isRequest) {
-        this.respondError(msg, "Missing command");
-      }
-      return;
+      return this.errorReply("Missing command");
     }
 
     if (!ctx.twitchApi) {
-      if (isRequest) {
-        // Only `helix` carries a code here: every other command's contract,
-        // and `ctx.twitch`'s with it, documents this refusal as uncoded.
-        this.respondError(
-          msg,
-          "Twitch is not linked yet: the streamer has to connect Twitch first",
-          request.command === HELIX_COMMAND ? "not_linked" : undefined
-        );
-      }
-      return;
+      // Only `helix` carries a code here: every other command's contract,
+      // and `ctx.twitch`'s with it, documents this refusal as uncoded.
+      return this.errorReply(
+        "Twitch is not linked yet: the streamer has to connect Twitch first",
+        request.command === HELIX_COMMAND ? "not_linked" : undefined
+      );
     }
 
     if (!isTwitchApiCommand(request.command)) {
       ctx.logger.warn("twitchapi: unknown command", { command: request.command });
-      if (isRequest) {
-        this.respondError(msg, `Unknown command: ${request.command}`);
-      }
-      return;
+      return this.errorReply(`Unknown command: ${request.command}`);
     }
 
-    span?.updateName(`twitchapi.${request.command}`);
-    span?.setAttribute("rpc.method", request.command);
+    span.updateName(`twitchapi.${request.command}`);
+    span.setAttribute("rpc.method", request.command);
 
-    const twitchApi = ctx.twitchApi as unknown as Record<string, (input: unknown) => Promise<unknown>>;
+    const twitchApi = ctx.twitchApi as unknown as Record<
+      string,
+      (input: unknown, call: TwitchApiCall) => Promise<unknown>
+    >;
+    const call: TwitchApiCall = {
+      helixDeadlineMs: Math.max(0, Math.min(HELIX_DEADLINE_MS, deadline - this.deps.clock.now())),
+    };
 
     try {
-      const result = await twitchApi[request.command](request.args ?? {});
-      if (isRequest) {
-        this.respondSuccess(msg, request.command, result);
-      }
+      const result = await twitchApi[request.command](request.args ?? {}, call);
+      return twitchApiReply(`twitchapi.${request.command}.result`, result, this.deps);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       ctx.logger.error("twitchapi: handler failed", { command: request.command, err: message });
-      if (isRequest) {
-        this.respondError(msg, message, twitchApiErrorCodeOf(err));
-      }
+      return this.errorReply(message, twitchApiErrorCodeOf(err));
     }
   }
 
-  private respondSuccess(msg: Msg, command: string, data: unknown) {
-    const envelope = {
-      id: crypto.randomUUID(),
-      type: `twitchapi.${command}.result`,
-      source: "twitchapi",
-      time: new Date().toISOString(),
-      data,
-    };
-    msg.respond(new TextEncoder().encode(JSON.stringify(envelope)));
+  private errorReply(error: string, code?: TwitchApiReplyCode): Uint8Array {
+    return twitchApiErrorReply(error, code, this.deps);
   }
+}
 
-  /**
-   * `code` is set when the failure is one a caller can act on differently
-   * (e.g. `missing_scope` means relink Twitch, `rate_limited` means wait);
-   * absent for everything else.
-   */
-  private respondError(msg: Msg, error: string, code?: TwitchApiReplyCode) {
-    const envelope = {
-      id: crypto.randomUUID(),
-      type: "twitchapi.error",
-      source: "twitchapi",
-      time: new Date().toISOString(),
-      data: code ? { error, code } : { error },
-    };
-    msg.respond(new TextEncoder().encode(JSON.stringify(envelope)));
+/**
+ * A `twitchapi.error` reply. `code` is set when the failure is one a caller
+ * can act on differently (e.g. `missing_scope` means relink Twitch,
+ * `rate_limited` means wait); absent for everything else.
+ */
+export function twitchApiErrorReply(
+  error: string,
+  code: TwitchApiReplyCode | undefined,
+  deps: TwitchReplyDeps
+): Uint8Array {
+  return twitchApiReply(TWITCHAPI_ERROR_TYPE, code ? { error, code } : { error }, deps);
+}
+
+/** A `twitchapi` reply: a CloudEvent of `type` around `data`, with source `twitchapi`. */
+function twitchApiReply(type: string, data: unknown, deps: TwitchReplyDeps): Uint8Array {
+  return encoder.encode(
+    JSON.stringify({
+      id: deps.ids.next(),
+      type,
+      source: TWITCHAPI_SUBJECT,
+      time: new Date(deps.clock.now()).toISOString(),
+      data,
+    })
+  );
+}
+
+/**
+ * The scoped bus as the shared request helpers call it. Both always pass a
+ * timeout; a call without one is a wiring mistake, so it is refused rather
+ * than given an invented default.
+ */
+function busRequest(
+  bus: TwitchBus
+): (subject: string, data: Uint8Array, opts?: { timeout?: number }) => Promise<{ data: Uint8Array }> {
+  return (subject, data, opts) => {
+    const timeout = opts?.timeout;
+    if (timeout === undefined) {
+      return Promise.reject(new Error(`a request on ${subject} needs a timeout`));
+    }
+    return bus.request(subject, data, { timeout });
+  };
+}
+
+/** The integration a `setting.integration.token.updated` CloudEvent names, or undefined for any other body. */
+function integrationOf(msg: BusMessage): unknown {
+  try {
+    const event = JSON.parse(decoder.decode(msg.data)) as { data?: { integration?: unknown } } | null;
+    return event?.data?.integration;
+  } catch {
+    return undefined;
   }
 }

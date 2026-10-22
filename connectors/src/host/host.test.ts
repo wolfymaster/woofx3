@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { PLATFORM_GATEWAY_SUBJECTS } from "@woofx3/api/platform-gateway";
+import { getCurrentSessionId } from "@woofx3/common/cloudevents/session";
 import {
   INTEGRATION_ENABLED_UPDATED_SUBJECT,
   INTEGRATION_TOKEN_UPDATED_SUBJECT,
@@ -137,6 +138,21 @@ describe("Host", () => {
     await announce(false);
     expect(adapter.starts).toBe(2);
     expect(await ask()).toEqual(["not_linked"]);
+  });
+
+  test("follows the stream session for the whole process, whatever the adapters do", async () => {
+    const { bus, host } = await setup();
+    await host.start();
+    await host.settled();
+
+    bus.deliver(
+      "session.started",
+      event("session.started", { sessionId: "sess-host-1", startedAt: "2026-10-22T12:00:00Z" })
+    );
+    await flush();
+
+    expect(getCurrentSessionId()).toBe("sess-host-1");
+    await host.stop();
   });
 
   test("stop stops the adapters and drops every host subscription", async () => {

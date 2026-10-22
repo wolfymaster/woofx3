@@ -1,4 +1,6 @@
 import { PLATFORM_IDS } from "@woofx3/api/platform-gateway";
+import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
+import { type SessionBus, subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
 import type { GatewayConfig } from "../config/gateway";
 import type { HostConfig } from "../config/host";
 import { EgressRegistry } from "../gateway/egress-registry";
@@ -113,7 +115,7 @@ export class Host {
       client: deps.bus,
       grants: {
         publishes: [],
-        subscribes: [...SETTINGS_SUBJECTS, ...this.servedSubjects()],
+        subscribes: [...SETTINGS_SUBJECTS, SessionEventType.SessionStarted, ...this.servedSubjects()],
         requests: [],
       },
       limits: deps.config.subscriptionLimits,
@@ -146,12 +148,19 @@ export class Host {
     return this.running;
   }
 
-  /** Serves every adapter's subjects, then reads the links and starts what is desired. */
+  /**
+   * Follows the stream session, serves every adapter's subjects, then reads
+   * the links and starts what is desired.
+   */
   async start(): Promise<void> {
     if (this.running) {
       throw new Error("the host is already running");
     }
     this.running = true;
+    // The session every event is stamped with is process-wide, so the host
+    // follows it rather than each adapter run: an adapter that starts after a
+    // session change still stamps the current session.
+    await subscribeToSessionUpdates(sessionBus(this.scope), this.deps.logger);
     for (const [id, adapter] of this.deps.adapters) {
       await this.served.serveAll(id, adapter.manifest.serves);
     }
@@ -237,4 +246,14 @@ function assertNoSecondResponder(
       }
     }
   }
+}
+
+const decoder = new TextDecoder();
+
+/** The host scope as the shared session subscriber reads it. */
+function sessionBus(scope: ScopedBus): SessionBus {
+  return {
+    subscribe: (subject, handler) =>
+      scope.subscribe(subject, (msg) => handler({ json: () => JSON.parse(decoder.decode(msg.data)) })),
+  };
 }

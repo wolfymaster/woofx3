@@ -1,65 +1,56 @@
 import { describe, expect, test } from "bun:test";
-import { TwitchEnvSchema } from "./config";
+import { TWITCH_DEFAULTS, type TwitchConfig, TwitchEnvSchema, twitchConfig } from "./twitch";
 
-const TOKEN = "twitch-db-proxy-token-0123456789abcdef";
+function shaped(env: Record<string, unknown>): TwitchConfig {
+  return twitchConfig(TwitchEnvSchema.parse(env));
+}
 
-describe("TwitchEnvSchema", () => {
-  test("accepts a complete valid configuration", () => {
-    const parsed = TwitchEnvSchema.parse({
-      woofx3MessagebusUrl: "nats://localhost:4222",
-      woofx3TwitchChannelName: "mychannel",
-      woofx3DatabaseProxyUrl: "http://db",
-      woofx3DbProxyToken: TOKEN,
-      woofx3TwitchClientId: "cid",
-      woofx3TwitchClientSecret: "sec",
+describe("twitchConfig", () => {
+  test("needs nothing: no channel, no app of its own, enrichment on with its named defaults", () => {
+    expect(shaped({})).toEqual({
+      channel: undefined,
+      app: undefined,
+      membership: { ttlMs: TWITCH_DEFAULTS.membershipTtlMs, deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs },
     });
-    expect(parsed.woofx3TwitchRedirectUrl).toBe("http://localhost");
   });
 
-  test("rejects when required infrastructure or Twitch fields are missing", () => {
-    const result = TwitchEnvSchema.safeParse({
-      woofx3MessagebusUrl: "",
-      woofx3TwitchChannelName: "c",
-      woofx3DatabaseProxyUrl: "http://db",
-      woofx3DbProxyToken: TOKEN,
-      woofx3TwitchClientId: "i",
-      woofx3TwitchClientSecret: "s",
+  const apps: Array<[name: string, env: Record<string, unknown>, app: TwitchConfig["app"]]> = [
+    [
+      "both id and secret",
+      { woofx3TwitchClientId: "cid", woofx3TwitchClientSecret: "sec" },
+      { clientId: "cid", clientSecret: "sec", redirectUri: TWITCH_DEFAULTS.redirectUrl },
+    ],
+    [
+      "a redirect url override",
+      { woofx3TwitchClientId: "cid", woofx3TwitchClientSecret: "sec", woofx3TwitchRedirectUrl: "http://x/cb" },
+      { clientId: "cid", clientSecret: "sec", redirectUri: "http://x/cb" },
+    ],
+    ["an id without a secret (the api's own client id)", { woofx3TwitchClientId: "cid" }, undefined],
+    ["a blank secret", { woofx3TwitchClientId: "cid", woofx3TwitchClientSecret: "  " }, undefined],
+  ];
+  for (const [name, env, app] of apps) {
+    test(`app credentials from ${name}`, () => {
+      expect(shaped(env).app).toEqual(app);
     });
-    expect(result.success).toBe(false);
+  }
+
+  test("a blank channel means whoever links Twitch", () => {
+    expect(shaped({ woofx3TwitchChannelName: " " }).channel).toBeUndefined();
+    expect(shaped({ woofx3TwitchChannelName: "mychannel" }).channel).toBe("mychannel");
   });
 
-  test("accepts a message bus token, numeric or not, and no token", () => {
-    const base = {
-      woofx3MessagebusUrl: "ws://127.0.0.1:4225",
-      woofx3DatabaseProxyUrl: "http://db",
-      woofx3DbProxyToken: TOKEN,
-    };
-
-    expect(TwitchEnvSchema.parse({ ...base, woofx3MessagebusToken: "s3cret" }).woofx3MessagebusToken).toBe("s3cret");
-    expect(TwitchEnvSchema.parse({ ...base, woofx3MessagebusToken: 12345 }).woofx3MessagebusToken).toBe(12345);
-    expect(TwitchEnvSchema.parse(base).woofx3MessagebusToken).toBeUndefined();
+  test("enrichment switched off leaves no membership settings", () => {
+    expect(shaped({ woofx3TwitchMembershipEnrichmentEnabled: false }).membership).toBeUndefined();
   });
 
-  test("accepts no channel: the channel is whoever links Twitch", () => {
-    const result = TwitchEnvSchema.safeParse({
-      woofx3MessagebusUrl: "nats://localhost:4222",
-      woofx3DatabaseProxyUrl: "http://db",
-      woofx3DbProxyToken: TOKEN,
-      woofx3TwitchClientId: "cid",
-      woofx3TwitchClientSecret: "sec",
-    });
-    expect(result.success).toBe(true);
-  });
-
-  for (const value of [undefined, "", "CHANGE_ME", "short-token"]) {
-    test(`refuses the db proxy token ${JSON.stringify(value)}`, () => {
-      const result = TwitchEnvSchema.safeParse({
-        woofx3MessagebusUrl: "nats://localhost:4222",
-        woofx3DatabaseProxyUrl: "http://db",
-        woofx3DbProxyToken: value,
-      });
-      expect(result.success).toBe(false);
-      expect(result.error?.issues[0]?.message).toContain("dbProxyToken (WOOFX3_DB_PROXY_TOKEN)");
+  const invalid: Array<[name: string, env: Record<string, unknown>]> = [
+    ["a zero membership TTL", { woofx3TwitchMembershipTtlMs: 0 }],
+    ["a non-numeric membership deadline", { woofx3TwitchMembershipDeadlineMs: "soon" }],
+    ["a non-boolean enrichment switch", { woofx3TwitchMembershipEnrichmentEnabled: "maybe" }],
+  ];
+  for (const [name, env] of invalid) {
+    test(`refuses ${name}`, () => {
+      expect(TwitchEnvSchema.safeParse(env).success).toBe(false);
     });
   }
 });

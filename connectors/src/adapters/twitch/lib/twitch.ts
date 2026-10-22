@@ -5,7 +5,7 @@ import type {
   TimeoutArgs,
   UpdateStreamArgs,
 } from "@woofx3/common/cloudevents/Twitch/commands";
-import { type HelixAuth, runHelixOperation } from "./helix";
+import { HELIX_DEADLINE_MS, type HelixAuth, runHelixOperation } from "./helix";
 import type { EnqueueShoutout } from "./shoutoutQueue";
 import { httpStatusOf, TwitchApiError } from "./twitchApiError";
 
@@ -239,6 +239,16 @@ export const TWITCH_API_COMMANDS = [
 ] as const satisfies readonly (keyof TwitchApi)[];
 
 export type TwitchApiCommand = (typeof TWITCH_API_COMMANDS)[number];
+
+/**
+ * What the dispatcher passes every command besides its args. Only `helix`
+ * reads it today: the other commands go through Twurple's client, which
+ * takes no deadline.
+ */
+export interface TwitchApiCall {
+  /** How long a `helix` operation may take in all, at most HELIX_DEADLINE_MS. */
+  helixDeadlineMs: number;
+}
 
 export function isTwitchApiCommand(command: string): command is TwitchApiCommand {
   return (TWITCH_API_COMMANDS as readonly string[]).includes(command);
@@ -652,8 +662,11 @@ export default class TwitchApi {
    * responses and reasons themselves, so this passes them through rather
    * than reshaping them as the other commands do.
    */
-  async helix(args: unknown): Promise<HelixCommandResult> {
-    return runHelixOperation(this.helixAuth, this.broadcaster.id, args);
+  async helix(
+    args: unknown,
+    call: TwitchApiCall = { helixDeadlineMs: HELIX_DEADLINE_MS }
+  ): Promise<HelixCommandResult> {
+    return runHelixOperation(this.helixAuth, this.broadcaster.id, args, call.helixDeadlineMs);
   }
 
   /**
