@@ -1,3 +1,4 @@
+import { type ManifestResourceKind, manifestPermissions, manifestResourceKindOf } from "@woofx3/api/module-manifest";
 import type { SharedLogger } from "@woofx3/common/logging";
 
 /** A declaration that carries a form: a trigger, action, widget or resource kind. */
@@ -5,15 +6,6 @@ export interface ManifestDeclaration {
   id: string;
   /** The declaration's form entries (`schema`, or `settingsSchema` for a widget), left untyped: field shapes belong to their readers. */
   fields: unknown[];
-}
-
-export interface ManifestResource {
-  kind: string;
-  name: string;
-  description: string;
-  icon?: string;
-  summaryPath?: string;
-  schema: unknown[];
 }
 
 /**
@@ -25,7 +17,7 @@ export interface StoredManifest {
   id: string;
   permissions: string[];
   settings: unknown[];
-  resources: ManifestResource[];
+  resources: ManifestResourceKind[];
   triggers: ManifestDeclaration[];
   actions: Array<ManifestDeclaration & { systemOnly: boolean }>;
   widgets: ManifestDeclaration[];
@@ -87,22 +79,13 @@ export function parseStoredManifest(value: unknown, logger: SharedLogger, module
       fields: asList(entry[fieldsKey]),
     }));
 
-  const permissions = asList(manifest.permissions).filter((p): p is string => typeof p === "string" && p !== "");
   return {
     id: asString(manifest.id),
-    permissions: [...new Set(permissions)].sort(),
+    permissions: manifestPermissions(manifest).sort(),
     settings: asList(manifest.settings),
-    resources: entriesOf(manifest, "resources", "kind", logger, moduleName).map(({ id, entry }) => {
-      const icon = asString(entry.icon);
-      const summaryPath = asString(asRecord(entry.display)?.summary);
-      return {
-        kind: id,
-        name: asString(entry.name),
-        description: asString(entry.description),
-        ...(icon ? { icon } : {}),
-        ...(summaryPath ? { summaryPath } : {}),
-        schema: asList(entry.schema),
-      };
+    resources: entriesOf(manifest, "resources", "kind", logger, moduleName).flatMap(({ entry }) => {
+      const kind = manifestResourceKindOf(entry);
+      return kind ? [kind] : [];
     }),
     triggers: declarations("triggers", "id", "schema"),
     actions: entriesOf(manifest, "actions", "id", logger, moduleName).map(({ id, entry }) => ({

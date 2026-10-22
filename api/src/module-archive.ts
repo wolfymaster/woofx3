@@ -137,61 +137,6 @@ export function readModuleArchive(archive: Uint8Array): ModuleArchiveContents {
   return { manifest: manifest as Record<string, unknown>, files };
 }
 
-/**
- * The permission ids a manifest declares, in order and without duplicates.
- * A missing or malformed `permissions` declares nothing, as barkloader reads it.
- */
-export function manifestPermissions(manifest: Record<string, unknown>): string[] {
-  const raw = manifest.permissions;
-  if (!Array.isArray(raw)) {
-    return [];
-  }
-  const seen = new Set<string>();
-  for (const entry of raw) {
-    if (typeof entry === "string" && entry.length > 0) {
-      seen.add(entry);
-    }
-  }
-  return Array.from(seen);
-}
-
-/** A `local[]` endpoint as an install review shows it. */
-export interface LocalEndpointSummary {
-  id: string;
-  name: string;
-  protocol: string;
-}
-
-/**
- * Every `local[]` entry that names an id. Deliberately not filtered down to
- * the entries barkloader's `validate_local` accepts: barkloader refuses the
- * whole install over an invalid entry, so counting one here can only ask for
- * an approval that the install would not have needed, never skip one it did.
- */
-export function manifestLocalEndpoints(manifest: Record<string, unknown>): LocalEndpointSummary[] {
-  if (!Array.isArray(manifest.local)) {
-    return [];
-  }
-  const endpoints: LocalEndpointSummary[] = [];
-  const seen = new Set<string>();
-  for (const entry of manifest.local) {
-    if (!entry || typeof entry !== "object") {
-      continue;
-    }
-    const raw = entry as Record<string, unknown>;
-    if (typeof raw.id !== "string" || raw.id === "" || seen.has(raw.id)) {
-      continue;
-    }
-    seen.add(raw.id);
-    endpoints.push({
-      id: raw.id,
-      name: typeof raw.name === "string" ? raw.name.trim() : raw.id,
-      protocol: typeof raw.protocol === "string" ? raw.protocol : "",
-    });
-  }
-  return endpoints;
-}
-
 /** The ids in `requested` that `approved` does not contain, in `requested` order. */
 export function unapprovedIds(requested: readonly string[], approved: readonly string[]): string[] {
   const approvedSet = new Set(approved);
