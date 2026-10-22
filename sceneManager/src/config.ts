@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   ALLOWED_ORIGINS_SETTING,
+  type OriginListSetting,
   parseRequestGuardPolicy,
   type RequestGuardPolicy,
 } from "@woofx3/common/http/request-guard";
@@ -39,7 +40,7 @@ export const SceneManagerEnvSchema = z.object({
   woofx3SceneManagerAllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
 });
 
-export const SCENE_MANAGER_ALLOWED_ORIGINS_SETTING = "WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS";
+export const SCENE_MANAGER_ALLOWED_ORIGINS_SETTING: OriginListSetting = "WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS";
 
 export interface SceneManagerRuntimeConfig {
   port: number;
@@ -154,15 +155,22 @@ function nonBlank(value: unknown): string | undefined {
 
 /**
  * The origin list sceneManager checks, and the setting it came from: its own
- * list when that is set and not blank, else the list it shares with the api.
- * A blank own list falls back rather than turning the check off, as a blank
- * value never overrides another setting.
+ * list (`WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS`, `sceneManagerAllowedOrigins`
+ * in `.woofx3.json`) when that is not blank, else the list it shares with the
+ * api. The own list replaces the shared one rather than adding to it, from
+ * whichever source each comes: an own list in `.woofx3.json` wins over a
+ * shared one in the environment. A blank own list falls back, as a blank
+ * value never overrides another setting; one that is set but lists nothing
+ * is refused when it is parsed.
+ *
+ * sceneManager may list `null`, which sandboxed widget frames send, and the
+ * api may not.
  */
 function sceneManagerAllowedOrigins(
   own: string | number | boolean | undefined,
   shared: string | number | boolean | undefined
-): { allowedOrigins: string | number | boolean | undefined; allowedOriginsSetting: string } {
-  if (own !== undefined && String(own).trim() !== "") {
+): { allowedOrigins: string | number | boolean | undefined; allowedOriginsSetting: OriginListSetting } {
+  if (nonBlank(own) !== undefined) {
     return { allowedOrigins: own, allowedOriginsSetting: SCENE_MANAGER_ALLOWED_ORIGINS_SETTING };
   }
   return { allowedOrigins: shared, allowedOriginsSetting: ALLOWED_ORIGINS_SETTING };

@@ -136,14 +136,22 @@ so an engine that sets neither accepts every request and answers CORS with
 |---|---|
 | `WOOFX3_ALLOWED_HOSTS` | A request whose `Host` is not listed is answered `421 Misdirected Request`. This stops DNS rebinding: a page on a hostile name that resolves to the engine still sends its own name as the Host. |
 | `WOOFX3_ALLOWED_ORIGINS` | A request that sends an `Origin` not listed is answered `403`, WebSocket upgrades and CORS preflights included. A request with no `Origin` is allowed. CORS echoes the request's origin with `Vary: Origin` instead of `*`. |
-| `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` | sceneManager's own origin list, checked the same way. When set and not blank, sceneManager uses it instead of `WOOFX3_ALLOWED_ORIGINS`; the api never reads it. |
+| `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` (`sceneManagerAllowedOrigins` in `.woofx3.json`) | sceneManager's own origin list, checked the same way. When it is not blank, sceneManager uses it instead of `WOOFX3_ALLOWED_ORIGINS`; the api never reads it. |
 
 Each is a comma-separated list. `WOOFX3_ALLOWED_HOSTS` and
 `WOOFX3_ALLOWED_ORIGINS` are read by both services, and each works without the
-other. A malformed entry stops the service at startup, naming the setting it
-came from, and so does a value that is not a list at all, such as `true`. The
-api also refuses to start when its origin list contains `null`: nothing that
-calls the api sends it, and a listed `null` would admit every sandboxed page.
+other. Unset or blank, a list turns its check off. A malformed entry stops the
+service at startup, naming the setting it came from, and so does a value that
+is not a list at all, such as `true`, or one that is set but lists nothing,
+such as `,`. The api also refuses to start when its origin list contains
+`null`: nothing that calls the api sends it, and a listed `null` would admit
+every sandboxed page.
+
+sceneManager's own list replaces the shared one; it does not add to it, so
+repeat the shared origins in it. Each setting is looked up on its own (the
+environment, then `.env`, then `.woofx3.json`), and then the own list wins
+whatever its source: a `sceneManagerAllowedOrigins` in `.woofx3.json` takes
+precedence over a `WOOFX3_ALLOWED_ORIGINS` set in the environment.
 
 Matching rules:
 
@@ -166,8 +174,7 @@ Matching rules:
 
 A browser sends no `Origin` on a top-level navigation or a same-origin `GET`,
 which is why an absent Origin is allowed; OBS, the CLI and peer services send
-none either. What an overlay sends when `WOOFX3_ALLOWED_ORIGINS` is set on
-sceneManager:
+none either. What an overlay sends when sceneManager's origin list is set:
 
 - An **OBS browser source** loads `/scene/{id}` as a navigation (no Origin), and
   its same-origin `GET`s, the `/events` SSE stream included, send none. Its

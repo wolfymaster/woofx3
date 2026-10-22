@@ -27,7 +27,17 @@ function guardFor(allowedHosts?: string, allowedOrigins?: string): RequestGuard 
 describe("parseRequestGuardPolicy", () => {
   test("unset, empty and blank lists disable both checks", () => {
     expect(parse({})).toEqual(OPEN_REQUEST_GUARD_POLICY);
-    expect(parse({ allowedHosts: "", allowedOrigins: " , " })).toEqual(OPEN_REQUEST_GUARD_POLICY);
+    expect(parse({ allowedHosts: "", allowedOrigins: "  " })).toEqual(OPEN_REQUEST_GUARD_POLICY);
+  });
+
+  test("a list that is set but names nothing is refused, not read as unset", () => {
+    for (const value of [",", " , ", ",,", " ,\t, "]) {
+      expect(() => parse({ allowedHosts: value })).toThrow("WOOFX3_ALLOWED_HOSTS");
+      expect(() => parse({ allowedOrigins: value })).toThrow("WOOFX3_ALLOWED_ORIGINS");
+      expect(() =>
+        parse({ allowedOrigins: value, allowedOriginsSetting: "WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS" })
+      ).toThrow("WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS");
+    }
   });
 
   test("parses hosts with and without ports, IPv6 bracketed", () => {

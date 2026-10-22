@@ -127,4 +127,18 @@ describe("origin allowlist", () => {
 
     expect(() => loadConfig()).toThrow("WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS");
   });
+
+  it("refuses an own list that is set but lists nothing, rather than turning the check off", () => {
+    for (const own of [",", " , ", ",,"]) {
+      withOrigins("https://app.example", own);
+
+      expect(() => loadConfig()).toThrow("WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS");
+    }
+  });
+
+  it("refuses a shared list that is set but lists nothing", () => {
+    withOrigins(",", undefined);
+
+    expect(() => loadConfig()).toThrow("WOOFX3_ALLOWED_ORIGINS");
+  });
 });

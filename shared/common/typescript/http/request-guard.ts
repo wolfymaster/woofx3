@@ -1,10 +1,11 @@
 /**
  * Host and Origin checks shared by the engine's HTTP services (api,
  * sceneManager), configured by `WOOFX3_ALLOWED_HOSTS` and
- * `WOOFX3_ALLOWED_ORIGINS`. sceneManager can have an origin list of its own,
- * `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` (see sceneManager/src/config.ts).
+ * `WOOFX3_ALLOWED_ORIGINS`, or an origin list a service names itself.
  *
- * Both lists are off unless set. The hosted dashboard reaches engines
+ * Both lists are off unless set: unset, or blank. A list that is set but
+ * names nothing (`","`) is refused at startup rather than read as unset, so
+ * a stray comma or an empty template cannot quietly turn a check off. The hosted dashboard reaches engines
  * directly from several origins, so an engine that sets neither accepts
  * every Host and Origin and answers CORS with `*`.
  *
@@ -52,24 +53,28 @@ export type OriginRule =
   | { kind: "opaque" };
 
 /**
- * Whether a service's origin list may contain `null`. Only a service that
- * sandboxed frames call (sceneManager, for widget frames) has a use for it;
- * any other service refuses it at startup, so a shared list that lists it
- * cannot open that service to every sandboxed page.
+ * Whether the opaque origin `null`, which every sandboxed page sends, is
+ * admitted. A listed `null` cannot tell one sandboxed page from another, so
+ * only what sandboxed frames must reach admits it: a service whose list may
+ * name it, and within such a service, a route they call.
  */
 export type OpaqueOriginPolicy = "allow" | "refuse";
 
+/** The name of a setting that holds an origin list, as errors name it. */
+export type OriginListSetting = `WOOFX3_${string}ALLOWED_ORIGINS`;
+
 export interface RequestGuardSettings {
-  /** Comma-separated `WOOFX3_ALLOWED_HOSTS`; empty or undefined disables the check. */
+  /** Comma-separated `WOOFX3_ALLOWED_HOSTS`; blank or undefined disables the check. */
   allowedHosts?: string | number | boolean;
-  /** Comma-separated origins; empty or undefined disables the check. */
+  /** Comma-separated origins; blank or undefined disables the check. */
   allowedOrigins?: string | number | boolean;
   /** The setting allowedOrigins was read from, named in errors. */
-  allowedOriginsSetting: string;
+  allowedOriginsSetting: OriginListSetting;
+  /** Whether the list may name `null`; "refuse" fails startup when it does. */
   opaqueOrigin: OpaqueOriginPolicy;
 }
 
-export const ALLOWED_ORIGINS_SETTING = "WOOFX3_ALLOWED_ORIGINS";
+export const ALLOWED_ORIGINS_SETTING: OriginListSetting = "WOOFX3_ALLOWED_ORIGINS";
 
 const OPAQUE_ORIGIN = "null";
 
@@ -107,11 +112,17 @@ function splitList(name: string, value: string | number | boolean | undefined): 
   if (typeof value !== "string") {
     throw new Error(`${name}: ${String(value)} is not a comma-separated list`);
   }
+  if (value.trim() === "") {
+    return null;
+  }
   const entries = value
     .split(",")
     .map((entry) => entry.trim())
     .filter((entry) => entry !== "");
-  return entries.length === 0 ? null : entries;
+  if (entries.length === 0) {
+    throw new Error(`${name}: "${value}" is set but lists nothing; leave it unset or blank to turn the check off`);
+  }
+  return entries;
 }
 
 /** Splits `name`, `name:port`, `[v6]` or `[v6]:port`; null when malformed. */
@@ -135,10 +146,10 @@ function parseHostRule(entry: string): HostRule {
   return parsed;
 }
 
-function parseOriginRule(setting: string, opaqueOrigin: OpaqueOriginPolicy, entry: string): OriginRule {
+function parseOriginRule(setting: OriginListSetting, opaqueOrigin: OpaqueOriginPolicy, entry: string): OriginRule {
   if (entry === OPAQUE_ORIGIN) {
     if (opaqueOrigin === "refuse") {
-      throw new Error(`${setting}: "null" is not allowed for this service; only sceneManager may list it`);
+      throw new Error(`${setting}: "null" is not allowed: this service refuses the opaque origin sandboxed pages send`);
     }
     return { kind: "opaque" };
   }
