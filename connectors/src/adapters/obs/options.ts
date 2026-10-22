@@ -20,10 +20,8 @@ import {
   isNotFound,
   OBS_COMMAND_TIMEOUT_MS,
   OBS_NOT_CONNECTED,
-  type ObsCommandMessage,
   type ObsControlClient,
   type ObsControlOptions,
-  type ObsSessionSource,
   ObsTimeoutError,
   withDeadline,
 } from "./control";
@@ -196,22 +194,4 @@ export async function handleObsOptionsRequest(
     logger.warn("engine.obs.options: failed", { list: parsed.data.list, error: reply.error });
   }
   return reply;
-}
-
-/** Answer one `engine.obs.options` message; one with no reply subject has no one to answer. */
-export async function answerObsOptions(obs: ObsSessionSource, msg: ObsCommandMessage, logger: Logger): Promise<void> {
-  if (!msg.reply) {
-    logger.warn("engine.obs.options: ignored a message with no reply subject; listing is request/reply only");
-    return;
-  }
-  try {
-    const reply = await handleObsOptionsRequest(obs.current(), msg.data, logger, {
-      onTimeout: () => obs.recycle("an OBS request timed out"),
-    });
-    msg.respond(new TextEncoder().encode(JSON.stringify(reply)));
-  } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
-    logger.error("engine.obs.options: handler failed", { error });
-    msg.respond(new TextEncoder().encode(JSON.stringify({ error: `scene manager error: ${error}` })));
-  }
 }

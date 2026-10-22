@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { ObsControlClient } from "./control";
 import { fakeObs, groupedScenes, logger, ObsNotFound, scenes } from "./fake-obs";
-import { answerObsOptions, executeObsOptionsRequest, handleObsOptionsRequest } from "./options";
+import { executeObsOptionsRequest, handleObsOptionsRequest } from "./options";
 
 const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
 
@@ -92,50 +92,5 @@ describe("handleObsOptionsRequest", () => {
   it("answers a malformed payload instead of throwing", async () => {
     const reply = await handleObsOptionsRequest(null, new TextEncoder().encode("{not json"), logger);
     expect(reply).toEqual({ error: "invalid OBS options request: payload is not JSON" });
-  });
-});
-
-describe("answerObsOptions", () => {
-  const session = (client: ObsControlClient | null) => ({ current: () => client, recycle: () => {} });
-
-  it("responds with the listing as JSON", async () => {
-    const obs = fakeObs(scenes());
-    const responses: unknown[] = [];
-    await answerObsOptions(
-      session(obs.client),
-      {
-        reply: "_INBOX.1",
-        data: encode({ data: { list: "scenes" } }),
-        respond: (data) => {
-          responses.push(JSON.parse(new TextDecoder().decode(data)));
-          return true;
-        },
-      },
-      logger
-    );
-    expect(responses).toEqual([
-      [
-        { value: "Raid", label: "Raid" },
-        { value: "Main", label: "Main" },
-      ],
-    ]);
-  });
-
-  it("ignores a message with no reply subject", async () => {
-    const obs = fakeObs(scenes());
-    let responded = false;
-    await answerObsOptions(
-      session(obs.client),
-      {
-        data: encode({ data: { list: "scenes" } }),
-        respond: () => {
-          responded = true;
-          return true;
-        },
-      },
-      logger
-    );
-    expect(responded).toBe(false);
-    expect(obs.calls).toEqual([]);
   });
 });
