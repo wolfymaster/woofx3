@@ -10,6 +10,7 @@
     "includes": [
       "**",
       "!**/*.pb.ts",
+      "!**/*.gen.ts",
       "!shared/clients/typescript/api/google-fonts.generated.ts",
       "!**/vendor",
       "!**/*.min.js",
