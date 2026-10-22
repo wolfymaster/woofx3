@@ -45,6 +45,15 @@ export class ApiSession extends RpcTarget {
     session.lease.assertLive();
   }
 
+  /**
+   * capnweb calls this once the client has released its last stub of the
+   * session, so the session is forgotten without waiting for the connection
+   * to end. Symbol-keyed, so it is not served.
+   */
+  [Symbol.dispose](): void {
+    this.lease.release();
+  }
+
   async installModuleZip(fileName: string, zipBase64: string, context?: { moduleKey?: string }) {
     return this.api.installModuleZip(fileName, zipBase64, {
       clientId: this.clientId,

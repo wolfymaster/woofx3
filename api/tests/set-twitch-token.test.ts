@@ -24,7 +24,11 @@ function session(clientId: string, twitch: Partial<Pick<ApiOptions, "twitchPubli
     logger: { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never,
     ...twitch,
   });
-  return { settings, api, rpc: new ApiSession(api, clientId, new SessionLease()) as unknown as Woofx3EngineApi };
+  return {
+    settings,
+    api,
+    rpc: new ApiSession(api, clientId, new SessionLease(() => {})) as unknown as Woofx3EngineApi,
+  };
 }
 
 const TOKEN = { accessToken: "a", scope: ["chat:read"], expiresIn: 3600, obtainmentTimestamp: 1, userId: "42" };

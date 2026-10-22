@@ -101,7 +101,11 @@ function session() {
       sent.push(event);
     }),
   } as unknown as WebhookClient);
-  return { db, sent, rpc: new ApiSession(api, "dash-client", new SessionLease()) as unknown as Woofx3EngineApi };
+  return {
+    db,
+    sent,
+    rpc: new ApiSession(api, "dash-client", new SessionLease(() => {})) as unknown as Woofx3EngineApi,
+  };
 }
 
 describe("UI settings", () => {

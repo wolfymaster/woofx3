@@ -179,7 +179,7 @@ function makeApi(db: FakeEngineDb) {
   });
   // The contract methods are installed on the session's prototype at load
   // time, so its class type does not list them; a client sees this interface.
-  const session = new ApiSession(api, "client-1", new SessionLease()) as unknown as Woofx3EngineApi;
+  const session = new ApiSession(api, "client-1", new SessionLease(() => {})) as unknown as Woofx3EngineApi;
   return { api, session, published };
 }
 

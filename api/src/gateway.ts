@@ -96,12 +96,11 @@ export class ApiGateway {
     if (verdict.kind === "refused") {
       throw new AuthenticationRefused("Invalid client credentials");
     }
-    const lease = this.sessions.register(clientId, generation, connection.close);
+    const lease = this.sessions.register(clientId, generation, connection);
     if (lease === null) {
       this.logger.warn("Refused a client deleted while it authenticated", { clientId });
       throw new AuthenticationRefused("Invalid client credentials");
     }
-    connection.onEnd(() => this.sessions.release(clientId, lease));
     this.logger.info("Authenticated client", {
       clientId,
       description: verdict.description,

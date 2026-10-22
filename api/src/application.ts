@@ -55,7 +55,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { AlertEmitter },
       { Api },
       { ClientAuth },
-      { ClientSessions },
+      { ClientRevoker, ClientSessions },
       { ConvexWebhookClient },
       { EngineEventStream },
       { EventCatalog },
@@ -292,12 +292,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
     const auth = new ClientAuth(db, logger);
     const sessions = new ClientSessions(logger);
-    api.setClientRevocation({
-      revoke(clientId) {
-        auth.invalidateCache();
-        sessions.revoke(clientId);
-      },
-    });
+    api.setClientRevocation(new ClientRevoker(auth, sessions, engineEventStream));
     const gateway = new ApiGateway(api, auth, db, logger, config.registration, sessions);
     gateway.setWebhookClient(webhookClient);
 

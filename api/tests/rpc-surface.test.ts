@@ -53,7 +53,7 @@ describe("the RPC surface a client sees", () => {
         };
       },
     });
-    const session = new ApiSession(api, "client-1", new SessionLease());
+    const session = new ApiSession(api, "client-1", new SessionLease(() => {}));
 
     for (const name of RPC_METHODS) {
       const method = (session as unknown as Record<string, unknown>)[name];
@@ -76,7 +76,7 @@ describe("the RPC surface a client sees", () => {
         };
       },
     });
-    const session = new ApiSession(api, "client-42", new SessionLease());
+    const session = new ApiSession(api, "client-42", new SessionLease(() => {}));
 
     await session.uninstallModule("some-module");
 
@@ -93,7 +93,7 @@ describe("the RPC surface a client sees", () => {
         };
       },
     });
-    const session = new ApiSession(api, "client-42", new SessionLease());
+    const session = new ApiSession(api, "client-42", new SessionLease(() => {}));
     const callback = { onStreamEvent: async () => {} };
 
     await session.subscribeStreamEvents(callback, ["goal.reached"]);

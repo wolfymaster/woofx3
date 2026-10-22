@@ -71,7 +71,7 @@ function engine(opts: {
       sent.push(event);
     }),
   } as unknown as WebhookClient);
-  const rpc = new ApiSession(api, "local-ui", new SessionLease()) as unknown as Woofx3EngineApi;
+  const rpc = new ApiSession(api, "local-ui", new SessionLease(() => {})) as unknown as Woofx3EngineApi;
   return {
     api,
     rpc,

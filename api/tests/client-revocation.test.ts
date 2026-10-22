@@ -5,7 +5,8 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import { newMessagePortRpcSession, newWebSocketRpcSession } from "capnweb";
 import { Api } from "../src/api";
 import { ClientAuth } from "../src/auth";
-import { ClientSessions } from "../src/client-sessions";
+import { ClientRevoker, ClientSessions } from "../src/client-sessions";
+import { EngineEventStream } from "../src/engine-event-stream";
 import { ApiGateway } from "../src/gateway";
 import { GatewayConnection } from "../src/gateway-connection";
 import { createHttpServer } from "../src/http";
@@ -46,6 +47,8 @@ async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
 function engine() {
   const deleted = new Set<string>();
   let held: Promise<void> | null = null;
+  /** What the next deleteClient does instead of deleting; null deletes normally. */
+  let deleteFailure: "throwAfterCommit" | "notOk" | null = null;
   const db = {
     async validateClient(clientId: string, clientSecret: string) {
       const known = CREDENTIALS[clientId] === clientSecret && !deleted.has(clientId);
@@ -60,7 +63,13 @@ function engine() {
       return deleted.has(clientId) || !(clientId in CREDENTIALS) ? {} : { client: { id: clientId, clientId } };
     },
     async deleteClient(id: string) {
+      if (deleteFailure === "notOk") {
+        return { code: "INTERNAL", message: "database is locked" };
+      }
       deleted.add(id);
+      if (deleteFailure === "throwAfterCommit") {
+        throw new Error("connection reset after the delete committed");
+      }
       return { code: "OK" };
     },
   };
@@ -75,15 +84,14 @@ function engine() {
   });
   const auth = new ClientAuth(db as never, logger);
   const sessions = new ClientSessions(logger);
-  api.setClientRevocation({
-    revoke(clientId) {
-      auth.invalidateCache();
-      sessions.revoke(clientId);
-    },
-  });
+  api.setClientRevocation(new ClientRevoker(auth, sessions, new EngineEventStream(logger)));
   const gateway = new ApiGateway(api, auth, db as never, logger, resolveRegistrationPolicy({}), sessions);
   return {
     gateway,
+    sessions,
+    failNextDelete(failure: "throwAfterCommit" | "notOk") {
+      deleteFailure = failure;
+    },
     holdValidation(): () => void {
       let release = () => {};
       held = new Promise<void>((resolve) => {
@@ -201,5 +209,87 @@ describe("deleting a client", () => {
     release();
 
     expect(isAuthenticationRefused(await authenticating)).toBe(true);
+  });
+  test("answers a client that deletes itself before closing its socket", async () => {
+    const { gateway } = engine();
+    const url = serve(gateway);
+    const socket = new WebSocket(url);
+    const closed = new Promise<number>((resolve) => {
+      socket.addEventListener("close", (event) => resolve(event.code));
+    });
+    const doomedGateway = newWebSocketRpcSession<ApiGatewayContract>(socket);
+    const doomed = doomedGateway.authenticate("doomed", CREDENTIALS.doomed) as unknown as Woofx3EngineApi;
+
+    expect(await doomed.deleteClient("doomed")).toEqual({ success: true, message: "Client deleted" });
+    expect(await closed).toBe(CLIENT_REVOKED_CLOSE_CODE);
+    doomedGateway[Symbol.dispose]();
+  });
+
+  test("keeps a socket open that still carries another client's session", async () => {
+    const { gateway } = engine();
+    const url = serve(gateway);
+    const socket = new WebSocket(url);
+    let closeCode: number | null = null;
+    socket.addEventListener("close", (event) => {
+      closeCode = event.code;
+    });
+    const shared = newWebSocketRpcSession<ApiGatewayContract>(socket);
+    const doomed = shared.authenticate("doomed", CREDENTIALS.doomed) as unknown as Woofx3EngineApi;
+    const admin = shared.authenticate("admin", CREDENTIALS.admin) as unknown as Woofx3EngineApi;
+    await doomed.ping();
+
+    expect(await admin.deleteClient("doomed")).toEqual({ success: true, message: "Client deleted" });
+    await Bun.sleep(20);
+
+    expect(closeCode).toBeNull();
+    expect(isAuthenticationRefused(await rejectionOf(doomed.ping()))).toBe(true);
+    expect(await admin.ping()).toEqual({ status: "ok" });
+    shared[Symbol.dispose]();
+  });
+
+  test("still ends the sessions when the delete commits and then fails on its way back", async () => {
+    const { gateway, failNextDelete } = engine();
+    using doomedPort = overMessagePort(gateway);
+    using adminPort = overMessagePort(gateway);
+    const doomed = doomedPort.client.authenticate("doomed", CREDENTIALS.doomed) as unknown as Woofx3EngineApi;
+    const admin = adminPort.client.authenticate("admin", CREDENTIALS.admin) as unknown as Woofx3EngineApi;
+    await doomed.ping();
+
+    failNextDelete("throwAfterCommit");
+    expect(await rejectionOf(admin.deleteClient("doomed"))).toBeInstanceOf(Error);
+
+    expect(isAuthenticationRefused(await rejectionOf(doomed.ping()))).toBe(true);
+  });
+
+  test("reports a delete db-proxy did not perform as a failure", async () => {
+    const { gateway, failNextDelete } = engine();
+    using adminPort = overMessagePort(gateway);
+    const admin = adminPort.client.authenticate("admin", CREDENTIALS.admin) as unknown as Woofx3EngineApi;
+
+    failNextDelete("notOk");
+    const result = await admin.deleteClient("doomed");
+
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("database is locked");
+  });
+});
+
+describe("a session disposed by its client", () => {
+  test("is forgotten without waiting for the socket to close", async () => {
+    const { gateway, sessions } = engine();
+    const gatewayStub = newWebSocketRpcSession<ApiGatewayContract>(serve(gateway));
+
+    for (let round = 0; round < 50; round++) {
+      const session = gatewayStub.authenticate("admin", CREDENTIALS.admin) as unknown as Woofx3EngineApi & Disposable;
+      await session.ping();
+      session[Symbol.dispose]();
+    }
+    const deadline = Date.now() + 2_000;
+    while (sessions.size > 0 && Date.now() < deadline) {
+      await Bun.sleep(5);
+    }
+
+    expect(sessions.size).toBe(0);
+    gatewayStub[Symbol.dispose]();
   });
 });

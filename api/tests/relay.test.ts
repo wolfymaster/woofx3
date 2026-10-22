@@ -37,7 +37,7 @@ function session(options: { writeFails?: boolean } = {}) {
     api,
     settings,
     published,
-    rpc: new ApiSession(api, "dash-client", new SessionLease()) as unknown as Woofx3EngineApi,
+    rpc: new ApiSession(api, "dash-client", new SessionLease(() => {})) as unknown as Woofx3EngineApi,
   };
 }
 

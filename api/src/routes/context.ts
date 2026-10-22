@@ -182,6 +182,25 @@ export class ApiRouteHost extends RpcTarget {
     };
   }
 
+  /**
+   * Stop delivering callbacks to a deleted client. Never throws: the delete
+   * has already happened, and a failed refresh is logged. The callback list
+   * is read again on the next refresh.
+   */
+  protected async refreshCallbackUrlsAfterDelete(clientId: string): Promise<void> {
+    if (!this.webhookClient) {
+      return;
+    }
+    try {
+      await this.webhookClient.refreshCallbackUrls();
+    } catch (err) {
+      this.logger.error("Failed to refresh callback URLs after deleting a client", {
+        clientId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   /** Best effort: a failed or unconfigured send is logged, never thrown. */
   protected async emitWebhook(event: CallbackEvent, context: Record<string, unknown>): Promise<void> {
     if (!this.webhookClient) {
