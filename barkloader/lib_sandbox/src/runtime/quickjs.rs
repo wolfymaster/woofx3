@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::host::{HostError, InvocationContext};
 use crate::runtime::RuntimeAdapter;
-use crate::runtime::limits::{Budget, ConversionLimits, SandboxLimits};
+use crate::runtime::limits::{Budget, ConversionLimits, SandboxLimits, Trip};
 use rquickjs::{
     Array, Context, Ctx, Function as JsFunction, Object, Runtime, Value as JsValue, function::Opt,
     object::Accessor,
@@ -12,10 +12,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
-const DEFAULT_MEMORY_LIMIT: usize = 16 * 1024 * 1024;
 const DEFAULT_MAX_STACK_SIZE: usize = 1024 * 1024;
-const DEFAULT_MAX_INSTRUCTIONS: u64 = 100_000;
 
 fn host_err(msg: impl Into<String>) -> rquickjs::Error {
     rquickjs::Error::new_from_js_message("host", "value", msg.into())
@@ -37,9 +36,58 @@ fn throw_host_error(ctx: &Ctx<'_>, err: &HostError) -> rquickjs::Error {
     ctx.throw(exception.into_value())
 }
 
+/// What one invocation has spent of its interrupt budget, and when it must
+/// end. The interrupt handler outlives any one invocation, so `execute`
+/// resets this before each run.
+struct InterruptBudget {
+    /// Fixed reference point: the deadline is stored as an offset from it so
+    /// it fits an atomic.
+    epoch: Instant,
+    max_interrupts: u64,
+    interrupts: AtomicU64,
+    deadline_nanos: AtomicU64,
+}
+
+impl InterruptBudget {
+    fn new(max_interrupts: u64) -> Self {
+        Self {
+            epoch: Instant::now(),
+            max_interrupts,
+            interrupts: AtomicU64::new(0),
+            deadline_nanos: AtomicU64::new(0),
+        }
+    }
+
+    fn reset(&self, deadline: Instant) {
+        let offset = deadline.saturating_duration_since(self.epoch).as_nanos();
+        self.deadline_nanos
+            .store(u64::try_from(offset).unwrap_or(u64::MAX), Ordering::Relaxed);
+        self.interrupts.store(0, Ordering::Relaxed);
+    }
+
+    /// Called by QuickJS; `true` stops the script with an uncatchable error.
+    fn interrupt(&self) -> bool {
+        self.interrupts.fetch_add(1, Ordering::Relaxed);
+        self.trip().is_some()
+    }
+
+    /// Which budget, if any, the current invocation has run out of. Both only
+    /// ever grow, so once tripped it stays tripped until the next `reset`.
+    fn trip(&self) -> Option<Trip> {
+        if self.interrupts.load(Ordering::Relaxed) > self.max_interrupts {
+            return Some(Trip::Instructions);
+        }
+        let elapsed = u64::try_from(self.epoch.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        if elapsed >= self.deadline_nanos.load(Ordering::Relaxed) {
+            return Some(Trip::Deadline);
+        }
+        None
+    }
+}
+
 pub struct QuickJSAdapter {
     runtime: Runtime,
-    instruction_counter: Arc<AtomicU64>,
+    budget: Arc<InterruptBudget>,
     limits: SandboxLimits,
 }
 
@@ -47,18 +95,16 @@ impl QuickJSAdapter {
     pub fn new(limits: SandboxLimits) -> Result<Self, Error> {
         let runtime = Runtime::new()
             .map_err(|e| Error::RuntimeError(format!("QuickJS runtime init: {e}")))?;
-        runtime.set_memory_limit(DEFAULT_MEMORY_LIMIT);
+        runtime.set_memory_limit(limits.memory_bytes);
         runtime.set_max_stack_size(DEFAULT_MAX_STACK_SIZE);
 
-        let counter = Arc::new(AtomicU64::new(0));
-        let counter_clone = counter.clone();
-        runtime.set_interrupt_handler(Some(Box::new(move || {
-            counter_clone.fetch_add(1, Ordering::Relaxed) >= DEFAULT_MAX_INSTRUCTIONS
-        })));
+        let budget = Arc::new(InterruptBudget::new(limits.quickjs_max_interrupts));
+        let handler_budget = budget.clone();
+        runtime.set_interrupt_handler(Some(Box::new(move || handler_budget.interrupt())));
 
         Ok(Self {
             runtime,
-            instruction_counter: counter,
+            budget,
             limits,
         })
     }
@@ -71,18 +117,17 @@ impl RuntimeAdapter for QuickJSAdapter {
         entry_point: &str,
         invocation: &InvocationContext,
     ) -> Result<Value, Error> {
-        self.instruction_counter.store(0, Ordering::Relaxed);
+        self.budget.reset(invocation.deadline);
 
         let context = Context::full(&self.runtime)
             .map_err(|e| Error::RuntimeError(format!("context creation: {e}")))?;
 
-        let max_instructions = DEFAULT_MAX_INSTRUCTIONS;
-        let counter = self.instruction_counter.clone();
+        let budget = &self.budget;
         let limits = self.limits.conversion;
 
         context.with(|ctx| {
             ctx.eval::<(), _>(code)
-                .map_err(|e| to_sandbox_error(&ctx, &counter, max_instructions, limits, e))?;
+                .map_err(|e| to_sandbox_error(&ctx, budget, limits, e))?;
 
             let globals = ctx.globals();
             let func: JsFunction = globals.get(entry_point).map_err(|e| {
@@ -93,7 +138,7 @@ impl RuntimeAdapter for QuickJSAdapter {
 
             let result: JsValue = func
                 .call((ctx_obj,))
-                .map_err(|e| to_sandbox_error(&ctx, &counter, max_instructions, limits, e))?;
+                .map_err(|e| to_sandbox_error(&ctx, budget, limits, e))?;
 
             // The job queue is never run, so a Promise would never settle;
             // read as an object it has no own properties and would pass for
@@ -114,13 +159,12 @@ impl RuntimeAdapter for QuickJSAdapter {
 
 fn to_sandbox_error(
     ctx: &Ctx<'_>,
-    counter: &AtomicU64,
-    max_instructions: u64,
+    budget: &InterruptBudget,
     limits: ConversionLimits,
     e: rquickjs::Error,
 ) -> Error {
-    if counter.load(Ordering::Relaxed) >= max_instructions {
-        return Error::InstructionLimitExceeded;
+    if let Some(trip) = budget.trip() {
+        return trip.into();
     }
     // rquickjs reports a thrown value only as "Exception generated by QuickJS";
     // the value itself waits in the context. Without it, a module that throws a
@@ -531,8 +575,11 @@ fn build_http_namespace<'js>(
 ///
 ///   - `ctx.resources.create(kind, instanceId, displayName?)` →
 ///     `{ canonicalId, moduleName, kind, instanceId, displayName }`
-///   - `ctx.resources.delete(canonicalId)` → no return
-///   - `ctx.resources.list(kind)` → array of the same instance objects
+///   - `ctx.resources.delete(canonicalId)` → no return; owning module only
+///   - `ctx.resources.get(canonicalId)` → the instance or null; owning module,
+///     or one the streamer linked it to
+///   - `ctx.resources.list(kind)` → array of the same instance objects; a
+///     bare kind lists the calling module's own (`crate::resource_access`)
 ///   - `ctx.resources.compareAndSetSetting(canonicalId, key, expected, value)`
 ///     → `{ swapped, current }`; owning module only
 ///
@@ -580,10 +627,12 @@ fn build_resources_namespace<'js>(
     resources.set("create", create_fn).map_err(map)?;
 
     let host = invocation.host.clone();
+    let module_id = invocation.module_id.clone();
     let delete_fn = JsFunction::new(
         ctx.clone(),
         move |_ctx: Ctx<'_>, canonical_id: String| -> rquickjs::Result<()> {
-            super::host_bindings::resources_delete(&host, &canonical_id).map_err(host_err)?;
+            super::host_bindings::resources_delete(&host, &module_id, &canonical_id)
+                .map_err(host_err)?;
             Ok(())
         },
     )
@@ -591,8 +640,11 @@ fn build_resources_namespace<'js>(
     resources.set("delete", delete_fn).map_err(map)?;
 
     let host = invocation.host.clone();
+    let module_id = invocation.module_id.clone();
+    let link_settings = invocation.resource_link_settings.clone();
     let get_fn = JsFunction::new(ctx.clone(), move |ctx, canonical_id: String| {
-        match super::host_bindings::resources_get(&host, &canonical_id) {
+        match super::host_bindings::resources_get(&host, &module_id, &link_settings, &canonical_id)
+        {
             Ok(v) => binding_return(&ctx, &v, limits),
             Err(e) => Err(host_err(e)),
         }
@@ -601,8 +653,10 @@ fn build_resources_namespace<'js>(
     resources.set("get", get_fn).map_err(map)?;
 
     let host = invocation.host.clone();
+    let module_id = invocation.module_id.clone();
+    let link_settings = invocation.resource_link_settings.clone();
     let list_fn = JsFunction::new(ctx.clone(), move |ctx, kind: String| {
-        match super::host_bindings::resources_list(&host, &kind) {
+        match super::host_bindings::resources_list(&host, &module_id, &link_settings, &kind) {
             Ok(v) => binding_return(&ctx, &v, limits),
             Err(e) => Err(host_err(e)),
         }
@@ -613,6 +667,7 @@ fn build_resources_namespace<'js>(
     let host = invocation.host.clone();
     let module_id = invocation.module_id.clone();
     let permissions = invocation.permissions.clone();
+    let link_settings = invocation.resource_link_settings.clone();
     let deadline = invocation.deadline;
     let run_fn = JsFunction::new(
         ctx.clone(),
@@ -624,9 +679,12 @@ fn build_resources_namespace<'js>(
                 .transpose()?;
             match super::host_bindings::resources_run(
                 &host,
-                &module_id,
-                &permissions,
-                deadline,
+                &crate::host::RunCaller {
+                    module_id: &module_id,
+                    permissions: &permissions,
+                    resource_link_settings: &link_settings,
+                    deadline,
+                },
                 &canonical_id,
                 &verb,
                 json_params,
@@ -800,6 +858,7 @@ fn build_module_namespace<'js>(
     let host_for_set = invocation.host.clone();
     let module_id_for_set = invocation.module_id.clone();
     let url_settings = invocation.url_settings.clone();
+    let link_settings = invocation.resource_link_settings.clone();
     let set_setting_fn = JsFunction::new(
         ctx.clone(),
         move |_ctx: Ctx<'_>, key: String, value: String| -> rquickjs::Result<()> {
@@ -807,6 +866,7 @@ fn build_module_namespace<'js>(
                 &host_for_set,
                 &module_id_for_set,
                 &url_settings,
+                &link_settings,
                 &key,
                 &value,
             )
@@ -822,6 +882,7 @@ fn build_module_namespace<'js>(
     let host_for_cas = invocation.host.clone();
     let module_id_for_cas = invocation.module_id.clone();
     let url_settings_for_cas = invocation.url_settings.clone();
+    let link_settings_for_cas = invocation.resource_link_settings.clone();
     let compare_and_set_setting_fn = JsFunction::new(
         ctx.clone(),
         move |ctx, key: String, expected: JsValue, value: JsValue| {
@@ -831,6 +892,7 @@ fn build_module_namespace<'js>(
                 &host_for_cas,
                 &module_id_for_cas,
                 &url_settings_for_cas,
+                &link_settings_for_cas,
                 &key,
                 &json_expected,
                 &json_val,
@@ -1018,6 +1080,7 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
@@ -1044,6 +1107,7 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
@@ -1088,6 +1152,7 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         for (code, expected) in [
@@ -1120,6 +1185,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = "function run(ctx) { return { id: ctx.module.id, name: ctx.module.name, version: ctx.module.version }; }";
@@ -1141,6 +1207,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Exercises all three levels and both a string and an object
@@ -1174,6 +1241,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = "function run(ctx) { ctx.log.info('data', { foo: 1 }); return { ok: true }; }";
@@ -1193,6 +1261,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = "function run(ctx) { return ctx.response(false, 'nope'); }";
@@ -1213,6 +1282,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         }
     }
@@ -1229,6 +1299,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // (call, success, message, extra field name, extra field value)
@@ -1328,6 +1399,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Never touches ctx.module.settings.
@@ -1356,6 +1428,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Reads ctx.module.settings twice — should still be one host fetch.
@@ -1433,6 +1506,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings,
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         (invocation, settings)
@@ -1494,6 +1568,7 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         (invocation, instance)

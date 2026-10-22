@@ -5,17 +5,19 @@ use lib_sandbox::host::noop::noop_host_context;
 use lib_sandbox::models::function::Function;
 use lib_sandbox::models::request::InvokeRequest;
 use lib_sandbox::{
-    Error, ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule, Sandbox, SizeLimit,
+    Error, InvokeBlockingError, ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule,
+    Sandbox, SandboxFactory, SandboxLimits, SizeLimit,
 };
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 const MODULE_ID: &str = "limits";
 
-/// Registers `code` as the only function of a fresh module and invokes its
-/// `run` entry point with `event`.
-fn invoke(file_name: &str, code: &str, event: Value) -> Result<Value, Error> {
+/// A fresh registry holding one module whose only function, `run`, is `code`.
+fn registry_with(file_name: &str, code: &str) -> Arc<ModuleRegistry> {
     let registry = Arc::new(ModuleRegistry::new());
     let mut functions = HashMap::new();
     functions.insert(
@@ -40,21 +42,42 @@ fn invoke(file_name: &str, code: &str, event: Value) -> Result<Value, Error> {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
     registry
         .register_module(MODULE_ID.to_string(), module)
         .expect("register test module");
+    registry
+}
 
-    let mut sandbox = Sandbox::new(registry, noop_host_context()).expect("build sandbox");
-    sandbox.invoke(InvokeRequest {
+fn run_request(event: Value, timeout_ms: Option<u64>) -> InvokeRequest {
+    InvokeRequest {
         function: format!("{MODULE_ID}:function:run"),
         event,
         user: None,
         params: Value::Null,
         workflow_chain: None,
-        timeout_ms: None,
-    })
+        timeout_ms,
+    }
+}
+
+/// Registers `code` as the only function of a fresh module and invokes its
+/// `run` entry point with `event`.
+fn invoke(file_name: &str, code: &str, event: Value) -> Result<Value, Error> {
+    invoke_with(file_name, code, event, SandboxLimits::default(), None)
+}
+
+fn invoke_with(
+    file_name: &str,
+    code: &str,
+    event: Value,
+    limits: SandboxLimits,
+    timeout_ms: Option<u64>,
+) -> Result<Value, Error> {
+    let mut sandbox = Sandbox::new(registry_with(file_name, code), noop_host_context(), limits)
+        .expect("build sandbox");
+    sandbox.invoke(run_request(event, timeout_ms))
 }
 
 fn invoke_lua(code: &str) -> Result<Value, Error> {
@@ -529,5 +552,296 @@ fn test_lua_colliding_integer_and_string_keys_are_refused() {
     assert!(
         matches!(&result, Err(Error::UnsupportedValue { type_name }) if type_name.contains("duplicate key")),
         "{result:?}"
+    );
+}
+
+/// Slack on top of an invocation's deadline before a test calls it runaway.
+/// Generous so a loaded CI machine does not fail the test.
+const DEADLINE_SLACK: Duration = Duration::from_secs(5);
+
+/// Limits under which only the deadline can stop a busy loop.
+fn deadline_only() -> SandboxLimits {
+    SandboxLimits {
+        max_instructions: u64::MAX,
+        quickjs_max_interrupts: u64::MAX,
+        ..SandboxLimits::default()
+    }
+}
+
+/// Runs `invoke` on its own thread and returns its outcome as `{:?}` text
+/// (sandbox errors are not `Send`), failing the test instead of hanging when
+/// the invocation runs past `limit`.
+fn finishes_within(
+    limit: Duration,
+    invoke: impl FnOnce() -> Result<Value, Error> + Send + 'static,
+) -> String {
+    let (done, outcome) = mpsc::channel();
+    std::thread::spawn(move || {
+        // The receiver is gone only when the test already failed on timeout.
+        let _ = done.send(format!("{:?}", invoke()));
+    });
+    outcome
+        .recv_timeout(limit)
+        .expect("invocation still running past its limit")
+}
+
+#[test]
+fn test_lua_pcall_cannot_catch_the_instruction_limit() {
+    let code = r#"
+        function run(ctx)
+            for i = 1, 1e9 do
+                pcall(function() while true do end end)
+            end
+            return { escaped = true }
+        end
+    "#;
+    let outcome = finishes_within(Duration::from_secs(30) + DEADLINE_SLACK, move || {
+        invoke_lua(code)
+    });
+    assert_eq!(outcome, "Err(InstructionLimitExceeded)");
+}
+
+#[test]
+fn test_busy_loops_end_at_the_deadline() {
+    for (case, file_name, code) in [
+        (
+            "lua loop",
+            "run.lua",
+            "function run(ctx) while true do end end",
+        ),
+        (
+            "lua pcall loop",
+            "run.lua",
+            "function run(ctx) for i = 1, 1e9 do pcall(function() while true do end end) end end",
+        ),
+        (
+            "lua xpcall loop",
+            "run.lua",
+            "function run(ctx) while true do xpcall(function() while true do end end, function() while true do end end) end end",
+        ),
+        ("js loop", "run.js", "function run(ctx) { for (;;) {} }"),
+        (
+            "js try/catch loop",
+            "run.js",
+            "function run(ctx) { for (;;) { try { for (;;) {} } catch (e) {} } }",
+        ),
+        (
+            "js backtracking regex",
+            "run.js",
+            "function run(ctx) { return { r: /^(a+)+$/.test('a'.repeat(40) + 'b') }; }",
+        ),
+        (
+            "js backtracking regex in try/catch",
+            "run.js",
+            "function run(ctx) { for (;;) { try { /^(a+)+$/.test('a'.repeat(40) + 'b'); } catch (e) {} } }",
+        ),
+    ] {
+        let timeout = Duration::from_millis(500);
+        let started = Instant::now();
+        let outcome = finishes_within(timeout + DEADLINE_SLACK, move || {
+            invoke_with(
+                file_name,
+                code,
+                Value::Null,
+                deadline_only(),
+                Some(timeout.as_millis() as u64),
+            )
+        });
+        assert_eq!(outcome, "Err(DeadlineExceeded)", "{case}");
+        assert!(started.elapsed() >= timeout, "{case} ended early");
+    }
+}
+
+#[test]
+fn test_js_busy_loop_hits_the_instruction_limit() {
+    for code in [
+        "function run(ctx) { for (;;) {} }",
+        "function run(ctx) { for (;;) { try { for (;;) {} } catch (e) {} } }",
+    ] {
+        let outcome = finishes_within(Duration::from_secs(30) + DEADLINE_SLACK, move || {
+            invoke("run.js", code, Value::Null)
+        });
+        assert_eq!(outcome, "Err(InstructionLimitExceeded)", "{code}");
+    }
+}
+
+#[test]
+fn test_bounded_work_runs_under_the_default_budgets() {
+    for (file_name, code) in [
+        (
+            "run.lua",
+            "function run(ctx) local t = 0; for i = 1, 50000 do t = t + i end; return { t = t } end",
+        ),
+        (
+            "run.js",
+            "function run(ctx) { let t = 0; for (let i = 1; i <= 50000; i++) { t += i; } return { t }; }",
+        ),
+    ] {
+        let result = invoke_with(
+            file_name,
+            code,
+            Value::Null,
+            SandboxLimits::default(),
+            Some(5_000),
+        );
+        assert_eq!(
+            result.expect(file_name),
+            json!({ "t": 1_250_025_000 }),
+            "{file_name}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn test_invocation_past_the_concurrency_cap_is_refused_as_busy() {
+    let slots = 2;
+    let limits = SandboxLimits {
+        max_concurrent_invocations: slots,
+        ..deadline_only()
+    };
+    let busy = SandboxFactory::new(
+        registry_with("run.lua", "function run(ctx) while true do end end"),
+        noop_host_context(),
+        limits,
+    )
+    .expect("valid limits");
+    let holders: Vec<_> = (0..slots)
+        .map(|_| {
+            let factory = busy.clone();
+            tokio::spawn(async move {
+                factory
+                    .invoke_blocking(run_request(Value::Null, Some(1_500)))
+                    .await
+            })
+        })
+        .collect();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    let started = Instant::now();
+    let refused = busy
+        .invoke_blocking(run_request(Value::Null, Some(200)))
+        .await;
+    assert!(
+        matches!(
+            refused,
+            Err(InvokeBlockingError::Busy {
+                max_concurrent: 2,
+                ..
+            })
+        ),
+        "{refused:?}"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "waited too long"
+    );
+
+    for holder in holders {
+        let outcome = holder.await.expect("holder task");
+        assert!(
+            matches!(&outcome, Err(InvokeBlockingError::Invoke(message)) if message.contains("deadline")),
+            "{outcome:?}"
+        );
+    }
+    // The finished holders gave their slots back.
+    let freed = busy
+        .invoke_blocking(run_request(Value::Null, Some(200)))
+        .await;
+    assert!(
+        matches!(&freed, Err(InvokeBlockingError::Invoke(message)) if message.contains("deadline")),
+        "{freed:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_invoke_blocking_runs_within_the_cap() {
+    let factory = SandboxFactory::new(
+        registry_with("run.js", "function run(ctx) { return { ok: true }; }"),
+        noop_host_context(),
+        SandboxLimits::default(),
+    )
+    .expect("valid limits");
+    let results = futures_join(&factory, 4).await;
+    for result in results {
+        assert_eq!(result.expect("invocation runs"), json!({ "ok": true }));
+    }
+}
+
+async fn futures_join(
+    factory: &SandboxFactory,
+    count: usize,
+) -> Vec<Result<Value, InvokeBlockingError>> {
+    let tasks: Vec<_> = (0..count)
+        .map(|_| {
+            let factory = factory.clone();
+            tokio::spawn(async move {
+                factory
+                    .invoke_blocking(run_request(Value::Null, None))
+                    .await
+            })
+        })
+        .collect();
+    let mut results = Vec::with_capacity(count);
+    for task in tasks {
+        results.push(task.await.expect("invocation task"));
+    }
+    results
+}
+
+#[test]
+fn test_lua_xpcall_still_handles_errors() {
+    let code = r#"
+        function run(ctx)
+            local ok, handled = xpcall(function(a, b) error({ sum = a + b }) end,
+                function(err) return err.sum * 10 end, 1, 2)
+            local fine, x, y = xpcall(function(a) return a, a + 1 end, error, 7)
+            local failed, reason = xpcall(error, function() error("handler broke") end, "boom")
+            return {
+                ok = ok, handled = handled,
+                fine = fine, x = x, y = y,
+                failed = failed, reason = tostring(reason),
+            }
+        end
+    "#;
+    let result = invoke_lua(code).expect("xpcall runs");
+    assert_eq!(result["ok"], json!(false));
+    assert_eq!(result["handled"], json!(30));
+    assert_eq!(
+        (&result["fine"], &result["x"], &result["y"]),
+        (&json!(true), &json!(7), &json!(8))
+    );
+    assert_eq!(result["failed"], json!(false));
+    assert!(
+        result["reason"]
+            .as_str()
+            .is_some_and(|r| r.contains("handler broke")),
+        "{result}"
+    );
+}
+
+#[test]
+fn test_lua_gc_metamethods_are_refused() {
+    let code = r#"
+        function run(ctx)
+            local ok, err = pcall(setmetatable, {}, { __gc = function() while true do end end })
+            local plain = setmetatable({}, { __index = { hello = "world" } })
+            return { ok = ok, err = tostring(err), hello = plain.hello }
+        end
+    "#;
+    // A finalizer that slipped through would loop, with no hook to stop it,
+    // when the VM closes.
+    let outcome = finishes_within(Duration::from_secs(30) + DEADLINE_SLACK, move || {
+        invoke_lua(code)
+    });
+    assert_eq!(
+        outcome,
+        format!(
+            "Ok({:?})",
+            json!({
+                "ok": false,
+                "err": "setmetatable: __gc metamethods are not allowed in the sandbox",
+                "hello": "world",
+            })
+        )
     );
 }

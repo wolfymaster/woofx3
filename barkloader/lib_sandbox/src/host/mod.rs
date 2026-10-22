@@ -286,6 +286,9 @@ pub struct RunCaller<'a> {
     pub module_id: &'a str,
     /// The invocation's grants, which must cover the providing module's.
     pub permissions: &'a HashSet<String>,
+    /// The invocation's resource-link setting ids, the same set `get` and
+    /// `list` are judged against.
+    pub resource_link_settings: &'a HashSet<String>,
     /// When the caller stops waiting; the action runs within it.
     pub deadline: Instant,
 }
@@ -342,6 +345,10 @@ pub struct InvocationContext {
     /// them (`ctx.module.setSetting`): a value there grants `ctx.http` its
     /// origin, so only the streamer may set it.
     pub url_settings: HashSet<String>,
+    /// The ids of the module's resource-link settings. Their values are the
+    /// instances the streamer linked to the module, which it may read and run
+    /// (`crate::resource_access`), so module code may not write them either.
+    pub resource_link_settings: HashSet<String>,
     /// When the caller stops waiting for the result. Host calls that wait on
     /// another service are bounded by it.
     pub deadline: Instant,

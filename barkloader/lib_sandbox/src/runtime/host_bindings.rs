@@ -21,8 +21,9 @@
 //! for those, same as before.
 
 use crate::host::{HostContext, StorageSetOptions};
+use crate::resource_access::ResourceAccess;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// `ctx.storage.set(key, value, options?)`: write through to the store under
 /// the module's own namespace, then emit the `module.storage.<module_id>.changed`
@@ -124,17 +125,43 @@ pub fn resources_create(
     serde_json::to_value(&inst).map_err(|e| e.to_string())
 }
 
-/// `ctx.resources.delete(canonicalId)`: delete the instance, then drop any
-/// scheduled entry keyed by its canonical id. A deadline armed for an
-/// instance that no longer exists has nothing left to act on.
-pub fn resources_delete(host: &HostContext, canonical_id: &str) -> Result<(), String> {
+/// `ctx.resources.delete(canonicalId)`: delete an instance the invoking module
+/// owns, then drop any scheduled entry keyed by its canonical id. A deadline
+/// armed for an instance that no longer exists has nothing left to act on.
+pub fn resources_delete(
+    host: &HostContext,
+    module_id: &str,
+    canonical_id: &str,
+) -> Result<(), String> {
+    if !ResourceAccess::may_write(module_id, canonical_id) {
+        return Err(format!(
+            "ctx.resources.delete: {canonical_id:?} is not an instance of module {module_id:?}; \
+             only the module that owns an instance may delete it"
+        ));
+    }
     host.resources.delete(canonical_id)?;
     host.schedule.cancel_key(canonical_id);
     Ok(())
 }
 
 /// `ctx.resources.get(canonicalId)`: the instance, settings included, or null.
-pub fn resources_get(host: &HostContext, canonical_id: &str) -> Result<Value, String> {
+/// Only an instance the invoking module owns or the streamer linked to it.
+pub fn resources_get(
+    host: &HostContext,
+    module_id: &str,
+    resource_link_settings: &HashSet<String>,
+    canonical_id: &str,
+) -> Result<Value, String> {
+    let access = ResourceAccess::new(module_id, resource_link_settings, host.settings.as_ref());
+    if !access
+        .may_read(canonical_id)
+        .map_err(|e| format!("ctx.resources.get: {e}"))?
+    {
+        return Err(format!(
+            "ctx.resources.get: {module_id:?} may read only an instance it owns or one its \
+             settings link to, and {canonical_id:?} is neither"
+        ));
+    }
     match host.resources.get(canonical_id)? {
         Some(inst) => serde_json::to_value(&inst).map_err(|e| e.to_string()),
         None => Ok(Value::Null),
@@ -171,11 +198,10 @@ pub fn resources_compare_and_set_setting(
     if key.is_empty() {
         return Err("ctx.resources.compareAndSetSetting: key is required".to_string());
     }
-    let owner = canonical_id.split(':').next().unwrap_or_default();
-    if owner != module_id {
+    if !ResourceAccess::may_write(module_id, canonical_id) {
         return Err(format!(
-            "ctx.resources.compareAndSetSetting: {canonical_id:?} belongs to module {owner:?}; \
-             only the module that owns an instance may write its settings"
+            "ctx.resources.compareAndSetSetting: {canonical_id:?} is not an instance of module \
+             {module_id:?}; only the module that owns an instance may write its settings"
         ));
     }
     let outcome =
@@ -193,36 +219,35 @@ pub fn resources_compare_and_set_setting(
 /// invocation, never from module code.
 pub fn resources_run(
     host: &HostContext,
-    module_id: &str,
-    permissions: &std::collections::HashSet<String>,
-    deadline: std::time::Instant,
+    caller: &crate::host::RunCaller<'_>,
     canonical_id: &str,
     verb: &str,
     params: Option<Value>,
 ) -> Result<Value, String> {
-    let caller = crate::host::RunCaller {
-        module_id,
-        permissions,
-        deadline,
-    };
     host.actions
-        .run(&caller, canonical_id, verb, params.unwrap_or(Value::Null))
+        .run(caller, canonical_id, verb, params.unwrap_or(Value::Null))
 }
 
-/// `ctx.resources.list(kind)`: call the resource client, then serialize
-/// the list to `Value`. A qualified `module:kind` keeps only that module's
-/// instances; a bare kind lists every module's.
-pub fn resources_list(host: &HostContext, kind: &str) -> Result<Value, String> {
-    let (module, bare) = match kind.split_once(':') {
-        Some((module, bare)) => (Some(module), bare),
-        None => (None, kind),
-    };
-    let items: Vec<_> = host
+/// `ctx.resources.list(kind)`: the instances of `kind` the invoking module may
+/// read, serialized to `Value`. A bare kind lists the module's own instances;
+/// a qualified `module:kind` lists that module's, keeping only the ones the
+/// invoking module owns or the streamer linked to it.
+pub fn resources_list(
+    host: &HostContext,
+    module_id: &str,
+    resource_link_settings: &HashSet<String>,
+    kind: &str,
+) -> Result<Value, String> {
+    let (module, bare) = kind.split_once(':').unwrap_or((module_id, kind));
+    let mut items: Vec<_> = host
         .resources
         .list_by_kind(bare)?
         .into_iter()
-        .filter(|item| module.is_none_or(|m| item.module_name == m))
+        .filter(|item| item.module_name == module)
         .collect();
+    ResourceAccess::new(module_id, resource_link_settings, host.settings.as_ref())
+        .retain_readable(&mut items)
+        .map_err(|e| format!("ctx.resources.list: {e}"))?;
     serde_json::to_value(&items).map_err(|e| e.to_string())
 }
 
@@ -310,11 +335,14 @@ fn require_schedule_identity(module_id: &str, deadline_id: &str, key: &str) -> R
 /// inside a closure captured by that engine's accessor/metatable hook).
 /// `ctx.module.setSetting(key, value)` — write one of the module's own
 /// settings. Refused for a `url` setting: its value grants `ctx.http` the
-/// URL's origin (`crate::net`), so only the streamer may set it.
+/// URL's origin (`crate::net`), so only the streamer may set it. Refused for a
+/// resource-link setting too: its value lets the module read and run another
+/// module's instance (`crate::resource_access`).
 pub fn set_module_setting(
     host: &HostContext,
     module_id: &str,
-    url_settings: &std::collections::HashSet<String>,
+    url_settings: &HashSet<String>,
+    resource_link_settings: &HashSet<String>,
     key: &str,
     value: &str,
 ) -> Result<(), String> {
@@ -326,6 +354,11 @@ pub fn set_module_setting(
     if url_settings.contains(key) {
         return Err(format!(
             "ctx.module.setSetting: {key:?} is a url setting, which only the streamer sets"
+        ));
+    }
+    if resource_link_settings.contains(key) {
+        return Err(format!(
+            "ctx.module.setSetting: {key:?} links a resource instance, which only the streamer sets"
         ));
     }
     host.settings.set(module_id, key, value)
@@ -343,7 +376,8 @@ pub fn set_module_setting(
 pub fn compare_and_set_module_setting(
     host: &HostContext,
     module_id: &str,
-    url_settings: &std::collections::HashSet<String>,
+    url_settings: &HashSet<String>,
+    resource_link_settings: &HashSet<String>,
     key: &str,
     expected: &Value,
     value: &Value,
@@ -356,6 +390,11 @@ pub fn compare_and_set_module_setting(
     if url_settings.contains(key) {
         return Err(format!(
             "ctx.module.compareAndSetSetting: {key:?} is a url setting, which only the streamer sets"
+        ));
+    }
+    if resource_link_settings.contains(key) {
+        return Err(format!(
+            "ctx.module.compareAndSetSetting: {key:?} links a resource instance, which only the streamer sets"
         ));
     }
     let outcome = host
@@ -741,8 +780,15 @@ mod tests {
         host.settings = std::sync::Arc::new(TokenHoldingSettings);
         let snapshot = module_settings_snapshot(&host, "spotify");
         assert_eq!(snapshot.keys().collect::<Vec<_>>(), vec!["clientId"]);
-        let err = set_module_setting(&host, "spotify", &Default::default(), "oauth.spotify", "{}")
-            .unwrap_err();
+        let err = set_module_setting(
+            &host,
+            "spotify",
+            &Default::default(),
+            &Default::default(),
+            "oauth.spotify",
+            "{}",
+        )
+        .unwrap_err();
         assert!(err.contains("reserved"), "{err}");
     }
 
@@ -754,13 +800,57 @@ mod tests {
             &host,
             "mymod",
             &url_settings,
+            &Default::default(),
             "server",
             "https://evil.example.com",
         )
         .unwrap_err();
         assert!(err.contains("only the streamer sets"), "{err}");
-        set_module_setting(&host, "mymod", &url_settings, "token", "x")
-            .expect("other settings stay writable");
+        set_module_setting(
+            &host,
+            "mymod",
+            &url_settings,
+            &Default::default(),
+            "token",
+            "x",
+        )
+        .expect("other settings stay writable");
+    }
+
+    #[test]
+    fn module_code_cannot_write_a_resource_link_setting() {
+        let host = noop_host_context();
+        let link_settings: HashSet<String> = ["timer".to_string()].into();
+        let err = set_module_setting(
+            &host,
+            "mymod",
+            &Default::default(),
+            &link_settings,
+            "timer",
+            "other:timer:main",
+        )
+        .unwrap_err();
+        assert!(err.contains("links a resource instance"), "{err}");
+        let err = compare_and_set_module_setting(
+            &host,
+            "mymod",
+            &Default::default(),
+            &link_settings,
+            "timer",
+            &Value::Null,
+            &serde_json::json!("other:timer:main"),
+        )
+        .unwrap_err();
+        assert!(err.contains("links a resource instance"), "{err}");
+        set_module_setting(
+            &host,
+            "mymod",
+            &Default::default(),
+            &link_settings,
+            "note",
+            "other:timer:main",
+        )
+        .expect("other settings stay writable");
     }
 
     #[test]
@@ -836,7 +926,8 @@ mod tests {
     #[test]
     fn resources_list_serializes_an_empty_list() {
         let host = noop_host_context();
-        let v = resources_list(&host, "counter").expect("noop resource client succeeds for list");
+        let v = resources_list(&host, "mymod", &HashSet::new(), "counter")
+            .expect("noop resource client succeeds for list");
         assert_eq!(v, serde_json::json!([]));
     }
 
@@ -911,24 +1002,69 @@ mod tests {
         }
     }
 
+    /// The caller's settings: `timer` links `alpha:list:main`.
+    struct LinkedSettings;
+    impl crate::host::SettingsClient for LinkedSettings {
+        fn list_by_module(&self, module_id: &str) -> Result<HashMap<String, Value>, String> {
+            assert_eq!(module_id, "beta", "only the caller's settings are read");
+            Ok(HashMap::from([(
+                "timer".to_string(),
+                serde_json::json!("alpha:list:main"),
+            )]))
+        }
+        fn set(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    fn listed_ids(v: Value) -> Vec<String> {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["canonical_id"].as_str().unwrap().to_string())
+            .collect()
+    }
+
     #[test]
-    fn resources_list_keeps_one_modules_instances_for_a_qualified_kind() {
+    fn resources_list_of_a_bare_kind_keeps_the_callers_own_instances() {
         let mut host = noop_host_context();
-        host.resources = std::sync::Arc::new(TwoModulesListClient);
-        let canonical_ids = |v: Value| -> Vec<String> {
-            v.as_array()
-                .unwrap()
-                .iter()
-                .map(|i| i["canonical_id"].as_str().unwrap().to_string())
-                .collect()
-        };
+        host.resources = Arc::new(TwoModulesListClient);
+        let none = HashSet::new();
         assert_eq!(
-            canonical_ids(resources_list(&host, "beta:list").unwrap()),
+            listed_ids(resources_list(&host, "beta", &none, "list").unwrap()),
             vec!["beta:list:main"]
         );
         assert_eq!(
-            canonical_ids(resources_list(&host, "list").unwrap()),
-            vec!["alpha:list:main", "beta:list:main"]
+            listed_ids(resources_list(&host, "gamma", &none, "list").unwrap()),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            listed_ids(resources_list(&host, "", &none, "list").unwrap()),
+            Vec::<String>::new(),
+            "a builtin invocation owns no instances"
+        );
+    }
+
+    #[test]
+    fn resources_list_of_a_qualified_kind_keeps_what_the_caller_may_read() {
+        let mut host = noop_host_context();
+        host.resources = Arc::new(TwoModulesListClient);
+        host.settings = Arc::new(LinkedSettings);
+        let none = HashSet::new();
+        assert_eq!(
+            listed_ids(resources_list(&host, "beta", &none, "beta:list").unwrap()),
+            vec!["beta:list:main"]
+        );
+        assert_eq!(
+            listed_ids(resources_list(&host, "beta", &none, "alpha:list").unwrap()),
+            Vec::<String>::new(),
+            "another module's instance without a link"
+        );
+        let links: HashSet<String> = ["timer".to_string()].into();
+        assert_eq!(
+            listed_ids(resources_list(&host, "beta", &links, "alpha:list").unwrap()),
+            vec!["alpha:list:main"],
+            "another module's instance the streamer linked"
         );
     }
 
@@ -1025,7 +1161,7 @@ mod tests {
     #[test]
     fn deleting_a_resource_cancels_entries_keyed_by_its_canonical_id() {
         let (host, schedule) = scheduling_host();
-        resources_delete(&host, "woofx3:timer:t1").unwrap();
+        resources_delete(&host, "woofx3", "woofx3:timer:t1").unwrap();
         assert_eq!(
             *schedule.calls.lock().unwrap(),
             vec!["cancel_key woofx3:timer:t1"]
@@ -1036,9 +1172,37 @@ mod tests {
     fn resources_get_reads_null_for_a_missing_instance() {
         let host = noop_host_context();
         assert_eq!(
-            resources_get(&host, "mymod:counter:gone").unwrap(),
+            resources_get(&host, "mymod", &HashSet::new(), "mymod:counter:gone").unwrap(),
             Value::Null
         );
+    }
+
+    #[test]
+    fn resources_delete_refuses_an_instance_another_module_owns() {
+        let (host, schedule) = scheduling_host();
+        for (caller, target) in [
+            ("intruder", "woofx3:timer:t1"),
+            ("", "woofx3:timer:t1"),
+            ("woofx3", "woofx3:timer"),
+        ] {
+            let err = resources_delete(&host, caller, target).unwrap_err();
+            assert!(err.contains("only the module that owns"), "{caller}: {err}");
+        }
+        assert!(
+            schedule.calls.lock().unwrap().is_empty(),
+            "a refused delete cancels nothing"
+        );
+    }
+
+    #[test]
+    fn resources_get_refuses_an_unlinked_instance_another_module_owns() {
+        let mut host = noop_host_context();
+        host.settings = Arc::new(LinkedSettings);
+        let err = resources_get(&host, "beta", &HashSet::new(), "alpha:list:main").unwrap_err();
+        assert!(err.contains("may read only an instance it owns"), "{err}");
+        let links: HashSet<String> = ["timer".to_string()].into();
+        resources_get(&host, "beta", &links, "alpha:list:main")
+            .expect("an instance the streamer linked is readable");
     }
 
     fn instance_settings_host(
