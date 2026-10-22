@@ -28,7 +28,11 @@ export const HOST_DEFAULTS = {
   /**
    * Whole-process shutdown, after which the process exits 1. Must exceed
    * dbProxyTimeoutMs plus the larger of stopDeadlineMs and the longest served
-   * budget (Host checks the budgets once the adapters are loaded).
+   * budget (Host checks the budgets once the adapters are loaded). Under the
+   * orchestrator, connectors depends on the bus and db-proxy, which are asked
+   * to stop once dependentStopPeriod (8s, build/orchestrator/main.go) has
+   * passed; a drain that runs longer loses them. The bus and db-proxy going
+   * away during that final drain only costs the last unflushed replies.
    */
   shutdownDeadlineMs: 15_000,
 } as const;
