@@ -208,23 +208,32 @@ describe("storedCommandDefinition", () => {
     expect(runs).toEqual([{ label: "command:hug", actions }]);
   });
 
-  test("unreadable actions run nothing, and the command still matches", async () => {
-    const logger = new RecordingLogger();
-    let ran = false;
-    const definition = storedCommandDefinition(
-      storedCommand({ actionsJson: "{not json" }),
-      {
-        ...noRunner,
-        runActions: async () => {
-          ran = true;
+  const unreadableActions = [
+    { name: "text that is not JSON", actionsJson: "{not json" },
+    { name: "JSON that is not a list", actionsJson: JSON.stringify({ action: "chat.reply" }) },
+    { name: "a step with no action type", actionsJson: JSON.stringify([{ id: "a", parameters: {} }]) },
+  ];
+  for (const { name, actionsJson } of unreadableActions) {
+    test(`unreadable actions (${name}) run nothing, are logged, and the command still matches`, async () => {
+      const logger = new RecordingLogger();
+      let ran = false;
+      const definition = storedCommandDefinition(
+        storedCommand({ actionsJson }),
+        {
+          ...noRunner,
+          runActions: async () => {
+            ran = true;
+          },
         },
-      },
-      logger
-    );
-    expect(await definition.handler(invocation)).toBe("");
-    expect(ran).toBe(false);
-    expect(logger.at("error")).toHaveLength(1);
-  });
+        logger
+      );
+      expect(await definition.handler(invocation)).toBe("");
+      expect(ran).toBe(false);
+      expect(logger.at("error").map((entry) => entry.message)).toEqual([
+        "a command's actions are unreadable; none run",
+      ]);
+    });
+  }
 
   test("visibility, cooldown and argument pattern carry over", () => {
     const definition = storedCommandDefinition(

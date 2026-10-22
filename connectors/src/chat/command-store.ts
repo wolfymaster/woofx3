@@ -68,21 +68,44 @@ export function storedCommandDefinition(
 }
 
 /**
- * A command's actions as stored: JSON text, like a workflow's steps.
- * Unreadable JSON runs nothing rather than taking the command down with it;
+ * A command's actions as stored: JSON text holding a list of steps, like a
+ * workflow's. Text that is not such a list runs nothing rather than taking the command down with it;
  * the command still matches and still announces itself.
  */
 function parseCommandActions(stored: StoredCommand, logger: Logger): ActionStep[] {
   if (stored.actionsJson === "") {
     return [];
   }
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(stored.actionsJson);
-    return Array.isArray(parsed) ? (parsed as ActionStep[]) : [];
+    parsed = JSON.parse(stored.actionsJson);
   } catch (error) {
-    logger.error("a command's actions are not readable JSON", { command: stored.command, error: errorMessage(error) });
+    logger.error("a command's actions are unreadable; none run", {
+      command: stored.command,
+      error: errorMessage(error),
+    });
     return [];
   }
+  if (!Array.isArray(parsed)) {
+    logger.error("a command's actions are unreadable; none run", {
+      command: stored.command,
+      error: "the actions are not a list",
+    });
+    return [];
+  }
+  if (!parsed.every(isActionStepShaped)) {
+    logger.error("a command's actions are unreadable; none run", {
+      command: stored.command,
+      error: "an action names no action type",
+    });
+    return [];
+  }
+  return parsed;
+}
+
+/** Only what the dispatcher relies on; the action runner validates each step's own fields. */
+function isActionStepShaped(value: unknown): value is ActionStep {
+  return typeof value === "object" && value !== null && typeof (value as { action?: unknown }).action === "string";
 }
 
 export interface CommandStoreConfig {
