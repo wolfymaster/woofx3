@@ -283,3 +283,39 @@ export function supportedEngineCapabilities(hosting: EngineHosting | null = null
     })
     .sort();
 }
+
+/**
+ * A `getEngineCapabilities()` answer as read by a client: every id listed,
+ * sorted and unique, including ids this contract does not declare (a newer
+ * engine lists features an older client has never heard of). Non-string
+ * entries are dropped.
+ *
+ * Throws on an answer that is not the schema-1 shape. A different `schema`
+ * means the answer is no longer a flat id list, and guessing at it could
+ * offer a feature the engine does not have.
+ *
+ * An engine older than the method rejects the call instead of answering;
+ * `isMissingRpcMethod(err, "getEngineCapabilities")` from `./rpc` recognises
+ * that, and such an engine supports none of the ids.
+ */
+export function parseEngineCapabilities(raw: unknown): EngineCapabilities {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new Error(`Engine answered getEngineCapabilities with ${JSON.stringify(raw) ?? String(raw)}`);
+  }
+  const body = raw as { schema?: unknown; capabilities?: unknown };
+  if (body.schema !== ENGINE_CAPABILITIES_SCHEMA) {
+    throw new Error(
+      `Engine answered getEngineCapabilities with schema ${JSON.stringify(body.schema) ?? "undefined"}; this client reads schema ${ENGINE_CAPABILITIES_SCHEMA}`
+    );
+  }
+  if (!Array.isArray(body.capabilities)) {
+    throw new Error("Engine answered getEngineCapabilities without a capabilities list");
+  }
+  const ids = new Set<string>();
+  for (const id of body.capabilities) {
+    if (typeof id === "string" && id !== "") {
+      ids.add(id);
+    }
+  }
+  return { schema: ENGINE_CAPABILITIES_SCHEMA, capabilities: [...ids].sort() };
+}
