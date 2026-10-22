@@ -17,7 +17,13 @@ const noPublicApp = {
 function gauges(respond: (url: string) => Response, token: string | null = TOKEN, clientId: string | null = "cid") {
   const db = { getSetting: mock(async () => token), setSetting: mock(async () => {}) };
   const fetchFn = mock(async (url: string, _init: RequestInit) => respond(url));
-  const twitch = new TwitchTokenSource({ db, dashboard: () => null, ownClientId: clientId, publicClient: noPublicApp });
+  const twitch = new TwitchTokenSource({
+    db,
+    dashboard: () => null,
+    ownClientId: clientId,
+    publicClient: noPublicApp,
+    onLinkChanged: () => {},
+  });
   return { helix: new TwitchHelixGauges(twitch, fetchFn), fetchFn };
 }
 

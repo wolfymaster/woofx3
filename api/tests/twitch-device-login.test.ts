@@ -178,6 +178,16 @@ describe("a device login", () => {
     expect("clientId" in (stored[0] as object)).toBe(false);
   });
 
+  test("a token whose answer lists no scopes is stored with the scopes Twitch validated", async () => {
+    const twitch = fakeTwitch([{ status: 200, body: { ...(ISSUED.body as object), scope: undefined } }]);
+    const { schedule } = immediate();
+    const { manager, stored } = logins(twitch.baseUrl, { schedule });
+
+    const login = await start(manager);
+    expect(await settled(manager, login.loginId)).toMatchObject({ ok: true, state: { status: "linked" } });
+    expect(stored.map((token) => token.scope)).toEqual([["chat:read"]]);
+  });
+
   test("waits five seconds longer after each slow_down", async () => {
     const twitch = fakeTwitch([SLOW_DOWN, SLOW_DOWN, ISSUED]);
     const { schedule, delays } = immediate();

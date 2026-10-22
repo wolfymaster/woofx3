@@ -84,6 +84,7 @@ export const EngineEventType = {
   GROUP_MEMBER_ADDED: "group.member_added",
   GROUP_MEMBER_REMOVED: "group.member_removed",
   UI_SETTING_CHANGED: "ui.setting.changed",
+  TWITCH_LINK_CHANGED: "twitch.link.changed",
 } as const;
 
 export type EngineEventType = (typeof EngineEventType)[keyof typeof EngineEventType];
@@ -1458,6 +1459,29 @@ export interface UISettingChangedEvent {
 }
 
 /**
+ * The engine's Twitch link as `twitch.link.changed` carries it: linked to a
+ * user, or not linked. `authFailedAt` is as `TwitchLinkInfo.authFailedAt`.
+ */
+export type TwitchLinkStatus = { linked: false } | { linked: true; userId: string; authFailedAt: number | null };
+
+/**
+ * Fired whenever the engine's Twitch link changes: an account is linked
+ * (`setTwitchToken`, a device login), it is unlinked (`deleteTwitchToken`),
+ * a renewal brings a different account or scopes, renewing its token is
+ * refused so it stops working, or a refused link renews again. A
+ * notification: `getTwitchLink` is the record, and carries the account's
+ * login and display name.
+ *
+ * `revision` rises with every change and is shared with `getTwitchLink`, so
+ * a consumer drops any delivery whose revision is not above the one it
+ * holds; callback URL deliveries can arrive out of order.
+ */
+export type TwitchLinkChangedEvent = {
+  type: typeof EngineEventType.TWITCH_LINK_CHANGED;
+  revision: number;
+} & TwitchLinkStatus;
+
+/**
  * Discriminated union of every event the engine can deliver via webhook.
  * Consumers should narrow on `event.type` — TypeScript will pick the right
  * branch without casts.
@@ -1519,7 +1543,8 @@ export type CallbackEvent =
   | GroupDeletedEvent
   | GroupMemberAddedEvent
   | GroupMemberRemovedEvent
-  | UISettingChangedEvent;
+  | UISettingChangedEvent
+  | TwitchLinkChangedEvent;
 
 /**
  * Lookup from event-type string → payload type. Useful for emitter code
@@ -1583,6 +1608,7 @@ export type CallbackEventByType = {
   [EngineEventType.GROUP_MEMBER_ADDED]: GroupMemberAddedEvent;
   [EngineEventType.GROUP_MEMBER_REMOVED]: GroupMemberRemovedEvent;
   [EngineEventType.UI_SETTING_CHANGED]: UISettingChangedEvent;
+  [EngineEventType.TWITCH_LINK_CHANGED]: TwitchLinkChangedEvent;
 };
 
 // ---------------------------------------------------------------------------
