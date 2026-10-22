@@ -240,7 +240,8 @@ export function parseFieldList(raw: string | undefined | null): ConfigField[] {
   return Array.isArray(parsed) ? parseFieldEntries(parsed) : [];
 }
 
-function parseFieldEntries(entries: unknown[]): ConfigField[] {
+/** `parseFieldList` for entries already parsed from JSON, such as a manifest's. */
+export function parseFieldEntries(entries: unknown[]): ConfigField[] {
   const fields: ConfigField[] = [];
   for (const entry of entries) {
     if (typeof entry !== "object" || entry === null) {

@@ -275,6 +275,12 @@ which case Twitch may still have acted.
 | `twitchCreateClip()` | `POST /clips?broadcaster_id` | none | `twitch.clips` |
 | `twitchUpdateChatSettings(params)` | `PATCH /chat/settings?broadcaster_id&moderator_id` | body `{ emote_mode?, subscriber_mode?, follower_mode?, follower_mode_duration?, slow_mode?, slow_mode_wait_time? }` | `twitch.moderation` |
 
+A client reads the bodies with `@woofx3/api/twitch-helix-bodies`: one reader
+per call (`parseHelixUser`, `parseHelixChatSettings`, `parseHelixChatPin` and
+the rest), `collectHelixPages` for the paginated lists, and
+`helixErrorMessage` for Twitch's reason in a `helix` result's `body`. They take
+Twitch's JSON as it is, so they read a direct Helix call's body the same way.
+
 The token is the one the twitch service holds: the linked account's, from the
 dashboard that linked it (see [Who renews the token](#who-renews-the-token)),
 with the scopes that link was granted. The broadcaster is the engine's
@@ -639,9 +645,11 @@ snoozeNextAd(): Promise<{
 
 Every time is ISO-8601 or null. Helix has sent these fields as RFC3339
 strings, as Unix seconds (number or numeric string), and as `""` when nothing
-is scheduled or the channel is offline; `normalizeHelixTime`
-(`twitch/src/lib/twitch.ts`) maps all of them, and anything unreadable
-becomes null rather than failing the call. `serverNow` lets a countdown
+is scheduled or the channel is offline. `parseHelixAdSchedule` and
+`parseHelixAdSnooze` (`@woofx3/api/twitch-helix-bodies`, the readers a
+dashboard uses on `twitchGetAdSchedule`'s body too) map all of them: an
+unreadable time becomes null and an unreadable count 0, and the rest of the
+schedule is still returned rather than failing the call. `serverNow` lets a countdown
 correct for the difference between the browser's clock and the engine's.
 
 Both are commands on the `twitchapi` NATS request subject, answered from

@@ -10,16 +10,18 @@
 // once placed (Text's height follows its text) is a
 // constraint of the widget, and lives with its traits in the type registry.
 //
-// Alert-host naming must agree with the scene manager's matching (woofx3
-// sceneManager/src/scene/alert-layout.ts) and with the dashboard
-// (woofx3-ui convex/lib/alertWidgets.ts).
+// Alert-host naming is the model's (model/alert-names.ts), re-exported here
+// because the editor names every alert area it adds.
 
+import { ALERT_SURFACE, alertWidgetName, nextAlertWidgetName } from "../model/alert-names";
 import { assert } from "../model/composition";
 import { HOST_EFFECT_KINDS, HOST_TRANSITION_KINDS } from "../model/entity-types";
 import { evenKeys, keyBetween, stackOrder } from "../model/keys";
 import type { KindExecutor } from "../model/registry";
 import type { CompositionDocument, CompositionProfile, PlacementDocument } from "../model/types";
 import { type CanvasSize, MEDIA_ASPECT, type Point, textBoxHeight, withCenter } from "./geometry";
+
+export { alertWidgetName, DEFAULT_ALERT_WIDGET_NAME, nextAlertWidgetName } from "../model/alert-names";
 
 /** A settings field as the catalog declares it; only what seeding a placement reads. */
 export interface CatalogSettingField {
@@ -119,29 +121,6 @@ export const NODE_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 /** The catalog rows that may be placed on a profile's surface. */
 export function placeableOn(catalog: readonly CatalogWidget[], profile: CompositionProfile): CatalogWidget[] {
   return catalog.filter((row) => (row.surfaces ?? ["scene"]).includes(profile.surface));
-}
-
-/** What a scene's first alert area is called, and what a step with no target plays on. */
-export const DEFAULT_ALERT_WIDGET_NAME = "default";
-
-/** The name an alert area answers to: its `name` setting, or the default when blank. */
-export function alertWidgetName(settings: Record<string, unknown> | undefined): string {
-  const name = typeof settings?.name === "string" ? settings.name.trim() : "";
-  return name || DEFAULT_ALERT_WIDGET_NAME;
-}
-
-/** The default for the first alert area, then the first free `alert-N`, so two never share a name by accident. */
-export function nextAlertWidgetName(existing: readonly string[]): string {
-  const taken = new Set(existing);
-  if (!taken.has(DEFAULT_ALERT_WIDGET_NAME)) {
-    return DEFAULT_ALERT_WIDGET_NAME;
-  }
-  for (let n = 2; ; n++) {
-    const candidate = `alert-${n}`;
-    if (!taken.has(candidate)) {
-      return candidate;
-    }
-  }
 }
 
 /** `w-N` for the first N not taken. */
@@ -249,8 +228,10 @@ export function newPlacement({ row, catalog, doc, profile, at }: NewPlacementInp
           ? { width: 1200, height: textBoxHeight(48, "New text") }
           : { width: 640, height: Math.round(640 * MEDIA_ASPECT) };
   }
-  if (row.hostsSurface === "alert") {
-    const hosts = new Set(catalog.filter((entry) => entry.hostsSurface === "alert").map((entry) => entry.widgetId));
+  if (row.hostsSurface === ALERT_SURFACE) {
+    const hosts = new Set(
+      catalog.filter((entry) => entry.hostsSurface === ALERT_SURFACE).map((entry) => entry.widgetId)
+    );
     const names = Object.values(doc.widgets)
       .filter((placement) => hosts.has(placement.widget))
       .map((placement) => alertWidgetName(placement.settings));

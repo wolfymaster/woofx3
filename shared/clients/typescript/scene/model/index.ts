@@ -1,6 +1,8 @@
 // The composition model: the document, its type registry, and the pure
 // functions every consumer shares.
 
+export * from "./alert-names";
+export * from "./alert-targets";
 export * from "./animation";
 export * from "./bind";
 export * from "./composition";

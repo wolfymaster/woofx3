@@ -92,6 +92,32 @@ export function refusalReason(err: unknown): string | null {
   return null;
 }
 
+// Methods an engine does not serve.
+//
+// capnweb answers a call to a method its target does not have with an error
+// whose message is `'<method>' is not a function.`, and that message is all
+// that crosses the wire. An engine older than a method answers that way, so a
+// client that must work with such an engine reads the method name back out.
+
+const MISSING_METHOD = /^'([\w.]+)' is not a function\.?$/;
+
+/**
+ * The method a call failed for because the engine does not serve it, or null
+ * for any other failure. Takes the rejection itself, or its message.
+ */
+export function missingRpcMethod(err: unknown): string | null {
+  const message = err instanceof Error ? err.message : typeof err === "string" ? err : null;
+  if (message === null) {
+    return null;
+  }
+  return MISSING_METHOD.exec(message)?.[1] ?? null;
+}
+
+/** Whether `err` says the engine does not serve `method`, as opposed to `method` failing. */
+export function isMissingRpcMethod(err: unknown, method: string): boolean {
+  return missingRpcMethod(err) === method;
+}
+
 /**
  * The unauthenticated capnweb entry point served by the engine. Connecting
  * to the engine's `/api` URL via capnweb HTTP batch (or WebSocket) gives

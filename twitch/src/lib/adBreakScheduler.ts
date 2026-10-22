@@ -1,6 +1,7 @@
 import type { AdBreakUpcoming } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
-import { type AdSchedule, TwitchApiError, type TwitchApiErrorCode } from "./twitch";
+import type { HelixAdSchedule } from "@woofx3/api/twitch-helix-bodies";
+import { TwitchApiError, type TwitchApiErrorCode } from "./twitch";
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -29,7 +30,7 @@ const REAL_CLOCK: SchedulerClock = {
 };
 
 export interface AdBreakSchedulerDeps {
-  fetchSchedule(): Promise<AdSchedule>;
+  fetchSchedule(): Promise<HelixAdSchedule>;
   publishUpcoming(event: AdBreakUpcoming): void;
   logger: SharedLogger;
   /**
@@ -160,7 +161,7 @@ export class AdBreakScheduler {
       return;
     }
 
-    let schedule: AdSchedule;
+    let schedule: HelixAdSchedule;
     try {
       schedule = await this.deps.fetchSchedule();
     } catch (err) {
@@ -181,7 +182,7 @@ export class AdBreakScheduler {
     this.arm(schedule, leadSeconds);
   }
 
-  private arm(schedule: AdSchedule, leadSeconds: number): void {
+  private arm(schedule: HelixAdSchedule, leadSeconds: number): void {
     this.clearLeadTimer();
     // The stream may have gone offline while the read was in flight.
     if (!this.live) {

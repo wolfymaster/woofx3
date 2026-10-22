@@ -5,14 +5,9 @@ import type {
   MarketplaceInstallResult,
   MarketplaceListingInspection,
 } from "@woofx3/api";
+import { manifestLocalEndpoints, manifestPermissions } from "@woofx3/api/module-manifest";
 import type { MarketplaceClient, MarketplaceDownload, MarketplaceListing } from "../marketplace-client";
-import {
-  type ModuleArchiveContents,
-  manifestLocalEndpoints,
-  manifestPermissions,
-  readModuleArchive,
-  unapprovedIds,
-} from "../module-archive";
+import { type ModuleArchiveContents, readModuleArchive, unapprovedIds } from "../module-archive";
 import { handArchiveToBarkloader, sendAlreadyInstalled, sendInstallFailed } from "../module-install";
 import { compositionsRoutes } from "./compositions";
 import { routeModule } from "./context";

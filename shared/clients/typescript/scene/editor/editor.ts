@@ -19,6 +19,7 @@
 // The editor never mutates the document it is handed; every change goes
 // through the source as a function of the document as it stands.
 
+import { ALERT_SURFACE, alertWidgetName, nextAlertWidgetName } from "../model/alert-names";
 import { assert, isCompositionShape, sameValue, withoutWidget } from "../model/composition";
 import { keyAt, keyBetween, keysBetween, orderByKey, stackOrder } from "../model/keys";
 import { TOLERANT_REGISTRY, type TypeRegistry } from "../model/registry";
@@ -35,12 +36,10 @@ import {
   type Timing,
 } from "../model/types";
 import {
-  alertWidgetName,
   type CatalogWidget,
   canvasSizeOf,
   NODE_ID_PATTERN,
   newPlacement,
-  nextAlertWidgetName,
   placeableOn,
   randomNodeId,
   type WidgetKind,
@@ -1055,7 +1054,7 @@ export function createCompositionEditor(options: CompositionEditorOptions): Comp
       takenNodes.add(fresh);
       idMap.set(id, fresh);
     }
-    const alertHosts = new Set(catalog.filter((row) => row.hostsSurface === "alert").map((row) => row.widgetId));
+    const alertHosts = new Set(catalog.filter((row) => row.hostsSurface === ALERT_SURFACE).map((row) => row.widgetId));
     const result = commit((current) => {
       const order = stackOrder(current);
       const top =

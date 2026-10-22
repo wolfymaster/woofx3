@@ -11,6 +11,7 @@ import {
   type ResourceInstanceDefinition,
   type WidgetThemes,
 } from "@woofx3/api";
+import { resourceValueStorageKey } from "@woofx3/api/resource-values";
 import type { SharedLogger } from "@woofx3/common/logging";
 import {
   type EngineModule,
@@ -552,7 +553,7 @@ export const modulesRoutes = routeModule({
         if (!moduleName) {
           throw new Error(`getResourceValues: "${canonicalId}" is not a canonical id`);
         }
-        const value = await this.db.getModuleStorageValue(moduleName, `state:${canonicalId}`);
+        const value = await this.db.getModuleStorageValue(moduleName, resourceValueStorageKey(canonicalId));
         values[canonicalId] = value ?? null;
       })
     );
