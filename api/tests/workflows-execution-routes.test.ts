@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { classifyOptionsProbe, OPTIONS_PROBE_OPTIONS, OPTIONS_PROBE_WORKFLOW } from "@woofx3/api/workflow-test-run";
 import { workflowsExecutionRoutes } from "../src/routes/workflows-execution";
 
 type WorkflowRow = { id: string; name: string; description: string; enabled: boolean };
@@ -247,15 +246,11 @@ describe("triggerWorkflowByName with sample trigger data", () => {
     );
   });
 
-  test("refuses the options probe in the way a probing client reads as supported, before any lookup", async () => {
+  test("refuses platform without sample data in its frozen words, before looking the workflow up", async () => {
     const { trigger, published, requested } = setup(ROWS);
-    const rejection = await trigger(OPTIONS_PROBE_WORKFLOW, {}, undefined, undefined, undefined, {
-      ...OPTIONS_PROBE_OPTIONS,
-    }).then(
-      () => null,
-      (err: unknown) => err
-    );
-    expect(classifyOptionsProbe(rejection)).toBe("supported");
+    await expect(
+      trigger("no-such-workflow", {}, undefined, undefined, undefined, { platform: "twitch" })
+    ).rejects.toThrow(new Error("options.platform and options.skipConditions only apply with options.triggerData"));
     expect(published).toHaveLength(0);
     expect(requested).toHaveLength(0);
   });
