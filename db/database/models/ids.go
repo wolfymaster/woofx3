@@ -5,14 +5,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// Every model below has a UUID primary key whose column default,
-// uuid_generate_v4(), exists only in the Postgres schema; the SQLite schema
-// declares the column NOT NULL with no default. So the id is assigned here,
-// before any insert, and a row reaches either database with the same id.
-// A caller that already chose an id keeps it.
+// Every model below is keyed by a UUID id. Where the column has a default it
+// is uuid_generate_v4(), which exists only in the Postgres schema; the SQLite
+// schema declares the column NOT NULL with no default. So the id is assigned
+// here, before any insert, and a row reaches either database with the same
+// id. A caller that already chose an id keeps it.
 //
-// TestEveryUUIDDefaultModelAssignsItsIDBeforeCreate fails for a model that
-// declares the Postgres default without a hook here.
+// The hook writes into the caller's struct before the insert runs, so after
+// a failed Create the struct holds an id no row has. Re-read into a fresh
+// value rather than reusing it: gorm adds a non-zero key to the lookup.
+//
+// TestEveryUUIDKeyedModelAssignsItsIDBeforeCreate fails for a model keyed by
+// a UUID id without a hook here.
 
 func assignUUID(id *uuid.UUID) {
 	if *id == uuid.Nil {
@@ -168,6 +172,21 @@ func (w *WorkflowExecution) BeforeCreate(*gorm.DB) error {
 
 func (w *WorkflowExecutionStep) BeforeCreate(*gorm.DB) error {
 	assignUUID(&w.ID)
+	return nil
+}
+
+func (s *SceneBackup) BeforeCreate(*gorm.DB) error {
+	assignUUID(&s.ID)
+	return nil
+}
+
+func (s *StreamGaugeSample) BeforeCreate(*gorm.DB) error {
+	assignUUID(&s.ID)
+	return nil
+}
+
+func (u *UserEvent) BeforeCreate(*gorm.DB) error {
+	assignUUID(&u.ID)
 	return nil
 }
 
