@@ -274,6 +274,9 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	}
 
 	appServices := buildAppServices()
+	if appServices.PlatformGateway() == nil {
+		return fmt.Errorf("platform gateway did not resolve from the service registry")
+	}
 
 	// Register the engine's built-in action handlers. The handler name
 	// here is what `step.action` carries on workflow steps (see

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,18 +28,22 @@ var (
 	// ErrGatewayTimeout is a request the gateway did not answer in time. It
 	// was sent, so a platform may have acted on it.
 	ErrGatewayTimeout = errors.New("the platform gateway did not answer in time; the platform may have acted")
+	// ErrGatewayAbandoned is a request sent whose answer was never read: the
+	// run was cancelled or the bus closed while waiting. A platform may have
+	// acted on it.
+	ErrGatewayAbandoned = errors.New("the platform gateway request was abandoned before it answered; the platform may have acted")
 )
 
 // PlatformGateway performs one action on streaming platforms and reports what
 // happened on each. Declared here, where it is consumed, so actions can be
 // tested against a fake.
 type PlatformGateway interface {
-	Send(request platformgateway.GatewayRequest) (platformgateway.GatewayReply, error)
+	Send(ctx context.Context, request platformgateway.GatewayRequest) (platformgateway.GatewayReply, error)
 }
 
 // busRequester is the part of the message bus client a gateway send needs.
 type busRequester interface {
-	Request(subject string, data []byte, timeout time.Duration) ([]byte, error)
+	RequestWithContext(ctx context.Context, subject string, data []byte) ([]byte, error)
 }
 
 // NATSPlatformGateway sends requests to the platform gateway in connectors
@@ -58,7 +63,7 @@ func NewNATSPlatformGateway(bus busRequester, logger tasks.Logger) *NATSPlatform
 // what each platform did is the caller's to judge. The error is
 // ErrGatewayUnavailable or ErrGatewayTimeout when no reply came, wrapped with
 // context otherwise.
-func (g *NATSPlatformGateway) Send(request platformgateway.GatewayRequest) (platformgateway.GatewayReply, error) {
+func (g *NATSPlatformGateway) Send(ctx context.Context, request platformgateway.GatewayRequest) (platformgateway.GatewayReply, error) {
 	if err := request.Validate(); err != nil {
 		return platformgateway.GatewayReply{}, fmt.Errorf("platform gateway request is invalid: %w", err)
 	}
@@ -66,7 +71,9 @@ func (g *NATSPlatformGateway) Send(request platformgateway.GatewayRequest) (plat
 	if err != nil {
 		return platformgateway.GatewayReply{}, fmt.Errorf("marshal platform gateway request: %w", err)
 	}
-	raw, err := g.bus.Request(string(platformgateway.SubjectSend), body, g.timeout)
+	waitCtx, cancel := context.WithTimeout(ctx, g.timeout)
+	defer cancel()
+	raw, err := g.bus.RequestWithContext(waitCtx, string(platformgateway.SubjectSend), body)
 	if err != nil {
 		return platformgateway.GatewayReply{}, g.requestError(request, err)
 	}
@@ -84,7 +91,10 @@ func (g *NATSPlatformGateway) requestError(request platformgateway.GatewayReques
 	case errors.Is(err, nats.ErrNoResponders), errors.Is(err, natsclient.ErrConnectionClosed):
 		g.logger.Warn("platform gateway is not running", "action", request.Action, "idempotencyKey", request.IdempotencyKey)
 		return ErrGatewayUnavailable
-	case errors.Is(err, nats.ErrTimeout):
+	case errors.Is(err, context.Canceled), errors.Is(err, nats.ErrConnectionClosed):
+		g.logger.Warn("platform gateway request abandoned", "action", request.Action, "idempotencyKey", request.IdempotencyKey, "error", err)
+		return ErrGatewayAbandoned
+	case errors.Is(err, nats.ErrTimeout), errors.Is(err, context.DeadlineExceeded):
 		g.logger.Warn("platform gateway did not answer in time",
 			"action", request.Action, "idempotencyKey", request.IdempotencyKey, "timeout", g.timeout)
 		return ErrGatewayTimeout

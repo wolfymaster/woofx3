@@ -203,7 +203,7 @@ func sendThroughGateway(ctx tasks.ActionContext[AppServices], action platformgat
 	if err != nil {
 		return platformgateway.GatewayReply{}, fmt.Errorf("marshal %s payload: %w", action, err)
 	}
-	reply, err := gateway.Send(platformgateway.GatewayRequest{
+	reply, err := gateway.Send(ctx.Context, platformgateway.GatewayRequest{
 		Action:         action,
 		Target:         target,
 		Payload:        encoded,

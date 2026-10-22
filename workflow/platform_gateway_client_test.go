@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	natsserver "github.com/nats-io/nats-server/v2/server"
+	"github.com/nats-io/nats.go"
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
 	"github.com/wolfymaster/woofx3/common/platformgateway"
 )
@@ -58,7 +60,8 @@ func serveGateway(t *testing.T, bus *natsclient.Client, answer func(platformgate
 		t.Fatalf("subscribe gateway: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := sub.Unsubscribe(); err != nil {
+		// A test may close the bus on purpose, taking the subscription with it.
+		if err := sub.Unsubscribe(); err != nil && !errors.Is(err, nats.ErrConnectionClosed) {
 			t.Errorf("unsubscribe gateway: %v", err)
 		}
 	})
@@ -170,7 +173,7 @@ func TestNATSPlatformGatewaySend(t *testing.T) {
 			gateway := NewNATSPlatformGateway(bus, quietLogger{})
 			gateway.timeout = 200 * time.Millisecond
 
-			reply, err := gateway.Send(tt.request())
+			reply, err := gateway.Send(context.Background(), tt.request())
 
 			switch {
 			case tt.wantErr != nil:
@@ -211,10 +214,50 @@ func TestNATSPlatformGatewaySend(t *testing.T) {
 }
 
 // The default wait is the caller's share of the gateway's deadlines; tests
-// shorten it, so it is pinned here.
+// shorten it, so the constructor is pinned to the named constant.
 func TestNATSPlatformGatewayWaitsTheCallerTimeout(t *testing.T) {
 	gateway := NewNATSPlatformGateway(nil, quietLogger{})
-	if gateway.timeout != 12*time.Second {
-		t.Errorf("timeout = %s, want 12s", gateway.timeout)
+	if gateway.timeout != PlatformGatewayTimeout {
+		t.Errorf("timeout = %s, want %s", gateway.timeout, PlatformGatewayTimeout)
 	}
+}
+
+// A request that was sent and then lost its wait, because the run was
+// cancelled or the bus went away, may have reached a platform; it must not
+// read as "nothing happened".
+func TestNATSPlatformGatewayAbandonedRequestsMayHaveActed(t *testing.T) {
+	t.Run("the run is cancelled while waiting", func(t *testing.T) {
+		bus := startEmbeddedNATS(t)
+		seen := serveGateway(t, bus, func(platformgateway.GatewayRequest) []byte { return nil })
+		gateway := NewNATSPlatformGateway(bus, quietLogger{})
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			<-seen
+			cancel()
+		}()
+
+		_, err := gateway.Send(ctx, validChatSendRequest())
+
+		if !errors.Is(err, ErrGatewayAbandoned) {
+			t.Fatalf("error = %v, want %v", err, ErrGatewayAbandoned)
+		}
+	})
+	t.Run("the bus closes while waiting", func(t *testing.T) {
+		bus := startEmbeddedNATS(t)
+		serveGateway(t, bus, func(platformgateway.GatewayRequest) []byte {
+			go func() {
+				if err := bus.Close(); err != nil {
+					t.Errorf("close bus: %v", err)
+				}
+			}()
+			return nil
+		})
+		gateway := NewNATSPlatformGateway(bus, quietLogger{})
+
+		_, err := gateway.Send(context.Background(), validChatSendRequest())
+
+		if !errors.Is(err, ErrGatewayAbandoned) {
+			t.Fatalf("error = %v, want %v", err, ErrGatewayAbandoned)
+		}
+	})
 }

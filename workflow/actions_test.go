@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -261,7 +262,7 @@ type fakeGateway struct {
 	requests []platformgateway.GatewayRequest
 }
 
-func (g *fakeGateway) Send(request platformgateway.GatewayRequest) (platformgateway.GatewayReply, error) {
+func (g *fakeGateway) Send(_ context.Context, request platformgateway.GatewayRequest) (platformgateway.GatewayReply, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.requests = append(g.requests, request)
