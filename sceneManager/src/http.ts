@@ -20,7 +20,7 @@ import {
   handleCompositionPreviewRoute,
 } from "./routes/composition-preview";
 import { COMPOSITION_PREVIEW_PATH } from "@woofx3/common/cloudevents/Scene/composition-preview";
-import { handleAlertWidgetFrameRoute, handleFrameDocumentRoute } from "./routes/widget";
+import { handleFrameDocumentRoute } from "./routes/widget";
 import { type EditorSocketData, editorSocketHandlers, handleEditorUpgrade } from "./routes/editor";
 import { handleStaticAssetRoute } from "./routes/assets";
 import { handleAssetReadRoute } from "./routes/asset-read";
@@ -183,13 +183,6 @@ const ROUTES = routeTable<HttpDeps>([
     methods: ["POST"],
     cors: "open",
     handle: (req, { params, deps }) => handleSessionRefreshRoute(req, params.sceneId!, deps),
-  },
-  {
-    path: "/scene/:sceneId/alert/:eventId/widget/:widgetId",
-    methods: ["GET"],
-    cors: "open",
-    handle: (req, { params, deps }) =>
-      handleAlertWidgetFrameRoute(req, params.sceneId!, params.eventId!, params.widgetId!, deps),
   },
   {
     path: "/scene/:sceneId/widget/:instanceId/status",

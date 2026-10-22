@@ -176,9 +176,8 @@ without adding logging:
   (finding each running scene's alert widgets), `recordMs` (recording and pushing each
   scene's delivery) and `totalMs`, timed from the moment the alert arrived on the bus.
 - **Frame documents.** Every widget frame document carries a `Server-Timing` header:
-  `event` (reading the alert's scene event back), `frame` (barkloader's widget entry),
-  `links` (the module's linked resources) and `total`. Browser devtools show it on the
-  frame's request.
+  `frame` (barkloader's widget entry) and `total`. Browser devtools show it on the
+  frame's request; a frame the browser had cached made no request at all.
 - **The page.** The overlay writes User Timing marks named
   `woofx3.alert/{eventId}/{stage}` for `delivered`, `started` and `finished`, and
   `woofx3.alert/{eventId}/{widgetId}/{stage}` for each frame's `mounted`, `ready` (the

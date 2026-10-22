@@ -1,6 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ServerMessage } from "@woofx3/api/scene-editor";
-import type { WidgetBootPayload } from "@woofx3/module-sdk";
 import type { FrameTheme } from "@woofx3/widget-host/frame";
 import {
   earliestMediaProxyExpiry,
@@ -29,7 +28,7 @@ import {
   mediaProxyBaseOf,
 } from "../../src/scene/media-proxy";
 import { type ItemReply, SceneDocuments, type SceneLoader } from "../../src/scene/scene-documents";
-import type { OverlayHost, OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
+import type { OverlaySceneState, OverlayWidgetInstance } from "../../src/scene/scene-host";
 import { eventAndData } from "../helpers/stream-frames";
 
 const SECRET = "test-barkloader-key";
@@ -687,65 +686,6 @@ describe("SceneDocuments — placements framed while barkloader was unavailable"
     expect((await docs.overlaySnapshot("s1"))!.doc.widgets.added!.settings.image).toEqual({
       ...external(),
       url: EXTERNAL_PROXIED,
-    });
-  });
-});
-
-describe("FrameAssembler — alert widgets", () => {
-  const FROM_EVENT = "https://viewer.example/chosen.png";
-  const PLAIN_STRING = "https://viewer.example/not-a-picker-value.png";
-
-  async function bootSettings(theme: FrameTheme | null): Promise<unknown> {
-    const delivery = {
-      alertId: "alert-1",
-      layout: {
-        width: 100,
-        height: 100,
-        widgets: [
-          {
-            id: "t1",
-            widgetCanonicalId: "woofx3:widget:timer",
-            moduleId: "woofx3",
-            manifestId: "timer",
-            position: { x: 0, y: 0, width: 10, height: 10 },
-            settings: { image: external(), avatar: external(FROM_EVENT), logo: library, caption: PLAIN_STRING },
-          },
-        ],
-      },
-      event: null,
-    };
-    const host = { loadSceneEvent: async () => ({ type: "alert", value: delivery }) } as unknown as OverlayHost;
-    const assembler = new FrameAssembler(host, logger(), {
-      barkloader: {
-        fetchWidgetFrame: async () => ({
-          entryHtml: "<!doctype html><html><head></head><body></body></html>",
-          resourceBaseUrl: RESOURCE_BASE,
-          fontSettings: [],
-          theme,
-        }),
-      },
-      mediaProxy: proxy,
-    });
-    const html = await (await assembler.assembleAlertWidget("s1", "evt-1", "t1", null)).text();
-    const boot: WidgetBootPayload = JSON.parse(/window\.__WOOFX3_WIDGET_BOOT__ = (.*?);<\/script>/.exec(html)![1]!);
-    return boot.settings;
-  }
-
-  it("signs every picker-shaped URL in alert settings for themeable frames, whether stored in the scene or not", async () => {
-    expect(await bootSettings(THEME)).toEqual({
-      image: { ...external(), url: EXTERNAL_PROXIED },
-      avatar: { ...external(FROM_EVENT), url: proxy.urlFor(FROM_EVENT, BASE) },
-      logo: library,
-      caption: PLAIN_STRING,
-    });
-  });
-
-  it("does not rewrite non-themeable alert frames", async () => {
-    expect(await bootSettings(null)).toEqual({
-      image: external(),
-      avatar: external(FROM_EVENT),
-      logo: library,
-      caption: PLAIN_STRING,
     });
   });
 });

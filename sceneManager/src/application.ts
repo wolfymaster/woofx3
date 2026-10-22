@@ -95,11 +95,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       backups: dbSceneBackupStore(db),
     });
     this.sceneDocuments = sceneDocuments;
-    const frameAssembler = new FrameAssembler(host, logger, {
-      barkloader,
-      linkedResources: (moduleId) => linkedResources(db, moduleId),
-      mediaProxy,
-    });
+    const frameAssembler = new FrameAssembler(logger, { barkloader });
     // Held before hydrating, so a start that fails after this still stops
     // the store's timers.
     this.deliveryStore = deliveryStore;

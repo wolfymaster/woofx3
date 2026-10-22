@@ -3,7 +3,6 @@ import type { FrameTheme } from "@woofx3/widget-host/frame";
 import type { BarkloaderFrameClient } from "../../src/scene/frame-assembler";
 import { FrameAssembler, HttpBarkloaderFrameClient } from "../../src/scene/frame-assembler";
 import { frameVersion } from "../../src/scene/frame-catalog";
-import type { OverlayHost, OverlaySceneState } from "../../src/scene/scene-host";
 
 function fakeLogger() {
   return {
@@ -50,7 +49,7 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
     const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, hung, 10);
 
     await expect(client.fetchWidgetFrame("mymod", "mywid")).rejects.toThrow();
-    const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), logger, { barkloader: client });
+    const assembler = new FrameAssembler(logger, { barkloader: client });
     const resp = await assembler.assembleDocument("mymod", "mywid", null, null);
     expect(resp.status).toBe(502);
   });
@@ -85,17 +84,6 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
   });
 });
 
-function fakeHost(state: OverlaySceneState, entry: string): OverlayHost {
-  return {
-    async loadSceneById(_sceneId: string) {
-      return state;
-    },
-    async lookupWidgetDefinition(moduleKey: string, manifestId: string) {
-      return { moduleKey, manifestId, entry };
-    },
-  } as unknown as OverlayHost;
-}
-
 describe("FrameAssembler.assembleDocument", () => {
   const info = {
     entryHtml: "<!doctype html><body></body>",
@@ -112,7 +100,7 @@ describe("FrameAssembler.assembleDocument", () => {
         return info;
       }),
     };
-    const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), { barkloader });
+    const assembler = new FrameAssembler(fakeLogger(), { barkloader });
 
     const resp = await assembler.assembleDocument("mymod", "mywid", null, frameVersion(info));
     const html = await resp.text();
@@ -126,16 +114,29 @@ describe("FrameAssembler.assembleDocument", () => {
     }
   });
 
+  it("says in Server-Timing how long barkloader took", async () => {
+    let time = 0;
+    const assembler = new FrameAssembler(fakeLogger(), {
+      barkloader: { fetchWidgetFrame: async () => info },
+      now: () => {
+        time += 2;
+        return time;
+      },
+    });
+    const resp = await assembler.assembleDocument("mymod", "mywid", null, null);
+    expect(resp.headers.get("Server-Timing")).toBe("frame;dur=2, total;dur=6");
+  });
+
   it("tells the shim which settings are fonts and where their stylesheets are", async () => {
     const withFonts = { ...info, fontSettings: ["fontFamily"] };
     const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => withFonts) };
-    const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), { barkloader });
+    const assembler = new FrameAssembler(fakeLogger(), { barkloader });
 
     const boot = bootOf(await (await assembler.assembleDocument("mymod", "mywid", null, null)).text());
     expect(boot.fonts).toEqual({ settings: ["fontFamily"], stylesheetUrl: "/fonts/css" });
     const plain = bootOf(
       await (
-        await new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), {
+        await new FrameAssembler(fakeLogger(), {
           barkloader: { fetchWidgetFrame: mock(async () => info) },
         }).assembleDocument("mymod", "mywid", null, null)
       ).text()
@@ -145,7 +146,7 @@ describe("FrameAssembler.assembleDocument", () => {
 
   it("is cached for good while its version is current, and not otherwise", async () => {
     const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => info) };
-    const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), { barkloader });
+    const assembler = new FrameAssembler(fakeLogger(), { barkloader });
     const current = await assembler.assembleDocument("mymod", "mywid", null, frameVersion(info));
     expect(current.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
     const stale = await assembler.assembleDocument("mymod", "mywid", null, "an-old-version");
@@ -156,16 +157,12 @@ describe("FrameAssembler.assembleDocument", () => {
 
   it("returns 502, uncached, when barkloader has no frame for the widget", async () => {
     const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => null) };
-    const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), { barkloader });
+    const assembler = new FrameAssembler(fakeLogger(), { barkloader });
     const resp = await assembler.assembleDocument("mymod", "mywid", null, "v");
     expect(resp.status).toBe(502);
     expect(resp.headers.get("Cache-Control")).toBe("no-store");
   });
 });
-
-function emptyState(): OverlaySceneState {
-  return { sceneId: "scene-1", name: "Scene", kind: "scene", behaviors: {}, inputs: [], layout: {}, instances: [] };
-}
 
 function bootOf(html: string): Record<string, unknown> {
   const match = /window\.__WOOFX3_WIDGET_BOOT__ = (.*?);<\/script>/.exec(html);
@@ -195,7 +192,7 @@ async function assembleThemed(settings: Record<string, unknown>, theme: FrameThe
     theme,
     fontSettings: [],
   }));
-  const assembler = new FrameAssembler(fakeHost(emptyState(), "index.html"), fakeLogger(), {
+  const assembler = new FrameAssembler(fakeLogger(), {
     barkloader: { fetchWidgetFrame },
   });
   const selected = typeof settings.theme === "string" ? settings.theme : null;
