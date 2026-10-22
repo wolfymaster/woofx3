@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { isOverlayUrl, refreshOverlayBrowserSources, type ObsRequester } from "../../src/obs/refresh-overlays";
+import { isOverlayUrl, type ObsRequester, refreshOverlayBrowserSources } from "../../src/obs/refresh-overlays";
 
 const logger = {
   info: () => {},
@@ -89,13 +89,13 @@ describe("refreshOverlayBrowserSources", () => {
     expect(pressed).toEqual(["Overlay:refreshnocache"]);
   });
 
-  it("is a no-op when OBS is not connected", async () => {
-    expect(await refreshOverlayBrowserSources(null, 9101, logger)).toBe(0);
+  it("reports that OBS was not asked when it is not connected", async () => {
+    expect(await refreshOverlayBrowserSources(null, 9101, logger)).toBeNull();
   });
 
-  it("returns zero rather than throwing when the input list is unavailable", async () => {
+  it("reports that OBS was not asked, rather than throwing, when the input list is unavailable", async () => {
     const { obs } = fakeObs([], { listThrows: true });
-    expect(await refreshOverlayBrowserSources(obs, 9101, logger)).toBe(0);
+    expect(await refreshOverlayBrowserSources(obs, 9101, logger)).toBeNull();
   });
 
   it("skips an input whose settings cannot be read and still refreshes the rest", async () => {

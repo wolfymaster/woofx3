@@ -118,8 +118,8 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
  *
  * A refresh exists to recover overlays after the requesting process
  * restarted; after a mere reconnect their streams are intact, and a refresh
- * would cut off whatever is playing. So each boot id refreshes at most once,
- * and only a request, never a connection, causes one.
+ * would cut off whatever is playing. So each boot id refreshes at most once
+ * once OBS has been asked, and only a request, never a connection, causes one.
  */
 class OverlayRefreshLatch {
   private pending: ObsBrowserSourceRefresh | null = null;
@@ -153,8 +153,14 @@ class OverlayRefreshLatch {
       for (let client = this.session(); client && this.pending; client = this.session()) {
         const request = this.pending;
         this.pending = null;
+        const refreshed = await refreshOverlayBrowserSources(client, request.overlayPort, this.logger);
+        if (refreshed === null) {
+          // OBS was never asked, so the request still stands for the next
+          // session, unless a newer one arrived meanwhile.
+          this.pending ??= request;
+          return;
+        }
         this.consumed.add(request.bootId);
-        await refreshOverlayBrowserSources(client, request.overlayPort, this.logger);
       }
     } finally {
       this.draining = false;

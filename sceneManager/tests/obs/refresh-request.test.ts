@@ -132,6 +132,21 @@ describe("startRefreshRequests", () => {
     await requester.stop();
   });
 
+  it("warns once when retrying has reached the cap", async () => {
+    const { bus } = fakeBus([]);
+    const time = manualTimers();
+    const { logger, lines } = recordingLogger();
+    const small = { requestTimeoutMs: 100, retryBaseMs: 10, retryMaxMs: 40 };
+
+    const requester = startRefreshRequests(request, { bus, config: small, random: half, timers: time.timers, logger });
+    await flush();
+    for (let i = 0; i < 6; i += 1) {
+      await time.fireNext();
+    }
+    expect(lines.filter((l) => l.level === "warn")).toHaveLength(1);
+    await requester.stop();
+  });
+
   for (const [name, reply] of [
     ["an invalid reply", { kind: "ok", body: { status: "invalid", error: "bad port" } }],
     ["a reply that is not JSON", { kind: "raw", text: "nope" }],

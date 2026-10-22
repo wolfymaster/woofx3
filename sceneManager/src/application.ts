@@ -165,7 +165,10 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     if (overlayPort === null) {
       throw new Error("sceneManager: the HTTP server reports no listening port");
     }
-    if (nats) {
+    if (nats === null) {
+      // No bus to ask over, and this process holds the OBS connection itself.
+      obs.requestOverlayRefresh({ overlayPort, bootId });
+    } else {
       this.refreshRequester = startRefreshRequests(
         { overlayPort, bootId },
         {

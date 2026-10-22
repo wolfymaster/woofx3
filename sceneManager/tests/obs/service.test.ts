@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { createObsService, type ObsService } from "../../src/obs/service";
-import { type FakeObsServer, startFakeObs } from "./fake-obs-server";
+import { type FakeObsOptions, type FakeObsServer, startFakeObs } from "./fake-obs-server";
 
 const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as never;
 
@@ -55,8 +55,8 @@ describe("overlay refresh requests", () => {
     fake = null;
   });
 
-  function connect(): ObsService {
-    fake = startFakeObs();
+  function connect(fakeOptions: FakeObsOptions = {}): ObsService {
+    fake = startFakeObs(fakeOptions);
     obs = service({ host: "127.0.0.1", port: String(fake.port) });
     return obs;
   }
@@ -98,6 +98,25 @@ describe("overlay refresh requests", () => {
     await settle();
 
     expect(refreshes(fake as FakeObsServer)).toBe(1);
+  });
+
+  it("keeps the request for the next session when OBS could not be asked", async () => {
+    const svc = connect({ failRequests: { type: "GetInputList", times: 1 } });
+    svc.requestOverlayRefresh({ overlayPort: OVERLAY_PORT, bootId: "boot-1" });
+    svc.start();
+    await until(() => refreshes(fake as FakeObsServer) === 1);
+    await settle();
+    expect(refreshes(fake as FakeObsServer)).toBe(1);
+
+    svc.connection.reconnectNow("test");
+    await until(() => refreshes(fake as FakeObsServer) === 2);
+    await settle();
+    expect(refreshes(fake as FakeObsServer)).toBe(2);
+
+    svc.connection.reconnectNow("test");
+    await until(() => (fake as FakeObsServer).upgrades.length === 3);
+    await settle();
+    expect(refreshes(fake as FakeObsServer)).toBe(2);
   });
 
   it("changes nothing for a boot id it has already consumed", async () => {
