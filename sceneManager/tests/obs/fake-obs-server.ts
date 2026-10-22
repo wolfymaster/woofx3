@@ -31,6 +31,8 @@ export interface FakeObsOptions {
   /** Refuse the upgrade (401) unless this accepts the request URL, as the relay does without a valid ticket. */
   acceptUrl?: (url: URL) => boolean;
   scenes?: { name: string; items: string[] }[];
+  /** Answer the first `times` requests of this type with a failure status. */
+  failRequests?: { type: string; times: number };
 }
 
 export interface FakeObsServer {
@@ -75,12 +77,25 @@ export function startFakeObs(options: FakeObsOptions = {}): FakeObsServer {
   const upgrades: URL[] = [];
   const protocols: string[] = [];
   const requests: string[] = [];
+  let failuresLeft = options.failRequests?.times ?? 0;
 
   const respond = (
     ws: ServerWebSocket<SocketData>,
     message: { requestType: string; requestId: string; requestData?: Record<string, unknown> }
   ) => {
     requests.push(message.requestType);
+    if (options.failRequests?.type === message.requestType && failuresLeft > 0) {
+      failuresLeft -= 1;
+      send(ws, {
+        op: 7,
+        d: {
+          requestType: message.requestType,
+          requestId: message.requestId,
+          requestStatus: { result: false, code: 600, comment: "injected failure" },
+        },
+      });
+      return;
+    }
     let responseData: Record<string, unknown> | undefined;
     switch (message.requestType) {
       case "GetSceneList":

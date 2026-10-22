@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OPEN_REQUEST_GUARD_POLICY, RequestGuard } from "@woofx3/common/http/request-guard";
 import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
-import { loadConfig, type SceneManagerRuntimeConfig, validateConfig } from "../src/config";
+import { loadConfig, OBS_REFRESH_DEFAULTS, type SceneManagerRuntimeConfig, validateConfig } from "../src/config";
 
 // The shim is a build output, absent from a checkout that has not built it;
 // validation checks it is there, so the config points at a directory that has one.
@@ -24,6 +24,7 @@ const valid: SceneManagerRuntimeConfig = {
   barkloaderKey: "media-secret-0123456789abcdef0123456789",
   requestGuard: OPEN_REQUEST_GUARD_POLICY,
   obs: { host: "127.0.0.1", port: "4455" },
+  obsRefresh: OBS_REFRESH_DEFAULTS,
   nats: { url: "ws://127.0.0.1:4225", name: "scene-manager" },
 };
 
@@ -42,6 +43,19 @@ describe("validateConfig", () => {
       expect(() => validateConfig(config)).toThrow(field);
     }
   });
+});
+
+describe("validateConfig obsRefresh", () => {
+  for (const [name, obsRefresh] of [
+    ["a zero request timeout", { ...OBS_REFRESH_DEFAULTS, requestTimeoutMs: 0 }],
+    ["a non-numeric base", { ...OBS_REFRESH_DEFAULTS, retryBaseMs: Number.NaN }],
+    ["a fractional max", { ...OBS_REFRESH_DEFAULTS, retryMaxMs: 10.5 }],
+    ["a max below the base", { ...OBS_REFRESH_DEFAULTS, retryBaseMs: 5_000, retryMaxMs: 1_000 }],
+  ] as const) {
+    it(`refuses ${name}`, () => {
+      expect(() => validateConfig({ ...valid, obsRefresh })).toThrow("obsRefresh");
+    });
+  }
 });
 
 describe("validateConfig secrets", () => {
