@@ -7,7 +7,7 @@ import {
   WORKFLOW_RUN_ALERT_LIMIT,
   type WorkflowRunDetail,
 } from "@woofx3/api";
-import { TRIGGER_OPTIONS_NEED_DATA_MESSAGE, workflowNotFoundMessage } from "@woofx3/api/workflow-test-run";
+import { TRIGGER_OPTIONS_NEED_DATA_MESSAGE, workflowNotFoundMessage } from "@woofx3/api/workflow-trigger-errors";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
 import type { DbClient } from "../db-client";

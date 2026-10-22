@@ -26,7 +26,7 @@
     "./twitch-helix-bodies": "./twitch-helix-bodies.ts",
     "./ui-schema": "./ui-schema.ts",
     "./workflow-definition": "./workflow-definition.ts",
-    "./workflow-test-run": "./workflow-test-run.ts",
+    "./workflow-trigger-errors": "./workflow-trigger-errors.ts",
     "./scene-editor": "./scene-editor/index.ts",
     "./scene-editor/client": "./scene-editor/client.ts",
     "./scene-editor/document": "./scene-editor/document.ts",
