@@ -265,8 +265,14 @@ func (e *Engine[TServices]) RegisterValidatedAction(name string, action tasks.Ac
 // The step graph is checked whole, disabled steps included, because every run
 // builds it from all of them: a duplicate id, a dependency or branch naming a
 // missing step, or a cycle would otherwise register fine and fail every run.
+//
+// A `${env.*}` reference anywhere in the definition is refused: workflows
+// never read the engine's environment.
 func (e *Engine[TServices]) validateDefinition(def *types.WorkflowDefinition) error {
 	if _, err := NewDependencyGraph(def.Tasks); err != nil {
+		return err
+	}
+	if err := refuseEnvReferences(def); err != nil {
 		return err
 	}
 	for i := range def.Tasks {
