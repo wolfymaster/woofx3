@@ -286,8 +286,8 @@ Twitch (Twitch may have acted, so it is never resent), else `failed`/`upstream`
 "did not reach Twitch before the deadline". Each call gets the smaller of
 Helix's 8 s deadline and the time left in the gateway's budget.
 
-All writes wait their turn in one send queue, which runs them one at a time
-in arrival order, so lines reach chat in the order they were sent. The queue
+All gateway chat writes wait their turn in one send queue, which runs them one at a time
+in arrival order, so gateway lines reach chat in the order they were sent. The queue
 lives as long as the adapter, so its order holds across a restart. A write
 still waiting when its request's deadline passes is dropped without being
 sent. Once `WOOFX3_TWITCH_SEND_QUEUE_CAP` writes are waiting, the next is

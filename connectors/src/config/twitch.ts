@@ -12,8 +12,9 @@ export const TWITCH_DEFAULTS = {
   membershipDeadlineMs: 250,
   /**
    * How many chat writes from the platform gateway may wait behind the one
-   * being sent. One more is refused as rate limited rather than queued, so a
-   * burst cannot hold lines for longer than callers wait for them.
+   * being sent. One more is refused as rate limited rather than queued, which
+   * bounds memory and pending handlers. A line whose caller stopped waiting is
+   * dropped from the queue by its deadline, not by this cap.
    */
   sendQueueCap: 100,
 } as const;

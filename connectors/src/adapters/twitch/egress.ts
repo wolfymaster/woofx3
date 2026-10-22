@@ -27,6 +27,13 @@ export interface AnnounceOptions {
 }
 
 /**
+ * Time held back from the request's deadline when pinning a line just posted.
+ * The pin gives up this much early so the handler can still answer, with the
+ * posted line's `messageId`, before the gateway answers for it without one.
+ */
+const PIN_REPLY_MARGIN_MS = 250;
+
+/**
  * The failure code for each Helix error status a chat write can get. Any
  * other status is `upstream`: Twitch failed, and the request may be fine.
  */
@@ -53,7 +60,7 @@ export type TwitchEgressSession =
 
 export interface TwitchEgressDeps {
   session(): TwitchEgressSession;
-  /** Shared by every action, so all of the engine's chat writes reach Twitch in order. */
+  /** Shared by every action, so all platform gateway chat writes reach Twitch in order. */
   queue: SendQueue;
   clock: Clock;
 }
@@ -176,7 +183,11 @@ async function pin(deps: TwitchEgressDeps, ctx: EgressContext, payload: ChatPinP
   if (posted.status !== "delivered" || posted.messageId === undefined) {
     return posted;
   }
-  const pinned = await pinById(deps, ctx, posted.messageId, payload.durationSeconds);
+  const pinCtx = { ...ctx, deadline: ctx.deadline - PIN_REPLY_MARGIN_MS };
+  const pinned =
+    pinCtx.deadline > deps.clock.now()
+      ? await pinById(deps, pinCtx, posted.messageId, payload.durationSeconds)
+      : notSent();
   if (pinned.status === "delivered") {
     return pinned;
   }
@@ -282,7 +293,7 @@ function outcomeInWords(outcome: Exclude<PlatformOutcome, { status: "delivered" 
       return `Twitch is unavailable (${outcome.reason})`;
     }
     case "unsupported": {
-      return "Twitch does not support pinning";
+      return "unsupported";
     }
   }
 }

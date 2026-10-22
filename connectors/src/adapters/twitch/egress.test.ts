@@ -303,6 +303,25 @@ describe("twitch egress, chat.pin of a new line", () => {
     });
   }
 
+  test("holds part of the deadline back from the pin so the reply can still carry the posted id", async () => {
+    const { session, calls } = scriptedSession(posted("m-1"), noContent);
+
+    await perform(session, "chat.pin", { message: "pin me" }, undefined, context(1_000).ctx);
+    expect(calls.map((call) => call.call.helixDeadlineMs)).toEqual([1_000, 750]);
+  });
+
+  test("does not call Twitch to pin when the post left no time for it", async () => {
+    const { session, calls } = scriptedSession(posted("m-1"));
+
+    expect(await perform(session, "chat.pin", { message: "pin me" }, undefined, context(200).ctx)).toEqual({
+      status: "failed",
+      code: "upstream",
+      message: "posted but not pinned: did not reach Twitch before the deadline",
+      messageId: "m-1",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
   test("does not pin a line Twitch dropped", async () => {
     const dropped: HelixCommandResult = { ok: true, body: { data: [{ is_sent: false, drop_reason: { code: "x" } }] } };
     const { session, calls } = scriptedSession(dropped);
