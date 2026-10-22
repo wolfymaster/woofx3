@@ -20,6 +20,15 @@ const (
 	SubjectFieldOptions = "platform.gateway.field_options"
 )
 
+// The CloudEvent type of each subject's replies; the reply's data is the
+// subject's reply shape: GatewayReply, CapabilitiesReply or
+// FieldOptionsReply.
+const (
+	ReplyTypeSend         = "platform.gateway.send.result"
+	ReplyTypeCapabilities = "platform.gateway.capabilities.result"
+	ReplyTypeFieldOptions = "platform.gateway.field_options.result"
+)
+
 // MaxRefLength bounds idempotency keys, requester refs and origin ids, in
 // characters (Unicode code points).
 const MaxRefLength = 200
@@ -195,6 +204,32 @@ func UnavailableReasons() []UnavailableReason {
 func (v UnavailableReason) Valid() bool {
 	switch v {
 	case UnavailableNotLinked, UnavailableDisabled, UnavailableStopped, UnavailableStarting, UnavailableParked:
+		return true
+	}
+	return false
+}
+
+// PlatformState is a platform adapter's lifecycle state, as a capabilities reply reports it.
+type PlatformState string
+
+const (
+	PlatformStateStopped   PlatformState = "stopped"
+	PlatformStateStarting  PlatformState = "starting"
+	PlatformStateConnected PlatformState = "connected"
+	PlatformStateDegraded  PlatformState = "degraded"
+	PlatformStateParked    PlatformState = "parked"
+	PlatformStateStopping  PlatformState = "stopping"
+)
+
+// PlatformStates returns every PlatformState in contract order.
+func PlatformStates() []PlatformState {
+	return []PlatformState{PlatformStateStopped, PlatformStateStarting, PlatformStateConnected, PlatformStateDegraded, PlatformStateParked, PlatformStateStopping}
+}
+
+// Valid reports whether v is one of the contract's values.
+func (v PlatformState) Valid() bool {
+	switch v {
+	case PlatformStateStopped, PlatformStateStarting, PlatformStateConnected, PlatformStateDegraded, PlatformStateParked, PlatformStateStopping:
 		return true
 	}
 	return false
@@ -386,6 +421,110 @@ func (r *GatewayReply) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
+// PlatformCapability is one platform in a capabilities reply. Connected and
+// Enabled are the platform's last link reading, both false before the first
+// one; Actions are the actions its adapter can perform whatever its State.
+type PlatformCapability struct {
+	ID          PlatformID    `json:"id"`
+	DisplayName string        `json:"displayName"`
+	State       PlatformState `json:"state"`
+	Connected   bool          `json:"connected"`
+	Enabled     bool          `json:"enabled"`
+	Actions     []ActionID    `json:"actions"`
+}
+
+// CapabilitiesReply answers a capabilities request, whose body the gateway
+// ignores: one entry per platform the gateway has an adapter for, or Error
+// when it could not answer.
+type CapabilitiesReply struct {
+	Platforms []PlatformCapability `json:"platforms"`
+	Error     string               `json:"error"`
+}
+
+// MarshalJSON writes {"error": ...} when Error is set and {"platforms": [...]}
+// otherwise, with an empty list for nil Platforms, so the two forms never mix.
+func (r CapabilitiesReply) MarshalJSON() ([]byte, error) {
+	if r.Error != "" {
+		return json.Marshal(struct {
+			Error string `json:"error"`
+		}{r.Error})
+	}
+	platforms := r.Platforms
+	if platforms == nil {
+		platforms = []PlatformCapability{}
+	}
+	return json.Marshal(struct {
+		Platforms []PlatformCapability `json:"platforms"`
+	}{platforms})
+}
+
+// FieldOptionsRequest asks which platforms can perform Action now, as the
+// options of a select field.
+type FieldOptionsRequest struct {
+	Action ActionID `json:"action"`
+}
+
+// FieldOption is one choice of a select field: a platform and its display
+// name.
+type FieldOption struct {
+	Value PlatformID `json:"value"`
+	Label string     `json:"label"`
+}
+
+// FieldOptionsReply answers a FieldOptionsRequest. On the wire it is either
+// the options as a bare array or {"error": ...}, the reason there are none.
+type FieldOptionsReply struct {
+	Options []FieldOption
+	Error   string
+}
+
+// MarshalJSON writes {"error": ...} when Error is set and the options array
+// otherwise, with an empty array for nil Options.
+func (r FieldOptionsReply) MarshalJSON() ([]byte, error) {
+	if r.Error != "" {
+		return json.Marshal(struct {
+			Error string `json:"error"`
+		}{r.Error})
+	}
+	options := r.Options
+	if options == nil {
+		options = []FieldOption{}
+	}
+	return json.Marshal(options)
+}
+
+// UnmarshalJSON reads either wire form. An object without a non-empty error,
+// or a value that is neither an array nor an object, is a *ValidationError,
+// at the same field the TypeScript parser reports.
+func (r *FieldOptionsReply) UnmarshalJSON(raw []byte) error {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		var options []FieldOption
+		if err := json.Unmarshal(trimmed, &options); err != nil {
+			return err
+		}
+		if options == nil {
+			options = []FieldOption{}
+		}
+		*r = FieldOptionsReply{Options: options}
+		return nil
+	}
+	if len(trimmed) > 0 && trimmed[0] == '{' {
+		var wire struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal(trimmed, &wire); err != nil {
+			return err
+		}
+		if wire.Error == "" {
+			return invalid("error", "is required")
+		}
+		*r = FieldOptionsReply{Error: wire.Error}
+		return nil
+	}
+	return invalid("reply", "must be an array or an object")
+}
+
 // ValidationError names the part of a request or reply that is wrong. Field
 // is a JSON path such as "payload.message" or "target.ids[1]"; the
 // TypeScript parsers report the same paths.
@@ -517,6 +656,92 @@ func (r GatewayReply) Validate() error {
 			return err
 		}
 	}
+	return nil
+}
+
+// Validate checks a capabilities reply as a requester receives it: either an
+// error and no platforms, or platforms that are known, named once, with a
+// display name, a known state, and known actions named once.
+func (r CapabilitiesReply) Validate() error {
+	if r.Error != "" {
+		if r.Platforms != nil {
+			return invalid("platforms", "must be absent when error is set")
+		}
+		return nil
+	}
+	if r.Platforms == nil {
+		return invalid("platforms", "is required")
+	}
+	seen := make(map[PlatformID]bool, len(r.Platforms))
+	for i, p := range r.Platforms {
+		field := "platforms[" + strconv.Itoa(i) + "]"
+		if err := checkListedPlatform(field+".id", p.ID, seen); err != nil {
+			return err
+		}
+		if err := requireText(field+".displayName", p.DisplayName); err != nil {
+			return err
+		}
+		if !p.State.Valid() {
+			return invalid(field+".state", "unknown platform state %q", p.State)
+		}
+		if p.Actions == nil {
+			return invalid(field+".actions", "is required")
+		}
+		seenActions := make(map[ActionID]bool, len(p.Actions))
+		for j, a := range p.Actions {
+			actionField := field + ".actions[" + strconv.Itoa(j) + "]"
+			if !a.Valid() {
+				return invalid(actionField, "unknown action %q", a)
+			}
+			if seenActions[a] {
+				return invalid(actionField, "names %q twice", a)
+			}
+			seenActions[a] = true
+		}
+	}
+	return nil
+}
+
+// Validate checks that the request names an action in the catalog.
+func (r FieldOptionsRequest) Validate() error {
+	if r.Action == "" {
+		return invalid("action", "is required")
+	}
+	if !r.Action.Valid() {
+		return invalid("action", "unknown action %q", r.Action)
+	}
+	return nil
+}
+
+// Validate checks a field-options reply as a requester receives it: unless it
+// is an error, every option names a known platform once and has a label.
+func (r FieldOptionsReply) Validate() error {
+	if r.Error != "" {
+		return nil
+	}
+	seen := make(map[PlatformID]bool, len(r.Options))
+	for i, option := range r.Options {
+		field := "[" + strconv.Itoa(i) + "]"
+		if err := checkListedPlatform(field+".value", option.Value, seen); err != nil {
+			return err
+		}
+		if err := requireText(field+".label", option.Label); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkListedPlatform refuses an unknown platform, or one already in seen,
+// and records it.
+func checkListedPlatform(field string, id PlatformID, seen map[PlatformID]bool) error {
+	if !id.Valid() {
+		return invalid(field, "unknown platform %q", id)
+	}
+	if seen[id] {
+		return invalid(field, "names %q twice", id)
+	}
+	seen[id] = true
 	return nil
 }
 
