@@ -1,7 +1,7 @@
 // capnweb RPC surface contracts for the engine.
 //
-// Types-only module — deliberately does NOT import from "capnweb" so this
-// shared package stays zero-dep. Engine runtime classes (api/src/gateway.ts,
+// Deliberately does NOT import from "capnweb", so this module has no
+// dependencies. Engine runtime classes (api/src/gateway.ts,
 // api/src/api.ts, api/src/api-session.ts) `extends RpcTarget` for the
 // capnweb side and `implements` the contracts declared here.
 //
@@ -35,18 +35,69 @@ export interface RegisterClientOptions {
   registrationToken?: string;
 }
 
+// Refusals across capnweb.
+//
+// capnweb sends an error's `name` and `message`, but the receiving side
+// rebuilds any name it does not know as a plain `Error`, so a custom name is
+// lost in transit. Each refusal is therefore carried by its message, which
+// starts with the refusal's marker and ": ". A guard below reads it, both for
+// the engine's own error and for the plain `Error` a capnweb client receives.
+
 /**
- * The error a refused `registerClient` rejects with. Its `name` survives the
- * capnweb boundary, so a caller can tell a refused registration from a
- * transport failure; its `message` is written to be shown to a user.
+ * The marker of a refused `registerClient`: this engine will not register the
+ * caller. The rest of the message is written to be shown to a user.
  */
 export const REGISTRATION_REFUSED = "RegistrationRefused";
 
 /**
- * The error `authenticate` rejects with when the engine could not check the
- * credentials (its database did not answer), as opposed to rejecting them.
- * Its `name` survives the capnweb boundary; the same credentials may succeed
- * on a retry.
+ * The marker of a refused `authenticate`: the engine does not accept these
+ * client credentials, so retrying them cannot succeed.
+ */
+export const AUTHENTICATION_REFUSED = "AuthenticationRefused";
+
+/** The message of a refused `registerClient`, for the engine to throw. */
+export function registrationRefusedMessage(reason: string): string {
+  return `${REGISTRATION_REFUSED}: ${reason}`;
+}
+
+/** The message of a refused `authenticate`, for the engine to throw. */
+export function authenticationRefusedMessage(reason: string): string {
+  return `${AUTHENTICATION_REFUSED}: ${reason}`;
+}
+
+/** Whether `err` is a refused `registerClient`, as opposed to a transport or transient failure. */
+export function isRegistrationRefused(err: unknown): err is Error {
+  return err instanceof Error && err.message.startsWith(`${REGISTRATION_REFUSED}: `);
+}
+
+/** Whether `err` is a refused `authenticate`, as opposed to a transport or transient failure. */
+export function isAuthenticationRefused(err: unknown): err is Error {
+  return err instanceof Error && err.message.startsWith(`${AUTHENTICATION_REFUSED}: `);
+}
+
+/**
+ * The sentence a refusal says, for showing to a user, with its marker
+ * removed; null when `err` is not a refusal. Covers both refusals above.
+ */
+export function refusalReason(err: unknown): string | null {
+  if (!(err instanceof Error)) {
+    return null;
+  }
+  for (const marker of [REGISTRATION_REFUSED, AUTHENTICATION_REFUSED]) {
+    const prefix = `${marker}: `;
+    if (err.message.startsWith(prefix)) {
+      return err.message.slice(prefix.length);
+    }
+  }
+  return null;
+}
+
+/**
+ * The `name` of the error `authenticate` rejects with when the engine could
+ * not check the credentials (its database gave no verdict), as opposed to
+ * refusing them. capnweb does not carry the name to the client, which sees a
+ * plain `Error` that `isAuthenticationRefused` does not match: a transient
+ * failure, so the same credentials may succeed on a retry.
  */
 export const AUTH_UNAVAILABLE = "AuthUnavailable";
 
@@ -76,6 +127,9 @@ export interface ApiGatewayContract {
    * Exchange client credentials for an authenticated API stub. The returned
    * object is a capnweb stub — methods can be called and pipelined into the
    * same HTTP batch as the `authenticate` call itself.
+   *
+   * Rejects with an error `isAuthenticationRefused` recognises when the
+   * engine does not accept the credentials.
    */
   authenticate(clientId: string, clientSecret: string): Promise<ApiContract>;
 }

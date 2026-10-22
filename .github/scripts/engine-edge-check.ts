@@ -19,6 +19,7 @@ import {
   createEngineGatewaySession,
   createEngineSession,
 } from "../../shared/clients/typescript/api/client";
+import { isRegistrationRefused } from "../../shared/clients/typescript/api/rpc";
 
 const BASE_URL = required("BASE_URL");
 const REGISTRATION_TOKEN = required("REGISTRATION_TOKEN");
@@ -57,13 +58,6 @@ function assertEqual(actual: unknown, expected: unknown, what: string): void {
   assert(actual === expected, `${what}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
 }
 
-/** The error a refused registration rejects with; see REGISTRATION_REFUSED. */
-function isRefusal(err: unknown): boolean {
-  const name = (err as { name?: string } | null)?.name ?? "";
-  const message = err instanceof Error ? err.message : String(err);
-  return name === "RegistrationRefused" || /registration token/i.test(message);
-}
-
 // --- the gateway, on /api through the edge --------------------------------
 
 await check("capnweb HTTP batch: gateway.ping() on /api", async () => {
@@ -79,7 +73,7 @@ await check("registerClient is refused without the registration token", async ()
       (err: unknown) => err
     );
   assert(refused !== null, "registration succeeded without a token");
-  assert(isRefusal(refused), `expected a refusal, got: ${refused}`);
+  assert(isRegistrationRefused(refused), `expected a refusal, got: ${refused}`);
 });
 
 await check("registerClient is refused with the wrong registration token", async () => {
@@ -90,7 +84,7 @@ await check("registerClient is refused with the wrong registration token", async
       (err: unknown) => err
     );
   assert(refused !== null, "registration succeeded with a wrong token");
-  assert(isRefusal(refused), `expected a refusal, got: ${refused}`);
+  assert(isRegistrationRefused(refused), `expected a refusal, got: ${refused}`);
 });
 
 let credentials: { clientId: string; clientSecret: string } | null = null;

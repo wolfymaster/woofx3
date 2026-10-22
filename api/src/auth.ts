@@ -95,10 +95,20 @@ export class ClientAuth {
       return { ok: false, error: { kind: "auth_unavailable", message } };
     }
 
-    if (resp.status?.code !== "OK" || !resp.client) {
+    const code = resp.status?.code;
+    if (code === "NOT_FOUND") {
       this.logger.warn("Auth: invalid client credentials");
       this.logger.debug("Auth: invalid credentials for client", { clientId });
       return { ok: false, error: { kind: "invalid_credentials" } };
+    }
+    // Only NOT_FOUND is the db proxy rejecting the credentials. Any other
+    // answer (a database error, a missing client record) says nothing about
+    // them, so it must not tell the caller to stop retrying.
+    if (code !== "OK" || !resp.client) {
+      const message = `db proxy answered client validation with ${code ?? "no status"}`;
+      this.logger.warn("Auth: db proxy gave no verdict on a client", { status: code ?? null });
+      this.logger.debug("Auth: validation unavailable for client", { clientId });
+      return { ok: false, error: { kind: "auth_unavailable", message } };
     }
 
     const client: AuthenticatedClient = {

@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.41.0](https://github.com/wolfymaster/woofx3/compare/v0.40.0...v0.41.0) (2026-10-22)
+
+### Features
+
+* **api:** alert overview behind alerts.overview ([e3b636c](https://github.com/wolfymaster/woofx3/commit/e3b636cc0e2d80608255a58ba869dde404123ab7))
+* **api:** carry the registration refusal in its message ([444ada2](https://github.com/wolfymaster/woofx3/commit/444ada2aa10ae1313818e6d19fbcbbfc16d61137))
+* **api:** name refused authentication ([af97261](https://github.com/wolfymaster/woofx3/commit/af9726199fc9b0c0de151f8e570d18468541b428))
+* **api:** re-export capnweb's MessagePort session from @woofx3/api/client ([99b6a1b](https://github.com/wolfymaster/woofx3/commit/99b6a1ba62b50f099a66c52e0e147afb1e85cbeb))
+* **api:** read the linked Twitch account behind twitch.linkRead ([b8e0429](https://github.com/wolfymaster/woofx3/commit/b8e0429954c7eb1d46f671070d1781c94e52744f))
+* **api:** refusalReason strips the refusal marker for users ([aaabd7c](https://github.com/wolfymaster/woofx3/commit/aaabd7c21a9555d45526ee9f751812201ef229bc))
+* **db:** count alerts by hour, status and confirmation ([5c599a1](https://github.com/wolfymaster/woofx3/commit/5c599a1bf924393b1271dea786055f418f6625cb))
+* **db:** count alerts by outcome, and say when retention truncates ([be2a43d](https://github.com/wolfymaster/woofx3/commit/be2a43d3409233503766cb4836dfd1fa90cee9fb))
+
+### Bug Fixes
+
+* **api:** merge the client package's two scripts blocks ([04b90f7](https://github.com/wolfymaster/woofx3/commit/04b90f70941b9ba6433c063784722898a70b5caa))
+* **api:** order twitch.link.changed by revision, and announce new accounts ([241a318](https://github.com/wolfymaster/woofx3/commit/241a31879907b1e32f22cf86275af9ed3ca05b99))
+* **api:** refuse authentication only for credentials db-proxy rejects ([f5923a8](https://github.com/wolfymaster/woofx3/commit/f5923a89f1ecbe81a252757699bd825dacf9e2c9))
+* **api:** share profile lookups and let TwitchProfiles forget ([ba676f1](https://github.com/wolfymaster/woofx3/commit/ba676f1228983455ce8ab2243a9ce1946be49f7f))
+* **api:** stop logging capnweb request and response bodies ([eb57636](https://github.com/wolfymaster/woofx3/commit/eb57636fb93d1b3db3ce2158b49361a762711246))
+* **api:** take alert outcomes and truncation from db-proxy ([38cb5e9](https://github.com/wolfymaster/woofx3/commit/38cb5e94c11a9e313eee8248dc877210317aeda6))
+* **db:** group alert counts in SQL and classify outcomes in db-proxy ([31a15f7](https://github.com/wolfymaster/woofx3/commit/31a15f7e50ac409dabfa7a73a3d7c7a0fccc8111))
+* **db:** read only the seconds of a SQLite alert timestamp for its hour ([03d836b](https://github.com/wolfymaster/woofx3/commit/03d836bdc7a0c93961f295c79bd0dc10aea2c59f))
+* **db:** stop at startup on a worker setting that does not parse ([4f72867](https://github.com/wolfymaster/woofx3/commit/4f728677c994a851197dfcd283741cd3da23171f))
+* **twitch:** keep known scopes when a token answer lists none ([3d45f66](https://github.com/wolfymaster/woofx3/commit/3d45f660d57233cb5d7877fddfe192e804b5d34f))
+
 ## [0.40.0](https://github.com/wolfymaster/woofx3/compare/v0.39.0...v0.40.0) (2026-10-21)
 
 ### Features

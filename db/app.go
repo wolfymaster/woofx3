@@ -27,8 +27,9 @@ type DatabaseAppConfig struct {
 	Logger *slog.Logger
 	// IDs and Now are the process-wide id source and clock; every repository
 	// built from the App shares them with the database connection.
-	IDs database.IDSource
-	Now func() time.Time
+	IDs     database.IDSource
+	Now     func() time.Time
+	Workers outbox.Config
 }
 
 type DatabaseApp struct {
@@ -36,6 +37,7 @@ type DatabaseApp struct {
 	logger          *slog.Logger
 	ids             database.IDSource
 	now             func() time.Time
+	workers         outbox.Config
 	db              *gorm.DB
 	moduleStorage   *sql.DB
 	casbin          *casbin.Enforcer
@@ -59,6 +61,7 @@ func NewDatabaseApp(cfg *DatabaseAppConfig) *DatabaseApp {
 		logger:          cfg.Logger,
 		ids:             cfg.IDs,
 		now:             cfg.Now,
+		workers:         cfg.Workers,
 	}
 }
 
@@ -70,6 +73,7 @@ func (a *DatabaseApp) App() *types.App {
 		IDs:             a.ids,
 		Now:             a.now,
 		Logger:          a.logger,
+		Workers:         a.workers,
 		NATSConn:        a.natsConn,
 		EventCache:      a.eventCache,
 		PublisherWorker: a.publisherWorker,

@@ -16,6 +16,7 @@ import (
 	"github.com/wolfymaster/woofx3/db/app/middleware"
 	"github.com/wolfymaster/woofx3/db/app/routes"
 	"github.com/wolfymaster/woofx3/db/app/services"
+	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/config"
 	"github.com/wolfymaster/woofx3/db/database"
 )
@@ -37,9 +38,15 @@ func main() {
 	defer sharedLogger.Close()
 	logger := sharedLogger.Slog()
 
+	workersConfig, err := workers.LoadConfig()
+	if err != nil {
+		logger.Error("db-proxy cannot start", "error", err)
+		sharedLogger.Close()
+		os.Exit(1)
+	}
 	ids := database.RandomIDs{}
 	now := func() time.Time { return time.Now().UTC() }
-	app := NewDatabaseApp(&DatabaseAppConfig{Logger: logger, IDs: ids, Now: now})
+	app := NewDatabaseApp(&DatabaseAppConfig{Logger: logger, IDs: ids, Now: now, Workers: workersConfig})
 	natsSvc := service.NewNATS(logger, "nats", "messagebus")
 	natsMonitor := monitor.NewNATS("nats", natsSvc, "db", "HEARTBEAT", 15*time.Second, logger)
 	dbEnvConfig := &config.DatabaseEnvConfig{}
@@ -95,7 +102,7 @@ func main() {
 				return err
 			}
 
-			workerSvc := services.NewWorkerService(logger, databaseSvc, natsSvc, ids)
+			workerSvc := services.NewWorkerService(logger, databaseSvc, natsSvc, ids, workersConfig)
 			if err := application.Register("workers", workerSvc); err != nil {
 				return err
 			}

@@ -4,7 +4,8 @@
   "description": "Shared API types + capnweb client helpers for woofx3 engine",
   "type": "module",
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "generate:google-fonts": "bun run scripts/generate-google-fonts.ts"
   },
   "exports": {
     ".": "./index.ts",
@@ -28,9 +29,6 @@
     "./scene-editor/protocol": "./scene-editor/protocol.ts",
     "./scene-editor/rebase": "./scene-editor/rebase.ts",
     "./scene-editor/sequencer": "./scene-editor/sequencer.ts"
-  },
-  "scripts": {
-    "generate:google-fonts": "bun run scripts/generate-google-fonts.ts"
   },
   "dependencies": {
     "capnweb": "^0.4.0",

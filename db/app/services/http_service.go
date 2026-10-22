@@ -21,7 +21,9 @@ import (
 	"github.com/wolfymaster/woofx3/db/config"
 )
 
-type RouteSetupFunc func(mux *http.ServeMux, app *types.App, casbinMiddleware *middleware.CasbinMiddleware)
+// RouteSetupFunc registers every route, or fails when a route cannot be built
+// from the app's configuration.
+type RouteSetupFunc func(mux *http.ServeMux, app *types.App, casbinMiddleware *middleware.CasbinMiddleware) error
 
 type HTTPServerService struct {
 	*runtime.BaseService[*http.Server]
@@ -176,7 +178,7 @@ func (s *HTTPServerService) lazyInitHandler(w http.ResponseWriter, r *http.Reque
 			}
 
 			if err := s.ensureRoutes(app); err != nil {
-				s.logger.Error("Failed to create casbin middleware", "error", err)
+				s.logger.Error("Failed to set up routes", "error", err)
 				http.Error(w, "Service initialization failed", http.StatusInternalServerError)
 				return
 			}
@@ -212,7 +214,9 @@ func (s *HTTPServerService) ensureRoutes(app *types.App) error {
 		return err
 	}
 	s.casbinMiddleware = casbinMiddleware
-	s.setupRoutes(s.mux, app)
+	if err := s.setupRoutes(s.mux, app); err != nil {
+		return err
+	}
 	s.routesInitialized.Store(true)
 	s.logger.Info("Routes initialized successfully")
 	return nil
@@ -272,15 +276,18 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
-func (s *HTTPServerService) setupRoutes(mux *http.ServeMux, app *types.App) {
+func (s *HTTPServerService) setupRoutes(mux *http.ServeMux, app *types.App) error {
 	s.logger.Info("Setting up routes")
 
 	if s.routeSetup != nil {
 		casbinMiddleware := s.casbinMiddleware.(*middleware.CasbinMiddleware)
-		s.routeSetup(mux, app, casbinMiddleware)
+		if err := s.routeSetup(mux, app, casbinMiddleware); err != nil {
+			return fmt.Errorf("set up routes: %w", err)
+		}
 	}
 
 	s.logger.Info("Routes setup completed")
+	return nil
 }
 
 func (s *HTTPServerService) Disconnect(ctx context.Context) error {
