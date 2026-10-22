@@ -3535,10 +3535,31 @@ mod endpoint_settings_tests {
         serde_json::from_value(manifest).expect("manifest")
     }
 
+    /// `obs_manifest` with its endpoint's port read from `obs_alt_port`.
+    fn obs_manifest_with_alt_port(version: &str) -> serde_json::Value {
+        let mut manifest = obs_manifest(version, "obs", "obs_host");
+        manifest["settings"]
+            .as_array_mut()
+            .expect("settings")
+            .push(serde_json::json!({
+                "id": "obs_alt_port", "label": "Alt port", "type": "number", "defaultValue": "4456"
+            }));
+        manifest["local"][0]["portSetting"] = serde_json::json!("obs_alt_port");
+        manifest
+    }
+
+    /// `obs_manifest` without its `local[]` endpoint.
+    fn obs_manifest_without_endpoints(version: &str) -> serde_json::Value {
+        let mut manifest = obs_manifest(version, "obs", "obs_host");
+        manifest["local"] = serde_json::json!([]);
+        manifest
+    }
+
     #[test]
     fn test_relocated_endpoint_address_settings_cases() {
         let installed = parsed(obs_manifest("1.0.0", "obs", "obs_host"));
-        let cases: [(&str, Option<&ModuleManifest>, ModuleManifest, Vec<&str>); 4] = [
+        let installed_without_endpoints = parsed(obs_manifest_without_endpoints("1.0.0"));
+        let cases: [(&str, Option<&ModuleManifest>, ModuleManifest, Vec<&str>); 6] = [
             (
                 "fresh install",
                 None,
@@ -3561,6 +3582,18 @@ mod endpoint_settings_tests {
                 "new endpoint id",
                 Some(&installed),
                 parsed(obs_manifest("1.1.0", "studio", "obs_host")),
+                vec!["obs_host", "obs_port"],
+            ),
+            (
+                "renamed port setting",
+                Some(&installed),
+                parsed(obs_manifest_with_alt_port("1.1.0")),
+                vec!["obs_alt_port"],
+            ),
+            (
+                "endpoint added by the upgrade",
+                Some(&installed_without_endpoints),
+                parsed(obs_manifest("1.1.0", "obs", "obs_host")),
                 vec!["obs_host", "obs_port"],
             ),
         ];
