@@ -116,9 +116,15 @@ interface Connected {
 
 /** Stops everything a connection built, however far its connect got. */
 async function closeConnection(connection: Connection): Promise<void> {
-  connection.eventBus?.disconnect();
-  connection.adBreakScheduler?.stop();
-  await connection.client.close();
+  try {
+    connection.eventBus?.disconnect();
+  } finally {
+    try {
+      connection.adBreakScheduler?.stop();
+    } finally {
+      await connection.client.close();
+    }
+  }
 }
 
 const encoder = new TextEncoder();
@@ -299,10 +305,15 @@ export default class TwitchApplication {
     let connected: Connected;
     try {
       connected = await this.build(ctx, connection, authProvider, signal);
+      signal.throwIfAborted();
     } catch (err) {
       this.link = "waiting";
       this.relinkPending = false;
-      await closeConnection(connection);
+      try {
+        await closeConnection(connection);
+      } catch (closeErr) {
+        ctx.logger.error("twitch: closing a failed connect also failed", { err: errorMessage(closeErr) });
+      }
       throw err;
     }
 
@@ -333,7 +344,7 @@ export default class TwitchApplication {
   ): Promise<Connected> {
     const apiClient = connection.client.ApiClient();
     const listener = connection.client.EventBusListener();
-    const broadcaster = await connection.client.broadcaster();
+    const broadcaster = await untilAborted(connection.client.broadcaster(), signal);
     signal.throwIfAborted();
 
     const twitchApi = new TwitchApiClientImpl(
