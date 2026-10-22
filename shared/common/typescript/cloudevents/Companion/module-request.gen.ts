@@ -117,9 +117,12 @@ function required<T>(result: CompanionGatewayParseResult<T | undefined>, prefix:
  */
 type StringBound = { kind: "characters"; max: number } | { kind: "bytes"; max: number } | { kind: "format"; pattern: RegExp };
 
-const FORMAT_MODULE_ID: StringBound = { kind: "format", pattern: /^[A-Za-z0-9._-]{1,100}$/ };
-const FORMAT_ENDPOINT_ID: StringBound = { kind: "format", pattern: /^[a-z0-9_-]{1,40}$/ };
-const FORMAT_MATCH_FIELD: StringBound = { kind: "format", pattern: /^[A-Za-z0-9_]{1,40}$/ };
+export const MODULE_ID_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
+const FORMAT_MODULE_ID: StringBound = { kind: "format", pattern: MODULE_ID_PATTERN };
+export const ENDPOINT_ID_PATTERN = /^[a-z0-9_-]{1,40}$/;
+const FORMAT_ENDPOINT_ID: StringBound = { kind: "format", pattern: ENDPOINT_ID_PATTERN };
+export const MATCH_FIELD_PATTERN = /^[A-Za-z0-9_]{1,40}$/;
+const FORMAT_MATCH_FIELD: StringBound = { kind: "format", pattern: MATCH_FIELD_PATTERN };
 
 const utf8 = new TextEncoder();
 
