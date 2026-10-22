@@ -160,8 +160,10 @@ one `alert` event whose `data` is the triggering CloudEvent (`{ type, data }`, o
 `null` when nothing triggered the workflow).
 
 The page plays alerts on **prepared** stages, so a widget's frame has usually loaded
-before its alert is due. An alert's stage is built hidden, with its frames booting
-and its time held at its first moment, as soon as the alert is delivered. Once an alert
+before its alert is due. An alert's stage is built transparent, with its frames
+booting and painting and its time held at its first moment, as soon as the alert is
+delivered. (Transparent rather than `visibility: hidden`, which stops Chromium
+rendering a cross-origin frame, so a widget could not paint before it is shown.) Once an alert
 of a shape has played, another stage of that shape (the same layout, behaviors and
 frames, whatever the settings) is prepared for the next one: at once when one is
 already waiting, otherwise after the alert finishes, so preparing never competes with

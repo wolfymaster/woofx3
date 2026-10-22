@@ -129,7 +129,7 @@ function setup(preparedAlerts?: number) {
   const stages = () =>
     element.children.map((stage) => {
       const frame = descendants(stage).find((child) => child.src !== "");
-      return { frame: frame?.src.split("#")[0] ?? "", hidden: stage.style.visibility === "hidden" };
+      return { frame: frame?.src.split("#")[0] ?? "", hidden: stage.style.opacity === "0" };
     });
   return { widget, timers, finished, stages };
 }

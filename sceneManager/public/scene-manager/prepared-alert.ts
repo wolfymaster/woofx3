@@ -87,8 +87,10 @@ export class PreparedAlert {
     this.stage.style.width = `${canvas.width}px`;
     this.stage.style.height = `${canvas.height}px`;
     // Laid out like a playing alert, so its frames boot at their real size,
-    // but not painted until it plays.
-    this.stage.style.visibility = "hidden";
+    // and transparent until it plays: under `visibility: hidden` Chromium
+    // would stop rendering the frames, and a widget enters only once its
+    // frame has painted.
+    this.stage.style.opacity = "0";
     deps.element.appendChild(this.stage);
     this.staged = stageAlert<HTMLElement, unknown>({
       document: deps.document,
@@ -173,7 +175,7 @@ export class PreparedAlert {
     }
     const fit = fitCanvas(canvasOf(this.delivery.layout), { width: element.clientWidth, height: element.clientHeight });
     this.stage.style.transform = `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`;
-    this.stage.style.visibility = "";
+    this.stage.style.opacity = "";
     this.staged.start();
   }
 

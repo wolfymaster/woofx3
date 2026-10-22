@@ -510,7 +510,7 @@ describe("an overlay page", () => {
     const page = await afterFirstAlert();
 
     const prepared = alertFrame(page, "prepared-2.t1");
-    expect(stageOf(prepared).style.visibility).toBe("hidden");
+    expect(stageOf(prepared).style.opacity).toBe("0");
     expect(sentTo(prepared, "event.deliver")).toEqual([]);
     expect(() => alertFrame(page, "prepared-1.t1")).toThrow();
   });
@@ -527,7 +527,7 @@ describe("an overlay page", () => {
     expect(sentTo(prepared, "event.deliver").map((message) => (message.event as { eventId: string }).eventId)).toEqual([
       "ev-2",
     ]);
-    expect(stageOf(prepared).style.visibility).toBe("");
+    expect(stageOf(prepared).style.opacity).toBe("");
     expect(page.marked).toContain("woofx3.alert/ev-2/prepared");
     expect(page.marked).toContain("woofx3.alert/ev-2/on-screen");
     expect(() => alertFrame(page, "prepared-3.t1")).toThrow();
