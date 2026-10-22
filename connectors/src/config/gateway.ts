@@ -14,6 +14,12 @@ export const GATEWAY_DEFAULTS = {
    * adapter reports its own timeout first, and below the callers' 12_000.
    */
   adapterDeadlineMs: 9_000,
+  /**
+   * Budget of both discovery subjects. They only read in-memory state, so this
+   * is far below the callers' own timeouts (the api waits 10_000 for field
+   * options) and only bounds a request that queued behind busy handlers.
+   */
+  discoveryBudgetMs: 2_000,
   /** Completed replies remembered for replay, oldest evicted first. */
   idempotencyCapacity: 1_024,
   /** How long a completed reply is replayed for a repeated idempotency key. */

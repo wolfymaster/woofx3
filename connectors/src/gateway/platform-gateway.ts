@@ -27,6 +27,7 @@ import {
 } from "../host/host-requests";
 import type { ScopedBus } from "../host/scoped-bus";
 import { type AdapterStatusSource, whenSettled } from "../host/served-subjects";
+import { GatewayDiscovery, type GatewayDiscoveryDeps } from "./discovery";
 import type { EgressRegistry } from "./egress-registry";
 import { fingerprint, IdempotencyCache } from "./idempotency";
 import { resolveTarget, type TargetResolution, type TargetView, withOriginReply } from "./targets";
@@ -55,6 +56,8 @@ export interface PlatformGatewayDeps {
   requests: HostRequests;
   clock: Clock;
   logger: Logger;
+  /** Display names for discovery; defaults to the contract table. */
+  displayNames?: GatewayDiscoveryDeps["displayNames"];
 }
 
 export type OutcomeCounts = Partial<
@@ -95,8 +98,15 @@ export class PlatformGateway {
   private readonly outcomes: OutcomeCounts = {};
   private readonly idempotencyCounts = { replayed: 0, coalesced: 0, mismatched: 0 };
   private readonly view: TargetView;
+  private readonly discovery: GatewayDiscovery;
 
   constructor(private readonly deps: PlatformGatewayDeps) {
+    this.discovery = new GatewayDiscovery({
+      egress: deps.egress,
+      adapters: deps.adapters,
+      requests: deps.requests,
+      displayNames: deps.displayNames,
+    });
     this.idempotency = new IdempotencyCache(deps.config.idempotency, deps.clock);
     this.view = {
       platforms: deps.egress.platforms,
@@ -107,7 +117,10 @@ export class PlatformGateway {
 
   /** The subjects and budgets the gateway serves, for the host scope's grants and its shutdown bound. */
   get served(): ReadonlyArray<{ subject: string; budgetMs: number }> {
-    return [{ subject: PLATFORM_GATEWAY_SUBJECTS.send, budgetMs: this.deps.config.adapterDeadlineMs }];
+    return [
+      { subject: PLATFORM_GATEWAY_SUBJECTS.send, budgetMs: this.deps.config.adapterDeadlineMs },
+      ...this.discovery.served,
+    ];
   }
 
   async serve(scope: ScopedBus): Promise<void> {
@@ -120,6 +133,7 @@ export class PlatformGateway {
       handle: (request, ctx) => this.send(request, ctx),
       errorReply: (code, message) => refusal(REFUSAL_CODES[code], message),
     });
+    await this.discovery.serve(scope);
   }
 
   snapshot(): GatewayCounters {
