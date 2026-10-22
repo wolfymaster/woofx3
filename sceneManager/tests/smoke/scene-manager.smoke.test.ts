@@ -26,6 +26,9 @@ if (!started.ok) {
   console.warn(`[smoke] skipped: ${started.reason}`);
 }
 
+/** The engine-side bus client's logger: the cases read the scene manager's logs, not its. */
+const quietLogger = { debug() {}, info() {}, warn() {}, error: console.error };
+
 /** An open overlay event stream, read frame by frame. */
 class OverlayStream {
   private readonly frames: StreamFrame[] = [];
@@ -98,7 +101,7 @@ describe.skipIf(!started.ok)("scene manager smoke", () => {
 
   beforeAll(async () => {
     sm = await bootSceneManager(bus.url);
-    engine = await createMessageBus({ url: bus.url, name: "smoke-engine" });
+    engine = await createMessageBus({ url: bus.url, name: "smoke-engine" }, quietLogger);
     await engine.connect();
     // The overlay's session, as a page load mints it; each case below that
     // acts as the overlay uses it.

@@ -1,5 +1,5 @@
 import type { Service } from "@woofx3/common/runtime";
-import { ListCommands, type ListCommandsRequest, type ListCommandsResponse } from "@woofx3/db/command.pb";
+import { type Command, ListCommands, type ListCommandsRequest, type ListCommandsResponse } from "@woofx3/db/command.pb";
 import type { ResponseStatus } from "@woofx3/db/common.pb";
 import { Ping } from "@woofx3/db/common.pb";
 import {
@@ -19,6 +19,7 @@ import {
   RemoveUserFromResource,
   type UserResourceRoleRequest,
 } from "@woofx3/db/permission.pb";
+import type { DbProxyClientConfig } from "@woofx3/db/service-auth";
 import {
   GetSetting,
   type GetSettingRequest,
@@ -26,13 +27,12 @@ import {
   type SetSettingRequest,
   type SettingResponse,
 } from "@woofx3/db/setting.pb";
-import type { ClientConfiguration } from "twirpscript";
 
 export class DatabaseClient {
-  private config: ClientConfiguration;
+  private config: DbProxyClientConfig;
 
-  constructor(baseURL: string) {
-    this.config = { baseURL };
+  constructor(config: DbProxyClientConfig) {
+    this.config = config;
   }
 
   async ping() {
@@ -49,6 +49,22 @@ export class DatabaseClient {
 
   async listCommands(req: ListCommandsRequest): Promise<ListCommandsResponse> {
     return ListCommands(req, this.config);
+  }
+
+  /**
+   * The stored command with engine id `id`, disabled ones included, or null
+   * when there is none. Throws when db-proxy does not answer OK.
+   *
+   * Lists every command and picks one, because db-proxy's GetCommand looks a
+   * command up by name, not id. That costs a full listing per call, which is
+   * acceptable while it only runs on command create, update and delete.
+   */
+  async findCommandById(id: string): Promise<Command | null> {
+    const response = await this.listCommands({ includeDisabled: true });
+    if (response.status?.code !== "OK") {
+      throw new Error(`Failed to list commands: ${response.status?.message ?? "no status"}`);
+    }
+    return response.commands.find((command) => command.id === id) ?? null;
   }
 
   async hasPermission(req: HasPermissionRequest): Promise<ResponseStatus> {
@@ -87,11 +103,11 @@ export default class DatabaseService implements Service<DatabaseClient> {
   client: DatabaseClient;
   connected: boolean;
 
-  constructor(baseURL: string) {
+  constructor(config: DbProxyClientConfig) {
     this.healthcheck = false;
     this.name = "db";
     this.type = "database";
-    this.client = new DatabaseClient(baseURL);
+    this.client = new DatabaseClient(config);
     this.connected = false;
   }
 

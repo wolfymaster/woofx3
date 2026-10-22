@@ -81,10 +81,10 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
 
     const db = ctx.services.db.client;
     const resolver = new OverlayTokenResolver(db, logger);
-    const barkloader = new HttpBarkloaderFrameClient(runtimeConfig.barkloaderUrl, logger);
+    const barkloader = new HttpBarkloaderFrameClient(runtimeConfig.barkloaderUrl, runtimeConfig.barkloaderKey, logger);
     const framing = new FrameCatalog(barkloader, logger, (moduleId) => linkedResources(db, moduleId));
     const host = new OverlayHost(resolver, db, logger, { framing });
-    const mediaProxy = new MediaProxy(runtimeConfig.mediaProxySecret);
+    const mediaProxy = new MediaProxy(runtimeConfig.barkloaderKey);
     const sessionTokens = new SessionTokenService(runtimeConfig.tokenSecret);
 
     const deliveryStore = new DeliveryStore(db, logger);

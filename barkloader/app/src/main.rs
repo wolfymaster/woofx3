@@ -1,4 +1,6 @@
-use crate::services::http_client::{HttpPolicy, ReqwestHttpClient};
+use crate::services::http_client::{
+    HttpClientLimits, HttpPolicy, HttpPolicyMode, ReqwestHttpClient,
+};
 use crate::services::http_storage_client::HttpStorageClient;
 use crate::services::oauth::{OAuthExtension, OAuthService, sealed_setting_writer};
 use crate::services::sandbox_resources::HttpResourceClient;
@@ -6,21 +8,24 @@ use crate::util::{
     get_config_value, get_env_or_default, get_env_or_default_with_key, validate_required_config,
     validate_required_config_keys,
 };
-use actix_web::{App, HttpServer, middleware::Logger, web::Data};
+use actix_web::{App, HttpServer, web::Data};
 use anyhow::Result;
 use lib_module::db_proxy::RequestContext as DbRequestContext;
 use lib_repository::{Repository, RepositoryFactory, RepositoryImpl};
-use lib_sandbox::extensions::{ChatExtension, ObsExtension, TwitchExtension};
-use lib_sandbox::host::noop::{NoopChatSender, NoopNatsRequester, noop_host_context};
-use lib_sandbox::host::{ChatSender, ExtensionRegistry, NatsRequester};
+use lib_sandbox::extensions::{ObsExtension, TwitchExtension};
+use lib_sandbox::host::noop::{NoopNatsRequester, noop_host_context};
+use lib_sandbox::host::{ExtensionRegistry, NatsRequester};
 use lib_sandbox::{ModuleRegistry, SandboxActionRunner, SandboxFactory};
+use middleware::service_auth::{ALLOWED_HOST_CONFIG_KEY, ALLOWED_HOST_ENV_VAR, ServiceAuth};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
 use types::{AppContext, SharedRepository};
+use woofx3_runtime::{SecretError, validate_secret};
 
 mod bundled_modules;
 mod callback;
+mod middleware;
 mod routes;
 mod services;
 mod types;
@@ -89,7 +94,6 @@ async fn setup() -> Result<AppContext> {
         ctx.schedule = scheduler.clone();
         ctx.actions = action_runner.clone();
 
-        let mut chat_sender: Arc<dyn ChatSender> = Arc::new(NoopChatSender);
         let mut requester: Arc<dyn NatsRequester> = Arc::new(NoopNatsRequester);
 
         let messagebus_url =
@@ -104,10 +108,6 @@ async fn setup() -> Result<AppContext> {
                         nats.raw_client().clone(),
                         SERVICE_NAME,
                     ));
-                    chat_sender = Arc::new(crate::services::chat::BusChatSender::new(
-                        nats.clone(),
-                        "twitch",
-                    ));
                     requester = nats.clone();
                     ctx.nats = nats;
                 }
@@ -119,7 +119,7 @@ async fn setup() -> Result<AppContext> {
                 }
             }
         } else {
-            info!("messagebusUrl not set; using noop NATS publisher and noop chat sender");
+            info!("messagebusUrl not set; using noop NATS publisher");
         }
 
         // Resource-instance lifecycle (`ctx.resources.*`) and module storage
@@ -151,15 +151,20 @@ async fn setup() -> Result<AppContext> {
         }
 
         let http_policy = HttpPolicy::from_settings(
-            &get_env_or_default("WOOFX3_MODULE_HTTP", "log"),
-            &get_env_or_default("WOOFX3_MODULE_HTTP_ALLOW_PRIVATE", "false"),
-        )
-        .unwrap_or_else(|reason| panic!("{reason}"));
+            &get_env_or_default("WOOFX3_MODULE_HTTP", ""),
+            &get_env_or_default("WOOFX3_MODULE_HTTP_ALLOW_PRIVATE", ""),
+        )?;
         info!(
             "ctx.http policy: mode={:?} allow_private={}",
             http_policy.mode, http_policy.allow_private
         );
-        ctx.http = Arc::new(ReqwestHttpClient::new(http_policy));
+        if http_policy.mode == HttpPolicyMode::Log {
+            warn!("WOOFX3_MODULE_HTTP=log: modules may reach hosts they were not granted");
+        }
+        ctx.http = Arc::new(ReqwestHttpClient::new(
+            http_policy,
+            HttpClientLimits::from_lookup(|key| get_env_or_default(key, ""))?,
+        ));
 
         let oauth = Arc::new(OAuthService::new(
             registry.clone(),
@@ -169,7 +174,7 @@ async fn setup() -> Result<AppContext> {
         ));
         oauth_service = Some(oauth.clone());
 
-        // Platform integrations (twitch / obs / chat) and `ctx.oauth` are
+        // Platform integrations (twitch / obs) and `ctx.oauth` are
         // bound through the extension registry. Each extension owns its own
         // Arc<dyn …> of the relevant transport, so the runtime adapters stay
         // agnostic to which platforms exist.
@@ -177,7 +182,6 @@ async fn setup() -> Result<AppContext> {
             ExtensionRegistry::new()
                 .with(Arc::new(TwitchExtension::new(requester.clone())))
                 .with(Arc::new(ObsExtension::new(requester)))
-                .with(Arc::new(ChatExtension::new(chat_sender)))
                 .with(Arc::new(OAuthExtension::new(oauth))),
         );
 
@@ -290,6 +294,11 @@ async fn setup() -> Result<AppContext> {
         public_url_resolver,
         oauth: oauth_service,
         frame_cache: Arc::new(services::frame_cache::FrameCache::new()),
+        file_service: Arc::new(services::file_service::FileService::new(
+            &routes::functions::upload_dir(),
+            services::upload_limits::UploadLimits::from_env()?,
+        )?),
+        module_locks: Arc::new(types::ModuleLocks::new()),
     };
 
     Ok(ctx)
@@ -311,6 +320,20 @@ async fn boot_modules(
     .map_err(|e| anyhow::anyhow!("sandbox registry hydrate: {}", e))
 }
 
+/// An engine secret held by `config_key` (or its `env_var`), read through
+/// `lookup(env_var, config_key)`. `barkloaderKey` authenticates the api and
+/// signs upload grants and media proxy URLs; `dbProxyToken` authenticates
+/// barkloader to db-proxy. A blank, placeholder or short value stops startup.
+fn engine_secret(
+    env_var: &str,
+    config_key: &str,
+    lookup: impl Fn(&str, &str) -> String,
+) -> Result<String, SecretError> {
+    let secret = lookup(env_var, config_key);
+    validate_secret(config_key, &secret)?;
+    Ok(secret)
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // Console + file logging always; OpenTelemetry export only when configured.
@@ -323,6 +346,8 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
+    lib_module::load_reserved_subjects_contract();
+
     // Validate required config. Each fatal path drops the guard first so the
     // file and OpenTelemetry sinks flush before the process goes away.
     if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY"]) {
@@ -330,6 +355,53 @@ async fn main() -> std::io::Result<()> {
         drop(logging);
         std::process::exit(1);
     }
+    let config_lookup = |env_var: &str, config_key: &str| {
+        get_env_or_default_with_key(env_var, Some(config_key), "")
+    };
+    let barkloader_key =
+        match engine_secret("WOOFX3_BARKLOADER_KEY", "barkloaderKey", config_lookup) {
+            Ok(secret) => secret,
+            Err(e) => {
+                tracing::error!("{}", e);
+                drop(logging);
+                std::process::exit(1);
+            }
+        };
+    // Every db-proxy call goes through the client this configures, so it is
+    // set up before anything below can dial db-proxy.
+    let db_proxy_auth = engine_secret("WOOFX3_DB_PROXY_TOKEN", "dbProxyToken", config_lookup)
+        .map_err(anyhow::Error::from)
+        .and_then(|token| lib_module::db_proxy::configure_service_auth(&token));
+    if let Err(e) = db_proxy_auth {
+        tracing::error!("{}", e);
+        drop(logging);
+        std::process::exit(1);
+    }
+    let port: u16 = match get_env_or_default("BARKLOADER_PORT", "9653").parse() {
+        Ok(port) if port != 0 => port,
+        Ok(_) => {
+            tracing::error!(
+                "BARKLOADER_PORT must not be 0: the Host allow-list needs the bound port"
+            );
+            drop(logging);
+            std::process::exit(1);
+        }
+        Err(e) => {
+            tracing::error!("BARKLOADER_PORT must be a port number: {}", e);
+            drop(logging);
+            std::process::exit(1);
+        }
+    };
+    let allowed_host =
+        get_env_or_default_with_key(ALLOWED_HOST_ENV_VAR, Some(ALLOWED_HOST_CONFIG_KEY), "");
+    let service_auth = match ServiceAuth::new(&barkloader_key, port, &allowed_host) {
+        Ok(auth) => Arc::new(auth),
+        Err(e) => {
+            tracing::error!("{}", e);
+            drop(logging);
+            std::process::exit(1);
+        }
+    };
     if let Err(e) = validate_required_config_keys(&["databaseProxyUrl"]) {
         tracing::error!("{}", e);
         drop(logging);
@@ -350,13 +422,11 @@ async fn main() -> std::io::Result<()> {
     // setup
     let ctx = setup().await.expect("Failed to complete set up");
 
-    let host = String::from("127.0.0.1");
-    let port = get_env_or_default("BARKLOADER_PORT", "9653");
-    let bind_addr = format!("{}:{}", host, port);
+    let bind_addr = format!("127.0.0.1:{}", port);
 
     // One client for every request, so upstream connections are reused.
     let media_proxy = Data::new(routes::media::MediaProxyService::new(
-        get_env_or_default_with_key("WOOFX3_BARKLOADER_KEY", Some("barkloaderKey"), ""),
+        barkloader_key,
         services::media_proxy::MediaFetcher::new(),
     ));
 
@@ -372,17 +442,8 @@ async fn main() -> std::io::Result<()> {
             // shares the same swappable handle, so a storage reload takes
             // effect here too rather than pinning a stale backend.
             .app_data(Data::new(ctx.repository.clone()))
-            .wrap(Logger::default()) // Use default format
-            .configure(routes::media::configure)
-            .configure(routes::assets::configure)
-            .configure(routes::archives::configure)
-            .configure(routes::resources::configure)
-            .configure(routes::storage::configure)
-            .configure(routes::echo::configure)
-            .configure(routes::websocket::configure)
-            .configure(routes::functions::configure)
-            .configure(routes::oauth::configure)
-            .configure(routes::widgets::configure)
+            .wrap(middleware::access_log())
+            .configure(|cfg| routes::configure(cfg, service_auth.clone()))
     })
     .bind(bind_addr)?
     .shutdown_timeout(5)
@@ -414,4 +475,63 @@ fn stop_on_ctrl_break(server: actix_web::dev::ServerHandle) {
             server.stop(true).await;
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SECRETS: [(&str, &str); 2] = [
+        ("WOOFX3_BARKLOADER_KEY", "barkloaderKey"),
+        ("WOOFX3_DB_PROXY_TOKEN", "dbProxyToken"),
+    ];
+
+    fn lookup_returning(
+        expected: (&'static str, &'static str),
+        value: &'static str,
+    ) -> impl Fn(&str, &str) -> String {
+        move |env_var, config_key| {
+            assert_eq!((env_var, config_key), expected);
+            value.to_string()
+        }
+    }
+
+    #[test]
+    fn test_engine_secret_refuses_unusable_values() {
+        let cases = [
+            ("", "empty"),
+            ("CHANGE_ME", "placeholder"),
+            ("short-key", "too short"),
+        ];
+        for (env_var, config_key) in SECRETS {
+            for (value, label) in cases {
+                let error = engine_secret(
+                    env_var,
+                    config_key,
+                    lookup_returning((env_var, config_key), value),
+                )
+                .expect_err(label);
+                assert!(
+                    error
+                        .to_string()
+                        .contains(&format!("{config_key} ({env_var})")),
+                    "{config_key} {label}: {error}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_engine_secret_returns_a_valid_secret_unchanged() {
+        let secret = "0123456789abcdef0123456789abcdef";
+        for (env_var, config_key) in SECRETS {
+            let value = engine_secret(
+                env_var,
+                config_key,
+                lookup_returning((env_var, config_key), secret),
+            )
+            .unwrap();
+            assert_eq!(value, secret);
+        }
+    }
 }

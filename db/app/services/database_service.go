@@ -15,14 +15,16 @@ type DatabaseService struct {
 	*runtime.BaseService[*gorm.DB]
 	databaseURL string
 	logger      *slog.Logger
+	ids         database.IDSource
 	db          *gorm.DB
 }
 
-func NewDatabaseService(databaseURL string, logger *slog.Logger) *DatabaseService {
+func NewDatabaseService(databaseURL string, logger *slog.Logger, ids database.IDSource) *DatabaseService {
 	return &DatabaseService{
 		BaseService: runtime.NewBaseService[*gorm.DB]("database", "database", nil, false),
 		databaseURL: databaseURL,
 		logger:      logger,
+		ids:         ids,
 	}
 }
 
@@ -31,9 +33,9 @@ func (s *DatabaseService) Connect(ctx context.Context, appCtx *runtime.Applicati
 	if err != nil {
 		return err
 	}
-	s.logger.Info("Connecting to system database", "dialect", parsed.Dialect, "url", s.databaseURL)
+	s.logger.Info("Connecting to system database", "dialect", parsed.Dialect, "target", parsed.LogSafe())
 
-	db, err := database.InitializeDB(s.databaseURL, s.logger)
+	db, err := database.InitializeDB(s.databaseURL, s.logger, s.ids)
 	if err != nil {
 		return err
 	}

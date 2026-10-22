@@ -16,7 +16,7 @@ import (
 // intentionally not applied yet — the alert log is gated by the
 // proxy's existing auth surface.
 func AlertRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMiddleware) {
-	alertRepository := repo.NewAlertRepository(app.Db)
+	alertRepository := repo.NewAlertRepository(app.Db, app.IDs)
 	alertService := svc.NewAlertService(alertRepository, app.EventPublisher)
 	alertHandler := client.NewAlertServiceServer(
 		alertService,

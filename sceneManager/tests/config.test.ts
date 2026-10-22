@@ -14,13 +14,14 @@ writeFileSync(join(publicDir, WIDGET_HOST_SHIM_FILE), "");
 const valid: SceneManagerRuntimeConfig = {
   port: 9101,
   bindHost: "127.0.0.1",
-  tokenSecret: "secret",
+  tokenSecret: "token-secret-0123456789abcdef0123456789",
   rootDir: "/tmp",
   publicDir,
   fontCacheDir: "/tmp/fonts",
   databaseProxyUrl: "http://127.0.0.1:9000",
+  dbProxyToken: "db-proxy-token-0123456789abcdef0123456789",
   barkloaderUrl: "http://127.0.0.1:9653",
-  mediaProxySecret: "media-secret",
+  barkloaderKey: "media-secret-0123456789abcdef0123456789",
   requestGuard: OPEN_REQUEST_GUARD_POLICY,
   obs: { host: "127.0.0.1", port: "4455" },
   nats: { url: "ws://127.0.0.1:4225", name: "scene-manager" },
@@ -41,6 +42,24 @@ describe("validateConfig", () => {
       expect(() => validateConfig(config)).toThrow(field);
     }
   });
+});
+
+describe("validateConfig secrets", () => {
+  for (const [field, setting, value] of [
+    ["tokenSecret", "sceneManagerTokenSecret", ""],
+    ["tokenSecret", "sceneManagerTokenSecret", "CHANGE_ME"],
+    ["tokenSecret", "sceneManagerTokenSecret", "short-secret"],
+    ["barkloaderKey", "barkloaderKey", ""],
+    ["barkloaderKey", "barkloaderKey", "CHANGE_ME"],
+    ["barkloaderKey", "barkloaderKey", "short-secret"],
+    ["dbProxyToken", "dbProxyToken", ""],
+    ["dbProxyToken", "dbProxyToken", "CHANGE_ME"],
+    ["dbProxyToken", "dbProxyToken", "short-secret"],
+  ] as const) {
+    it(`refuses ${field} = "${value}"`, () => {
+      expect(() => validateConfig({ ...valid, [field]: value })).toThrow(setting);
+    });
+  }
 });
 
 describe("message bus token", () => {

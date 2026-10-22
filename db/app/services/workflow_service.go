@@ -141,7 +141,6 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 	// whatever the streamer has since switched it to.
 	moduleOwned := createdByType == "MODULE" && req.ManifestId != ""
 	wf := &models.WorkflowDefinition{
-		ID:            uuid.New(),
 		Name:          req.Name,
 		Steps:         stepsJSON,
 		Trigger:       triggerJSON,
@@ -388,7 +387,6 @@ func (s *workflowService) ExecuteWorkflow(ctx context.Context, req *client.Execu
 	}
 
 	exec := &models.WorkflowExecution{
-		ID:         uuid.New(),
 		WorkflowID: workflowID,
 		UserID:     startedByID,
 		Status:     models.WorkflowStatusPending,
@@ -663,7 +661,6 @@ func (s *workflowService) RecordWorkflowRunStep(ctx context.Context, req *client
 	}
 
 	step := &models.WorkflowExecutionStep{
-		ID:          uuid.New(),
 		ExecutionID: executionID,
 		TaskID:      req.TaskId,
 		Name:        req.Name,

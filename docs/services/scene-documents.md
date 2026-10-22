@@ -168,6 +168,18 @@ makes around it; the engine checks those edits again. `compositionJsonSchema`
 emits the registry's rules as a JSON Schema (draft 2020-12) for checking a
 composition without this code, such as one a module ships.
 
+Whatever the registry, the keys an op names are checked before anything is
+applied (`invalidOps` in `@woofx3/api/scene-editor/document`). A layout key
+or an entry id is 1 to 128 letters, digits, `_`, `.`, `:` or `-`
+(`isSafeKey`); a key in a freeform or keyed field is 1 to 128 characters of
+any kind, since widget manifests choose their settings keys. No path
+segment, and no key at any depth of an inserted value, may be `__proto__`,
+`prototype` or `constructor`: json0 follows paths with plain property
+reads, so such a key would reach a prototype the whole process shares.
+`applyOps` also walks each component's path against the document before
+applying it and throws when a step is not a property the document owns, so
+an inherited name only the document reveals is refused too.
+
 ## Sequencing
 
 Every change to a scene goes through one serial queue per scene and the

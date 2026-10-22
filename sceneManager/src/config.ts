@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parseRequestGuardPolicy, type RequestGuardPolicy, resolveExposure } from "@woofx3/common/http/request-guard";
-import { dataDir, loadRuntimeEnv } from "@woofx3/common/runtime";
+import { dataDir, loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
+import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
 import { z } from "zod";
 
@@ -11,8 +12,8 @@ export const SceneManagerEnvSchema = z.object({
   // exposure in dev) is the public surface, never assumed here.
   woofx3SceneManagerHost: z.string().default("127.0.0.1"),
   // HS256 signing secret for the short-lived session JWT minted at
-  // `GET /scene/{sceneId}`. Required — fail fast rather than run with
-  // an absent/guessable secret.
+  // `GET /scene/{sceneId}`. Required and checked by validateConfig: fail
+  // fast rather than run with an absent or guessable secret.
   woofx3SceneManagerTokenSecret: z.string().optional(),
   woofx3RootPath: z.string().optional(),
   woofx3MessagebusUrl: z.string().default("ws://localhost:4225"),
@@ -35,6 +36,7 @@ export const SceneManagerEnvSchema = z.object({
   woofx3SceneManagerUrl: z.string().optional(),
   // True where the edge listens beyond loopback and forwards to sceneManager; the production image sets it.
   woofx3BehindEdge: z.boolean().optional(),
+  woofx3DbProxyToken: z.string().optional(),
 });
 
 export interface SceneManagerRuntimeConfig {
@@ -46,9 +48,14 @@ export interface SceneManagerRuntimeConfig {
   /** Where Google Fonts families are kept once fetched (see google-font-cache.ts). */
   fontCacheDir: string;
   databaseProxyUrl: string;
+  /** Service token db-proxy requires of every caller. */
+  dbProxyToken: string;
   barkloaderUrl: string;
-  /** Signs the media proxy URLs barkloader verifies (scene/media-proxy.ts). */
-  mediaProxySecret: string;
+  /**
+   * The engine secret: signs the media proxy URLs barkloader verifies
+   * (scene/media-proxy.ts) and authenticates to barkloader's management routes.
+   */
+  barkloaderKey: string;
   /** Which Host and Origin headers the HTTP server accepts, with their defaults resolved. */
   requestGuard: RequestGuardPolicy;
   /**
@@ -78,18 +85,14 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
   if (!config.bindHost) {
     throw new Error("sceneManager: bindHost must not be empty (WOOFX3_SCENE_MANAGER_HOST)");
   }
-  if (!config.tokenSecret) {
-    throw new Error(
-      "sceneManager: tokenSecret is required (WOOFX3_SCENE_MANAGER_TOKEN_SECRET) — refusing to mint session tokens with no secret"
-    );
-  }
+  // Session and editor tokens are signed with tokenSecret, and media proxy
+  // URLs and barkloader requests with barkloaderKey: a guessable secret lets
+  // anyone forge any of them.
+  assertSecret("sceneManagerTokenSecret", config.tokenSecret);
+  assertSecret("barkloaderKey", config.barkloaderKey);
+  assertSecret(DB_PROXY_TOKEN_CONFIG_KEY, config.dbProxyToken);
   if (!config.barkloaderUrl) {
     throw new Error("sceneManager: barkloaderUrl must not be empty (WOOFX3_BARKLOADER_URL)");
-  }
-  if (!config.mediaProxySecret) {
-    throw new Error(
-      "sceneManager: barkloaderKey is required (WOOFX3_BARKLOADER_KEY) — external media in widget settings is signed with it"
-    );
   }
   try {
     new URL(config.barkloaderUrl);
@@ -116,6 +119,13 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
   const shimPath = join(config.publicDir, WIDGET_HOST_SHIM_FILE);
   if (!existsSync(shimPath)) {
     throw new Error(`sceneManager: widget host shim not found at ${shimPath} -- run \`bun run build:shim\``);
+  }
+}
+
+function assertSecret(name: string, value: string): void {
+  const result = validateSecret(name, value);
+  if (!result.ok) {
+    throw new Error(`sceneManager: ${result.error.message}`);
   }
 }
 
@@ -167,8 +177,9 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const obsToken = c.woofx3ObsRpcToken ? String(c.woofx3ObsRpcToken) : undefined;
 
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? "");
+  const dbProxyToken = String(c.woofx3DbProxyToken ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? "http://127.0.0.1:9653");
-  const mediaProxySecret = String(c.woofx3BarkloaderKey ?? "");
+  const barkloaderKey = String(c.woofx3BarkloaderKey ?? "");
   const publicUrl = nonBlank(c.woofx3SceneManagerUrl);
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: c.woofx3AllowedHosts,
@@ -188,8 +199,9 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     // The cache is written at runtime, so it follows the data directory when there is one.
     fontCacheDir: join(dataDir() ?? rootDir, "cache", "fonts"),
     databaseProxyUrl,
+    dbProxyToken,
     barkloaderUrl,
-    mediaProxySecret,
+    barkloaderKey,
     requestGuard,
     obs: {
       host: obsHost,
