@@ -59,6 +59,8 @@ describe("ApiGateway.registerClient", () => {
       description: "test-ui",
       callbackUrl: "http://cb",
       callbackToken: "tok",
+      kind: "CLIENT_KIND_REGISTERED",
+      origin: "",
     });
     // The new callback is picked up without a restart.
     expect(listClients).toHaveBeenCalledTimes(1);

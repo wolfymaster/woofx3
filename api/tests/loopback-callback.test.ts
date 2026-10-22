@@ -95,6 +95,8 @@ describe("a dashboard client with a loopback callback URL", () => {
       description: "desktop shell",
       callbackUrl: url,
       callbackToken: "shell-token",
+      kind: "CLIENT_KIND_REGISTERED",
+      origin: "",
     });
     expect(webhooks.clientIds()).toEqual(["shell"]);
   });
