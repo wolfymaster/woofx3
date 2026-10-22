@@ -1,8 +1,8 @@
-import type { Adapter, AdapterFactory } from "./adapter";
+import type { Adapter, AdapterModule } from "./adapter";
 import { ADAPTER_IDS, type AdapterId } from "./adapter-ids";
 import { subjectCovered } from "./scoped-bus";
 
-export type AdapterLoader = () => Promise<AdapterFactory>;
+export type AdapterLoader = () => Promise<AdapterModule>;
 
 export type AdapterRegistry = Partial<Record<AdapterId, AdapterLoader>>;
 
@@ -12,14 +12,21 @@ export type AdapterRegistry = Partial<Record<AdapterId, AdapterLoader>>;
  */
 export const ADAPTERS: AdapterRegistry = {};
 
+export interface LoadedAdapters {
+  adapters: Map<AdapterId, Adapter>;
+  /** Each adapter module's host state, undefined for a module without one. */
+  hostStates: Map<AdapterId, unknown>;
+}
+
 /**
- * Loads every registered adapter, once. Fails startup when an entry names an
+ * Loads every registered adapter, once, building its host state first. Fails startup when an entry names an
  * id the host does not know, or builds an adapter whose manifest claims a
  * different id or subscribes to a subject it serves. The host alone holds
  * served subjects; an adapter subscribed to one would race the host's answer.
  */
-export async function loadAdapters(registry: AdapterRegistry): Promise<Map<AdapterId, Adapter>> {
+export async function loadAdapters(registry: AdapterRegistry): Promise<LoadedAdapters> {
   const adapters = new Map<AdapterId, Adapter>();
+  const hostStates = new Map<AdapterId, unknown>();
   for (const [key, load] of Object.entries(registry)) {
     const id = ADAPTER_IDS.find((known) => known === key);
     if (id === undefined) {
@@ -28,7 +35,9 @@ export async function loadAdapters(registry: AdapterRegistry): Promise<Map<Adapt
     if (load === undefined) {
       throw new Error(`the adapter registry entry for "${id}" has no loader`);
     }
-    const adapter = (await load())();
+    const module = await load();
+    const hostState = module.hostState === undefined ? undefined : module.hostState();
+    const adapter = module.create(hostState);
     if (adapter.manifest.id !== id) {
       throw new Error(`the adapter registered as "${id}" says its id is "${adapter.manifest.id}"`);
     }
@@ -41,6 +50,7 @@ export async function loadAdapters(registry: AdapterRegistry): Promise<Map<Adapt
       }
     }
     adapters.set(id, adapter);
+    hostStates.set(id, hostState);
   }
-  return adapters;
+  return { adapters, hostStates };
 }

@@ -115,6 +115,29 @@ Each served subject declares its own `budgetMs`, set below the timeout its
 callers use, so a held request is answered before the caller gives up. There is
 no host-wide budget.
 
+### Subjects that answer in every state
+
+A served subject can set `availability: "always"` (the default is
+`"whenRunning"`, the table above). The host then calls its `handle` whatever the
+adapter's state, without holding the request, so a request is never lost while
+the adapter is stopped, parked or restarting. A `handle` that throws still
+counts as a served error and gets `unavailableReply`.
+
+State such a subject must keep lives in the adapter module's host state. A
+registry entry loads an `AdapterModule`:
+
+```ts
+{
+  hostState(): S,            // optional; runs once at host startup
+  create(hostState: S): Adapter,
+}
+```
+
+The host keeps the host state for the life of the process and passes it to
+`create` and to every `handle` as `ctx.hostState`. It survives adapter stops
+and restarts, so anything written while the adapter was down is there when it
+starts again. A module without `hostState` gets `undefined`.
+
 ### Serving a subject from host code
 
 Every request the host answers goes through one helper,
@@ -205,7 +228,8 @@ fix what parked it.
       "changedAt": "2026-10-21T11:58:00.000Z",
       "link": { "connected": true, "enabled": true },
       "counts": { "starts": 5, "failures": 5, "faults": 0, "servedErrors": 0, "stopTimeouts": 0 },
-      "bus": { "refusals": 0, "subscriptions": {} }
+      "bus": { "refusals": 0, "subscriptions": {} },
+      "detail": null
     }
   ],
   "counters": {
@@ -214,6 +238,12 @@ fix what parked it.
   }
 }
 ```
+
+`detail` is whatever the adapter's optional `detail()` returns, for facts worth
+seeing at a glance, and `null` when it has none or it throws (the throw is logged
+once). The host replaces the value of any key whose name contains `password`,
+`token`, `ticket` or `credential` (any case, at any depth) with `"[redacted]"`.
+Adapters must still keep secrets out of `detail()`.
 
 Any other path or method answers `404` with
 `{"error": {"code": "not_found", "message": "..."}}`.

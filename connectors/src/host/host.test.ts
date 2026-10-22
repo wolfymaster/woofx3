@@ -44,6 +44,7 @@ async function setup(served: ServedSubject = twitchapi, env: Record<string, unkn
     busConnected: () => true,
     settings,
     adapters: new Map([["twitch", adapter]]),
+    hostStates: new Map(),
     readers: LINK_READERS,
     clock: time,
     random: halfRandom,

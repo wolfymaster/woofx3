@@ -28,6 +28,7 @@ export interface HostDeps {
   busConnected: () => boolean;
   settings: SettingsReader;
   adapters: ReadonlyMap<AdapterId, Adapter>;
+  hostStates: ReadonlyMap<AdapterId, unknown>;
   readers: LinkReaderRegistry;
   clock: Clock;
   random: RandomSource;
@@ -96,6 +97,7 @@ export class Host {
       requests: this.requests,
       scope: this.scope,
       adapters: this.supervisor,
+      hostStates: deps.hostStates,
       logger: deps.logger,
     });
     this.watcher = new SettingsWatcher({

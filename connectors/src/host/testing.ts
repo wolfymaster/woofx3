@@ -211,6 +211,7 @@ export class FakeAdapter implements Adapter {
   defaultStart: Step = "resolve";
   stopStep: "resolve" | "hang" = "resolve";
   lastContext: AdapterContext | undefined;
+  detail?: () => Record<string, unknown>;
   private release: (() => void) | undefined;
 
   constructor(id: AdapterId = "twitch", serves: ServedSubject[] = []) {
