@@ -228,8 +228,9 @@ export interface ConfigField {
    */
   missingText?: string;
   /**
-   * Shown only while a sibling holds one of the listed values. A hidden
-   * field's value is dropped on save and its `required` does not apply.
+   * Shown only while a sibling holds one of the listed values. A consumer
+   * must drop a hidden field's value on save and skip its `required`.
+   * Stored field lists carry `null` for an absent condition.
    * Engines that predate this property refuse the manifest at install.
    */
   visibleWhen?: VisibleWhen;
@@ -243,7 +244,7 @@ export interface ConfigField {
  */
 export function isFieldVisible(field: ConfigField, values: Readonly<Record<string, unknown>>): boolean {
   const condition = field.visibleWhen;
-  if (condition === undefined) {
+  if (condition == null) {
     return true;
   }
   const current = values[condition.field];

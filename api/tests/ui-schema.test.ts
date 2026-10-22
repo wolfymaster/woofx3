@@ -7,6 +7,7 @@ import {
   isFieldVisible,
   mergePinnedOptions,
   parseDataShape,
+  parseFieldList,
 } from "@woofx3/api/ui-schema";
 
 // parseDataShape is the one place that decides whether a trigger's `emits` /
@@ -201,5 +202,11 @@ describe("isFieldVisible", () => {
 
   test.each(cases)("%s", (_name, field, values, expected) => {
     expect(isFieldVisible(field, values)).toBe(expected);
+  });
+
+  test("a stored field list carries null for an absent condition", () => {
+    const stored = JSON.stringify([{ id: "color", label: "Colour", type: "text", visibleWhen: null }]);
+    const [field] = parseFieldList(stored);
+    expect(isFieldVisible(field, {})).toBe(true);
   });
 });
