@@ -4448,6 +4448,22 @@ mod tests {
     }
 
     #[test]
+    fn rejects_an_unknown_command_role() {
+        let json = r#"{
+            "id": "test_mod", "name": "Test Mod", "version": "1.0.0",
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix",
+                "requiredRole": "admin" }]
+        }"#;
+        let err = serde_json::from_str::<ModuleManifest>(json)
+            .expect_err("an unknown requiredRole must not parse")
+            .to_string();
+        assert!(
+            err.contains("admin") && err.contains("moderator") && err.contains("everyone"),
+            "the refusal names the bad role and the roles it accepts: {err}"
+        );
+    }
+
+    #[test]
     fn rejects_an_unknown_key_on_an_option() {
         let json = r#"{
             "id": "test_mod", "name": "Test Mod", "version": "1.0.0",

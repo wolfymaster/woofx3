@@ -31,7 +31,9 @@ same file; webhook event types live in `shared/clients/typescript/api/webhooks.t
   belong to one of the command's `groupIds` or be listed in its
   `usernames`). A restricted command with empty `groupIds`/`usernames`
   is invocable by no one — the UI should warn on save if that combination
-  is reached, since it's very likely a mistake.
+  is reached, since it's very likely a mistake. A command created without a
+  visibility is restricted, and any other value is refused with
+  `invalid_argument`.
 - **Cooldown**: seconds between invocations of a command, enforced
   per-command (not per-user). `0` means never throttle. A throttled
   invocation is dropped silently in chat — there's nothing for the UI to

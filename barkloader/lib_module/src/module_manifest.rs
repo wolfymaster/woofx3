@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use tracing::{info, warn};
 
+use super::db_proxy::CommandAccess;
 use super::module_file::ModuleFile;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -542,8 +543,54 @@ pub struct ManifestCommand {
     /// Mutually exclusive with `workflow`.
     #[serde(default)]
     pub actions: Vec<ManifestWorkflowStep>,
+    /// The least chat role that may invoke the command. A command without
+    /// one is open to everyone in chat.
     #[serde(default)]
-    pub required_role: Option<String>,
+    pub required_role: Option<RequiredRole>,
+}
+
+/// The least chat role a viewer needs to invoke a module command. Roles form
+/// a ladder, highest first: a role admits itself and every role above it, so
+/// a moderator command is open to the broadcaster too. An unknown role fails
+/// to parse, so a manifest can never ask for a role the engine would not
+/// enforce.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RequiredRole {
+    Broadcaster,
+    /// `mod` is the spelling the module docs once gave as an example.
+    #[serde(alias = "mod")]
+    Moderator,
+    Vip,
+    Subscriber,
+    Follower,
+    /// `public` is the spelling the module docs once gave as an example.
+    #[serde(alias = "public")]
+    Everyone,
+}
+
+impl RequiredRole {
+    /// The access the command is registered with: the built-in groups whose
+    /// members may invoke it, or public for `Everyone`. Group names must match
+    /// the built-in groups seeded by db (db/database/models/builtin_groups.go).
+    pub fn command_access(self) -> CommandAccess {
+        match self {
+            RequiredRole::Broadcaster => CommandAccess::Groups(&["broadcaster"]),
+            RequiredRole::Moderator => CommandAccess::Groups(&["moderator", "broadcaster"]),
+            RequiredRole::Vip => CommandAccess::Groups(&["vip", "moderator", "broadcaster"]),
+            RequiredRole::Subscriber => {
+                CommandAccess::Groups(&["subscriber", "vip", "moderator", "broadcaster"])
+            }
+            RequiredRole::Follower => CommandAccess::Groups(&[
+                "follower",
+                "subscriber",
+                "vip",
+                "moderator",
+                "broadcaster",
+            ]),
+            RequiredRole::Everyone => CommandAccess::Public,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1737,6 +1784,14 @@ impl ManifestCommand {
         self.pattern.strip_prefix('!').unwrap_or(&self.pattern)
     }
 
+    /// Who may invoke the command when it is first registered. A command
+    /// without a `requiredRole` is public, so a manifest that never named a
+    /// role keeps working for everyone in chat.
+    pub fn command_access(&self) -> CommandAccess {
+        self.required_role
+            .map_or(CommandAccess::Public, RequiredRole::command_access)
+    }
+
     /// Registers the command with the actions the manifest declared for it.
     ///
     /// `resolved_workflow` is the canonical id of the workflow the command
@@ -1789,13 +1844,14 @@ impl ManifestCommand {
         };
         let actions_json = serde_json::to_string(&actions)?;
 
+        let access = self.command_access();
         db_proxy
-            .register_command(command_name, &actions_json, module_name)
+            .register_command(command_name, &actions_json, module_name, access)
             .await?;
 
         info!(
-            "Registered command: {} [{}] (pattern={}, workflow={:?})",
-            self.name, self.id, self.pattern, resolved_workflow,
+            "Registered command: {} [{}] (pattern={}, workflow={:?}, access={:?})",
+            self.name, self.id, self.pattern, resolved_workflow, access,
         );
         Ok(())
     }
@@ -3006,6 +3062,97 @@ mod tests {
         assert_eq!(
             typescript_mirror("COMPARISON_OPERATORS"),
             COMPARISON_OPERATORS.to_vec()
+        );
+    }
+
+    fn command_with_role(role: Option<&str>) -> ManifestCommand {
+        let role = role.map_or(String::new(), |r| format!(r#", "requiredRole": "{r}""#));
+        serde_json::from_str(&format!(
+            r#"{{ "id": "c1", "name": "C1", "pattern": "!vanish", "type": "prefix", "workflow": "w1"{role} }}"#
+        ))
+        .expect("command parses")
+    }
+
+    #[test]
+    fn required_role_admits_its_role_and_every_role_above() {
+        let cases = [
+            ("broadcaster", CommandAccess::Groups(&["broadcaster"])),
+            (
+                "moderator",
+                CommandAccess::Groups(&["moderator", "broadcaster"]),
+            ),
+            ("mod", CommandAccess::Groups(&["moderator", "broadcaster"])),
+            (
+                "vip",
+                CommandAccess::Groups(&["vip", "moderator", "broadcaster"]),
+            ),
+            (
+                "subscriber",
+                CommandAccess::Groups(&["subscriber", "vip", "moderator", "broadcaster"]),
+            ),
+            (
+                "follower",
+                CommandAccess::Groups(&[
+                    "follower",
+                    "subscriber",
+                    "vip",
+                    "moderator",
+                    "broadcaster",
+                ]),
+            ),
+            ("everyone", CommandAccess::Public),
+            ("public", CommandAccess::Public),
+        ];
+        for (role, want) in cases {
+            assert_eq!(
+                command_with_role(Some(role)).command_access(),
+                want,
+                "{role}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_command_without_a_required_role_is_public() {
+        assert_eq!(
+            command_with_role(None).command_access(),
+            CommandAccess::Public
+        );
+    }
+
+    #[tokio::test]
+    async fn register_sends_the_access_its_required_role_names() {
+        let db_proxy = super::super::db_proxy_client::FakeDbProxyClient::new();
+        command_with_role(Some("moderator"))
+            .register(
+                "modtools",
+                &db_proxy,
+                Some("modtools:workflow:w1"),
+                &[],
+                &HashMap::new(),
+            )
+            .await
+            .expect("register");
+        command_with_role(None)
+            .register(
+                "modtools",
+                &db_proxy,
+                Some("modtools:workflow:w1"),
+                &[],
+                &HashMap::new(),
+            )
+            .await
+            .expect("register");
+
+        assert_eq!(
+            db_proxy.registered_access(),
+            vec![
+                (
+                    "vanish".to_string(),
+                    CommandAccess::Groups(&["moderator", "broadcaster"])
+                ),
+                ("vanish".to_string(), CommandAccess::Public),
+            ]
         );
     }
 }

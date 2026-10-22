@@ -75,7 +75,7 @@ The manifest uses **camelCase** JSON keys. All top-level sections are optional *
       "pattern": "!clip",
       "type": "prefix",
       "workflow": "create_clip_workflow",
-      "requiredRole": "public"
+      "requiredRole": "everyone"
     }
   ],
   "workflows": [
@@ -807,7 +807,15 @@ A module's `actions[]` list is not "things modules add to the engine." It's "con
 | `type` | string | yes | One of `prefix`, `exact`, `regex`. |
 | `actions` | array | no | The actions the command runs, in order. Each entry has the same shape as a workflow step (`id`, `action`, `parameters`, `dependsOn`); `action` names an action in the same manifest by `id`, or another module's by canonical id. Stored as the command's actions exactly as declared. Mutually exclusive with `workflow`. |
 | `workflow` | string | no | Reference to a workflow the command runs as its one action (use the workflow's `id`; resolved to its canonical id at install). Mutually exclusive with `actions`. |
-| `requiredRole` | string | no | Minimum role required to invoke (e.g. `public`, `subscriber`, `mod`). |
+| `requiredRole` | string | no | The least chat role that may invoke the command: `broadcaster`, `moderator`, `vip`, `subscriber`, `follower` or `everyone` (`mod` and `public` are accepted as spellings of `moderator` and `everyone`). Any other value refuses the manifest. Without it the command is open to everyone. |
+
+`requiredRole` sets who may use the command when it is first registered.
+Roles form a ladder, highest first, and a role admits itself and every role
+above it: a `subscriber` command is open to subscribers, VIPs, moderators and
+the broadcaster. The command is registered restricted to those built-in
+groups; `everyone` registers it public. Once registered the command belongs to
+the streamer, who may change who can use it, and reinstalling the module keeps
+their choice.
 
 A command declaring neither `actions` nor `workflow` runs nothing itself; it
 still matches and still publishes `chat.command.<slug>` for workflows listening

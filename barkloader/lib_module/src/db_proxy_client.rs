@@ -20,10 +20,10 @@ use async_trait::async_trait;
 use super::manifest_validate::InstallProvenance;
 
 use super::db_proxy::{
-    self, ActionInputJson, AssetInputJson, BackgroundTaskInputJson, CreateModuleFunctionJson,
-    MarketplaceOrigin, ModuleCommandRow, ModuleRecord, ModuleSettingJson, RequestContext,
-    ResolvedActionRef, ResourceInstanceJson, ResourceUsage, SettingInputJson, TriggerInputJson,
-    WidgetInputJson,
+    self, ActionInputJson, AssetInputJson, BackgroundTaskInputJson, CommandAccess,
+    CreateModuleFunctionJson, MarketplaceOrigin, ModuleCommandRow, ModuleRecord, ModuleSettingJson,
+    RequestContext, ResolvedActionRef, ResourceInstanceJson, ResourceUsage, SettingInputJson,
+    TriggerInputJson, WidgetInputJson,
 };
 
 // async-trait marks each method it rewrites `#[must_use]`, and its boxed
@@ -167,12 +167,15 @@ pub trait ModuleDbProxy: Send + Sync {
         request: woofx3::db::workflow::CreateWorkflowRequest,
     ) -> Result<()>;
     /// `actions_json` is the JSON array of actions the command runs, in order
-    /// -- the same shape a workflow's steps have.
+    /// -- the same shape a workflow's steps have. `access` applies only when
+    /// the command is new; a command the module registered before keeps the
+    /// access the streamer gave it.
     async fn register_command(
         &self,
         command: &str,
         actions_json: &str,
         module_name: &str,
+        access: CommandAccess,
     ) -> Result<()>;
 
     // install-status notification + read queries the HTTP routes need
@@ -529,8 +532,9 @@ impl ModuleDbProxy for HttpDbProxyClient {
         command: &str,
         actions_json: &str,
         module_name: &str,
+        access: CommandAccess,
     ) -> Result<()> {
-        db_proxy::create_command(&self.base_url, command, actions_json, module_name).await
+        db_proxy::create_command(&self.base_url, command, actions_json, module_name, access).await
     }
 
     async fn complete_module_install(
@@ -639,6 +643,8 @@ mod test_support {
         failing_command: Option<&'static str>,
         /// `(command, actions_json)` for every `register_command`, in order.
         registered_commands: Mutex<Vec<(String, String)>>,
+        /// `(command, access)` for every `register_command`, in order.
+        registered_access: Mutex<Vec<(String, CommandAccess)>>,
         /// Every `register_workflow` request, in order.
         registered_workflows: Mutex<Vec<woofx3::db::workflow::CreateWorkflowRequest>>,
         /// What `list_modules` answers: the modules already installed.
@@ -664,6 +670,7 @@ mod test_support {
                 commands: Mutex::new(Vec::new()),
                 failing_command: None,
                 registered_commands: Mutex::new(Vec::new()),
+                registered_access: Mutex::new(Vec::new()),
                 registered_workflows: Mutex::new(Vec::new()),
                 installed: Mutex::new(Vec::new()),
                 settings: Mutex::new(Default::default()),
@@ -738,6 +745,13 @@ mod test_support {
             self.registered_commands
                 .lock()
                 .expect("registered_commands mutex poisoned")
+                .clone()
+        }
+
+        pub fn registered_access(&self) -> Vec<(String, CommandAccess)> {
+            self.registered_access
+                .lock()
+                .expect("registered_access mutex poisoned")
                 .clone()
         }
 
@@ -1057,12 +1071,17 @@ mod test_support {
             command: &str,
             actions_json: &str,
             _module_name: &str,
+            access: CommandAccess,
         ) -> Result<()> {
             self.record("register_command")?;
             self.registered_commands
                 .lock()
                 .expect("registered_commands mutex poisoned")
                 .push((command.to_string(), actions_json.to_string()));
+            self.registered_access
+                .lock()
+                .expect("registered_access mutex poisoned")
+                .push((command.to_string(), access));
             if self.failing_command == Some(command) {
                 return Err(anyhow!(
                     "FakeDbProxyClient: injected failure registering command {}",
