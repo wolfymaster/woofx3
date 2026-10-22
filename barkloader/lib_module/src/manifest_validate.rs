@@ -1986,6 +1986,43 @@ fn refuse_any_text(fields: &[ManifestConfigField], context: &str) -> Result<()> 
     Ok(())
 }
 
+/// A select's `options` are distinct values. Without a `source` they are the
+/// whole list, so the default must be one of them. With a `source` they are
+/// pinned entries the form lists ahead of the fetched ones, and the default
+/// may name a fetched value the manifest cannot know, so it is only required
+/// to be text.
+fn validate_select_options(field: &ManifestConfigField, context: &str) -> Result<()> {
+    let options = field.options.as_deref().unwrap_or_default();
+    let mut seen: HashSet<&str> = HashSet::with_capacity(options.len());
+    for option in options {
+        if !seen.insert(option.value.as_str()) {
+            return Err(anyhow!(
+                "{context}: option value {:?} is listed twice",
+                option.value
+            ));
+        }
+    }
+    if field.source.is_some() {
+        if let Some(default) = &field.default_value
+            && !default.is_string()
+        {
+            return Err(anyhow!(
+                "{context}: `defaultValue` {default} must be a string; a select's values are text"
+            ));
+        }
+        return Ok(());
+    }
+    match field.default_value.as_ref().and_then(|d| d.as_str()) {
+        Some(default) if seen.contains(default) => Ok(()),
+        Some(default) => Err(anyhow!(
+            "{context}: `defaultValue` {default:?} is not one of the `options`"
+        )),
+        None => Err(anyhow!(
+            "{context}: a `select` without a `source` needs a `defaultValue` that is one of its `options`"
+        )),
+    }
+}
+
 fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<()> {
     let mut seen: HashSet<&str> = HashSet::with_capacity(fields.len());
     for (i, field) in fields.iter().enumerate() {
@@ -2012,6 +2049,9 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
             return Err(anyhow!(
                 "{context} field #{i} ({id}): `select` needs `options` or a `source`"
             ));
+        }
+        if field.field_type == "select" {
+            validate_select_options(field, &format!("{context} field #{i} ({id})"))?;
         }
         if field.field_type == "resource_ref" {
             let Some(kind) = field.resource_kind.as_deref() else {
@@ -3623,6 +3663,106 @@ mod tests {
                 "schema": [{{ "id": "pick", "label": "Pick", "type": "select", "source": {descriptor} }}] }}],
             "functions": [{{ "id": "f", "name": "F", "runtime": "js", "path": "f.js" }}]}}"#
         ))
+    }
+
+    fn action_with_select(select_extras: &str) -> ModuleManifest {
+        parse(&format!(
+            r#"{{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "actions": [{{ "id": "a", "name": "A", "type": "function", "function": "f",
+                "schema": [{{ "id": "platform", "label": "Platform", "type": "select", {select_extras} }}] }}],
+            "functions": [{{ "id": "f", "name": "F", "runtime": "js", "path": "f.js" }}]}}"#
+        ))
+    }
+
+    const PINNED_PLATFORM_OPTIONS: &str = r#""options": [
+        { "value": "origin", "label": "Where it came from" },
+        { "value": "all", "label": "Everywhere" }]"#;
+    const OWN_FIELD_OPTIONS_SOURCE: &str = r#""source": { "kind": "internal", "request": {
+        "event": "barkloader.module.field_options",
+        "payload": { "moduleId": "mod", "functionId": "f" } } }"#;
+
+    #[test]
+    fn test_select_options_pinned_beside_an_internal_source_validate() {
+        validate(&action_with_select(&format!(
+            r#""defaultValue": "origin", {PINNED_PLATFORM_OPTIONS}, {OWN_FIELD_OPTIONS_SOURCE}"#
+        )))
+        .expect("pinned origin and all may sit beside a source");
+    }
+
+    #[test]
+    fn test_select_options_duplicate_values_are_refused() {
+        for extras in [
+            r#""defaultValue": "a", "options": [
+                { "value": "a", "label": "A" }, { "value": "a", "label": "Again" }]"#
+                .to_string(),
+            format!(
+                r#""defaultValue": "a", "options": [
+                    {{ "value": "a", "label": "A" }}, {{ "value": "a", "label": "Again" }}], {OWN_FIELD_OPTIONS_SOURCE}"#
+            ),
+        ] {
+            let err = validate(&action_with_select(&extras))
+                .expect_err("a value listed twice is ambiguous")
+                .to_string();
+            assert!(err.contains("is listed twice"), "{extras}: {err}");
+        }
+    }
+
+    #[test]
+    fn test_select_default_without_a_source_must_be_an_option() {
+        for (extras, expected) in [
+            (
+                format!(r#""defaultValue": "nowhere", {PINNED_PLATFORM_OPTIONS}"#),
+                "is not one of the `options`",
+            ),
+            (
+                format!(r#""defaultValue": 3, {PINNED_PLATFORM_OPTIONS}"#),
+                "needs a `defaultValue`",
+            ),
+            (
+                PINNED_PLATFORM_OPTIONS.to_string(),
+                "needs a `defaultValue`",
+            ),
+        ] {
+            let err = validate(&action_with_select(&extras))
+                .expect_err("a static select needs a default it can show")
+                .to_string();
+            assert!(err.contains(expected), "{extras}: {err}");
+        }
+        validate(&action_with_select(&format!(
+            r#""defaultValue": "all", {PINNED_PLATFORM_OPTIONS}"#
+        )))
+        .expect("a default among the options is fine");
+    }
+
+    #[test]
+    fn test_select_default_with_a_source_must_be_a_string() {
+        let err = validate(&action_with_select(&format!(
+            r#""defaultValue": 7, {OWN_FIELD_OPTIONS_SOURCE}"#
+        )))
+        .expect_err("select values are text")
+        .to_string();
+        assert!(err.contains("must be a string"), "{err}");
+        validate(&action_with_select(&format!(
+            r#""defaultValue": "fetched-later", {OWN_FIELD_OPTIONS_SOURCE}"#
+        )))
+        .expect("a sourced default may name a value only the source knows");
+        validate(&action_with_select(OWN_FIELD_OPTIONS_SOURCE))
+            .expect("a sourced select may leave the default out");
+    }
+
+    #[test]
+    fn test_select_source_inside_a_list_row_stays_refused_with_pinned_options() {
+        let m = action_with_list_row(&format!(
+            r#"{{ "id": "pick", "label": "Pick", "type": "select", "defaultValue": "origin",
+                {PINNED_PLATFORM_OPTIONS}, {OWN_FIELD_OPTIONS_SOURCE} }}"#
+        ));
+        let err = validate(&m)
+            .expect_err("pinned options do not make a nested source resolvable")
+            .to_string();
+        assert!(
+            err.contains("internal sources are only supported on top-level fields"),
+            "{err}"
+        );
     }
 
     fn action_with_list_row(row_field: &str) -> ModuleManifest {

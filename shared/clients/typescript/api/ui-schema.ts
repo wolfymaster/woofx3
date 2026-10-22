@@ -150,7 +150,15 @@ export interface ConfigField {
   required?: boolean;
   placeholder?: string;
   unit?: string;
-  /** Required for `type: "select"` — a select with nothing to select is a dead control. */
+  /**
+   * Required for `type: "select"` unless a `source` supplies the choices — a
+   * select with nothing to select is a dead control. Beside an `internal`
+   * source the options are pinned: the form lists them first and the fetched
+   * options after, `mergePinnedOptions` dropping a fetched value a pinned one
+   * already names. Values are distinct. Without a source the `defaultValue`
+   * is one of them; with a source it is a string, since it may name a value
+   * only the source knows.
+   */
   options?: ConfigFieldOption[];
   source?: ConfigFieldSource;
   min?: number;
@@ -420,4 +428,25 @@ export function parseDataShape(raw: string | undefined | null): DataShape | unde
     }
   }
   return shape;
+}
+
+/**
+ * A select's pinned options followed by the fetched ones. A fetched option
+ * whose value a pinned one already names is dropped, so the pinned label wins
+ * and no value appears twice; a repeat within `fetched` keeps its first entry.
+ */
+export function mergePinnedOptions(
+  pinned: readonly ConfigFieldOption[],
+  fetched: readonly ConfigFieldOption[]
+): ConfigFieldOption[] {
+  const seen = new Set<string>();
+  const merged: ConfigFieldOption[] = [];
+  for (const option of [...pinned, ...fetched]) {
+    if (seen.has(option.value)) {
+      continue;
+    }
+    seen.add(option.value);
+    merged.push(option);
+  }
+  return merged;
 }
