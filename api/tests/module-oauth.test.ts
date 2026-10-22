@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { Woofx3EngineApi } from "@woofx3/api";
 import { Api, type ApiOptions } from "../src/api";
 import { ApiSession } from "../src/api-session";
+import { SessionLease } from "../src/client-sessions";
 
 const realFetch = globalThis.fetch;
 
@@ -19,7 +20,7 @@ function session() {
     apiUrl: "http://api.test",
     logger: { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never,
   });
-  return new ApiSession(api, "dash-client") as unknown as Woofx3EngineApi;
+  return new ApiSession(api, "dash-client", new SessionLease(() => {})) as unknown as Woofx3EngineApi;
 }
 
 const AUTHORIZATION = { code: "c", codeVerifier: "v", redirectUri: "https://dash/cb" };

@@ -86,7 +86,8 @@ describe("GatewayConnection", () => {
 
     await settled(newHttpBatchRpcSession<ApiGatewayContract>(request).authenticate("c1", "s1"));
 
-    expect(connections).toEqual([{ origin: ORIGIN, remoteAddress: "127.0.0.1", close: null }]);
+    expect(connections).toHaveLength(1);
+    expect(connections[0]).toMatchObject({ origin: ORIGIN, remoteAddress: "127.0.0.1", close: null });
   });
 
   test("a call with no Origin header has a null origin", async () => {

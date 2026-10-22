@@ -10,6 +10,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type { Api } from "./api";
 import { ApiSession } from "./api-session";
 import type { ClientAuth } from "./auth";
+import type { ClientSessions } from "./client-sessions";
 import type { DbClient } from "./db-client";
 import type { ConnectionInfo } from "./gateway-connection";
 import type { RegistrationPolicy } from "./registration";
@@ -63,7 +64,8 @@ export class ApiGateway {
     private auth: ClientAuth,
     private db: DbClient,
     private logger: SharedLogger,
-    private registration: RegistrationPolicy
+    private registration: RegistrationPolicy,
+    private sessions: ClientSessions
   ) {
     if (registration.mode === "open") {
       logger.warn(
@@ -83,9 +85,20 @@ export class ApiGateway {
     this.webhookClient = client;
   }
 
+  /**
+   * A session for `clientId`, registered so that deleting the client ends
+   * it. A client deleted while its credentials were being checked is
+   * refused, not admitted with a session that outlives it.
+   */
   async authenticate(clientId: string, clientSecret: string, connection: ConnectionInfo): Promise<ApiSession> {
+    const generation = this.sessions.generation(clientId);
     const verdict = await this.auth.validate(clientId, clientSecret);
     if (verdict.kind === "refused") {
+      throw new AuthenticationRefused("Invalid client credentials");
+    }
+    const lease = this.sessions.register(clientId, generation, connection);
+    if (lease === null) {
+      this.logger.warn("Refused a client deleted while it authenticated", { clientId });
       throw new AuthenticationRefused("Invalid client credentials");
     }
     this.logger.info("Authenticated client", {
@@ -94,7 +107,7 @@ export class ApiGateway {
       origin: connection.origin,
       remoteAddress: connection.remoteAddress,
     });
-    return new ApiSession(this.api, clientId);
+    return new ApiSession(this.api, clientId, lease);
   }
 
   async registerClient(

@@ -26,6 +26,12 @@ export class ClientAuth {
    * who knows a client id lock that client out.
    */
   private cache = new Map<string, CacheEntry>();
+  /**
+   * Bumped by every `invalidateCache`. A validation that was already asking
+   * db-proxy when the cache was cleared may carry a verdict from before the
+   * change that cleared it, so it is answered but not cached.
+   */
+  private epoch = 0;
 
   constructor(
     private db: Pick<DbClient, "validateClient">,
@@ -46,6 +52,7 @@ export class ClientAuth {
       return cached.verdict;
     }
 
+    const epoch = this.epoch;
     let resp: Awaited<ReturnType<DbClient["validateClient"]>>;
     try {
       resp = await this.db.validateClient(clientId, clientSecret);
@@ -57,7 +64,9 @@ export class ClientAuth {
     const code = resp.status?.code;
     if (code === "OK" && resp.client) {
       const verdict = { kind: "accepted", description: resp.client.description } as const;
-      this.cache.set(key, { verdict, expiresAt: now + CLIENT_AUTH_CACHE_TTL_MS });
+      if (epoch === this.epoch) {
+        this.cache.set(key, { verdict, expiresAt: now + CLIENT_AUTH_CACHE_TTL_MS });
+      }
       this.logger.info("Auth: Client validated", { clientId, description: resp.client.description });
       return verdict;
     }
@@ -69,6 +78,7 @@ export class ClientAuth {
   }
 
   invalidateCache(): void {
+    this.epoch += 1;
     this.cache.clear();
     this.logger.debug("Client auth cache invalidated");
   }

@@ -5,6 +5,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import { newWebSocketRpcSession, RpcTarget } from "capnweb";
 import { Api } from "../src/api";
 import { EngineEventStream } from "../src/engine-event-stream";
+import { ClientSessions } from "../src/client-sessions";
 import { ApiGateway } from "../src/gateway";
 import { createHttpServer } from "../src/http";
 import { resolveRegistrationPolicy } from "../src/registration";
@@ -57,7 +58,14 @@ async function startEngine() {
   api.setWebhookClient(webhooks);
   await webhooks.refreshCallbackUrls();
   const auth = { validate: async () => ({ kind: "accepted", description: "desktop" }) };
-  const gateway = new ApiGateway(api, auth as never, db as never, logger, resolveRegistrationPolicy({}));
+  const gateway = new ApiGateway(
+    api,
+    auth as never,
+    db as never,
+    logger,
+    resolveRegistrationPolicy({}),
+    new ClientSessions(logger)
+  );
   server = createHttpServer({
     port: 0,
     hostname: "127.0.0.1",

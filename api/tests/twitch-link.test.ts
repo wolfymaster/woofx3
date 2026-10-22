@@ -4,6 +4,7 @@ import { type CallbackEvent, EngineEventType } from "@woofx3/api/webhooks";
 import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
 import { Api, type ApiOptions } from "../src/api";
 import { ApiSession, RPC_METHODS } from "../src/api-session";
+import { SessionLease } from "../src/client-sessions";
 import type { WebhookClient } from "../src/webhook-client";
 
 const TOKEN = {
@@ -70,7 +71,7 @@ function engine(opts: {
       sent.push(event);
     }),
   } as unknown as WebhookClient);
-  const rpc = new ApiSession(api, "local-ui") as unknown as Woofx3EngineApi;
+  const rpc = new ApiSession(api, "local-ui", new SessionLease(() => {})) as unknown as Woofx3EngineApi;
   return {
     api,
     rpc,

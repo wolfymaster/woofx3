@@ -29,6 +29,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
 import { RpcTarget } from "capnweb";
+import type { ClientRevocation } from "../client-sessions";
 import type { DbClient } from "../db-client";
 import type { EngineEventStream } from "../engine-event-stream";
 import type { EventLogSelectionSource } from "../event-log-selection";
@@ -95,14 +96,22 @@ async function barkloaderRequestError(response: Response): Promise<Error> {
  * Shared host state and internal helpers for route modules.
  */
 export class ApiRouteHost extends RpcTarget {
-  protected triggerSubscribers = new Set<{
-    onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
-  }>();
+  /**
+   * Each held trigger-change callback, with the session that subscribed it
+   * (the callback itself for an in-process caller with no session) and that
+   * session's client (null for an in-process caller).
+   */
+  protected triggerSubscribers = new Map<
+    {
+      onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
+    },
+    { session: object; clientId: string | null }
+  >();
   protected webhookClient: WebhookClient | null = null;
   protected streamEventBroadcaster: StreamEventBroadcaster | null = null;
   protected engineEventStream: EngineEventStream | null = null;
   protected eventLogSelection: EventLogSelectionSource | null = null;
-  protected authInvalidate: (() => void) | null = null;
+  protected clientRevocation: ClientRevocation | null = null;
   /**
    * The linked Twitch account's token. An instance property, not a method,
    * so capnweb never offers it to a client.
@@ -179,6 +188,25 @@ export class ApiRouteHost extends RpcTarget {
       updatedAt: timestampToIso(wf.updatedAt),
       taxonomy: wf.taxonomy ?? [],
     };
+  }
+
+  /**
+   * Re-read the callback list after a client was revoked: it drops a deleted
+   * client for good, and lists again one whose delete failed. Never throws:
+   * a failed refresh is logged, and the list is read again on the next one.
+   */
+  protected async refreshCallbackUrlsAfterRevoke(clientId: string): Promise<void> {
+    if (!this.webhookClient) {
+      return;
+    }
+    try {
+      await this.webhookClient.refreshCallbackUrls();
+    } catch (err) {
+      this.logger.error("Failed to refresh callback URLs after revoking a client", {
+        clientId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /** Best effort: a failed or unconfigured send is logged, never thrown. */
@@ -284,10 +312,19 @@ export class ApiRouteHost extends RpcTarget {
     }
   }
 
+  protected dropTriggerSubscribers(matches: (owner: { session: object; clientId: string | null }) => boolean): void {
+    for (const [held, owner] of this.triggerSubscribers) {
+      if (matches(owner)) {
+        this.triggerSubscribers.delete(held);
+        releaseStub(held);
+      }
+    }
+  }
+
   protected async notifyTriggerChange(moduleName: string): Promise<void> {
     type Subscriber = { onTriggerChange(event: { type: string; moduleName: string }): Promise<void> };
     const dead: Subscriber[] = [];
-    for (const cb of this.triggerSubscribers) {
+    for (const cb of this.triggerSubscribers.keys()) {
       try {
         await cb.onTriggerChange({ type: "registered", moduleName });
       } catch {

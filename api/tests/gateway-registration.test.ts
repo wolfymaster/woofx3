@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { isRegistrationRefused } from "@woofx3/api/rpc";
 import { Api } from "../src/api";
+import { ClientSessions } from "../src/client-sessions";
 import { ApiGateway } from "../src/gateway";
 import { type RegistrationMode, resolveRegistrationPolicy } from "../src/registration";
 
@@ -48,7 +49,8 @@ function gateway(registrationToken: string | null, mode?: RegistrationMode) {
       {} as never,
       db,
       logger,
-      resolveRegistrationPolicy({ token: registrationToken ?? undefined, mode })
+      resolveRegistrationPolicy({ token: registrationToken ?? undefined, mode }),
+      new ClientSessions(logger)
     ),
     createClient,
     logger,

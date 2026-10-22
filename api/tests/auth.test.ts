@@ -84,6 +84,29 @@ describe("ClientAuth.validate", () => {
     expect((await auth.validate("c1", "right")).kind).toBe("accepted");
   });
 
+  test("an acceptance still in flight when the cache is cleared is not cached", async () => {
+    const proxy = db();
+    const real = proxy.validateClient.getMockImplementation()!;
+    let answer = () => {};
+    const answered = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    proxy.validateClient.mockImplementationOnce(async (clientId: string, clientSecret: string) => {
+      const verdict = await real(clientId, clientSecret);
+      await answered;
+      return verdict;
+    });
+    const auth = new ClientAuth(proxy, LOGGER);
+
+    const inFlight = auth.validate("c1", "right");
+    auth.invalidateCache();
+    answer();
+
+    expect((await inFlight).kind).toBe("accepted");
+    await auth.validate("c1", "right");
+    expect(proxy.validateClient).toHaveBeenCalledTimes(2);
+  });
+
   test("a db-proxy answer that is not a verdict is an error", async () => {
     const proxy = {
       validateClient: mock(async () => ({ status: { code: "INTERNAL", message: "database is locked" } })),

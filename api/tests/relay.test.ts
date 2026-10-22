@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { RelayConfig, Woofx3EngineApi } from "@woofx3/api";
 import { Api, type ApiOptions } from "../src/api";
 import { ApiSession } from "../src/api-session";
+import { SessionLease } from "../src/client-sessions";
 
 function session(options: { writeFails?: boolean } = {}) {
   const settings = new Map<string, string>();
@@ -32,7 +33,12 @@ function session(options: { writeFails?: boolean } = {}) {
     apiUrl: "http://api.test",
     logger: { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never,
   });
-  return { api, settings, published, rpc: new ApiSession(api, "dash-client") as unknown as Woofx3EngineApi };
+  return {
+    api,
+    settings,
+    published,
+    rpc: new ApiSession(api, "dash-client", new SessionLease(() => {})) as unknown as Woofx3EngineApi,
+  };
 }
 
 const CONFIG: RelayConfig = {

@@ -12,6 +12,7 @@ import type {
 } from "@woofx3/api";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
+import type { SessionLease } from "./client-sessions";
 
 /**
  * Per-connection session wrapper around the shared Api instance.
@@ -20,16 +21,39 @@ import type { Api } from "./api";
  *
  * Methods that need the clientId (e.g. installModuleZip) are overridden
  * to inject it automatically. All other method calls are forwarded to
- * the underlying Api instance via prototype delegation.
+ * the underlying Api instance via prototype delegation. Every method,
+ * overridden or delegated, first checks the session's lease, so a session
+ * whose client was deleted refuses every call.
  */
 export class ApiSession extends RpcTarget {
   readonly clientId: string;
   private api: Api;
+  private lease: SessionLease;
 
-  constructor(api: Api, clientId: string) {
+  constructor(api: Api, clientId: string, lease: SessionLease) {
     super();
     this.api = api;
     this.clientId = clientId;
+    this.lease = lease;
+  }
+
+  /**
+   * Throws once the session's client is revoked. Static, so capnweb never
+   * serves it, for the prototype methods installed below the class body.
+   */
+  static assertLive(session: ApiSession): void {
+    session.lease.assertLive();
+  }
+
+  /**
+   * capnweb calls this once the client has released its last stub of the
+   * session, so the session is forgotten, and the subscriptions it made end,
+   * without waiting for the connection to end. Symbol-keyed, so it is not
+   * served.
+   */
+  [Symbol.dispose](): void {
+    this.lease.release();
+    this.api.dropSessionSubscriptions(this);
   }
 
   async installModuleZip(fileName: string, zipBase64: string, context?: { moduleKey?: string }) {
@@ -66,7 +90,14 @@ export class ApiSession extends RpcTarget {
 
   /** The session is the registration's key, so a second call replaces the first. */
   async subscribeStreamEvents(callback: StreamEventSubscriber, types?: string[]) {
-    return this.api.subscribeStreamEvents(callback, types, { session: this });
+    return this.api.subscribeStreamEvents(callback, types, { session: this, clientId: this.clientId });
+  }
+
+  /** Keyed on the session, so revoking its client ends it. */
+  async subscribeTriggerChanges(callback: {
+    onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
+  }) {
+    return this.api.subscribeTriggerChanges(callback, { session: this, clientId: this.clientId });
   }
 
   /** Keyed on the session like `subscribeStreamEvents`; the client id decides what it receives. */
@@ -330,13 +361,18 @@ export type _SurfaceMatchesContract = Assert<Equals<(typeof RPC_METHODS)[number]
 export type _ContractIsImplemented = Assert<Equals<Exclude<keyof Woofx3EngineApi, keyof Api>, never>>;
 
 // capnweb only exposes methods found on the prototype chain, so these are
-// installed on the prototype rather than per instance.
+// installed on the prototype rather than per instance. The hand-written
+// methods above, which inject the session's clientId, are wrapped in place;
+// the rest delegate to Api. Either way the lease is checked first, so no
+// method can be added that skips it.
+const prototype = ApiSession.prototype as unknown as Record<string, (...args: unknown[]) => unknown>;
 for (const key of RPC_METHODS) {
-  if (key in ApiSession.prototype) {
-    // Hand-written above to inject the session's clientId.
-    continue;
-  }
-  (ApiSession.prototype as unknown as Record<string, unknown>)[key] = function (this: ApiSession, ...args: unknown[]) {
+  const handWritten = Object.hasOwn(prototype, key) ? prototype[key] : null;
+  prototype[key] = async function (this: ApiSession, ...args: unknown[]) {
+    ApiSession.assertLive(this);
+    if (handWritten !== null) {
+      return handWritten.apply(this, args);
+    }
     // Reaching `api` past `private` deliberately: the delegation is
     // installed from outside the class body, and widening the field to
     // public would put the whole Api object on a session a client holds.

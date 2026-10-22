@@ -181,16 +181,31 @@ export const engineRoutes = routeModule({
     if (!resp.client) {
       return { success: false, message: "Client not found" };
     }
-    await this.db.deleteClient(resp.client.id);
-    if (this.authInvalidate) {
-      this.authInvalidate();
+    let status: Awaited<ReturnType<typeof this.db.deleteClient>>;
+    try {
+      status = await this.db.deleteClient(resp.client.id);
+    } finally {
+      // After the delete, not before: from here on a fresh validation is
+      // refused by db-proxy, so only sessions admitted before this point can
+      // exist, and revoking ends those and any still authenticating. In a
+      // `finally`, because a delete that committed can still fail on its way
+      // back. Revoking a client the delete did not remove costs it its open
+      // sessions and its callbacks until the refresh below lists it again;
+      // it authenticates again and loses nothing else.
+      this.clientRevocation?.revoke(clientId);
+      // Not awaited: the reply must go out before the revoked sessions'
+      // sockets close, which happens on the next macrotask, and a client
+      // deleting itself is waiting on that reply.
+      void this.refreshCallbackUrlsAfterRevoke(clientId);
     }
-    // A deleted client's open sessions must stop receiving its events, and
-    // must not be offered as a client that can answer a request.
-    this.engineEventStream?.dropClient(clientId);
-    if (this.webhookClient) {
-      await this.webhookClient.refreshCallbackUrls();
+    if (status.code !== "OK") {
+      this.logger.warn("db-proxy did not delete the client", { clientId, code: status.code, message: status.message });
+      return { success: false, message: `Client not deleted: ${status.message || status.code}` };
     }
+    // Only once db-proxy confirms the delete, and in the same turn as the
+    // refresh above started, so neither it nor any later refresh lists the
+    // client again.
+    this.webhookClient?.forgetDeletedClient(clientId);
     this.logger.info("Client deleted", { clientId });
     return { success: true, message: "Client deleted" };
   },

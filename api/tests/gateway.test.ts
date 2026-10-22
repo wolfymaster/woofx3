@@ -4,6 +4,7 @@ import { newMessagePortRpcSession } from "capnweb";
 import { Api } from "../src/api";
 import { ApiSession } from "../src/api-session";
 import { ClientAuth } from "../src/auth";
+import { ClientSessions } from "../src/client-sessions";
 import { ApiGateway, AuthenticationRefused } from "../src/gateway";
 import { type ConnectionInfo, GatewayConnection } from "../src/gateway-connection";
 import { EngineEventStream } from "../src/engine-event-stream";
@@ -11,7 +12,7 @@ import { WebhookClient } from "../src/webhook-client";
 
 const OPEN = { mode: "open", token: null } as const;
 
-const BATCH: ConnectionInfo = { origin: null, remoteAddress: "127.0.0.1", close: null };
+const BATCH: ConnectionInfo = { origin: null, remoteAddress: "127.0.0.1", close: null, onEnd() {} };
 
 function fakeLogger() {
   return {
@@ -49,7 +50,7 @@ describe("ApiGateway.registerClient", () => {
     const webhook = new WebhookClient(db, logger, new EngineEventStream(logger));
     api.setWebhookClient(webhook);
     const auth = { validate: mock(async () => ({ kind: "accepted", description: "test-ui" })) } as any;
-    const gateway = new ApiGateway(api, auth, db, logger, OPEN);
+    const gateway = new ApiGateway(api, auth, db, logger, OPEN, new ClientSessions(logger));
     gateway.setWebhookClient(webhook);
 
     const res = await gateway.registerClient("test-ui", {
@@ -82,7 +83,8 @@ describe("ApiGateway.registerClient", () => {
       { validate: mock(async () => ({ kind: "accepted", description: "test-ui" })) } as any,
       db,
       logger,
-      OPEN
+      OPEN,
+      new ClientSessions(logger)
     );
     gateway.setWebhookClient(webhook);
 
@@ -100,7 +102,8 @@ describe("ApiGateway.registerClient", () => {
       { validate: mock(async () => ({ kind: "accepted", description: "test-ui" })) } as any,
       db,
       logger,
-      OPEN
+      OPEN,
+      new ClientSessions(logger)
     );
 
     await expect(gateway.registerClient("test", {})).rejects.toThrow("Failed to create client");
@@ -120,7 +123,7 @@ describe("ApiGateway.authenticate", () => {
   function gatewayOver(answer: () => Promise<unknown>) {
     const db = { validateClient: mock(answer) } as any;
     const logger = fakeLogger();
-    return new ApiGateway(newApi(db, logger), new ClientAuth(db, logger), db, logger, OPEN);
+    return new ApiGateway(newApi(db, logger), new ClientAuth(db, logger), db, logger, OPEN, new ClientSessions(logger));
   }
   const ACCEPTED = async () => ({ status: { code: "OK" }, client: { description: "test-ui" } });
   const NOT_FOUND = async () => ({ status: { code: "NOT_FOUND", message: "Invalid credentials" } });

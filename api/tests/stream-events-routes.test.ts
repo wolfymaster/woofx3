@@ -101,7 +101,11 @@ describe("listEvents", () => {
 });
 
 describe("subscribeStreamEvents", () => {
-  type Subscribe = (callback: StreamEventSubscriber, types?: string[], context?: { session: object }) => Promise<void>;
+  type Subscribe = (
+    callback: StreamEventSubscriber,
+    types?: string[],
+    context?: { session: object; clientId: string }
+  ) => Promise<void>;
   const route = streamEventsRoutes.subscribeStreamEvents as unknown as Subscribe;
 
   function host() {
@@ -121,12 +125,12 @@ describe("subscribeStreamEvents", () => {
     const callback = { onStreamEvent: async () => {} };
     const session = {};
 
-    await subscribe(callback, ["goal.reached"], { session });
+    await subscribe(callback, ["goal.reached"], { session, clientId: "c1" });
     await subscribe(callback);
 
     expect(calls).toEqual([
-      [callback, ["goal.reached"], session],
-      [callback, undefined, callback],
+      [callback, ["goal.reached"], session, "c1"],
+      [callback, undefined, callback, null],
     ]);
   });
 

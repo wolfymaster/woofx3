@@ -119,6 +119,19 @@ export function isMissingRpcMethod(err: unknown, method: string): boolean {
 }
 
 /**
+ * The WebSocket close code the engine ends a session with when its client is
+ * deleted. A client matches on this code, never on the close reason. The
+ * credentials are gone: authenticating with them again is refused, so a
+ * client stops or obtains new credentials rather than reconnecting. Calls that
+ * reach the session after the deletion are refused with an error
+ * `isAuthenticationRefused` recognises.
+ *
+ * It follows the 4000 + HTTP status convention of the scene editor's
+ * `CLOSE_CODES` (401: the credentials are no longer valid).
+ */
+export const CLIENT_REVOKED_CLOSE_CODE = 4401;
+
+/**
  * The unauthenticated capnweb entry point served by the engine. Connecting
  * to the engine's `/api` URL via capnweb HTTP batch (or WebSocket) gives
  * back a stub of this shape.

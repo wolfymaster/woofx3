@@ -4,6 +4,7 @@ import { newHttpBatchRpcSession, newWebSocketRpcSession } from "capnweb";
 import type { ApiGatewayContract } from "@woofx3/api/rpc";
 import { Api } from "../src/api";
 import { ClientAuth } from "../src/auth";
+import { ClientSessions } from "../src/client-sessions";
 import { ApiGateway } from "../src/gateway";
 import { createHttpServer } from "../src/http";
 import { resolveRegistrationPolicy } from "../src/registration";
@@ -59,7 +60,8 @@ function startEngine(logger: SharedLogger) {
     new ClientAuth(db as never, logger),
     db as never,
     logger,
-    resolveRegistrationPolicy({ token: REGISTRATION_TOKEN })
+    resolveRegistrationPolicy({ token: REGISTRATION_TOKEN }),
+    new ClientSessions(logger)
   );
   server = createHttpServer({
     port: 0,

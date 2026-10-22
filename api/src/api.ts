@@ -1,3 +1,4 @@
+import type { ClientRevocation } from "./client-sessions";
 import type { EngineEventStream } from "./engine-event-stream";
 import type { EventLogSelectionSource } from "./event-log-selection";
 import { type RegisteredApiRoutes, registerAllRoutes } from "./routes";
@@ -45,8 +46,8 @@ export class Api extends ApiRouteHost {
     this.webhookClient = client;
   }
 
-  setAuthInvalidate(fn: () => void): void {
-    this.authInvalidate = fn;
+  setClientRevocation(revocation: ClientRevocation): void {
+    this.clientRevocation = revocation;
   }
 
   setStreamEventBroadcaster(broadcaster: StreamEventBroadcaster): void {
@@ -59,6 +60,25 @@ export class Api extends ApiRouteHost {
 
   setEngineEventStream(stream: EngineEventStream): void {
     this.engineEventStream = stream;
+  }
+
+  /**
+   * End the stream-event and trigger-change subscriptions `session` made,
+   * for a session its client disposed: the callbacks are separate stubs and
+   * would otherwise outlive it.
+   */
+  dropSessionSubscriptions(session: object): void {
+    this.streamEventBroadcaster?.unsubscribe(session);
+    this.dropTriggerSubscribers((owner) => owner.session === session);
+  }
+
+  /**
+   * End every stream-event and trigger-change subscription of `clientId`,
+   * from any of its sessions, tracked or disposed, for a revoked client.
+   */
+  dropClientSubscriptions(clientId: string): void {
+    this.streamEventBroadcaster?.dropClient(clientId);
+    this.dropTriggerSubscribers((owner) => owner.clientId === clientId);
   }
 }
 
