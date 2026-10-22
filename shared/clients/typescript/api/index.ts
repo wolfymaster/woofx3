@@ -14,3 +14,4 @@ export * from "./twitch-helix";
 export * from "./ui-schema";
 export * from "./webhooks";
 export * from "./workflow-definition";
+export * from "./workflow-test-run";
