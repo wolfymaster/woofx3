@@ -159,6 +159,21 @@ never when it is stored. Each layout widget boots with `surface: "alert"` and re
 one `alert` event whose `data` is the triggering CloudEvent (`{ type, data }`, or
 `null` when nothing triggered the workflow).
 
+The page plays alerts on **prepared** stages, so a widget's frame has usually loaded
+before its alert is due. An alert's stage is built hidden, with its frames booting
+and its time held at its first moment, as soon as the alert is delivered. Once an alert
+of a shape has played, another stage of that shape (the same layout, behaviors and
+frames, whatever the settings) is prepared for the next one: at once when one is
+already waiting, otherwise after the alert finishes, so preparing never competes with
+an alert on screen. The next alert takes over the prepared stage. Its settings are
+handed to the running widgets as a settings change, and only then is the alert's event
+sent. If a widget read a setting the alert changes while it booted, its frame could
+not show the new value, so the alert gets fresh frames instead. Each stage plays one
+alert and is then removed; an area keeps up to four prepared shapes. A widget in a
+prepared stage boots with an instance id of its stage's (`prepared-{n}.{widgetId}`),
+not the alert's; its status reports are recorded under `{eventId}.{widgetId}` once its
+alert is known.
+
 A layout widget that subscribes with `autoComplete: false` has a length of its own and
 holds the alert until it calls `complete()`; one that completes on handler return has
 none. Once every timed widget is done, or after 5 seconds when none is timed, the
@@ -179,11 +194,13 @@ without adding logging:
   `frame` (barkloader's widget entry) and `total`. Browser devtools show it on the
   frame's request; a frame the browser had cached made no request at all.
 - **The page.** The overlay writes User Timing marks named
-  `woofx3.alert/{eventId}/{stage}` for `delivered`, `started` and `finished`, and
+  `woofx3.alert/{eventId}/{stage}` for `delivered`, `prepared` (it played on a prepared
+  stage), `started` and `finished`, and
   `woofx3.alert/{eventId}/{widgetId}/{stage}` for each frame's `mounted`, `ready` (the
   shim's hello was answered: the document has loaded), `subscribed` (the widget's own
-  script has run) and `rendered`. The measure `woofx3.alert/{eventId}/on-screen` spans
-  from delivery to the first widget's paint. They appear in the devtools Performance
+  script has run) and `rendered`; on a prepared stage, the steps its frames reached
+  before the alert are marked as it starts. The measure `woofx3.alert/{eventId}/on-screen`
+  spans from delivery to the first widget's paint. They appear in the devtools Performance
   panel, and `performance.getEntriesByType("mark")` reads them from a script. Only the
   most recent 20 alerts' entries are kept, since an overlay can stay open for a whole
   stream.

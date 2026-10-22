@@ -36,8 +36,12 @@ export const BROWSER_MARKS: PageMarks = {
 /** How many alerts' entries are kept before the oldest alert's are cleared. */
 export const RETAINED_ALERT_TIMINGS = 20;
 
-/** Steps of the alert as a whole: it reached the page, its turn came, it played out. */
-export type AlertStage = "delivered" | "started" | "finished";
+/**
+ * Steps of the alert as a whole: it reached the page, its turn came, it played
+ * out. `prepared` is marked as it starts when it plays on frames prepared
+ * before its turn (alert-widget.ts) rather than on frames made for it then.
+ */
+export type AlertStage = "delivered" | "prepared" | "started" | "finished";
 
 /**
  * Steps of one widget's frame: it was put on the stage, its shim said hello
