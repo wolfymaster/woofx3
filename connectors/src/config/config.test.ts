@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { connectorsConfig } from "../config";
-import { GATEWAY_DEFAULTS } from "./gateway";
+import { CHAT_DEFAULTS } from "./chat";
+import { GATEWAY_CALLER_TIMEOUT_MS, GATEWAY_DEFAULTS } from "./gateway";
 import { HOST_DEFAULTS } from "./host";
 
 const required = {
@@ -55,6 +56,20 @@ describe("connectorsConfig", () => {
     });
   });
 
+  test("fills the chat dispatcher tunables from their named defaults", () => {
+    expect(connectorsConfig(required).chat).toEqual({
+      authCache: { capacity: 2_048, ttlMs: 5_000 },
+      groups: { lastSeenCapacity: CHAT_DEFAULTS.groupLastSeenCapacity, catalogTtlMs: 300_000 },
+      store: { reloadDebounceMs: 250, reloadBackstopMs: 300_000 },
+      replyTimeoutMs: GATEWAY_CALLER_TIMEOUT_MS,
+    });
+  });
+
+  test("takes overrides for the chat dispatcher tunables", () => {
+    const config = connectorsConfig({ ...required, woofx3ConnectorsDispatcherAuthCacheTtlMs: 1_000 });
+    expect(config.chat.authCache.ttlMs).toBe(1_000);
+  });
+
   test("takes overrides for the host tunables", () => {
     const config = connectorsConfig({ ...required, woofx3ConnectorsPort: 20106, woofx3ConnectorsAdapterQueueCap: 0 });
     expect(config.host.port).toBe(20106);
@@ -104,6 +119,16 @@ describe("connectorsConfig", () => {
       "zero idempotency TTL",
       { ...required, woofx3ConnectorsGatewayIdempotencyTtlMs: 0 },
       "woofx3ConnectorsGatewayIdempotencyTtlMs",
+    ],
+    [
+      "zero dispatcher auth cache capacity",
+      { ...required, woofx3ConnectorsDispatcherAuthCacheCapacity: 0 },
+      "woofx3ConnectorsDispatcherAuthCacheCapacity",
+    ],
+    [
+      "a fractional dispatcher reload debounce",
+      { ...required, woofx3ConnectorsDispatcherReloadDebounceMs: 2.5 },
+      "woofx3ConnectorsDispatcherReloadDebounceMs",
     ],
   ];
   for (const [name, env, problem] of invalid) {
