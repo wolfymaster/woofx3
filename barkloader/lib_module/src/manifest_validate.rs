@@ -40,6 +40,7 @@ use super::module_manifest::{
     ModuleManifest, ModuleWidget, SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE,
     WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE, WIDGET_BEHAVIOR_LABEL_MAX, WIDGET_SURFACES,
 };
+use super::reserved_subjects::declared_event_reservation;
 use super::resource_kind_ref::parse_kind_ref;
 use super::theme::{self, InstalledModule};
 
@@ -420,7 +421,7 @@ pub fn validate_with_provenance(
         &actions_table,
     )?;
     let widgets = resolve_widgets(&manifest.widgets, &widgets_table)?;
-    validate_trigger_transports(manifest, provenance)?;
+    validate_trigger_transports(manifest, &module_id, provenance)?;
     validate_internal_requests(manifest, &module_id, provenance)?;
     validate_no_ingress_bindings(manifest, &module_id, &workflows)?;
 
@@ -522,60 +523,6 @@ async fn validate_theme_dependencies(
         theme::check_against_contract(t, contract).map_err(|e| anyhow!("{label}: {e}"))?;
     }
     Ok(())
-}
-
-/// Event prefixes no bus-fired trigger may claim: the webhook placeholder,
-/// and for uploads, every subject the engine or a service treats as a command.
-///
-/// A webhook handler may publish any event type its module declares as an
-/// eventbus trigger, verbatim, so declaring one of these would let an upload
-/// drive the engine directly: forge outbox events (`db.`), change OBS
-/// (`engine.obs.command`), call the Twitch API (`twitchapi`), speak in
-/// chat (`message.send`), play or skip alerts (`ui.notify.`, `ui.alert.`,
-/// `widget.queue.`), or run, replay or stop workflows and actions
-/// (`workflow.execute`, `workflow.replay`, `workflow.cancel`,
-/// `workflow.command.execute`, `action.execute`).
-/// Must match the command prefixes in api/src/workflow/reserved-subjects.ts.
-/// See docs/services/engine-integrity.md.
-///
-/// The outbox stays open to the system module, which owns the `db.workflow.*`
-/// triggers and declares no handlers.
-const USER_RESERVED_EVENT_PREFIXES: [&str; 13] = [
-    WEBHOOK_EVENT_PREFIX,
-    "db.",
-    "engine.",
-    "twitchapi",
-    "message.send",
-    "ui.notify.",
-    "ui.alert.",
-    "widget.queue.",
-    "workflow.execute",
-    "workflow.replay",
-    "workflow.cancel",
-    "workflow.command.execute",
-    "action.execute",
-];
-
-/// Event prefixes only the engine publishes, which uploads may not declare.
-///
-/// Unlike a platform event such as `channel.`, which the module bringing that
-/// platform declares, nothing outside the engine asserts these, so an upload
-/// declaring one could only forge it through its webhook handler: `viewer.`
-/// carries segment entered/left edges computed by the db proxy. The bundled
-/// system module declares triggers on them and stays exempt. Each entry must
-/// also appear in EngineEventSubjectPrefixes in
-/// shared/common/golang/cloudevents/reserved.go.
-const UPLOAD_ENGINE_ONLY_EVENT_PREFIXES: [&str; 1] = ["viewer."];
-
-fn reserved_event_prefixes(provenance: InstallProvenance) -> impl Iterator<Item = &'static str> {
-    let (commands, engine_only): (&[&str], &[&str]) = match provenance {
-        InstallProvenance::User => (
-            &USER_RESERVED_EVENT_PREFIXES,
-            &UPLOAD_ENGINE_ONLY_EVENT_PREFIXES,
-        ),
-        InstallProvenance::System => (&[WEBHOOK_EVENT_PREFIX], &[]),
-    };
-    commands.iter().chain(engine_only).copied()
 }
 
 /// The subject barkloader's field-options responder answers. It runs
@@ -763,6 +710,7 @@ fn is_internal_request(descriptor: &serde_json::Value) -> bool {
 /// mean nothing on it. They are rejected rather than silently ignored.
 fn validate_trigger_transports(
     manifest: &ModuleManifest,
+    module_id: &str,
     provenance: InstallProvenance,
 ) -> Result<()> {
     for (i, trigger) in manifest.triggers.iter().enumerate() {
@@ -778,8 +726,7 @@ fn validate_trigger_transports(
             } else {
                 &trigger.event
             };
-            if let Some(prefix) = reserved_event_prefixes(provenance).find(|p| event.starts_with(p))
-            {
+            if let Some(prefix) = declared_event_reservation(event, module_id, provenance) {
                 return Err(anyhow!(
                     "{label}: event {event:?} uses the reserved prefix {prefix:?}"
                 ));
@@ -3264,6 +3211,90 @@ mod tests {
         assert!(err.contains("reserved prefix \"viewer.\""), "{err}");
     }
 
+    fn module_with_trigger_event(module_id: &str, event: &str) -> ModuleManifest {
+        parse(&format!(
+            r#"{{"id": "{module_id}", "name": "Mod", "version": "1.0.0",
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "{event}" }}]}}"#
+        ))
+    }
+
+    // Engine-asserted events an upload could otherwise forge through its
+    // webhook handler: a chat command invocation or command change, a session
+    // or setting change, a heartbeat, a workflow lifecycle event, another
+    // module's lifecycle. The bundled module binds some of them and stays
+    // exempt.
+    #[test]
+    fn test_validate_engine_asserted_events_are_reserved_for_uploads() {
+        for (event, reservation) in [
+            ("command.created", "command."),
+            ("command.deleted", "command."),
+            ("chat.command.sr", "chat.command."),
+            ("session.started", "session."),
+            ("setting.integration.token.updated", "setting."),
+            ("HEARTBEAT", "HEARTBEAT"),
+            ("MESSAGEBUS_INIT", "MESSAGEBUS_INIT"),
+            ("barkloader.module.field_options", "barkloader."),
+            ("workflow.run.completed", "workflow."),
+            ("workflow.health.ping", "workflow."),
+            ("workflow.anything", "workflow."),
+            ("module.change.add", "module."),
+            ("module.other_mod.order", "module."),
+            ("viewer.segment.entered", "viewer."),
+        ] {
+            let manifest = module_with_trigger_event("store", event);
+            let err = validate(&manifest)
+                .expect_err("an upload may not declare an engine-asserted event")
+                .to_string();
+            assert!(
+                err.contains(&format!("reserved prefix {reservation:?}")),
+                "{event}: {err}"
+            );
+            validate_with_provenance(&manifest, InstallProvenance::System)
+                .unwrap_or_else(|e| panic!("{event}: a system module may declare it: {e}"));
+        }
+    }
+
+    // Platform modules bring the platform's events, so those stay declarable.
+    #[test]
+    fn test_validate_platform_events_stay_open_to_uploads() {
+        for event in [
+            "channel.follow",
+            "channelpoints.redeem",
+            "user.message",
+            "stream.online",
+            "stream.offline",
+            "store.order.created",
+        ] {
+            validate(&module_with_trigger_event("store", event))
+                .unwrap_or_else(|e| panic!("{event}: {e}"));
+        }
+    }
+
+    #[test]
+    fn test_validate_module_namespace_is_open_only_under_the_own_id() {
+        validate(&module_with_trigger_event(
+            "store",
+            "module.store.order.created",
+        ))
+        .expect("a module may declare events under module.<its id>.");
+        for (module_id, event) in [
+            ("store", "module.other.order"),
+            ("store", "module.storefront.order"),
+            ("store", "module.store"),
+            ("a.b", "module.a.b.order"),
+            ("change", "module.change.add"),
+            ("storage", "module.storage.store.changed"),
+        ] {
+            let err = validate(&module_with_trigger_event(module_id, event))
+                .expect_err("outside the module's own namespace")
+                .to_string();
+            assert!(
+                err.contains("reserved prefix \"module.\""),
+                "{module_id} {event}: {err}"
+            );
+        }
+    }
+
     // A trigger with no `event` fires on its id, so the id is checked too.
     #[test]
     fn rejects_a_reserved_prefix_reached_through_the_id_fallback() {
@@ -5128,7 +5159,7 @@ mod tests {
                 "id": "w1", "name": "W1", "trigger": "t1",
                 "steps": [{ "id": "s1", "action": "builtin:action:alert" }]
             }],
-            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#,
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created" }]"#,
         );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::failing_on(["get_action_ref_by_canonical_id"]);
@@ -5150,7 +5181,7 @@ mod tests {
                 "id": "w1", "name": "W1", "trigger": "t1",
                 "steps": [{ "id": "s1", "action": "woofx3:action:doesnotexist" }]
             }],
-            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#,
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created" }]"#,
         );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::failing_on(["get_action_ref_by_canonical_id"]);
@@ -5174,7 +5205,7 @@ mod tests {
                 "id": "w1", "name": "W1", "trigger": "t1",
                 "steps": [{ "id": "s1", "action": "woofx3:action:alert" }]
             }],
-            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#,
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created" }]"#,
         );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::new().with_installed([installed_module("woofx3", &[])]);
@@ -5212,7 +5243,7 @@ mod tests {
                 "steps": [{{ "id": "s1", "action": "{action}" }}]
             }}],
             "commands": [{{ "id": "c1", "name": "C1", "pattern": "!x", "type": "prefix", "actions": [{{ "action": "woofx3:action:open" }}] }}],
-            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }}]"#
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created" }}]"#
         ));
         validate(&m).expect("validate ok")
     }
@@ -5308,7 +5339,7 @@ mod tests {
         minimal(&format!(
             r#",
             "permissions": {permissions},
-            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }}],
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created" }}],
             "workflows": [{{
                 "id": "w1", "name": "W1", "trigger": "t1",
                 "steps": [{{ "id": "s1", "action": "woofx3_twitch:action:twitch.timeout" }}]
@@ -5371,7 +5402,7 @@ mod tests {
     async fn a_step_calling_its_own_action_needs_no_extra_permissions() {
         let m = minimal(
             r#",
-            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }],
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created" }],
             "functions": [{ "id": "f1", "name": "F1", "runtime": "js", "path": "f.js" }],
             "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
             "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [{ "action": "a1" }] }]"#,
