@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   collectHelixPages,
+  helixAdTime,
   helixErrorMessage,
+  parseHelixAdSchedule,
+  parseHelixAdSnooze,
   parseHelixBlockedTermsPage,
   parseHelixCategories,
   parseHelixChannelInformation,
@@ -518,6 +521,157 @@ describe("parseHelixChatPin", () => {
   for (const { name, body, pin } of cases) {
     test(name, () => {
       expect(parseHelixChatPin(body)).toEqual(pin);
+    });
+  }
+});
+
+describe("helixAdTime", () => {
+  // Helix has sent each of these forms for the ad-schedule times.
+  const cases: { raw: unknown; time: string | null }[] = [
+    { raw: "2026-09-28T18:10:00Z", time: "2026-09-28T18:10:00.000Z" },
+    { raw: "2026-09-28T13:10:00-05:00", time: "2026-09-28T18:10:00.000Z" },
+    { raw: 1790619000, time: "2026-09-28T18:10:00.000Z" },
+    { raw: "1790619000", time: "2026-09-28T18:10:00.000Z" },
+    { raw: " 1790619000 ", time: "2026-09-28T18:10:00.000Z" },
+    { raw: 1790619000.5, time: "2026-09-28T18:10:00.500Z" },
+    { raw: "", time: null },
+    { raw: "  ", time: null },
+    { raw: 0, time: null },
+    { raw: "0", time: null },
+    { raw: -5, time: null },
+    { raw: Number.NaN, time: null },
+    { raw: null, time: null },
+    { raw: undefined, time: null },
+    { raw: "not a time", time: null },
+    { raw: true, time: null },
+    { raw: { seconds: 1 }, time: null },
+  ];
+
+  for (const { raw, time } of cases) {
+    test(`${JSON.stringify(raw) ?? String(raw)} -> ${time}`, () => {
+      expect(helixAdTime(raw)).toBe(time);
+    });
+  }
+});
+
+describe("parseHelixAdSchedule", () => {
+  const NOW = "2026-09-28T18:00:00.000Z";
+  const cases: { name: string; body: unknown; schedule: ReturnType<typeof parseHelixAdSchedule> }[] = [
+    {
+      name: "a schedule in mixed time forms",
+      body: {
+        data: [
+          {
+            next_ad_at: "2026-09-28T18:10:00Z",
+            last_ad_at: "",
+            duration: 90,
+            preroll_free_time: 1200,
+            snooze_count: 3,
+            snooze_refresh_at: 1790622000,
+          },
+        ],
+      },
+      schedule: {
+        nextAdAt: "2026-09-28T18:10:00.000Z",
+        lastAdAt: null,
+        durationSeconds: 90,
+        prerollFreeSeconds: 1200,
+        snoozeCount: 3,
+        snoozeRefreshAt: "2026-09-28T19:00:00.000Z",
+        serverNow: NOW,
+      },
+    },
+    {
+      name: "an offline channel with nothing scheduled",
+      body: {
+        data: [
+          { next_ad_at: "", last_ad_at: "", duration: 0, preroll_free_time: 0, snooze_count: 0, snooze_refresh_at: "" },
+        ],
+      },
+      schedule: {
+        nextAdAt: null,
+        lastAdAt: null,
+        durationSeconds: 0,
+        prerollFreeSeconds: 0,
+        snoozeCount: 0,
+        snoozeRefreshAt: null,
+        serverNow: NOW,
+      },
+    },
+    {
+      name: "unreadable times are null and the rest still reads",
+      body: {
+        data: [
+          {
+            next_ad_at: "soon",
+            last_ad_at: { at: 1 },
+            duration: "90",
+            preroll_free_time: 1200.7,
+            snooze_count: "3",
+            snooze_refresh_at: "later",
+          },
+        ],
+      },
+      schedule: {
+        nextAdAt: null,
+        lastAdAt: null,
+        durationSeconds: 90,
+        prerollFreeSeconds: 1200,
+        snoozeCount: 3,
+        snoozeRefreshAt: null,
+        serverNow: NOW,
+      },
+    },
+    {
+      name: "unreadable counts are zero",
+      body: { data: [{ duration: "long", preroll_free_time: -30, snooze_count: null }] },
+      schedule: {
+        nextAdAt: null,
+        lastAdAt: null,
+        durationSeconds: 0,
+        prerollFreeSeconds: 0,
+        snoozeCount: 0,
+        snoozeRefreshAt: null,
+        serverNow: NOW,
+      },
+    },
+    { name: "no schedule row", body: { data: [] }, schedule: null },
+    { name: "a row that is not an object", body: { data: ["schedule"] }, schedule: null },
+    ...NOT_HELIX.map(({ name, body }) => ({ name, body, schedule: null })),
+  ];
+
+  for (const { name, body, schedule } of cases) {
+    test(name, () => {
+      expect(parseHelixAdSchedule(body, NOW)).toEqual(schedule);
+    });
+  }
+});
+
+describe("parseHelixAdSnooze", () => {
+  const NOW = "2026-09-28T18:00:00.000Z";
+  const cases: { name: string; body: unknown; snooze: ReturnType<typeof parseHelixAdSnooze> }[] = [
+    {
+      name: "a snooze with numeric text",
+      body: { data: [{ snooze_count: "2", snooze_refresh_at: "1790622000", next_ad_at: "2026-09-28T18:15:00Z" }] },
+      snooze: {
+        snoozeCount: 2,
+        snoozeRefreshAt: "2026-09-28T19:00:00.000Z",
+        nextAdAt: "2026-09-28T18:15:00.000Z",
+        serverNow: NOW,
+      },
+    },
+    {
+      name: "unreadable times are null",
+      body: { data: [{ snooze_count: 0, snooze_refresh_at: "x", next_ad_at: false }] },
+      snooze: { snoozeCount: 0, snoozeRefreshAt: null, nextAdAt: null, serverNow: NOW },
+    },
+    { name: "no result row", body: { data: [] }, snooze: null },
+    ...NOT_HELIX.map(({ name, body }) => ({ name, body, snooze: null })),
+  ];
+
+  for (const { name, body, snooze } of cases) {
+    test(name, () => {
+      expect(parseHelixAdSnooze(body, NOW)).toEqual(snooze);
     });
   }
 });

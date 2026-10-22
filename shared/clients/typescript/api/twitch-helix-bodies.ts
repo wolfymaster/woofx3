@@ -302,6 +302,111 @@ export function parseHelixChatPin(body: unknown): HelixChatPin | null {
   };
 }
 
+/**
+ * `GET /helix/channels/ads`: the broadcaster's ad schedule. Times are
+ * ISO-8601, or null when Twitch reports none. Helix documents these times as
+ * RFC3339 but has sent Unix seconds (a number or a numeric string), and 0 or
+ * "" for none; `helixAdTime` reads every one of those forms.
+ *
+ * Read leniently: a time that cannot be read is null and a count that cannot
+ * be read is 0, and the rest of the schedule is still returned, so one odd
+ * field does not hide the others.
+ */
+export interface HelixAdSchedule {
+  /** When the next scheduled mid-roll starts; null when none is scheduled. */
+  nextAdAt: string | null;
+  /** When the last ad break started. */
+  lastAdAt: string | null;
+  /** Length of the next scheduled ad break, in seconds. */
+  durationSeconds: number;
+  /** Preroll-free seconds left at the moment Twitch answered. */
+  prerollFreeSeconds: number;
+  /** Snoozes left to spend. */
+  snoozeCount: number;
+  /** When the next snooze is added back; null when the count is full. */
+  snoozeRefreshAt: string | null;
+  /** The reader's clock when Twitch answered (Helix sends none), the reference the other times are read against. */
+  serverNow: string;
+}
+
+/** `POST /helix/channels/ads/schedule/snooze`: the schedule after spending a snooze, read like `HelixAdSchedule`. */
+export interface HelixAdSnooze {
+  snoozeCount: number;
+  snoozeRefreshAt: string | null;
+  nextAdAt: string | null;
+  serverNow: string;
+}
+
+/**
+ * An ad schedule time as ISO-8601, or null for none or for a value that
+ * cannot be read: RFC3339 text, Unix seconds as a number or numeric text, and
+ * 0 or "" for nothing scheduled.
+ */
+export function helixAdTime(raw: unknown): string | null {
+  if (typeof raw === "number") {
+    return epochSecondsToIso(raw);
+  }
+  if (typeof raw !== "string") {
+    return null;
+  }
+  const trimmed = raw.trim();
+  if (trimmed === "") {
+    return null;
+  }
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    return epochSecondsToIso(Number(trimmed));
+  }
+  const ms = Date.parse(trimmed);
+  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
+}
+
+/**
+ * The schedule in a `GET /helix/channels/ads` body; null when the body has
+ * no schedule at all. `serverNow` is the caller's clock at receipt.
+ */
+export function parseHelixAdSchedule(body: unknown, serverNow: string): HelixAdSchedule | null {
+  const row = firstRow(body);
+  if (!row) {
+    return null;
+  }
+  return {
+    nextAdAt: helixAdTime(row.next_ad_at),
+    lastAdAt: helixAdTime(row.last_ad_at),
+    durationSeconds: wholeCount(row.duration),
+    prerollFreeSeconds: wholeCount(row.preroll_free_time),
+    snoozeCount: wholeCount(row.snooze_count),
+    snoozeRefreshAt: helixAdTime(row.snooze_refresh_at),
+    serverNow,
+  };
+}
+
+/** The result in a `POST /helix/channels/ads/schedule/snooze` body; null when it has none. */
+export function parseHelixAdSnooze(body: unknown, serverNow: string): HelixAdSnooze | null {
+  const row = firstRow(body);
+  if (!row) {
+    return null;
+  }
+  return {
+    snoozeCount: wholeCount(row.snooze_count),
+    snoozeRefreshAt: helixAdTime(row.snooze_refresh_at),
+    nextAdAt: helixAdTime(row.next_ad_at),
+    serverNow,
+  };
+}
+
+function epochSecondsToIso(seconds: number): string | null {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return null;
+  }
+  return new Date(seconds * 1000).toISOString();
+}
+
+/** A whole, non-negative count from a number or numeric text; 0 for anything else. */
+function wholeCount(raw: unknown): number {
+  const value = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : 0;
+  return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+}
+
 function parsePage<T>(body: unknown, item: (row: Record<string, unknown>) => T | null): HelixPage<T> | null {
   const rows = dataRows(body);
   if (!rows) {
