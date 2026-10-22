@@ -132,8 +132,29 @@ interface Follow {
 #### HypeTrainBegin
 
 ```typescript
-interface HypeTrainBegin {}  // no additional payload
+interface HypeTrainBegin {
+    id: string;
+    broadcasterId: string;
+    broadcasterName: string;   // display name
+    level: number;
+    total: number;             // points contributed to the whole train
+    progress: number;          // points towards the current level
+    goal: number;              // points the current level needs
+    topContributions: {
+        userId: string;
+        userName: string;      // display name
+        type: "bits" | "subscription" | "other";
+        total: number;
+    }[];
+    startedAt: string;         // ISO-8601
+    expiresAt: string;         // ISO-8601; extended when the train levels up
+}
 ```
+
+Every Twitch payload must be a plain object. `TwitchEvents` throws when given a
+class instance (anywhere in the payload), so a platform SDK event, whose data
+sits behind getters and whose API client is an own property, can never be
+serialized onto the bus by accident.
 
 #### StreamOnline
 
