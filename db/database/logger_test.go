@@ -11,7 +11,7 @@ func TestSlogAdapter_TracedQueryOmitsBoundValues(t *testing.T) {
 	var buf bytes.Buffer
 	slogger := slog.New(slog.NewTextHandler(&buf, nil))
 
-	db, err := InitializeDB("sqlite:///:memory:", slogger)
+	db, err := InitializeDB("sqlite:///:memory:", slogger, RandomIDs{})
 	if err != nil {
 		t.Fatal(err)
 	}
