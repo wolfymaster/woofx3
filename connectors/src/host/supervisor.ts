@@ -1,6 +1,7 @@
 import { type Backoff, type BackoffConfig, createBackoff } from "@woofx3/common/runtime";
 import type { Adapter, AdapterContext, AdapterStatus } from "./adapter";
 import type { AdapterId } from "./adapter-ids";
+import { type Bounded, bounded } from "./bounded";
 import type { Clock, Logger, RandomSource, TimerHandle, Timers } from "./deps";
 import { errorMessage } from "./deps";
 import type { LinkState } from "./link-readers";
@@ -75,7 +76,8 @@ class Slot {
   }
 }
 
-type Bounded = { kind: "done" } | { kind: "failed"; error: unknown } | { kind: "timeout" };
+/** How a start settled, and when the release that follows an abort must be done by. */
+type StartOutcome = { result: Bounded<void>; releaseBy: number | undefined };
 
 /**
  * Runs each adapter while its link says it should. A reconciler: every pass
@@ -169,7 +171,11 @@ export class Supervisor {
     }));
   }
 
-  /** Stops every adapter in parallel, each under the stop deadline. Nothing starts afterwards. */
+  /**
+   * Stops every adapter in parallel. Each one's abort, stop and bus close
+   * share one stop deadline, so this resolves within stopDeadlineMs of the
+   * call. Nothing starts afterwards.
+   */
   async stopAll(): Promise<void> {
     this.shuttingDown = true;
     await Promise.all(
@@ -290,7 +296,7 @@ export class Supervisor {
       dbProxyUrl: this.deps.dbProxyUrl,
       reportFault: (reason) => this.fault(slot, epoch, reason),
     };
-    const started = await this.settleStart(slot, ctx, abort.signal);
+    const { result: started, releaseBy } = await this.settleStart(slot, ctx, abort.signal);
     if (abort.signal.aborted) {
       if (started.kind === "timeout") {
         slot.counts.stopTimeouts++;
@@ -299,7 +305,7 @@ export class Supervisor {
           stopDeadlineMs: this.config.stopDeadlineMs,
         });
       }
-      await this.stop(slot, "stopped while starting");
+      await this.stop(slot, "stopped while starting", releaseBy);
       return;
     }
     if (started.kind === "failed") {
@@ -310,9 +316,9 @@ export class Supervisor {
     this.setStatus(slot, { state: "connected", since: this.deps.clock.now() });
   }
 
-  private async stop(slot: Slot, reason: string): Promise<void> {
+  private async stop(slot: Slot, reason: string, releaseBy = this.stopDeadlineFromNow()): Promise<void> {
     this.setStatus(slot, { state: "stopping" });
-    await this.release(slot, reason);
+    await this.release(slot, reason, releaseBy);
     this.setStatus(slot, { state: "stopped" });
   }
 
@@ -320,7 +326,7 @@ export class Supervisor {
     slot.counts.failures++;
     this.deps.logger.warn("adapter failed", { adapter: slot.id, reason });
     this.setStatus(slot, { state: "stopping" });
-    await this.release(slot, `failed: ${reason}`);
+    await this.release(slot, `failed: ${reason}`, this.stopDeadlineFromNow());
 
     const now = this.deps.clock.now();
     slot.recentFailures = slot.recentFailures.filter((at) => now - at < this.config.park.windowMs);
@@ -343,19 +349,32 @@ export class Supervisor {
     }, delay);
   }
 
-  /** Aborts, stops and closes the adapter's bus scope, each bounded by the stop deadline. */
-  private async release(slot: Slot, reason: string): Promise<void> {
+  /**
+   * Aborts, stops and closes the adapter's bus scope, all by the one clock
+   * time `releaseBy`: the bus close gets whatever the stop left, so a hung
+   * adapter costs one stop deadline, not one per step.
+   */
+  private async release(slot: Slot, reason: string, releaseBy: number): Promise<void> {
     slot.abort?.abort();
     slot.abort = undefined;
     const scope = slot.scope;
     slot.scope = undefined;
 
-    const stopped = await this.bounded(() => slot.adapter.stop(reason));
+    const stopped = await bounded(() => slot.adapter.stop(reason), this.msUntil(releaseBy), this.deps.timers);
     this.logBounded(slot, "stop", stopped);
     if (scope !== undefined) {
-      const closed = await this.bounded(() => scope.closeAll());
+      // closeAll unsubscribes before its first await, so even with no time left nothing stays subscribed.
+      const closed = await bounded(() => scope.closeAll(), this.msUntil(releaseBy), this.deps.timers);
       this.logBounded(slot, "bus close", closed);
     }
+  }
+
+  private stopDeadlineFromNow(): number {
+    return this.deps.clock.now() + this.config.stopDeadlineMs;
+  }
+
+  private msUntil(at: number): number {
+    return Math.max(0, at - this.deps.clock.now());
   }
 
   private fault(slot: Slot, epoch: number, reason: string): void {
@@ -369,22 +388,28 @@ export class Supervisor {
 
   /**
    * Waits for `start` to settle. A start runs as long as it needs while it is
-   * wanted; once aborted it gets the stop deadline to give up, so a start
-   * that ignores its signal cannot hold the adapter's passes forever.
+   * wanted. Once aborted, the stop deadline starts: the start must give up and
+   * the release that follows must finish by `releaseBy`, so a start that
+   * ignores its signal cannot hold the adapter's passes forever.
    */
-  private settleStart(slot: Slot, ctx: AdapterContext, signal: AbortSignal): Promise<Bounded> {
-    return new Promise<Bounded>((resolve) => {
+  private settleStart(slot: Slot, ctx: AdapterContext, signal: AbortSignal): Promise<StartOutcome> {
+    return new Promise<StartOutcome>((resolve) => {
       let timer: TimerHandle | undefined;
+      let releaseBy: number | undefined;
       const onAbort = () => {
-        timer = this.deps.timers.setTimeout(() => resolve({ kind: "timeout" }), this.config.stopDeadlineMs);
+        releaseBy = this.stopDeadlineFromNow();
+        timer = this.deps.timers.setTimeout(
+          () => resolve({ result: { kind: "timeout" }, releaseBy }),
+          this.config.stopDeadlineMs
+        );
       };
       signal.addEventListener("abort", onAbort, { once: true });
-      const settle = (outcome: Bounded) => {
+      const settle = (result: Bounded<void>) => {
         signal.removeEventListener("abort", onAbort);
         if (timer !== undefined) {
           this.deps.timers.clearTimeout(timer);
         }
-        resolve(outcome);
+        resolve({ result, releaseBy });
       };
       let starting: Promise<void>;
       try {
@@ -393,35 +418,13 @@ export class Supervisor {
         starting = Promise.reject(error);
       }
       starting.then(
-        () => settle({ kind: "done" }),
+        () => settle({ kind: "done", value: undefined }),
         (error: unknown) => settle({ kind: "failed", error })
       );
     });
   }
 
-  private bounded(work: () => Promise<void>): Promise<Bounded> {
-    return new Promise<Bounded>((resolve) => {
-      const timer = this.deps.timers.setTimeout(() => resolve({ kind: "timeout" }), this.config.stopDeadlineMs);
-      let running: Promise<void>;
-      try {
-        running = work();
-      } catch (error) {
-        running = Promise.reject(error);
-      }
-      running.then(
-        () => {
-          this.deps.timers.clearTimeout(timer);
-          resolve({ kind: "done" });
-        },
-        (error: unknown) => {
-          this.deps.timers.clearTimeout(timer);
-          resolve({ kind: "failed", error });
-        }
-      );
-    });
-  }
-
-  private logBounded(slot: Slot, what: string, outcome: Bounded): void {
+  private logBounded(slot: Slot, what: string, outcome: Bounded<void>): void {
     if (outcome.kind === "timeout") {
       slot.counts.stopTimeouts++;
       this.deps.logger.error(`adapter ${what} did not finish within the stop deadline; marking it stopped`, {

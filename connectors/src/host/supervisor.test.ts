@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { LinkState } from "./link-readers";
 import { Supervisor, type SupervisorConfig } from "./supervisor";
 import {
+  bytes,
   disabled,
   FakeAdapter,
   FakeBus,
@@ -22,19 +23,22 @@ const config: SupervisorConfig = {
 
 function setup(adapter = new FakeAdapter()) {
   const time = new FakeTime();
+  // Lets a test put the supervisor's clock a little behind its timers, as real timers can be.
+  const skew = { ms: 0 };
+  const clock = { now: () => time.now() + skew.ms };
   const bus = new FakeBus();
   const logger = new RecordingLogger();
   const supervisor = new Supervisor(new Map([["twitch", adapter]]), config, {
     bus,
     dbProxyUrl: "http://db.test",
-    clock: time,
+    clock,
     random: halfRandom,
     timers: time,
     logger,
   });
   const apply = (link: LinkState, changed = false) =>
     supervisor.reconcile(new Map([["twitch", link]]), new Set(changed ? (["twitch"] as const) : []));
-  return { adapter, time, bus, logger, supervisor, apply };
+  return { adapter, time, skew, bus, logger, supervisor, apply };
 }
 
 describe("Supervisor", () => {
@@ -165,6 +169,46 @@ describe("Supervisor", () => {
     expect(supervisor.status("twitch").state).toBe("parked");
 
     await apply(disabled, true);
+    expect(supervisor.status("twitch").state).toBe("stopped");
+  });
+
+  test("a hung stop and a hung bus close share one stop deadline", async () => {
+    const adapter = new FakeAdapter();
+    adapter.stopStep = "hang";
+    const { supervisor, bus, time, apply } = setup(adapter);
+    await apply(linked, true);
+    await adapter.lastContext?.bus.subscribe("fake.in", () => new Promise<void>(() => {}));
+    bus.deliver("fake.in", bytes("held"));
+    await flush();
+
+    let stopped = false;
+    void supervisor.stopAll().then(() => {
+      stopped = true;
+    });
+    await time.advance(config.stopDeadlineMs);
+    expect(stopped).toBe(true);
+    expect(supervisor.status("twitch").state).toBe("stopped");
+    expect(supervisor.report()[0].counts.stopTimeouts).toBe(2);
+    expect(bus.active("fake.in")).toBe(0);
+  });
+
+  test("an aborted start that ignores its abort, then hangs its stop and bus close, is released within one stop deadline", async () => {
+    const adapter = new FakeAdapter();
+    adapter.startSteps = ["ignoreAbort"];
+    adapter.stopStep = "hang";
+    const { supervisor, bus, time, apply } = setup(adapter);
+    void apply(linked, true);
+    await flush();
+    await adapter.lastContext?.bus.subscribe("fake.in", () => new Promise<void>(() => {}));
+    bus.deliver("fake.in", bytes("held"));
+    await flush();
+
+    let stopped = false;
+    void supervisor.stopAll().then(() => {
+      stopped = true;
+    });
+    await time.advance(config.stopDeadlineMs);
+    expect(stopped).toBe(true);
     expect(supervisor.status("twitch").state).toBe("stopped");
   });
 

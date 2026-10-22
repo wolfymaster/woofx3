@@ -30,14 +30,15 @@ function event(subject: string, data: Record<string, unknown>): Uint8Array {
   return bytes(JSON.stringify({ specversion: "1.0", id: "e", type: subject, source: "api", data }));
 }
 
-async function setup() {
+async function setup(served: ServedSubject = twitchapi, env: Record<string, unknown> = {}) {
   const values: Record<string, string> = {};
   const settings: SettingsReader = { getSetting: async (key) => values[key] ?? null };
   const bus = new FakeBus();
-  const adapter = new FakeAdapter("twitch", [twitchapi]);
+  const adapter = new FakeAdapter("twitch", [served]);
   const time = new FakeTime();
+  const logger = new RecordingLogger();
   const host = new Host({
-    config: hostConfig(HostEnvSchema.parse({})),
+    config: hostConfig(HostEnvSchema.parse(env)),
     dbProxyUrl: "http://db.test",
     bus,
     busConnected: () => true,
@@ -48,7 +49,7 @@ async function setup() {
     random: halfRandom,
     ids: countingIds(),
     timers: time,
-    logger: new RecordingLogger(),
+    logger,
   });
   const announce = async (enabled: boolean) => {
     bus.deliver(
@@ -64,7 +65,7 @@ async function setup() {
     await flush();
     return replies.map(text);
   };
-  return { values, bus, adapter, host, announce, ask };
+  return { values, bus, adapter, host, time, logger, announce, ask };
 }
 
 describe("Host", () => {
@@ -104,6 +105,34 @@ describe("Host", () => {
     await host.stop();
     expect(adapter.stops).toBe(1);
     expect(bus.subscriptions.filter((s) => s.active)).toHaveLength(0);
+  });
+
+  test("stop gives up on a served handler that ignores its deadline once the drain time is spent", async () => {
+    const stuck: ServedSubject = { ...twitchapi, handle: () => new Promise<Uint8Array>(() => {}) };
+    const { values, bus, host, time, logger } = await setup(stuck);
+    values.twitch_token = "tok";
+    await host.start();
+    await host.settled();
+    bus.deliver("twitchapi", bytes("{}"), "inbox");
+    await flush();
+
+    let stopped = false;
+    void host.stop().then(() => {
+      stopped = true;
+    });
+    await flush();
+    // The drain time is the larger of the 10 s stop deadline and the 9 s budget.
+    await time.advance(9_999);
+    expect(stopped).toBe(false);
+    await time.advance(1);
+    expect(stopped).toBe(true);
+    expect(logger.at("error").some((entry) => entry.message.includes("still running past"))).toBe(true);
+  });
+
+  test("refuses a shutdown deadline that does not cover the db-proxy timeout and the longest served budget", async () => {
+    const slow: ServedSubject = { ...twitchapi, budgetMs: 14_000 };
+    await expect(setup(slow)).rejects.toThrow("must exceed the db-proxy timeout");
+    await expect(setup(slow, { woofx3ConnectorsShutdownDeadlineMs: 16_001 })).resolves.toBeDefined();
   });
 
   test("refuses a second start", async () => {
