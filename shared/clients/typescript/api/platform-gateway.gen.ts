@@ -850,7 +850,7 @@ function parsePlatformCapability(
     return fail(`${field}.state`, `unknown platform state ${JSON.stringify(object.state)}`);
   }
   for (const name of ["connected", "enabled"] as const) {
-    if (typeof object[name] !== "boolean") {
+    if (object[name] !== undefined && typeof object[name] !== "boolean") {
       return fail(`${field}.${name}`, "must be a boolean");
     }
   }

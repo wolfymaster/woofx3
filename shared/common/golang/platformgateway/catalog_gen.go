@@ -437,8 +437,8 @@ type PlatformCapability struct {
 // ignores: one entry per platform the gateway has an adapter for, or Error
 // when it could not answer.
 type CapabilitiesReply struct {
-	Platforms []PlatformCapability `json:"platforms,omitempty"`
-	Error     string               `json:"error,omitempty"`
+	Platforms []PlatformCapability `json:"platforms"`
+	Error     string               `json:"error"`
 }
 
 // MarshalJSON writes {"error": ...} when Error is set and {"platforms": [...]}
