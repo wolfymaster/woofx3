@@ -492,39 +492,51 @@ fn relocated_endpoint_address_settings<'a>(
     relocated
 }
 
-/// Puts every relocated endpoint address setting
-/// (`relocated_endpoint_address_settings`) back to the value a newly
-/// registered key starts with: the manifest's default, empty when it declares
-/// none. db-proxy stores an unset setting as an empty value and has no delete
-/// for one setting, so this is how a stored value is removed. A key with no
-/// stored row, or already holding its default, is left alone, so running this
-/// again changes nothing.
+/// What a successful install leaves for its caller to finish once the
+/// module is registered again in the sandbox.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct InstallOutcome {
+    /// The local endpoint address settings the install reset
+    /// (`relocated_endpoint_address_settings`). Until the sandbox registry is
+    /// refreshed, code of the previous version can still write them, so the
+    /// caller resets them again after the refresh
+    /// (`ModuleService::reset_relocated_endpoint_settings`). From then on the
+    /// registry refuses those writes, including from invocations already
+    /// running.
+    pub relocated_endpoint_settings: Vec<String>,
+}
+
+/// Puts each of `keys`, local endpoint address settings of `manifest`, back
+/// to the value a newly registered key starts with: the manifest's default,
+/// empty when it declares none. db-proxy stores an unset setting as an empty
+/// value and has no delete for one setting, so this is how a stored value is
+/// removed. A key with no stored row, or already holding its default, is
+/// left alone, so running this again changes nothing.
 ///
 /// Trade-off: a value the streamer typed into the setting before it became an
 /// endpoint setting is cleared once, and the streamer or the companion sets
 /// it again.
-async fn clear_relocated_endpoint_settings(
+pub async fn reset_endpoint_settings(
     db_proxy: &dyn ModuleDbProxy,
-    module_key: &str,
-    previous: Option<&ModuleManifest>,
-    new_manifest: &ModuleManifest,
+    manifest: &ModuleManifest,
+    keys: &[String],
 ) -> Result<()> {
-    let relocated = relocated_endpoint_address_settings(previous, new_manifest);
-    if relocated.is_empty() {
+    if keys.is_empty() {
         return Ok(());
     }
+    let module_key = manifest.module_key();
     let stored = db_proxy
         .get_module_settings(module_key)
         .await
         .map_err(|e| anyhow!("clear endpoint settings: read settings: {e}"))?;
-    for key in relocated {
-        let Some(row) = stored.iter().find(|row| row.key == key) else {
+    for key in keys {
+        let Some(row) = stored.iter().find(|row| &row.key == key) else {
             continue;
         };
-        let default = new_manifest
+        let default = manifest
             .settings
             .iter()
-            .find(|setting| setting.id == key)
+            .find(|setting| &setting.id == key)
             .map(|setting| setting.resolved_default())
             .ok_or_else(|| anyhow!("clear endpoint settings: `{key}` is not a declared setting"))?;
         if row.value == default {
@@ -1484,7 +1496,7 @@ pub async fn run_install<R: Repository>(
     db_proxy: Option<&dyn ModuleDbProxy>,
     composite_module_key: &str,
     client_id: &str,
-) -> Result<()> {
+) -> Result<InstallOutcome> {
     run_install_with_provenance(
         manifest,
         files,
@@ -1516,6 +1528,9 @@ pub async fn run_install<R: Repository>(
 /// after it. A failed upgrade restores the installed version
 /// (`restore_previous_install`); a failed fresh install removes what it
 /// registered (`rollback_db_install`).
+///
+/// The caller refreshes the sandbox registry after a successful install and
+/// then finishes what the returned `InstallOutcome` names.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_install_with_provenance<R: Repository>(
     manifest: &ModuleManifest,
@@ -1528,7 +1543,7 @@ pub async fn run_install_with_provenance<R: Repository>(
     provenance: InstallProvenance,
     marketplace: Option<&MarketplaceOrigin>,
     system_only: &SystemOnlyActions,
-) -> Result<()> {
+) -> Result<InstallOutcome> {
     // `module_key` here is the manifest id (used for file paths and as the
     // module_name-style ref passed to child resource registrations).
     // `composite_module_key` is the `{id}:{version}:{hash}` idempotency key
@@ -1626,6 +1641,7 @@ pub async fn run_install_with_provenance<R: Repository>(
     };
     state.upload_files().await?;
 
+    let mut outcome = InstallOutcome::default();
     if let Some(proxy) = db_proxy {
         let plan = plan.expect("plan was built above whenever db_proxy is Some");
 
@@ -1642,71 +1658,75 @@ pub async fn run_install_with_provenance<R: Repository>(
         // paired with a compensating cleanup if the install fails
         // partway through. Run the whole plan inside one async block so
         // a single rollback path handles any step's failure.
-        let install_result: Result<()> = async {
+        let install_result: Result<Vec<String>> = async {
             for step in &plan {
                 state.execute(step, proxy).await?;
             }
             // Last, so a value is cleared only once every other step has
             // succeeded; a failure here still restores the previous version.
             let previous_manifest = previous.as_ref().and_then(PreviousInstall::parsed_manifest);
-            clear_relocated_endpoint_settings(
-                proxy,
-                module_key,
-                previous_manifest.as_ref(),
-                manifest,
-            )
-            .await
+            let relocated: Vec<String> =
+                relocated_endpoint_address_settings(previous_manifest.as_ref(), manifest)
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect();
+            reset_endpoint_settings(proxy, manifest, &relocated).await?;
+            Ok(relocated)
         }
         .await;
 
-        if let Err(e) = install_result {
-            // CreateModule is the first db write; until it succeeds this
-            // install has written nothing to undo, and the module row the
-            // db holds, if any, is not this install's.
-            let Some(db_record_id) = state.db_record_id.clone() else {
-                return Err(e);
-            };
-            let Some(previous) = previous else {
+        let relocated = match install_result {
+            Ok(relocated) => relocated,
+            Err(e) => {
+                // CreateModule is the first db write; until it succeeds this
+                // install has written nothing to undo, and the module row the
+                // db holds, if any, is not this install's.
+                let Some(db_record_id) = state.db_record_id.clone() else {
+                    return Err(e);
+                };
+                let Some(previous) = previous else {
+                    warn!(
+                        "install failed for module {} ({}): rolling back db state: {}",
+                        manifest.name, composite_module_key, e
+                    );
+                    rollback_db_install(
+                        proxy,
+                        module_key,
+                        composite_module_key,
+                        &manifest.name,
+                        &db_record_id,
+                        &preexisting_command_ids,
+                    )
+                    .await;
+                    return Err(e);
+                };
                 warn!(
-                    "install failed for module {} ({}): rolling back db state: {}",
-                    manifest.name, composite_module_key, e
+                    "upgrade of module {} to {} failed: restoring {}: {}",
+                    manifest.name, composite_module_key, previous.module_key, e
                 );
-                rollback_db_install(
+                if let Err(restore) = restore_previous_install(
                     proxy,
                     module_key,
-                    composite_module_key,
-                    &manifest.name,
-                    &db_record_id,
+                    &previous,
+                    manifest,
                     &preexisting_command_ids,
                 )
-                .await;
+                .await
+                {
+                    error!("rollback: {}", restore);
+                    return Err(anyhow!(
+                        "{e}; the previous version could not be restored: {restore}"
+                    ));
+                }
                 return Err(e);
-            };
-            warn!(
-                "upgrade of module {} to {} failed: restoring {}: {}",
-                manifest.name, composite_module_key, previous.module_key, e
-            );
-            if let Err(restore) = restore_previous_install(
-                proxy,
-                module_key,
-                &previous,
-                manifest,
-                &preexisting_command_ids,
-            )
-            .await
-            {
-                error!("rollback: {}", restore);
-                return Err(anyhow!(
-                    "{e}; the previous version could not be restored: {restore}"
-                ));
             }
-            return Err(e);
-        }
+        };
 
         if let Some(previous) = &previous {
             prune_removed_resources(proxy, module_key, previous, manifest).await;
         }
         prune_removed_commands(proxy, module_key, manifest).await;
+        outcome.relocated_endpoint_settings = relocated;
     } else {
         warn!(
             "databaseProxyUrl not set in .woofx3.json; skipping CreateModule, trigger, workflow, action, and command registration"
@@ -1719,7 +1739,7 @@ pub async fn run_install_with_provenance<R: Repository>(
         }
     }
 
-    Ok(())
+    Ok(outcome)
 }
 
 #[cfg(test)]
@@ -3388,7 +3408,7 @@ mod link_resource_settings_tests {
         .expect("module record")
     }
 
-    async fn install(db_proxy: &FakeDbProxyClient) -> Result<()> {
+    async fn install(db_proxy: &FakeDbProxyClient) -> Result<InstallOutcome> {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = FileRepository::new(FileRepositoryConfig {
             destination: dir.path().to_path_buf(),
@@ -3569,7 +3589,10 @@ mod endpoint_settings_tests {
         .to_string()
     }
 
-    async fn install(db_proxy: &FakeDbProxyClient, manifest: serde_json::Value) -> Result<()> {
+    async fn install(
+        db_proxy: &FakeDbProxyClient,
+        manifest: serde_json::Value,
+    ) -> Result<InstallOutcome> {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = FileRepository::new(FileRepositoryConfig {
             destination: dir.path().to_path_buf(),
@@ -3603,10 +3626,13 @@ mod endpoint_settings_tests {
             )))
             .with_setting("obs_address", "10.0.0.66")
             .with_setting("obs_port", "4455");
-        install(&db, obs_manifest("1.1.0", "obs", "obs_address"))
+        let outcome = install(&db, obs_manifest("1.1.0", "obs", "obs_address"))
             .await
             .expect("upgrade");
 
+        // Named so the caller resets it again once the registry refuses
+        // writes to it.
+        assert_eq!(outcome.relocated_endpoint_settings, vec!["obs_address"]);
         let settings = db.settings();
         assert_eq!(settings.get("obs_address").map(String::as_str), Some(""));
         assert_eq!(settings.get("obs_port").map(String::as_str), Some("4455"));
@@ -3651,13 +3677,35 @@ mod endpoint_settings_tests {
     }
 
     #[tokio::test]
-    async fn test_clear_relocated_endpoint_settings_succeeds_for_an_absent_key() {
+    async fn test_reset_after_the_install_clears_a_value_planted_before_the_registry_refresh() {
+        let db = FakeDbProxyClient::new().with_installed_version(installed_version_body(
+            &obs_manifest("1.0.0", "obs", "obs_host"),
+        ));
+        let upgraded = obs_manifest("1.1.0", "obs", "obs_address");
+        let outcome = install(&db, upgraded.clone()).await.expect("upgrade");
+        // Code of 1.0.0, where `obs_address` is an ordinary setting, writes it
+        // before the sandbox registry holds 1.1.0.
+        db.set_module_setting("obs", "obs_address", "10.0.0.66")
+            .await
+            .expect("planted write");
+
+        reset_endpoint_settings(&db, &parsed(upgraded), &outcome.relocated_endpoint_settings)
+            .await
+            .expect("reset after refresh");
+
+        assert_eq!(
+            db.settings().get("obs_address").map(String::as_str),
+            Some("")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_reset_endpoint_settings_succeeds_for_an_absent_key() {
         let db = FakeDbProxyClient::new();
-        clear_relocated_endpoint_settings(
+        reset_endpoint_settings(
             &db,
-            "obs",
-            None,
             &parsed(obs_manifest("1.0.0", "obs", "obs_host")),
+            &["obs_host".to_string(), "obs_port".to_string()],
         )
         .await
         .expect("an absent key is already clear");
