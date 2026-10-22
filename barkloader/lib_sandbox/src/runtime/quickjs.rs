@@ -462,6 +462,7 @@ fn build_http_namespace<'js>(
                     url: &url,
                     method: &method,
                     opts: json_opts,
+                    enforcement: crate::host::Enforcement::Policy,
                 })
                 .map_err(host_err)?;
             json_to_js(&ctx, &response).map_err(|e| host_err(e.to_string()))

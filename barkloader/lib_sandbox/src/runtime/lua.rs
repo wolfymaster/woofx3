@@ -288,6 +288,7 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
                         url: &url,
                         method: &method,
                         opts: json_opts,
+                        enforcement: crate::host::Enforcement::Policy,
                     })
                     .map_err(mlua::Error::RuntimeError)?;
                 lua.to_value(&result)
