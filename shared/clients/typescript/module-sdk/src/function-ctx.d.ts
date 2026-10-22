@@ -387,7 +387,7 @@ export interface CtxCompareAndSetSettingResult {
 // know they're available get autocomplete; authors writing portable
 // modules check `if (ctx.twitch) …` first.
 //
-// Source: `barkloader/lib_sandbox/src/extensions/{twitch,obs,chat}.rs`.
+// Source: `barkloader/lib_sandbox/src/extensions/{twitch,obs}.rs`.
 // To add a new extension, declare
 // the namespace + its function names below.
 
@@ -582,12 +582,6 @@ export interface CtxObsExtension {
   listInputs(): ObsNameOption[];
 }
 
-/** `ctx.chat.*` — registered when `ChatExtension` is bound. */
-export interface CtxChatExtension {
-  /** Send a message via the engine-bound chat sender. */
-  sendMessage(text: string): null;
-}
-
 /**
  * `ctx.oauth.*` — requests to a provider the manifest declares under
  * `oauth[]`, with the streamer's token, which module code never sees. The
@@ -611,7 +605,6 @@ export interface CtxOAuthExtension {
 export interface CtxExtensions {
   twitch?: CtxTwitchExtension;
   obs?: CtxObsExtension;
-  chat?: CtxChatExtension;
   oauth?: CtxOAuthExtension;
 }
 

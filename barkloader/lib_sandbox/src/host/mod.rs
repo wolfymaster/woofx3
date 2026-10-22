@@ -135,10 +135,6 @@ pub trait HttpClient: Send + Sync {
     fn request(&self, request: HttpRequest<'_>) -> Result<Value, String>;
 }
 
-pub trait ChatSender: Send + Sync {
-    fn send_message(&self, text: &str) -> Result<(), String>;
-}
-
 /// A view of a runtime-created resource instance, returned across the
 /// `ResourceClient` trait boundary. Mirrors the `ModuleResourceInstance`
 /// proto message but stays decoupled from the generated client crate so

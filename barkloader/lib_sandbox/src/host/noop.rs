@@ -66,14 +66,6 @@ impl HttpClient for NoopHttpClient {
     }
 }
 
-pub struct NoopChatSender;
-
-impl ChatSender for NoopChatSender {
-    fn send_message(&self, _text: &str) -> Result<(), String> {
-        Ok(())
-    }
-}
-
 pub struct NoopSettingsClient;
 
 impl super::SettingsClient for NoopSettingsClient {

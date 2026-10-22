@@ -219,9 +219,6 @@
 ---@field listSources fun(): { value: string, label: string, group?: string }[]
 ---@field listInputs fun(): { value: string, label: string, group?: string }[]
 
----@class CtxChatExtension
----@field sendMessage fun(text: string): nil
-
 ---The `ctx` object passed to every function invocation. Combines the
 ---built-in surface with extension namespaces the host registered. Each
 ---extension namespace is optional — check for presence before calling
@@ -244,4 +241,3 @@
 ---@field result fun(value: any, events?: CtxResultEvent[]): CtxResult
 ---@field twitch? CtxTwitchExtension
 ---@field obs? CtxObsExtension
----@field chat? CtxChatExtension
