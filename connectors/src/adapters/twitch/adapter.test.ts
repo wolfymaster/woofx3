@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import { EventType as TwitchEventType } from "@woofx3/common/cloudevents/Twitch/events";
@@ -66,6 +66,19 @@ class NotLinkedError extends Error {
 
 type AuthFailureHandler = (err: Error, info: { provider: "refreshing" | "dashboard" }) => void;
 
+/** The auth provider every connected client hands back, for the Helix calls egress makes. */
+const fakeAuthProvider = {
+  clientId: "client-1",
+  getAccessTokenForUser: async () => ({
+    accessToken: "token-1",
+    refreshToken: null,
+    scope: [],
+    expiresIn: null,
+    obtainmentTimestamp: 0,
+    userId: "broadcaster-1",
+  }),
+};
+
 /** Every client the adapter built, newest last. */
 const clients: MockTwitchClient[] = [];
 
@@ -78,6 +91,7 @@ class MockTwitchClient {
     if (!linked) {
       throw new NotLinkedError();
     }
+    return fakeAuthProvider;
   });
   ApiClient = mock(() => ({ streams: { getStreamByUserId: async () => null } }));
   EventBusListener = mock(() => confirmingListener());
@@ -126,6 +140,10 @@ describe("TwitchAdapter manifest", () => {
     expect(manifest.serves.map((served) => [served.subject, served.budgetMs])).toEqual([
       ["twitchapi", TWITCH_API_SERVED_BUDGET_MS],
     ]);
+  });
+
+  test("performs every platform gateway chat action", () => {
+    expect(Object.keys(manifest.egress ?? {}).sort()).toEqual(["chat.announce", "chat.pin", "chat.send"]);
   });
 
   test("gives a Helix call room to report its own timeout inside the served budget", () => {
@@ -253,6 +271,61 @@ describe("TwitchAdapter under the supervisor", () => {
 
     expect(supervisor.status("twitch").state).toBe("connected");
     expect(liveListeners.size).toBe(1);
+  });
+});
+
+describe("TwitchAdapter egress", () => {
+  const egressCtx = () => ({
+    signal: new AbortController().signal,
+    deadline: new FakeTime().now() + 9_000,
+    requestedBy: { kind: "workflow" as const, ref: "workflow-1" },
+    markSent: () => {},
+  });
+
+  test("answers stopped while the adapter is not running, without calling Twitch", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch");
+    try {
+      const send = newAdapter().manifest.egress?.["chat.send"];
+      expect(await send?.handle({ message: "hi" }, undefined, egressCtx())).toEqual({
+        status: "unavailable",
+        reason: "stopped",
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  test("posts through the running connection as the broadcaster, and answers stopped again after stop", async () => {
+    linked = true;
+    const { adapter, apply } = supervised();
+    const fetchSpy = spyOn(globalThis, "fetch");
+    fetchSpy.mockImplementation(
+      (async () =>
+        new Response(JSON.stringify({ data: [{ message_id: "m-1", is_sent: true }] }), {
+          status: 200,
+        })) as unknown as typeof fetch
+    );
+    try {
+      await apply(true, true);
+      const send = adapter.manifest.egress?.["chat.send"];
+
+      expect(await send?.handle({ message: "hi" }, undefined, egressCtx())).toEqual({
+        status: "delivered",
+        messageId: "m-1",
+      });
+      const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+      expect(body).toEqual({ broadcaster_id: "broadcaster-1", sender_id: "broadcaster-1", message: "hi" });
+
+      await apply(true, false);
+      expect(await send?.handle({ message: "hi" }, undefined, egressCtx())).toEqual({
+        status: "unavailable",
+        reason: "stopped",
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });
 
