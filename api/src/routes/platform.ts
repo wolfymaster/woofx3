@@ -22,6 +22,7 @@ export const platformRoutes = routeModule({
       options: params.options,
       idempotencyKey: params.idempotencyKey,
       requestedBy: { kind: "api", ref: clientId },
+      // The cast is safe to hold: send() validates the request with parseGatewayRequest before it goes out.
     } as GatewayRequest);
   },
 });

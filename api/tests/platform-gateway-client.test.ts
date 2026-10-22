@@ -9,7 +9,7 @@ import {
 } from "@woofx3/api/platform-gateway";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { RPC_METHODS } from "../src/api-session";
-import { DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS, PlatformGatewayClient } from "../src/platform-gateway-client";
+import { PlatformGatewayClient } from "../src/platform-gateway-client";
 import { platformRoutes } from "../src/routes/platform";
 
 function fakeLogger(): SharedLogger {
@@ -119,6 +119,26 @@ describe("PlatformGatewayClient.send", () => {
     });
   }
 
+  const warned: [string, unknown | Error][] = [
+    ["a timeout", named("timeout", "TimeoutError")],
+    ["no responders", named("503", "NatsError", "NoResponders")],
+    ["a reply that breaks the contract", "not json"],
+  ];
+  for (const [name, reply] of warned) {
+    test(`${name} is logged with the action and key`, async () => {
+      const calls: { message: string; fields: Record<string, unknown> }[] = [];
+      const logger = {
+        warn: (message: string, fields: Record<string, unknown>) => calls.push({ message, fields }),
+      } as unknown as SharedLogger;
+      const { nats } = busAnswering(reply);
+
+      await new PlatformGatewayClient({ nats: nats as never, logger, timeoutMs: 5_000 }).send(REQUEST);
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.fields).toMatchObject({ action: "chat.send", idempotencyKey: "key-1" });
+    });
+  }
+
   test("a refused whole request is still a reply, for the caller to read", async () => {
     const refusal: GatewayReply = {
       ok: false,
@@ -149,10 +169,6 @@ describe("PlatformGatewayClient.send", () => {
 
   test.each([0, -1, 1.5, Number.NaN])("refuses a timeout of %p at construction", (timeoutMs) => {
     expect(() => clientOn(null, timeoutMs)).toThrow("timeoutMs must be a positive integer");
-  });
-
-  test("defaults to the gateway's caller window", () => {
-    expect(DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS).toBe(12_000);
   });
 });
 

@@ -12,8 +12,9 @@ import type NATSClient from "@woofx3/nats/src/client";
 /**
  * How long a send waits for the gateway's reply. The gateway answers every
  * request within this window with per-platform results (its own adapter
- * deadline is shorter, `GATEWAY_CALLER_TIMEOUT_MS` in connectors), so a
- * timeout here means the connectors host itself went quiet.
+ * deadline is shorter; this must match `GATEWAY_CALLER_TIMEOUT_MS` in
+ * connectors), so a timeout here means the connectors host itself went quiet.
+ * It is also the lowest wait the api accepts from configuration.
  */
 export const DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS = 12_000;
 
@@ -73,6 +74,11 @@ export class PlatformGatewayClient {
       );
     } catch (err) {
       if (isTimeout(err)) {
+        logger.warn("platform gateway did not answer in time", {
+          action: request.action,
+          idempotencyKey: request.idempotencyKey,
+          timeoutMs,
+        });
         return {
           ok: false,
           code: "timeout",
@@ -80,12 +86,28 @@ export class PlatformGatewayClient {
         };
       }
       if (isNoResponders(err)) {
+        logger.warn("platform gateway has no responders", {
+          action: request.action,
+          idempotencyKey: request.idempotencyKey,
+        });
         return { ok: false, code: "unavailable", error: "The platform gateway is not running" };
       }
-      logger.warn("platform gateway request failed", { action: request.action, error: errorMessage(err) });
+      logger.warn("platform gateway request failed", {
+        action: request.action,
+        idempotencyKey: request.idempotencyKey,
+        error: errorMessage(err),
+      });
       return { ok: false, code: "failed", error: `The platform gateway request failed: ${errorMessage(err)}` };
     }
-    return readGatewayReply(reply.data);
+    const result = readGatewayReply(reply.data);
+    if (!result.ok) {
+      logger.warn("platform gateway reply broke the contract", {
+        action: request.action,
+        idempotencyKey: request.idempotencyKey,
+        problem: result.error,
+      });
+    }
+    return result;
   }
 }
 
