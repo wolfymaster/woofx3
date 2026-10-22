@@ -22,12 +22,14 @@ import (
 )
 
 type DatabaseAppConfig struct {
-	Logger *slog.Logger
+	Logger  *slog.Logger
+	Workers outbox.Config
 }
 
 type DatabaseApp struct {
 	*runtime.BaseApplication
 	logger          *slog.Logger
+	workers         outbox.Config
 	db              *gorm.DB
 	moduleStorage   *sql.DB
 	casbin          *casbin.Enforcer
@@ -46,6 +48,7 @@ func NewDatabaseApp(cfg *DatabaseAppConfig) *DatabaseApp {
 	return &DatabaseApp{
 		BaseApplication: runtime.NewBaseApplication(),
 		logger:          cfg.Logger,
+		workers:         cfg.Workers,
 	}
 }
 
@@ -55,6 +58,7 @@ func (a *DatabaseApp) App() *types.App {
 		Casbin:          a.casbin,
 		Db:              a.db,
 		Logger:          a.logger,
+		Workers:         a.workers,
 		NATSConn:        a.natsConn,
 		EventCache:      a.eventCache,
 		PublisherWorker: a.publisherWorker,

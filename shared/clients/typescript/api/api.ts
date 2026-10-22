@@ -366,6 +366,43 @@ export interface TwitchAccessToken {
   clientId?: string;
 }
 
+/**
+ * The linked Twitch account as `getTwitchLink` describes it: who it is and
+ * what it may do, never its tokens.
+ */
+export interface TwitchLinkedAccount {
+  /** The broadcaster's Twitch user id. */
+  userId: string;
+  /**
+   * The account's login, display name and avatar (an `https:` URL), from
+   * Helix. Null when the engine could not ask Twitch (the twitch service is
+   * not running, or Twitch refused); the link itself is still there.
+   */
+  login: string | null;
+  displayName: string | null;
+  profileImageUrl: string | null;
+  /** The scopes the token was granted. */
+  scopes: string[];
+  /** Milliseconds since the epoch when the current access token expires; null when it does not. */
+  expiresAt: number | null;
+  /**
+   * Milliseconds since the epoch when renewing the token was refused, so the
+   * link no longer works and the streamer has to link Twitch again; null
+   * while it works. Kept in memory: after a restart it is null again until
+   * the next renewal is refused.
+   */
+  authFailedAt: number | null;
+}
+
+/**
+ * `getTwitchLink`'s answer. `revision` is the link's current revision, the
+ * one `twitch.link.changed` deliveries are ordered by: a consumer that read
+ * this ignores any delivery at or below it.
+ */
+export type TwitchLinkInfo =
+  | { linked: false; revision: number }
+  | ({ linked: true; revision: number } & TwitchLinkedAccount);
+
 // ==================== Actions ====================
 
 /**
@@ -1010,6 +1047,60 @@ export interface AlertListPage {
   totalCount: number;
   limit: number;
   offset: number;
+}
+
+/** Hours `getAlertOverview` covers when the caller names none. */
+export const ALERT_OVERVIEW_DEFAULT_HOURS = 24;
+/**
+ * The longest window `getAlertOverview` covers: a week. Must match
+ * MaxAlertCountHours in db/database/repository/alert_repository.go.
+ */
+export const ALERT_OVERVIEW_MAX_HOURS = 7 * 24;
+/** The width of one `AlertOverview` bucket, and the alignment of `hourStart`. */
+export const ALERT_OVERVIEW_BUCKET_MS = 60 * 60 * 1000;
+
+/**
+ * What an alert counts as in an overview. `failed` takes `timed_out` too.
+ * `replayed` is neither a success nor a failure: an operator superseded that
+ * row, and the replay is a row of its own. `inFlight` is still on its way;
+ * `unconfirmed` was on its way but nothing has reported on it for long
+ * enough that no report is coming.
+ */
+export type AlertOutcome = "completed" | "failed" | "skipped" | "replayed" | "inFlight" | "unconfirmed";
+
+/** Alerts by outcome; `total` counts them all. */
+export type AlertOverviewTotals = { total: number } & Record<AlertOutcome, number>;
+
+/** One hour of an overview: the alerts created in it, and how many of those failed. */
+export interface AlertOverviewBucket {
+  /** Epoch milliseconds, on the hour. */
+  start: number;
+  total: number;
+  failed: number;
+}
+
+/**
+ * How alerts have gone lately, as `getAlertOverview` answers: totals by
+ * outcome over the window, and one bucket per hour, oldest first.
+ *
+ * The window is `hours` whole hours from `since` (epoch milliseconds), ending
+ * with the hour that starts at the caller's `hourStart`. Alerts are placed by
+ * when the engine recorded them.
+ */
+export interface AlertOverview {
+  hours: number;
+  since: number;
+  /** Always ALERT_OVERVIEW_BUCKET_MS. */
+  bucketMs: number;
+  /**
+   * Whether the counts cover only part of the window. From the engine: the
+   * window starts before its alert retention horizon, so settled alerts in
+   * the earliest hours have been pruned and only those still on their way
+   * are counted there.
+   */
+  truncated: boolean;
+  totals: AlertOverviewTotals;
+  buckets: AlertOverviewBucket[];
 }
 
 /**
@@ -2082,6 +2173,12 @@ export interface Woofx3EngineApi {
   // and stored on settings.user_id so the row is properly user-scoped.
   setTwitchToken(token: TwitchAccessToken, convexUserId?: string): Promise<{ ok: true }>;
   deleteTwitchToken(): Promise<{ ok: true }>;
+  /**
+   * The linked Twitch account, or `linked: false`. Every change to the link
+   * sends a `twitch.link.changed` webhook with a higher `revision`. Requires
+   * the `twitch.linkRead` capability.
+   */
+  getTwitchLink(): Promise<TwitchLinkInfo>;
 
   // Twitch device login: the engine links Twitch itself with its public
   // Twitch app (see ./twitch-device-login.ts). Requires the
@@ -2406,6 +2503,16 @@ export interface Woofx3EngineApi {
    * Requires the `alerts.history` capability.
    */
   listAlerts(query?: AlertListQuery): Promise<AlertListPage>;
+
+  /**
+   * How alerts have gone over the `windowHours` hours (1 to
+   * ALERT_OVERVIEW_MAX_HOURS, ALERT_OVERVIEW_DEFAULT_HOURS when omitted)
+   * ending with the hour that starts at `hourStart`, epoch milliseconds on
+   * the hour. The caller passes the start of its current hour, so the
+   * arguments change once an hour. Anything out of range is refused, not
+   * clamped. Requires the `alerts.overview` capability.
+   */
+  getAlertOverview(hourStart: number, windowHours?: number): Promise<AlertOverview>;
 
   /**
    * What the open overlays are playing now and what waits behind it, as the

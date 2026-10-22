@@ -1,4 +1,11 @@
-import { type ApiGatewayContract, REGISTRATION_REFUSED, type RegisterClientOptions } from "@woofx3/api/rpc";
+import {
+  AUTHENTICATION_REFUSED,
+  type ApiGatewayContract,
+  authenticationRefusedMessage,
+  REGISTRATION_REFUSED,
+  type RegisterClientOptions,
+  registrationRefusedMessage,
+} from "@woofx3/api/rpc";
 import { secretsMatch } from "@woofx3/common/http/secrets";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { RpcTarget } from "capnweb";
@@ -10,13 +17,26 @@ import type { RegistrationPolicy } from "./registration";
 import type { WebhookClient } from "./webhook-client";
 
 /**
- * A registration the engine will not accept. Named so the refusal is
- * recognisable across the capnweb boundary; see REGISTRATION_REFUSED.
+ * A registration the engine will not accept. Its message carries the
+ * REGISTRATION_REFUSED marker, so a capnweb client can tell the refusal from
+ * a transient failure.
  */
 export class RegistrationRefused extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(reason: string) {
+    super(registrationRefusedMessage(reason));
     this.name = REGISTRATION_REFUSED;
+  }
+}
+
+/**
+ * Credentials the engine does not accept. Its message carries the
+ * AUTHENTICATION_REFUSED marker, so a capnweb client can tell the refusal
+ * from a transient failure and stop retrying.
+ */
+export class AuthenticationRefused extends Error {
+  constructor(reason: string) {
+    super(authenticationRefusedMessage(reason));
+    this.name = AUTHENTICATION_REFUSED;
   }
 }
 
@@ -61,13 +81,13 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
   }
 
   async authenticate(clientId: string, clientSecret: string): Promise<ApiSession> {
-    const result = await this.auth.validate(clientId, clientSecret);
-    if (!result.valid) {
-      throw new Error("Invalid client credentials");
+    const verdict = await this.auth.validate(clientId, clientSecret);
+    if (verdict.kind === "refused") {
+      throw new AuthenticationRefused("Invalid client credentials");
     }
     this.logger.info("Authenticated client", {
       clientId,
-      description: result.description,
+      description: verdict.description,
     });
     return new ApiSession(this.api, clientId);
   }

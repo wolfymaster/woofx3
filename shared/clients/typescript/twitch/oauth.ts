@@ -37,7 +37,11 @@ export interface DeviceAuthorization {
 export interface PublicClientToken {
   accessToken: string;
   refreshToken: string;
-  scope: string[];
+  /**
+   * The scopes Twitch's answer listed; null when it listed none, which does
+   * not mean the token lost them: the caller keeps the scopes it knew.
+   */
+  scope: string[] | null;
   expiresIn: number;
   /** When the engine received the token, in epoch milliseconds. */
   obtainmentTimestamp: number;
@@ -256,7 +260,7 @@ export class TwitchOAuthClient {
     return {
       accessToken: access_token,
       refreshToken: refresh_token,
-      scope: isStringArray(scope) ? scope : [],
+      scope: isStringArray(scope) ? scope : null,
       expiresIn: expires_in,
       obtainmentTimestamp: this.now(),
     };
