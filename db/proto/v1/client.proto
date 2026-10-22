@@ -4,6 +4,7 @@ package client;
 option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
 
 import "common.proto";
+import "google/protobuf/timestamp.proto";
 
 service ClientService {
     rpc CreateClient(CreateClientRequest) returns (ClientResponse);
@@ -12,6 +13,16 @@ service ClientService {
     rpc UpdateClient(UpdateClientRequest) returns (ClientResponse);
     rpc DeleteClient(DeleteClientRequest) returns (common.ResponseStatus);
     rpc ValidateClient(ValidateClientRequest) returns (ClientResponse);
+    rpc RecordClientAuthentication(RecordClientAuthenticationRequest) returns (common.ResponseStatus);
+}
+
+// How a client came to exist.
+enum ClientKind {
+    CLIENT_KIND_UNSPECIFIED = 0;
+    // Called registerClient: a desktop shell, a cloud dashboard, a CLI.
+    CLIENT_KIND_REGISTERED = 1;
+    // Obtained by a browser through pairing; bound to its origin.
+    CLIENT_KIND_PAIRED = 2;
 }
 
 message Client {
@@ -23,6 +34,12 @@ message Client {
     string client_secret = 5;
     string callback_url = 6;
     string callback_token = 7;
+    ClientKind kind = 8;
+    // The web origin a paired client is bound to; empty for a registered one.
+    string origin = 9;
+    google.protobuf.Timestamp created_at = 10;
+    // Unset until an authentication is recorded.
+    google.protobuf.Timestamp last_authenticated_at = 11;
 }
 
 message CreateClientRequest {
@@ -31,6 +48,9 @@ message CreateClientRequest {
     reserved "application_id";
     string callback_url = 3;
     string callback_token = 4;
+    // Required. A paired client needs an origin; a registered one must not have one.
+    ClientKind kind = 5;
+    string origin = 6;
 }
 
 message GetClientRequest {
@@ -56,6 +76,10 @@ message DeleteClientRequest {
 message ValidateClientRequest {
     string client_id = 1;
     string client_secret = 2;
+}
+
+message RecordClientAuthenticationRequest {
+    string client_id = 1;
 }
 
 message ClientResponse {
