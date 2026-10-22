@@ -1,3 +1,4 @@
+export * from "./alert-targets";
 export * from "./api";
 export * from "./capabilities";
 export * from "./client";
