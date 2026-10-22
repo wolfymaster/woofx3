@@ -149,6 +149,10 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	registerService("alertLog", func() dbv1.AlertService {
 		return alertDbClient
 	})
+	platformGateway := NewNATSPlatformGateway(natsClient, a.logger)
+	registerService("platformGateway", func() PlatformGateway {
+		return platformGateway
+	})
 
 	// Attached before the first load, so a workflow that fails to load at
 	// start-up is announced like one that fails later.

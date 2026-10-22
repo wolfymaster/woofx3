@@ -2,8 +2,13 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/wolfymaster/woofx3/common/platformgateway"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
@@ -218,7 +223,7 @@ func TestNativeActionDryRunSentences(t *testing.T) {
 	if _, err := functionActionSpec.DryRun(map[string]any{}); err == nil {
 		t.Error("function: accepted a step naming no function")
 	}
-	if got, err := chatReplyActionSpec.DryRun(map[string]any{"message": "welcome raiders"}); err != nil || got != `would send "welcome raiders" to twitch chat` {
+	if got, err := chatReplyActionSpec.DryRun(map[string]any{"message": "welcome raiders"}); err != nil || got != `would send "welcome raiders" to the chat the trigger came from` {
 		t.Errorf("chat.reply: %q, %v", got, err)
 	}
 	if _, err := alertActionSpec.DryRun(map[string]any{}); err == nil {
@@ -263,4 +268,130 @@ func TestHandleCommandExecuteEvent(t *testing.T) {
 			t.Fatalf("expected one error, got %v", logger.errors)
 		}
 	})
+}
+
+// echoingChat stands in for the platform gateway and the chat feed together:
+// every line it is asked to send comes back as the user.message the twitch
+// adapter publishes for an engine line, carrying the sending run's chain.
+type echoingChat struct {
+	t      *testing.T
+	engine *engine.Engine[AppServices]
+	mu     sync.Mutex
+	sent   int
+}
+
+func (c *echoingChat) Send(request platformgateway.GatewayRequest) (platformgateway.GatewayReply, error) {
+	c.mu.Lock()
+	c.sent++
+	line := c.sent
+	c.mu.Unlock()
+	messageID := fmt.Sprintf("line-%d", line)
+	echo := &types.Event{
+		ID:            fmt.Sprintf("echo-%d", line),
+		Type:          "user.message",
+		Source:        "connectors/twitch",
+		Platform:      "twitch",
+		WorkflowChain: request.WorkflowChain,
+		Data:          map[string]any{"messageId": messageID, "message": "hi again", "fromEngine": true},
+	}
+	go func() {
+		if err := c.engine.HandleEvent(echo); err != nil {
+			c.t.Errorf("deliver echo: %v", err)
+		}
+	}()
+	return platformgateway.GatewayReply{OK: true, Results: map[platformgateway.PlatformID]platformgateway.PlatformOutcome{
+		platformgateway.PlatformTwitch: {Status: platformgateway.OutcomeDelivered, MessageID: messageID},
+	}}, nil
+}
+
+// settledChatRuns records every run that finishes and closes failed on the
+// first one that failed.
+type settledChatRuns struct {
+	mu     sync.Mutex
+	runs   []types.WorkflowExecution
+	failed chan struct{}
+}
+
+func (r *settledChatRuns) RunStarted(*types.WorkflowExecution)                  {}
+func (r *settledChatRuns) StepSettled(*types.WorkflowExecution, engine.RunStep) {}
+func (r *settledChatRuns) RunSettled(execution *types.WorkflowExecution) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.runs = append(r.runs, *execution)
+	if execution.Status == types.ExecutionStatusFailed && r.failed != nil {
+		close(r.failed)
+		r.failed = nil
+	}
+}
+
+func (r *settledChatRuns) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.runs)
+}
+
+// A workflow that answers every chat line answers its own lines too, since
+// the engine speaks as the broadcaster. The chain the chat step hands the
+// gateway comes back on the echo, so the loop guard stops it after
+// MaxWorkflowChain lines instead of letting it talk to itself forever.
+func TestAWorkflowAnsweringItsOwnChatLinesIsStopped(t *testing.T) {
+	quiet := quietLogger{}
+	runs := engine.New[AppServices](quiet)
+	chat := &echoingChat{t: t, engine: runs}
+	recorder := &settledChatRuns{failed: make(chan struct{})}
+	runs.SetRunRecorder(recorder)
+	if err := runs.RegisterActionWithSpec("chat.reply", WithServices(AppServices{gateway: chat}, NewChatReplyAction()), chatReplyActionSpec); err != nil {
+		t.Fatalf("register chat.reply: %v", err)
+	}
+	if err := runs.RegisterWorkflow(&types.WorkflowDefinition{
+		ID:      "wf-chatty",
+		Name:    "Chatty",
+		Trigger: &types.TriggerConfig{Type: "event", Event: "user.message"},
+		Tasks: []types.TaskDefinition{{
+			ID:         "answer",
+			Type:       "action",
+			Action:     "chat.reply",
+			Parameters: map[string]any{"message": "hi again"},
+		}},
+	}); err != nil {
+		t.Fatalf("RegisterWorkflow: %v", err)
+	}
+
+	failed := recorder.failed
+	if err := runs.HandleEvent(&types.Event{
+		ID: "viewer-line", Type: "user.message", Source: "connectors/twitch", Platform: "twitch",
+		Data: map[string]any{"messageId": "viewer-1", "message": "hello", "fromEngine": false},
+	}); err != nil {
+		t.Fatalf("HandleEvent: %v", err)
+	}
+	select {
+	case <-failed:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("the loop was not stopped; %d runs settled", recorder.count())
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for recorder.count() < engine.MaxWorkflowChain+1 {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d runs settled, want %d", recorder.count(), engine.MaxWorkflowChain+1)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	chat.mu.Lock()
+	sent := chat.sent
+	chat.mu.Unlock()
+	if sent != engine.MaxWorkflowChain {
+		t.Errorf("sent %d lines, want %d", sent, engine.MaxWorkflowChain)
+	}
+	recorder.mu.Lock()
+	defer recorder.mu.Unlock()
+	var refusals []string
+	for _, run := range recorder.runs {
+		if run.Status == types.ExecutionStatusFailed {
+			refusals = append(refusals, run.Error)
+		}
+	}
+	if len(refusals) != 1 || !strings.Contains(refusals[0], "Chatty keeps triggering itself") {
+		t.Errorf("refusals = %q", refusals)
+	}
 }
