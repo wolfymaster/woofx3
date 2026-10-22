@@ -8,6 +8,8 @@ pub struct Client {
     pub description: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
     pub client_id: ::prost::alloc::string::String,
+    /// Set only in CreateClient's response. db-proxy keeps only a hash, so no
+    /// other response can carry it.
     #[prost(string, tag="5")]
     pub client_secret: ::prost::alloc::string::String,
     #[prost(string, tag="6")]

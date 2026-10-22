@@ -30,12 +30,7 @@ func InitializeDB(dsn string, slogger *slog.Logger) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	slogAdapter := NewSlogAdapter(slogger, logger.Config{
-		SlowThreshold:             200 * time.Millisecond,
-		LogLevel:                  logger.Info,
-		IgnoreRecordNotFoundError: true,
-		Colorful:                  false,
-	})
+	slogAdapter := NewSlogAdapter(slogger, systemLoggerConfig())
 
 	gormCfg := &gorm.Config{
 		Logger: slogAdapter,
@@ -51,6 +46,20 @@ func InitializeDB(dsn string, slogger *slog.Logger) (*gorm.DB, error) {
 		return openSQLite(parsed.DriverDSN, gormCfg, slogger)
 	default:
 		return nil, fmt.Errorf("unhandled database dialect %q", parsed.Dialect)
+	}
+}
+
+// systemLoggerConfig is how the system database's queries are logged: on an
+// error, or when slower than SlowThreshold. ParameterizedQueries keeps bound
+// values out of the logged SQL, because they include client secrets, callback
+// tokens and every other credential written through the db proxy.
+func systemLoggerConfig() logger.Config {
+	return logger.Config{
+		SlowThreshold:             200 * time.Millisecond,
+		LogLevel:                  logger.Info,
+		IgnoreRecordNotFoundError: true,
+		Colorful:                  false,
+		ParameterizedQueries:      true,
 	}
 }
 

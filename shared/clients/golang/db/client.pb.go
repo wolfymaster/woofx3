@@ -75,14 +75,16 @@ func (ClientKind) EnumDescriptor() ([]byte, []int) {
 }
 
 type Client struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
-	ClientId      string                 `protobuf:"bytes,4,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	ClientSecret  string                 `protobuf:"bytes,5,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"`
-	CallbackUrl   string                 `protobuf:"bytes,6,opt,name=callback_url,json=callbackUrl,proto3" json:"callback_url,omitempty"`
-	CallbackToken string                 `protobuf:"bytes,7,opt,name=callback_token,json=callbackToken,proto3" json:"callback_token,omitempty"`
-	Kind          ClientKind             `protobuf:"varint,8,opt,name=kind,proto3,enum=client.ClientKind" json:"kind,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Description string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	ClientId    string                 `protobuf:"bytes,4,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	// Set only in CreateClient's response. db-proxy keeps only a hash, so no
+	// other response can carry it.
+	ClientSecret  string     `protobuf:"bytes,5,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"`
+	CallbackUrl   string     `protobuf:"bytes,6,opt,name=callback_url,json=callbackUrl,proto3" json:"callback_url,omitempty"`
+	CallbackToken string     `protobuf:"bytes,7,opt,name=callback_token,json=callbackToken,proto3" json:"callback_token,omitempty"`
+	Kind          ClientKind `protobuf:"varint,8,opt,name=kind,proto3,enum=client.ClientKind" json:"kind,omitempty"`
 	// The web origin a paired client is bound to; empty for a registered one.
 	Origin    string                 `protobuf:"bytes,9,opt,name=origin,proto3" json:"origin,omitempty"`
 	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`

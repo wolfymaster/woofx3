@@ -21,13 +21,19 @@ const (
 )
 
 type Client struct {
-	ID            int        `gorm:"primaryKey;autoIncrement"`
-	Description   string     `gorm:"type:varchar(100)"`
-	ClientID      uuid.UUID  `gorm:"column:client_id;type:uuid;not null;uniqueIndex"`
-	ClientSecret  string     `gorm:"column:client_secret;type:varchar(100);not null"`
-	CallbackUrl   string     `gorm:"column:callback_url;type:varchar(255)"`
-	CallbackToken string     `gorm:"column:callback_token;type:varchar(255)"`
-	Kind          ClientKind `gorm:"column:kind;not null"`
+	ID          int       `gorm:"primaryKey;autoIncrement"`
+	Description string    `gorm:"type:varchar(100)"`
+	ClientID    uuid.UUID `gorm:"column:client_id;type:uuid;not null;uniqueIndex"`
+	// ClientSecret is a plain-text secret, as issued before secrets were
+	// hashed or written by an older release run on this schema after a
+	// rollback. Only HashStoredClientSecrets reads it: it hashes and clears
+	// it before db-proxy serves, so it is nil for every client then.
+	ClientSecret *string `gorm:"column:client_secret;type:varchar(100)"`
+	// ClientSecretHash is the lowercase hex SHA-256 of the secret.
+	ClientSecretHash *string    `gorm:"column:client_secret_hash"`
+	CallbackUrl      string     `gorm:"column:callback_url;type:varchar(255)"`
+	CallbackToken    string     `gorm:"column:callback_token;type:varchar(255)"`
+	Kind             ClientKind `gorm:"column:kind;not null"`
 	// Origin is set for a paired client and nil for a registered one.
 	Origin              *string    `gorm:"column:origin"`
 	CreatedAt           time.Time  `gorm:"column:created_at;not null"`
@@ -60,11 +66,5 @@ func GetClientByID(db *gorm.DB, id int) (*Client, error) {
 func GetClientByClientID(db *gorm.DB, clientID uuid.UUID) (*Client, error) {
 	var client Client
 	err := db.Where("client_id = ?", clientID).First(&client).Error
-	return &client, err
-}
-
-func ValidateClient(db *gorm.DB, clientID uuid.UUID, clientSecret string) (*Client, error) {
-	var client Client
-	err := db.Where("client_id = ? AND client_secret = ?", clientID, clientSecret).First(&client).Error
 	return &client, err
 }

@@ -18,7 +18,8 @@ type tableRebuild struct {
 	table string
 	// dropColumn, when set, is removed by the rebuild.
 	dropColumn string
-	// nullable lists columns whose NOT NULL is removed along with dropColumn.
+	// nullable lists columns whose NOT NULL is removed: along with dropColumn
+	// when it is set, or on its own when it is not.
 	nullable []string
 	// datetime lists TEXT columns the rebuild re-declares as DATETIME.
 	datetime []string
@@ -128,7 +129,7 @@ func rebuildTable(tx *gorm.DB, r tableRebuild) error {
 	if err != nil {
 		return err
 	}
-	if r.dropColumn == "" && len(r.datetime) == 0 {
+	if r.dropColumn == "" && len(r.datetime) == 0 && len(r.nullable) == 0 {
 		return nil
 	}
 
@@ -214,10 +215,11 @@ func rebuildTable(tx *gorm.DB, r tableRebuild) error {
 }
 
 // pendingRebuild returns r without the changes the table already has: a
-// dropColumn that is gone (with the nullable changes that go with it), and
-// datetime columns already declared DATETIME. A datetime column that is
-// missing, or declared as anything but TEXT or DATETIME, is an error rather
-// than something to guess about.
+// dropColumn that is gone (with the nullable changes that go with it),
+// nullable columns that already allow NULL, and datetime columns already
+// declared DATETIME. A datetime column that is missing, or declared as
+// anything but TEXT or DATETIME, is an error rather than something to guess
+// about.
 func pendingRebuild(tx *gorm.DB, r tableRebuild) (tableRebuild, error) {
 	if r.dropColumn != "" {
 		hasColumn, err := columnExists(tx, r.table, r.dropColumn)
@@ -228,6 +230,19 @@ func pendingRebuild(tx *gorm.DB, r tableRebuild) (tableRebuild, error) {
 			r.dropColumn = ""
 			r.nullable = nil
 		}
+	}
+	if r.dropColumn == "" && len(r.nullable) > 0 {
+		notNull, err := notNullColumns(tx, r.table)
+		if err != nil {
+			return r, err
+		}
+		pending := make([]string, 0, len(r.nullable))
+		for _, column := range r.nullable {
+			if notNull[column] {
+				pending = append(pending, column)
+			}
+		}
+		r.nullable = pending
 	}
 
 	if len(r.datetime) == 0 {
@@ -461,6 +476,25 @@ func columnTypes(tx *gorm.DB, table string) (map[string]string, error) {
 		types[column.Name] = column.Type
 	}
 	return types, nil
+}
+
+// notNullColumns returns the columns of table declared NOT NULL.
+func notNullColumns(tx *gorm.DB, table string) (map[string]bool, error) {
+	var columns []struct {
+		Name    string
+		NotNull int
+	}
+	if err := tx.Raw(`SELECT name, "notnull" AS not_null FROM pragma_table_info(?)`, table).Scan(&columns).Error; err != nil {
+		return nil, err
+	}
+	if len(columns) == 0 {
+		return nil, fmt.Errorf("table %s does not exist", table)
+	}
+	notNull := make(map[string]bool, len(columns))
+	for _, column := range columns {
+		notNull[column.Name] = column.NotNull == 1
+	}
+	return notNull, nil
 }
 
 func tableColumns(tx *gorm.DB, table string) ([]string, error) {

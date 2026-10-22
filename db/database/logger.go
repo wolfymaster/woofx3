@@ -49,6 +49,16 @@ func (a *SlogAdapter) Error(ctx context.Context, msg string, args ...interface{}
 	}
 }
 
+// ParamsFilter is how gorm asks which bound values to render into the SQL it
+// hands to Trace: none when ParameterizedQueries is set, so the logged
+// statement shows placeholders.
+func (a *SlogAdapter) ParamsFilter(ctx context.Context, sql string, params ...interface{}) (string, []interface{}) {
+	if a.config.ParameterizedQueries {
+		return sql, nil
+	}
+	return sql, params
+}
+
 // Trace logs SQL query information, execution time, errors, and affected rows.
 func (a *SlogAdapter) Trace(ctx context.Context, begin time.Time, fc func() (string, int64), err error) {
 	elapsed := time.Since(begin)
