@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TRIGGER_OPTIONS_NEED_DATA_MESSAGE, workflowNotFoundMessage } from "../workflow-test-run";
+import { TRIGGER_OPTIONS_NEED_DATA_MESSAGE, workflowNotFoundMessage } from "../workflow-trigger-errors";
 
 describe("triggerWorkflowByName's refusals, as engines already shipped send them", () => {
   test("the options refusal never changes", () => {
