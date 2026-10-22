@@ -172,6 +172,53 @@ describe("Supervisor", () => {
     expect(supervisor.status("twitch").state).toBe("stopped");
   });
 
+  test("a retry timer that fires just before retryAt on the clock still retries", async () => {
+    const adapter = new FakeAdapter();
+    adapter.startSteps = ["reject"];
+    const { supervisor, time, skew, apply } = setup(adapter);
+
+    await apply(linked, true);
+    expect(supervisor.status("twitch").state).toBe("degraded");
+    skew.ms = -1;
+    await time.advance(500);
+    await supervisor.whenIdle();
+    expect(adapter.starts).toBe(2);
+    expect(supervisor.status("twitch").state).toBe("connected");
+  });
+
+  test("disabling a parked adapter forgets its failures, so one failure after re-enabling only degrades it", async () => {
+    const adapter = new FakeAdapter();
+    adapter.defaultStart = "reject";
+    const { supervisor, time, apply } = setup(adapter);
+    await apply(linked, true);
+    for (let i = 0; i < 10; i++) {
+      await time.advance(300_000);
+    }
+    expect(supervisor.status("twitch").state).toBe("parked");
+
+    await apply(disabled, true);
+    await apply(linked, true);
+    // Back at the base backoff: full jitter at 0.5 of the 1 s base.
+    expect(supervisor.status("twitch")).toEqual({
+      state: "degraded",
+      reason: "could not connect",
+      retryAt: time.now() + 500,
+    });
+  });
+
+  test("an adapter whose desired() throws is treated as not desired", async () => {
+    const adapter = new FakeAdapter();
+    adapter.desired = () => {
+      throw new Error("bad link shape");
+    };
+    const { supervisor, logger, apply } = setup(adapter);
+
+    await apply(linked, true);
+    expect(supervisor.status("twitch").state).toBe("stopped");
+    expect(adapter.starts).toBe(0);
+    expect(logger.at("error").some((entry) => entry.message.includes("desired() threw"))).toBe(true);
+  });
+
   test("a hung stop and a hung bus close share one stop deadline", async () => {
     const adapter = new FakeAdapter();
     adapter.stopStep = "hang";

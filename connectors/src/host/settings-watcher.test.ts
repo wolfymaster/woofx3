@@ -36,7 +36,7 @@ function cloudEvent(subject: string, data: unknown): Uint8Array {
   return bytes(JSON.stringify({ specversion: "1.0", id: "e1", type: subject, source: "api", data }));
 }
 
-async function setup() {
+async function setup(failingSink = false) {
   const time = new FakeTime();
   const bus = new FakeBus();
   const logger = new RecordingLogger();
@@ -45,6 +45,9 @@ async function setup() {
   const applied: Applied[] = [];
   const sink: LinkSink = {
     reconcile: async (links, changed) => {
+      if (failingSink) {
+        throw new Error("supervisor exploded");
+      }
       applied.push({ links: Object.fromEntries(links), changed: [...changed] });
     },
   };
@@ -153,6 +156,17 @@ describe("SettingsWatcher", () => {
     const stopping = watcher.stop();
     await time.advance(READ_TIMEOUT_MS);
     await stopping;
+  });
+
+  test("a reconcile that fails is logged and the next pass still runs", async () => {
+    const { time, settings, logger, watcher } = await setup(true);
+    await watcher.start();
+    await flush();
+    expect(logger.at("error").some((entry) => entry.message.includes("reconcile failed"))).toBe(true);
+
+    const reads = settings.reads;
+    await time.advance(60_000);
+    expect(settings.reads).toBeGreaterThan(reads);
   });
 
   test("an absent flag is logged once at info, an invalid one once per value at warn", async () => {

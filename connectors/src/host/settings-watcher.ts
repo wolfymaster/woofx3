@@ -170,7 +170,9 @@ export class SettingsWatcher {
     }
     const changed = new Set([...pass.changed].filter((id) => links.has(id)));
     // Not awaited: an adapter slow to start must not hold up the next read.
-    void this.deps.sink.reconcile(links, changed);
+    this.deps.sink.reconcile(links, changed).catch((error: unknown) => {
+      this.deps.logger.error("reconcile failed", { error: errorMessage(error) });
+    });
   }
 
   private logFlag(id: AdapterId, flag: IntegrationEnabled): void {

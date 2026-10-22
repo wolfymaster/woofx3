@@ -62,6 +62,8 @@ class Slot {
   abort: AbortController | undefined;
   scope: ScopedBus | undefined;
   retryTimer: TimerHandle | undefined;
+  /** Set when the retry timer fires, so a timer firing a little before `retryAt` on the clock still retries. */
+  retryDue = false;
   busy = false;
   again = false;
   idle: Promise<void> = Promise.resolve();
@@ -114,7 +116,7 @@ export class Supervisor {
    * about. Adapters missing from `links` keep their last state. Resolves once
    * every adapter touched has settled.
    */
-  reconcile(links: ReadonlyMap<AdapterId, LinkState>, changed: ReadonlySet<AdapterId>): Promise<void> {
+  async reconcile(links: ReadonlyMap<AdapterId, LinkState>, changed: ReadonlySet<AdapterId>): Promise<void> {
     const settling: Promise<void>[] = [];
     for (const [id, link] of links) {
       const slot = this.slots.get(id);
@@ -131,7 +133,7 @@ export class Supervisor {
       }
       settling.push(this.kick(slot));
     }
-    return Promise.all(settling).then(() => undefined);
+    await Promise.all(settling);
   }
 
   status(id: AdapterId): AdapterStatus {
@@ -194,8 +196,20 @@ export class Supervisor {
     return slot;
   }
 
+  /** An adapter whose `desired` throws is treated as not desired, so one bad adapter cannot stall the others. */
   private desired(slot: Slot): boolean {
-    return !this.shuttingDown && slot.link !== undefined && slot.adapter.desired(slot.link);
+    if (this.shuttingDown || slot.link === undefined) {
+      return false;
+    }
+    try {
+      return slot.adapter.desired(slot.link);
+    } catch (error) {
+      this.deps.logger.error("adapter desired() threw; treating it as not desired", {
+        adapter: slot.id,
+        error: errorMessage(error),
+      });
+      return false;
+    }
   }
 
   private kick(slot: Slot): Promise<void> {
@@ -238,10 +252,12 @@ export class Supervisor {
     if (!this.desired(slot)) {
       if (state === "connected") {
         await this.stop(slot, "no longer desired");
+        this.forgetFailures(slot);
         return;
       }
       if (state === "degraded" || state === "parked") {
         this.clearRetry(slot);
+        this.forgetFailures(slot);
         this.setStatus(slot, { state: "stopped" });
       }
       return;
@@ -252,15 +268,14 @@ export class Supervisor {
         await this.start(slot);
         return;
       case "degraded":
-        if (settingsChanged || this.deps.clock.now() >= slot.status.retryAt) {
+        if (settingsChanged || slot.retryDue || this.deps.clock.now() >= slot.status.retryAt) {
           await this.start(slot);
         }
         return;
       case "parked":
         if (settingsChanged) {
           this.deps.logger.info("adapter unparked by a settings change", { adapter: slot.id });
-          slot.recentFailures = [];
-          slot.backoff.reset();
+          this.forgetFailures(slot);
           await this.start(slot);
         }
         return;
@@ -345,6 +360,7 @@ export class Supervisor {
     this.setStatus(slot, { state: "degraded", reason, retryAt: now + delay });
     slot.retryTimer = this.deps.timers.setTimeout(() => {
       slot.retryTimer = undefined;
+      slot.retryDue = true;
       void this.kick(slot);
     }, delay);
   }
@@ -375,6 +391,12 @@ export class Supervisor {
 
   private msUntil(at: number): number {
     return Math.max(0, at - this.deps.clock.now());
+  }
+
+  /** A user's disable, or a settings change that unparks, starts the adapter's failure count afresh. */
+  private forgetFailures(slot: Slot): void {
+    slot.recentFailures = [];
+    slot.backoff.reset();
   }
 
   private fault(slot: Slot, epoch: number, reason: string): void {
@@ -437,6 +459,7 @@ export class Supervisor {
   }
 
   private clearRetry(slot: Slot): void {
+    slot.retryDue = false;
     if (slot.retryTimer !== undefined) {
       this.deps.timers.clearTimeout(slot.retryTimer);
       slot.retryTimer = undefined;
