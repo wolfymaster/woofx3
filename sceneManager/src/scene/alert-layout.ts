@@ -1,5 +1,8 @@
 import {
+  ALERT_SURFACE,
   alertCompositionOf,
+  alertRouteName,
+  alertWidgetName,
   type BehaviorDocument,
   type BehaviorId,
   CANVAS_TARGET,
@@ -17,15 +20,6 @@ import type { OverlayWidgetDefinition, OverlayWidgetInstance } from "./scene-hos
 
 /** The scene-event `type` an alert is recorded and delivered under. */
 export const ALERT_EVENT_TYPE = "alert";
-
-/** The surface an alert widget hosts, and that an alert layout's widgets must list. */
-export const ALERT_SURFACE = "alert";
-
-/**
- * The alert widget an alert plays on when its step names none. The UI gives a
- * scene's first alert widget this name, so an unconfigured step reaches it.
- */
-export const DEFAULT_ALERT_WIDGET_NAME = "default";
 
 /** Layout widget ids end up in the frame URL, so they are held to a URL-safe token. */
 const LAYOUT_WIDGET_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -275,22 +269,14 @@ export function hasVisibleWidget(layout: CompositionDocument): boolean {
 
 /** The alert widget name an alert step targets. */
 export function alertTarget(parameters: Record<string, unknown>): string {
-  return nameOrDefault(parameters.target);
-}
-
-/** The name an alert widget placement answers to. */
-export function alertWidgetName(instance: OverlayWidgetInstance): string {
-  return nameOrDefault(instance.settings.name);
+  return alertRouteName(parameters.target);
 }
 
 /** Every alert widget on a scene that answers to `name`. */
 export function alertWidgetsNamed(instances: OverlayWidgetInstance[], name: string): OverlayWidgetInstance[] {
-  return instances.filter((instance) => instance.hostsSurface === ALERT_SURFACE && alertWidgetName(instance) === name);
-}
-
-function nameOrDefault(raw: unknown): string {
-  const name = typeof raw === "string" ? raw.trim() : "";
-  return name || DEFAULT_ALERT_WIDGET_NAME;
+  return instances.filter(
+    (instance) => instance.hostsSurface === ALERT_SURFACE && alertWidgetName(instance.settings) === name
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
