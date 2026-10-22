@@ -7,6 +7,7 @@ use lib_sandbox::models::function::Function;
 use lib_sandbox::models::request::InvokeRequest;
 use lib_sandbox::{
     ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule, Sandbox, SandboxActionRunner,
+    SandboxLimits,
 };
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -161,7 +162,8 @@ fn world(linked: bool, provider_permissions: &[&str], consumer_permissions: &[&s
             HashMap::from([("timer".to_string(), json!(COUNTER))]),
         );
     }
-    let runner = SandboxActionRunner::new(registry.clone());
+    let runner =
+        SandboxActionRunner::new(registry.clone(), SandboxLimits::default()).expect("valid limits");
     let mut host = noop_host_context();
     host.settings = Arc::new(Settings(settings));
     host.resources = Arc::new(Instances(vec![
@@ -174,17 +176,21 @@ fn world(linked: bool, provider_permissions: &[&str], consumer_permissions: &[&s
 }
 
 fn call(world: &World, function: &str, target: &str, verb: &str) -> Result<Value, String> {
-    Sandbox::new(world.registry.clone(), world.host.clone())
-        .unwrap()
-        .invoke(InvokeRequest {
-            function: function.to_string(),
-            event: json!({ "parameters": { "target": target, "verb": verb } }),
-            user: None,
-            params: Value::Null,
-            workflow_chain: None,
-            timeout_ms: None,
-        })
-        .map_err(|e| e.to_string())
+    Sandbox::new(
+        world.registry.clone(),
+        world.host.clone(),
+        SandboxLimits::default(),
+    )
+    .unwrap()
+    .invoke(InvokeRequest {
+        function: function.to_string(),
+        event: json!({ "parameters": { "target": target, "verb": verb } }),
+        user: None,
+        params: Value::Null,
+        workflow_chain: None,
+        timeout_ms: None,
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[test]

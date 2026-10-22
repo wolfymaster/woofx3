@@ -66,6 +66,7 @@ All configuration is via environment variables with sensible defaults.
 | `MODULES_DIR` | `modules` | Directory for stored module files |
 | `REPOSITORY_TYPE` | `file` | Storage backend (`file` or `s3`) |
 | `RUST_LOG` | `info` | Log level filter |
+| `WOOFX3_SANDBOX_MAX_CONCURRENT_INVOCATIONS` | `32` | Module function invocations that may run at once (1 to 512); see [Sandbox & Runtimes](sandbox.md#time-instruction-and-concurrency-limits) |
 
 ### S3 Configuration
 

@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::host::{HostError, InvocationContext};
 use crate::runtime::RuntimeAdapter;
-use crate::runtime::limits::{Budget, ConversionLimits, SandboxLimits};
+use crate::runtime::limits::{Budget, ConversionLimits, SandboxLimits, Trip};
 use rquickjs::{
     Array, Context, Ctx, Function as JsFunction, Object, Runtime, Value as JsValue, function::Opt,
     object::Accessor,
@@ -12,10 +12,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
-const DEFAULT_MEMORY_LIMIT: usize = 16 * 1024 * 1024;
 const DEFAULT_MAX_STACK_SIZE: usize = 1024 * 1024;
-const DEFAULT_MAX_INSTRUCTIONS: u64 = 100_000;
 
 fn host_err(msg: impl Into<String>) -> rquickjs::Error {
     rquickjs::Error::new_from_js_message("host", "value", msg.into())
@@ -37,9 +36,58 @@ fn throw_host_error(ctx: &Ctx<'_>, err: &HostError) -> rquickjs::Error {
     ctx.throw(exception.into_value())
 }
 
+/// What one invocation has spent of its interrupt budget, and when it must
+/// end. The interrupt handler outlives any one invocation, so `execute`
+/// resets this before each run.
+struct InterruptBudget {
+    /// Fixed reference point: the deadline is stored as an offset from it so
+    /// it fits an atomic.
+    epoch: Instant,
+    max_interrupts: u64,
+    interrupts: AtomicU64,
+    deadline_nanos: AtomicU64,
+}
+
+impl InterruptBudget {
+    fn new(max_interrupts: u64) -> Self {
+        Self {
+            epoch: Instant::now(),
+            max_interrupts,
+            interrupts: AtomicU64::new(0),
+            deadline_nanos: AtomicU64::new(0),
+        }
+    }
+
+    fn reset(&self, deadline: Instant) {
+        let offset = deadline.saturating_duration_since(self.epoch).as_nanos();
+        self.deadline_nanos
+            .store(u64::try_from(offset).unwrap_or(u64::MAX), Ordering::Relaxed);
+        self.interrupts.store(0, Ordering::Relaxed);
+    }
+
+    /// Called by QuickJS; `true` stops the script with an uncatchable error.
+    fn interrupt(&self) -> bool {
+        self.interrupts.fetch_add(1, Ordering::Relaxed);
+        self.trip().is_some()
+    }
+
+    /// Which budget, if any, the current invocation has run out of. Both only
+    /// ever grow, so once tripped it stays tripped until the next `reset`.
+    fn trip(&self) -> Option<Trip> {
+        if self.interrupts.load(Ordering::Relaxed) > self.max_interrupts {
+            return Some(Trip::Instructions);
+        }
+        let elapsed = u64::try_from(self.epoch.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        if elapsed >= self.deadline_nanos.load(Ordering::Relaxed) {
+            return Some(Trip::Deadline);
+        }
+        None
+    }
+}
+
 pub struct QuickJSAdapter {
     runtime: Runtime,
-    instruction_counter: Arc<AtomicU64>,
+    budget: Arc<InterruptBudget>,
     limits: SandboxLimits,
 }
 
@@ -47,18 +95,16 @@ impl QuickJSAdapter {
     pub fn new(limits: SandboxLimits) -> Result<Self, Error> {
         let runtime = Runtime::new()
             .map_err(|e| Error::RuntimeError(format!("QuickJS runtime init: {e}")))?;
-        runtime.set_memory_limit(DEFAULT_MEMORY_LIMIT);
+        runtime.set_memory_limit(limits.memory_bytes);
         runtime.set_max_stack_size(DEFAULT_MAX_STACK_SIZE);
 
-        let counter = Arc::new(AtomicU64::new(0));
-        let counter_clone = counter.clone();
-        runtime.set_interrupt_handler(Some(Box::new(move || {
-            counter_clone.fetch_add(1, Ordering::Relaxed) >= DEFAULT_MAX_INSTRUCTIONS
-        })));
+        let budget = Arc::new(InterruptBudget::new(limits.quickjs_max_interrupts));
+        let handler_budget = budget.clone();
+        runtime.set_interrupt_handler(Some(Box::new(move || handler_budget.interrupt())));
 
         Ok(Self {
             runtime,
-            instruction_counter: counter,
+            budget,
             limits,
         })
     }
@@ -71,18 +117,17 @@ impl RuntimeAdapter for QuickJSAdapter {
         entry_point: &str,
         invocation: &InvocationContext,
     ) -> Result<Value, Error> {
-        self.instruction_counter.store(0, Ordering::Relaxed);
+        self.budget.reset(invocation.deadline);
 
         let context = Context::full(&self.runtime)
             .map_err(|e| Error::RuntimeError(format!("context creation: {e}")))?;
 
-        let max_instructions = DEFAULT_MAX_INSTRUCTIONS;
-        let counter = self.instruction_counter.clone();
+        let budget = &self.budget;
         let limits = self.limits.conversion;
 
         context.with(|ctx| {
             ctx.eval::<(), _>(code)
-                .map_err(|e| to_sandbox_error(&ctx, &counter, max_instructions, limits, e))?;
+                .map_err(|e| to_sandbox_error(&ctx, budget, limits, e))?;
 
             let globals = ctx.globals();
             let func: JsFunction = globals.get(entry_point).map_err(|e| {
@@ -93,7 +138,7 @@ impl RuntimeAdapter for QuickJSAdapter {
 
             let result: JsValue = func
                 .call((ctx_obj,))
-                .map_err(|e| to_sandbox_error(&ctx, &counter, max_instructions, limits, e))?;
+                .map_err(|e| to_sandbox_error(&ctx, budget, limits, e))?;
 
             // The job queue is never run, so a Promise would never settle;
             // read as an object it has no own properties and would pass for
@@ -114,13 +159,12 @@ impl RuntimeAdapter for QuickJSAdapter {
 
 fn to_sandbox_error(
     ctx: &Ctx<'_>,
-    counter: &AtomicU64,
-    max_instructions: u64,
+    budget: &InterruptBudget,
     limits: ConversionLimits,
     e: rquickjs::Error,
 ) -> Error {
-    if counter.load(Ordering::Relaxed) >= max_instructions {
-        return Error::InstructionLimitExceeded;
+    if let Some(trip) = budget.trip() {
+        return trip.into();
     }
     // rquickjs reports a thrown value only as "Exception generated by QuickJS";
     // the value itself waits in the context. Without it, a module that throws a

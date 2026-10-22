@@ -18,11 +18,11 @@ SandboxFactory
 
 ## SandboxFactory
 
-Created once at server startup. Takes an `Arc<ModuleRegistry>` and a `HostContext`, and produces `Sandbox` instances that share them.
+Created once at server startup. Takes an `Arc<ModuleRegistry>`, a `HostContext` and the `SandboxLimits`, and produces `Sandbox` instances that share them. Async callers go through `invoke_blocking`, which caps how many invocations run at once (see [Time, instruction and concurrency limits](#time-instruction-and-concurrency-limits)).
 
 ```rust
 let registry = Arc::new(ModuleRegistry::new());
-let factory = SandboxFactory::new(registry.clone(), noop_host_context());
+let factory = SandboxFactory::new(registry.clone(), noop_host_context(), SandboxLimits::default());
 
 let sandbox = factory.create();
 let result = sandbox.invoke(InvokeRequest {
@@ -105,6 +105,11 @@ The adapter creates a `Lua` instance with `StdLib::NONE`, strips the global envi
 
 Module source is loaded in text mode: a source starting with the Lua bytecode signature (`\27Lua`) is refused with a syntax error, because the VM does not verify precompiled chunks.
 
+Two allowed globals are replaced, because their stock versions run module code with Lua's debug hooks switched off, where the instruction and deadline checks cannot stop it (`LUA_HOOK_SAFE_GLOBALS` in `lua.rs`):
+
+- `xpcall` calls its message handler after the failed call has unwound, not at the point of the error. If the handler itself fails, `xpcall` returns `false` and the handler's error.
+- `setmetatable` refuses a metatable with a `__gc` field, since Lua runs finalizers with hooks off.
+
 ### Echo (fallback)
 
 Debug adapter for unrecognized file extensions.
@@ -132,6 +137,21 @@ A value that refers to itself exceeds the depth limit, so a cyclic return value 
 A Lua table whose keys are exactly `1..n` becomes an array; any other table becomes an object keyed by its string and integer keys. An empty table is an object, except an empty array from the event, which round-trips as `[]`. A table holding both `[1]` and `['1']` is refused rather than silently keeping one. Functions, coroutines and userdata (in JavaScript: functions, promises, symbols and BigInts) have no JSON form and are refused with `UnsupportedValue`.
 
 A JavaScript entry point must return its result directly. The adapter does not run the promise job queue, so an `async` function (or any function returning a Promise) is refused with `AsyncEntryUnsupported`.
+
+### Time, instruction and concurrency limits
+
+Every invocation has a deadline: the caller's `timeoutMs`, capped at and defaulting to 30 seconds. Module code also has a CPU budget. Both runtimes check the two as the code runs (the rest of `SandboxLimits`):
+
+| Limit | Default | Error |
+|-------|---------|-------|
+| Invocation deadline | `timeoutMs`, at most 30 s | `DeadlineExceeded` |
+| Lua VM instructions, checked every 10,000 | 10,000,000 | `InstructionLimitExceeded` |
+| QuickJS interrupt-handler calls (about 1e7 bytecode ops) | 200 | `InstructionLimitExceeded` |
+| Heap per runtime | 16 MiB | runtime error |
+
+Neither stop can be caught by module code. QuickJS raises an uncatchable error, and it checks both limits inside regular expression matching too, so a pattern that backtracks without end stops at the deadline like a loop does. In Lua, the first trip switches the hook to fail every instruction, so a `pcall` handler cannot run a single instruction and the error unwinds to the entry point. The error reported is the limit that tripped, whatever error module code turned it into on the way out.
+
+`SandboxFactory::invoke_blocking` runs at most `max_concurrent_invocations` invocations at once (32, set with `WOOFX3_SANDBOX_MAX_CONCURRENT_INVOCATIONS`, 1 to 512). Each running invocation holds one of Tokio's blocking threads, so the cap keeps a burst of calls or a few runaway modules from starving everything else. A call waits for a free slot for up to 5 seconds, or until its deadline if that is sooner, and the wait counts against the deadline. When no slot frees up in time it fails with `InvokeBlockingError::Busy`, which the WebSocket invoke, the scheduler and the field-options responder report like any other failed invocation. A slot is held until the invocation ends, even when its caller has stopped waiting. A nested `ctx.resources.run` runs on its caller's thread and takes no slot of its own. Every limit is checked when the sandbox is built: a zero budget or a slot count outside 1 to 512 stops barkloader at startup.
 
 ## Modules request, the engine acts
 
@@ -383,5 +403,8 @@ Sandbox errors are categorized:
 | `ValueTooLarge` | A converted value has too many values or too much text |
 | `UnsupportedValue` | A value with no JSON form, such as a Lua function |
 | `AsyncEntryUnsupported` | A JavaScript entry point returned a Promise |
+| `InstructionLimitExceeded` | Module code used up its instruction budget |
+| `DeadlineExceeded` | Module code was still running at the invocation's deadline |
+| `InvokeBlockingError::Busy` | Every invocation slot stayed taken for the whole wait |
 
 All errors implement `std::error::Error` via `thiserror` and are converted to WebSocket error messages.

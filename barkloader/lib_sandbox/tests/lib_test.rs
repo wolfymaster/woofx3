@@ -5,7 +5,9 @@ use lib_sandbox::host::{
 };
 use lib_sandbox::models::function::Function;
 use lib_sandbox::models::request::InvokeRequest;
-use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule, Sandbox};
+use lib_sandbox::{
+    ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule, Sandbox, SandboxLimits,
+};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -76,7 +78,7 @@ fn build_registry() -> Arc<ModuleRegistry> {
 
 fn test_sandbox_instance() -> Sandbox {
     let registry = build_registry();
-    Sandbox::new(registry, noop_host_context()).unwrap()
+    Sandbox::new(registry, noop_host_context(), SandboxLimits::default()).unwrap()
 }
 
 #[test]
@@ -191,7 +193,8 @@ fn test_js_instruction_limit() {
         .register_module("limits".to_string(), module)
         .unwrap();
 
-    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+    let mut sandbox =
+        Sandbox::new(registry, noop_host_context(), SandboxLimits::default()).unwrap();
 
     let result = sandbox.invoke(InvokeRequest {
         function: "limits:function:infinite".to_string(),
@@ -255,7 +258,8 @@ function isolation(ctx) {
         .register_module("example".to_string(), module)
         .unwrap();
 
-    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+    let mut sandbox =
+        Sandbox::new(registry, noop_host_context(), SandboxLimits::default()).unwrap();
 
     let result1 = sandbox
         .invoke(InvokeRequest {
@@ -330,7 +334,8 @@ fn test_ctx_event_data() {
         .register_module("example".to_string(), module)
         .unwrap();
 
-    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+    let mut sandbox =
+        Sandbox::new(registry, noop_host_context(), SandboxLimits::default()).unwrap();
 
     let result = sandbox
         .invoke(InvokeRequest {
@@ -449,7 +454,7 @@ fn invoke_with_twitch(
     let mut host_ctx = noop_host_context();
     host_ctx.extensions =
         Arc::new(ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(twitch))));
-    Sandbox::new(registry, host_ctx)
+    Sandbox::new(registry, host_ctx, SandboxLimits::default())
         .unwrap()
         .invoke(InvokeRequest {
             function: "twitch_test:function:run".to_string(),
@@ -691,7 +696,7 @@ fn assert_nested_namespace_call_publishes(module: &str, func_name: &str, code: &
         ExtensionRegistry::new().with(Arc::new(NestedNamespaceExtension::new(nats.clone()))),
     );
 
-    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    let mut sandbox = Sandbox::new(registry, host_ctx, SandboxLimits::default()).unwrap();
     sandbox
         .invoke(InvokeRequest {
             function: format!("{module}:function:{func_name}"),
@@ -743,7 +748,7 @@ fn test_unregistered_extension_namespace_is_undefined() {
     let registry = extension_test_module("noext_test", "probe", code, "js");
 
     let host_ctx = noop_host_context();
-    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    let mut sandbox = Sandbox::new(registry, host_ctx, SandboxLimits::default()).unwrap();
     let result = sandbox
         .invoke(InvokeRequest {
             function: "noext_test:function:probe".to_string(),
@@ -765,7 +770,8 @@ fn invoke_probe(
     ext: &str,
 ) -> Result<serde_json::Value, String> {
     let registry = extension_test_module(module, func, code, ext);
-    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+    let mut sandbox =
+        Sandbox::new(registry, noop_host_context(), SandboxLimits::default()).unwrap();
     sandbox
         .invoke(InvokeRequest {
             function: format!("{module}:function:{func}"),
@@ -858,7 +864,7 @@ fn invoke_announcer(
     let nats = Arc::new(CapturingNats::default());
     let mut host_ctx = noop_host_context();
     host_ctx.nats = nats.clone();
-    let result = Sandbox::new(registry, host_ctx)
+    let result = Sandbox::new(registry, host_ctx, SandboxLimits::default())
         .unwrap()
         .invoke(InvokeRequest {
             function: format!("announcer:function:{func_name}"),
@@ -1008,7 +1014,7 @@ fn a_url_settings_origin_is_granted_to_the_invocation() {
         "server".to_string(),
         serde_json::json!("http://homeassistant.local:8123/api/states"),
     )])));
-    let mut sandbox = Sandbox::new(registry, host).unwrap();
+    let mut sandbox = Sandbox::new(registry, host, SandboxLimits::default()).unwrap();
 
     sandbox
         .invoke(InvokeRequest {
@@ -1051,7 +1057,7 @@ fn ctx_http_carries_the_invocations_deadline_in_both_runtimes() {
         let mut host = noop_host_context();
         host.http = http.clone();
         let before = std::time::Instant::now();
-        Sandbox::new(registry, host)
+        Sandbox::new(registry, host, SandboxLimits::default())
             .unwrap()
             .invoke(InvokeRequest {
                 function: "http_deadline:function:run".to_string(),
