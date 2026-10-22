@@ -135,7 +135,9 @@ describe("deleteClient", () => {
       deleteClient: mock(async () => ({ code: "OK" })),
     };
     const { api, stream } = newApi(db);
-    api.setClientRevocation(new ClientRevoker({ invalidateCache() {} }, new ClientSessions(logger), stream));
+    api.setClientRevocation(
+      new ClientRevoker({ invalidateCache() {} }, new ClientSessions(logger), stream, { dropClient() {} })
+    );
     const gone = recorder();
     const kept = recorder();
     await api.subscribeEngineEvents(gone.subscriber, undefined, { session: {}, clientId: "gone" });

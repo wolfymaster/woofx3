@@ -96,9 +96,16 @@ async function barkloaderRequestError(response: Response): Promise<Error> {
  * Shared host state and internal helpers for route modules.
  */
 export class ApiRouteHost extends RpcTarget {
-  protected triggerSubscribers = new Set<{
-    onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
-  }>();
+  /**
+   * Each held trigger-change callback, with the session that subscribed it,
+   * or the callback itself for an in-process caller with no session.
+   */
+  protected triggerSubscribers = new Map<
+    {
+      onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
+    },
+    object
+  >();
   protected webhookClient: WebhookClient | null = null;
   protected streamEventBroadcaster: StreamEventBroadcaster | null = null;
   protected engineEventStream: EngineEventStream | null = null;
@@ -307,7 +314,7 @@ export class ApiRouteHost extends RpcTarget {
   protected async notifyTriggerChange(moduleName: string): Promise<void> {
     type Subscriber = { onTriggerChange(event: { type: string; moduleName: string }): Promise<void> };
     const dead: Subscriber[] = [];
-    for (const cb of this.triggerSubscribers) {
+    for (const cb of this.triggerSubscribers.keys()) {
       try {
         await cb.onTriggerChange({ type: "registered", moduleName });
       } catch {

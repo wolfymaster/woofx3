@@ -4,6 +4,7 @@ import type { ClientAuth } from "./auth";
 import type { EngineEventStream } from "./engine-event-stream";
 import { AuthenticationRefused } from "./gateway";
 import type { ConnectionInfo } from "./gateway-connection";
+import type { WebhookClient } from "./webhook-client";
 
 /** The reason a revoked session gives, on its calls and on its closed socket. */
 const CLIENT_REVOKED = "client revoked";
@@ -13,20 +14,46 @@ const CLIENT_REVOKED = "client revoked";
  * revoked, and then refuses every call that starts: an HTTP batch has no
  * socket to close, and a WebSocket frame may already be in flight when its
  * socket closes. A call already running when the revocation lands finishes.
+ *
+ * Revocation is checked two ways: the registry revokes the lease, and the
+ * lease compares the client's generation with the one it was issued under.
+ * The second holds even for a lease the registry no longer tracks, such as
+ * one capnweb disposed early.
  */
 export class SessionLease {
   private revoked = false;
   private released = false;
+  private revokeListeners: (() => void)[] = [];
 
-  /** @param onRelease forgets the session in its registry; run at most once. */
-  constructor(private readonly onRelease: () => void) {}
+  /**
+   * @param onRelease forgets the session in its registry; run at most once.
+   * @param current whether the client is still on the generation the lease
+   *   was issued under.
+   */
+  constructor(
+    private readonly onRelease: () => void,
+    private readonly current: () => boolean = () => true
+  ) {}
+
+  /** Runs `listener` when the lease is revoked. */
+  onRevoke(listener: () => void): void {
+    this.revokeListeners.push(listener);
+  }
 
   revoke(): void {
+    if (this.revoked) {
+      return;
+    }
     this.revoked = true;
+    const listeners = this.revokeListeners;
+    this.revokeListeners = [];
+    for (const listener of listeners) {
+      listener();
+    }
   }
 
   get live(): boolean {
-    return !this.revoked && !this.released;
+    return !this.revoked && !this.released && this.current();
   }
 
   /** The session is gone (disposed, or its connection ended). Releasing twice is a no-op. */
@@ -35,12 +62,13 @@ export class SessionLease {
       return;
     }
     this.released = true;
+    this.revokeListeners = [];
     this.onRelease();
   }
 
   /** Throws the refusal a client recognises once the lease is revoked. */
   assertLive(): void {
-    if (this.revoked) {
+    if (this.revoked || !this.current()) {
       throw new AuthenticationRefused(CLIENT_REVOKED);
     }
   }
@@ -111,7 +139,10 @@ export class ClientSessions {
     if (this.generation(clientId) !== seenGeneration) {
       return null;
     }
-    const lease = new SessionLease(() => this.forget(clientId, lease, connection));
+    const lease = new SessionLease(
+      () => this.forget(clientId, lease, connection),
+      () => this.generation(clientId) === seenGeneration
+    );
     let leases = this.byClient.get(clientId);
     if (!leases) {
       leases = new Map();
@@ -141,22 +172,22 @@ export class ClientSessions {
     if (!leases) {
       return;
     }
+    const ended = leases.size;
     const connections = new Set(leases.values());
     for (const lease of [...leases.keys()]) {
       lease.revoke();
       lease.release();
     }
-    const closing = [...connections].filter((connection) => connection.close !== null && !this.hasLive(connection));
+    // Decided when the task runs, not now: another client may authenticate
+    // on one of these sockets before then, and its session must keep it open.
     this.defer(() => {
-      for (const connection of closing) {
-        this.close(clientId, connection);
+      for (const connection of connections) {
+        if (connection.close !== null && this.byConnection.has(connection) && !this.hasLive(connection)) {
+          this.close(clientId, connection);
+        }
       }
     });
-    this.logger.info("Ended a revoked client's sessions", {
-      clientId,
-      sessions: leases.size,
-      closedConnections: closing.length,
-    });
+    this.logger.info("Ended a revoked client's sessions", { clientId, sessions: ended });
   }
 
   private hasLive(connection: ConnectionInfo): boolean {
@@ -172,10 +203,9 @@ export class ClientSessions {
     try {
       connection.close?.(CLIENT_REVOKED_CLOSE_CODE, CLIENT_REVOKED);
     } catch (err) {
-      // The lease already refuses every call. What the engine pushes to the
-      // session unasked (stream-event and trigger subscriptions) stops only
-      // once the socket's close is observed, so it runs until the socket
-      // times out.
+      // The lease already refuses every call, and the session's
+      // subscriptions ended when it was revoked; the socket itself is left
+      // to time out.
       this.logger.warn("Could not close a revoked client's connection", {
         clientId,
         error: err instanceof Error ? err.message : String(err),
@@ -204,20 +234,23 @@ export class ClientSessions {
 
 /**
  * Everything deleting a client does besides the db delete: forgets the
- * credentials the engine trusted for it, ends its sessions, and drops its
- * event-stream subscriptions so it neither receives events nor is offered as
- * a client that can answer a request.
+ * credentials the engine trusted for it, ends its sessions, and stops every
+ * delivery to it, over the event stream and to its callback URL, so it
+ * neither receives events nor is offered as a client that can answer a
+ * request.
  */
 export class ClientRevoker implements ClientRevocation {
   constructor(
     private readonly auth: Pick<ClientAuth, "invalidateCache">,
     private readonly sessions: ClientSessions,
-    private readonly eventStream: Pick<EngineEventStream, "dropClient">
+    private readonly eventStream: Pick<EngineEventStream, "dropClient">,
+    private readonly webhooks: Pick<WebhookClient, "dropClient">
   ) {}
 
   revoke(clientId: string): void {
     this.auth.invalidateCache();
     this.sessions.revoke(clientId);
     this.eventStream.dropClient(clientId);
+    this.webhooks.dropClient(clientId);
   }
 }

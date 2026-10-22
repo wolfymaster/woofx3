@@ -112,6 +112,7 @@ describe("the RPC surface a client sees", () => {
       "setStreamEventBroadcaster",
       "setEventLogSelectionSource",
       "setEngineEventStream",
+      "dropSessionSubscriptions",
       "initSubscriptions",
       "handleProcessingCallback",
     ].sort();

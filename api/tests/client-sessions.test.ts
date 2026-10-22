@@ -159,18 +159,60 @@ describe("ClientSessions", () => {
   });
 });
 
+describe("ClientSessions hardening", () => {
+  test("a lease the registry no longer tracks is still refused once its client is revoked", () => {
+    const sessions = new ClientSessions(logger);
+    const lease = sessions.register("c1", 0, socket().connection)!;
+    lease.release();
+
+    sessions.revoke("c1");
+
+    expect(isAuthenticationRefused(refusalOf(lease))).toBe(true);
+  });
+
+  test("a socket another session joined before the deferred close stays open", () => {
+    const { defer, run } = manualDefer();
+    const sessions = new ClientSessions(logger, defer);
+    const conn = socket();
+    sessions.register("doomed", 0, conn.connection);
+
+    sessions.revoke("doomed");
+    sessions.register("admin", 0, conn.connection);
+    run();
+
+    expect(conn.closes).toEqual([]);
+  });
+
+  test("revoking runs each session's revoke listeners and logs how many sessions it ended", () => {
+    const infos: unknown[][] = [];
+    const recording = { ...logger, info: (...args: unknown[]) => infos.push(args) } as unknown as SharedLogger;
+    const sessions = new ClientSessions(recording);
+    const dropped: string[] = [];
+    sessions.register("c1", 0, socket().connection)!.onRevoke(() => dropped.push("first"));
+    sessions.register("c1", 0, socket().connection)!.onRevoke(() => dropped.push("second"));
+
+    sessions.revoke("c1");
+
+    expect(dropped).toEqual(["first", "second"]);
+    expect(infos).toContainEqual(["Ended a revoked client's sessions", { clientId: "c1", sessions: 2 }]);
+  });
+});
+
 describe("ClientRevoker", () => {
   test("forgets the trusted credentials, ends the sessions and drops the event subscriptions", () => {
     const calls: string[] = [];
     const sessions = new ClientSessions(logger);
     const lease = sessions.register("c1", 0, socket().connection)!;
-    const revoker = new ClientRevoker({ invalidateCache: () => calls.push("cache") }, sessions, {
-      dropClient: (clientId: string) => calls.push(`events:${clientId}`),
-    });
+    const revoker = new ClientRevoker(
+      { invalidateCache: () => calls.push("cache") },
+      sessions,
+      { dropClient: (clientId: string) => calls.push(`events:${clientId}`) },
+      { dropClient: (clientId: string) => calls.push(`callbacks:${clientId}`) }
+    );
 
     revoker.revoke("c1");
 
-    expect(calls).toEqual(["cache", "events:c1"]);
+    expect(calls).toEqual(["cache", "events:c1", "callbacks:c1"]);
     expect(isAuthenticationRefused(refusalOf(lease))).toBe(true);
   });
 });

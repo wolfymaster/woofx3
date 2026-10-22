@@ -2,14 +2,17 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { Woofx3EngineApi } from "@woofx3/api";
 import { type ApiGatewayContract, CLIENT_REVOKED_CLOSE_CODE, isAuthenticationRefused } from "@woofx3/api/rpc";
 import type { SharedLogger } from "@woofx3/common/logging";
+import { EngineEventType } from "@woofx3/api/webhooks";
 import { newMessagePortRpcSession, newWebSocketRpcSession } from "capnweb";
 import { Api } from "../src/api";
 import { ClientAuth } from "../src/auth";
-import { ClientRevoker, ClientSessions } from "../src/client-sessions";
+import { ClientRevoker, ClientSessions, SessionLease } from "../src/client-sessions";
 import { EngineEventStream } from "../src/engine-event-stream";
+import { ApiSession } from "../src/api-session";
 import { ApiGateway } from "../src/gateway";
 import { GatewayConnection } from "../src/gateway-connection";
 import { createHttpServer } from "../src/http";
+import { WebhookClient } from "../src/webhook-client";
 import { resolveRegistrationPolicy } from "../src/registration";
 
 /*
@@ -49,6 +52,9 @@ function engine() {
   let held: Promise<void> | null = null;
   /** What the next deleteClient does instead of deleting; null deletes normally. */
   let deleteFailure: "throwAfterCommit" | "notOk" | null = null;
+  /** Each client's callback URL, for the clients that registered one. */
+  const callbackUrls: Record<string, string> = {};
+  let listFails = false;
   const db = {
     async validateClient(clientId: string, clientSecret: string) {
       const known = CREDENTIALS[clientId] === clientSecret && !deleted.has(clientId);
@@ -58,6 +64,21 @@ function engine() {
       return known
         ? { status: { code: "OK" }, client: { description: clientId } }
         : { status: { code: "NOT_FOUND", message: "Invalid credentials" } };
+    },
+    async listClients() {
+      if (listFails) {
+        throw new Error("db-proxy unavailable");
+      }
+      return {
+        clients: Object.keys(callbackUrls)
+          .filter((clientId) => !deleted.has(clientId))
+          .map((clientId) => ({
+            clientId,
+            description: clientId,
+            callbackUrl: callbackUrls[clientId],
+            callbackToken: "t",
+          })),
+      };
     },
     async getClientByClientID(clientId: string) {
       return deleted.has(clientId) || !(clientId in CREDENTIALS) ? {} : { client: { id: clientId, clientId } };
@@ -84,11 +105,23 @@ function engine() {
   });
   const auth = new ClientAuth(db as never, logger);
   const sessions = new ClientSessions(logger);
-  api.setClientRevocation(new ClientRevoker(auth, sessions, new EngineEventStream(logger)));
+  const stream = new EngineEventStream(logger);
+  const webhooks = new WebhookClient(db as never, logger, stream);
+  api.setWebhookClient(webhooks);
+  api.setClientRevocation(new ClientRevoker(auth, sessions, stream, webhooks));
   const gateway = new ApiGateway(api, auth, db as never, logger, resolveRegistrationPolicy({}), sessions);
   return {
     gateway,
     sessions,
+    webhooks,
+    /** Give `clientId` a callback URL, as if it registered with one, and load it. */
+    async withCallback(clientId: string, url: string) {
+      callbackUrls[clientId] = url;
+      await webhooks.refreshCallbackUrls();
+    },
+    failListing() {
+      listFails = true;
+    },
     failNextDelete(failure: "throwAfterCommit" | "notOk") {
       deleteFailure = failure;
     },
@@ -261,6 +294,33 @@ describe("deleting a client", () => {
     expect(isAuthenticationRefused(await rejectionOf(doomed.ping()))).toBe(true);
   });
 
+  test("stops callbacks to the client at once, even when the refresh after the delete fails", async () => {
+    const { gateway, webhooks, withCallback, failListing } = engine();
+    const received: string[] = [];
+    const callbacks = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(req) {
+        received.push(((await req.json()) as { type: string }).type);
+        return Response.json({});
+      },
+    });
+    try {
+      await withCallback("doomed", `http://127.0.0.1:${callbacks.port}/callback`);
+      using adminPort = overMessagePort(gateway);
+      const admin = adminPort.client.authenticate("admin", CREDENTIALS.admin) as unknown as Woofx3EngineApi;
+
+      failListing();
+      expect(await admin.deleteClient("doomed")).toEqual({ success: true, message: "Client deleted" });
+      await webhooks.send({ type: EngineEventType.WORKFLOW_DELETED, workflowId: "w1" });
+
+      expect(received).toEqual([]);
+      expect(webhooks.clientIds()).not.toContain("doomed");
+    } finally {
+      callbacks.stop(true);
+    }
+  });
+
   test("reports a delete db-proxy did not perform as a failure", async () => {
     const { gateway, failNextDelete } = engine();
     using adminPort = overMessagePort(gateway);
@@ -291,5 +351,30 @@ describe("a session disposed by its client", () => {
 
     expect(sessions.size).toBe(0);
     gatewayStub[Symbol.dispose]();
+  });
+});
+
+describe("a revoked session's subscriptions", () => {
+  test("end with its client, even while its socket stays open", async () => {
+    const api = new Api({
+      db: {} as never,
+      nats: null,
+      functions: null,
+      barkloaderUrl: "http://b",
+      sceneManagerUrl: "http://scene.test",
+      apiUrl: "http://api.test",
+      logger,
+    });
+    const lease = new SessionLease(() => {});
+    const session = new ApiSession(api, "doomed", lease);
+    const kept = new ApiSession(api, "admin", new SessionLease(() => {}));
+    const callback = { async onTriggerChange() {} };
+    await session.subscribeTriggerChanges(callback);
+    await kept.subscribeTriggerChanges({ async onTriggerChange() {} });
+
+    lease.revoke();
+
+    const subscribers = (api as unknown as { triggerSubscribers: Map<object, object> }).triggerSubscribers;
+    expect([...subscribers.values()]).toEqual([kept]);
   });
 });

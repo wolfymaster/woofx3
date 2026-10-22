@@ -112,6 +112,24 @@ export class StreamEventBroadcaster {
     await this.resync();
   }
 
+  /**
+   * End `session`'s registration, as when its client is revoked while its
+   * socket stays open for another client. A session with none is a no-op.
+   */
+  unsubscribe(session: object): void {
+    const registration = this.registrations.get(session);
+    if (!registration) {
+      return;
+    }
+    this.registrations.delete(session);
+    releaseStub(registration.subscriber);
+    this.resync().catch((err) => {
+      this.logger.error("StreamEventBroadcaster: resync after unsubscribe failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+
   /** Exposed for tests and diagnostics. */
   get subscriberCount(): number {
     return this.registrations.size;

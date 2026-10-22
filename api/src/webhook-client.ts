@@ -67,6 +67,13 @@ const CALLBACK_TIMEOUT_MS = 5_000;
  */
 export class WebhookClient {
   private instances: RegisteredInstance[] = [];
+  /**
+   * Every client deleted since the engine started. A refresh that read the
+   * client list before a delete can land after it, so its answer is filtered
+   * through this set rather than trusted. Client ids are never reused, so an
+   * id here stays deleted; the set grows only with deletions.
+   */
+  private deleted = new Set<string>();
   private readonly timeoutMs = CALLBACK_TIMEOUT_MS;
 
   constructor(
@@ -89,12 +96,21 @@ export class WebhookClient {
     return ids;
   }
 
+  /**
+   * Stop delivering to a deleted client at once, without waiting for a
+   * refresh, and keep any refresh already under way from adding it back.
+   */
+  dropClient(clientId: string): void {
+    this.deleted.add(clientId);
+    this.instances = this.instances.filter((instance) => instance.clientId !== clientId);
+  }
+
   async refreshCallbackUrls(): Promise<void> {
     const resp = await this.db.listClients();
     const newInstances: RegisteredInstance[] = [];
 
     for (const client of resp.clients ?? []) {
-      if (client.callbackUrl) {
+      if (client.callbackUrl && !this.deleted.has(client.clientId)) {
         newInstances.push({
           clientId: client.clientId,
           instanceName: client.description || client.clientId,

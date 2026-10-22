@@ -268,7 +268,12 @@ client and ends every session it already holds:
   refused;
 - a session that was still authenticating when the client was deleted is
   refused rather than admitted;
-- its event-stream subscriptions are dropped.
+- its event-stream subscriptions are dropped, and the stream-event and
+  trigger-change subscriptions of each of its sessions end, even on a socket
+  that stays open for another client;
+- events stop going to its callback URL at once, and it is no longer offered
+  as a client that can answer a request, whatever happens to the refresh of
+  the callback list that follows.
 
 A socket that also carries a live session of another client stays open for
 that session; only the deleted client's sessions on it end.

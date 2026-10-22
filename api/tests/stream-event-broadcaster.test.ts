@@ -208,4 +208,23 @@ describe("StreamEventBroadcaster", () => {
 
     expect(frames[0]?.platform).toBe("woofx3");
   });
+  test("unsubscribe ends one session's registration and frees its subjects", async () => {
+    const { nats, handlers, deliver } = fakeBus();
+    const { catalog } = fakeCatalog(["channel.follow"]);
+    const broadcaster = new StreamEventBroadcaster(nats, logger, catalog);
+    await broadcaster.start();
+    const revoked = collector();
+    const session = {};
+    await broadcaster.subscribe(revoked.subscriber, ["channel.follow"], session);
+
+    broadcaster.unsubscribe(session);
+    broadcaster.unsubscribe(session);
+    await flush();
+    deliver("channel.follow", event("channel.follow"));
+    await flush();
+
+    expect(revoked.frames).toEqual([]);
+    expect(broadcaster.subscriberCount).toBe(0);
+    expect(handlers.size).toBe(0);
+  });
 });

@@ -35,6 +35,9 @@ export class ApiSession extends RpcTarget {
     this.api = api;
     this.clientId = clientId;
     this.lease = lease;
+    // What the engine pushes to the session unasked ends with its client,
+    // even when the socket stays open for another client's session.
+    lease.onRevoke(() => api.dropSessionSubscriptions(this));
   }
 
   /**
@@ -89,6 +92,13 @@ export class ApiSession extends RpcTarget {
   /** The session is the registration's key, so a second call replaces the first. */
   async subscribeStreamEvents(callback: StreamEventSubscriber, types?: string[]) {
     return this.api.subscribeStreamEvents(callback, types, { session: this });
+  }
+
+  /** Keyed on the session, so revoking its client ends it. */
+  async subscribeTriggerChanges(callback: {
+    onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
+  }) {
+    return this.api.subscribeTriggerChanges(callback, { session: this });
   }
 
   /** Keyed on the session like `subscribeStreamEvents`; the client id decides what it receives. */
