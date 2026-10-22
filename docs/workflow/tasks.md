@@ -61,9 +61,9 @@ Returns all parameters as-is.
 
 #### `chat.reply`
 
-Sends one message to chat, by publishing `message.send` — the same event the
-sandbox's chat extension publishes, consumed by woofwoofwoof, which holds the
-chat client.
+Sends one message to chat by publishing `message.send`, consumed by
+woofwoofwoof, which holds the chat client. This is how module functions reply:
+they return `ctx.success(message)` and a `chat.reply` step posts it.
 
 ```json
 {
