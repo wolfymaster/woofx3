@@ -35,7 +35,7 @@ readonly GO_MODULES=(
   shared/common/golang/runtime shared/common/contracts/gen
 )
 readonly RUST_ROOTS=(barkloader shared/common/rust/logging shared/common/rust/runtime)
-readonly TS_SERVICES=(api twitch woofwoofwoof sceneManager)
+readonly TS_SERVICES=(api connectors twitch woofwoofwoof sceneManager)
 # Shared packages with their own type check and tests, as the CI jobs of the
 # services that use them run them.
 readonly TS_PACKAGES=(shared/clients/typescript/widget-host)
