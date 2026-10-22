@@ -127,7 +127,7 @@ func (h *waitHarness) fire(t *testing.T, wait *types.WaitConfig) {
 		},
 	}
 	trigger := &types.Event{ID: "raid-1", Type: "channel.raid", Source: "test", Time: time.Now(), Data: map[string]any{}}
-	go h.engine.executeWorkflow(def, trigger, h.engine.newViewerLoader(viewerTrigger(def), trigger))
+	h.engine.startRun(def, trigger, h.engine.newViewerLoader(viewerTrigger(def), trigger))
 }
 
 func (h *waitHarness) awaitArmed(t *testing.T) {
@@ -461,7 +461,7 @@ func TestWaitTimeoutContinuesWithEmptyData(t *testing.T) {
 		},
 	}
 	trigger := &types.Event{ID: "raid-1", Type: "channel.raid", Source: "test", Time: time.Now(), Data: map[string]any{}}
-	go engine.executeWorkflow(def, trigger, engine.newViewerLoader(viewerTrigger(def), trigger))
+	engine.startRun(def, trigger, engine.newViewerLoader(viewerTrigger(def), trigger))
 
 	execution := recorder.awaitSettled(t, 2*time.Second)
 	if execution.Status != types.ExecutionStatusCompleted {

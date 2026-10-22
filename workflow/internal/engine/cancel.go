@@ -389,7 +389,7 @@ func (e *Engine[TServices]) executeTaskCancellable(
 	ctx := e.runContext(execution.ID)
 	done := make(chan taskOutcome, 1)
 	go func() {
-		result, params, err := e.executeTask(taskDef, execution, event, taskExports)
+		result, params, err := e.executeTaskGuarded(taskDef, execution, event, taskExports)
 		done <- taskOutcome{result: result, params: params, err: err}
 	}()
 	select {
