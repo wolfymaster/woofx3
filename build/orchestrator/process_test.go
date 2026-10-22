@@ -73,19 +73,19 @@ func TestAServiceStartedByTheOrchestratorExitsCleanlyWhenAskedToStop(t *testing.
 	if err := process.RequestStop(); err != nil {
 		t.Fatalf("request stop: %v", err)
 	}
-	exited := make(chan string, 1)
+	exited := make(chan processExit, 1)
 	go func() {
 		state, err := process.Wait()
 		if err != nil {
-			state = err.Error()
+			state = processExit{description: err.Error()}
 		}
 		exited <- state
 	}()
 
 	select {
 	case state := <-exited:
-		if state != "exit status 0" {
-			t.Fatalf("service exited with %q, want a clean exit", state)
+		if !state.success || state.description != "exit status 0" {
+			t.Fatalf("service exited with %+v, want a clean exit", state)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("service did not exit after it was asked to stop")
@@ -151,10 +151,10 @@ func (p *scriptedProcess) Kill() error {
 	return nil
 }
 
-func (p *scriptedProcess) Wait() (string, error) {
+func (p *scriptedProcess) Wait() (processExit, error) {
 	<-p.exited
 	time.Sleep(p.reapDelay)
-	return "exit status 0", nil
+	return processExit{description: "exit status 0", success: true}, nil
 }
 
 func (p *scriptedProcess) exit() {

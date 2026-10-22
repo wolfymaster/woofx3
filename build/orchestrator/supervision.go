@@ -221,8 +221,16 @@ type serviceHandle interface {
 	// the request is delivered, not once the process has exited.
 	RequestStop() error
 	Kill() error
-	// Wait blocks until the process exits and describes how it did.
-	Wait() (string, error)
+	// Wait blocks until the process exits and says how it did.
+	Wait() (processExit, error)
+}
+
+// processExit is how a service process ended.
+type processExit struct {
+	// description is the exit as the OS reports it, such as "exit status 1".
+	description string
+	// success is an exit with status 0.
+	success bool
 }
 
 // processStarter starts a service process.
@@ -238,10 +246,10 @@ type osProcess struct {
 func (p osProcess) Pid() int    { return p.process.Pid }
 func (p osProcess) Kill() error { return p.process.Kill() }
 
-func (p osProcess) Wait() (string, error) {
+func (p osProcess) Wait() (processExit, error) {
 	state, err := p.process.Wait()
 	if err != nil {
-		return "", err
+		return processExit{}, err
 	}
-	return state.String(), nil
+	return processExit{description: state.String(), success: state.Success()}, nil
 }

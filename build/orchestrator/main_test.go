@@ -195,9 +195,11 @@ func (c *fakeClock) Sleep(ctx context.Context, d time.Duration) error {
 	return ctx.Err()
 }
 
-// fakeProcess runs until it is signalled or killed.
+// fakeProcess runs until it is signalled or killed, or exits on its own when
+// it was started that way, and then ends with result.
 type fakeProcess struct {
 	pid    int
+	result processExit
 	exited chan struct{}
 	once   sync.Once
 }
@@ -214,9 +216,9 @@ func (p *fakeProcess) Kill() error {
 	return nil
 }
 
-func (p *fakeProcess) Wait() (string, error) {
+func (p *fakeProcess) Wait() (processExit, error) {
 	<-p.exited
-	return "exit status 0", nil
+	return p.result, nil
 }
 
 func (p *fakeProcess) exit() {
@@ -224,12 +226,14 @@ func (p *fakeProcess) exit() {
 }
 
 // fakeProcesses starts fakeProcess values and remembers the order services
-// were started in.
+// were started in. A service named in exitOnStart exits as soon as it has
+// started, with that result, as a run-once step does.
 type fakeProcesses struct {
-	mu      sync.Mutex
-	nextPid int
-	started []string
-	attrs   map[string]*os.ProcAttr
+	mu          sync.Mutex
+	nextPid     int
+	started     []string
+	attrs       map[string]*os.ProcAttr
+	exitOnStart map[string]processExit
 }
 
 func (f *fakeProcesses) start(path string, argv []string, attr *os.ProcAttr) (serviceHandle, error) {
@@ -242,7 +246,12 @@ func (f *fakeProcesses) start(path string, argv []string, attr *os.ProcAttr) (se
 		f.attrs = make(map[string]*os.ProcAttr)
 	}
 	f.attrs[name] = attr
-	return &fakeProcess{pid: f.nextPid, exited: make(chan struct{})}, nil
+	process := &fakeProcess{pid: f.nextPid, result: processExit{description: "exit status 0", success: true}, exited: make(chan struct{})}
+	if result, ok := f.exitOnStart[name]; ok {
+		process.result = result
+		process.exit()
+	}
+	return process, nil
 }
 
 func (f *fakeProcesses) startedServices() []string {
@@ -1102,5 +1111,126 @@ func TestTheAPIsHealthCheckFollowsItsPortFromTheRuntimeConfig(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// migrateAndDBProxy are a run-once step shaped like the shipped migrate entry
+// and the service that waits for it.
+func migrateAndDBProxy() []Service {
+	return []Service{
+		{Name: "migrate", Output: "migrate", Args: []string{"-cmd", "up"}, RunOnce: true},
+		{Name: "db-proxy", Output: "db-proxy", Dependencies: []string{"migrate"}},
+	}
+}
+
+func TestARunOnceStepCompletesBeforeItsDependentsStartAndCountsTowardsReady(t *testing.T) {
+	supervisor, processes, output := newFakeSupervisor(t, migrateAndDBProxy(), func(string) bool { return true })
+	processes.exitOnStart = map[string]processExit{"migrate": {description: "exit status 0", success: true}}
+
+	order, err := supervisor.GetStartupOrder()
+	if err != nil {
+		t.Fatalf("startup order: %v", err)
+	}
+	supervisor.StartInOrder(order)
+	waitFor(t, "ready", func() bool { return hasEvent(output.events(t), eventReady) })
+	supervisor.StopAll()
+
+	if got := processes.startedServices(); !reflect.DeepEqual(got, []string{"migrate", "db-proxy"}) {
+		t.Errorf("started %v, want the migration once, then db-proxy", got)
+	}
+	got := summary(output.events(t))
+	wantPrefix := []string{
+		"service:migrate:starting", "service:migrate:completed",
+		"service:db-proxy:starting", "service:db-proxy:healthy",
+		"ready",
+	}
+	if len(got) < len(wantPrefix) || !reflect.DeepEqual(got[:len(wantPrefix)], wantPrefix) {
+		t.Fatalf("events = %v, want them to start with %v", got, wantPrefix)
+	}
+	for _, event := range got[len(wantPrefix):] {
+		if strings.HasPrefix(event, "service:migrate:") {
+			t.Errorf("the completed step was reported again while stopping: %v", got)
+		}
+	}
+	select {
+	case err := <-supervisor.RunOnceFailed():
+		t.Errorf("a completed step was reported failed: %v", err)
+	default:
+	}
+}
+
+func TestAFailedRunOnceStepKeepsItsDependentsDownAndIsDelivered(t *testing.T) {
+	supervisor, processes, output := newFakeSupervisor(t, migrateAndDBProxy(), func(string) bool { return true })
+	processes.exitOnStart = map[string]processExit{"migrate": {description: "exit status 1"}}
+
+	order, err := supervisor.GetStartupOrder()
+	if err != nil {
+		t.Fatalf("startup order: %v", err)
+	}
+	supervisor.StartInOrder(order)
+
+	var failure error
+	select {
+	case failure = <-supervisor.RunOnceFailed():
+	case <-time.After(5 * time.Second):
+		t.Fatal("the failed step was never delivered")
+	}
+	if !strings.Contains(failure.Error(), "migrate") || !strings.Contains(failure.Error(), "exit status 1") {
+		t.Errorf("failure = %q, want the step and how it exited", failure)
+	}
+	// db-proxy's dependency monitor polls on the fake clock; give it rounds
+	// in which it could start db-proxy, were a stopped step enough.
+	time.Sleep(50 * time.Millisecond)
+	supervisor.StopAll()
+
+	if got := processes.startedServices(); !reflect.DeepEqual(got, []string{"migrate"}) {
+		t.Errorf("started %v, want db-proxy held back", got)
+	}
+	events := output.events(t)
+	if hasEvent(events, eventReady) {
+		t.Errorf("ready reported after a failed step: %v", summary(events))
+	}
+	wantPrefix := []string{"service:migrate:starting", "service:migrate:stopped", "error"}
+	if got := summary(events); len(got) < len(wantPrefix) || !reflect.DeepEqual(got[:len(wantPrefix)], wantPrefix) {
+		t.Fatalf("events = %v, want them to start with %v", got, wantPrefix)
+	}
+	if stopped := events[1]; stopped.Message != "exit status 1" {
+		t.Errorf("stopped event = %+v, want how the step exited", stopped)
+	}
+	if failed := events[2]; failed.Name != "migrate" || !strings.Contains(failed.Message, "exit status 1") {
+		t.Errorf("error event = %+v, want it about the step", failed)
+	}
+}
+
+func TestARunOnceStepStoppedWithTheEngineIsNotAFailure(t *testing.T) {
+	supervisor, processes, output := newFakeSupervisor(t, migrateAndDBProxy(), func(string) bool { return true })
+
+	order, err := supervisor.GetStartupOrder()
+	if err != nil {
+		t.Fatalf("startup order: %v", err)
+	}
+	supervisor.StartInOrder(order)
+	waitFor(t, "the step to start", func() bool { return len(processes.startedServices()) == 1 })
+	supervisor.StopAll()
+
+	select {
+	case err := <-supervisor.RunOnceFailed():
+		t.Errorf("a step stopped with the engine was reported failed: %v", err)
+	default:
+	}
+	if hasEvent(output.events(t), eventError) {
+		t.Errorf("events = %v, want no error", summary(output.events(t)))
+	}
+}
+
+func TestResolveServiceRefusesAHealthCheckOnARunOnceStep(t *testing.T) {
+	cases := []Service{
+		{Name: "migrate", RunOnce: true, HealthEndpoint: "http://127.0.0.1:1/health"},
+		{Name: "migrate", RunOnce: true, HealthTimeout: "90s"},
+	}
+	for _, service := range cases {
+		if _, err := resolveService(service, func(string) string { return "" }); err == nil {
+			t.Errorf("resolveService(%+v) = nil error, want a refusal", service)
+		}
 	}
 }
