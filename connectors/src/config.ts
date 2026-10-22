@@ -1,8 +1,10 @@
 import { z } from "zod";
 import { type BusConfig, BusEnvSchema, busConfig } from "./config/bus";
+import { type GatewayConfig, GatewayEnvSchema, gatewayConfig } from "./config/gateway";
 import { type HostConfig, HostEnvSchema, hostConfig, hostConfigProblems } from "./config/host";
 
 export const ConnectorsEnvSchema = BusEnvSchema.extend(HostEnvSchema.shape)
+  .extend(GatewayEnvSchema.shape)
   .extend({ woofx3RootPath: z.string().optional() })
   .superRefine((env, ctx) => {
     for (const message of hostConfigProblems(env)) {
@@ -16,6 +18,7 @@ export interface ConnectorsConfig {
   bus: BusConfig;
   dbProxyUrl: string;
   host: HostConfig;
+  gateway: GatewayConfig;
   /** Logs go under <rootPath>/logs. */
   rootPath: string | undefined;
 }
@@ -27,6 +30,7 @@ export function connectorsConfig(env: Record<string, unknown>): ConnectorsConfig
     bus: busConfig(parsed),
     dbProxyUrl: parsed.woofx3DatabaseProxyUrl,
     host: hostConfig(parsed),
+    gateway: gatewayConfig(parsed),
     rootPath: parsed.woofx3RootPath,
   };
 }
