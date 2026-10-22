@@ -5,7 +5,7 @@ export const TWITCHAPI_SUBJECT = "twitchapi";
 
 /**
  * Argument shapes of the `twitchapi` commands. The twitch service
- * (twitch/src/lib/twitch.ts) is the authority on them and validates each.
+ * (connectors/src/adapters/twitch/lib/twitch.ts) is the authority on them and validates each.
  */
 export interface TimeoutArgs {
   userId?: string;
@@ -34,7 +34,7 @@ export interface CreateMarkerArgs {
 export const HELIX_COMMAND = "helix";
 
 /**
- * The Helix operations `helix` performs. twitch/src/lib/helix.ts declares
+ * The Helix operations `helix` performs. connectors/src/adapters/twitch/lib/helix.ts declares
  * each one's endpoint and the parameters a caller may set.
  */
 export type HelixOperationName =

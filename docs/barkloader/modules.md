@@ -451,7 +451,7 @@ The bundled system module's forms may also read engine subjects. Engine-held nam
 
 An `internal` source or action is supported on top-level fields only. The api and the UI do not resolve one inside a `list` field's `itemFields`, so barkloader refuses it there, for every module.
 
-A worked example lives at `modules/platform/twitch/manifest.json` in the **woofx3-modules** repository (the `channelpoints.redeem` trigger) and `twitch/src/lib/twitch.ts` `listChannelPointRewards()`.
+A worked example lives at `modules/platform/twitch/manifest.json` in the **woofx3-modules** repository (the `channelpoints.redeem` trigger) and `connectors/src/adapters/twitch/lib/twitch.ts` `listChannelPointRewards()`.
 
 #### Helping users map fields to event payloads
 

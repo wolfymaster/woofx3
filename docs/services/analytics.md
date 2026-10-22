@@ -103,7 +103,7 @@ someone starts from nothing.
 |---|---|---|
 | Session partition key on every event | **Built** | `sessionId` CloudEvents extension, stamped centrally in `BaseEvent.ts` |
 | Session records and segments | **Built** | `stream_sessions`, `stream_session_segments`; `StreamSessionService` |
-| Every platform event reaching the engine | **Built** | `twitch/src/lib/twitchEventBus.ts`, 10 EventSub subscriptions |
+| Every platform event reaching the engine | **Built** | `connectors/src/adapters/twitch/lib/twitchEventBus.ts`, 10 EventSub subscriptions |
 | Fan-out including gift subs | **Built** | `api/src/stream-event-broadcaster.ts` |
 | A per-viewer event table | **Built** | `user_events`, written by `UserEventRecorder` through `UserEventService` |
 | Per-minute gauge samples | **Built** | `stream_gauge_samples`, written by `StreamGaugeSampler` through `StreamGaugeService` |
