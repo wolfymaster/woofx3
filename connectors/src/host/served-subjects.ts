@@ -82,7 +82,7 @@ export class ServedSubjects {
       return await served.handle(request, {
         deadline: ctx.deadline,
         signal: ctx.signal,
-        hostState: this.deps.hostStates.get(id),
+        hostState: this.hostStateFor(id),
       });
     } catch (error) {
       this.deps.adapters.recordServedError(id);
@@ -123,6 +123,14 @@ export class ServedSubjects {
       }
       signal.addEventListener("abort", onAbort, { once: true });
     });
+  }
+
+  /** A missing entry is a wiring mistake, never "a module without host state" (that is an entry holding undefined). */
+  private hostStateFor(id: AdapterId): unknown {
+    if (!this.deps.hostStates.has(id)) {
+      throw new Error(`no host state entry for the adapter "${id}"`);
+    }
+    return this.deps.hostStates.get(id);
   }
 
   private unavailable(id: AdapterId, reason: UnavailableReason): Unavailable {

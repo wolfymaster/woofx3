@@ -20,7 +20,7 @@ async function runningHost(adapter: FakeAdapter, busUp = { value: true }) {
     busConnected: () => busUp.value,
     settings: linkedSettings,
     adapters: new Map([["twitch", adapter]]),
-    hostStates: new Map(),
+    hostStates: new Map([["twitch", undefined]]),
     readers: LINK_READERS,
     clock: time,
     random: halfRandom,
@@ -165,6 +165,25 @@ describe("health", () => {
       throw new Error("no detail today");
     };
     const { host } = await runningHost(broken);
+    const { status, body } = await getHealth(host);
+    expect(status).toBe(200);
+    expect(body.adapters[0].detail).toBeNull();
+  });
+
+  test.each([
+    [
+      "a cyclic object",
+      () => {
+        const loop: Record<string, unknown> = {};
+        loop.self = loop;
+        return loop;
+      },
+    ],
+    ["a BigInt", () => ({ big: 10n })],
+  ])("detail is null and /health still answers when detail() returns %s", async (_name, make) => {
+    const adapter = new FakeAdapter();
+    adapter.detail = make;
+    const { host } = await runningHost(adapter);
     const { status, body } = await getHealth(host);
     expect(status).toBe(200);
     expect(body.adapters[0].detail).toBeNull();

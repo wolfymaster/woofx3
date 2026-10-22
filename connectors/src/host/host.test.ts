@@ -44,7 +44,7 @@ async function setup(served: ServedSubject = twitchapi, env: Record<string, unkn
     busConnected: () => true,
     settings,
     adapters: new Map([["twitch", adapter]]),
-    hostStates: new Map(),
+    hostStates: new Map([["twitch", undefined]]),
     readers: LINK_READERS,
     clock: time,
     random: halfRandom,
@@ -70,6 +70,27 @@ async function setup(served: ServedSubject = twitchapi, env: Record<string, unkn
 }
 
 describe("Host", () => {
+  test("refuses to be built when an adapter has no host state entry", () => {
+    const time = new FakeTime();
+    const build = () =>
+      new Host({
+        config: hostConfig(HostEnvSchema.parse({})),
+        dbProxyUrl: "http://db.test",
+        bus: new FakeBus(),
+        busConnected: () => true,
+        settings: { getSetting: async () => null },
+        adapters: new Map([["twitch", new FakeAdapter("twitch", [twitchapi])]]),
+        hostStates: new Map(),
+        readers: LINK_READERS,
+        clock: time,
+        random: halfRandom,
+        ids: countingIds(),
+        timers: time,
+        logger: new RecordingLogger(),
+      });
+    expect(build).toThrow('the adapter "twitch" has no host state entry');
+  });
+
   test("starts the adapter on link, stops it on disable and on unlink, without a restart", async () => {
     const { values, adapter, host, announce, ask } = await setup();
     await host.start();

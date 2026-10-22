@@ -121,7 +121,9 @@ A served subject can set `availability: "always"` (the default is
 `"whenRunning"`, the table above). The host then calls its `handle` whatever the
 adapter's state, without holding the request, so a request is never lost while
 the adapter is stopped, parked or restarting. A `handle` that throws still
-counts as a served error and gets `unavailableReply`.
+counts as a served error and gets `unavailableReply` with reason `stopped`,
+whatever the adapter's real state: the reasons describe the adapter's lifecycle,
+and there is none for a failed handler.
 
 State such a subject must keep lives in the adapter module's host state. A
 registry entry loads an `AdapterModule`:

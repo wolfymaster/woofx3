@@ -184,7 +184,8 @@ export class Supervisor {
       return null;
     }
     try {
-      const detail = slot.adapter.detail();
+      // Plain JSON now, so a cyclic or BigInt value fails here instead of while /health is answering.
+      const detail = JSON.parse(JSON.stringify(slot.adapter.detail())) as Record<string, unknown>;
       slot.detailFailed = false;
       return detail;
     } catch (error) {
