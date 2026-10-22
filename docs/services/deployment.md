@@ -240,6 +240,9 @@ carried in its message, which starts with a marker that a guard from
 | `registerClient` | `RegistrationRefused: ` | `isRegistrationRefused` |
 | `authenticate` | `AuthenticationRefused: ` | `isAuthenticationRefused` |
 
+The marker is for code, not people: `refusalReason(err)` returns the sentence
+after it, to show to a user, or null when the error is not a refusal.
+
 An authentication refusal means db-proxy does not know the client id and
 secret. Retrying the same credentials cannot succeed, so a client stops and
 asks for new ones instead of backing off. When the api cannot ask db-proxy, or

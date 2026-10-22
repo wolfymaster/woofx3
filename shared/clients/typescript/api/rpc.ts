@@ -76,6 +76,23 @@ export function isAuthenticationRefused(err: unknown): err is Error {
 }
 
 /**
+ * The sentence a refusal says, for showing to a user, with its marker
+ * removed; null when `err` is not a refusal. Covers both refusals above.
+ */
+export function refusalReason(err: unknown): string | null {
+  if (!(err instanceof Error)) {
+    return null;
+  }
+  for (const marker of [REGISTRATION_REFUSED, AUTHENTICATION_REFUSED]) {
+    const prefix = `${marker}: `;
+    if (err.message.startsWith(prefix)) {
+      return err.message.slice(prefix.length);
+    }
+  }
+  return null;
+}
+
+/**
  * The unauthenticated capnweb entry point served by the engine. Connecting
  * to the engine's `/api` URL via capnweb HTTP batch (or WebSocket) gives
  * back a stub of this shape.

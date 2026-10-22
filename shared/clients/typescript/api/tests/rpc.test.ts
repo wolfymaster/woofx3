@@ -5,6 +5,7 @@ import {
   authenticationRefusedMessage,
   isAuthenticationRefused,
   isRegistrationRefused,
+  refusalReason,
   registrationRefusedMessage,
 } from "../rpc";
 
@@ -85,5 +86,36 @@ describe("isRegistrationRefused", () => {
 
   test("an authentication refusal is not a registration refusal either way round", () => {
     expect(isAuthenticationRefused(new Error(registrationRefusedMessage("x")))).toBe(false);
+  });
+});
+
+describe("refusalReason", () => {
+  const cases: { name: string; err: unknown; reason: string | null }[] = [
+    {
+      name: "a registration refusal",
+      err: new Error(registrationRefusedMessage("This engine requires a registration token to register.")),
+      reason: "This engine requires a registration token to register.",
+    },
+    {
+      name: "an authentication refusal",
+      err: new Error(authenticationRefusedMessage("Invalid client credentials")),
+      reason: "Invalid client credentials",
+    },
+    { name: "a plain error", err: new Error("fetch failed"), reason: null },
+    { name: "a marker without its separator", err: new Error(AUTHENTICATION_REFUSED), reason: null },
+    { name: "a thrown string", err: registrationRefusedMessage("nope"), reason: null },
+    { name: "nothing", err: undefined, reason: null },
+  ];
+
+  for (const { name, err, reason } of cases) {
+    test(`${name} -> ${JSON.stringify(reason)}`, () => {
+      expect(refusalReason(err)).toBe(reason);
+    });
+  }
+
+  test("reads a refusal after capnweb serialisation dropped its name", async () => {
+    const err = await rejectionAcrossCapnweb((gateway) => gateway.authenticate());
+
+    expect(refusalReason(err)).toBe("Invalid client credentials");
   });
 });
