@@ -14,6 +14,44 @@ export interface ConnectionInfo {
    * HTTP batch: its response is the whole connection, so nothing stays open.
    */
   close: ((code: number, reason: string) => void) | null;
+  /** Runs `listener` once the connection has ended; at once if it already has. */
+  onEnd(listener: () => void): void;
+}
+
+/**
+ * The end of one connection, for the transport to announce and for whatever
+ * lives as long as the connection to wait on.
+ */
+export class ConnectionLifetime {
+  private listeners: (() => void)[] = [];
+  private ended = false;
+
+  constructor(private readonly onListenerError: (err: unknown) => void) {}
+
+  onEnd(listener: () => void): void {
+    if (this.ended) {
+      listener();
+      return;
+    }
+    this.listeners.push(listener);
+  }
+
+  /** Runs every listener once. Ending twice is a no-op. */
+  end(): void {
+    if (this.ended) {
+      return;
+    }
+    this.ended = true;
+    const listeners = this.listeners;
+    this.listeners = [];
+    for (const listener of listeners) {
+      try {
+        listener();
+      } catch (err) {
+        this.onListenerError(err);
+      }
+    }
+  }
 }
 
 /**

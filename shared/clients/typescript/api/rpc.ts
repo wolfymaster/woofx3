@@ -93,6 +93,14 @@ export function refusalReason(err: unknown): string | null {
 }
 
 /**
+ * The WebSocket close code the engine ends a session with when its client is
+ * deleted. Every call still in flight on that session is refused with an
+ * error `isAuthenticationRefused` recognises, so the client's credentials
+ * will not work again: reconnecting with them is refused too.
+ */
+export const CLIENT_REVOKED_CLOSE_CODE = 4401;
+
+/**
  * The unauthenticated capnweb entry point served by the engine. Connecting
  * to the engine's `/api` URL via capnweb HTTP batch (or WebSocket) gives
  * back a stub of this shape.

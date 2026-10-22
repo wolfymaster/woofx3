@@ -251,6 +251,25 @@ retries. Accepted credentials are trusted for a minute without asking db-proxy
 again, keyed by the client id and a hash of the secret, so neither a wrong
 secret nor an earlier success changes the answer for another secret.
 
+### Deleting a client
+
+`deleteClient(clientId)`, which any authenticated client may call, removes the
+client and ends every session it already holds:
+
+- each of its WebSockets is closed with code `4401` (`CLIENT_REVOKED_CLOSE_CODE`
+  in `@woofx3/api/rpc`) and reason `client revoked`;
+- any call that still reaches one of its sessions, including one in an HTTP
+  batch, which has no socket to close, is refused with `AuthenticationRefused:
+  client revoked`;
+- its trusted credentials are forgotten, so authenticating with them again is
+  refused;
+- a session that was still authenticating when the client was deleted is
+  refused rather than admitted;
+- its event-stream subscriptions are dropped.
+
+A socket that also carries a session of another client closes with it; that
+client reconnects and authenticates again.
+
 ## Barkloader processing callbacks
 
 barkloader reports asynchronous asset jobs (thumbnails) by POSTing to the api's

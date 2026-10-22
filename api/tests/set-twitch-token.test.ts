@@ -4,6 +4,7 @@ import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
 import { selectStrategy } from "@woofx3/twitch/token-strategy";
 import { Api, type ApiOptions } from "../src/api";
 import { ApiSession } from "../src/api-session";
+import { SessionLease } from "../src/client-sessions";
 
 function session(clientId: string, twitch: Partial<Pick<ApiOptions, "twitchPublicClientId" | "twitchOAuth">> = {}) {
   const settings = new Map<string, string>();
@@ -23,7 +24,7 @@ function session(clientId: string, twitch: Partial<Pick<ApiOptions, "twitchPubli
     logger: { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never,
     ...twitch,
   });
-  return { settings, api, rpc: new ApiSession(api, clientId) as unknown as Woofx3EngineApi };
+  return { settings, api, rpc: new ApiSession(api, clientId, new SessionLease()) as unknown as Woofx3EngineApi };
 }
 
 const TOKEN = { accessToken: "a", scope: ["chat:read"], expiresIn: 3600, obtainmentTimestamp: 1, userId: "42" };

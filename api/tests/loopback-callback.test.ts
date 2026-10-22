@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import { EngineRequestType } from "@woofx3/api/webhooks";
 import { Api } from "../src/api";
+import { ClientSessions } from "../src/client-sessions";
 import { ApiGateway } from "../src/gateway";
 import { resolveRegistrationPolicy } from "../src/registration";
 import { TwitchTokenSource } from "../src/twitch-token-source";
@@ -78,7 +79,14 @@ async function registerShell(callbackUrl: string) {
     apiUrl: "http://api.test",
     logger,
   });
-  const gateway = new ApiGateway(api, {} as never, db as never, logger, resolveRegistrationPolicy({}));
+  const gateway = new ApiGateway(
+    api,
+    {} as never,
+    db as never,
+    logger,
+    resolveRegistrationPolicy({}),
+    new ClientSessions(logger)
+  );
   const webhooks = new WebhookClient(db as never, logger, new EngineEventStream(logger));
   gateway.setWebhookClient(webhooks);
   const registered = await gateway.registerClient("desktop shell", { callbackUrl, callbackToken: "shell-token" });

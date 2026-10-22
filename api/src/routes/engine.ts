@@ -182,9 +182,10 @@ export const engineRoutes = routeModule({
       return { success: false, message: "Client not found" };
     }
     await this.db.deleteClient(resp.client.id);
-    if (this.authInvalidate) {
-      this.authInvalidate();
-    }
+    // After the delete, not before: from here on a fresh validation is
+    // refused by db-proxy, so only sessions admitted before this point can
+    // exist, and revoking ends those and any still authenticating.
+    this.clientRevocation?.revoke(clientId);
     // A deleted client's open sessions must stop receiving its events, and
     // must not be offered as a client that can answer a request.
     this.engineEventStream?.dropClient(clientId);

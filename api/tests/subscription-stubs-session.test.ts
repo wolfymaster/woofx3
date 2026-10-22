@@ -6,6 +6,7 @@ import type { Msg } from "@woofx3/nats/src/types";
 import { newWebSocketRpcSession, RpcTarget } from "capnweb";
 import { Api } from "../src/api";
 import type { EventCatalog, LoggedEvent } from "../src/event-catalog";
+import { ClientSessions } from "../src/client-sessions";
 import { ApiGateway } from "../src/gateway";
 import { createHttpServer } from "../src/http";
 import { resolveRegistrationPolicy } from "../src/registration";
@@ -60,7 +61,14 @@ async function startEngine() {
   });
   api.setStreamEventBroadcaster(broadcaster);
   const auth = { validate: async () => ({ kind: "accepted", description: "dashboard" }) };
-  const gateway = new ApiGateway(api, auth as never, db as never, logger, resolveRegistrationPolicy({}));
+  const gateway = new ApiGateway(
+    api,
+    auth as never,
+    db as never,
+    logger,
+    resolveRegistrationPolicy({}),
+    new ClientSessions(logger)
+  );
   server = createHttpServer({
     port: 0,
     hostname: "127.0.0.1",

@@ -29,6 +29,7 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
 import { RpcTarget } from "capnweb";
+import type { ClientRevocation } from "../client-sessions";
 import type { DbClient } from "../db-client";
 import type { EngineEventStream } from "../engine-event-stream";
 import type { EventLogSelectionSource } from "../event-log-selection";
@@ -102,7 +103,7 @@ export class ApiRouteHost extends RpcTarget {
   protected streamEventBroadcaster: StreamEventBroadcaster | null = null;
   protected engineEventStream: EngineEventStream | null = null;
   protected eventLogSelection: EventLogSelectionSource | null = null;
-  protected authInvalidate: (() => void) | null = null;
+  protected clientRevocation: ClientRevocation | null = null;
   /**
    * The linked Twitch account's token. An instance property, not a method,
    * so capnweb never offers it to a client.

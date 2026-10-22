@@ -1,3 +1,4 @@
+import type { ClientRevocation } from "./client-sessions";
 import type { EngineEventStream } from "./engine-event-stream";
 import type { EventLogSelectionSource } from "./event-log-selection";
 import { type RegisteredApiRoutes, registerAllRoutes } from "./routes";
@@ -45,8 +46,8 @@ export class Api extends ApiRouteHost {
     this.webhookClient = client;
   }
 
-  setAuthInvalidate(fn: () => void): void {
-    this.authInvalidate = fn;
+  setClientRevocation(revocation: ClientRevocation): void {
+    this.clientRevocation = revocation;
   }
 
   setStreamEventBroadcaster(broadcaster: StreamEventBroadcaster): void {

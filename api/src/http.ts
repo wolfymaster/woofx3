@@ -4,7 +4,7 @@ import type { ServerWebSocket } from "bun";
 import { hasBarkloaderBearer } from "./barkloader-webhook-auth";
 import { newHttpBatchRpcResponse, newWebSocketRpcSession } from "capnweb";
 import type { ApiGateway } from "./gateway";
-import { type ConnectionInfo, GatewayConnection } from "./gateway-connection";
+import { type ConnectionInfo, ConnectionLifetime, GatewayConnection } from "./gateway-connection";
 import type { Health } from "./health";
 import type { Readiness } from "./readiness";
 
@@ -168,6 +168,12 @@ export function createHttpServer(deps: HttpDeps) {
 
   // Map to track WebSocket adapters by their Bun WebSocket (capnweb path)
   const wsAdapters = new WeakMap<ServerWebSocket<SocketData>, BunWebSocketAdapter>();
+  const wsLifetimes = new WeakMap<ServerWebSocket<SocketData>, ConnectionLifetime>();
+  const logEndListenerError = (err: unknown) => {
+    logger.error("Error ending a connection's sessions", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  };
 
   return Bun.serve<SocketData>({
     port,
@@ -217,6 +223,7 @@ export function createHttpServer(deps: HttpDeps) {
         }
 
         const startTime = Date.now();
+        const lifetime = new ConnectionLifetime(logEndListenerError);
         try {
           // Never the bodies: they carry client secrets, registration tokens
           // and every RPC's arguments and results.
@@ -229,6 +236,7 @@ export function createHttpServer(deps: HttpDeps) {
             origin: req.headers.get("origin"),
             remoteAddress: server.requestIP(req)?.address ?? null,
             close: null,
+            onEnd: (listener) => lifetime.onEnd(listener),
           };
           const response = await newHttpBatchRpcResponse(req, new GatewayConnection(gateway, connection), {
             onSendError(error: Error) {
@@ -266,6 +274,8 @@ export function createHttpServer(deps: HttpDeps) {
               headers: { "Content-Type": "application/json" },
             }
           );
+        } finally {
+          lifetime.end();
         }
       }
 
@@ -332,9 +342,12 @@ export function createHttpServer(deps: HttpDeps) {
         try {
           const adapter = new BunWebSocketAdapter(ws, logger);
           wsAdapters.set(ws, adapter);
+          const lifetime = new ConnectionLifetime(logEndListenerError);
+          wsLifetimes.set(ws, lifetime);
           const connection: ConnectionInfo = {
             ...ws.data,
             close: (code, reason) => adapter.close(code, reason),
+            onEnd: (listener) => lifetime.onEnd(listener),
           };
           newWebSocketRpcSession(adapter as any, new GatewayConnection(gateway, connection), {
             onSendError(error: Error) {
@@ -360,6 +373,8 @@ export function createHttpServer(deps: HttpDeps) {
           adapter.dispatchClose(code, reason);
           wsAdapters.delete(ws);
         }
+        wsLifetimes.get(ws)?.end();
+        wsLifetimes.delete(ws);
       },
       // Bun's WebSocketHandler has no `error` hook -- only open, message,
       // close, drain, ping and pong. An `error` handler lived here and was
