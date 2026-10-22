@@ -27,9 +27,12 @@ export const OBS_SERVED_BUDGETS_MS = {
 
 // loadRuntimeEnv coerces all-digit values to numbers before the schema sees
 // them, so a numeric password arrives as a number and is turned back into text.
+// A blank value means "unset" for all three keys: the default applies.
+const unsetWhenBlank = (value: unknown) => (typeof value === "string" && value.trim() === "" ? undefined : value);
+
 export const ObsEnvSchema = z.object({
   woofx3ObsHost: z.string().default(OBS_DEFAULTS.host),
-  woofx3ObsPort: z.number().int().min(1).max(65_535).default(OBS_DEFAULTS.port),
+  woofx3ObsPort: z.preprocess(unsetWhenBlank, z.number().int().min(1).max(65_535).default(OBS_DEFAULTS.port)),
   woofx3ObsRpcToken: z.union([z.string(), z.number()]).optional(),
 });
 

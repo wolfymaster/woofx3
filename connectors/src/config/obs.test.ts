@@ -16,6 +16,7 @@ describe("obsConfig", () => {
     ["a numeric password, as loadRuntimeEnv coerces it", { woofx3ObsRpcToken: 1234 }, { ...defaults(), token: "1234" }],
     ["a blank password", { woofx3ObsRpcToken: "  " }, defaults()],
     ["a blank host", { woofx3ObsHost: " " }, defaults()],
+    ["a blank port", { woofx3ObsPort: "" }, defaults()],
   ];
   for (const [name, env, expected] of cases) {
     test(name, () => {
