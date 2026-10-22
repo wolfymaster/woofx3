@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 #
-# Container entrypoint: migrate the database, then hand over to the
-# orchestrator, which starts every service.
+# Container entrypoint: hand over to the orchestrator, which migrates the
+# database (the run-once `migrate` step in services.json) and then starts
+# every service. A failed migration exits the orchestrator, and with it the
+# container, non-zero.
 #
 # The image runs as UID 65532. It starts as root only where the host forces
 # it (Railway, with RAILWAY_RUN_UID=0) because the host mounts the data volume
@@ -20,10 +22,5 @@ if [ "$(id -u)" = "0" ]; then
   export HOME=/nonexistent
   exec setpriv --reuid="$APP_UID" --regid="$APP_UID" --clear-groups "$0" "$@"
 fi
-
-# Migrate before any service starts: a failed migration must fail the deploy
-# rather than boot services against a schema they disagree with. `set -e`
-# makes a non-zero exit from the migrate tool the container's exit.
-/app/migrate -cmd up
 
 exec /app/orchestrator

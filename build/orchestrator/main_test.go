@@ -1234,3 +1234,37 @@ func TestResolveServiceRefusesAHealthCheckOnARunOnceStep(t *testing.T) {
 		}
 	}
 }
+
+// Every way of running the shipped services.json (the image, the release
+// archives, a desktop shell) must migrate before db-proxy, the only service
+// that opens the database, starts.
+func TestShippedServicesJSONMigratesBeforeDBProxyStarts(t *testing.T) {
+	config, err := loadConfig(filepath.Join("..", "config", "services.json"), func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("load services.json: %v", err)
+	}
+	supervisor := NewSupervisor(t.TempDir(), discardLogger(), nil, childIO{})
+	for _, service := range config.Services {
+		if service.Enabled {
+			supervisor.AddService(service)
+		}
+	}
+
+	migrate, ok := supervisor.services["migrate"]
+	if !ok {
+		t.Fatal("services.json has no enabled migrate step")
+	}
+	if !migrate.Service.RunOnce || !reflect.DeepEqual(migrate.Service.Args, []string{"-cmd", "up"}) {
+		t.Errorf("migrate = %+v, want a run_once step running -cmd up", migrate.Service)
+	}
+	if deps := supervisor.services["db-proxy"].Service.Dependencies; !slices.Contains(deps, "migrate") {
+		t.Errorf("db-proxy depends on %v, want migrate among them", deps)
+	}
+	order, err := supervisor.GetStartupOrder()
+	if err != nil {
+		t.Fatalf("startup order: %v", err)
+	}
+	if slices.Index(order, "migrate") > slices.Index(order, "db-proxy") {
+		t.Errorf("startup order %v starts db-proxy before migrate", order)
+	}
+}

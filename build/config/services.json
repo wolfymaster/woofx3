@@ -20,10 +20,21 @@
     },
     {
       "name": "db-proxy",
+      "dependencies": ["migrate"],
       "type": "go",
       "path": "../db",
       "enabled": true,
       "output": "db-proxy"
+    },
+    {
+      "name": "migrate",
+      "type": "go",
+      "path": "../db",
+      "enabled": true,
+      "entry": "./database/migrate",
+      "output": "migrate",
+      "args": ["-cmd", "up"],
+      "run_once": true
     },
     {
       "name": "message-bus",
@@ -76,15 +87,6 @@
       "enabled": true,
       "output": "caddy",
       "args": ["run", "--config", "Caddyfile.edge", "--adapter", "caddyfile"]
-    }
-  ],
-  "tools": [
-    {
-      "name": "migrate",
-      "type": "go",
-      "path": "../db",
-      "entry": "./database/migrate",
-      "output": "migrate"
     }
   ],
   "build": {

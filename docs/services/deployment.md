@@ -275,15 +275,21 @@ running barkloader sends the header.
 
 ## Startup
 
-The entrypoint (`build/entrypoint.sh`) runs the database migrations with the
-bundled `migrate` tool before the orchestrator starts any service. A failed
-migration exits the container non-zero, so a deploy fails instead of booting
-services against a half-migrated schema.
+The orchestrator migrates the database before any service opens it:
+`services.json` declares `migrate` (the bundled `migrate -cmd up`) as a
+run-once step that db-proxy depends on, so db-proxy starts only once the step
+has exited with status 0. The image's entrypoint, the release archives'
+`start.sh` and `start.bat`, and a desktop shell that runs the orchestrator
+itself all go through it. Migrations are tracked in the database's
+`migrations` table, so a database that is already up to date makes the step a
+no-op. A failed migration stops every service and exits the orchestrator, and
+so the container, non-zero: a deploy fails instead of booting services
+against a half-migrated schema.
 
 The image runs as UID 65532 and keeps its state in `/app/data`. A host that
 mounts a root-owned volume there must start the container as root (Railway:
 `RAILWAY_RUN_UID=0`); the entrypoint then hands `/app/data` to 65532 and drops
-privileges before migrating or starting anything.
+privileges before the orchestrator starts.
 
 The orchestrator starts each service once the services it depends on are up.
 The api declares `GET /ready` as its health endpoint in `services.json`, so the
@@ -410,8 +416,11 @@ Each line is one event, with an RFC 3339 `time`:
 
 - `service` — a service moved to `starting`, `healthy`, `unhealthy` or
   `stopped` (with how it exited in `message`), or was `skipped` because its
-  prebuilt binary is not installed.
-- `ready` — every service is healthy at once, sent once per run. A service with
+  prebuilt binary is not installed. A run-once step (`migrate`) is `starting`
+  while it runs and `completed` once it exits with status 0; any other exit is
+  reported `stopped`, followed by an `error` naming it.
+- `ready` — every service is healthy, and every run-once step completed, at
+  once; sent once per run. A service with
   a `health_endpoint` in `services.json` is healthy when a `GET` of it answers
   `200`; one without is healthy as soon as its process has started, whether or
   not it has finished starting up. A service whose check times out is
@@ -424,14 +433,16 @@ Each line is one event, with an RFC 3339 `time`:
     (see [Readiness and version](#readiness-and-version) below);
   - sceneManager's `GET /health` answered `200`: its HTTP server is listening
     (on `WOOFX3_SCENE_MANAGER_PORT`, `9101` by default);
+  - `migrate` exited with status 0: the database is migrated;
   - the message bus, twitch, wooflow, woofwoofwoof and the edge each have a
     running process. None of them serves an HTTP health route, so nothing more
     is known about them, beyond the bus working for barkloader.
 
   Both checks go to `127.0.0.1`, so a deployment that sets
   `WOOFX3_ALLOWED_HOSTS` must list it.
-- `error` — a service could not be started (`name` set), or the orchestrator
-  could not start at all (no `name`; it exits non-zero after this line).
+- `error` — a service could not be started or a run-once step failed (`name`
+  set), or the orchestrator could not start at all or stopped because a step
+  failed (no `name`; it exits non-zero after this line, with no `stopped`).
 - `stopped` — every service has been stopped, and its own `stopped` event
   written, and the orchestrator is exiting. A service that cannot be reaped
   within 5 seconds of being killed may be missing its event.
