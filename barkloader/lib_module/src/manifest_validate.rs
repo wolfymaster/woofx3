@@ -5976,6 +5976,9 @@ mod tests {
             "obs-pc.lan",
             "0.0.0.0",
             "example.com",
+            "::ffff:127.0.0.1",
+            "[::1]",
+            "localhost.",
         ] {
             let err = with_default(Some(refused)).unwrap_err().to_string();
             assert!(
