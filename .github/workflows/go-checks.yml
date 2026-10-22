@@ -110,8 +110,8 @@ jobs:
       # (everything run through dbtest.ForEachDialect) skip without the
       # database URL, so they run here too. The first grep fails the step if
       # any case skipped for want of the URL; a case that skips one dialect on
-      # purpose says why and is not caught. The last two prove the services
-      # and repository packages really reached Postgres.
+      # purpose says why and is not caught. The last three prove the
+      # services, repository and models packages really reached Postgres.
       - name: Test db services against postgres
         working-directory: db
         shell: bash
@@ -125,3 +125,4 @@ jobs:
           fi
           grep -E -- '--- PASS: TestCountAlertsByHourCountsEachHourByOutcome/postgres' "$RUNNER_TEMP/services.log"
           grep -E -- '--- PASS: TestSettingWritesInsertNewRowsOnEveryDialect/postgres' "$RUNNER_TEMP/services.log"
+          grep -E -- '--- PASS: TestFindOrCreateUserCreatesOnceOnEveryDialect/postgres' "$RUNNER_TEMP/services.log"

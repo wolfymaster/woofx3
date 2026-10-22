@@ -109,9 +109,13 @@ func FindOrCreateUserByWoofx3UIUserID(db *gorm.DB, uiUserID string) (*User, erro
 	}
 	user = User{Woofx3UIUserID: uiUserID}
 	if err := db.Create(&user).Error; err != nil {
-		// Unique-violation race: another caller inserted concurrently.
-		if reread := db.Where("woofx3_ui_user_id = ?", uiUserID).First(&user).Error; reread == nil {
-			return &user, nil
+		// Unique-violation race: another caller inserted concurrently. The
+		// re-read goes into a fresh value because the failed insert left
+		// an id in `user` that no row has, and gorm would add it to the
+		// lookup as a condition.
+		var existing User
+		if reread := db.Where("woofx3_ui_user_id = ?", uiUserID).First(&existing).Error; reread == nil {
+			return &existing, nil
 		}
 		return nil, err
 	}
