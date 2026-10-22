@@ -82,5 +82,6 @@ func All() []*gormigrate.Migration {
 		CreateSceneBackupsTable(),
 		AddLocalUISettings(),
 		AddClientKindOrigin(),
+		AddClientSecretHash(),
 	}
 }

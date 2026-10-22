@@ -31,6 +31,8 @@ message Client {
     reserved 3;
     reserved "application_id";
     string client_id = 4;
+    // Set only in CreateClient's response. db-proxy keeps only a hash, so no
+    // other response can carry it.
     string client_secret = 5;
     string callback_url = 6;
     string callback_token = 7;

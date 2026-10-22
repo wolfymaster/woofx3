@@ -89,8 +89,22 @@ func (r *ClientRepository) RecordAuthentication(clientID uuid.UUID, at time.Time
 	return res.RowsAffected > 0, nil
 }
 
-func (r *ClientRepository) ValidateClient(clientID uuid.UUID, clientSecret string) (*models.Client, error) {
-	var client models.Client
-	err := r.db.Where("client_id = ? AND client_secret = ?", clientID, clientSecret).First(&client).Error
-	return &client, err
+// ListUnhashed returns the clients that have a plain-text secret and no hash.
+func (r *ClientRepository) ListUnhashed() ([]models.Client, error) {
+	var clients []models.Client
+	err := r.db.Where("client_secret_hash IS NULL AND client_secret IS NOT NULL").Find(&clients).Error
+	return clients, err
+}
+
+// SetSecretHash stores `hash` for the client with `id`, only while it still
+// has no hash and its plain-text secret is still `plaintext`, and reports
+// whether it did. A write landing between the read and this one is kept.
+func (r *ClientRepository) SetSecretHash(id int, plaintext, hash string) (bool, error) {
+	res := r.db.Model(&models.Client{}).
+		Where("id = ? AND client_secret_hash IS NULL AND client_secret = ?", id, plaintext).
+		Update("client_secret_hash", hash)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
 }

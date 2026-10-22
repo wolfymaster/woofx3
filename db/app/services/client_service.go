@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -23,6 +25,9 @@ import (
 // writes `db.client.created.system` or `db.client.deleted.system` to the
 // outbox in the same transaction, carrying clientChangeData: never the
 // secret or the callback token.
+//
+// A secret is stored only as its hash (hashClientSecret). CreateClient
+// returns the plain text once; no other response carries it.
 type clientService struct {
 	repo      *repository.ClientRepository
 	publisher *workers.EventPublisher
@@ -41,6 +46,14 @@ func NewClientService(
 		return nil, errors.New("client service needs a clock")
 	}
 	return &clientService{repo: repo, publisher: publisher, now: now}, nil
+}
+
+// hashClientSecret is how a client secret is stored: the lowercase hex
+// SHA-256 of the secret as the client presents it. A fast hash is enough
+// because every secret is 32 random bytes, so there is nothing to guess.
+func hashClientSecret(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(sum[:])
 }
 
 func generateSecret() (string, error) {
@@ -62,24 +75,27 @@ func (s *clientService) CreateClient(ctx context.Context, req *client.CreateClie
 		return nil, err
 	}
 
+	secretHash := hashClientSecret(clientSecret)
 	m := &models.Client{
-		ClientID:      clientID,
-		ClientSecret:  clientSecret,
-		Description:   req.Description,
-		CallbackUrl:   req.CallbackUrl,
-		CallbackToken: req.CallbackToken,
-		Kind:          kind,
-		Origin:        origin,
-		CreatedAt:     s.now(),
+		ClientID:         clientID,
+		ClientSecretHash: &secretHash,
+		Description:      req.Description,
+		CallbackUrl:      req.CallbackUrl,
+		CallbackToken:    req.CallbackToken,
+		Kind:             kind,
+		Origin:           origin,
+		CreatedAt:        s.now(),
 	}
 
 	if err := s.repo.Create(m, s.recordChange("created")); err != nil {
 		return nil, fmt.Errorf("creating client: %w", err)
 	}
 
+	created := clientModelToProto(m)
+	created.ClientSecret = clientSecret
 	return &client.ClientResponse{
 		Status: &client.ResponseStatus{Code: client.ResponseStatus_OK},
-		Client: clientModelToProto(m, true),
+		Client: created,
 	}, nil
 }
 
@@ -161,7 +177,7 @@ func (s *clientService) GetClient(ctx context.Context, req *client.GetClientRequ
 
 	return &client.ClientResponse{
 		Status: &client.ResponseStatus{Code: client.ResponseStatus_OK},
-		Client: clientModelToProto(model, false),
+		Client: clientModelToProto(model),
 	}, nil
 }
 
@@ -173,7 +189,7 @@ func (s *clientService) ListClients(ctx context.Context, req *client.ListClients
 
 	var clients []*client.Client
 	for i := range models {
-		clients = append(clients, clientModelToProto(&models[i], false))
+		clients = append(clients, clientModelToProto(&models[i]))
 	}
 
 	return &client.ListClientsResponse{
@@ -208,7 +224,7 @@ func (s *clientService) UpdateClient(ctx context.Context, req *client.UpdateClie
 
 	return &client.ClientResponse{
 		Status: &client.ResponseStatus{Code: client.ResponseStatus_OK},
-		Client: clientModelToProto(model, false),
+		Client: clientModelToProto(model),
 	}, nil
 }
 
@@ -233,20 +249,59 @@ func (s *clientService) ValidateClient(ctx context.Context, req *client.Validate
 		}, nil
 	}
 
-	model, err := s.repo.ValidateClient(clientID, req.ClientSecret)
+	refused := &client.ClientResponse{
+		Status: &client.ResponseStatus{Code: client.ResponseStatus_NOT_FOUND, Message: "Invalid credentials"},
+	}
+	model, err := s.repo.GetByClientID(clientID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return refused, nil
+	}
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return &client.ClientResponse{
-				Status: &client.ResponseStatus{Code: client.ResponseStatus_NOT_FOUND, Message: "Invalid credentials"},
-			}, nil
-		}
-		return nil, err
+		return nil, fmt.Errorf("validating client %s: %w", clientID, err)
+	}
+	// HashStoredClientSecrets runs before db-proxy serves, so a client with
+	// no hash means the stored secrets are not in the state this code
+	// assumes. That is an error, not a refusal: the client's credentials
+	// may be right.
+	if model.ClientSecretHash == nil {
+		return nil, twirp.InternalError(fmt.Sprintf("client %s has no secret hash", clientID))
+	}
+	presented := hashClientSecret(req.ClientSecret)
+	if subtle.ConstantTimeCompare([]byte(presented), []byte(*model.ClientSecretHash)) != 1 {
+		return refused, nil
 	}
 
 	return &client.ClientResponse{
 		Status: &client.ResponseStatus{Code: client.ResponseStatus_OK},
-		Client: clientModelToProto(model, true),
+		Client: clientModelToProto(model),
 	}, nil
+}
+
+// HashStoredClientSecrets gives every client that has only a plain-text
+// secret, as issued before secrets were hashed or written by the previous
+// release after a rollback, its hash, and returns how many it hashed. The
+// plain text stays for the previous release to validate against. Each row is
+// swapped only while it still holds the value read, so running it again, or
+// beside a write, changes nothing it should not.
+func HashStoredClientSecrets(repo *repository.ClientRepository) (int, error) {
+	rows, err := repo.ListUnhashed()
+	if err != nil {
+		return 0, fmt.Errorf("reading clients with plain-text secrets: %w", err)
+	}
+	hashed := 0
+	for _, row := range rows {
+		if row.ClientSecret == nil {
+			return hashed, fmt.Errorf("client %d was listed as having a plain-text secret but has none", row.ID)
+		}
+		swapped, err := repo.SetSecretHash(row.ID, *row.ClientSecret, hashClientSecret(*row.ClientSecret))
+		if err != nil {
+			return hashed, fmt.Errorf("hashing the secret of client %d: %w", row.ID, err)
+		}
+		if swapped {
+			hashed++
+		}
+	}
+	return hashed, nil
 }
 
 // RecordClientAuthentication stamps the client's last authentication with
@@ -266,11 +321,8 @@ func (s *clientService) RecordClientAuthentication(ctx context.Context, req *cli
 	return &client.ResponseStatus{Code: client.ResponseStatus_OK}, nil
 }
 
-func clientModelToProto(m *models.Client, includeSecret bool) *client.Client {
-	secret := ""
-	if includeSecret {
-		secret = m.ClientSecret
-	}
+// clientModelToProto never carries the secret, in either form.
+func clientModelToProto(m *models.Client) *client.Client {
 	origin := ""
 	if m.Origin != nil {
 		origin = *m.Origin
@@ -283,7 +335,6 @@ func clientModelToProto(m *models.Client, includeSecret bool) *client.Client {
 		Id:                  strconv.Itoa(m.ID),
 		Description:         m.Description,
 		ClientId:            m.ClientID.String(),
-		ClientSecret:        secret,
 		CallbackUrl:         m.CallbackUrl,
 		CallbackToken:       m.CallbackToken,
 		Kind:                clientKindToProto(m.Kind),

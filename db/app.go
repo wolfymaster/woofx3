@@ -160,6 +160,17 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 			a.logger.Info("Sealed stored credential settings", "count", sealed)
 		}
 
+		// Before serving, so ValidateClient finds a hash for every client,
+		// including one the previous release created after a rollback.
+		hashed, err := svc.HashStoredClientSecrets(repository.NewClientRepository(a.db))
+		if err != nil {
+			a.logger.Error("Failed to hash stored client secrets", "error", err)
+			return err
+		}
+		if hashed > 0 {
+			a.logger.Info("Hashed stored client secrets", "count", hashed)
+		}
+
 		casbinEnforcer, err := a.initCasbin(a.db)
 		if err != nil {
 			a.logger.Error("Failed to initialize Casbin", "error", err)
