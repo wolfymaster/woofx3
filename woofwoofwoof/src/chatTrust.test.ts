@@ -97,6 +97,7 @@ async function start(options: { commands?: () => Command[] | Promise<Command[]> 
     },
     getSetting: async () => undefined,
     sentLines: new SentLineRegistry(DEFAULT_SENT_LINE_CONFIG, () => 0),
+    logger: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
   });
   await twitchChat.connect();
 

@@ -5,6 +5,7 @@ import TwitchClient, {
   type RequestDashboardToken,
   type SetSettingFn,
   type TwitchAuthCredentials,
+  type TwitchClientLogger,
 } from "@woofx3/twitch";
 import type { ChatSayMessageAttributes, ChatSender } from "../commands";
 import { guardOutgoingLine, type SentLineRegistry } from "../sentLines";
@@ -32,6 +33,7 @@ export interface TwitchChatConfig {
   setSetting?: SetSettingFn;
   /** Where every line the bot says is recorded, so its echo can be recognised. */
   sentLines: SentLineRegistry;
+  logger: TwitchClientLogger;
 }
 
 /**
@@ -73,6 +75,7 @@ export default class TwitchChatClientService implements Service<ChatClient>, Cha
       getSetting: this.config.getSetting,
       setSetting: this.config.setSetting,
       requestToken: this.config.requestToken,
+      logger: this.config.logger,
     });
 
     const authProvider = await twitchClient.init(this.config.credentials).catch((err: unknown) => {
