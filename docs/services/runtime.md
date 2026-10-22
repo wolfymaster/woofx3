@@ -361,9 +361,9 @@ var EnvSchema = schema.NewSchema(map[string]*schema.Field{
 
 :::
 
-Every service's message bus client reads `messagebusUrl` and, when the bus
-requires one, `messagebusToken` (`WOOFX3_MESSAGEBUS_TOKEN`). A blank token sends
-none. See [Message bus hardening](./deployment.md#message-bus-hardening) for the
+Every service's message bus client reads `messagebusUrl` and
+`messagebusToken` (`WOOFX3_MESSAGEBUS_TOKEN`), which the bus requires unless it
+was started without authentication. A blank token sends none. See [Message bus hardening](./deployment.md#message-bus-hardening) for the
 server side and which key each client reads.
 
 ### Staying connected to the message bus
