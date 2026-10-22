@@ -29,8 +29,8 @@ export type SourceVisibility = "visible" | "hidden" | "toggle";
 
 /**
  * One change to OBS, carried as the `data` of an `engine.obs.command`
- * CloudEvent to the OBS connection the scene manager holds. Request/reply: the
- * scene manager answers every command with an `ObsControlReply`.
+ * CloudEvent to the OBS connection the connectors host's obs adapter holds.
+ * Request/reply: the host answers every command with an `ObsControlReply`.
  *
  * The only producer is barkloader's `ctx.obs` extension, on behalf of module
  * code holding the `obs.control` permission; a module never chooses the
@@ -82,8 +82,7 @@ export type ObsControlReply =
  * never needs the permission that changing OBS does.
  */
 /**
- * Request/reply subject the api asks the scene manager's OBS connection state
- * on. The reply is the api's `ObsStatus` without `unanswered`, which only the
+ * Request/reply subject the api asks the OBS adapter's connection state on. The reply is the api's `ObsStatus` without `unanswered`, which only the
  * api can observe.
  */
 export const OBS_STATUS_SUBJECT = "engine.obs.status";

@@ -1,11 +1,3 @@
-import {
-  OBS_BROWSER_SOURCE_REFRESH_SUBJECT,
-  OBS_STATUS_SUBJECT,
-  type ObsBrowserSourceRefresh,
-  type ObsBrowserSourceRefreshReply,
-  parseObsBrowserSourceRefresh,
-} from "@woofx3/common/cloudevents/Obs/commands";
-import { RELAY_CONFIG_UPDATED_SUBJECT } from "@woofx3/common/cloudevents/Relay/relay";
 import { SCENE_COMMAND_SUBJECT } from "@woofx3/common/cloudevents/Scene/commands";
 import {
   COMPOSITION_PREVIEW_TOKEN_SUBJECT,
@@ -33,13 +25,8 @@ import {
 } from "./events/alert-controls";
 import { type AlertEnvelope, dispatchAlert } from "./events/alert-dispatch";
 import type { DeliveryStore } from "./events/delivery-store";
-import { closeDeliveriesToRemovedPlacements } from "./events/removed-placements";
 import { handleStatusReport } from "./events/handlers";
-import { answerObsCommand } from "./obs/control";
-import type Manager from "./obs/manager";
-import { answerObsOptions } from "./obs/options";
-import { OBS_MODULE_ID } from "./obs/settings";
-import type { ObsStatusReply } from "./obs/status";
+import { closeDeliveriesToRemovedPlacements } from "./events/removed-placements";
 import { errorText } from "./scene/held-scene";
 import type { ModuleStateWatch } from "./scene/module-state";
 import { answerSceneCommand, type SceneCommandDeps } from "./scene/scene-command";
@@ -48,20 +35,12 @@ import type { OverlayTokenResolver } from "./scene/token-resolver";
 
 interface InitArgs {
   nats: NATSClient | null;
-  /** The live OBS session, re-read per message: it comes and goes as OBS does. */
-  obs: { current(): Manager | null; recycle(reason: string): void; reconnectNow(reason: string): void };
-  /** The OBS connection's state for `engine.obs.status`; see obs/status.ts. */
-  obsStatus: () => ObsStatusReply;
-  /** Whether the stored relay configuration moves OBS off the route its latest attempt took. */
-  relayConfigMovesObs: () => Promise<boolean>;
   db: DbClient;
   host: OverlayHost;
   deliveryStore: DeliveryStore;
   moduleState: ModuleStateWatch;
   resolver: OverlayTokenResolver;
   sceneDocuments: SavedScenes;
-  /** Latches a request to refresh the OBS browser sources showing the overlays; see obs/service.ts. */
-  requestOverlayRefresh: (request: ObsBrowserSourceRefresh) => void;
   /** Mints the token that opens a scene's editor socket (see routes/editor.ts). */
   editorToken: (sceneId: string) => Promise<SceneEditorTokenReply>;
   /** Mints the token that opens the composition preview page (see routes/composition-preview.ts). */
@@ -124,8 +103,7 @@ interface WidgetEventEnvelope {
 
 /**
  * Wire NATS-sourced engine events into `DeliveryStore`, invalidate
- * caches on control-plane pushes, and answer the engine's OBS and scene
- * requests.
+ * caches on control-plane pushes, and answer the engine's scene requests.
  *
  *   - `ui.notify.alert` goes straight to `DeliveryStore.recordEvent`:
  *     dispatch timing is decided by each overlay's per-widget queue in the
@@ -140,22 +118,8 @@ interface WidgetEventEnvelope {
  *     `db.upsertWidgetStatus`, the built-in alert widget's included.
  */
 export async function initSubscriptions(args: InitArgs): Promise<void> {
-  const {
-    nats,
-    obs,
-    obsStatus,
-    relayConfigMovesObs,
-    db,
-    host,
-    deliveryStore,
-    moduleState,
-    resolver,
-    sceneDocuments,
-    requestOverlayRefresh,
-    editorToken,
-    previewToken,
-    logger,
-  } = args;
+  const { nats, db, host, deliveryStore, moduleState, resolver, sceneDocuments, editorToken, previewToken, logger } =
+    args;
 
   if (!nats) {
     logger.warn("NATS unavailable — event subscriptions skipped (scenes will receive no live events)");
@@ -249,34 +213,6 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     }
   );
 
-  // Engine OBS control, request/reply: barkloader's `ctx.obs` waits on this
-  // answer to succeed or fail.
-  await nats.subscribe("engine.obs.command", (msg) => answerObsCommand(obs, msg, logger));
-  logger.info("Subscribed to engine.obs.command");
-
-  // OBS names for `ctx.obs.listScenes` / `listSources` / `listInputs`,
-  // request/reply.
-  await nats.subscribe("engine.obs.options", (msg) => answerObsOptions(obs, msg, logger));
-  logger.info("Subscribed to engine.obs.options");
-
-  // Answered from the connection's own state, so it replies at once whether
-  // or not OBS is up; the api asks it for the OBS module's page.
-  await answer(OBS_STATUS_SUBJECT, async () => obsStatus());
-  logger.info(`Answering ${OBS_STATUS_SUBJECT}`);
-
-  // sceneManager asks for its overlays' OBS browser sources to be refreshed
-  // once per start, repeating until this accepts. A boot id seen before is
-  // accepted again and changes nothing (see `OverlayRefreshLatch`).
-  await answer(OBS_BROWSER_SOURCE_REFRESH_SUBJECT, async (body): Promise<ObsBrowserSourceRefreshReply> => {
-    const parsed = parseObsBrowserSourceRefresh(body);
-    if (!parsed.ok) {
-      return { status: "invalid", error: parsed.error };
-    }
-    requestOverlayRefresh(parsed.value);
-    return { status: "accepted", bootId: parsed.value.bootId };
-  });
-  logger.info(`Answering ${OBS_BROWSER_SOURCE_REFRESH_SUBJECT}`);
-
   // The api asks for this when a dashboard opens the scene editor; only the
   // api's requests are answered (see `answer`).
   await answer(SCENE_EDITOR_TOKEN_SUBJECT, async (body) => {
@@ -310,17 +246,13 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   logger.info(`Answering ${SCENE_COMMAND_SUBJECT}`);
 
   // db-proxy announces every module setting write, naming the setting but
-  // never its value. A change to the OBS module's connection reconnects with
-  // the new details (obs/settings.ts reads them on each attempt), and a
-  // module's widgets reading one of its list settings get its new rows.
+  // never its value. A module's widgets reading one of its list settings get
+  // its new rows.
   await subscribeJson<ModuleSettingUpdatedEnvelope>(
     nats,
     logger,
     "db.module.setting.updated.*",
     async (envelope, msg) => {
-      if (envelope.data?.moduleId === OBS_MODULE_ID) {
-        obs.reconnectNow("OBS module settings changed");
-      }
       const moduleId = typeof envelope.data?.moduleId === "string" ? envelope.data.moduleId : "";
       const key = typeof envelope.data?.key === "string" ? envelope.data.key : "";
       if (moduleId && key) {
@@ -328,22 +260,6 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       }
     }
   );
-
-  // The api announces a change to which local endpoints go through the
-  // companion. OBS's open session is replaced only when the change moves it to
-  // another route; one that cannot be read is assumed to.
-  await nats.subscribe(RELAY_CONFIG_UPDATED_SUBJECT, async () => {
-    const moves = await relayConfigMovesObs().catch((err: unknown) => {
-      logger.warn("relay config change: could not read where OBS is reached; reconnecting to be sure", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return true;
-    });
-    if (moves) {
-      obs.reconnectNow("Relay configuration changed");
-    }
-  });
-  logger.info(`Subscribed to ${RELAY_CONFIG_UPDATED_SUBJECT}`);
 
   await subscribeJson<SceneUpdatedEnvelope>(nats, logger, "db.scene.updated.*", async (envelope, msg) => {
     const sceneId = notifySceneUpdated(sceneDocuments, envelope);

@@ -1739,7 +1739,7 @@ fields in an entry also fail the install. The block is stored with the manifest
 in `modules.manifest`, where the dashboard and sceneManager read it.
 
 Module code cannot open a local endpoint yet. Today the one endpoint in use is
-OBS's, and sceneManager holds that connection on the module's behalf
+OBS's, and the connectors host's obs adapter holds that connection on the module's behalf
 (`woofx3_obs/obs`, see [OBS](../services/obs.md)); module code reaches OBS
 through `ctx.obs`.
 
