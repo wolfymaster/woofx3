@@ -152,6 +152,7 @@ describe("alert queue control subjects", () => {
       obs: { current: () => null, recycle: () => {}, reconnectNow: () => {} },
       obsStatus: () => ({ state: "connected", failure: null, address: "127.0.0.1:4455" }),
       relayConfigMovesObs: async () => false,
+      requestOverlayRefresh: () => {},
       db: db as any,
       host: {} as any,
       deliveryStore: deliveryStore as any,
@@ -288,6 +289,7 @@ describe("module setting changes", () => {
       obs: { current: () => null, recycle: () => {}, reconnectNow: (reason: string) => reconnects.push(reason) },
       obsStatus: () => ({ state: "retrying", failure: "authentication", address: "obs.lan:4455" }),
       relayConfigMovesObs,
+      requestOverlayRefresh: () => {},
       db: {} as any,
       host: {} as any,
       deliveryStore: {} as any,
@@ -370,6 +372,7 @@ describe("module setting changes", () => {
       obs: { current: () => null, recycle: () => {}, reconnectNow: () => {} },
       obsStatus: () => ({ state: "retrying", failure: "authentication", address: "obs.lan:4455" }),
       relayConfigMovesObs: async () => false,
+      requestOverlayRefresh: () => {},
       db: {} as never,
       host: {} as never,
       deliveryStore: {} as never,
@@ -400,5 +403,84 @@ describe("module setting changes", () => {
       },
     });
     expect(reply).toEqual({ state: "retrying", failure: "authentication", address: "obs.lan:4455" });
+  });
+});
+
+describe("engine.obs.browser_source.refresh", () => {
+  async function wire() {
+    const handlers = new Map<string, (msg: unknown) => unknown>();
+    const latched: unknown[] = [];
+    await initSubscriptions({
+      nats: {
+        subscribe: async (subject: string, handler: (msg: unknown) => unknown) => {
+          handlers.set(subject, handler);
+          return {};
+        },
+      } as never,
+      obs: { current: () => null, recycle: () => {}, reconnectNow: () => {} },
+      obsStatus: () => ({ state: "connecting", failure: null, address: null }),
+      relayConfigMovesObs: async () => false,
+      requestOverlayRefresh: (request) => latched.push(request),
+      db: {} as never,
+      host: {} as never,
+      deliveryStore: {} as never,
+      moduleState: {} as never,
+      resolver: {} as never,
+      sceneDocuments: {
+        refresh: async () => {},
+        applyChange: async () => ({ ok: true as const }),
+        published: async () => null,
+        repair: async () => ({ ok: true as const, backups: 0 }),
+      },
+      editorToken: async () => ({ ok: false, reason: "unused" }),
+      previewToken: async () => ({ ok: false, reason: "unused" }),
+      logger: fakeLogger(),
+    });
+    const handler = handlers.get("engine.obs.browser_source.refresh");
+    if (!handler) {
+      throw new Error("engine.obs.browser_source.refresh is not answered");
+    }
+    const ask = async (body: unknown, reply: string | null = "_INBOX.test") => {
+      let answer: unknown = null;
+      await handler({
+        subject: "engine.obs.browser_source.refresh",
+        reply: reply ?? undefined,
+        json: () => body,
+        respond: (data: Uint8Array) => {
+          answer = JSON.parse(new TextDecoder().decode(data));
+          return true;
+        },
+      });
+      return answer;
+    };
+    return { ask, latched };
+  }
+
+  it("latches a valid request and accepts it", async () => {
+    const { ask, latched } = await wire();
+    const request = { overlayPort: 9101, bootId: "boot-1" };
+
+    expect(await ask(request)).toEqual({ status: "accepted", bootId: "boot-1" });
+    expect(latched).toEqual([request]);
+  });
+
+  for (const [name, body] of [
+    ["a port out of range", { overlayPort: 0, bootId: "boot-1" }],
+    ["no boot id", { overlayPort: 9101 }],
+    ["an empty body", {}],
+  ] as const) {
+    it(`answers invalid and latches nothing for ${name}`, async () => {
+      const { ask, latched } = await wire();
+
+      expect(await ask(body)).toMatchObject({ status: "invalid" });
+      expect(latched).toEqual([]);
+    });
+  }
+
+  it("ignores a publish that has no inbox to answer", async () => {
+    const { ask, latched } = await wire();
+
+    expect(await ask({ overlayPort: 9101, bootId: "boot-1" }, null)).toBeNull();
+    expect(latched).toEqual([]);
   });
 });

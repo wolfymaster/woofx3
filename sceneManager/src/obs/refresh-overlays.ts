@@ -8,8 +8,9 @@
 // browser sources persist across sceneManager's lifetime and survive
 // its restarts. OBS *is* the registry.
 //
-// So on startup we walk OBS's inputs, find the browser sources pointed
-// at our own overlay routes, and refresh them. Those overlays come back
+// So when a refresh is requested (see obs/service.ts) we walk OBS's inputs,
+// find the browser sources pointed at our own overlay routes, and refresh
+// them. Those overlays come back
 // immediately instead of waiting out a backoff. The client-side
 // reconnect loop (public/scene-manager/event-source.ts) remains the
 // fallback for every case this can't cover: OBS not running, OBS
@@ -63,8 +64,8 @@ interface ObsInput {
 /**
  * Refreshes every OBS browser source pointing at this sceneManager.
  * Best-effort throughout: OBS being absent, an input disappearing
- * mid-walk, or a refusal to press the button must never keep
- * sceneManager from starting. Returns how many sources were refreshed.
+ * mid-walk, or a refusal to press the button is logged and never thrown.
+ * Returns how many sources were refreshed.
  */
 export async function refreshOverlayBrowserSources(
   obs: ObsRequester | null,
@@ -117,7 +118,7 @@ export async function refreshOverlayBrowserSources(
   }
 
   if (refreshed > 0) {
-    logger.info("Refreshed OBS overlay browser sources after startup", { count: refreshed, inputs: names });
+    logger.info("Refreshed OBS overlay browser sources", { count: refreshed, inputs: names });
   }
   return refreshed;
 }
