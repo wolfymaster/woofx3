@@ -1,4 +1,10 @@
 import { describe, expect, it, mock } from "bun:test";
+import {
+  ALLOWED_ORIGINS_SETTING,
+  OPEN_REQUEST_GUARD_POLICY,
+  parseRequestGuardPolicy,
+  RequestGuard,
+} from "@woofx3/common/http/request-guard";
 import { dispatchRoute, matchRoute, type Route, routeTable } from "../../src/routes/route-table";
 
 const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: mock(() => {}) };
@@ -17,9 +23,9 @@ async function call(t: ReturnType<typeof table>, method: string, path: string) {
 describe("matchRoute", () => {
   it("picks the most specific route whatever the order", () => {
     const t = table([
-      { path: "/assets/*", methods: ["GET"], cors: "open", handle: ok("static") },
-      { path: "/assets/read/*", methods: ["GET"], cors: "none", handle: ok("read") },
-      { path: "/assets/media/:token", methods: ["GET"], cors: "none", handle: ok("media") },
+      { path: "/assets/*", methods: ["GET"], cors: "open", opaqueOrigin: "refuse", handle: ok("static") },
+      { path: "/assets/read/*", methods: ["GET"], cors: "none", opaqueOrigin: "refuse", handle: ok("read") },
+      { path: "/assets/media/:token", methods: ["GET"], cors: "none", opaqueOrigin: "refuse", handle: ok("media") },
     ]);
     const routeOf = (path: string) => {
       const m = matchRoute(t, path);
@@ -33,7 +39,9 @@ describe("matchRoute", () => {
   });
 
   it("decodes params once, and refuses a path that does not decode", () => {
-    const t = table([{ path: "/scene/:sceneId", methods: ["GET"], cors: "open", handle: ok("") }]);
+    const t = table([
+      { path: "/scene/:sceneId", methods: ["GET"], cors: "open", opaqueOrigin: "refuse", handle: ok("") },
+    ]);
     expect(matchRoute(t, "/scene/a%20b")).toMatchObject({ params: { sceneId: "a b" } });
     expect(matchRoute(t, "/scene/%E0%A4%A")).toEqual({ route: null, reason: "bad_path" });
   });
@@ -41,13 +49,14 @@ describe("matchRoute", () => {
 
 describe("dispatchRoute", () => {
   const t = table([
-    { path: "/open", methods: ["GET"], cors: "open", handle: ok("open") },
-    { path: "/private", methods: ["GET"], cors: "none", handle: ok("private") },
-    { path: "/upload/:grant", methods: ["PUT"], cors: "upload", handle: ok("up") },
+    { path: "/open", methods: ["GET"], cors: "open", opaqueOrigin: "refuse", handle: ok("open") },
+    { path: "/private", methods: ["GET"], cors: "none", opaqueOrigin: "refuse", handle: ok("private") },
+    { path: "/upload/:grant", methods: ["PUT"], cors: "upload", opaqueOrigin: "refuse", handle: ok("up") },
     {
       path: "/broken",
       methods: ["GET"],
       cors: "open",
+      opaqueOrigin: "refuse",
       handle: () => {
         throw new Error("boom");
       },
@@ -85,5 +94,46 @@ describe("dispatchRoute", () => {
     expect(resp.status).toBe(500);
     expect(resp.headers.get("Access-Control-Allow-Origin")).toBe("*");
     expect(logger.error).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("dispatchRoute opaque origin", () => {
+  const t = table([
+    { path: "/frame-asset", methods: ["GET"], cors: "open", opaqueOrigin: "allow", handle: ok("asset") },
+    { path: "/scene", methods: ["GET", "POST"], cors: "open", opaqueOrigin: "refuse", handle: ok("scene") },
+  ]);
+  const listingNull = new RequestGuard(
+    parseRequestGuardPolicy({
+      allowedOrigins: "https://app.example,null",
+      allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
+      opaqueOrigin: "allow",
+    })
+  );
+
+  async function from(guard: RequestGuard, method: string, path: string, origin: string) {
+    const url = new URL(`http://scene.test${path}`);
+    return dispatchRoute(t, new Request(url, { method, headers: { origin } }), url, null, logger as never, guard);
+  }
+
+  it("admits null on a route that allows it, echoing it", async () => {
+    const res = await from(listingNull, "GET", "/frame-asset", "null");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("null");
+  });
+
+  it("refuses null on every other route, preflights included, without CORS", async () => {
+    for (const method of ["GET", "POST", "OPTIONS"]) {
+      const res = await from(listingNull, method, "/scene", "null");
+      expect(res.status).toBe(403);
+      expect(res.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    }
+  });
+
+  it("still admits a listed origin there", async () => {
+    expect((await from(listingNull, "GET", "/scene", "https://app.example")).status).toBe(200);
+  });
+
+  it("admits null everywhere when origins are not checked", async () => {
+    expect((await from(new RequestGuard(OPEN_REQUEST_GUARD_POLICY), "GET", "/scene", "null")).status).toBe(200);
   });
 });

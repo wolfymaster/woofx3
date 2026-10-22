@@ -181,12 +181,25 @@ none either. What an overlay sends when sceneManager's origin list is set:
   `POST`s (delivery acknowledgements, widget status, session refresh) send the
   page's own origin, so list sceneManager's public origin, as OBS reaches it.
 - **Widget frames** are sandboxed with an opaque origin. Their CORS-mode loads
-  from sceneManager (web fonts, module scripts) send `Origin: null`, so list
-  `null` when widgets load anything from sceneManager. A listed `null` cannot
-  tell one sandboxed page from another; the Host check and the session tokens
-  remain the protection there. The api has no such caller and refuses `null`,
-  so list it in `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` (with the rest of
-  sceneManager's origins), never in `WOOFX3_ALLOWED_ORIGINS`.
+  from sceneManager send `Origin: null`: module scripts and `@font-face` fonts
+  from the module's files (`/assets/modules/...`) and the asset library
+  (`/assets/user/...`), and the font files (`/fonts/files/...`) a widget's
+  font stylesheet names. Frame documents, the widget host shim, stylesheets
+  and images load without CORS and send no Origin. So list `null` when
+  widgets load anything from sceneManager. The api has no such caller and
+  refuses `null`, so list it in `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` (with
+  the rest of sceneManager's origins), never in `WOOFX3_ALLOWED_ORIGINS`.
+
+  A listed `null` is admitted only on those three paths; every other route,
+  the overlay page, its session and event routes, frame documents, uploads,
+  the editor WebSocket and `/health` included, answers `Origin: null` with
+  `403`. A listed `null` cannot tell one sandboxed page from another, though,
+  and those paths take no token: any sandboxed page, on any site, opened in a
+  browser that can reach sceneManager's Host can read a module's files, an
+  asset library file or a cached font file, if it knows the path. The asset
+  library is the one piece of user data among them. Keep the Host check on,
+  and keep sceneManager on loopback or behind the edge, where that browser is
+  the streamer's own.
 - The **scene editor** WebSocket sends the dashboard's origin.
 
 For a desktop engine on loopback, for example, all set in the one environment

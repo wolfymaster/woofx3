@@ -18,6 +18,9 @@
  *   send none, and neither does a browser for a same-origin GET or a
  *   top-level navigation.
  * - CORS echoes the matched origin with `Vary: Origin` instead of `*`.
+ * - a listed `null` is admitted service-wide by `reject`; a route that
+ *   sandboxed frames never call narrows that back with
+ *   `rejectOpaqueOrigin`.
  *
  * Matching rules (documented in docs/services/deployment.md):
  * - Host entries are `name` or `name:port`, compared case-insensitively.
@@ -244,6 +247,20 @@ export class RequestGuard {
     }
     const origin = req.headers.get("origin");
     if (allowedOrigins && origin !== null && !originAllowed(allowedOrigins, origin)) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    return null;
+  }
+
+  /**
+   * The response that refuses `req` on a route that does not admit the
+   * opaque origin, or null when it may proceed. Call it once `reject` has let
+   * the request through and the route is known. Only a request that sends
+   * `Origin: null` to a service with an origin list is refused: with no list
+   * every origin is admitted, `null` included.
+   */
+  rejectOpaqueOrigin(req: Request): Response | null {
+    if (this.policy.allowedOrigins && req.headers.get("origin") === OPAQUE_ORIGIN) {
       return new Response("Forbidden", { status: 403 });
     }
     return null;

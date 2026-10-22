@@ -91,6 +91,24 @@ describe("parseRequestGuardPolicy opaque origin", () => {
   });
 });
 
+describe("RequestGuard.rejectOpaqueOrigin", () => {
+  test("refuses Origin: null when origins are checked, null listed or not", () => {
+    for (const origins of ["https://app.example,null", "https://app.example"]) {
+      expect(guardFor(undefined, origins).rejectOpaqueOrigin(request({ origin: "null" }))?.status).toBe(403);
+    }
+  });
+
+  test("lets every other request through", () => {
+    const guard = guardFor(undefined, "https://app.example,null");
+    expect(guard.rejectOpaqueOrigin(request({ origin: "https://app.example" }))).toBeNull();
+    expect(guard.rejectOpaqueOrigin(request({}))).toBeNull();
+  });
+
+  test("admits null when origins are not checked", () => {
+    expect(new RequestGuard(OPEN_REQUEST_GUARD_POLICY).rejectOpaqueOrigin(request({ origin: "null" }))).toBeNull();
+  });
+});
+
 describe("RequestGuard unset", () => {
   const guard = new RequestGuard(OPEN_REQUEST_GUARD_POLICY);
 

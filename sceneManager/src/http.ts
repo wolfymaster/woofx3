@@ -78,13 +78,20 @@ export interface HttpDeps {
  * by order (see `matchRoute`).
  */
 const ROUTES = routeTable<HttpDeps>([
-  { path: "/health", methods: ["GET"], cors: "open", handle: () => Response.json({ status: "ok" }) },
+  {
+    path: "/health",
+    methods: ["GET"],
+    cors: "open",
+    opaqueOrigin: "refuse",
+    handle: () => Response.json({ status: "ok" }),
+  },
 
   // Stored files, the media proxy and fonts.
   {
     path: "/assets/upload/:grant",
     methods: ["PUT"],
     cors: "upload",
+    opaqueOrigin: "refuse",
     handle: (req, { url, deps }) => handleUploadRoute(req, url, deps.ctx.runtimeConfig.barkloaderUrl, deps.ctx.logger),
   },
   {
@@ -92,6 +99,7 @@ const ROUTES = routeTable<HttpDeps>([
     path: "/assets/read/*",
     methods: ["GET"],
     cors: "none",
+    opaqueOrigin: "refuse",
     handle: (req, { url, deps }) =>
       handleAssetReadRoute(req, url, deps.ctx.runtimeConfig.barkloaderUrl, deps.ctx.logger),
   },
@@ -100,6 +108,10 @@ const ROUTES = routeTable<HttpDeps>([
       path: `${prefix}*`,
       methods: ["GET"],
       cors: "open",
+      // A sandboxed widget frame's module scripts and @font-face fonts load
+      // in CORS mode with `Origin: null`, from its module's files and the
+      // asset library.
+      opaqueOrigin: "allow",
       handle: (req, { url, deps }) =>
         handleStorageAssetRoute(req, url, deps.ctx.runtimeConfig.barkloaderUrl, deps.ctx.logger),
     })
@@ -109,6 +121,7 @@ const ROUTES = routeTable<HttpDeps>([
     path: `${MEDIA_PROXY_PATH}:token`,
     methods: ["GET"],
     cors: "none",
+    opaqueOrigin: "refuse",
     handle: (req, { url, deps }) =>
       handleMediaProxyRoute(req, url, deps.ctx.runtimeConfig.barkloaderUrl, deps.ctx.logger),
   },
@@ -116,18 +129,23 @@ const ROUTES = routeTable<HttpDeps>([
     path: FONT_STYLESHEET_PATH,
     methods: ["GET"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { url, deps }) => handleFontRoute(req, url, deps.fonts),
   },
   {
     path: `${FONT_FILES_PREFIX}*`,
     methods: ["GET"],
     cors: "open",
+    // The font files a frame's linked font stylesheet names, fetched in CORS
+    // mode with `Origin: null`. The stylesheet itself loads without CORS.
+    opaqueOrigin: "allow",
     handle: (req, { url, deps }) => handleFontRoute(req, url, deps.fonts),
   },
   {
     path: "/assets/*",
     methods: ["GET"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { url, deps }) => handleStaticAssetRoute(req, url, deps.ctx.runtimeConfig.publicDir),
   },
 
@@ -136,18 +154,21 @@ const ROUTES = routeTable<HttpDeps>([
     path: COMPOSITION_PREVIEW_PATH,
     methods: ["GET"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (_req, { url, deps }) => handleCompositionPreviewRoute(url, deps),
   },
   {
     path: COMPOSITION_PREVIEW_FRAMES_PATH,
     methods: ["POST"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { deps }) => handleCompositionPreviewFramesRoute(req, deps),
   },
   {
     path: COMPOSITION_PREVIEW_REFRESH_PATH,
     methods: ["POST"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { deps }) => handleCompositionPreviewRefreshRoute(req, deps),
   },
 
@@ -156,6 +177,7 @@ const ROUTES = routeTable<HttpDeps>([
     path: "/frames/:moduleId/:manifestId",
     methods: ["GET"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { params, deps }) => handleFrameDocumentRoute(req, params.moduleId!, params.manifestId!, deps),
   },
 
@@ -164,30 +186,35 @@ const ROUTES = routeTable<HttpDeps>([
     path: "/scene/:sceneId",
     methods: ["GET"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { url, params, deps }) => handleSceneRoute(req, url, params.sceneId!, deps),
   },
   {
     path: "/scene/:sceneId/config",
     methods: ["GET"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { params, deps }) => handleSceneConfigRoute(req, params.sceneId!, deps),
   },
   {
     path: "/scene/:sceneId/draft-config",
     methods: ["POST"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { params, deps }) => handleSceneDraftConfigRoute(req, params.sceneId!, deps),
   },
   {
     path: "/scene/:sceneId/session/refresh",
     methods: ["POST"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { params, deps }) => handleSessionRefreshRoute(req, params.sceneId!, deps),
   },
   {
     path: "/scene/:sceneId/alert/:eventId/widget/:widgetId",
     methods: ["GET"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { params, deps }) =>
       handleAlertWidgetFrameRoute(req, params.sceneId!, params.eventId!, params.widgetId!, deps),
   },
@@ -195,36 +222,42 @@ const ROUTES = routeTable<HttpDeps>([
     path: "/scene/:sceneId/widget/:instanceId/status",
     methods: ["POST"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { params, deps }) => handleWidgetStatusRoute(req, params.sceneId!, params.instanceId!, deps),
   },
   {
     path: "/scene/:sceneId/widget/:instanceId/storage",
     methods: ["GET"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { params, deps }) => handleWidgetStorageRoute(req, params.sceneId!, params.instanceId!, deps),
   },
   {
     path: "/scene/:sceneId/events",
     methods: ["GET"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { params, deps }) => handleEventsStreamRoute(req, params.sceneId!, deps),
   },
   {
     path: "/scene/:sceneId/events/:eventId/delivered",
     methods: ["POST"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { params, deps }) => handleEventDeliveredRoute(req, params.sceneId!, params.eventId!, deps),
   },
   {
     path: "/scene/:sceneId/events/:eventId/started",
     methods: ["POST"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { params, deps }) => handleEventStartedRoute(req, params.sceneId!, params.eventId!, deps),
   },
   {
     path: "/scene/:sceneId/events/:eventId/completed",
     methods: ["POST"],
     cors: "open",
+    opaqueOrigin: "refuse",
     handle: (req, { params, deps }) => handleEventCompletedRoute(req, params.sceneId!, params.eventId!, deps),
   },
 ]);
@@ -238,7 +271,7 @@ export function routeOf(pathname: string): string | null {
 /**
  * The CORS headers the route answering `pathname` grants: its preflight
  * answer and its responses, to a request from `origin` (every origin unless
- * WOOFX3_ALLOWED_ORIGINS is set).
+ * sceneManager's origin list is set; see config.ts).
  */
 export function corsHeadersFor(pathname: string, origin: CorsOrigin = ANY_ORIGIN): Record<string, string> {
   return corsHeadersForPath(ROUTES, pathname, origin);
@@ -285,6 +318,10 @@ export function createHttpServer(deps: HttpDeps) {
       // request span, since a socket that opens returns no response.
       const editorMatch = /^\/scene\/([^/]+)\/edit$/.exec(url.pathname);
       if (editorMatch && req.method === "GET") {
+        const refused = requestGuard.rejectOpaqueOrigin(req);
+        if (refused) {
+          return refused;
+        }
         let sceneId: string;
         try {
           sceneId = decodeURIComponent(editorMatch[1]!);
@@ -296,7 +333,7 @@ export function createHttpServer(deps: HttpDeps) {
 
       return withSpan(
         `scene-manager ${req.method}`,
-        () => dispatchRoute(ROUTES, req, url, deps, ctx.logger, requestGuard.corsOriginHeaders(req)),
+        () => dispatchRoute(ROUTES, req, url, deps, ctx.logger, requestGuard),
         {
           attributes: { "http.request.method": req.method, "url.path": url.pathname },
           kind: SpanKind.SERVER,

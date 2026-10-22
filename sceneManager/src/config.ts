@@ -164,7 +164,8 @@ function nonBlank(value: unknown): string | undefined {
  * is refused when it is parsed.
  *
  * sceneManager may list `null`, which sandboxed widget frames send, and the
- * api may not.
+ * api may not. Which routes admit it is the route table's call (`opaqueOrigin`
+ * in routes/route-table.ts).
  */
 function sceneManagerAllowedOrigins(
   own: string | number | boolean | undefined,
