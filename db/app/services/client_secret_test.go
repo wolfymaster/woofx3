@@ -1,11 +1,16 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
+	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/google/uuid"
+	gsqlite "github.com/libtnb/sqlite"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -266,4 +271,55 @@ func TestValidateClientWithoutAHashIsAnErrorNotARefusal(t *testing.T) {
 			t.Errorf("err = %v, want an internal error", err)
 		}
 	})
+}
+
+func TestHashStoredClientSecretsRefusesAnEmptySecretWithNoHash(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		insertLegacyClient(t, db, "")
+
+		if _, err := HashStoredClientSecrets(repo.NewClientRepository(db)); err == nil {
+			t.Error("an empty plain-text secret was hashed into a credential")
+		}
+	})
+}
+
+func TestHashStoredClientSecretsLeavesNoPlainTextInTheSQLiteFile(t *testing.T) {
+	const secret = "plain-text-secret-that-must-leave-the-file"
+	path := filepath.Join(t.TempDir(), "woofx3.db")
+	db, err := gorm.Open(gsqlite.Open(path), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("close sqlite: %v", err)
+		}
+	})
+	// The client exists before 0071, as on an engine upgrading to it: the
+	// migration's table rebuild then leaves a freed copy of the row behind.
+	migrator := gormigrate.New(db, gormigrate.DefaultOptions, sqliteChain(t))
+	if err := migrator.MigrateTo("0070_client_kind_origin"); err != nil {
+		t.Fatalf("migrate to 0070: %v", err)
+	}
+	insertLegacyClient(t, db, secret)
+	if err := migrator.Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	if _, err := HashStoredClientSecrets(repo.NewClientRepository(db)); err != nil {
+		t.Fatalf("HashStoredClientSecrets: %v", err)
+	}
+
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read database file: %v", err)
+	}
+	if bytes.Contains(contents, []byte(secret)) {
+		t.Error("the cleared plain-text secret is still in the database file")
+	}
 }

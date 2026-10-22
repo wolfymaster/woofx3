@@ -88,6 +88,19 @@ func (r *ClientRepository) RecordAuthentication(clientID uuid.UUID, at time.Time
 	return res.RowsAffected > 0, nil
 }
 
+// EraseFreedSpace makes sure values the clients table no longer holds are not
+// left in the database file. On SQLite an UPDATE or a table rebuild frees the
+// old row's bytes without overwriting them, so the file is rewritten with
+// VACUUM, which copies only live content. VACUUM cannot run inside a
+// transaction. On Postgres old row versions stay until vacuum reclaims them,
+// which is the server's to schedule; nothing is done here.
+func (r *ClientRepository) EraseFreedSpace() error {
+	if r.db.Dialector.Name() != "sqlite" {
+		return nil
+	}
+	return r.db.Exec("VACUUM").Error
+}
+
 // ListPlaintextSecretIDs returns the ids of the clients that still have a
 // plain-text secret.
 func (r *ClientRepository) ListPlaintextSecretIDs() ([]int, error) {

@@ -197,7 +197,11 @@ authenticates with from then on. That response is the only place the secret
 appears: the db proxy stores only its SHA-256 hash, so a client that loses its
 secret registers again. A secret stored in plain text, issued before secrets
 were hashed, is hashed and its plain text cleared when the db proxy starts,
-before it serves. Rolling back to a release from before hashing therefore
+before it serves. On SQLite the db proxy then rewrites the database file with
+`VACUUM`, once, so the cleared bytes do not linger in its free pages. On
+Postgres the old row versions stay on disk until the server's (auto)vacuum
+reclaims them. On either, a backup taken before the upgrade still holds the
+plain text; replace or destroy it as you would any copy of a credential. Rolling back to a release from before hashing therefore
 refuses every existing client; see "Rollback compatibility" in
 `docs/operations/releases.md`. Who may register is set by `WOOFX3_REGISTRATION_MODE`:
 

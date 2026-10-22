@@ -285,6 +285,7 @@ const clientSecretSettleAttempts = 3
 // table.
 type clientSecretStore interface {
 	ListPlaintextSecretIDs() ([]int, error)
+	EraseFreedSpace() error
 	GetByID(id int) (*models.Client, error)
 	ReplacePlaintextSecret(id int, plaintext string, expectedHash *string, hash string) (bool, error)
 }
@@ -294,7 +295,8 @@ type clientSecretStore interface {
 // secrets issued before secrets were hashed, and from an older release run on
 // this schema after a rollback. Each row is swapped only while it still holds
 // the values read, so running it again, or beside a write, changes nothing it
-// should not.
+// should not. When it changed any client, the space the plain text occupied is
+// erased from the database file (EraseFreedSpace).
 func HashStoredClientSecrets(store clientSecretStore) (int, error) {
 	ids, err := store.ListPlaintextSecretIDs()
 	if err != nil {
@@ -308,6 +310,11 @@ func HashStoredClientSecrets(store clientSecretStore) (int, error) {
 		}
 		if changed {
 			settled++
+		}
+	}
+	if settled > 0 {
+		if err := store.EraseFreedSpace(); err != nil {
+			return settled, fmt.Errorf("erasing cleared client secrets from the database file: %w", err)
 		}
 	}
 	return settled, nil
@@ -331,6 +338,12 @@ func settleClientSecret(store clientSecretStore, id int) (bool, error) {
 		}
 		if row.ClientSecret == nil {
 			return false, nil
+		}
+		// No release issues an empty secret, so an empty one with no hash
+		// beside it is not a credential: hashing it would admit the empty
+		// secret.
+		if *row.ClientSecret == "" && row.ClientSecretHash == nil {
+			return false, fmt.Errorf("client %d has an empty plain-text secret and no hash", id)
 		}
 		hash := hashClientSecret(*row.ClientSecret)
 		if row.ClientSecretHash != nil {
