@@ -5,6 +5,22 @@ export interface NATSConfig {
   nkeySeed?: string;
   /** Sent when the message bus requires a token (WOOFX3_MESSAGEBUS_TOKEN); blank sends none. */
   token?: string;
+  /** How long to wait between reconnect attempts; DEFAULT_RECONNECT_POLICY when unset. */
+  reconnect?: ReconnectPolicy;
+}
+
+/** How a client reaches the bus at first and after it drops. */
+export interface ReconnectPolicy {
+  /** Pause before retrying a server that was just tried. */
+  reconnectTimeWaitMs: number;
+  /** Most added at random to the pause, so clients do not reconnect in lockstep. */
+  reconnectJitterMs: number;
+  /**
+   * Tries for the first dial, reconnectTimeWaitMs apart, before connect()
+   * rejects. Only the first dial is bounded; an established connection
+   * reconnects forever.
+   */
+  firstConnectAttempts: number;
 }
 
 /**

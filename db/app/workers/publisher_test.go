@@ -8,7 +8,6 @@ import (
 
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 	"github.com/go-gormigrate/gormigrate/v2"
-	gsqlite "github.com/libtnb/sqlite"
 	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/migrate/migrations"
 	"github.com/wolfymaster/woofx3/db/database/models"
@@ -16,17 +15,14 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestPublishEventInCarriesItsSubjectAsTypeAndItsExtensionsOntoTheWire(t *testing.T) {
-	db, err := gorm.Open(gsqlite.Open(":memory:"), &gorm.Config{})
+// openOutboxDB opens an in-memory SQLite database the way db-proxy does and
+// migrates it with the real SQLite chain.
+func openOutboxDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := database.InitializeDB("sqlite:///:memory:", slog.New(slog.NewTextHandler(io.Discard, nil)), database.RandomIDs{})
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatalf("InitializeDB: %v", err)
 	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("sql db: %v", err)
-	}
-	// Every connection to :memory: is a separate database.
-	sqlDB.SetMaxOpenConns(1)
 	chain, err := migrations.For(database.DialectSQLite)
 	if err != nil {
 		t.Fatalf("migrations.For: %v", err)
@@ -34,15 +30,42 @@ func TestPublishEventInCarriesItsSubjectAsTypeAndItsExtensionsOntoTheWire(t *tes
 	if err := gormigrate.New(db, migrations.Options, chain).Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	// The outbox row's id comes from a Postgres column default that the
-	// SQLite schema lacks, so the test supplies one.
-	if err := db.Callback().Create().Before("gorm:create").Register("test:worker_event_id", func(tx *gorm.DB) {
-		if event, ok := tx.Statement.Dest.(*models.WorkerEvent); ok && event.ID == "" {
-			event.ID = "e1"
+	return db
+}
+
+// The outbox row has no id until the client gives it one: the SQLite schema
+// has no column default for it.
+func TestPublishStoresTheEventOnSQLite(t *testing.T) {
+	db := openOutboxDB(t)
+	publisher := NewEventPublisher(repository.NewDbEventRepository(db), slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	for _, entityID := range []string{"c1", "c2"} {
+		err := publisher.Publish(PublishOptions{
+			EntityType:      "command",
+			EntityID:        entityID,
+			Operation:       "created",
+			Data:            map[string]string{"id": entityID},
+			AutoAcknowledge: true,
+		})
+		if err != nil {
+			t.Fatalf("Publish %s: %v", entityID, err)
 		}
-	}); err != nil {
-		t.Fatalf("register outbox id callback: %v", err)
 	}
+
+	var events []models.WorkerEvent
+	if err := db.Order("entity_id").Find(&events).Error; err != nil {
+		t.Fatalf("read outbox: %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("outbox holds %d events, want 2", len(events))
+	}
+	if events[0].ID == "" || events[1].ID == "" || events[0].ID == events[1].ID {
+		t.Fatalf("event ids = %q, %q, want two distinct ids", events[0].ID, events[1].ID)
+	}
+}
+
+func TestPublishEventInCarriesItsSubjectAsTypeAndItsExtensionsOntoTheWire(t *testing.T) {
+	db := openOutboxDB(t)
 	publisher := NewEventPublisher(repository.NewDbEventRepository(db), slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	if err := publisher.PublishEventIn(db, "viewer.segment.entered", "user:segment:chatty",
@@ -52,7 +75,7 @@ func TestPublishEventInCarriesItsSubjectAsTypeAndItsExtensionsOntoTheWire(t *tes
 	if err := publisher.PublishEventIn(db, "viewer", "user:segment:chatty", nil, nil); err == nil {
 		t.Fatal("a subject with no operation was accepted")
 	}
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err := db.Transaction(func(tx *gorm.DB) error {
 		return publisher.PublishEventIn(tx, "viewer.segment.entered", "user:segment:chatty",
 			map[string]string{"platform": "twitch", "sessionid": "s1"}, map[string]string{"viewerId": "v1"})
 	})

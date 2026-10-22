@@ -44,7 +44,7 @@ func main() {
 		exit(sharedLogger, 1)
 	}
 
-	database, err := db.InitializeDB(*dbURL, logger)
+	database, err := db.InitializeDB(*dbURL, logger, db.RandomIDs{})
 	if err != nil {
 		logger.Error("Failed to connect to database", "error", err)
 		exit(sharedLogger, 1)

@@ -156,6 +156,13 @@ When the sub-workflow completes:
 2. Sub-workflow results are copied to the parent task's exports
 3. Parent workflows resume from the next task
 
+The task's sub-workflow comes from its `workflow` block, or from its
+`parameters` (`workflowId`, `waitUntilCompletion`, `event`, `eventData`). Either
+form is resolved once per run into a value of its own; the task definition is
+never written to. A parameter whose expression does not resolve, or that
+resolves to the wrong type, fails the task with an error naming it, and no
+sub-workflow starts.
+
 ## Manual Runs and Sample Trigger Data
 
 `workflow.execute` runs one named workflow on request. Without sample data the
@@ -268,10 +275,60 @@ idempotent. A run that completed or failed first gets
 `{ "outcome": "already_finished", "status": "completed" }` and is unchanged. An
 id this engine does not know gets `{ "outcome": "not_found" }`. That covers a
 run that was in flight when the engine restarted, which nothing will ever
-finish. The api then settles that run's history row as `cancelled` itself.
+finish, and a run that settled longer ago than the engine keeps settled runs
+(see [Settled Runs](#settled-runs)). The api then settles that run's history
+row as `cancelled` itself, unless the row already holds an outcome, which it
+reports instead.
 
 `Engine.Stop` is not a cancel. Runs in flight are not recorded as cancelled
 when the engine shuts down.
+
+## Recording Runs
+
+The workflow service writes each run, its steps and its outcome to db-proxy as
+run history. Writing never holds up a run or the delivery that started it:
+
+- What to write is captured the moment the engine reports a change, then
+  queued. One background writer sends the queue to db-proxy in order, so a
+  run's row always arrives before its steps and its outcome. History therefore
+  trails the run by however long the queue takes to reach it, usually
+  milliseconds.
+- Each write gives up after 3 seconds (`DefaultRecorderCallTimeout`), and every
+  request on the db-proxy client after 5 seconds by default
+  (`WOOFX3_WORKFLOW_DB_TIMEOUT`, a duration such as `5s` or `750ms`). A failed
+  write is logged (`workflow run not recorded` and its siblings) and the run
+  carries on.
+- The queue holds 1024 writes (`DefaultRecorderQueueSize`). When db-proxy falls
+  that far behind, new writes are dropped and counted, with a
+  `workflow run history dropped` warning at most once a second.
+
+Runs fired by hand from the dashboard are not written; whoever started one is
+already watching it live.
+
+## Settled Runs
+
+The engine holds every run it has begun in memory while it executes, and for a
+while after it settles. The grace period exists so that whatever still reads a
+run right after it ends finds it: a parent resuming from a sub-workflow, or a
+cancel arriving in the same instant the run finished. The lasting record of a
+run is its history (see [Recording Runs](#recording-runs)), not this memory.
+
+A sweep evicts settled runs on a fixed interval:
+
+- A run is evicted once it has been settled for its retention, 2 minutes by
+  default (`WOOFX3_WORKFLOW_RUN_RETENTION`, a duration such as `90s`).
+- However recent they are, no more than 10,000 settled runs are kept
+  (`WOOFX3_WORKFLOW_MAX_SETTLED_RUNS`). Past that, the oldest settled go first,
+  so a burst of events cannot grow memory without bound inside one retention.
+- A sub-workflow a parent is still registered as waiting on is never evicted,
+  and neither is that parent, however long ago either settled.
+- The sweep runs every 30 seconds (`WOOFX3_WORKFLOW_RUN_SWEEP_INTERVAL`), so a
+  run can outlive its retention by up to one interval.
+
+A run still executing or paused is never evicted. Each value must be positive;
+one that is not, or does not parse, stops the service at start rather than
+disabling eviction. Once a run is evicted the engine no longer knows its id, and
+a cancel for it is answered as for any unknown run.
 
 ## Stopping the Engine
 
@@ -289,6 +346,9 @@ sure no run is left without a recorded outcome:
    not undone, as for a cancelled run, and no later step starts.
 5. `Stop` waits up to 2 seconds (`DefaultStopSettleTimeout`) for the abandoned
    runs to unwind and for their outcomes to be recorded, then returns.
+6. The run recorder then gets half a second (`DefaultRecorderDrainTimeout`) to send
+   what is still queued. Writes it has not sent by then are dropped and counted
+   (`workflow run history not written before shutdown`).
 
 An abandoned run settles as `failed` with the error `engine stopped`, and the
 step it was on is recorded as `cancelled` with the same error. A parent waiting
@@ -438,6 +498,14 @@ Wait task timeouts follow `onTimeout`:
 
 - `"fail"` (default): The workflow fails.
 - `"continue"`: The wait task is marked as successful, exports `timedOut: true`, and execution continues. With no event, its `data` is empty: a later `${<wait id>.data.<field>}` resolves to empty rather than failing.
+
+A panic anywhere under a run is a bug, but it fails only that run. A panic
+inside a task fails the task, and so the run, with `internal error: panic in
+task <id>`. A panic elsewhere on a run's goroutine (starting it, resuming it
+after a wait or sub-workflow, or a wait's timer) fails the run with `internal
+error: panic in <where>`. Either way the run settles, is recorded and releases
+a parent waiting on it, the panic value and stack are logged at Error with the
+workflow and execution ids, and every other run carries on.
 
 ## Concurrency
 

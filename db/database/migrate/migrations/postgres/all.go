@@ -81,5 +81,6 @@ func All() []*gormigrate.Migration {
 		AddCommandWorkflowError(),
 		CreateSceneBackupsTable(),
 		AddLocalUISettings(),
+		RevokeUngrantedCommandWildcards(),
 	}
 }

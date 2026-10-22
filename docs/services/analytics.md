@@ -543,7 +543,10 @@ touches while their raw events are still there.
 db-proxy's `CleanupWorker`, which already prunes the outbox and the viewer
 facts' dedupe rows, deletes detail older than `EVENT_DETAIL_RETENTION_PERIOD`
 (default `168h`, 7 days) every `OUTBOX_CLEANUP_INTERVAL` (default an hour),
-in batches of `EVENT_DETAIL_PRUNE_BATCH_SIZE` rows (default 1000):
+in batches of `EVENT_DETAIL_PRUNE_BATCH_SIZE` rows (default 1000). These and
+the other worker settings must be positive, durations written like `168h` or
+`30s`; db-proxy refuses to start on a value that is not, naming it.
+
 
 | What | Deleted when | Never deleted |
 |---|---|---|

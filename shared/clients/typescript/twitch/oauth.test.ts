@@ -211,9 +211,9 @@ describe("pollDeviceToken", () => {
     ["missing", undefined],
     ["not a list", "chat:read"],
     ["a list with a non-string", ["chat:read", 7]],
-  ])("an issued token whose scope is %s has no scopes", async (_, scope) => {
+  ])("an issued token whose scope is %s lists no scopes, rather than an empty list", async (_, scope) => {
     const { result } = await poll(() => json(200, { ...TOKEN_BODY, scope }));
-    expect(result).toMatchObject({ kind: "token", token: { accessToken: "a1", scope: [] } });
+    expect(result).toMatchObject({ kind: "token", token: { accessToken: "a1", scope: null } });
   });
 
   test.each([

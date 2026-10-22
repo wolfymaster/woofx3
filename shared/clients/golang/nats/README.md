@@ -6,7 +6,8 @@ A Go client wrapper for NATS that mirrors the TypeScript NATS client interface.
 
 - Simple, consistent API matching the TypeScript client
 - Support for JWT authentication
-- Automatic reconnection handling
+- Unlimited reconnects with jitter; subscriptions survive a bus restart
+- Connection events and slow consumers logged through slog
 - Custom logger interface
 - Message wrapping with JSON support
 
@@ -50,16 +51,18 @@ func main() {
 
 ## API
 
-### CreateMessageBus(config Config, logger Logger) (*Client, error)
+### CreateMessageBus(config Config, logger *slog.Logger) (*Client, error)
 
-Creates and connects a new NATS client.
+Creates and connects a new NATS client. When the bus is not reachable yet it
+returns at once and keeps dialling in the background.
 
 ### Client Methods
 
 - `Connect() error` - Connects to NATS server
 - `Publish(subject string, data []byte) error` - Publishes a message
 - `Subscribe(subject string, handler Handler) (*nats.Subscription, error)` - Subscribes to a subject
-- `Close() error` - Closes the connection
+- `Close() error` - Closes the connection for good; later calls return `ErrConnectionClosed`
+- `Healthy() bool` - False before the first dial and once the connection is closed; true while reconnecting
 - `AsNATS() *nats.Conn` - Returns the underlying NATS connection
 
 ### Configuration
@@ -74,15 +77,16 @@ type Config struct {
 }
 ```
 
-### Logger Interface
+### Reconnects
 
-```go
-type Logger interface {
-    Info(message string, args ...interface{})
-    Error(message string, args ...interface{})
-    Warn(message string, args ...interface{})
-    Debug(message string, args ...interface{})
-}
-```
+The client keeps one connection and reconnects it forever, `DefaultReconnectWait`
+(1s) plus up to `DefaultReconnectJitter` (500ms) apart. Subscriptions survive a
+bus restart. It never dials a replacement connection: a closed client stays
+closed.
 
-If no logger is provided, a default logger using Go's standard log package will be used.
+### Logging
+
+Connection events (connect, disconnect, reconnect, close) and asynchronous
+errors are logged through the `*slog.Logger` given to `NewClient` (`slog.Default()`
+when nil). A slow consumer logs its subject, the error, its pending message and
+byte counts and its dropped total.

@@ -1,5 +1,6 @@
 import { createServiceLogger } from "@woofx3/common/logging";
 import { createApplication, createRuntime, loadRuntimeEnv } from "@woofx3/common/runtime";
+import { dbProxyClientConfig } from "@woofx3/db/service-auth";
 import ApiApplication, { type ApiApplicationHandle } from "./application";
 import { ApiEnvSchema, loadConfig } from "./config";
 import DbService from "./db-service";
@@ -22,7 +23,10 @@ const runtime = createRuntime({
   logger,
   runtimeEnv: () => loadedConfig,
   runtimeInit: async (application: ApiApplicationHandle) => {
-    application.register("db", new DbService(runtimeConfig.databaseProxyUrl));
+    application.register(
+      "db",
+      new DbService(dbProxyClientConfig(runtimeConfig.databaseProxyUrl, runtimeConfig.dbProxyToken))
+    );
   },
   runtimeTerminate: async () => {},
 });

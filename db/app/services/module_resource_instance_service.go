@@ -72,7 +72,6 @@ func (s *moduleService) CreateResourceInstance(ctx context.Context, req *client.
 	}
 
 	inst := &models.ModuleResourceInstance{
-		ID:          uuid.New(),
 		ModuleID:    moduleID,
 		Kind:        kind,
 		InstanceID:  instanceID,

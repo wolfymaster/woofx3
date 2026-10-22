@@ -8,7 +8,7 @@ import (
 )
 
 // SetupAllRoutes registers all application routes with the provided mux
-func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middleware.CasbinMiddleware) {
+func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middleware.CasbinMiddleware) error {
 	PingRoutes(mux, app)
 	UserRoutes(mux, app)
 	WorkflowRoutes(mux, app, casbinMiddleware)
@@ -22,7 +22,9 @@ func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middle
 	ClientRoutes(mux, app)
 	SceneRoutes(mux, app, casbinMiddleware)
 	OverlayTokenRoutes(mux, app, casbinMiddleware)
-	AlertRoutes(mux, app, casbinMiddleware)
+	if err := AlertRoutes(mux, app, casbinMiddleware); err != nil {
+		return err
+	}
 	WidgetStatusRoutes(mux, app, casbinMiddleware)
 	SceneEventRoutes(mux, app, casbinMiddleware)
 	ResourceRoutes(mux, app, casbinMiddleware)
@@ -31,4 +33,5 @@ func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middle
 	StreamGaugeRoutes(mux, app, casbinMiddleware)
 	ViewerFactRoutes(mux, app, casbinMiddleware)
 	LocalUISettingRoutes(mux, app, casbinMiddleware)
+	return nil
 }

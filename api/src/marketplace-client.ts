@@ -1,6 +1,11 @@
-import { createHash } from "node:crypto";
 import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "@woofx3/api";
-import { fetchModuleArchive, MODULE_ARCHIVE_FETCH_TIMEOUT_MS, MODULE_ARCHIVE_MAX_BYTES } from "./module-install";
+import {
+  DEFAULT_GUARDED_DOWNLOAD_CONFIG,
+  type DownloadExpectation,
+  type DownloadFetch,
+  type GuardedDownloadConfig,
+  GuardedDownloader,
+} from "./guarded-download";
 
 /**
  * A client for the woofx3 marketplace API: catalog reads, the free-claim and
@@ -65,8 +70,13 @@ export interface MarketplaceListing {
   moduleId: string;
 }
 
+/** An archive to fetch, and what the caller already knows about it. */
+export interface ArchiveDownload extends DownloadExpectation {
+  url: string;
+}
+
 /** `GET /modules/{id}/download`, with its integrity fields checked. */
-export interface MarketplaceDownload {
+export interface MarketplaceDownload extends ArchiveDownload {
   url: string;
   /** Lowercase hex SHA-256 of the archive. Always present: a download without one is refused. */
   sha256: string;
@@ -230,28 +240,10 @@ export interface MarketplaceClientOptions {
    */
   downloadHosts: readonly string[];
   requestTimeoutMs?: number;
-  downloadTimeoutMs?: number;
-  maxArchiveBytes?: number;
-}
-
-/**
- * An allowlist entry as an origin. A bare host means HTTPS: a presigned
- * download carries its signature in the URL, so it must not cross the
- * network in clear text unless an operator spelled out `http://`.
- */
-export function downloadOrigin(entry: string): string {
-  const trimmed = entry.trim();
-  if (trimmed === "") {
-    throw new Error("A marketplace download host must not be empty");
-  }
-  const url = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
-  if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error(`Marketplace download host ${entry} must be http or https`);
-  }
-  if (url.pathname !== "/" || url.search !== "" || url.username !== "" || url.password !== "") {
-    throw new Error(`Marketplace download host ${entry} must be a host or an origin, not a URL`);
-  }
-  return url.origin;
+  /** Archive download limits; `DEFAULT_GUARDED_DOWNLOAD_CONFIG` when absent. */
+  download?: GuardedDownloadConfig;
+  /** The fetch archive downloads go through; the global `fetch` when absent. */
+  downloadFetch?: DownloadFetch;
 }
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -264,24 +256,22 @@ function asString(value: unknown, fallback = ""): string {
 
 export class MarketplaceClient {
   readonly baseUrl: string;
-  private readonly allowedOrigins: ReadonlySet<string>;
   private readonly requestTimeoutMs: number;
-  private readonly downloadTimeoutMs: number;
-  private readonly maxArchiveBytes: number;
+  private readonly downloader: GuardedDownloader;
 
   constructor(options: MarketplaceClientOptions) {
     const base = new URL(options.baseUrl);
     if (base.protocol !== "https:" && base.protocol !== "http:") {
       throw new Error(`Marketplace URL ${options.baseUrl} must be http or https`);
     }
-    if (options.downloadHosts.length === 0) {
-      throw new Error("A marketplace client needs at least one download host");
-    }
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
-    this.allowedOrigins = new Set(options.downloadHosts.map(downloadOrigin));
     this.requestTimeoutMs = options.requestTimeoutMs ?? MARKETPLACE_REQUEST_TIMEOUT_MS;
-    this.downloadTimeoutMs = options.downloadTimeoutMs ?? MODULE_ARCHIVE_FETCH_TIMEOUT_MS;
-    this.maxArchiveBytes = options.maxArchiveBytes ?? MODULE_ARCHIVE_MAX_BYTES;
+    this.downloader = new GuardedDownloader({
+      // Late-bound so the global fetch is resolved per call, not captured here.
+      fetch: options.downloadFetch ?? ((url, init) => fetch(url, init)),
+      downloadHosts: options.downloadHosts,
+      config: options.download ?? DEFAULT_GUARDED_DOWNLOAD_CONFIG,
+    });
   }
 
   // ---------- catalog reads, passed through unchanged ----------
@@ -415,38 +405,18 @@ export class MarketplaceClient {
   }
 
   /**
-   * The archive `download` points at, checked against what the marketplace
-   * recorded for it. Fetched only from an allowed origin, without following
-   * redirects, and refused when its length or SHA-256 differs.
+   * The archive `download` points at, checked against whatever the caller
+   * knows about it. Fetched only from an allowed download host, without
+   * following redirects, capped in size as it streams in, and refused when
+   * its length or SHA-256 differs from what `download` expects.
    */
-  async fetchArchive(download: MarketplaceDownload): Promise<Uint8Array> {
-    let origin: string;
-    try {
-      origin = new URL(download.url).origin;
-    } catch {
-      throw new Error("Marketplace download URL is not a URL");
+  async fetchArchive(download: ArchiveDownload): Promise<Uint8Array> {
+    const { url, ...expect } = download;
+    const result = await this.downloader.download(url, expect);
+    if (!result.ok) {
+      throw new Error(`Marketplace archive refused: ${result.error.message}`);
     }
-    if (!this.allowedOrigins.has(origin)) {
-      throw new Error(`Marketplace download host ${origin} is not an allowed download host`);
-    }
-    if (download.sizeBytes !== undefined && download.sizeBytes > this.maxArchiveBytes) {
-      throw new Error(`Marketplace archive exceeds size cap (${download.sizeBytes} > ${this.maxArchiveBytes})`);
-    }
-    const bytes = await fetchModuleArchive(download.url, {
-      timeoutMs: this.downloadTimeoutMs,
-      maxBytes: this.maxArchiveBytes,
-      redirect: "error",
-    });
-    if (download.sizeBytes !== undefined && bytes.byteLength !== download.sizeBytes) {
-      throw new Error(
-        `Marketplace archive is ${bytes.byteLength} bytes, but the marketplace recorded ${download.sizeBytes}`
-      );
-    }
-    const actual = createHash("sha256").update(bytes).digest("hex");
-    if (actual !== download.sha256) {
-      throw new Error("Marketplace archive does not match the marketplace's sha256 hash");
-    }
-    return bytes;
+    return result.value;
   }
 
   private async request(

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { parseGoDurationMs, validateWorkflowDefinition } from "../../src/workflow/validate-definition";
+import {
+  ENV_REFERENCE_MESSAGE,
+  parseGoDurationMs,
+  validateWorkflowDefinition,
+} from "../../src/workflow/validate-definition";
 
 describe("validateWorkflowDefinition", () => {
   test("accepts a minimal valid definition", () => {
@@ -219,6 +223,44 @@ describe("schedule triggers", () => {
 
     test("rejects a wait task without a wait config", () => {
       expect(paths(withWait(undefined))).toEqual(["tasks[0].wait"]);
+    });
+  });
+
+  describe("env references", () => {
+    const withParameters = (parameters: Record<string, unknown>) => ({
+      id: "x",
+      name: "X",
+      trigger: { type: "event" as const, event: "channel.cheer" },
+      tasks: [{ id: "t1", type: "action" as const, action: "print", parameters }],
+    });
+
+    test("refuses ${env.*} in a nested step parameter, with its path", () => {
+      const r = validateWorkflowDefinition(
+        withParameters({ request: { headers: ["plain", { auth: "Bearer ${env.TWITCH_TOKEN}" }] } })
+      );
+      expect(r).toEqual({
+        ok: false,
+        errors: [{ path: "tasks[0].parameters.request.headers[1].auth", message: ENV_REFERENCE_MESSAGE }],
+      });
+    });
+
+    test("refuses ${env.*} in a trigger condition", () => {
+      const r = validateWorkflowDefinition({
+        ...withParameters({ message: "hi" }),
+        trigger: {
+          type: "event" as const,
+          event: "channel.cheer",
+          conditions: [{ field: "${trigger.data.user}", operator: "eq" as const, value: "${env.OWNER}" }],
+        },
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.errors).toEqual([{ path: "trigger.conditions[0].value", message: ENV_REFERENCE_MESSAGE }]);
+      }
+    });
+
+    test("accepts a definition that reads only workflow sources", () => {
+      expect(validateWorkflowDefinition(withParameters({ message: "${trigger.data.userName}" })).ok).toBe(true);
     });
   });
 

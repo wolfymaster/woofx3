@@ -1,8 +1,8 @@
 import { createServiceLogger } from "@woofx3/common/logging";
 import { createApplication, createRuntime, loadRuntimeEnv } from "@woofx3/common/runtime";
+import { dbProxyClientConfig } from "@woofx3/db/service-auth";
 import SceneManager, { type SceneManagerApplication } from "./application";
-import { SceneManagerEnvSchema } from "./config";
-import { loadConfig, validateConfig } from "./config";
+import { loadConfig, SceneManagerEnvSchema, validateConfig } from "./config";
 import DatabaseService from "./services/db";
 
 const runtimeConfig = loadConfig();
@@ -24,7 +24,10 @@ const runtime = createRuntime({
   logger,
   runtimeEnv: () => loadedConfig,
   runtimeInit: async (application: SceneManagerApplication) => {
-    application.register("db", new DatabaseService(runtimeConfig.databaseProxyUrl));
+    application.register(
+      "db",
+      new DatabaseService(dbProxyClientConfig(runtimeConfig.databaseProxyUrl, runtimeConfig.dbProxyToken))
+    );
   },
   runtimeTerminate: async () => {},
 });

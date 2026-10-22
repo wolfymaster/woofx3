@@ -1,4 +1,12 @@
-import { type ApiGatewayContract, REGISTRATION_REFUSED, type RegisterClientOptions } from "@woofx3/api/rpc";
+import {
+  AUTH_UNAVAILABLE,
+  AUTHENTICATION_REFUSED,
+  type ApiGatewayContract,
+  authenticationRefusedMessage,
+  REGISTRATION_REFUSED,
+  type RegisterClientOptions,
+  registrationRefusedMessage,
+} from "@woofx3/api/rpc";
 import { secretsMatch } from "@woofx3/common/http/secrets";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { RpcTarget } from "capnweb";
@@ -7,16 +15,41 @@ import { ApiSession } from "./api-session";
 import type { ClientAuth } from "./auth";
 import type { DbClient } from "./db-client";
 import type { RegistrationPolicy } from "./registration";
-import type { WebhookClient } from "./webhook-client";
+import { callbackUrlRefusal, type WebhookClient } from "./webhook-client";
 
 /**
- * A registration the engine will not accept. Named so the refusal is
- * recognisable across the capnweb boundary; see REGISTRATION_REFUSED.
+ * A registration the engine will not accept. Its message carries the
+ * REGISTRATION_REFUSED marker, so a capnweb client can tell the refusal from
+ * a transient failure.
  */
 export class RegistrationRefused extends Error {
+  constructor(reason: string) {
+    super(registrationRefusedMessage(reason));
+    this.name = REGISTRATION_REFUSED;
+  }
+}
+
+/**
+ * Credentials the engine does not accept. Its message carries the
+ * AUTHENTICATION_REFUSED marker, so a capnweb client can tell the refusal
+ * from a transient failure and stop retrying.
+ */
+export class AuthenticationRefused extends Error {
+  constructor(reason: string) {
+    super(authenticationRefusedMessage(reason));
+    this.name = AUTHENTICATION_REFUSED;
+  }
+}
+
+/**
+ * Credentials the engine could not check because the db proxy gave no
+ * verdict. Its message carries no refusal marker, so a capnweb client sees a
+ * transient failure and may retry; see AUTH_UNAVAILABLE.
+ */
+export class AuthUnavailable extends Error {
   constructor(message: string) {
     super(message);
-    this.name = REGISTRATION_REFUSED;
+    this.name = AUTH_UNAVAILABLE;
   }
 }
 
@@ -44,7 +77,7 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     super();
     if (registration.mode === "open") {
       logger.warn(
-        "WOOFX3_REGISTRATION_TOKEN is not set: any caller that reaches this engine can register a client. Set it on any engine reachable from the internet."
+        "WOOFX3_REGISTRATION_MODE=open: any caller that reaches this engine over loopback can register a client."
       );
     }
     if (registration.mode === "first") {
@@ -62,12 +95,16 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
 
   async authenticate(clientId: string, clientSecret: string): Promise<ApiSession> {
     const result = await this.auth.validate(clientId, clientSecret);
-    if (!result.valid) {
-      throw new Error("Invalid client credentials");
+    if (!result.ok) {
+      if (result.error.kind === "auth_unavailable") {
+        throw new AuthUnavailable("The engine could not check client credentials right now; try again.");
+      }
+      // woofx3-ui matches this text inside the message to tell a rejected client from a failed call.
+      throw new AuthenticationRefused("Invalid client credentials");
     }
-    this.logger.info("Authenticated client", {
+    this.logger.debug("Authenticated client", {
       clientId,
-      description: result.description,
+      description: result.value.description,
     });
     return new ApiSession(this.api, clientId);
   }
@@ -76,6 +113,12 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     description: string,
     options: RegisterClientOptions
   ): Promise<{ clientId: string; clientSecret: string }> {
+    if (options.callbackUrl) {
+      const refusal = callbackUrlRefusal(options.callbackUrl);
+      if (refusal !== null) {
+        throw new RegistrationRefused(`The callback URL is refused: ${refusal}.`);
+      }
+    }
     if (this.registration.mode !== "first") {
       this.admit(options.registrationToken, this.registration.mode === "token");
       return this.createClient(description, options);

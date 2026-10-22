@@ -31,16 +31,44 @@ import (
 type alertService struct {
 	repo      *repo.AlertRepository
 	publisher *workers.EventPublisher
+	retention AlertRetention
+}
+
+// AlertRetention is how far back settled alerts are kept, and the clock that
+// horizon is measured on, so a count can say when its window reaches past
+// what the cleanup worker keeps.
+type AlertRetention struct {
+	// Period is the cleanup worker's EventDetailRetention.
+	Period time.Duration
+	Now    func() time.Time
 }
 
 func NewAlertService(
 	alertRepo *repo.AlertRepository,
 	publisher *workers.EventPublisher,
-) client.AlertService {
+	retention AlertRetention,
+) (client.AlertService, error) {
+	if retention.Period <= 0 {
+		return nil, fmt.Errorf("alert retention period must be positive, got %s", retention.Period)
+	}
+	if retention.Now == nil {
+		return nil, fmt.Errorf("alert retention needs a clock")
+	}
 	return &alertService{
 		repo:      alertRepo,
 		publisher: publisher,
-	}
+		retention: retention,
+	}, nil
+}
+
+// alertOutcomeToProto maps every repository outcome to its wire value.
+var alertOutcomeToProto = map[repo.AlertOutcome]client.AlertOutcome{
+	repo.AlertOutcomeCompleted:   client.AlertOutcome_ALERT_OUTCOME_COMPLETED,
+	repo.AlertOutcomeFailed:      client.AlertOutcome_ALERT_OUTCOME_FAILED,
+	repo.AlertOutcomeSkipped:     client.AlertOutcome_ALERT_OUTCOME_SKIPPED,
+	repo.AlertOutcomeReplayed:    client.AlertOutcome_ALERT_OUTCOME_REPLAYED,
+	repo.AlertOutcomeInFlight:    client.AlertOutcome_ALERT_OUTCOME_IN_FLIGHT,
+	repo.AlertOutcomeUnconfirmed: client.AlertOutcome_ALERT_OUTCOME_UNCONFIRMED,
 }
 
 func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertRequest) (*client.AlertResponse, error) {
@@ -58,9 +86,6 @@ func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertR
 	}
 
 	alert, err := s.repo.Create(repo.NewAlert{
-		// Generated here rather than by the column default: SQLite has no
-		// uuid_generate_v4().
-		ID:            uuid.New(),
 		Payload:       req.Payload,
 		WorkflowID:    workflowID,
 		SourceEventID: req.SourceEventId,
@@ -139,6 +164,52 @@ func (s *alertService) ListAlerts(ctx context.Context, req *client.ListAlertsReq
 		TotalCount: total,
 		Limit:      int32(limit),
 		Offset:     int32(offset),
+	}, nil
+}
+
+// CountAlertsByHour counts the alerts created in a window of whole hours, by
+// hour, status and whether each is unconfirmed (see CountAlertsByHourRequest).
+func (s *alertService) CountAlertsByHour(ctx context.Context, req *client.CountAlertsByHourRequest) (*client.CountAlertsByHourResponse, error) {
+	if req.Since == nil {
+		return nil, twirp.RequiredArgumentError("since")
+	}
+	if err := req.Since.CheckValid(); err != nil {
+		return nil, twirp.InvalidArgumentError("since", err.Error())
+	}
+	since := req.Since.AsTime()
+	if !since.Equal(since.Truncate(time.Hour)) {
+		return nil, twirp.InvalidArgumentError("since", "must be on the hour")
+	}
+	if req.Hours < 1 || req.Hours > repo.MaxAlertCountHours {
+		return nil, twirp.InvalidArgumentError("hours", fmt.Sprintf("must be 1 to %d", repo.MaxAlertCountHours))
+	}
+	if req.UnconfirmedBefore == nil {
+		return nil, twirp.RequiredArgumentError("unconfirmed_before")
+	}
+	if err := req.UnconfirmedBefore.CheckValid(); err != nil {
+		return nil, twirp.InvalidArgumentError("unconfirmed_before", err.Error())
+	}
+
+	counts, err := s.repo.CountByHour(ctx, since, int(req.Hours), req.UnconfirmedBefore.AsTime())
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to count alerts: %w", err))
+	}
+	out := make([]*client.AlertHourCount, len(counts))
+	for i, c := range counts {
+		outcome, known := alertOutcomeToProto[c.Outcome]
+		if !known {
+			return nil, twirp.InternalErrorWith(fmt.Errorf("alert outcome %d has no wire value", c.Outcome))
+		}
+		out[i] = &client.AlertHourCount{Hour: int32(c.Hour), Outcome: outcome, Count: c.Count}
+	}
+	horizon := s.retention.Now().Add(-s.retention.Period)
+	return &client.CountAlertsByHourResponse{
+		Status: &client.ResponseStatus{
+			Code:    client.ResponseStatus_OK,
+			Message: "Alerts counted successfully",
+		},
+		Counts:    out,
+		Truncated: since.Before(horizon),
 	}, nil
 }
 
