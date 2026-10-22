@@ -30,6 +30,7 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     permissions:
       contents: read
     strategy:
@@ -65,9 +66,91 @@ jobs:
         working-directory: ${{ matrix.module }}
         run: go build ./...
 
-      - name: Test
+      - name: Vet
         working-directory: ${{ matrix.module }}
-        run: go test ./...
+        run: go vet ./...
+
+      # -race catches the data races the services' goroutine-heavy code is
+      # prone to; it needs cgo, which ubuntu-latest has.
+      - name: Test
+        if: matrix.module != 'db'
+        working-directory: ${{ matrix.module }}
+        run: go test -race ./...
+
+      # db/app/services migrates a fresh database for every case, and under
+      # the race detector it has not finished in 25 minutes (about 90 seconds
+      # without), so that one package runs without -race until its fixtures
+      # share a migrated database. Every other db package keeps -race.
+      - name: Test with the race detector
+        if: matrix.module == 'db'
+        working-directory: db
+        run: |
+          set -o pipefail
+          pkgs=$(go list ./... | grep -v '/app/services$')
+          test -n "$pkgs"
+          go test -race $pkgs
+
+      - name: Test db/app/services
+        if: matrix.module == 'db'
+        working-directory: db
+        run: go test ./app/services/
+
+  # Informational for now: it reports vulnerabilities in dependencies and in
+  # the standard library of the pinned Go version, which a PR cannot always
+  # fix, and the baseline is not clean yet. The scan step tolerates findings
+  # (the job still shows green) and writes them to the job summary; flip
+  # continue-on-error off once the baseline is clean. Every module is scanned
+  # (keep this list equal to the check job's) because a library module is
+  # judged on its own call graph, not its consumers'.
+  #
+  # govulncheck is installed at a pinned version rather than through
+  # golang/govulncheck-action, which installs @latest and so breaks whenever
+  # the tool moves to a Go release newer than the one pinned above.
+  govulncheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - db
+          - workflow
+          - services/nats
+          - build/orchestrator
+          - shared/clients/golang/barkloader
+          - shared/clients/golang/db
+          - shared/clients/golang/nats
+          - shared/clients/golang/servicediscovery
+          - shared/common/golang/cloudevents
+          - shared/common/golang/conditions
+          - shared/common/golang/config
+          - shared/common/golang/logging
+          - shared/common/golang/runtime
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+
+      - name: Scan ${{ matrix.module }}
+        working-directory: ${{ matrix.module }}
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          {
+            echo '### govulncheck ${{ matrix.module }}'
+            echo '```'
+            govulncheck ./... | tee /dev/stderr
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # The postgres migration tests skip without a database to run against, so
   # the check job above only proves them against sqlite. This one gives them a

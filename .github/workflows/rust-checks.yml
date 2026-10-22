@@ -4,7 +4,7 @@ name: rust checks
 # barkloader -- the module system, its sandbox, and every install/validate
 # rule -- was verified only on whoever's machine last touched it.
 #
-# Three roots rather than one job: barkloader is a workspace, but the shared
+# Four roots rather than one job: barkloader is a workspace, but the shared
 # crates it depends on by path are their own workspaces, so `cargo test` in
 # barkloader compiles them without running their tests.
 #
@@ -46,6 +46,7 @@ jobs:
       matrix:
         crate:
           - barkloader
+          - shared/common/rust/cloudevents
           - shared/common/rust/logging
           - shared/common/rust/runtime
     steps:
