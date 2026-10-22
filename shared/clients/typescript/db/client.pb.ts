@@ -26,6 +26,10 @@ export interface Client {
   id: string;
   description: string;
   clientId: string;
+  /**
+   * Set only in CreateClient's response. db-proxy keeps only a hash, so no
+   * other response can carry it.
+   */
   clientSecret: string;
   callbackUrl: string;
   callbackToken: string;
