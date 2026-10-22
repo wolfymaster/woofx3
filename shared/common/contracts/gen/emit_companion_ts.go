@@ -19,8 +19,9 @@ type companionTSSubject struct {
 }
 
 type companionTSFormat struct {
-	Const   string
-	Pattern string
+	PatternConst string
+	Const        string
+	Pattern      string
 }
 
 // companionTSStruct is one object or message variant: its interface and
@@ -83,7 +84,7 @@ func emitCompanionTS(c companionGateway) ([]byte, error) {
 		})
 	}
 	for _, f := range c.Formats {
-		data.Formats = append(data.Formats, companionTSFormat{Const: tsFormatConst(f.Name), Pattern: f.Pattern})
+		data.Formats = append(data.Formats, companionTSFormat{PatternConst: screamingName(f.Name) + "_PATTERN", Const: tsFormatConst(f.Name), Pattern: f.Pattern})
 	}
 	for _, e := range c.Enums {
 		data.Enums = append(data.Enums, tsEnumOf(

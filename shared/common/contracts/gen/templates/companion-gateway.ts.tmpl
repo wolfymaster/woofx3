@@ -93,7 +93,8 @@ function required<T>(result: CompanionGatewayParseResult<T | undefined>, prefix:
  */
 type StringBound = { kind: "characters"; max: number } | { kind: "bytes"; max: number } | { kind: "format"; pattern: RegExp };
 {{range .Formats}}
-const {{.Const}}: StringBound = { kind: "format", pattern: /{{.Pattern}}/ };
+export const {{.PatternConst}} = /{{.Pattern}}/;
+const {{.Const}}: StringBound = { kind: "format", pattern: {{.PatternConst}} };
 {{- end}}
 
 const utf8 = new TextEncoder();
