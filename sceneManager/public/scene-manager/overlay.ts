@@ -8,7 +8,7 @@
 // each placement's queue, and drives the Disconnected banner.
 
 import { encodePlacementBoot, type WidgetBehaviorState } from "@woofx3/module-sdk";
-import { declaresKind, NO_DECLARED_KINDS, PROFILES } from "@woofx3/scene/model";
+import { ALERT_SURFACE, declaresKind, NO_DECLARED_KINDS, PROFILES } from "@woofx3/scene/model";
 import { createDomRenderer, createScheduler, type Scheduler, type SchedulerClock } from "@woofx3/scene/runtime";
 import {
   AssetCache,
@@ -190,7 +190,7 @@ export function createOverlay(env: OverlayEnv): void {
   });
 
   const draft = new DraftPreview({
-    isAlertArea: (id) => configs.get(id)?.hostsSurface === "alert",
+    isAlertArea: (id) => configs.get(id)?.hostsSurface === ALERT_SURFACE,
     onLayout: (layout) => playing().setTransient(transientOfPreviewLayout(layout, configs.keys())),
     // Settings reach the widgets now, keystroke by keystroke. Only a new
     // widget or theme needs the server, and an alert area waits for it too,
@@ -343,7 +343,7 @@ export function createOverlay(env: OverlayEnv): void {
     if (!instance) {
       throw new Error(`scene: placement ${id} is on the page with no config`);
     }
-    if (instance.hostsSurface === "alert") {
+    if (instance.hostsSurface === ALERT_SURFACE) {
       contents.set(id, { slot, unmount: alertAreas.mount(instance.id, slot), bridge: null, swap: null });
     } else {
       const frame = mountFrame(instance, slot, false, () => playing().widgetRendered(id));

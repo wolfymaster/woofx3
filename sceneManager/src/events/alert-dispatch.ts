@@ -1,8 +1,8 @@
 import type { Logger } from "@woofx3/common/runtime";
+import { alertStepTarget } from "@woofx3/scene/model";
 import {
   ALERT_EVENT_TYPE,
   type AlertDelivery,
-  alertTarget,
   alertWidgetsNamed,
   hasVisibleWidget,
   parseAlertLayout,
@@ -157,7 +157,7 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
     layout: parsed.layout,
     event: eventType ? { type: eventType, data: raw.event?.data ?? null } : null,
   };
-  return fanOutAlert({ target: alertTarget(parameters), report: target, delivery }, deps);
+  return fanOutAlert({ target: alertStepTarget(parameters), report: target, delivery }, deps);
 }
 
 /**

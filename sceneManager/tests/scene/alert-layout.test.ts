@@ -1,12 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import {
   type AlertLayoutParse,
-  alertTarget,
   alertWidgetsNamed,
   parseAlertDelivery,
   parseAlertLayout,
 } from "../../src/scene/alert-layout";
-import type { BehaviorDocument } from "@woofx3/scene/model";
+import { alertStepTarget, type BehaviorDocument } from "@woofx3/scene/model";
 import type { OverlayWidgetDefinition, OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function definition(
@@ -307,9 +306,9 @@ describe("alert widget targeting", () => {
   }
 
   it("targets the alert widget named default when a step names none", () => {
-    expect(alertTarget({})).toBe("default");
-    expect(alertTarget({ target: "  " })).toBe("default");
-    expect(alertTarget({ target: " sidebar " })).toBe("sidebar");
+    expect(alertStepTarget({})).toBe("default");
+    expect(alertStepTarget({ target: "  " })).toBe("default");
+    expect(alertStepTarget({ target: " sidebar " })).toBe("sidebar");
   });
 
   it("matches alert widgets by name, an unnamed one answering to default", () => {

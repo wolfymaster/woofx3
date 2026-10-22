@@ -1,7 +1,6 @@
 import {
   ALERT_SURFACE,
   alertCompositionOf,
-  alertRouteName,
   alertWidgetName,
   type BehaviorDocument,
   type BehaviorId,
@@ -265,11 +264,6 @@ export function parseAlertDelivery(raw: unknown): AlertDelivery | null {
 /** Whether an alert layout has a widget that will be seen: a hidden one does not play. */
 export function hasVisibleWidget(layout: CompositionDocument): boolean {
   return Object.values(layout.widgets).some((placement) => placement.visible);
-}
-
-/** The alert widget name an alert step targets. */
-export function alertTarget(parameters: Record<string, unknown>): string {
-  return alertRouteName(parameters.target);
 }
 
 /** Every alert widget on a scene that answers to `name`. */

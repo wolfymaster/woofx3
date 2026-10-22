@@ -13,7 +13,7 @@
 // Alert-host naming is the model's (model/alert-names.ts), re-exported here
 // because the editor names every alert area it adds.
 
-import { alertWidgetName, nextAlertWidgetName } from "../model/alert-names";
+import { ALERT_SURFACE, alertWidgetName, nextAlertWidgetName } from "../model/alert-names";
 import { assert } from "../model/composition";
 import { HOST_EFFECT_KINDS, HOST_TRANSITION_KINDS } from "../model/entity-types";
 import { evenKeys, keyBetween, stackOrder } from "../model/keys";
@@ -228,8 +228,10 @@ export function newPlacement({ row, catalog, doc, profile, at }: NewPlacementInp
           ? { width: 1200, height: textBoxHeight(48, "New text") }
           : { width: 640, height: Math.round(640 * MEDIA_ASPECT) };
   }
-  if (row.hostsSurface === "alert") {
-    const hosts = new Set(catalog.filter((entry) => entry.hostsSurface === "alert").map((entry) => entry.widgetId));
+  if (row.hostsSurface === ALERT_SURFACE) {
+    const hosts = new Set(
+      catalog.filter((entry) => entry.hostsSurface === ALERT_SURFACE).map((entry) => entry.widgetId)
+    );
     const names = Object.values(doc.widgets)
       .filter((placement) => hosts.has(placement.widget))
       .map((placement) => alertWidgetName(placement.settings));
