@@ -200,8 +200,9 @@ live db-proxy) returns an empty map.
 
 `setSetting(key, value)` refuses the keys only the streamer sets: the tokens
 `ctx.oauth` keeps (`oauth.<id>`), a `url` setting, whose origin `ctx.http` may reach,
-and a `resource_ref` setting, whose instance the module may then read and run
-(`resource_access.rs`).
+a `local[]` endpoint's host, port and password settings, which decide where the
+engine connects (`protected_settings.rs`), and a `resource_ref` setting, whose
+instance the module may then read and run (`resource_access.rs`).
 
 `compareAndSetSetting(key, expected, value)` writes only while the setting still
 holds `expected` and answers `{ swapped, current }`. `HttpSettingsClient` compares

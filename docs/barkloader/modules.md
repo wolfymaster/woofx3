@@ -1738,6 +1738,22 @@ in, and two endpoints sharing one would overwrite each other's values. Unknown
 fields in an entry also fail the install. The block is stored with the manifest
 in `modules.manifest`, where the dashboard and sceneManager read it.
 
+Module code cannot write an endpoint's host, port or password setting:
+`ctx.module.setSetting` and `compareAndSetSetting` refuse them, because those
+values decide where the engine connects. Only the streamer, in the dashboard,
+or the companion that found the device sets them.
+
+An upgrade that makes a setting an endpoint's host or port setting for the
+first time (a new endpoint, or an endpoint whose `hostSetting` or
+`portSetting` now names a different setting) puts that setting back to its
+manifest default once every other install step has succeeded, and logs each
+setting it reset. A fresh install does the same for every endpoint. Until
+then the setting was an ordinary one that module code could write, so a value
+already stored there cannot be trusted as an address. A setting that keeps its
+role across the upgrade keeps its value. The cost: a value the streamer typed
+into the setting before it became an endpoint setting is cleared once, and
+has to be set again.
+
 Module code cannot open a local endpoint yet. Today the one endpoint in use is
 OBS's, and sceneManager holds that connection on the module's behalf
 (`woofx3_obs/obs`, see [OBS](../services/obs.md)); module code reaches OBS

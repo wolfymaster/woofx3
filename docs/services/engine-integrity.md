@@ -72,7 +72,14 @@ What a module reaches on the streamer's own network is declared in its
 manifest's `local[]` (see [Module format → Local endpoints](../barkloader/modules.md#local-endpoints-local)),
 shown on the module install page beside its permissions, and fixed at install
 like them. An entry names settings that hold an address; it never carries an
-address the platform dials on the module's say-so.
+address the platform dials on the module's say-so, and module code cannot write
+the settings an entry names (`ctx.module.setSetting` refuses them), so only the
+streamer or the companion decides the address. An upgrade that gives a setting
+that role for the first time resets the value already stored in it.
+
+A module installed from a zip upload or a URL is one the streamer chose and
+supplied themselves. Those install paths show no review of the module's local
+endpoints, just as they show no review of its permissions.
 
 When an endpoint goes through the woofx3 companion, the engine names only
 `(moduleId, endpointId)` on the bridge. The engine never tells the companion an
