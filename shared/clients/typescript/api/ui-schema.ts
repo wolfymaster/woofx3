@@ -142,6 +142,16 @@ export type ConfigFieldSource =
   | ScenesConfigFieldSource
   | ScenePlacementsConfigFieldSource;
 
+/**
+ * Shows a field only while the top-level sibling `field` holds one of the
+ * `oneOf` values. Conditions go one level only: the sibling is itself always
+ * shown, and a list row's `itemFields` take none.
+ */
+export interface VisibleWhen {
+  field: string;
+  oneOf: string[];
+}
+
 export interface ConfigField {
   /** Stable field id; the key the collected value is stored under. */
   id: string;
@@ -217,6 +227,27 @@ export interface ConfigField {
    * while it is required and has no value yet. Non-empty when present.
    */
   missingText?: string;
+  /**
+   * Shown only while a sibling holds one of the listed values. A hidden
+   * field's value is dropped on save and its `required` does not apply.
+   * Engines that predate this property refuse the manifest at install.
+   */
+  visibleWhen?: VisibleWhen;
+}
+
+/**
+ * Whether the form shows `field` given the form's current `values`. A field
+ * with no condition is always shown; one with a condition is shown only when
+ * the named sibling's value is a string listed in `oneOf`, so an unset sibling
+ * hides it.
+ */
+export function isFieldVisible(field: ConfigField, values: Readonly<Record<string, unknown>>): boolean {
+  const condition = field.visibleWhen;
+  if (condition === undefined) {
+    return true;
+  }
+  const current = values[condition.field];
+  return typeof current === "string" && condition.oneOf.includes(current);
 }
 
 function isConfigFieldType(raw: unknown): raw is ConfigFieldType {
