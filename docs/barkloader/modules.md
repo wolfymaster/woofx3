@@ -311,7 +311,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover. An illustration, not a declaration: nothing reads its keys. |
 | `anyText` | string | no | Trigger `schema` only. The words a [trigger sentence](#trigger-sentences) shows in place of this field when it is set to "any". `""` drops that part of the sentence; whitespace alone is rejected. Rejected on an action field, which is never set to "any". |
 | `missingText` | string | no | Trigger and action `schema` only. The words a [trigger sentence](#trigger-sentences) or [action sentence](#action-sentences) shows in place of this field while it has no value: for a required field, until one is set; for an optional action field, whenever the step leaves it empty, so they say what the action does then. Must be non-empty when present. |
-| `visibleWhen` | object | no | `{ "field": "<sibling id>", "oneOf": ["a", "b"] }`. Shows the field only while that sibling holds one of the listed values. A hidden field's value is dropped on save and its `required` does not apply. |
+| `visibleWhen` | object | no | `{ "field": "<sibling id>", "oneOf": ["a", "b"] }`. Shows the field only while that sibling holds one of the listed values. A form must drop a hidden field's value on save and skip its `required`. |
 
 The info icon next to a field's label appears if and only if `hint` or `examplePayload` is present. `description` renders independently below the input.
 
@@ -454,7 +454,7 @@ A select may carry `options` beside an `internal` source. The options are pinned
 
 ### Conditional fields (`visibleWhen`)
 
-`visibleWhen` hides a field until another field of the same form holds a matching value, such as an announcement colour that only a Twitch target uses. `isFieldVisible(field, values)` in `shared/clients/typescript/api/ui-schema.ts` decides; an unset or non-text sibling hides the field. Barkloader refuses a condition that names the field itself or an id not in the same list, a target that has a `visibleWhen` of its own (one level only), an empty `oneOf` or an empty value in it, and any `visibleWhen` inside a `list` field's `itemFields`.
+`visibleWhen` hides a field until another field of the same form holds a matching value, such as an announcement colour that only a Twitch target uses. `isFieldVisible(field, values)` in `shared/clients/typescript/api/ui-schema.ts` decides; an unset or non-text sibling hides the field. Barkloader refuses a condition that names the field itself or an id not in the same list, a target that has a `visibleWhen` of its own (one level only), a target that holds no text (`number`, `range`, `toggle`, `button`, `layout`, `list`), an empty `oneOf` or a blank value in it, and any `visibleWhen` inside a `list` field's `itemFields`.
 
 An engine that predates `visibleWhen` refuses a manifest that uses it, because manifest properties are checked strictly. Take care before uploading such a module to a fleet that still runs older engines.
 

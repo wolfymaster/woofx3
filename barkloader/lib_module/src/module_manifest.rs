@@ -281,9 +281,9 @@ pub struct ManifestConfigField {
     #[serde(default)]
     pub missing_text: Option<String>,
     /// Shows the field only while a sibling holds one of the listed values.
-    /// A hidden field's value is dropped on save and its `required` does not
-    /// apply. Not allowed inside `itemFields`.
-    #[serde(default)]
+    /// A consumer must drop a hidden field's value on save and skip its
+    /// `required`. Not allowed inside `itemFields`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub visible_when: Option<VisibleWhen>,
 }
 

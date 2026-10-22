@@ -2023,6 +2023,10 @@ fn validate_select_options(field: &ManifestConfigField, context: &str) -> Result
     }
 }
 
+/// Field types whose value is never a string; a `visibleWhen` on one of them
+/// can never match.
+const NON_TEXT_FIELD_TYPES: [&str; 6] = ["number", "range", "toggle", "button", "layout", "list"];
+
 /// `visibleWhen` names another field of the same top-level list, one that is
 /// itself always shown, and the values that reveal this one.
 fn validate_visible_when(
@@ -2050,7 +2054,14 @@ fn validate_visible_when(
             condition.field
         ));
     }
-    if condition.one_of.is_empty() || condition.one_of.iter().any(|v| v.is_empty()) {
+    if NON_TEXT_FIELD_TYPES.contains(&target.field_type.as_str()) {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` {:?} is a `{}` field, which never holds text, so the condition could not match",
+            condition.field,
+            target.field_type
+        ));
+    }
+    if condition.one_of.is_empty() || condition.one_of.iter().any(|v| v.trim().is_empty()) {
         return Err(anyhow!(
             "{context}: `visibleWhen.oneOf` must list at least one non-empty value"
         ));
@@ -4346,6 +4357,18 @@ mod tests {
                    { "id": "x", "label": "X", "type": "text",
                     "visibleWhen": { "field": "m", "oneOf": [""] } }]"#,
                 "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": [" "] } }]"#,
+                "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "toggle" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": ["a"] } }]"#,
+                "never holds text",
             ),
             (
                 r#"[{ "id": "m", "label": "M", "type": "text" },
