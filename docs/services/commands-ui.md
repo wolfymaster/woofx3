@@ -457,6 +457,51 @@ command's steps also links it, and clears `workflowError`.
 Anything else holding actions and no workflow can run them the same way,
 through the `runActions(input)` engine RPC.
 
+### What woofwoofwoof trusts from the bus
+
+Anything connected to the message bus can publish the subjects woofwoofwoof
+reads, so it decides for itself what to believe:
+
+- **Its own lines are not commands.** The bot speaks with the broadcaster's
+  token, so Twitch hands its lines back on `user.message` as the
+  broadcaster's, with broadcaster badges. woofwoofwoof records every line it
+  says (`SentLineRegistry` in `woofwoofwoof/src/sentLines.ts`) and drops a
+  chat message that comes from the account it speaks as and matches a line it
+  said within the last `chatSentLineTtlMs` (default 30 s; at most
+  `chatSentLineCapacity` lines, default 256, are held; set in `.woofx3.json`
+  or as `WOOFX3_CHAT_SENT_LINE_TTL_MS` / `WOOFX3_CHAT_SENT_LINE_CAPACITY`,
+  and a value that is not a positive integer stops woofwoofwoof at startup).
+  Each recorded line answers for one echo, so the streamer typing a command
+  from the broadcaster account is still read. The message is dropped before group membership is
+  synced and before the commander sees it.
+- **A reply never starts with `!`.** A line the bot says that would start with
+  the command prefix gets a zero-width space in front, so it reads the same in
+  chat but cannot run a command. The twitch service applies the same rule to
+  the Helix chat operations (`sendChatMessage`, `sendChatAnnouncement`), which
+  also speak as the broadcaster but never pass through woofwoofwoof, so a
+  module function or workflow sending a line that way cannot run a command
+  either.
+- **Only Twitch's word changes derived groups.** The subscriber, VIP,
+  moderator and broadcaster groups are written only from chat messages whose
+  CloudEvent `source` is `twitch`, the twitch service. A simulated chat
+  message (the api publishes them with source `api`) still runs commands, but
+  never writes membership. `source` is declared by the publisher, not proven:
+  this check keeps the api's simulated messages out of the groups, but it is
+  not authentication. Telling the twitch service apart from anything else on
+  the bus needs per-service bus credentials.
+- **Command events are reload signals.** `command.created`,
+  `command.updated` and `command.deleted` only name a command id. woofwoofwoof
+  reads that command back from db-proxy and applies what is stored, or removes
+  the command when db-proxy no longer holds it; the snapshot an event carries
+  is never applied. db-proxy's `GetCommand` looks commands up by name, so the
+  read lists every command and picks the id, one listing per command change.
+  Reloads of one command run one at a time, in the order their events arrive.
+
+Only woofwoofwoof drops the bot's own lines. Other readers of `user.message`,
+such as workflows triggered on it, still see them as the broadcaster's, so a
+workflow that replies in chat to every message would trigger itself again on
+its own reply.
+
 ## Out of scope
 
 - No bulk/batch endpoints — create/update/delete one command or group per
