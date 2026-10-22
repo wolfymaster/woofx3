@@ -174,6 +174,27 @@ describe("Host", () => {
     expect(host.snapshot().gateway.outcomes.twitch?.["chat.send"]).toEqual({ delivered: 1, unavailable: 1 });
   });
 
+  test("lists a platform as a field option only while it is connected and enabled", async () => {
+    const { values, bus, host, announce } = await setup();
+    await host.start();
+    const options = async () => {
+      const request = bytes(JSON.stringify({ action: "chat.send" }));
+      const replies = bus.deliver(PLATFORM_GATEWAY_SUBJECTS.fieldOptions, request, "inbox");
+      await flush();
+      return replies.map((reply) => (JSON.parse(text(reply)) as { data: unknown }).data);
+    };
+    expect(await options()).toEqual([[]]);
+
+    values.twitch_token = "tok";
+    values["integration.twitch.enabled"] = "true";
+    await announce(true);
+    expect(await options()).toEqual([[{ value: "twitch", label: "Twitch" }]]);
+
+    values["integration.twitch.enabled"] = "false";
+    await announce(false);
+    expect(await options()).toEqual([[]]);
+  });
+
   test("refuses an adapter whose subscriptions cover the gateway's subject", async () => {
     const greedy: Adapter = {
       manifest: { id: "twitch", publishes: [], subscribes: ["platform.>"], requests: [], serves: [] },

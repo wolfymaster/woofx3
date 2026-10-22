@@ -107,7 +107,7 @@ async function setup(manifests: AdapterManifest[], env: Record<string, unknown> 
   const scope = new ScopedBus({
     scope: "host",
     client: bus,
-    grants: { publishes: [], subscribes: [SEND], requests: [] },
+    grants: { publishes: [], subscribes: Object.values(PLATFORM_GATEWAY_SUBJECTS), requests: [] },
     limits: { concurrency: 16, queueCap: 16 },
     logger,
     counters: new ScopeCounters(),
