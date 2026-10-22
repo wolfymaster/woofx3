@@ -1906,10 +1906,10 @@ When a ZIP is uploaded to `POST /functions`:
 Multipart upload → temp dir
     → extract ZIP
     → classify each file by extension (program / manifest / asset)
-    → ModuleService.create_plan()
+    → ModuleService.load_manifest()
          → pick manifest file
          → parse ModuleManifest
-    → ModuleService.execute_plan(archive_key, db_proxy_url?)
+    → ModuleService.install(archive_key, db_proxy_url?)
          → run_install():
               → upload each function path to modules/{id}/functions/…
               → upload widget entry + assets
