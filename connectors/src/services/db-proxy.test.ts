@@ -2,11 +2,35 @@ import { describe, expect, test } from "bun:test";
 import { GetSetting } from "@woofx3/db/setting.pb";
 import { dbProxyClientConfig } from "./db-proxy";
 
+const TOKEN = "connectors-db-proxy-token-0123456789abcdef";
+
 describe("dbProxyClientConfig", () => {
+  test("sends the service token on every call", async () => {
+    let authorization = "";
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: (request) => {
+        authorization = request.headers.get("authorization") ?? "";
+        return new Response("{}", { headers: { "content-type": "application/json" } });
+      },
+    });
+    try {
+      // Only the request matters here; the answer is not a valid setting and fails to decode.
+      await GetSetting(
+        { key: "twitch_token" },
+        dbProxyClientConfig(`http://127.0.0.1:${server.port}`, TOKEN, 1_000)
+      ).catch(() => undefined);
+      expect(authorization).toBe(`Bearer ${TOKEN}`);
+    } finally {
+      server.stop(true);
+    }
+  });
+
   test("aborts a call the server never answers once the timeout passes", async () => {
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Promise<Response>(() => {}) });
     try {
-      const client = dbProxyClientConfig(`http://127.0.0.1:${server.port}`, 50);
+      const client = dbProxyClientConfig(`http://127.0.0.1:${server.port}`, TOKEN, 50);
       const started = performance.now();
       await expect(GetSetting({ key: "twitch_token" }, client)).rejects.toThrow();
       expect(performance.now() - started).toBeLessThan(2_000);
@@ -22,7 +46,7 @@ describe("dbProxyClientConfig", () => {
   ];
   for (const [name, timeoutMs] of invalid) {
     test(`refuses a ${name} timeout`, () => {
-      expect(() => dbProxyClientConfig("http://127.0.0.1:1", timeoutMs)).toThrow("db-proxy timeout");
+      expect(() => dbProxyClientConfig("http://127.0.0.1:1", TOKEN, timeoutMs)).toThrow("db-proxy timeout");
     });
   }
 });

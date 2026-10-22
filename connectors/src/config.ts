@@ -17,6 +17,8 @@ export type ConnectorsEnv = z.infer<typeof ConnectorsEnvSchema>;
 export interface ConnectorsConfig {
   bus: BusConfig;
   dbProxyUrl: string;
+  /** The service token db-proxy requires on every call. */
+  dbProxyToken: string;
   host: HostConfig;
   gateway: GatewayConfig;
   /** Logs go under <rootPath>/logs. */
@@ -29,6 +31,7 @@ export function connectorsConfig(env: Record<string, unknown>): ConnectorsConfig
   return {
     bus: busConfig(parsed),
     dbProxyUrl: parsed.woofx3DatabaseProxyUrl,
+    dbProxyToken: parsed.woofx3DbProxyToken,
     host: hostConfig(parsed),
     gateway: gatewayConfig(parsed),
     rootPath: parsed.woofx3RootPath,

@@ -3,6 +3,7 @@ import type { GatewayConfig } from "../config/gateway";
 import type { HostConfig } from "../config/host";
 import { EgressRegistry } from "../gateway/egress-registry";
 import { PlatformGateway } from "../gateway/platform-gateway";
+import type { DbProxyClientConfig } from "../services/db-proxy";
 import type { Adapter } from "./adapter";
 import type { AdapterId } from "./adapter-ids";
 import { bounded } from "./bounded";
@@ -28,7 +29,7 @@ export const LOOP_STALE_INTERVALS = 2;
 export interface HostDeps {
   config: HostConfig;
   gateway: GatewayConfig;
-  dbProxyUrl: string;
+  dbProxy: DbProxyClientConfig;
   bus: BusClient;
   busConnected: () => boolean;
   settings: SettingsReader;
@@ -100,7 +101,7 @@ export class Host {
       },
       {
         bus: deps.bus,
-        dbProxyUrl: deps.dbProxyUrl,
+        dbProxy: deps.dbProxy,
         clock: deps.clock,
         random: deps.random,
         timers: deps.timers,

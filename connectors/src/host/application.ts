@@ -58,7 +58,7 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
     const host = new Host({
       config: this.deps.config.host,
       gateway: this.deps.config.gateway,
-      dbProxyUrl: this.deps.config.dbProxyUrl,
+      dbProxy: dbProxy.client,
       bus: messageBus.client,
       busConnected: () => messageBus.isUp(),
       settings: dbProxySettings(dbProxy.client),

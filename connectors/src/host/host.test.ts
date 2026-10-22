@@ -46,7 +46,7 @@ async function setup(served: ServedSubject = twitchapi, env: Record<string, unkn
   const host = new Host({
     config: hostConfig(HostEnvSchema.parse(env)),
     gateway: gatewayConfig(GatewayEnvSchema.parse({})),
-    dbProxyUrl: "http://db.test",
+    dbProxy: { baseURL: "http://db.test" },
     bus,
     busConnected: () => true,
     settings,
@@ -97,7 +97,7 @@ describe("Host", () => {
       new Host({
         config: hostConfig(HostEnvSchema.parse({})),
         gateway: gatewayConfig(GatewayEnvSchema.parse({})),
-        dbProxyUrl: "http://db.test",
+        dbProxy: { baseURL: "http://db.test" },
         bus: new FakeBus(),
         busConnected: () => true,
         settings: { getSetting: async () => null },

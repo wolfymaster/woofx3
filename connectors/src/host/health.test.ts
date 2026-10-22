@@ -18,7 +18,7 @@ async function runningHost(adapter: FakeAdapter, busUp = { value: true }) {
   const host = new Host({
     config,
     gateway,
-    dbProxyUrl: "http://db.test",
+    dbProxy: { baseURL: "http://db.test" },
     bus: new FakeBus(),
     busConnected: () => busUp.value,
     settings: linkedSettings,
@@ -83,7 +83,7 @@ describe("health", () => {
     const host = new Host({
       config,
       gateway,
-      dbProxyUrl: "http://db.test",
+      dbProxy: { baseURL: "http://db.test" },
       bus: new FakeBus(),
       busConnected: () => true,
       settings: linkedSettings,

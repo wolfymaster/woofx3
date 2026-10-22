@@ -6,6 +6,7 @@ import { HOST_DEFAULTS } from "./host";
 const required = {
   woofx3MessagebusUrl: "ws://127.0.0.1:4225",
   woofx3DatabaseProxyUrl: "http://127.0.0.1:5555",
+  woofx3DbProxyToken: "connectors-db-proxy-token-0123456789abcdef",
 };
 
 describe("connectorsConfig", () => {
@@ -23,6 +24,7 @@ describe("connectorsConfig", () => {
     });
     expect(config.host.port).toBe(9102);
     expect(config.dbProxyUrl).toBe(required.woofx3DatabaseProxyUrl);
+    expect(config.dbProxyToken).toBe(required.woofx3DbProxyToken);
   });
 
   test("shapes the bus config, dropping blank credentials and stringifying a numeric token", () => {
@@ -54,7 +56,10 @@ describe("connectorsConfig", () => {
   });
 
   const invalid: Array<[name: string, env: Record<string, unknown>, problem: string]> = [
-    ["no bus url", { woofx3DatabaseProxyUrl: required.woofx3DatabaseProxyUrl }, "woofx3MessagebusUrl"],
+    ["no bus url", { ...required, woofx3MessagebusUrl: undefined }, "woofx3MessagebusUrl"],
+    ["no db-proxy token", { ...required, woofx3DbProxyToken: undefined }, "dbProxyToken (WOOFX3_DB_PROXY_TOKEN)"],
+    ["a placeholder db-proxy token", { ...required, woofx3DbProxyToken: "CHANGE_ME" }, "dbProxyToken"],
+    ["a short db-proxy token", { ...required, woofx3DbProxyToken: "short-token" }, "dbProxyToken"],
     ["db-proxy url that is not a URL", { ...required, woofx3DatabaseProxyUrl: "db-proxy" }, "woofx3DatabaseProxyUrl"],
     ["port out of range", { ...required, woofx3ConnectorsPort: 70_000 }, "woofx3ConnectorsPort"],
     [
