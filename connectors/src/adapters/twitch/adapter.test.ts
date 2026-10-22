@@ -64,7 +64,16 @@ class NotLinkedError extends Error {
   }
 }
 
+type AuthFailureHandler = (err: Error, info: { provider: "refreshing" | "dashboard" }) => void;
+
+/** Every client the adapter built, newest last. */
+const clients: MockTwitchClient[] = [];
+
 class MockTwitchClient {
+  constructor(readonly args: { onAuthFailure?: AuthFailureHandler }) {
+    clients.push(this);
+  }
+
   init = mock(async () => {
     if (!linked) {
       throw new NotLinkedError();
@@ -185,7 +194,7 @@ function supervised() {
     await supervisor.reconcile(new Map([["twitch", { connected, enabled }]]), new Set(["twitch" as const]));
     await supervisor.whenIdle();
   };
-  return { bus, adapter, supervisor, apply };
+  return { bus, time, adapter, supervisor, apply };
 }
 
 describe("TwitchAdapter under the supervisor", () => {
@@ -243,6 +252,36 @@ describe("TwitchAdapter under the supervisor", () => {
 
     expect(supervisor.status("twitch").state).toBe("connected");
     expect(liveListeners.size).toBe(1);
+  });
+});
+
+describe("TwitchAdapter token renewal failures under the supervisor", () => {
+  const REASON = "Twitch token renewal failed (refreshing): Invalid refresh token";
+
+  test("leave it degraded with the reason, and repeated ones park it", async () => {
+    linked = true;
+    clients.length = 0;
+    const { time, supervisor, apply } = supervised();
+    const failRenewal = async () => {
+      clients.at(-1)?.args.onAuthFailure?.(new Error("Invalid refresh token"), { provider: "refreshing" });
+      await flush();
+      await supervisor.whenIdle();
+    };
+
+    await apply(true, true);
+    await failRenewal();
+    expect(supervisor.status("twitch")).toEqual({ state: "degraded", reason: REASON, retryAt: expect.any(Number) });
+
+    // park.afterFailures is 5; each retry reconnects and fails its renewal again.
+    for (let fault = 2; fault <= 5; fault++) {
+      await time.advance(10_000);
+      await supervisor.whenIdle();
+      expect(supervisor.status("twitch").state).toBe("connected");
+      await failRenewal();
+    }
+
+    expect(supervisor.status("twitch")).toEqual({ state: "parked", reason: REASON });
+    expect(supervisor.report().find((entry) => entry.id === "twitch")?.counts.faults).toBe(5);
   });
 });
 
