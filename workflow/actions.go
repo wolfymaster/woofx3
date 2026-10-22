@@ -324,6 +324,9 @@ func pinDurationParam(params map[string]any) (*int, error) {
 		if v != math.Trunc(v) {
 			return nil, fmt.Errorf("durationSeconds must be a whole number of seconds, got number %v", v)
 		}
+		if v < pinDurationMinSeconds || v > pinDurationMaxSeconds {
+			return nil, fmt.Errorf("durationSeconds must be between %d and %d, got %v", pinDurationMinSeconds, pinDurationMaxSeconds, v)
+		}
 		seconds = int(v)
 	case string:
 		trimmed := strings.TrimSpace(v)

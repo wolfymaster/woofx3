@@ -629,6 +629,7 @@ func TestChatPinActionDuration(t *testing.T) {
 		{"blank text means unset", map[string]any{"message": "hi", "durationSeconds": " "}, `{"message":"hi"}`, ""},
 		{"below the bound", map[string]any{"message": "hi", "durationSeconds": 29.0}, "", "durationSeconds must be between 30 and 1200, got 29"},
 		{"above the bound", map[string]any{"message": "hi", "durationSeconds": 1201.0}, "", "durationSeconds must be between 30 and 1200, got 1201"},
+		{"a huge number", map[string]any{"message": "hi", "durationSeconds": 1e20}, "", "durationSeconds must be between 30 and 1200"},
 		{"a fraction", map[string]any{"message": "hi", "durationSeconds": 30.5}, "", "whole number of seconds"},
 		{"words", map[string]any{"message": "hi", "durationSeconds": "soon"}, "", "whole number of seconds"},
 		{"not a number", map[string]any{"message": "hi", "durationSeconds": true}, "", "durationSeconds must be a number"},
@@ -652,6 +653,9 @@ func TestChatPinActionDuration(t *testing.T) {
 				t.Fatalf("chat.pin: %v", err)
 			}
 			request := gateway.requests[0]
+			if request.IdempotencyKey != "exec-1:say" || request.WorkflowChain != "wf-b" {
+				t.Errorf("key = %q, chain = %q", request.IdempotencyKey, request.WorkflowChain)
+			}
 			if request.Action != platformgateway.ActionChatPin || string(request.Payload) != tt.wantPayload {
 				t.Errorf("request = %s %s, want payload %s", request.Action, request.Payload, tt.wantPayload)
 			}

@@ -163,10 +163,10 @@ that it cannot do this, which fails the step.
 | `parameters.platform` | `string` | No | `origin` (the default), `all`, or a platform id. Supports expressions. An announcement is never a reply, so the trigger's message id is not used. |
 | `parameters.twitchColor` | `string` | No | `primary` (the channel's colour), `blue`, `green`, `orange` or `purple`. Sent to the gateway as Twitch's options, and left out when unset. Other platforms ignore it. Supports expressions. |
 
-The editor shows `twitchColor` only while `platform` is `origin`, `all` or
-`twitch` (the field's `visibleWhen`). A `platform` set to an expression is
-none of those, so the editor hides the colour for it; a stored `twitchColor`
-still applies when the step runs. Registration refuses a colour that is not
+The editor shows `twitchColor` while `platform` is `origin`, `all`, `twitch` or
+an expression (a variable has no value to compare until the run), and hides it
+for any other platform id. A stored `twitchColor` applies when the step runs.
+Registration refuses a colour that is not
 one of the five and is not an expression.
 
 Returns the same `message`, `ok` and `results` as `chat.reply`. A dry run

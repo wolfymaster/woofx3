@@ -231,9 +231,11 @@ func TestNativeActionDryRunSentences(t *testing.T) {
 		t.Error("alert: accepted parameters the real action refuses")
 	}
 	for name, spec := range map[string]bool{
-		"function":   functionActionSpec.SideEffect,
-		"alert":      alertActionSpec.SideEffect,
-		"chat.reply": chatReplyActionSpec.SideEffect,
+		"function":      functionActionSpec.SideEffect,
+		"alert":         alertActionSpec.SideEffect,
+		"chat.reply":    chatReplyActionSpec.SideEffect,
+		"chat.announce": chatAnnounceActionSpec.SideEffect,
+		"chat.pin":      chatPinActionSpec.SideEffect,
 	} {
 		if !spec {
 			t.Errorf("%s is not marked side-effecting", name)
