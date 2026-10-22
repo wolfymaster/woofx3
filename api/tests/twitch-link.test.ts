@@ -38,6 +38,10 @@ function engine(opts: {
     setSetting: mock(async (key: string, value: string) => {
       settings.set(key, value);
     }),
+    trySetSetting: mock(async (key: string, value: string) => {
+      settings.set(key, value);
+      return true;
+    }),
     findOrCreateByWoofx3UIUserId: mock(async () => ({ id: "engine-user" })),
   };
   const helixAsked: unknown[] = [];
