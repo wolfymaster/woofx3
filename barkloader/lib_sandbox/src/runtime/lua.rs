@@ -537,16 +537,24 @@ fn build_lua_ctx(
         resources.set("create", create_fn)?;
 
         let host = invocation.host.clone();
+        let module_id = invocation.module_id.clone();
         let delete_fn = lua.create_function(move |_lua, canonical_id: String| {
-            super::host_bindings::resources_delete(&host, &canonical_id)
+            super::host_bindings::resources_delete(&host, &module_id, &canonical_id)
                 .map_err(mlua::Error::RuntimeError)?;
             Ok(())
         })?;
         resources.set("delete", delete_fn)?;
 
         let host = invocation.host.clone();
+        let module_id = invocation.module_id.clone();
+        let link_settings = invocation.resource_link_settings.clone();
         let get_fn = lua.create_function(move |lua, canonical_id: String| {
-            match super::host_bindings::resources_get(&host, &canonical_id) {
+            match super::host_bindings::resources_get(
+                &host,
+                &module_id,
+                &link_settings,
+                &canonical_id,
+            ) {
                 Ok(v) => binding_return(lua, &v, limits),
                 Err(e) => Err(mlua::Error::RuntimeError(e)),
             }
@@ -554,9 +562,16 @@ fn build_lua_ctx(
         resources.set("get", get_fn)?;
 
         let host = invocation.host.clone();
+        let module_id = invocation.module_id.clone();
+        let link_settings = invocation.resource_link_settings.clone();
         let list_fn =
             lua.create_function(
-                move |lua, kind: String| match super::host_bindings::resources_list(&host, &kind) {
+                move |lua, kind: String| match super::host_bindings::resources_list(
+                    &host,
+                    &module_id,
+                    &link_settings,
+                    &kind,
+                ) {
                     Ok(v) => binding_return(lua, &v, limits),
                     Err(e) => Err(mlua::Error::RuntimeError(e)),
                 },
@@ -566,6 +581,7 @@ fn build_lua_ctx(
         let host = invocation.host.clone();
         let module_id = invocation.module_id.clone();
         let permissions = invocation.permissions.clone();
+        let link_settings = invocation.resource_link_settings.clone();
         let deadline = invocation.deadline;
         let run_fn = lua.create_function(
             move |lua, (canonical_id, verb, params): (String, String, Option<LuaValue>)| {
@@ -573,9 +589,12 @@ fn build_lua_ctx(
                     params.map(|p| binding_arg(lua, &p, limits)).transpose()?;
                 match super::host_bindings::resources_run(
                     &host,
-                    &module_id,
-                    &permissions,
-                    deadline,
+                    &crate::host::RunCaller {
+                        module_id: &module_id,
+                        permissions: &permissions,
+                        resource_link_settings: &link_settings,
+                        deadline,
+                    },
                     &canonical_id,
                     &verb,
                     json_params,
@@ -677,11 +696,13 @@ fn build_lua_ctx(
         let host_for_set = invocation.host.clone();
         let module_id_for_set = invocation.module_id.clone();
         let url_settings = invocation.url_settings.clone();
+        let link_settings = invocation.resource_link_settings.clone();
         let set_setting_fn = lua.create_function(move |_, (key, value): (String, String)| {
             super::host_bindings::set_module_setting(
                 &host_for_set,
                 &module_id_for_set,
                 &url_settings,
+                &link_settings,
                 &key,
                 &value,
             )
@@ -696,6 +717,7 @@ fn build_lua_ctx(
         let host_for_cas = invocation.host.clone();
         let module_id_for_cas = invocation.module_id.clone();
         let url_settings_for_cas = invocation.url_settings.clone();
+        let link_settings_for_cas = invocation.resource_link_settings.clone();
         let compare_and_set_setting_fn = lua.create_function(
             move |lua, (key, expected, value): (String, LuaValue, LuaValue)| {
                 let json_expected = binding_arg(lua, &expected, limits)?;
@@ -704,6 +726,7 @@ fn build_lua_ctx(
                     &host_for_cas,
                     &module_id_for_cas,
                     &url_settings_for_cas,
+                    &link_settings_for_cas,
                     &key,
                     &json_expected,
                     &json_val,
@@ -942,6 +965,7 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let adapter = LuaAdapter::new(SandboxLimits::default());
@@ -968,6 +992,7 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let adapter = LuaAdapter::new(SandboxLimits::default());
@@ -1012,6 +1037,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Exercises all three levels and both a string and a table
@@ -1042,6 +1068,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = r#"
@@ -1066,6 +1093,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         }
     }
@@ -1082,6 +1110,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // (call, success, message, extra field name, extra field value)
@@ -1191,6 +1220,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Never touches ctx.module.settings.
@@ -1224,6 +1254,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Reads ctx.module.settings twice — should still be one host fetch.
@@ -1264,6 +1295,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = r#"
@@ -1301,6 +1333,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = r#"
@@ -1370,6 +1403,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = r#"
@@ -1407,6 +1441,7 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = r#"

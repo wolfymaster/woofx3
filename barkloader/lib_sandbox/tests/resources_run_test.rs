@@ -64,6 +64,7 @@ fn module(
         event_types: Default::default(),
         permissions: permissions.iter().map(|p| p.to_string()).collect(),
         url_settings: Default::default(),
+        resource_link_settings: ["timer".to_string()].into(),
         oauth: Default::default(),
         actions: actions
             .iter()
@@ -128,7 +129,8 @@ struct World {
     host: HostContext,
 }
 
-/// `consumer` links `COUNTER` in its `timer` setting unless `linked` is false;
+/// `consumer` links `COUNTER` in its `timer` resource-link setting unless
+/// `linked` is false;
 /// `provider` declares `counter.bump` and needs `provider_permissions`.
 fn world(linked: bool, provider_permissions: &[&str], consumer_permissions: &[&str]) -> World {
     let registry = Arc::new(ModuleRegistry::new());

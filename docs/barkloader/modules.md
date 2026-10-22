@@ -1772,11 +1772,24 @@ Available in both QuickJS and Lua function runtimes:
 | Call | Returns | Notes |
 |------|---------|-------|
 | `ctx.resources.create(kind, instanceId, displayName?, settings?)` | `{ canonical_id, module_name, kind, instance_id, display_name, settings }` | The owning module is implicit (taken from the function's canonical path). `settings` must be an object. |
-| `ctx.resources.get(canonicalId)` | the same shape, or `null` | How a function reads the settings of the instance it was asked to act on. `null` when nothing has the id — a workflow can name an instance deleted after it was configured. |
-| `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. Also cancels every [deadline](#deadlines-deadlines) entry keyed by `canonicalId`. |
-| `ctx.resources.list(kind)` | an array of the same shape | A bare `kind` returns every instance of that name across every installed module; `module:kind` returns only that module's. |
+| `ctx.resources.get(canonicalId)` | the same shape, or `null` | How a function reads the settings of the instance it was asked to act on. `null` when nothing has the id — a workflow can name an instance deleted after it was configured. Throws for an instance another module owns, unless the streamer linked it to this module (see [Which instances a module reaches](#which-instances-a-module-reaches)). |
+| `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. Also cancels every [deadline](#deadlines-deadlines) entry keyed by `canonicalId`. Throws for an instance another module owns, linked or not. |
+| `ctx.resources.list(kind)` | an array of the same shape | A bare `kind` returns the calling module's own instances of that kind; `module:kind` returns that module's instances the calling module may read: all of them for its own module, only the linked ones for another. |
 | `ctx.resources.run(canonicalId, verb, params?)` | what the action returns | Runs the providing module's `{kind}.{verb}` action on the instance — `ctx.resources.run(timer, "add", { seconds: 60 })` runs `woofx3:action:timer.add` with `target` set to `timer`. See below. |
 | `ctx.resources.compareAndSetSetting(canonicalId, key, expected, value)` | `{ swapped, current }` | Writes `settings[key] = value` on an instance this module owns, only while `settings[key]` still holds `expected`, compared by meaning (key order, `1` vs `1.0`, `[]` vs `{}`). `null`/`undefined` (`nil` in Lua) matches a key the instance does not hold, which is how a schema field the streamer never saved reads. `current` is the setting as it reads now, `null` when absent. A swap is announced as an instance update (`db.module.resource.instance.updated`), the same as a streamer's edit, so the dashboard and `resource:<canonicalId>` readers refresh. Throws for an instance another module owns, one that does not exist, or a value JSON cannot hold. See [List settings](#list-settings). |
+
+#### Which instances a module reaches
+
+A module **writes** only the instances it owns: `delete` and
+`compareAndSetSetting` need the first segment of the canonical id to be the
+calling module. It **reads** (`get`, `list`, `run`) the instances it owns, and the
+ones the streamer linked to it: the value of one of its
+[`resource_ref` settings](#linking-a-resource). Module code cannot write a
+`resource_ref` setting (`ctx.module.setSetting` and `compareAndSetSetting` refuse
+it), and a canonical id held in any other setting is not a link, so at run time a
+link is either the streamer's pick or what the module's manifest `create` set at
+install (which can reuse an instance that already exists). The rule lives in
+`barkloader/lib_sandbox/src/resource_access.rs`.
 
 `ctx.resources.run` is how a module drives a resource another module provides. The
 action runs as the providing module — its function, its storage, the events it
@@ -1784,8 +1797,8 @@ announces — on the caller's thread, within the caller's time. Before running i
 engine checks that:
 
 - the instance belongs to the calling module, or one of the calling module's
-  settings holds its canonical id: the streamer chose it, typically through a
-  [linked `resource_ref` setting](#linking-a-resource);
+  `resource_ref` settings holds its canonical id: the streamer
+  [linked it](#linking-a-resource);
 - it exists and is of the kind its id names;
 - the providing module declares `{kind}.{verb}` as a `type: "function"` action;
 - the calling module declares every permission the providing module does, since the

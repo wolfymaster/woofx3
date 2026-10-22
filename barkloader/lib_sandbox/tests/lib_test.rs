@@ -67,6 +67,7 @@ fn build_registry() -> Arc<ModuleRegistry> {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
 
@@ -186,6 +187,7 @@ fn test_js_instruction_limit() {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
 
@@ -251,6 +253,7 @@ function isolation(ctx) {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
 
@@ -327,6 +330,7 @@ fn test_ctx_event_data() {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
 
@@ -397,6 +401,7 @@ fn extension_test_module(
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
     registry.register_module(name.to_string(), module).unwrap();
@@ -999,6 +1004,7 @@ fn a_url_settings_origin_is_granted_to_the_invocation() {
                 event_types: Default::default(),
                 permissions: ["net:api.example.com".to_string()].into(),
                 url_settings: ["server".to_string()].into(),
+                resource_link_settings: Default::default(),
                 oauth: Default::default(),
             },
         )

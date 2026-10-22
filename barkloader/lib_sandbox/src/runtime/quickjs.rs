@@ -575,8 +575,11 @@ fn build_http_namespace<'js>(
 ///
 ///   - `ctx.resources.create(kind, instanceId, displayName?)` →
 ///     `{ canonicalId, moduleName, kind, instanceId, displayName }`
-///   - `ctx.resources.delete(canonicalId)` → no return
-///   - `ctx.resources.list(kind)` → array of the same instance objects
+///   - `ctx.resources.delete(canonicalId)` → no return; owning module only
+///   - `ctx.resources.get(canonicalId)` → the instance or null; owning module,
+///     or one the streamer linked it to
+///   - `ctx.resources.list(kind)` → array of the same instance objects; a
+///     bare kind lists the calling module's own (`crate::resource_access`)
 ///   - `ctx.resources.compareAndSetSetting(canonicalId, key, expected, value)`
 ///     → `{ swapped, current }`; owning module only
 ///
@@ -624,10 +627,12 @@ fn build_resources_namespace<'js>(
     resources.set("create", create_fn).map_err(map)?;
 
     let host = invocation.host.clone();
+    let module_id = invocation.module_id.clone();
     let delete_fn = JsFunction::new(
         ctx.clone(),
         move |_ctx: Ctx<'_>, canonical_id: String| -> rquickjs::Result<()> {
-            super::host_bindings::resources_delete(&host, &canonical_id).map_err(host_err)?;
+            super::host_bindings::resources_delete(&host, &module_id, &canonical_id)
+                .map_err(host_err)?;
             Ok(())
         },
     )
@@ -635,8 +640,11 @@ fn build_resources_namespace<'js>(
     resources.set("delete", delete_fn).map_err(map)?;
 
     let host = invocation.host.clone();
+    let module_id = invocation.module_id.clone();
+    let link_settings = invocation.resource_link_settings.clone();
     let get_fn = JsFunction::new(ctx.clone(), move |ctx, canonical_id: String| {
-        match super::host_bindings::resources_get(&host, &canonical_id) {
+        match super::host_bindings::resources_get(&host, &module_id, &link_settings, &canonical_id)
+        {
             Ok(v) => binding_return(&ctx, &v, limits),
             Err(e) => Err(host_err(e)),
         }
@@ -645,8 +653,10 @@ fn build_resources_namespace<'js>(
     resources.set("get", get_fn).map_err(map)?;
 
     let host = invocation.host.clone();
+    let module_id = invocation.module_id.clone();
+    let link_settings = invocation.resource_link_settings.clone();
     let list_fn = JsFunction::new(ctx.clone(), move |ctx, kind: String| {
-        match super::host_bindings::resources_list(&host, &kind) {
+        match super::host_bindings::resources_list(&host, &module_id, &link_settings, &kind) {
             Ok(v) => binding_return(&ctx, &v, limits),
             Err(e) => Err(host_err(e)),
         }
@@ -657,6 +667,7 @@ fn build_resources_namespace<'js>(
     let host = invocation.host.clone();
     let module_id = invocation.module_id.clone();
     let permissions = invocation.permissions.clone();
+    let link_settings = invocation.resource_link_settings.clone();
     let deadline = invocation.deadline;
     let run_fn = JsFunction::new(
         ctx.clone(),
@@ -668,9 +679,12 @@ fn build_resources_namespace<'js>(
                 .transpose()?;
             match super::host_bindings::resources_run(
                 &host,
-                &module_id,
-                &permissions,
-                deadline,
+                &crate::host::RunCaller {
+                    module_id: &module_id,
+                    permissions: &permissions,
+                    resource_link_settings: &link_settings,
+                    deadline,
+                },
                 &canonical_id,
                 &verb,
                 json_params,
@@ -844,6 +858,7 @@ fn build_module_namespace<'js>(
     let host_for_set = invocation.host.clone();
     let module_id_for_set = invocation.module_id.clone();
     let url_settings = invocation.url_settings.clone();
+    let link_settings = invocation.resource_link_settings.clone();
     let set_setting_fn = JsFunction::new(
         ctx.clone(),
         move |_ctx: Ctx<'_>, key: String, value: String| -> rquickjs::Result<()> {
@@ -851,6 +866,7 @@ fn build_module_namespace<'js>(
                 &host_for_set,
                 &module_id_for_set,
                 &url_settings,
+                &link_settings,
                 &key,
                 &value,
             )
@@ -866,6 +882,7 @@ fn build_module_namespace<'js>(
     let host_for_cas = invocation.host.clone();
     let module_id_for_cas = invocation.module_id.clone();
     let url_settings_for_cas = invocation.url_settings.clone();
+    let link_settings_for_cas = invocation.resource_link_settings.clone();
     let compare_and_set_setting_fn = JsFunction::new(
         ctx.clone(),
         move |ctx, key: String, expected: JsValue, value: JsValue| {
@@ -875,6 +892,7 @@ fn build_module_namespace<'js>(
                 &host_for_cas,
                 &module_id_for_cas,
                 &url_settings_for_cas,
+                &link_settings_for_cas,
                 &key,
                 &json_expected,
                 &json_val,
@@ -1062,6 +1080,7 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
@@ -1088,6 +1107,7 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
@@ -1132,6 +1152,7 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         for (code, expected) in [
@@ -1164,6 +1185,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = "function run(ctx) { return { id: ctx.module.id, name: ctx.module.name, version: ctx.module.version }; }";
@@ -1185,6 +1207,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Exercises all three levels and both a string and an object
@@ -1218,6 +1241,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = "function run(ctx) { ctx.log.info('data', { foo: 1 }); return { ok: true }; }";
@@ -1237,6 +1261,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = "function run(ctx) { return ctx.response(false, 'nope'); }";
@@ -1257,6 +1282,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         }
     }
@@ -1273,6 +1299,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // (call, success, message, extra field name, extra field value)
@@ -1372,6 +1399,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Never touches ctx.module.settings.
@@ -1400,6 +1428,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Reads ctx.module.settings twice — should still be one host fetch.
@@ -1477,6 +1506,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings,
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         (invocation, settings)
@@ -1538,6 +1568,7 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         (invocation, instance)
