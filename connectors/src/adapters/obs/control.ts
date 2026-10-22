@@ -10,7 +10,6 @@
 import type { ObsControlCommand, ObsControlReply } from "@woofx3/common/cloudevents/Obs/commands";
 import type { OBSRequestTypes, OBSResponseTypes } from "obs-websocket-js";
 import { z } from "zod";
-import { OBS_DEFAULTS } from "../../config/obs";
 import type { Logger } from "../../host/deps";
 
 /** The slice of `manager.ts` a command needs; structural so tests can fake OBS. */
@@ -84,13 +83,12 @@ export function parseObsControlCommand(data: unknown): ParsedObsCommand {
 
 export interface ObsControlOptions {
   /**
-   * How long one command may take in OBS; defaults to
-   * OBS_DEFAULTS.commandTimeoutMs. Under the host's reply budget on purpose,
+   * How long one command may take in OBS (WOOFX3_OBS_COMMAND_TIMEOUT_MS). Under the host's reply budget on purpose,
    * so the step fails with this service's reason rather than a bare "no
    * answer". OBS answers a local request in milliseconds; one that has not
    * answered in this long is hung, and the session is recycled.
    */
-  timeoutMs?: number;
+  timeoutMs: number;
   /** Called when OBS did not answer in time; the caller drops the session. */
   onTimeout?: () => void;
 }
@@ -125,12 +123,12 @@ export function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
 export async function executeObsControlCommand(
   obs: ObsControlClient | null,
   command: ObsControlCommand,
-  options: ObsControlOptions = {}
+  options: ObsControlOptions
 ): Promise<ObsControlReply> {
   if (!obs) {
     return { ok: false, error: OBS_NOT_CONNECTED };
   }
-  const timeoutMs = options.timeoutMs ?? OBS_DEFAULTS.commandTimeoutMs;
+  const timeoutMs = options.timeoutMs;
   try {
     return await withDeadline(runCommand(obs, command), timeoutMs);
   } catch (err) {
@@ -357,7 +355,7 @@ export async function handleObsControlRequest(
   obs: ObsControlClient | null,
   raw: Uint8Array,
   logger: Logger,
-  options: ObsControlOptions = {}
+  options: ObsControlOptions
 ): Promise<ObsControlReply> {
   let envelope: { data?: unknown };
   try {

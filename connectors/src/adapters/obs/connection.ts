@@ -32,7 +32,7 @@ export type ObsConnectionState = "connecting" | "connected" | "retrying" | "stop
 
 export interface ObsConnectionOptions<TClient> {
   /** Open a session or throw. Must not retry on its own. */
-  open: () => Promise<ObsSession<TClient>>;
+  open: (signal: AbortSignal) => Promise<ObsSession<TClient>>;
   /**
    * Runs after every successful connect. A failure is logged and does not
    * drop the session.
@@ -104,7 +104,7 @@ export class ObsConnection<TClient> {
    * whatever it opens rather than installing a session made with old details.
    */
   private attemptSeq = 0;
-  /** Aborted by stop: ends the open deadline of an attempt in flight, so no timer outlives the connection. */
+  /** Aborted by stop: ends the open deadline and the connect timer of an attempt in flight; handed to `options.open`. */
   private readonly lifetime = new AbortController();
   private stopOnAbort: (() => void) | null = null;
 
@@ -257,8 +257,8 @@ export class ObsConnection<TClient> {
    * closed as soon as it does.
    */
   private openWithinDeadline(): Promise<ObsSession<TClient>> {
-    const opening = this.options.open();
     const { signal } = this.lifetime;
+    const opening = this.options.open(signal);
     return new Promise<ObsSession<TClient>>((resolve, reject) => {
       let settled = false;
       const settle = () => {

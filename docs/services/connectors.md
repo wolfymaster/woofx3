@@ -286,8 +286,9 @@ store it reads routes from live in `connectors/src/companion/` (see
   stays live for the whole run; when it aborts, the connection stops dialing
   as a stop does.
 - **Stop.** Closes the OBS session, cancels any pending retry and ends the
-  open deadline of an attempt in flight, so no timer outlives the run; a
-  session that opens after the stop is closed at once. The host then closes
+  open deadline and OBS connect timer of an attempt in flight; a relay
+  credential request already sent finishes on its own (bounded by its own
+  timeout), and a session that opens after the stop is closed at once. The host then closes
   the adapter's subscriptions.
 - **Manifest.** Publishes nothing, requests `engine.relay.credential` from the
   api, and serves:

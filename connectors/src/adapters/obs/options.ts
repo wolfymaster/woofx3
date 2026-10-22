@@ -14,7 +14,6 @@ import {
   type ObsOptionsReply,
 } from "@woofx3/common/cloudevents/Obs/commands";
 import { z } from "zod";
-import { OBS_DEFAULTS } from "../../config/obs";
 import type { Logger } from "../../host/deps";
 import {
   groupSceneItems,
@@ -146,12 +145,12 @@ const LISTERS: Readonly<Record<ObsOptionsList, (obs: ObsControlClient) => Promis
 export async function executeObsOptionsRequest(
   obs: ObsControlClient | null,
   list: ObsOptionsList,
-  options: ObsControlOptions = {}
+  options: ObsControlOptions
 ): Promise<ObsOptionsReply> {
   if (!obs) {
     return { error: OBS_NOT_CONNECTED };
   }
-  const timeoutMs = options.timeoutMs ?? OBS_DEFAULTS.commandTimeoutMs;
+  const timeoutMs = options.timeoutMs;
   try {
     return await withDeadline(LISTERS[list](obs), timeoutMs);
   } catch (err) {
@@ -169,7 +168,7 @@ export async function handleObsOptionsRequest(
   obs: ObsControlClient | null,
   raw: Uint8Array,
   logger: Logger,
-  options: ObsControlOptions = {}
+  options: ObsControlOptions
 ): Promise<ObsOptionsReply> {
   let envelope: { data?: unknown };
   try {

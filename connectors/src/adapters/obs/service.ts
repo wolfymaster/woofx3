@@ -78,11 +78,16 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
 
   const refreshes = new RefreshDrain(latch, () => connection.current(), logger);
   const connection: ObsConnection<Manager> = new ObsConnection<Manager>({
-    open: async () => {
+    open: async (signal) => {
       try {
         const route = await dialWebSocketEndpoint(dialer, target);
+        signal.throwIfAborted();
         last = { route: route.route, address: route.address };
-        return await openObsOverRoute(route, deps.connection.connectTimeoutMs);
+        return await openObsOverRoute(route, {
+          connectTimeoutMs: deps.connection.connectTimeoutMs,
+          timers: deps.timers,
+          signal,
+        });
       } catch (err) {
         if (err instanceof EndpointRelayError) {
           last = { route: "companion", address: err.address };

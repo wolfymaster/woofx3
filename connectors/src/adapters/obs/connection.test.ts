@@ -1,8 +1,15 @@
 import { describe, expect, it } from "bun:test";
+import type { ObsControlCommand } from "@woofx3/common/cloudevents/Obs/commands";
 import { OBS_DEFAULTS, type ObsConnectionConfig } from "../../config/obs";
 import type { RandomSource, Timers } from "../../host/deps";
 import { ObsConnection, type ObsSession } from "./connection";
-import { executeObsControlCommand, type ObsControlClient } from "./control";
+import { executeObsControlCommand, type ObsControlClient, type ObsControlOptions } from "./control";
+
+const runCommand = (
+  obs: ObsControlClient | null,
+  command: ObsControlCommand,
+  options: Partial<ObsControlOptions> = {}
+) => executeObsControlCommand(obs, command, { timeoutMs: OBS_DEFAULTS.commandTimeoutMs, ...options });
 
 /** The shipped backoff and open deadline. */
 const CONFIG: Pick<ObsConnectionConfig, "backoff" | "openTimeoutMs"> = {
@@ -193,7 +200,7 @@ describe("ObsConnection", () => {
     conn.start(forever());
     await settle();
 
-    const reply = await executeObsControlCommand(conn.current(), { command: "switch_scene", sceneName: "Raid" });
+    const reply = await runCommand(conn.current(), { command: "switch_scene", sceneName: "Raid" });
     expect(reply).toEqual({ ok: false, error: "OBS is not connected (retrying)" });
   });
 
@@ -488,9 +495,11 @@ describe("ObsConnection", () => {
       throw new Error("the attempt never started");
     };
     const closed: string[] = [];
+    let attemptSignal: AbortSignal | null = null;
     const timers = manualTimers();
     const conn = new ObsConnection<ObsControlClient>({
-      open: async () => {
+      open: async (signal) => {
+        attemptSignal = signal;
         await new Promise<void>((resolve) => {
           release = resolve;
         });
@@ -511,7 +520,9 @@ describe("ObsConnection", () => {
     await settle();
     expect(timers.delays()).toEqual([OBS_DEFAULTS.openTimeoutMs]);
 
+    expect((attemptSignal as AbortSignal | null)?.aborted).toBe(false);
     await conn.stop();
+    expect((attemptSignal as AbortSignal | null)?.aborted).toBe(true);
     expect(timers.count()).toBe(0);
     release();
     await settle();

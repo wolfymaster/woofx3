@@ -8,7 +8,7 @@
 import { type DialTarget, type EndpointKeys, EndpointRelayError, type WebSocketRoute } from "../../companion/dialer";
 import { type ObsSession, obsFailureKind } from "./connection";
 import type Manager from "./manager";
-import { openObsSession } from "./manager";
+import { type ObsConnectLimits, openObsSession } from "./manager";
 
 /** The OBS module's manifest id. Must match `id` in woofx3-modules' modules/platform/obs/manifest.json. */
 export const OBS_MODULE_ID = "woofx3_obs";
@@ -46,9 +46,9 @@ export function obsDialTarget(fallback: ObsFallback): DialTarget {
  * or the companion not reaching OBS. It reads as `relay`, so the streamer is
  * pointed at the companion rather than at OBS.
  */
-export async function openObsOverRoute(route: WebSocketRoute, connectTimeoutMs: number): Promise<ObsSession<Manager>> {
+export async function openObsOverRoute(route: WebSocketRoute, limits: ObsConnectLimits): Promise<ObsSession<Manager>> {
   try {
-    return await openObsSession({ url: route.url, token: route.password, connectTimeoutMs });
+    return await openObsSession({ url: route.url, token: route.password, ...limits });
   } catch (err) {
     if (route.route === "companion" && obsFailureKind(err) !== "authentication") {
       const message = err instanceof Error ? err.message : String(err);

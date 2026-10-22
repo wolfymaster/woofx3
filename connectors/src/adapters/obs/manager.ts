@@ -1,4 +1,5 @@
 import OBSWebSocket, { type OBSRequestTypes, type OBSResponseTypes } from "obs-websocket-js";
+import type { TimerHandle, Timers } from "../../host/deps";
 import type { ObsSession } from "./connection";
 
 /** One OBS WebSocket session: what the engine's OBS control and listings ask OBS through. */
@@ -10,11 +11,18 @@ export default class Manager {
   }
 }
 
-export interface ObsSessionTarget {
-  url: string;
-  token?: string;
+/** What bounds one connect: a deadline, and the connection's end of life. */
+export interface ObsConnectLimits {
   /** How long the WebSocket connect and sign-in may take (OBS_DEFAULTS.connectTimeoutMs). */
   connectTimeoutMs: number;
+  timers: Timers;
+  /** Aborted when the connection stops: the attempt ends and its timer is cleared at once. */
+  signal: AbortSignal;
+}
+
+export interface ObsSessionTarget extends ObsConnectLimits {
+  url: string;
+  token?: string;
 }
 
 /**
@@ -35,15 +43,22 @@ export async function openObsSession(config: ObsSessionTarget): Promise<ObsSessi
     closed = true;
     closeListener?.();
   });
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timer: TimerHandle | undefined;
+  let onAbort: (() => void) | undefined;
   try {
     await Promise.race([
       ws.connect(config.url, config.token),
       new Promise((_, reject) => {
-        timer = setTimeout(
+        timer = config.timers.setTimeout(
           () => reject(new Error(`timeout after ${config.connectTimeoutMs}ms`)),
           config.connectTimeoutMs
         );
+        onAbort = () => reject(new Error("OBS connection stopped while opening"));
+        if (config.signal.aborted) {
+          onAbort();
+        } else {
+          config.signal.addEventListener("abort", onAbort, { once: true });
+        }
       }),
     ]);
     return {
@@ -63,6 +78,9 @@ export async function openObsSession(config: ObsSessionTarget): Promise<ObsSessi
     void ws.disconnect().catch(() => undefined);
     throw err;
   } finally {
-    clearTimeout(timer);
+    config.timers.clearTimeout(timer);
+    if (onAbort) {
+      config.signal.removeEventListener("abort", onAbort);
+    }
   }
 }

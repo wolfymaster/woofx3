@@ -5,6 +5,7 @@ import { obsFailureKind } from "../adapters/obs/connection";
 import { type FakeObsServer, startFakeObs } from "../adapters/obs/fake-obs-server";
 import { obsDialTarget, openObsOverRoute } from "../adapters/obs/settings";
 import { OBS_DEFAULTS } from "../config/obs";
+import { systemTimers, type Timers } from "../host/deps";
 import {
   type DialerDeps,
   dialWebSocketEndpoint,
@@ -239,6 +240,12 @@ describe("relayChangeMovesEndpoint", () => {
   });
 });
 
+const CONNECT_LIMITS = {
+  connectTimeoutMs: OBS_DEFAULTS.connectTimeoutMs,
+  timers: systemTimers,
+  signal: new AbortController().signal,
+};
+
 describe("opening OBS on a route", () => {
   let fake: FakeObsServer | null = null;
   afterEach(() => {
@@ -255,7 +262,7 @@ describe("opening OBS on a route", () => {
         password: "hunter2",
         address: "127.0.0.1",
       },
-      OBS_DEFAULTS.connectTimeoutMs
+      CONNECT_LIMITS
     );
     expect(fake.protocols).toEqual(["obswebsocket.msgpack"]);
     expect(fake.requests).toEqual([]);
@@ -271,7 +278,7 @@ describe("opening OBS on a route", () => {
       url: `${fake.url}/bridge/woofx3_obs/obs?ticket=${TICKET}`,
       address: "127.0.0.1",
     };
-    const session = await openObsOverRoute(route, OBS_DEFAULTS.connectTimeoutMs);
+    const session = await openObsOverRoute(route, CONNECT_LIMITS);
     expect(fake.upgrades.map((u) => u.pathname)).toEqual(["/bridge/woofx3_obs/obs"]);
     await session.close();
   });
@@ -284,16 +291,48 @@ describe("opening OBS on a route", () => {
         url: `${fake.url}/bridge/woofx3_obs/obs?ticket=spent`,
         address: "c-x.woofx3.tv",
       },
-      OBS_DEFAULTS.connectTimeoutMs
+      CONNECT_LIMITS
     ).catch((e) => e);
     expect(bridged).toBeInstanceOf(EndpointRelayError);
     expect(bridged.address).toBe("c-x.woofx3.tv");
     expect(obsFailureKind(bridged)).toBe("relay");
     const direct = await openObsOverRoute(
       { route: "direct", url: fake.url, address: "127.0.0.1" },
-      OBS_DEFAULTS.connectTimeoutMs
+      CONNECT_LIMITS
     ).catch((e) => e);
     expect(obsFailureKind(direct)).toBe("unreachable");
+  });
+
+  it("ends a connect that never answers as soon as its signal aborts, leaving no timer behind", async () => {
+    const silent = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {}, open() {} } });
+    const pending = new Set<unknown>();
+    const timers: Timers = {
+      ...systemTimers,
+      setTimeout: (fn, ms) => {
+        const handle = systemTimers.setTimeout(fn, ms);
+        pending.add(handle);
+        return handle;
+      },
+      clearTimeout: (handle) => {
+        pending.delete(handle);
+        systemTimers.clearTimeout(handle);
+      },
+    };
+    const run = new AbortController();
+    try {
+      const opening = openObsOverRoute(
+        { route: "direct", url: `ws://127.0.0.1:${silent.port}`, address: "127.0.0.1" },
+        { ...CONNECT_LIMITS, timers, signal: run.signal }
+      ).catch((e) => e);
+      await Bun.sleep(20);
+      expect(pending.size).toBe(1);
+      run.abort();
+      const err = await opening;
+      expect(err).toBeInstanceOf(Error);
+      expect(pending.size).toBe(0);
+    } finally {
+      silent.stop(true);
+    }
   });
 
   it("reads a wrong password as an authentication failure on either route", async () => {
@@ -301,7 +340,7 @@ describe("opening OBS on a route", () => {
     for (const route of ["direct", "companion"] as const) {
       const err = await openObsOverRoute(
         { route, url: fake.url, password: "wrong", address: "127.0.0.1" },
-        OBS_DEFAULTS.connectTimeoutMs
+        CONNECT_LIMITS
       ).catch((e) => e);
       expect(err.code).toBe(4009);
       expect(obsFailureKind(err)).toBe("authentication");
