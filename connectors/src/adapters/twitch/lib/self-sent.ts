@@ -1,3 +1,4 @@
+import { COMMAND_PREFIX } from "../../../chat/command-prefix";
 import type { Clock } from "../../../host/deps";
 
 /** U+200B ZERO WIDTH SPACE, which guardChatLine in ./helix.ts may put in front of a line. */
@@ -37,6 +38,8 @@ export type SelfSentRecorder = Pick<SelfSentRegistry, "begin">;
 
 interface SelfSentRecord {
   line: string;
+  /** Said behind the guard, so it is a command the engine only quotes and the streamer's own typing of it is a different line. */
+  guarded: boolean;
   workflowChain: string | undefined;
   /** Null until Twitch answers the send with the posted line's id. */
   messageId: string | null;
@@ -97,6 +100,7 @@ export class SelfSentRegistry {
     this.prune();
     const record: SelfSentRecord = {
       line,
+      guarded: text.startsWith(ZERO_WIDTH_SPACE),
       workflowChain,
       messageId: null,
       expiresAt: this.clock.now() + this.config.ttlMs,
@@ -123,7 +127,12 @@ export class SelfSentRegistry {
     let index = this.records.findIndex((record) => record.messageId === echo.messageId);
     if (index === -1 && echo.fromBroadcaster) {
       const line = normalizeChatLine(echo.text);
-      index = this.records.findIndex((record) => record.messageId === null && record.line === line);
+      // A guarded line may come back with or without its guard, but the same
+      // words typed as a bare command are the streamer running it.
+      const bareCommand = echo.text.trimStart().startsWith(COMMAND_PREFIX);
+      index = this.records.findIndex(
+        (record) => record.messageId === null && record.line === line && !(record.guarded && bareCommand)
+      );
     }
     if (index === -1) {
       return null;
@@ -134,8 +143,8 @@ export class SelfSentRegistry {
 
   /** How many lines are waiting for their echo. */
   get size(): number {
-    this.prune();
-    return this.records.length;
+    const now = this.clock.now();
+    return this.records.filter((record) => record.expiresAt > now).length;
   }
 
   private forget(record: SelfSentRecord): void {

@@ -36,6 +36,31 @@ describe("SelfSentRegistry", () => {
     expect(lines.claimEcho(echo("hi chat", "msg-1"))).toEqual({ workflowChain: "wf-a,wf-b" });
   });
 
+  // The engine says "!hi" behind the guard; the streamer typing "!hi" while that is in flight is a different line.
+  test("does not claim a bare command by text when the sent line was guarded", () => {
+    const { lines } = registry();
+    lines.begin("\u200b!hi");
+
+    expect(lines.claimEcho(echo("!hi"))).toBeNull();
+    expect(lines.claimEcho(echo("\u200b!hi"))).not.toBeNull();
+  });
+
+  test("claims a bare command by text when the sent line was not guarded", () => {
+    const { lines } = registry();
+    lines.begin("!hi");
+
+    expect(lines.claimEcho(echo("!hi"))).not.toBeNull();
+  });
+
+  test("counting waiting lines does not forget the expired ones", async () => {
+    const { lines, time } = registry();
+    lines.begin("hi");
+    await time.advance(CONFIG.ttlMs);
+
+    expect(lines.size).toBe(0);
+    expect(lines.claimEcho(echo("hi"))).toBeNull();
+  });
+
   test("claims by id whoever the chatter appears to be", () => {
     const { lines } = registry();
     lines.begin("hi chat").sent("msg-1");
@@ -50,7 +75,7 @@ describe("SelfSentRegistry", () => {
     const { lines } = registry();
     const line = lines.begin("​!title is shown", "wf-a");
 
-    expect(lines.claimEcho(echo("!title  is shown"))).toEqual({ workflowChain: "wf-a" });
+    expect(lines.claimEcho(echo("\u200b!title  is shown"))).toEqual({ workflowChain: "wf-a" });
     line.sent("echo-1");
     expect(lines.size).toBe(0);
   });

@@ -311,12 +311,15 @@ event (`lib/self-sent.ts`):
 - A chat message is the engine's when its id matches a recorded line. An echo
   that arrives before Twitch has answered the send matches by its text
   instead, ignoring whitespace and the guard's zero-width space, and only
-  when the broadcaster sent it. Each record answers for one echo only, so the
+  when the broadcaster sent it. A command the engine said behind the guard is
+  not matched by an echo that starts with a bare `!`, since that is the
+  streamer running the command. Each record answers for one echo only, so the
   streamer typing the same words afterwards is still the streamer.
 - A matched message is published with `fromEngine: true`, and its CloudEvent
   carries the sending run's `workflowChain`, which is how the workflow loop
   guard sees a workflow answering its own line. Every other message has
-  `fromEngine: false` and no chain.
+  `fromEngine: false` and no chain. Lines sent through the legacy `twitchapi`
+  command are marked `fromEngine` but never carry a chain.
 
 Records expire after `WOOFX3_TWITCH_SELF_SENT_TTL_MS`, and at most
 `WOOFX3_TWITCH_SELF_SENT_CAPACITY` are held, the oldest forgotten first. They
