@@ -35,19 +35,22 @@ const loadedConfig = loadRuntimeEnv({
   injectIntoProcess: true,
 });
 
-const bus = await MessageBus.createMessageBus({
-  name: "woofwooofwoof",
-  url: loadedConfig.getConfig("woofx3MessagebusUrl") as string,
-  jwt: loadedConfig.getConfig("woofx3MessagebusJwt") as string,
-  nkeySeed: loadedConfig.getConfig("woofx3MessagebusNKey") as string,
-  token: String(loadedConfig.getConfig("woofx3MessagebusToken") ?? ""),
-});
-const messageBusService = new MessageBusService(bus);
-
 const logger = createServiceLogger({
   serviceName: "woofwoofwoof",
   logDir: path.join((loadedConfig.getConfig("woofx3RootPath") as string | undefined) ?? process.cwd(), "logs"),
 });
+
+const bus = await MessageBus.createMessageBus(
+  {
+    name: "woofwooofwoof",
+    url: loadedConfig.getConfig("woofx3MessagebusUrl") as string,
+    jwt: loadedConfig.getConfig("woofx3MessagebusJwt") as string,
+    nkeySeed: loadedConfig.getConfig("woofx3MessagebusNKey") as string,
+    token: String(loadedConfig.getConfig("woofx3MessagebusToken") ?? ""),
+  },
+  logger
+);
+const messageBusService = new MessageBusService(bus);
 
 const runtime = createRuntime({
   application: createApplication(new WoofWoofWoof()),
