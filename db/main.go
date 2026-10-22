@@ -16,6 +16,7 @@ import (
 	"github.com/wolfymaster/woofx3/db/app/routes"
 	"github.com/wolfymaster/woofx3/db/app/services"
 	"github.com/wolfymaster/woofx3/db/config"
+	"github.com/wolfymaster/woofx3/db/database"
 )
 
 func main() {
@@ -35,7 +36,9 @@ func main() {
 	defer sharedLogger.Close()
 	logger := sharedLogger.Slog()
 
-	app := NewDatabaseApp(&DatabaseAppConfig{Logger: logger})
+	ids := database.RandomIDs{}
+	now := func() time.Time { return time.Now().UTC() }
+	app := NewDatabaseApp(&DatabaseAppConfig{Logger: logger, IDs: ids, Now: now})
 	natsSvc := service.NewNATS(logger, "nats", "messagebus")
 	natsMonitor := monitor.NewNATS("nats", natsSvc, "db", "HEARTBEAT", 15*time.Second, logger)
 	dbEnvConfig := &config.DatabaseEnvConfig{}
@@ -63,7 +66,7 @@ func main() {
 				}
 			}
 
-			databaseSvc := services.NewDatabaseService(databaseURL, logger)
+			databaseSvc := services.NewDatabaseService(databaseURL, logger, ids)
 			if err := application.Register("database", databaseSvc); err != nil {
 				return err
 			}
@@ -82,7 +85,7 @@ func main() {
 				return err
 			}
 
-			workerSvc := services.NewWorkerService(logger, databaseSvc, natsSvc)
+			workerSvc := services.NewWorkerService(logger, databaseSvc, natsSvc, ids)
 			if err := application.Register("workers", workerSvc); err != nil {
 				return err
 			}

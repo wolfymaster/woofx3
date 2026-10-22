@@ -209,7 +209,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `name` | string | yes | Display name. Used only for presentation; never used as an identifier. |
 | `description` | string | no | Human-readable summary. |
 | `type` | string | yes | Trigger transport: `eventbus`, `webhook`, `command`, `schedule`. Determines how install wires the trigger up. See [Webhook triggers](#webhook-triggers) for `webhook`. |
-| `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. Must not start with `webhook.`, which is reserved. An uploaded module also may not use a subject the engine treats as a command, because a webhook handler can publish its module's eventbus trigger events verbatim: `db.`, `engine.`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute` and `action.execute` (prefix match). Rejected on a `webhook` trigger. |
+| `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. Must not start with `webhook.`, which is reserved. An uploaded module also may not use a subject the engine treats as a command, because a webhook handler can publish its module's eventbus trigger events verbatim: `db.`, `engine.`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute` and `action.execute` (prefix match). Nor may it claim an event the engine asserts: `command.`, `chat.command.`, `session.`, `setting.`, `viewer.`, `workflow.`, `barkloader.`, `HEARTBEAT`, `MESSAGEBUS_INIT`, or `module.` outside `module.<its id>.`. Platform events such as `channel.*`, `user.message` and `stream.online` stay open to the platform module that brings them. The full list is `shared/common/contracts/reserved-subjects.json` (see [Engine integrity](../services/engine-integrity.md#reserved-subjects)). Rejected on a `webhook` trigger. |
 | `handler` | string | yes (for `webhook`) | Manifest-local id of the function that handles inbound HTTP requests for a `webhook` trigger. Rejected on every other type. |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification (e.g. `["platform.twitch.chat", "function.chat"]`). Sent to RegisterTrigger as `taxonomy`. See [Taxonomy](#taxonomy). **Legacy:** superseded by `category`. |
 | `category` | string | no | **Legacy.** UX / registry grouping (e.g. `platform.twitch`). Still accepted; folded into a single-element `taxonomy` at parse time when `taxonomy` is unset, otherwise falls back to `type`. New manifests should use `taxonomy` instead. |
@@ -1554,13 +1554,24 @@ Module code reaches only the destinations its module was granted
   `url` setting (`ctx.module.setSetting` refuses it), and a manifest cannot
   give one a default.
 
-Every redirect is checked like the first request, and every address a host
-name resolves to must not be loopback, private, link-local or otherwise local
-unless the engine sets `WOOFX3_MODULE_HTTP_ALLOW_PRIVATE=true` (a self-hosted
-engine whose modules talk to its own network). `WOOFX3_MODULE_HTTP` decides
-what happens to anything else: `log` (the default) logs it and sends the
-request, so modules written before host permissions can be found and updated;
-`enforce` refuses it with `permission_denied`.
+Every redirect is checked like the first request. By default a request to
+anything else throws with `code` `permission_denied` before it is sent (see
+the settings below).
+
+Two engine settings shape this, and are read once at startup; any value other
+than the ones listed stops barkloader from starting:
+
+| Setting | Values | Effect |
+|---|---|---|
+| `WOOFX3_MODULE_HTTP` | `enforce` (default), `log` | What happens to a destination the module was not granted. `log` writes a warning and sends the request anyway: a migration opt-in for finding modules written before host permissions, logged as a warning at startup |
+| `WOOFX3_MODULE_HTTP_ALLOW_PRIVATE` | `false` (default), `true` | Whether module code may reach loopback, private, link-local (cloud metadata), multicast and other non-routable addresses, as an IP literal or as any address a host name resolves to. Only for a self-hosted engine whose modules talk to its own network. When `false` these addresses are refused in both modes |
+
+Requests that carry credentials ([`ctx.oauth.request`](#oauth-integrations-oauth)
+and its token refreshes) always enforce the grant rule, even under
+`WOOFX3_MODULE_HTTP=log`, and are never followed across a redirect to another
+origin. On any other request, a redirect to another origin (scheme, host or
+port) drops the `Authorization`, `Proxy-Authorization` and `Cookie` headers
+before the next hop, as browsers do.
 An unknown id or one listed twice fails the install. At runtime barkloader
 reads the permissions from the installed manifest, and a call to a function
 whose permission the invoking module did not declare throws before anything is
@@ -1611,7 +1622,9 @@ starting with `oauth.`. Module code then calls the provider with
 `ctx.oauth.request({ integration, url, method?, headers?, query?, body? })`:
 the engine attaches the access token, refreshes it when it is about to expire
 or the provider answers 401, and sends it only to `hosts`, through the same
-checks as `ctx.http` ([Where `ctx.http` may connect](#where-ctx-http-may-connect)).
+checks as `ctx.http` ([Where `ctx.http` may connect](#where-ctx-http-may-connect)),
+which these requests always enforce whatever `WOOFX3_MODULE_HTTP` says. A
+redirect to another origin is refused rather than followed.
 It throws while the integration is not connected. A token is used only with the `tokenUrl` and `hosts` it was issued under: once an update moves the `tokenUrl` or adds a host, `ctx.oauth.request` throws without sending anything until the streamer connects again, so an update cannot redirect the refresh token or the access token. Dropping a host needs no reconnect.
 
 A workflow step or command action that names another module's action runs that

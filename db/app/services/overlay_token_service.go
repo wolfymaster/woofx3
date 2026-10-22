@@ -312,7 +312,6 @@ func (s *overlayTokenService) mintRow(r *repo.OverlayTokenRepository, sceneID uu
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to generate overlay token: %w", err))
 	}
 	token := &models.OverlayToken{
-		ID:      uuid.New(),
 		Token:   tokenValue,
 		SceneID: sceneID,
 		Label:   label,

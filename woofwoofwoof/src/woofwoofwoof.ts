@@ -5,7 +5,8 @@ import { createApplication, createNATSMonitor, createRuntime, loadRuntimeEnv } f
 import MessageBus from "@woofx3/nats";
 import { requestTokenOverNats, type TwitchAuthCredentials } from "@woofx3/twitch";
 import WoofWoofWoof, { type WoofWoofWoofApplication } from "./application";
-import { WoofEnvSchema } from "./config";
+import { sentLineConfig, WoofEnvSchema } from "./config";
+import { SentLineRegistry } from "./sentLines";
 import BarkloaderClientService from "./services/barkloader";
 import DatabaseService from "./services/database";
 import MessageBusService from "./services/messageBus";
@@ -34,19 +35,22 @@ const loadedConfig = loadRuntimeEnv({
   injectIntoProcess: true,
 });
 
-const bus = await MessageBus.createMessageBus({
-  name: "woofwooofwoof",
-  url: loadedConfig.getConfig("woofx3MessagebusUrl") as string,
-  jwt: loadedConfig.getConfig("woofx3MessagebusJwt") as string,
-  nkeySeed: loadedConfig.getConfig("woofx3MessagebusNKey") as string,
-  token: String(loadedConfig.getConfig("woofx3MessagebusToken") ?? ""),
-});
-const messageBusService = new MessageBusService(bus);
-
 const logger = createServiceLogger({
   serviceName: "woofwoofwoof",
   logDir: path.join((loadedConfig.getConfig("woofx3RootPath") as string | undefined) ?? process.cwd(), "logs"),
 });
+
+const bus = await MessageBus.createMessageBus(
+  {
+    name: "woofwooofwoof",
+    url: loadedConfig.getConfig("woofx3MessagebusUrl") as string,
+    jwt: loadedConfig.getConfig("woofx3MessagebusJwt") as string,
+    nkeySeed: loadedConfig.getConfig("woofx3MessagebusNKey") as string,
+    token: String(loadedConfig.getConfig("woofx3MessagebusToken") ?? ""),
+  },
+  logger
+);
+const messageBusService = new MessageBusService(bus);
 
 const runtime = createRuntime({
   application: createApplication(new WoofWoofWoof()),
@@ -86,6 +90,7 @@ const runtime = createRuntime({
             userId: "",
           });
         },
+        sentLines: new SentLineRegistry(sentLineConfig(config), Date.now),
       })
     );
 

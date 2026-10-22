@@ -86,6 +86,14 @@ select_for_path() {
       for module in "${GO_MODULES[@]}"; do select_target "go:$module"; done
       return
       ;;
+    # The reserved-subjects contract is read by the Go cloudevents package,
+    # the api and barkloader.
+    shared/common/contracts/*)
+      select_target "go:shared/common/golang/cloudevents"
+      select_target "ts:api"
+      select_target "rust:barkloader"
+      return
+      ;;
     shared/common/rust/logging/*) select_target "rust:shared/common/rust/logging" ;;
     shared/common/rust/runtime/*) select_target "rust:shared/common/rust/runtime" ;;
   esac

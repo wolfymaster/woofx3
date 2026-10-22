@@ -1,8 +1,8 @@
 import { RequestGuard, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { ServerWebSocket } from "bun";
-import { hasBarkloaderBearer } from "./barkloader-webhook-auth";
 import { newHttpBatchRpcResponse, newWebSocketRpcSession } from "capnweb";
+import { hasBarkloaderBearer } from "./barkloader-webhook-auth";
 import type { ApiGateway } from "./gateway";
 import type { Health } from "./health";
 import type { Readiness } from "./readiness";
@@ -37,12 +37,24 @@ const BATCH_CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
+/** The events the adapter raises, in the shapes capnweb reads off them. */
+type SocketEvents = {
+  message: { data: string | ArrayBuffer };
+  close: { code?: number; reason?: string };
+  // capnweb subscribes to "error", but Bun reports socket failures through
+  // `close` only, so the adapter never raises it.
+  error: { error: Error };
+};
+type SocketListeners = { [K in keyof SocketEvents]: Set<(event: SocketEvents[K]) => void> };
+
 /**
  * Adapter to make Bun's ServerWebSocket compatible with the standard WebSocket interface
  * that capnweb expects (with addEventListener, etc.)
+ *
+ * Frames are never logged: they carry RPC arguments, credentials included.
  */
 class BunWebSocketAdapter {
-  private listeners: Map<string, Set<(event: any) => void>> = new Map();
+  private listeners: SocketListeners = { message: new Set(), close: new Set(), error: new Set() };
   private bunWs: ServerWebSocket<unknown>;
   private logger: SharedLogger;
 
@@ -62,24 +74,17 @@ class BunWebSocketAdapter {
     return BunWebSocketAdapter.OPEN;
   }
 
-  addEventListener(type: string, listener: (event: any) => void): void {
-    if (!this.listeners.has(type)) {
-      this.listeners.set(type, new Set());
-    }
-    this.listeners.get(type)!.add(listener);
+  addEventListener<K extends keyof SocketEvents>(type: K, listener: (event: SocketEvents[K]) => void): void {
+    this.listeners[type].add(listener);
   }
 
-  removeEventListener(type: string, listener: (event: any) => void): void {
-    this.listeners.get(type)?.delete(listener);
+  removeEventListener<K extends keyof SocketEvents>(type: K, listener: (event: SocketEvents[K]) => void): void {
+    this.listeners[type].delete(listener);
   }
 
   send(data: string | ArrayBuffer): void {
     try {
-      const dataStr = typeof data === "string" ? data : new TextDecoder().decode(data);
-      this.logger.debug("Sending WebSocket message", {
-        size: typeof data === "string" ? data.length : data.byteLength,
-        preview: dataStr.substring(0, 200), // First 200 chars for preview
-      });
+      this.logger.debug("Sending WebSocket message", { bytes: frameBytes(data) });
       this.bunWs.send(data);
     } catch (error) {
       this.logger.error("Failed to send WebSocket message", {
@@ -97,14 +102,10 @@ class BunWebSocketAdapter {
   // Called by Bun's websocket.message handler
   dispatchMessage(data: string | ArrayBuffer): void {
     try {
-      const dataStr = typeof data === "string" ? data : new TextDecoder().decode(data);
-      this.logger.debug("Received WebSocket message", {
-        size: typeof data === "string" ? data.length : data.byteLength,
-        preview: dataStr.substring(0, 200), // First 200 chars for preview
-      });
+      this.logger.debug("Received WebSocket message", { bytes: frameBytes(data) });
 
-      const listeners = this.listeners.get("message");
-      if (listeners) {
+      const listeners = this.listeners.message;
+      if (listeners.size > 0) {
         const event = { data };
         for (const listener of listeners) {
           try {
@@ -129,25 +130,24 @@ class BunWebSocketAdapter {
 
   // Called by Bun's websocket.close handler
   dispatchClose(code?: number, reason?: string): void {
-    const listeners = this.listeners.get("close");
-    if (listeners) {
-      const event = { code, reason };
-      for (const listener of listeners) {
-        listener(event);
-      }
+    const event = { code, reason };
+    for (const listener of this.listeners.close) {
+      listener(event);
     }
   }
+}
 
-  // Called by Bun's websocket.error handler
-  dispatchError(error: Error): void {
-    const listeners = this.listeners.get("error");
-    if (listeners) {
-      const event = { error };
-      for (const listener of listeners) {
-        listener(event);
-      }
-    }
-  }
+function frameBytes(data: string | ArrayBuffer): number {
+  return typeof data === "string" ? Buffer.byteLength(data) : data.byteLength;
+}
+
+/**
+ * capnweb types its session transport as the DOM `WebSocket`, which the adapter
+ * only mimics (addEventListener, send, close, readyState). This is the one place
+ * the structural gap is papered over.
+ */
+function asCapnwebSocket(adapter: BunWebSocketAdapter): WebSocket {
+  return adapter as unknown as WebSocket;
 }
 
 /**
@@ -211,14 +211,11 @@ export function createHttpServer(deps: HttpDeps) {
 
         const startTime = Date.now();
         try {
-          const reqBody = await req.clone().text();
-          logger.info("HTTP batch RPC request", {
-            method: req.method,
-            path: url.pathname,
-            bodyLength: reqBody.length,
-            bodyPreview: reqBody.substring(0, 500),
-          });
-          const response = await newHttpBatchRpcResponse(req, gateway, {
+          // Measured, not the client-declared Content-Length (absent when chunked,
+          // arbitrary when lying). capnweb reads the whole body as text anyway.
+          const requestBody = await req.text();
+          const batchRequest = new Request(req.url, { method: req.method, headers: req.headers, body: requestBody });
+          const rpcResponse = await newHttpBatchRpcResponse(batchRequest, gateway, {
             onSendError(error: Error) {
               logger.error("RPC method error", {
                 error: error.message,
@@ -226,27 +223,35 @@ export function createHttpServer(deps: HttpDeps) {
               });
               return error;
             },
-            headers: { ...requestGuard.corsOriginHeaders(req), ...BATCH_CORS_HEADERS },
-          } as any);
-          const duration = Date.now() - startTime;
-          const responseBody = await response.clone().text();
+          });
+          // capnweb's batch responder takes no headers, so the CORS headers are
+          // set on the response it returns. The body is buffered by capnweb
+          // already, so reading it here to size it costs nothing extra.
+          const responseBody = await rpcResponse.arrayBuffer();
+          const headers = new Headers(rpcResponse.headers);
+          for (const [name, value] of Object.entries({
+            ...requestGuard.corsOriginHeaders(req),
+            ...BATCH_CORS_HEADERS,
+          })) {
+            headers.set(name, value);
+          }
+          const response = new Response(responseBody, { status: rpcResponse.status, headers });
           logger.info("HTTP batch RPC request completed", {
             method: req.method,
             path: url.pathname,
             status: response.status,
-            duration: `${duration}ms`,
-            bodyLength: responseBody.length,
-            bodyPreview: responseBody.substring(0, 500),
+            durationMs: Date.now() - startTime,
+            requestBytes: Buffer.byteLength(requestBody),
+            responseBytes: responseBody.byteLength,
           });
           return response;
         } catch (err) {
-          const duration = Date.now() - startTime;
           logger.error("RPC error", {
             error: err instanceof Error ? err.message : String(err),
             stack: err instanceof Error ? err.stack : undefined,
             method: req.method,
             path: url.pathname,
-            duration: `${duration}ms`,
+            durationMs: Date.now() - startTime,
           });
           return new Response(
             JSON.stringify({
@@ -323,7 +328,7 @@ export function createHttpServer(deps: HttpDeps) {
         try {
           const adapter = new BunWebSocketAdapter(ws, logger);
           wsAdapters.set(ws, adapter);
-          newWebSocketRpcSession(adapter as any, gateway, {
+          newWebSocketRpcSession(asCapnwebSocket(adapter), gateway, {
             onSendError(error: Error) {
               logger.error("WebSocket RPC method error", {
                 error: error.message,
@@ -348,10 +353,9 @@ export function createHttpServer(deps: HttpDeps) {
           wsAdapters.delete(ws);
         }
       },
-      // Bun's WebSocketHandler has no `error` hook -- only open, message,
-      // close, drain, ping and pong. An `error` handler lived here and was
-      // never called, so socket failures reach the adapter through `close`
-      // alone. Removed rather than left as reassuring dead code.
+      // Invariant: Bun's WebSocketHandler has no `error` hook (only open,
+      // message, close, drain, ping, pong), so socket failures reach the
+      // adapter through `close` alone.
     },
   });
 }

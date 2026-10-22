@@ -1720,7 +1720,11 @@ export interface Woofx3EngineApi {
   /**
    * Install a module by URL. The engine fetches the archive server-side from
    * `downloadUrl` (a short-lived presigned URL produced by an upstream
-   * marketplace), then hands the bytes to barkloader. Install is asynchronous;
+   * marketplace), then hands the bytes to barkloader. The URL must be on one
+   * of the engine's marketplace download hosts; it is fetched without
+   * following redirects and capped in size, and refused when it does not
+   * match `ctx.sha256` (checked when given). With the marketplace turned off
+   * the call is refused. Install is asynchronous;
    * `module.installed` or `module.install_failed` is dispatched via webhook
    * once barkloader finishes, correlated by `moduleKey`.
    *
@@ -1740,6 +1744,8 @@ export interface Woofx3EngineApi {
       version: string;
       source: "marketplace";
       marketplaceModuleId: string;
+      /** Lowercase hex SHA-256 of the archive, as the marketplace's download answer gives it. */
+      sha256?: string;
     }
   ): Promise<ModuleInstallZipResponse>;
 

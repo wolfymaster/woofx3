@@ -273,6 +273,28 @@ finish. The api then settles that run's history row as `cancelled` itself.
 `Engine.Stop` is not a cancel. Runs in flight are not recorded as cancelled
 when the engine shuts down.
 
+## Recording Runs
+
+The workflow service writes each run, its steps and its outcome to db-proxy as
+run history. Writing never holds up a run or the delivery that started it:
+
+- What to write is captured the moment the engine reports a change, then
+  queued. One background writer sends the queue to db-proxy in order, so a
+  run's row always arrives before its steps and its outcome. History therefore
+  trails the run by however long the queue takes to reach it, usually
+  milliseconds.
+- Each write gives up after 3 seconds (`DefaultRecorderCallTimeout`), and every
+  request on the db-proxy client after 5 seconds by default
+  (`WOOFX3_WORKFLOW_DB_TIMEOUT`, a duration such as `5s` or `750ms`). A failed
+  write is logged (`workflow run not recorded` and its siblings) and the run
+  carries on.
+- The queue holds 1024 writes (`DefaultRecorderQueueSize`). When db-proxy falls
+  that far behind, new writes are dropped and counted, with a
+  `workflow run history dropped` warning at most once a second.
+
+Runs fired by hand from the dashboard are not written; whoever started one is
+already watching it live.
+
 ## Stopping the Engine
 
 A run's state lives only in the workflow process, so a run that has not finished
@@ -289,6 +311,9 @@ sure no run is left without a recorded outcome:
    not undone, as for a cancelled run, and no later step starts.
 5. `Stop` waits up to 2 seconds (`DefaultStopSettleTimeout`) for the abandoned
    runs to unwind and for their outcomes to be recorded, then returns.
+6. The run recorder then gets half a second (`DefaultRecorderDrainTimeout`) to send
+   what is still queued. Writes it has not sent by then are dropped and counted
+   (`workflow run history not written before shutdown`).
 
 An abandoned run settles as `failed` with the error `engine stopped`, and the
 step it was on is recorded as `cancelled` with the same error. A parent waiting

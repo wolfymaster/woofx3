@@ -1,5 +1,5 @@
-use lib_sandbox::host::{HttpClient, HttpRequest};
-use lib_sandbox::net;
+use lib_sandbox::host::{Enforcement, HttpClient, HttpRequest};
+use lib_sandbox::net::{self, Refusal};
 use serde_json::Value;
 use std::collections::HashSet;
 use std::net::SocketAddr;
@@ -10,44 +10,89 @@ use tracing::warn;
 /// Redirects a module's request may follow, as reqwest's default allows.
 const MAX_REDIRECTS: usize = 10;
 
-/// What happens when module code reaches a destination its module was not
-/// granted (see `lib_sandbox::net`).
+/// Request headers that carry credentials, dropped before a redirect hop to
+/// another origin, as browsers and reqwest do.
+const CREDENTIAL_HEADERS: &[&str] = &["authorization", "proxy-authorization", "cookie"];
+
+/// What happens when module code reaches a destination outside its grants
+/// (see `lib_sandbox::net`). Private and local addresses are a separate rule
+/// (`HttpPolicy::allow_private`) that this mode never relaxes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HttpPolicyMode {
-    /// Log the destination and send the request anyway, so modules written
-    /// before host permissions can be found and updated before `Enforce`.
-    Log,
     /// Refuse the request with `permission_denied`.
     Enforce,
+    /// Log the destination and send the request anyway: an explicit opt-in so
+    /// an operator can find and update modules written before host
+    /// permissions.
+    Log,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PolicyError {
+    #[error("WOOFX3_MODULE_HTTP must be enforce or log, not {0:?}")]
+    Mode(String),
+    #[error("WOOFX3_MODULE_HTTP_ALLOW_PRIVATE must be true or false, not {0:?}")]
+    AllowPrivate(String),
+}
+
+/// Why the client refused to send a request. Crosses the `HttpClient`
+/// boundary as its message, which starts with the `permission_denied` code
+/// module code sees.
+#[derive(Debug, thiserror::Error)]
+enum EgressError {
+    #[error("permission_denied: ctx.http: {0}")]
+    Refused(Refusal),
+    #[error(
+        "permission_denied: ctx.http: a request carrying credentials for {from} is not followed to another origin, {to}"
+    )]
+    CrossOriginRedirect { from: String, to: String },
+}
+
+/// The two egress rules for module requests, parsed once at startup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HttpPolicy {
+    /// The grant rule: what happens to a destination the module was not
+    /// granted.
     pub mode: HttpPolicyMode,
-    /// Let module code reach loopback, private and link-local addresses: for
-    /// a self-hosted engine whose modules talk to its own network. Never set
-    /// on a managed engine, where those addresses are the engine's own
-    /// services and its host's metadata endpoint.
+    /// The private-address rule: let module code reach loopback, private and
+    /// link-local addresses, for a self-hosted engine whose modules talk to
+    /// its own network. Never set on a managed engine, where those addresses
+    /// are the engine's own services and its host's metadata endpoint. When
+    /// false these addresses are refused in every mode.
     pub allow_private: bool,
 }
 
 impl HttpPolicy {
-    /// `WOOFX3_MODULE_HTTP` (`log`, the default, or `enforce`) and
-    /// `WOOFX3_MODULE_HTTP_ALLOW_PRIVATE` (`true` to allow).
-    pub fn from_settings(mode: &str, allow_private: &str) -> Result<Self, String> {
+    /// `WOOFX3_MODULE_HTTP` (`enforce`, the default, or `log`) and
+    /// `WOOFX3_MODULE_HTTP_ALLOW_PRIVATE` (`false`, the default, or `true`).
+    /// Any other value is an error, so a typo never weakens the policy.
+    pub fn from_settings(mode: &str, allow_private: &str) -> Result<Self, PolicyError> {
         let mode = match mode.trim() {
-            "" | "log" => HttpPolicyMode::Log,
-            "enforce" => HttpPolicyMode::Enforce,
-            other => {
-                return Err(format!(
-                    "WOOFX3_MODULE_HTTP must be log or enforce, not {other:?}"
-                ));
-            }
+            "" | "enforce" => HttpPolicyMode::Enforce,
+            "log" => HttpPolicyMode::Log,
+            other => return Err(PolicyError::Mode(other.to_string())),
+        };
+        let allow_private = match allow_private.trim() {
+            "" | "false" => false,
+            "true" => true,
+            other => return Err(PolicyError::AllowPrivate(other.to_string())),
         };
         Ok(Self {
             mode,
-            allow_private: allow_private.trim() == "true",
+            allow_private,
         })
+    }
+
+    /// Whether `refusal` stops the request. Only the grant rule follows the
+    /// mode, and only for requests that defer to it; a URL that is not
+    /// http(s) or names a private address never goes.
+    fn enforces(&self, refusal: &Refusal, enforcement: Enforcement) -> bool {
+        match refusal {
+            Refusal::Unreachable(_) | Refusal::PrivateAddress(_) => true,
+            Refusal::Ungranted(_) => {
+                enforcement == Enforcement::Always || self.mode == HttpPolicyMode::Enforce
+            }
+        }
     }
 }
 
@@ -64,34 +109,41 @@ impl ReqwestHttpClient {
         let client = reqwest::Client::builder()
             // Followed here instead, so each hop is checked like the first.
             .redirect(reqwest::redirect::Policy::none())
-            .dns_resolver(Arc::new(GuardedResolver { policy }))
+            // A proxy would resolve the destination itself and skip the
+            // resolver's check of the addresses it answers with.
+            .no_proxy()
+            .dns_resolver(Arc::new(GuardedResolver {
+                allow_private: policy.allow_private,
+            }))
             .build()
             .expect("reqwest client with a custom resolver and no redirects always builds");
         Self { client, policy }
     }
 
-    /// Why this request may not go to `url`, logged; an error only when the
-    /// policy enforces.
+    /// Why this request may not go to `url`, logged; an error when the policy
+    /// enforces that refusal.
     fn check(
         &self,
         module_id: &str,
         grants: &HashSet<String>,
+        enforcement: Enforcement,
         url: &reqwest::Url,
-    ) -> Result<(), String> {
-        let Some(reason) = net::refusal(grants, url, self.policy.allow_private) else {
+    ) -> Result<(), EgressError> {
+        let Some(refusal) = net::refusal(grants, url, self.policy.allow_private) else {
             return Ok(());
         };
+        let enforced = self.policy.enforces(&refusal, enforcement);
         warn!(
-            "ctx.http to an ungranted destination module={} host={} enforced={} reason={}",
+            "ctx.http destination not allowed module={} host={} enforced={} reason={}",
             module_id,
             url.host_str().unwrap_or(""),
-            self.policy.mode == HttpPolicyMode::Enforce,
-            reason
+            enforced,
+            refusal
         );
-        match self.policy.mode {
-            HttpPolicyMode::Log => Ok(()),
-            HttpPolicyMode::Enforce => Err(format!("permission_denied: ctx.http: {reason}")),
+        if enforced {
+            return Err(EgressError::Refused(refusal));
         }
+        Ok(())
     }
 }
 
@@ -110,11 +162,13 @@ impl HttpClient for ReqwestHttpClient {
         let mut method = reqwest::Method::from_bytes(request.method.as_bytes())
             .map_err(|e| format!("invalid HTTP method: {}", e))?;
         let mut body = request.opts.get("body").cloned().unwrap_or(Value::Null);
-        let headers = request.opts.get("headers").cloned().unwrap_or(Value::Null);
+        let mut headers = request.opts.get("headers").cloned().unwrap_or(Value::Null);
+        let first_origin = url.origin();
 
         Handle::current().block_on(async {
             for _ in 0..=MAX_REDIRECTS {
-                self.check(request.module_id, request.grants, &url)?;
+                self.check(request.module_id, request.grants, request.enforcement, &url)
+                    .map_err(|e| e.to_string())?;
                 let response = send(&self.client, &url, &method, &headers, &body).await?;
                 let status = response.status();
                 let location = status
@@ -129,6 +183,16 @@ impl HttpClient for ReqwestHttpClient {
                 url = url
                     .join(&location)
                     .map_err(|e| format!("redirect to an invalid location {location:?}: {e}"))?;
+                if url.origin() != first_origin {
+                    if request.enforcement == Enforcement::Always {
+                        return Err(EgressError::CrossOriginRedirect {
+                            from: first_origin.ascii_serialization(),
+                            to: url.origin().ascii_serialization(),
+                        }
+                        .to_string());
+                    }
+                    drop_credential_headers(&mut headers);
+                }
                 // As browsers and reqwest do: a 303, or a 301/302 after a
                 // POST, is followed with a GET and no body.
                 if status == reqwest::StatusCode::SEE_OTHER
@@ -144,6 +208,18 @@ impl HttpClient for ReqwestHttpClient {
             }
             Err(format!("more than {MAX_REDIRECTS} redirects"))
         })
+    }
+}
+
+/// Remove `CREDENTIAL_HEADERS` from a module's header map, whatever their
+/// case. Once removed they stay removed for the rest of the redirect chain.
+fn drop_credential_headers(headers: &mut Value) {
+    if let Some(headers) = headers.as_object_mut() {
+        headers.retain(|name, _| {
+            !CREDENTIAL_HEADERS
+                .iter()
+                .any(|credential| name.eq_ignore_ascii_case(credential))
+        });
     }
 }
 
@@ -213,32 +289,31 @@ async fn into_value(response: reqwest::Response) -> Result<Value, String> {
 /// granted host could still resolve to the engine's own network, by mistake
 /// or because its owner pointed it there. Checking here, rather than before
 /// sending, means the address checked is the address connected to.
+/// Private addresses are refused whatever the grant mode, unless the engine
+/// allows them.
 struct GuardedResolver {
-    policy: HttpPolicy,
+    allow_private: bool,
 }
 
 impl reqwest::dns::Resolve for GuardedResolver {
     fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
-        let policy = self.policy;
+        let allow_private = self.allow_private;
         Box::pin(async move {
             let host = name.as_str().to_string();
             let addrs: Vec<SocketAddr> =
                 tokio::net::lookup_host((host.as_str(), 0)).await?.collect();
-            if !policy.allow_private
+            if !allow_private
                 && let Some(addr) = addrs.iter().find(|addr| net::is_restricted_ip(addr.ip()))
             {
                 warn!(
-                    "ctx.http host resolves to a private or local address host={} address={} enforced={}",
+                    "ctx.http host resolves to a private or local address host={} address={}",
                     host,
-                    addr.ip(),
-                    policy.mode == HttpPolicyMode::Enforce
+                    addr.ip()
                 );
-                if policy.mode == HttpPolicyMode::Enforce {
-                    return Err(format!(
-                        "permission_denied: ctx.http: {host} resolves to a private or local address"
-                    )
-                    .into());
-                }
+                return Err(format!(
+                    "permission_denied: ctx.http: {host} resolves to a private or local address"
+                )
+                .into());
             }
             let addrs: reqwest::dns::Addrs = Box::new(addrs.into_iter());
             Ok(addrs)
@@ -251,14 +326,52 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_policy_logs_by_default_and_enforces_when_asked() {
-        let default = HttpPolicy::from_settings("", "").unwrap();
-        assert_eq!(default.mode, HttpPolicyMode::Log);
-        assert!(!default.allow_private);
-        let strict = HttpPolicy::from_settings("enforce", "true").unwrap();
-        assert_eq!(strict.mode, HttpPolicyMode::Enforce);
-        assert!(strict.allow_private);
-        assert!(HttpPolicy::from_settings("strict", "").is_err());
+    fn the_policy_enforces_by_default_and_rejects_unknown_values() {
+        let policy = |mode, allow_private| HttpPolicy {
+            mode,
+            allow_private,
+        };
+        let cases: &[(&str, &str, Result<HttpPolicy, PolicyError>)] = &[
+            ("", "", Ok(policy(HttpPolicyMode::Enforce, false))),
+            (
+                "enforce",
+                "false",
+                Ok(policy(HttpPolicyMode::Enforce, false)),
+            ),
+            (
+                " enforce ",
+                " true ",
+                Ok(policy(HttpPolicyMode::Enforce, true)),
+            ),
+            ("log", "", Ok(policy(HttpPolicyMode::Log, false))),
+            ("log", "true", Ok(policy(HttpPolicyMode::Log, true))),
+            ("strict", "", Err(PolicyError::Mode("strict".to_string()))),
+            (
+                "enforced",
+                "",
+                Err(PolicyError::Mode("enforced".to_string())),
+            ),
+            ("Log", "", Err(PolicyError::Mode("Log".to_string()))),
+            ("", "yes", Err(PolicyError::AllowPrivate("yes".to_string()))),
+            ("", "1", Err(PolicyError::AllowPrivate("1".to_string()))),
+            (
+                "",
+                "True",
+                Err(PolicyError::AllowPrivate("True".to_string())),
+            ),
+            (
+                "",
+                "flase",
+                Err(PolicyError::AllowPrivate("flase".to_string())),
+            ),
+        ];
+        for (mode, allow_private, expected) in cases {
+            assert_eq!(
+                &HttpPolicy::from_settings(mode, allow_private),
+                expected,
+                "mode={mode:?} allow_private={allow_private:?}"
+            );
+        }
     }
 
     fn grants(entries: &[&str]) -> HashSet<String> {
@@ -279,6 +392,7 @@ mod tests {
                 url: "https://evil.example.com/steal",
                 method: "GET",
                 opts: Value::Null,
+                enforcement: Enforcement::Policy,
             })
         });
         let error = result.unwrap_err();
@@ -300,8 +414,194 @@ mod tests {
                 url: "http://127.0.0.1:9/",
                 method: "GET",
                 opts: Value::Null,
+                enforcement: Enforcement::Policy,
             })
         });
         assert!(result.unwrap_err().contains("private or local"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn logging_still_refuses_a_private_address_literal() {
+        let client = ReqwestHttpClient::new(HttpPolicy {
+            mode: HttpPolicyMode::Log,
+            allow_private: false,
+        });
+        let grants = grants(&[]);
+        for url in [
+            "http://127.0.0.1:5555/",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://[::ffff:127.0.0.1]:9/",
+        ] {
+            let result = tokio::task::block_in_place(|| {
+                client.request(HttpRequest {
+                    module_id: "mymod",
+                    grants: &grants,
+                    url,
+                    method: "GET",
+                    opts: Value::Null,
+                    enforcement: Enforcement::Policy,
+                })
+            });
+            let error = result.unwrap_err();
+            assert!(error.starts_with("permission_denied:"), "{url}: {error}");
+            assert!(error.contains("private or local"), "{url}: {error}");
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_resolver_refuses_private_answers_whatever_the_mode() {
+        use reqwest::dns::Resolve;
+        use std::str::FromStr;
+
+        let resolver = GuardedResolver {
+            allow_private: false,
+        };
+        let name = reqwest::dns::Name::from_str("localhost").unwrap();
+        let error = match resolver.resolve(name).await {
+            Ok(_) => panic!("localhost resolved for a module"),
+            Err(error) => error.to_string(),
+        };
+        assert!(error.contains("private or local"), "{error}");
+
+        let permissive = GuardedResolver {
+            allow_private: true,
+        };
+        let name = reqwest::dns::Name::from_str("localhost").unwrap();
+        assert!(permissive.resolve(name).await.is_ok());
+    }
+
+    /// Request heads a test server received, lowercased.
+    type Heads = Arc<std::sync::Mutex<Vec<String>>>;
+
+    /// A loopback HTTP server answering every request with `response`. Returns
+    /// its origin and the request heads it receives.
+    async fn serve(response: String) -> (String, Heads) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let heads = Heads::default();
+        let received = heads.clone();
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let mut head = Vec::new();
+                let mut buf = [0u8; 1024];
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buf).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => head.extend_from_slice(&buf[..n]),
+                    }
+                }
+                received
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(&head).to_ascii_lowercase());
+                // A client that hung up early fails its own assertions.
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.shutdown().await;
+            }
+        });
+        (origin, heads)
+    }
+
+    /// A server that answers 200, and one on another port that redirects to
+    /// it, with grants for both.
+    struct CrossOriginRedirect {
+        start: String,
+        start_heads: Heads,
+        target_heads: Heads,
+        grants: HashSet<String>,
+    }
+
+    async fn cross_origin_redirect() -> CrossOriginRedirect {
+        let (target, target_heads) = serve(
+            "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".to_string(),
+        )
+        .await;
+        let (start, start_heads) = serve(format!(
+            "HTTP/1.1 302 Found\r\nLocation: {target}/landing\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        ))
+        .await;
+        let grants = grants(&[&format!("origin:{start}"), &format!("origin:{target}")]);
+        CrossOriginRedirect {
+            start,
+            start_heads,
+            target_heads,
+            grants,
+        }
+    }
+
+    fn loopback_client() -> ReqwestHttpClient {
+        ReqwestHttpClient::new(HttpPolicy {
+            mode: HttpPolicyMode::Enforce,
+            allow_private: true,
+        })
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_cross_origin_redirect_drops_credential_headers() {
+        let CrossOriginRedirect {
+            start,
+            start_heads,
+            target_heads,
+            grants,
+        } = cross_origin_redirect().await;
+        let client = loopback_client();
+        let url = format!("{start}/start");
+        let response = tokio::task::block_in_place(|| {
+            client.request(HttpRequest {
+                module_id: "mymod",
+                grants: &grants,
+                url: &url,
+                method: "GET",
+                opts: serde_json::json!({ "headers": {
+                    "Authorization": "Bearer secret",
+                    "proxy-authorization": "Basic c2VjcmV0",
+                    "Cookie": "session=secret",
+                    "X-Trace": "kept",
+                } }),
+                enforcement: Enforcement::Policy,
+            })
+        })
+        .unwrap();
+        assert_eq!(response["status"], 200);
+        let start_head = start_heads.lock().unwrap()[0].clone();
+        assert!(
+            start_head.contains("authorization: bearer secret"),
+            "{start_head}"
+        );
+        let target_head = target_heads.lock().unwrap()[0].clone();
+        assert!(target_head.starts_with("get /landing"), "{target_head}");
+        assert!(!target_head.contains("secret"), "{target_head}");
+        assert!(!target_head.contains("authorization"), "{target_head}");
+        assert!(!target_head.contains("cookie"), "{target_head}");
+        assert!(target_head.contains("x-trace: kept"), "{target_head}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_credential_request_refuses_a_cross_origin_redirect() {
+        let CrossOriginRedirect {
+            start,
+            start_heads,
+            target_heads,
+            grants,
+        } = cross_origin_redirect().await;
+        let client = loopback_client();
+        let url = format!("{start}/start");
+        let error = tokio::task::block_in_place(|| {
+            client.request(HttpRequest {
+                module_id: "mymod",
+                grants: &grants,
+                url: &url,
+                method: "GET",
+                opts: serde_json::json!({ "headers": { "Authorization": "Bearer secret" } }),
+                enforcement: Enforcement::Always,
+            })
+        })
+        .unwrap_err();
+        assert!(error.starts_with("permission_denied:"), "{error}");
+        assert!(error.contains("another origin"), "{error}");
+        assert_eq!(start_heads.lock().unwrap().len(), 1);
+        assert!(target_heads.lock().unwrap().is_empty());
     }
 }

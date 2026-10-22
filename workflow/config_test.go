@@ -50,3 +50,46 @@ func TestOrderedTurnTimeoutFromEnv(t *testing.T) {
 		})
 	}
 }
+
+func TestDbRequestTimeoutFromEnv(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "unset uses the default", value: "", want: DefaultDbRequestTimeout},
+		{name: "a duration is taken as is", value: "750ms", want: 750 * time.Millisecond},
+		{name: "a bare number is refused", value: "5", wantErr: true},
+		{name: "zero is refused", value: "0s", wantErr: true},
+		{name: "negative is refused", value: "-1s", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &WorkflowEnvConfig{}
+			env := map[string]string{
+				"WOOFX3_BARKLOADER_WS_URL":   "ws://barkloader",
+				"WOOFX3_DATABASE_PROXY_URL":  "http://db",
+				"WOOFX3_SCENE_MANAGER_URL":   "http://scenes",
+				"WOOFX3_MESSAGEBUS_URL":      "nats://bus",
+				"WOOFX3_WORKFLOW_DB_TIMEOUT": tc.value,
+			}
+			if err := runtime.FillEnvConfig(env, cfg); err != nil {
+				t.Fatalf("FillEnvConfig: %v", err)
+			}
+			got, err := cfg.dbRequestTimeout()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("got %s, want an error", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("dbRequestTimeout: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %s, want %s", got, tc.want)
+			}
+		})
+	}
+}

@@ -2,11 +2,44 @@ import type { Logger } from "@woofx3/common/runtime";
 import { type BarkloaderRelay, relayToBarkloader } from "./barkloader-relay";
 import { jsonError } from "./http-kit";
 
+/**
+ * `/assets/modules/{module}/{version}/widgets/...` and `.../themes/...` are
+ * the files a widget frame executes or renders: its scripts, stylesheets,
+ * fonts and media are subresources of a frame that is itself sandboxed (see
+ * the frame CSP in @woofx3/widget-host/frame), and barkloader's frame
+ * endpoint hands the entry document over inline. They are the module's own
+ * code, installed by an operator, so they are served as they are. The match
+ * is on the raw path and refuses percent-encoding in the module and version
+ * segments, because
+ * barkloader decodes the path before deciding whether a key is a bundle file
+ * and an encoded separator could otherwise slip a non-bundle key through.
+ * Mirrors `is_widget_bundle_key` in barkloader/app/src/routes/assets.rs.
+ */
+const FRAME_BUNDLE_PATH = /^\/assets\/modules\/[^/%]+\/[^/%]+\/(?:widgets|themes)\//;
+
+/**
+ * Everything else under /assets/ -- user uploads and the rest of a module's
+ * files -- is stored content that keeps barkloader's inert document headers.
+ */
+export function isInertAssetPath(pathname: string): boolean {
+  return !FRAME_BUNDLE_PATH.test(pathname);
+}
+
 const STORAGE_ASSET_RELAY: BarkloaderRelay = {
   forwardedRequestHeaders: [],
-  relayedResponseHeaders: ["Location", "Content-Type", "Cache-Control"],
+  relayedResponseHeaders: [
+    "Location",
+    "Content-Type",
+    "Cache-Control",
+    "X-Content-Type-Options",
+    "Content-Security-Policy",
+    "Content-Disposition",
+  ],
   failure: "barkloader asset request failed",
   loggedPath: (url) => url.pathname,
+  // Barkloader decides the document headers; a frame's own bundle files are
+  // the one place its sandbox CSP must not reach, since the frame loads them.
+  omittedResponseHeaders: (url) => (isInertAssetPath(url.pathname) ? [] : ["Content-Security-Policy"]),
 };
 
 /**

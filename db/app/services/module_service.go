@@ -140,7 +140,6 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 		functions := make([]models.ModuleFunction, 0, len(req.Functions))
 		for _, f := range req.Functions {
 			fn := models.ModuleFunction{
-				ID:         uuid.New(),
 				ModuleID:   existing.ID,
 				ManifestID: f.ManifestId,
 				Name:       f.Name,
@@ -174,10 +173,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 		}, nil
 	}
 
-	// Ids are assigned here rather than left to the column defaults, which
-	// are Postgres-only (uuid_generate_v4()) and absent on SQLite.
 	m := models.Module{
-		ID:            uuid.New(),
 		ModuleKey:     req.ModuleKey,
 		ModuleID:      manifestModuleID,
 		Name:          req.Name,
@@ -194,7 +190,6 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 
 	for _, f := range req.Functions {
 		m.Functions = append(m.Functions, models.ModuleFunction{
-			ID:         uuid.New(),
 			ManifestID: f.ManifestId,
 			Name:       f.Name,
 			FileName:   f.FileName,
@@ -468,7 +463,6 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 			return nil, fmt.Errorf("marshal taxonomy for trigger %q: %w", in.Name, err)
 		}
 		t := &models.Trigger{
-			ID:            uuid.New(),
 			Taxonomy:      string(taxonomyJSON),
 			Name:          in.Name,
 			Description:   in.Description,
@@ -636,7 +630,6 @@ func (s *moduleService) RegisterActions(ctx context.Context, req *client.Registe
 			return nil, fmt.Errorf("marshal taxonomy for action %q: %w", in.Name, err)
 		}
 		a := &models.Action{
-			ID:            uuid.New(),
 			Name:          in.Name,
 			Description:   in.Description,
 			Call:          in.Call,
@@ -910,7 +903,6 @@ func (s *moduleService) CreateModuleResource(ctx context.Context, req *client.Cr
 	}
 
 	res := &models.ModuleResource{
-		ID:              uuid.New(),
 		ModuleID:        moduleID,
 		ResourceType:    req.ResourceType,
 		ResourceID:      resourceID,
@@ -1403,7 +1395,6 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 			return nil, fmt.Errorf("marshal behavior kinds for widget %q: %w", in.Name, err)
 		}
 		w := &models.Widget{
-			ID:             uuid.New(),
 			Name:           in.Name,
 			Description:    in.Description,
 			Directory:      in.Directory,
@@ -1517,7 +1508,6 @@ func (s *moduleService) RegisterBackgroundTasks(ctx context.Context, req *client
 	saved := make([]*models.BackgroundTask, 0, len(req.Tasks))
 	for _, in := range req.Tasks {
 		t := &models.BackgroundTask{
-			ID:            uuid.New(),
 			Name:          in.Name,
 			Description:   in.Description,
 			Function:      in.Function,
@@ -1733,7 +1723,6 @@ func (s *moduleService) RegisterAssets(ctx context.Context, req *client.Register
 	saved := make([]*models.Asset, 0, len(req.Assets))
 	for _, in := range req.Assets {
 		a := &models.Asset{
-			ID:            uuid.New(),
 			Name:          in.Name,
 			Description:   in.Description,
 			ManifestPath:  in.ManifestPath,

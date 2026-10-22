@@ -1,4 +1,4 @@
-use crate::services::http_client::{HttpPolicy, ReqwestHttpClient};
+use crate::services::http_client::{HttpPolicy, HttpPolicyMode, ReqwestHttpClient};
 use crate::services::http_storage_client::HttpStorageClient;
 use crate::services::oauth::{OAuthExtension, OAuthService, sealed_setting_writer};
 use crate::services::sandbox_resources::HttpResourceClient;
@@ -18,6 +18,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
 use types::{AppContext, SharedRepository};
+use woofx3_runtime::{SecretError, validate_secret};
 
 mod bundled_modules;
 mod callback;
@@ -151,14 +152,16 @@ async fn setup() -> Result<AppContext> {
         }
 
         let http_policy = HttpPolicy::from_settings(
-            &get_env_or_default("WOOFX3_MODULE_HTTP", "log"),
-            &get_env_or_default("WOOFX3_MODULE_HTTP_ALLOW_PRIVATE", "false"),
-        )
-        .unwrap_or_else(|reason| panic!("{reason}"));
+            &get_env_or_default("WOOFX3_MODULE_HTTP", ""),
+            &get_env_or_default("WOOFX3_MODULE_HTTP_ALLOW_PRIVATE", ""),
+        )?;
         info!(
             "ctx.http policy: mode={:?} allow_private={}",
             http_policy.mode, http_policy.allow_private
         );
+        if http_policy.mode == HttpPolicyMode::Log {
+            warn!("WOOFX3_MODULE_HTTP=log: modules may reach hosts they were not granted");
+        }
         ctx.http = Arc::new(ReqwestHttpClient::new(http_policy));
 
         let oauth = Arc::new(OAuthService::new(
@@ -290,6 +293,11 @@ async fn setup() -> Result<AppContext> {
         public_url_resolver,
         oauth: oauth_service,
         frame_cache: Arc::new(services::frame_cache::FrameCache::new()),
+        file_service: Arc::new(services::file_service::FileService::new(
+            &routes::functions::upload_dir(),
+            services::upload_limits::UploadLimits::from_env()?,
+        )?),
+        module_locks: Arc::new(types::ModuleLocks::new()),
     };
 
     Ok(ctx)
@@ -311,6 +319,15 @@ async fn boot_modules(
     .map_err(|e| anyhow::anyhow!("sandbox registry hydrate: {}", e))
 }
 
+/// The engine secret (`barkloaderKey`), read through `lookup(env_var,
+/// config_key)`. It authenticates the api and signs upload grants and media
+/// proxy URLs, so a blank, placeholder or short value stops startup.
+fn engine_secret(lookup: impl Fn(&str, &str) -> String) -> Result<String, SecretError> {
+    let secret = lookup("WOOFX3_BARKLOADER_KEY", "barkloaderKey");
+    validate_secret("barkloaderKey", &secret)?;
+    Ok(secret)
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // Console + file logging always; OpenTelemetry export only when configured.
@@ -323,6 +340,8 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
+    lib_module::load_reserved_subjects_contract();
+
     // Validate required config. Each fatal path drops the guard first so the
     // file and OpenTelemetry sinks flush before the process goes away.
     if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY"]) {
@@ -330,6 +349,16 @@ async fn main() -> std::io::Result<()> {
         drop(logging);
         std::process::exit(1);
     }
+    let barkloader_key = match engine_secret(|env_var, config_key| {
+        get_env_or_default_with_key(env_var, Some(config_key), "")
+    }) {
+        Ok(secret) => secret,
+        Err(e) => {
+            tracing::error!("{}", e);
+            drop(logging);
+            std::process::exit(1);
+        }
+    };
     if let Err(e) = validate_required_config_keys(&["databaseProxyUrl"]) {
         tracing::error!("{}", e);
         drop(logging);
@@ -356,7 +385,7 @@ async fn main() -> std::io::Result<()> {
 
     // One client for every request, so upstream connections are reused.
     let media_proxy = Data::new(routes::media::MediaProxyService::new(
-        get_env_or_default_with_key("WOOFX3_BARKLOADER_KEY", Some("barkloaderKey"), ""),
+        barkloader_key,
         services::media_proxy::MediaFetcher::new(),
     ));
 
@@ -414,4 +443,43 @@ fn stop_on_ctrl_break(server: actix_web::dev::ServerHandle) {
             server.stop(true).await;
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lookup_returning(value: &'static str) -> impl Fn(&str, &str) -> String {
+        move |env_var, config_key| {
+            assert_eq!(
+                (env_var, config_key),
+                ("WOOFX3_BARKLOADER_KEY", "barkloaderKey")
+            );
+            value.to_string()
+        }
+    }
+
+    #[test]
+    fn test_engine_secret_refuses_unusable_values() {
+        let cases = [
+            ("", "empty"),
+            ("CHANGE_ME", "placeholder"),
+            ("short-key", "too short"),
+        ];
+        for (value, label) in cases {
+            let error = engine_secret(lookup_returning(value)).expect_err(label);
+            assert!(
+                error
+                    .to_string()
+                    .contains("barkloaderKey (WOOFX3_BARKLOADER_KEY)"),
+                "{label}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_engine_secret_returns_a_valid_secret_unchanged() {
+        let secret = "0123456789abcdef0123456789abcdef";
+        assert_eq!(engine_secret(lookup_returning(secret)).unwrap(), secret);
+    }
 }

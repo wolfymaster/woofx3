@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -68,11 +69,11 @@ func main() {
 		}
 	}
 
-	getenv, err := runtimeGetenv()
+	sources, err := woofx3config.LoadSources(woofx3config.ResolveLocation(""))
 	if err != nil {
 		fatalExit(sharedLogger, reporter, "Failed to load the runtime configuration", err)
 	}
-	config, err := loadConfig(configPath, getenv)
+	config, err := loadConfig(configPath, runtimeGetenv(sources))
 	if err != nil {
 		fatalExit(sharedLogger, reporter, "Failed to load configuration", err)
 	}
@@ -85,7 +86,18 @@ func main() {
 		fatalExit(sharedLogger, reporter, "Failed to copy existing engine data into the data directory", err)
 	}
 
-	var serviceIO childIO
+	// Every service that reads one of these refuses to start without a
+	// usable value, so each is resolved, and generated on first run, here.
+	engineSecrets := []SecretSpec{
+		{Name: "barkloader-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey"},
+		{Name: "scene-manager-token-secret", EnvKey: "WOOFX3_SCENE_MANAGER_TOKEN_SECRET", ConfigKey: "sceneManagerTokenSecret"},
+	}
+	secrets, err := ResolveSecrets(engineSecrets, sources, engineStateDir(workDir, woofx3config.DataDir()), rand.Reader, logger)
+	if err != nil {
+		fatalExit(sharedLogger, reporter, "Failed to resolve the engine secrets", err)
+	}
+
+	serviceIO := childIO{envOverrides: secrets}
 	if options.statusToStdout {
 		serviceIO.outputDirectory = logging.ResolveLogDirectory(logDirectory)
 	}
@@ -183,16 +195,13 @@ func findConfigFile(startDir string) string {
 }
 
 // runtimeGetenv looks up WOOFX3_* settings the way the services do: the
-// process environment, then .env, then .woofx3.json, found from the working
-// directory the services inherit. Health endpoints expanded with it follow a
-// port set in .woofx3.json (apiPort) as well as one set by variable, so they
-// check the port the service actually listens on.
-func runtimeGetenv() (func(string) string, error) {
-	env, err := woofx3config.Load(woofx3config.ResolveLocation(""))
-	if err != nil {
-		return nil, err
-	}
-	return func(key string) string { return env[key] }, nil
+// process environment, then .env, then .woofx3.json, as loaded from the
+// working directory the services inherit. Health endpoints expanded with it
+// follow a port set in .woofx3.json (apiPort) as well as one set by variable,
+// so they check the port the service actually listens on.
+func runtimeGetenv(sources woofx3config.Sources) func(string) string {
+	env := sources.Merge()
+	return func(key string) string { return env[key] }
 }
 
 // loadConfig reads services.json and resolves each enabled service's health
@@ -380,7 +389,9 @@ const stopGracePeriod = 25 * time.Second
 // on others get to themselves, before the services they depend on are asked
 // to stop. It must cover the workflow engine's Stop (DefaultStopDrainTimeout
 // plus DefaultStopSettleTimeout in workflow/internal/engine/engine.go), which
-// records through db-proxy the runs it could not finish. What is left of
+// records through db-proxy the runs it could not finish, and the run
+// recorder's drain after it (DefaultRecorderDrainTimeout in
+// workflow/async_run_recorder.go). What is left of
 // stopGracePeriod must cover db-proxy's final flush of module storage to its
 // replica (closeTimeout in db/app/services/module_storage_service.go); a kill
 // mid-flush loses the writes since the last sync.
@@ -475,14 +486,18 @@ type Supervisor struct {
 	childIO    childIO
 }
 
-// childIO is what the services' standard streams are connected to. The zero
-// value shares the orchestrator's own.
+// childIO is what the services inherit from the orchestrator: what their
+// standard streams are connected to, and their environment. The zero value
+// shares the orchestrator's own.
 type childIO struct {
 	// stdin replaces the orchestrator's stdin for the services when set.
 	stdin *os.File
 	// outputDirectory, when set, receives each service's stdout and stderr in
 	// a file of its own instead of the orchestrator's.
 	outputDirectory string
+	// envOverrides are set in each service's environment over the
+	// orchestrator's own (see serviceEnvironment).
+	envOverrides map[string]string
 }
 
 // NewSupervisor returns a supervisor of no services yet. reporter may be nil,
@@ -886,7 +901,7 @@ func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryP
 	}
 	attr := &os.ProcAttr{
 		Files: files,
-		Env:   os.Environ(),
+		Env:   serviceEnvironment(os.Environ(), s.childIO.envOverrides),
 	}
 
 	process, err := s.startProcess(binaryPath, serviceArgv(binaryPath, service), attr)

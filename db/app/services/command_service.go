@@ -333,11 +333,7 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 		}
 	}
 
-	// Assign the id here rather than leaning on the column default: that
-	// default is Postgres-only (uuid_generate_v4()), so on the SQLite backend
-	// every command would otherwise be inserted with the zero UUID and collide.
 	m := models.Command{
-		ID:              uuid.New(),
 		Command:         cmd.Command,
 		Actions:         defaultActionsJSON(cmd.ActionsJson),
 		Cooldown:        int(cmd.Cooldown),
