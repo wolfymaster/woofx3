@@ -453,6 +453,95 @@ async fn prune_removed_resources(
     remove_resources(db_proxy, module_key, removed, "dropped from manifest").await;
 }
 
+/// The host and port settings of `new`'s `local[]` endpoints that `previous`
+/// did not use as that endpoint's host or port: a key that is new, or that
+/// differs from the installed manifest's key for the same endpoint id. With
+/// no previous manifest (a fresh install, or one whose stored manifest does
+/// not parse) every endpoint's keys count as new.
+///
+/// Such a key may already hold a value written while it was an ordinary
+/// setting, which module code could write; once it is an endpoint setting
+/// that value decides where the engine connects. Password settings are left
+/// out: a planted password cannot redirect the engine anywhere.
+fn relocated_endpoint_address_settings<'a>(
+    previous: Option<&ModuleManifest>,
+    new: &'a ModuleManifest,
+) -> Vec<&'a str> {
+    let mut relocated = Vec::new();
+    for endpoint in &new.local {
+        let installed = previous.and_then(|manifest| {
+            manifest
+                .local
+                .iter()
+                .find(|installed| installed.id == endpoint.id)
+        });
+        let (installed_host, installed_port) = match installed {
+            Some(installed) => (
+                Some(installed.host_setting.as_str()),
+                Some(installed.port_setting.as_str()),
+            ),
+            None => (None, None),
+        };
+        if installed_host != Some(endpoint.host_setting.as_str()) {
+            relocated.push(endpoint.host_setting.as_str());
+        }
+        if installed_port != Some(endpoint.port_setting.as_str()) {
+            relocated.push(endpoint.port_setting.as_str());
+        }
+    }
+    relocated
+}
+
+/// Puts every relocated endpoint address setting
+/// (`relocated_endpoint_address_settings`) back to the value a newly
+/// registered key starts with: the manifest's default, empty when it declares
+/// none. db-proxy stores an unset setting as an empty value and has no delete
+/// for one setting, so this is how a stored value is removed. A key with no
+/// stored row, or already holding its default, is left alone, so running this
+/// again changes nothing.
+///
+/// Trade-off: a value the streamer typed into the setting before it became an
+/// endpoint setting is cleared once, and the streamer or the companion sets
+/// it again.
+async fn clear_relocated_endpoint_settings(
+    db_proxy: &dyn ModuleDbProxy,
+    module_key: &str,
+    previous: Option<&ModuleManifest>,
+    new_manifest: &ModuleManifest,
+) -> Result<()> {
+    let relocated = relocated_endpoint_address_settings(previous, new_manifest);
+    if relocated.is_empty() {
+        return Ok(());
+    }
+    let stored = db_proxy
+        .get_module_settings(module_key)
+        .await
+        .map_err(|e| anyhow!("clear endpoint settings: read settings: {e}"))?;
+    for key in relocated {
+        let Some(row) = stored.iter().find(|row| row.key == key) else {
+            continue;
+        };
+        let default = new_manifest
+            .settings
+            .iter()
+            .find(|setting| setting.id == key)
+            .map(|setting| setting.resolved_default())
+            .ok_or_else(|| anyhow!("clear endpoint settings: `{key}` is not a declared setting"))?;
+        if row.value == default {
+            continue;
+        }
+        db_proxy
+            .set_module_setting(module_key, key, &default)
+            .await
+            .map_err(|e| anyhow!("clear endpoint setting `{key}`: {e}"))?;
+        info!(
+            "Cleared module {}'s setting {}: it became a local endpoint address setting",
+            module_key, key
+        );
+    }
+    Ok(())
+}
+
 /// Archives each `(resource_type, manifest_id)` (background_task is
 /// hard-deleted instead — see `db_proxy::delete_resource_by_manifest_id`'s
 /// doc comment for why that one kind is safe to delete outright).
@@ -1557,7 +1646,16 @@ pub async fn run_install_with_provenance<R: Repository>(
             for step in &plan {
                 state.execute(step, proxy).await?;
             }
-            Ok(())
+            // Last, so a value is cleared only once every other step has
+            // succeeded; a failure here still restores the previous version.
+            let previous_manifest = previous.as_ref().and_then(PreviousInstall::parsed_manifest);
+            clear_relocated_endpoint_settings(
+                proxy,
+                module_key,
+                previous_manifest.as_ref(),
+                manifest,
+            )
+            .await
         }
         .await;
 
@@ -3381,5 +3479,190 @@ mod link_resource_settings_tests {
             FakeDbProxyClient::new().with_installed([provider("woofx3"), provider("timerpro")]);
         let err = install(&db).await.expect_err("ambiguous owner");
         assert!(err.to_string().contains("timerpro, woofx3"), "{err}");
+    }
+}
+
+#[cfg(test)]
+mod endpoint_settings_tests {
+    use super::super::db_proxy_client::FakeDbProxyClient;
+    use super::*;
+    use crate::module_file::{ModuleFileKind, ModuleValidManifestKind};
+    use lib_repository::{FileRepository, FileRepositoryConfig};
+
+    /// An `obs` manifest at `version` whose endpoint `endpoint_id` reads its
+    /// address from `host_setting` and `obs_port`.
+    fn obs_manifest(version: &str, endpoint_id: &str, host_setting: &str) -> serde_json::Value {
+        serde_json::json!({
+            "id": "obs",
+            "name": "OBS",
+            "version": version,
+            "settings": [
+                { "id": "obs_host", "label": "Host", "type": "text", "defaultValue": "localhost" },
+                { "id": "obs_address", "label": "Address", "type": "text" },
+                { "id": "obs_port", "label": "Port", "type": "number", "defaultValue": "4455" }
+            ],
+            "local": [{
+                "id": endpoint_id,
+                "name": "OBS",
+                "protocol": "websocket",
+                "hostSetting": host_setting,
+                "portSetting": "obs_port"
+            }]
+        })
+    }
+
+    fn parsed(manifest: serde_json::Value) -> ModuleManifest {
+        serde_json::from_value(manifest).expect("manifest")
+    }
+
+    #[test]
+    fn test_relocated_endpoint_address_settings_cases() {
+        let installed = parsed(obs_manifest("1.0.0", "obs", "obs_host"));
+        let cases: [(&str, Option<&ModuleManifest>, ModuleManifest, Vec<&str>); 4] = [
+            (
+                "fresh install",
+                None,
+                parsed(obs_manifest("1.0.0", "obs", "obs_host")),
+                vec!["obs_host", "obs_port"],
+            ),
+            (
+                "unchanged keys",
+                Some(&installed),
+                parsed(obs_manifest("1.1.0", "obs", "obs_host")),
+                vec![],
+            ),
+            (
+                "renamed host setting",
+                Some(&installed),
+                parsed(obs_manifest("1.1.0", "obs", "obs_address")),
+                vec!["obs_address"],
+            ),
+            (
+                "new endpoint id",
+                Some(&installed),
+                parsed(obs_manifest("1.1.0", "studio", "obs_host")),
+                vec!["obs_host", "obs_port"],
+            ),
+        ];
+        for (name, previous, new, expected) in cases {
+            assert_eq!(
+                relocated_endpoint_address_settings(previous, &new),
+                expected,
+                "{name}"
+            );
+        }
+    }
+
+    fn installed_version_body(manifest: &serde_json::Value) -> String {
+        serde_json::json!({ "module": {
+            "id": "row-1",
+            "name": "OBS",
+            "module_id": "obs",
+            "module_key": "obs:1.0.0:0000000",
+            "version": "1.0.0",
+            "manifest": manifest.to_string(),
+            "archive_key": "archives/obs-1.0.0.zip",
+            "state": "active",
+            "created_by_type": "CLIENT",
+            "created_by_ref": "client-1",
+        }})
+        .to_string()
+    }
+
+    async fn install(db_proxy: &FakeDbProxyClient, manifest: serde_json::Value) -> Result<()> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = FileRepository::new(FileRepositoryConfig {
+            destination: dir.path().to_path_buf(),
+        });
+        repo.setup().expect("setup");
+        let json = manifest.to_string().into_bytes();
+        let manifest = parsed(manifest);
+        let files = vec![ModuleFile::new(
+            "manifest.json".into(),
+            ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
+            json.clone(),
+        )];
+        let key = manifest.compute_module_key(&json);
+        run_install(
+            &manifest,
+            &files,
+            &repo,
+            "archives/obs.zip",
+            Some(db_proxy as &dyn ModuleDbProxy),
+            &key,
+            "",
+        )
+        .await
+    }
+
+    #[tokio::test]
+    async fn test_upgrade_clears_a_planted_value_under_a_renamed_host_setting() {
+        let db = FakeDbProxyClient::new()
+            .with_installed_version(installed_version_body(&obs_manifest(
+                "1.0.0", "obs", "obs_host",
+            )))
+            .with_setting("obs_address", "10.0.0.66")
+            .with_setting("obs_port", "4455");
+        install(&db, obs_manifest("1.1.0", "obs", "obs_address"))
+            .await
+            .expect("upgrade");
+
+        let settings = db.settings();
+        assert_eq!(settings.get("obs_address").map(String::as_str), Some(""));
+        assert_eq!(settings.get("obs_port").map(String::as_str), Some("4455"));
+    }
+
+    #[tokio::test]
+    async fn test_upgrade_keeps_the_value_of_an_unchanged_host_setting() {
+        let db = FakeDbProxyClient::new()
+            .with_installed_version(installed_version_body(&obs_manifest(
+                "1.0.0", "obs", "obs_host",
+            )))
+            .with_setting("obs_host", "192.168.1.20")
+            .with_setting("obs_port", "4456");
+        install(&db, obs_manifest("1.1.0", "obs", "obs_host"))
+            .await
+            .expect("upgrade");
+
+        let settings = db.settings();
+        assert_eq!(
+            settings.get("obs_host").map(String::as_str),
+            Some("192.168.1.20")
+        );
+        assert_eq!(settings.get("obs_port").map(String::as_str), Some("4456"));
+        assert!(!db.calls().contains(&"set_module_setting".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_fresh_install_resets_a_new_endpoint_key_to_its_default() {
+        let db = FakeDbProxyClient::new()
+            .with_setting("obs_host", "10.0.0.66")
+            .with_setting("obs_port", "1");
+        install(&db, obs_manifest("1.0.0", "obs", "obs_host"))
+            .await
+            .expect("install");
+
+        let settings = db.settings();
+        assert_eq!(
+            settings.get("obs_host").map(String::as_str),
+            Some("localhost")
+        );
+        assert_eq!(settings.get("obs_port").map(String::as_str), Some("4455"));
+    }
+
+    #[tokio::test]
+    async fn test_clear_relocated_endpoint_settings_succeeds_for_an_absent_key() {
+        let db = FakeDbProxyClient::new();
+        clear_relocated_endpoint_settings(
+            &db,
+            "obs",
+            None,
+            &parsed(obs_manifest("1.0.0", "obs", "obs_host")),
+        )
+        .await
+        .expect("an absent key is already clear");
+
+        assert!(db.settings().is_empty());
+        assert!(!db.calls().contains(&"set_module_setting".to_string()));
     }
 }
