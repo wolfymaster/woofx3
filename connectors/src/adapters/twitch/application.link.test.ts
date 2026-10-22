@@ -5,14 +5,19 @@ import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
 import { countingIds, FakeTime, RecordingLogger } from "../../host/testing";
 import type { TwitchAppContext } from "./application";
 
+/** Whether listeners confirm subscriptions; false leaves TwitchEventBus waiting to settle. */
+let confirmSubscriptions = true;
+
 /**
  * An EventSub listener that confirms every subscription as it is created, so
  * the real TwitchEventBus starts at once. Any `on<Event>` method the bus asks
- * for exists.
+ * for exists, and the callback it is given is kept in `callbacks`.
  */
 function confirmingListener() {
   const successHandlers: Array<(sub: EventSubSubscription) => void> = [];
+  const callbacks: Record<string, (event: unknown) => Promise<void>> = {};
   const base: Record<string, unknown> = {
+    callbacks,
     start: mock(() => {}),
     stop: mock(() => {}),
     onSubscriptionCreateSuccess: (handler: (sub: EventSubSubscription) => void) => {
@@ -28,11 +33,17 @@ function confirmingListener() {
         return target[prop];
       }
       if (prop.startsWith("on")) {
-        return () => {
+        return (...args: unknown[]) => {
           (target.subscribeCount as number) += 1;
+          const callback = args.find((arg) => typeof arg === "function");
+          if (callback !== undefined) {
+            callbacks[prop] = callback as (event: unknown) => Promise<void>;
+          }
           const sub = { id: prop, start: () => {}, stop: () => {} } as unknown as EventSubSubscription;
-          for (const handler of successHandlers) {
-            handler(sub);
+          if (confirmSubscriptions) {
+            for (const handler of successHandlers) {
+              handler(sub);
+            }
           }
           return sub;
         };
@@ -97,6 +108,9 @@ mock.module("@woofx3/twitch", () => ({
 
 const { default: TwitchApplication } = await import("./application");
 
+/** A start signal that never aborts, for the tests that are not about aborting. */
+const running = new AbortController().signal;
+
 type Handler = (msg: { data: Uint8Array }) => unknown;
 
 const encoder = new TextEncoder();
@@ -146,6 +160,7 @@ function reset() {
   constructedWith = [];
   instances = [];
   initGate = null;
+  confirmSubscriptions = true;
   nextReload = { userId: "42", userChanged: false, providerChanged: false };
 }
 
@@ -157,7 +172,7 @@ describe("TwitchApplication before Twitch is linked", () => {
     const { ctx, logger } = context();
     const app = newApp();
 
-    expect(await app.start(ctx)).toBe("not_linked");
+    expect(await app.start(ctx, running)).toBe("not_linked");
 
     expect(ctx.twitchEventBus).toBeUndefined();
     expect(app.eventSubStatus().ready).toBe(false);
@@ -170,7 +185,7 @@ describe("TwitchApplication before Twitch is linked", () => {
     reset();
     const { ctx } = context();
 
-    await newApp().start(ctx);
+    await newApp().start(ctx, running);
 
     expect(constructedWith[0]?.channel).toBeUndefined();
   });
@@ -179,7 +194,7 @@ describe("TwitchApplication before Twitch is linked", () => {
     reset();
     const { ctx, handlers } = context();
     const app = newApp();
-    await app.start(ctx);
+    await app.start(ctx, running);
 
     linkTwitch();
     await handlers.get(TOKEN_UPDATED)?.(event({ data: { integration: "twitch" } }));
@@ -192,7 +207,7 @@ describe("TwitchApplication before Twitch is linked", () => {
   test("ignores token updates for other integrations, and bodies that are not events", async () => {
     reset();
     const { ctx, handlers } = context();
-    await newApp().start(ctx);
+    await newApp().start(ctx, running);
 
     linkTwitch();
     await handlers.get(TOKEN_UPDATED)?.(event({ data: { integration: "spotify" } }));
@@ -205,7 +220,7 @@ describe("TwitchApplication before Twitch is linked", () => {
     reset();
     const { ctx } = context();
     const app = newApp();
-    await app.start(ctx);
+    await app.start(ctx, running);
 
     const reply = await ask(app, ctx, { data: { command: "getStreamInfo" } });
 
@@ -218,7 +233,7 @@ describe("TwitchApplication before Twitch is linked", () => {
     reset();
     const { ctx } = context();
     const app = newApp();
-    await app.start(ctx);
+    await app.start(ctx, running);
 
     const helix = await ask(app, ctx, { command: "helix", args: { operation: "getChannelInformation" } });
     expect(helix.type).toBe("twitchapi.error");
@@ -235,7 +250,7 @@ describe("TwitchApplication before Twitch is linked", () => {
     reset();
     const { ctx } = context();
     const app = newApp();
-    await app.start(ctx);
+    await app.start(ctx, running);
 
     const reply = await ask(app, ctx, { command: "getStreamInfo", args: {} });
 
@@ -252,7 +267,7 @@ describe("TwitchApplication relinked while connected", () => {
     linkTwitch();
     const { ctx, handlers } = context();
     const app = newApp();
-    expect(await app.start(ctx)).toBe("connected");
+    expect(await app.start(ctx, running)).toBe("connected");
     const client = instances[0];
     const bus = ctx.twitchEventBus;
     const subscriptionsBefore = client?.listener.subscribeCount as number;
@@ -271,7 +286,7 @@ describe("TwitchApplication relinked while connected", () => {
     linkTwitch();
     const { ctx, handlers } = context();
     const app = newApp();
-    await app.start(ctx);
+    await app.start(ctx, running);
     const first = instances[0];
 
     nextReload = { userId: "99", userChanged: true, providerChanged: false };
@@ -288,7 +303,7 @@ describe("TwitchApplication relinked while connected", () => {
     linkTwitch();
     const { ctx, handlers } = context();
     const app = newApp();
-    await app.start(ctx);
+    await app.start(ctx, running);
     const first = instances[0];
 
     nextReload = { userId: "42", userChanged: false, providerChanged: true };
@@ -306,7 +321,7 @@ describe("TwitchApplication relinked while connected", () => {
     linkTwitch();
     const { ctx, handlers } = context();
     const app = newApp();
-    await app.start(ctx);
+    await app.start(ctx, running);
 
     let release = () => {};
     initGate = new Promise<void>((resolve) => {
@@ -332,7 +347,7 @@ describe("TwitchApplication relinked while connected", () => {
     reset();
     linkTwitch();
     const { ctx, handlers } = context({ channel: "stream" });
-    await newApp().start(ctx);
+    await newApp().start(ctx, running);
 
     nextReload = { userId: "99", userChanged: true, providerChanged: false };
     await handlers.get(TOKEN_UPDATED)?.(tokenUpdated);
@@ -345,12 +360,149 @@ describe("TwitchApplication relinked while connected", () => {
     reset();
     linkTwitch();
     const { ctx, handlers } = context({ channel: "stream" });
-    await newApp().start(ctx);
+    await newApp().start(ctx, running);
 
     nextReload = { userId: "42", userChanged: false, providerChanged: true };
     await handlers.get(TOKEN_UPDATED)?.(tokenUpdated);
 
     expect(instances[0]?.close).toHaveBeenCalledTimes(1);
     expect(instances).toHaveLength(2);
+  });
+});
+
+describe("TwitchApplication stop", () => {
+  test("closes the client, stops EventSub and clears the context", async () => {
+    reset();
+    linkTwitch();
+    const { ctx } = context();
+    const app = newApp();
+    await app.start(ctx, running);
+    const client = instances[0];
+
+    await app.stop(ctx);
+
+    expect(client?.close).toHaveBeenCalledTimes(1);
+    expect(client?.listener.stop).toHaveBeenCalled();
+    expect(ctx.twitchApi).toBeUndefined();
+    expect(ctx.twitchEventBus).toBeUndefined();
+    expect(ctx.broadcaster).toBeUndefined();
+    expect(app.eventSubStatus().ready).toBe(false);
+  });
+
+  test("drops a relink that arrived mid-connect", async () => {
+    reset();
+    linkTwitch();
+    const { ctx, handlers } = context();
+    const app = newApp();
+    let release = () => {};
+    initGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const starting = app.start(ctx, running);
+    await Bun.sleep(0);
+    await handlers.get(TOKEN_UPDATED)?.(event({ data: { integration: "twitch" } }));
+
+    await app.stop(ctx);
+    release();
+
+    await expect(starting).rejects.toThrow("stopped");
+    expect(instances[0]?.reloadToken).not.toHaveBeenCalled();
+    expect(instances[0]?.close).toHaveBeenCalledTimes(1);
+    expect(ctx.twitchEventBus).toBeUndefined();
+  });
+
+  test("ignores a token update that arrives after it", async () => {
+    reset();
+    linkTwitch();
+    const { ctx, handlers, logger } = context();
+    const app = newApp();
+    await app.start(ctx, running);
+    await app.stop(ctx);
+
+    await handlers.get(TOKEN_UPDATED)?.(event({ data: { integration: "twitch" } }));
+
+    expect(instances).toHaveLength(1);
+    expect(instances[0]?.reloadToken).not.toHaveBeenCalled();
+    expect(logger.at("error")).toEqual([]);
+  });
+
+  test("waits for an event publish still in flight", async () => {
+    reset();
+    linkTwitch();
+    const { ctx } = context();
+    const app = newApp();
+    await app.start(ctx, running);
+    let release = () => {};
+    (ctx.bus.publish as ReturnType<typeof mock>).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    const callbacks = instances[0]?.listener.callbacks as Record<string, (event: unknown) => Promise<void>>;
+    void callbacks.onChannelFollow?.({ userDisplayName: "Pup", userId: "u1" });
+
+    let stopped = false;
+    const stopping = app.stop(ctx).then(() => {
+      stopped = true;
+    });
+    await Bun.sleep(0);
+    expect(stopped).toBe(false);
+
+    release();
+    await stopping;
+    expect(stopped).toBe(true);
+  });
+});
+
+describe("TwitchApplication start aborted", () => {
+  test("mid-init gives up and closes the client", async () => {
+    reset();
+    linkTwitch();
+    const { ctx } = context();
+    const abort = new AbortController();
+    let release = () => {};
+    initGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    const starting = newApp().start(ctx, abort.signal);
+    await Bun.sleep(0);
+    abort.abort(new Error("no longer wanted"));
+    release();
+
+    await expect(starting).rejects.toThrow("no longer wanted");
+    expect(instances[0]?.close).toHaveBeenCalledTimes(1);
+    expect(ctx.twitchApi).toBeUndefined();
+  });
+
+  test("while EventSub settles stops waiting, stops the listener and closes the client", async () => {
+    reset();
+    linkTwitch();
+    confirmSubscriptions = false;
+    const { ctx } = context();
+    const abort = new AbortController();
+    const app = newApp();
+
+    const starting = app.start(ctx, abort.signal);
+    await Bun.sleep(0);
+    expect(instances[0]?.listener.start).toHaveBeenCalled();
+    abort.abort(new Error("no longer wanted"));
+
+    await expect(starting).rejects.toThrow("no longer wanted");
+    expect(instances[0]?.listener.stop).toHaveBeenCalled();
+    expect(instances[0]?.close).toHaveBeenCalledTimes(1);
+    expect(ctx.twitchEventBus).toBeUndefined();
+    expect(app.eventSubStatus().ready).toBe(false);
+  });
+
+  test("on a signal already aborted connects nothing", async () => {
+    reset();
+    linkTwitch();
+    const { ctx } = context();
+
+    await expect(newApp().start(ctx, AbortSignal.abort(new Error("gone")))).rejects.toThrow("gone");
+
+    expect(instances).toHaveLength(0);
   });
 });
