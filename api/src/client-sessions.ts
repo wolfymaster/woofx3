@@ -1,5 +1,6 @@
 import type { SharedLogger } from "@woofx3/common/logging";
 import { CLIENT_REVOKED_CLOSE_CODE } from "@woofx3/api/rpc";
+import type { Api } from "./api";
 import type { ClientAuth } from "./auth";
 import type { EngineEventStream } from "./engine-event-stream";
 import { AuthenticationRefused } from "./gateway";
@@ -23,7 +24,6 @@ const CLIENT_REVOKED = "client revoked";
 export class SessionLease {
   private revoked = false;
   private released = false;
-  private revokeListeners: (() => void)[] = [];
 
   /**
    * @param onRelease forgets the session in its registry; run at most once.
@@ -35,21 +35,8 @@ export class SessionLease {
     private readonly current: () => boolean = () => true
   ) {}
 
-  /** Runs `listener` when the lease is revoked. */
-  onRevoke(listener: () => void): void {
-    this.revokeListeners.push(listener);
-  }
-
   revoke(): void {
-    if (this.revoked) {
-      return;
-    }
     this.revoked = true;
-    const listeners = this.revokeListeners;
-    this.revokeListeners = [];
-    for (const listener of listeners) {
-      listener();
-    }
   }
 
   get live(): boolean {
@@ -62,7 +49,6 @@ export class SessionLease {
       return;
     }
     this.released = true;
-    this.revokeListeners = [];
     this.onRelease();
   }
 
@@ -203,8 +189,8 @@ export class ClientSessions {
     try {
       connection.close?.(CLIENT_REVOKED_CLOSE_CODE, CLIENT_REVOKED);
     } catch (err) {
-      // The lease already refuses every call, and the session's
-      // subscriptions ended when it was revoked; the socket itself is left
+      // The lease already refuses every call, and the client's
+      // subscriptions ended with the revocation; the socket itself is left
       // to time out.
       this.logger.warn("Could not close a revoked client's connection", {
         clientId,
@@ -235,16 +221,18 @@ export class ClientSessions {
 /**
  * Everything deleting a client does besides the db delete: forgets the
  * credentials the engine trusted for it, ends its sessions, and stops every
- * delivery to it, over the event stream and to its callback URL, so it
- * neither receives events nor is offered as a client that can answer a
- * request.
+ * delivery to it: engine events over the event stream and to its callback
+ * URL, stream events and trigger changes. It is then not offered as a client
+ * that can answer a request. Revoking a client whose delete did not happen
+ * is safe: it authenticates again, and the next callback refresh lists it.
  */
 export class ClientRevoker implements ClientRevocation {
   constructor(
     private readonly auth: Pick<ClientAuth, "invalidateCache">,
     private readonly sessions: ClientSessions,
     private readonly eventStream: Pick<EngineEventStream, "dropClient">,
-    private readonly webhooks: Pick<WebhookClient, "dropClient">
+    private readonly webhooks: Pick<WebhookClient, "dropClient">,
+    private readonly subscriptions: Pick<Api, "dropClientSubscriptions">
   ) {}
 
   revoke(clientId: string): void {
@@ -252,5 +240,8 @@ export class ClientRevoker implements ClientRevocation {
     this.sessions.revoke(clientId);
     this.eventStream.dropClient(clientId);
     this.webhooks.dropClient(clientId);
+    // By client id, not through the sessions: a session the client already
+    // disposed is no longer tracked, but its callbacks may still be held.
+    this.subscriptions.dropClientSubscriptions(clientId);
   }
 }

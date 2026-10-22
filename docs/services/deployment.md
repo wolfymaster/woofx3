@@ -268,12 +268,17 @@ client and ends every session it already holds:
   refused;
 - a session that was still authenticating when the client was deleted is
   refused rather than admitted;
-- its event-stream subscriptions are dropped, and the stream-event and
-  trigger-change subscriptions of each of its sessions end, even on a socket
-  that stays open for another client;
+- its event-stream, stream-event and trigger-change subscriptions end, from
+  every session it made, including one it already disposed and one on a
+  socket that stays open for another client;
 - events stop going to its callback URL at once, and it is no longer offered
   as a client that can answer a request, whatever happens to the refresh of
   the callback list that follows.
+
+A delete that db-proxy reports as failed still ends the client's open
+sessions and callbacks, because the engine cannot tell whether it committed.
+The client authenticates again, and the refresh that follows lists its
+callback URL again.
 
 A socket that also carries a live session of another client stays open for
 that session; only the deleted client's sessions on it end.

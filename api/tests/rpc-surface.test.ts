@@ -98,7 +98,7 @@ describe("the RPC surface a client sees", () => {
 
     await session.subscribeStreamEvents(callback, ["goal.reached"]);
 
-    expect(received).toEqual([[callback, ["goal.reached"], { session }]]);
+    expect(received).toEqual([[callback, ["goal.reached"], { session, clientId: "client-42" }]]);
   });
 
   test("every method on Api is either published or a known internal", () => {
@@ -113,6 +113,7 @@ describe("the RPC surface a client sees", () => {
       "setEventLogSelectionSource",
       "setEngineEventStream",
       "dropSessionSubscriptions",
+      "dropClientSubscriptions",
       "initSubscriptions",
       "handleProcessingCallback",
     ].sort();

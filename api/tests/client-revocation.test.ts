@@ -3,7 +3,7 @@ import type { Woofx3EngineApi } from "@woofx3/api";
 import { type ApiGatewayContract, CLIENT_REVOKED_CLOSE_CODE, isAuthenticationRefused } from "@woofx3/api/rpc";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { EngineEventType } from "@woofx3/api/webhooks";
-import { newMessagePortRpcSession, newWebSocketRpcSession } from "capnweb";
+import { newMessagePortRpcSession, newWebSocketRpcSession, RpcTarget } from "capnweb";
 import { Api } from "../src/api";
 import { ClientAuth } from "../src/auth";
 import { ClientRevoker, ClientSessions, SessionLease } from "../src/client-sessions";
@@ -108,9 +108,10 @@ function engine() {
   const stream = new EngineEventStream(logger);
   const webhooks = new WebhookClient(db as never, logger, stream);
   api.setWebhookClient(webhooks);
-  api.setClientRevocation(new ClientRevoker(auth, sessions, stream, webhooks));
+  api.setClientRevocation(new ClientRevoker(auth, sessions, stream, webhooks, api));
   const gateway = new ApiGateway(api, auth, db as never, logger, resolveRegistrationPolicy({}), sessions);
   return {
+    api,
     gateway,
     sessions,
     webhooks,
@@ -321,6 +322,33 @@ describe("deleting a client", () => {
     }
   });
 
+  test("gives callbacks back to a client whose delete failed, once the list is refreshed", async () => {
+    const { gateway, webhooks, withCallback, failNextDelete } = engine();
+    const received: string[] = [];
+    const callbacks = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(req) {
+        received.push(((await req.json()) as { type: string }).type);
+        return Response.json({});
+      },
+    });
+    try {
+      await withCallback("doomed", `http://127.0.0.1:${callbacks.port}/callback`);
+      using adminPort = overMessagePort(gateway);
+      const admin = adminPort.client.authenticate("admin", CREDENTIALS.admin) as unknown as Woofx3EngineApi;
+
+      failNextDelete("notOk");
+      expect((await admin.deleteClient("doomed")).success).toBe(false);
+      await webhooks.refreshCallbackUrls();
+      await webhooks.send({ type: EngineEventType.WORKFLOW_DELETED, workflowId: "w1" });
+
+      expect(received).toEqual([EngineEventType.WORKFLOW_DELETED]);
+    } finally {
+      callbacks.stop(true);
+    }
+  });
+
   test("reports a delete db-proxy did not perform as a failure", async () => {
     const { gateway, failNextDelete } = engine();
     using adminPort = overMessagePort(gateway);
@@ -354,8 +382,41 @@ describe("a session disposed by its client", () => {
   });
 });
 
-describe("a revoked session's subscriptions", () => {
-  test("end with its client, even while its socket stays open", async () => {
+describe("a revoked client's subscriptions", () => {
+  /** Trigger-change pushes reaching a client's callback. */
+  class TriggerListener extends RpcTarget {
+    received: string[] = [];
+    async onTriggerChange(event: { type: string; moduleName: string }) {
+      this.received.push(event.moduleName);
+    }
+  }
+
+  function notifyTriggerChange(api: Api, moduleName: string): Promise<void> {
+    return (api as unknown as { notifyTriggerChange(name: string): Promise<void> }).notifyTriggerChange(moduleName);
+  }
+
+  test("end on revocation even after the client disposed the session that made them", async () => {
+    const { api, gateway } = engine();
+    const url = serve(gateway);
+    const doomedGateway = newWebSocketRpcSession<ApiGatewayContract>(url);
+    const doomed = doomedGateway.authenticate("doomed", CREDENTIALS.doomed) as unknown as Woofx3EngineApi & Disposable;
+    const listener = new TriggerListener();
+    await doomed.subscribeTriggerChanges(listener);
+    await notifyTriggerChange(api, "before");
+    expect(listener.received).toEqual(["before"]);
+
+    // The session stub goes; the socket, and the listener the engine holds, stay.
+    doomed[Symbol.dispose]();
+    using adminPort = overMessagePort(gateway);
+    const admin = adminPort.client.authenticate("admin", CREDENTIALS.admin) as unknown as Woofx3EngineApi;
+    await admin.deleteClient("doomed");
+    await notifyTriggerChange(api, "after");
+
+    expect(listener.received).toEqual(["before"]);
+    doomedGateway[Symbol.dispose]();
+  });
+
+  test("end on revocation for a session the registry no longer tracks", async () => {
     const api = new Api({
       db: {} as never,
       nats: null,
@@ -365,16 +426,41 @@ describe("a revoked session's subscriptions", () => {
       apiUrl: "http://api.test",
       logger,
     });
+    const sessions = new ClientSessions(logger);
+    const revoker = new ClientRevoker(
+      { invalidateCache() {} },
+      sessions,
+      { dropClient() {} },
+      { dropClient() {} },
+      api
+    );
     const lease = new SessionLease(() => {});
-    const session = new ApiSession(api, "doomed", lease);
+    const doomed = new ApiSession(api, "doomed", lease);
     const kept = new ApiSession(api, "admin", new SessionLease(() => {}));
-    const callback = { async onTriggerChange() {} };
-    await session.subscribeTriggerChanges(callback);
+    await doomed.subscribeTriggerChanges({ async onTriggerChange() {} });
     await kept.subscribeTriggerChanges({ async onTriggerChange() {} });
 
-    lease.revoke();
+    revoker.revoke("doomed");
 
-    const subscribers = (api as unknown as { triggerSubscribers: Map<object, object> }).triggerSubscribers;
-    expect([...subscribers.values()]).toEqual([kept]);
+    const subscribers = (api as unknown as { triggerSubscribers: Map<object, { session: object }> }).triggerSubscribers;
+    expect([...subscribers.values()].map((owner) => owner.session)).toEqual([kept]);
+  });
+
+  test("end when the client disposes the session that made them", async () => {
+    const api = new Api({
+      db: {} as never,
+      nats: null,
+      functions: null,
+      barkloaderUrl: "http://b",
+      sceneManagerUrl: "http://scene.test",
+      apiUrl: "http://api.test",
+      logger,
+    });
+    const session = new ApiSession(api, "c1", new SessionLease(() => {}));
+    await session.subscribeTriggerChanges({ async onTriggerChange() {} });
+
+    session[Symbol.dispose]();
+
+    expect((api as unknown as { triggerSubscribers: Map<object, object> }).triggerSubscribers.size).toBe(0);
   });
 });

@@ -189,18 +189,23 @@ export const engineRoutes = routeModule({
       // refused by db-proxy, so only sessions admitted before this point can
       // exist, and revoking ends those and any still authenticating. In a
       // `finally`, because a delete that committed can still fail on its way
-      // back; revoking after a delete that did not happen only makes the
-      // client authenticate again.
+      // back. Revoking a client the delete did not remove costs it its open
+      // sessions and its callbacks until the refresh below lists it again;
+      // it authenticates again and loses nothing else.
       this.clientRevocation?.revoke(clientId);
+      // Not awaited: the reply must go out before the revoked sessions'
+      // sockets close, which happens on the next macrotask, and a client
+      // deleting itself is waiting on that reply.
+      void this.refreshCallbackUrlsAfterRevoke(clientId);
     }
     if (status.code !== "OK") {
       this.logger.warn("db-proxy did not delete the client", { clientId, code: status.code, message: status.message });
       return { success: false, message: `Client not deleted: ${status.message || status.code}` };
     }
-    // Not awaited: the reply must go out before the revoked sessions'
-    // sockets close, which happens on the next macrotask, and a client
-    // deleting itself is waiting on that reply.
-    void this.refreshCallbackUrlsAfterDelete(clientId);
+    // Only once db-proxy confirms the delete, and in the same turn as the
+    // refresh above started, so neither it nor any later refresh lists the
+    // client again.
+    this.webhookClient?.forgetDeletedClient(clientId);
     this.logger.info("Client deleted", { clientId });
     return { success: true, message: "Client deleted" };
   },

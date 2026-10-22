@@ -27,6 +27,8 @@ export const LEGACY_STREAM_EVENT_TYPES: readonly string[] = [
 /** capnweb stubs carry this; the contract types the argument as a plain object. */
 interface Registration {
   subscriber: StreamEventSubscriber;
+  /** The engine client the session belongs to; null for an in-process caller. */
+  clientId: string | null;
   /** The types asked for, or null for `LEGACY_STREAM_EVENT_TYPES`. */
   requested: ReadonlySet<string> | null;
 }
@@ -88,10 +90,15 @@ export class StreamEventBroadcaster {
   async subscribe(
     subscriber: StreamEventSubscriber,
     types: readonly string[] | undefined,
-    session: object
+    session: object,
+    clientId: string | null
   ): Promise<void> {
     const held = holdStub(subscriber);
-    const registration: Registration = { subscriber: held, requested: types === undefined ? null : new Set(types) };
+    const registration: Registration = {
+      subscriber: held,
+      clientId,
+      requested: types === undefined ? null : new Set(types),
+    };
     const replaced = this.registrations.get(session);
     this.registrations.set(session, registration);
     if (replaced) {
@@ -112,19 +119,34 @@ export class StreamEventBroadcaster {
     await this.resync();
   }
 
-  /**
-   * End `session`'s registration, as when its client is revoked while its
-   * socket stays open for another client. A session with none is a no-op.
-   */
+  /** End `session`'s registration, as when the session is disposed. A session with none is a no-op. */
   unsubscribe(session: object): void {
-    const registration = this.registrations.get(session);
-    if (!registration) {
+    this.drop((candidate) => candidate === session);
+  }
+
+  /**
+   * End every registration of `clientId`, whichever session made it and
+   * whether or not that session is still tracked, as when the client is
+   * deleted.
+   */
+  dropClient(clientId: string): void {
+    this.drop((_, registration) => registration.clientId === clientId);
+  }
+
+  private drop(matches: (session: object, registration: Registration) => boolean): void {
+    let dropped = 0;
+    for (const [session, registration] of this.registrations) {
+      if (matches(session, registration)) {
+        this.registrations.delete(session);
+        releaseStub(registration.subscriber);
+        dropped++;
+      }
+    }
+    if (dropped === 0) {
       return;
     }
-    this.registrations.delete(session);
-    releaseStub(registration.subscriber);
     this.resync().catch((err) => {
-      this.logger.error("StreamEventBroadcaster: resync after unsubscribe failed", {
+      this.logger.error("StreamEventBroadcaster: resync after dropping subscribers failed", {
         error: err instanceof Error ? err.message : String(err),
       });
     });

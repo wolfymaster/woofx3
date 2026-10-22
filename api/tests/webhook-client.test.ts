@@ -235,7 +235,7 @@ describe("WebhookClient.dropClient", () => {
     }
   });
 
-  it("keeps a refresh that read the client list before the delete from adding the client back", async () => {
+  it("keeps a refresh that read the client list before a confirmed delete from adding the client back", async () => {
     let answer: (value: unknown) => void = () => {};
     const listed = new Promise((resolve) => {
       answer = resolve;
@@ -245,7 +245,7 @@ describe("WebhookClient.dropClient", () => {
     const wc = new WebhookClient(db, logger, new EngineEventStream(logger));
 
     const refreshing = wc.refreshCallbackUrls();
-    wc.dropClient("gone");
+    wc.forgetDeletedClient("gone");
     answer({
       clients: [
         { clientId: "gone", description: "d", callbackUrl: "http://gone", callbackToken: "" },
@@ -253,6 +253,21 @@ describe("WebhookClient.dropClient", () => {
       ],
     });
     await refreshing;
+
+    expect(wc.clientIds()).toEqual(["kept"]);
+  });
+});
+
+describe("WebhookClient after a revoke whose delete failed", () => {
+  it("lists the client again on the next refresh", async () => {
+    const db = fakeDb([{ clientId: "kept", description: "d", callbackUrl: "http://kept", callbackToken: "" }]);
+    const logger = fakeLogger();
+    const wc = new WebhookClient(db, logger, new EngineEventStream(logger));
+    await wc.refreshCallbackUrls();
+
+    wc.dropClient("kept");
+    expect(wc.clientIds()).toEqual([]);
+    await wc.refreshCallbackUrls();
 
     expect(wc.clientIds()).toEqual(["kept"]);
   });

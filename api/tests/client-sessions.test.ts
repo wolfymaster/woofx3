@@ -183,17 +183,15 @@ describe("ClientSessions hardening", () => {
     expect(conn.closes).toEqual([]);
   });
 
-  test("revoking runs each session's revoke listeners and logs how many sessions it ended", () => {
+  test("revoking logs how many sessions it ended", () => {
     const infos: unknown[][] = [];
     const recording = { ...logger, info: (...args: unknown[]) => infos.push(args) } as unknown as SharedLogger;
     const sessions = new ClientSessions(recording);
-    const dropped: string[] = [];
-    sessions.register("c1", 0, socket().connection)!.onRevoke(() => dropped.push("first"));
-    sessions.register("c1", 0, socket().connection)!.onRevoke(() => dropped.push("second"));
+    sessions.register("c1", 0, socket().connection);
+    sessions.register("c1", 0, socket().connection);
 
     sessions.revoke("c1");
 
-    expect(dropped).toEqual(["first", "second"]);
     expect(infos).toContainEqual(["Ended a revoked client's sessions", { clientId: "c1", sessions: 2 }]);
   });
 });
@@ -207,12 +205,13 @@ describe("ClientRevoker", () => {
       { invalidateCache: () => calls.push("cache") },
       sessions,
       { dropClient: (clientId: string) => calls.push(`events:${clientId}`) },
-      { dropClient: (clientId: string) => calls.push(`callbacks:${clientId}`) }
+      { dropClient: (clientId: string) => calls.push(`callbacks:${clientId}`) },
+      { dropClientSubscriptions: (clientId: string) => calls.push(`subscriptions:${clientId}`) }
     );
 
     revoker.revoke("c1");
 
-    expect(calls).toEqual(["cache", "events:c1", "callbacks:c1"]);
+    expect(calls).toEqual(["cache", "events:c1", "callbacks:c1", "subscriptions:c1"]);
     expect(isAuthenticationRefused(refusalOf(lease))).toBe(true);
   });
 });

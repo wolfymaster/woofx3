@@ -97,14 +97,15 @@ async function barkloaderRequestError(response: Response): Promise<Error> {
  */
 export class ApiRouteHost extends RpcTarget {
   /**
-   * Each held trigger-change callback, with the session that subscribed it,
-   * or the callback itself for an in-process caller with no session.
+   * Each held trigger-change callback, with the session that subscribed it
+   * (the callback itself for an in-process caller with no session) and that
+   * session's client (null for an in-process caller).
    */
   protected triggerSubscribers = new Map<
     {
       onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
     },
-    object
+    { session: object; clientId: string | null }
   >();
   protected webhookClient: WebhookClient | null = null;
   protected streamEventBroadcaster: StreamEventBroadcaster | null = null;
@@ -190,18 +191,18 @@ export class ApiRouteHost extends RpcTarget {
   }
 
   /**
-   * Stop delivering callbacks to a deleted client. Never throws: the delete
-   * has already happened, and a failed refresh is logged. The callback list
-   * is read again on the next refresh.
+   * Re-read the callback list after a client was revoked: it drops a deleted
+   * client for good, and lists again one whose delete failed. Never throws:
+   * a failed refresh is logged, and the list is read again on the next one.
    */
-  protected async refreshCallbackUrlsAfterDelete(clientId: string): Promise<void> {
+  protected async refreshCallbackUrlsAfterRevoke(clientId: string): Promise<void> {
     if (!this.webhookClient) {
       return;
     }
     try {
       await this.webhookClient.refreshCallbackUrls();
     } catch (err) {
-      this.logger.error("Failed to refresh callback URLs after deleting a client", {
+      this.logger.error("Failed to refresh callback URLs after revoking a client", {
         clientId,
         error: err instanceof Error ? err.message : String(err),
       });
@@ -308,6 +309,15 @@ export class ApiRouteHost extends RpcTarget {
       await this.publishEvent(RELAY_CONFIG_UPDATED_SUBJECT, { at: new Date().toISOString() });
     } catch (err) {
       this.logger.warn(`Failed to publish ${RELAY_CONFIG_UPDATED_SUBJECT}`, { err });
+    }
+  }
+
+  protected dropTriggerSubscribers(matches: (owner: { session: object; clientId: string | null }) => boolean): void {
+    for (const [held, owner] of this.triggerSubscribers) {
+      if (matches(owner)) {
+        this.triggerSubscribers.delete(held);
+        releaseStub(held);
+      }
     }
   }
 

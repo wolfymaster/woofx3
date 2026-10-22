@@ -76,7 +76,7 @@ describe("StreamEventBroadcaster", () => {
     expect(handlers.size).toBe(0);
 
     const { frames, subscriber } = collector();
-    await broadcaster.subscribe(subscriber, undefined, {});
+    await broadcaster.subscribe(subscriber, undefined, {}, null);
     expect([...handlers.keys()].sort()).toEqual([...LEGACY_STREAM_EVENT_TYPES].sort());
 
     deliver("channel.ad_break.upcoming", {
@@ -109,8 +109,8 @@ describe("StreamEventBroadcaster", () => {
 
     const widget = collector();
     const adBreaks = collector();
-    await broadcaster.subscribe(widget.subscriber, ["goal.reached", "user.message", "not.installed"], {});
-    await broadcaster.subscribe(adBreaks.subscriber, AD_BREAKS, {});
+    await broadcaster.subscribe(widget.subscriber, ["goal.reached", "user.message", "not.installed"], {}, null);
+    await broadcaster.subscribe(adBreaks.subscriber, AD_BREAKS, {}, null);
     expect([...handlers.keys()].sort()).toEqual(["goal.reached", ...AD_BREAKS].sort());
 
     deliver("goal.reached", event("goal.reached", "evt-1"));
@@ -130,8 +130,8 @@ describe("StreamEventBroadcaster", () => {
 
     const first = collector();
     const second = collector();
-    await broadcaster.subscribe(first.subscriber, ["channel.follow"], session);
-    await broadcaster.subscribe(second.subscriber, ["goal.reached"], session);
+    await broadcaster.subscribe(first.subscriber, ["channel.follow"], session, null);
+    await broadcaster.subscribe(second.subscriber, ["goal.reached"], session, null);
 
     expect(broadcaster.subscriberCount).toBe(1);
     expect([...handlers.keys()]).toEqual(["goal.reached"]);
@@ -155,9 +155,9 @@ describe("StreamEventBroadcaster", () => {
     });
     const session = {};
 
-    await broadcaster.subscribe(stub(), ["channel.follow"], session);
-    await broadcaster.subscribe(stub(), ["goal.reached"], session);
-    await broadcaster.subscribe(stub(), ["goal.reached"], {});
+    await broadcaster.subscribe(stub(), ["channel.follow"], session, null);
+    await broadcaster.subscribe(stub(), ["goal.reached"], session, null);
+    await broadcaster.subscribe(stub(), ["goal.reached"], {}, null);
 
     breakers[0]?.();
     await flush();
@@ -179,7 +179,7 @@ describe("StreamEventBroadcaster", () => {
     const { catalog, change } = fakeCatalog([]);
     const broadcaster = new StreamEventBroadcaster(nats, logger, catalog);
     await broadcaster.start();
-    await broadcaster.subscribe(collector().subscriber, ["goal.reached"], {});
+    await broadcaster.subscribe(collector().subscriber, ["goal.reached"], {}, null);
     expect(handlers.size).toBe(0);
 
     await change(["goal.reached"]);
@@ -195,7 +195,7 @@ describe("StreamEventBroadcaster", () => {
     const broadcaster = new StreamEventBroadcaster(nats, logger, catalog);
     await broadcaster.start();
     const { frames, subscriber } = collector();
-    await broadcaster.subscribe(subscriber, ["goal.reached"], {});
+    await broadcaster.subscribe(subscriber, ["goal.reached"], {}, null);
 
     deliver("goal.reached", {
       id: "evt-2",
@@ -215,7 +215,7 @@ describe("StreamEventBroadcaster", () => {
     await broadcaster.start();
     const revoked = collector();
     const session = {};
-    await broadcaster.subscribe(revoked.subscriber, ["channel.follow"], session);
+    await broadcaster.subscribe(revoked.subscriber, ["channel.follow"], session, "c1");
 
     broadcaster.unsubscribe(session);
     broadcaster.unsubscribe(session);
@@ -226,5 +226,26 @@ describe("StreamEventBroadcaster", () => {
     expect(revoked.frames).toEqual([]);
     expect(broadcaster.subscriberCount).toBe(0);
     expect(handlers.size).toBe(0);
+  });
+  test("dropClient ends every registration of that client, and only that client", async () => {
+    const { nats, deliver } = fakeBus();
+    const { catalog } = fakeCatalog(["channel.follow"]);
+    const broadcaster = new StreamEventBroadcaster(nats, logger, catalog);
+    await broadcaster.start();
+    const first = collector();
+    const second = collector();
+    const kept = collector();
+    await broadcaster.subscribe(first.subscriber, ["channel.follow"], {}, "doomed");
+    await broadcaster.subscribe(second.subscriber, ["channel.follow"], {}, "doomed");
+    await broadcaster.subscribe(kept.subscriber, ["channel.follow"], {}, "admin");
+
+    broadcaster.dropClient("doomed");
+    await flush();
+    deliver("channel.follow", event("channel.follow"));
+    await flush();
+
+    expect(first.frames).toEqual([]);
+    expect(second.frames).toEqual([]);
+    expect(kept.frames).toHaveLength(1);
   });
 });

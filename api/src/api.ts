@@ -1,7 +1,6 @@
 import type { ClientRevocation } from "./client-sessions";
 import type { EngineEventStream } from "./engine-event-stream";
 import type { EventLogSelectionSource } from "./event-log-selection";
-import { releaseStub } from "./held-stub";
 import { type RegisteredApiRoutes, registerAllRoutes } from "./routes";
 import { type ApiOptions, ApiRouteHost } from "./routes/context";
 import type { StreamEventBroadcaster } from "./stream-event-broadcaster";
@@ -64,18 +63,22 @@ export class Api extends ApiRouteHost {
   }
 
   /**
-   * End the subscriptions `session` keyed: stream events and trigger
-   * changes. For a session whose client was revoked, so the engine stops
-   * pushing to it even when its socket stays open for another client.
+   * End the stream-event and trigger-change subscriptions `session` made,
+   * for a session its client disposed: the callbacks are separate stubs and
+   * would otherwise outlive it.
    */
   dropSessionSubscriptions(session: object): void {
     this.streamEventBroadcaster?.unsubscribe(session);
-    for (const [held, owner] of this.triggerSubscribers) {
-      if (owner === session) {
-        this.triggerSubscribers.delete(held);
-        releaseStub(held);
-      }
-    }
+    this.dropTriggerSubscribers((owner) => owner.session === session);
+  }
+
+  /**
+   * End every stream-event and trigger-change subscription of `clientId`,
+   * from any of its sessions, tracked or disposed, for a revoked client.
+   */
+  dropClientSubscriptions(clientId: string): void {
+    this.streamEventBroadcaster?.dropClient(clientId);
+    this.dropTriggerSubscribers((owner) => owner.clientId === clientId);
   }
 }
 

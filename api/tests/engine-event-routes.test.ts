@@ -136,7 +136,7 @@ describe("deleteClient", () => {
     };
     const { api, stream } = newApi(db);
     api.setClientRevocation(
-      new ClientRevoker({ invalidateCache() {} }, new ClientSessions(logger), stream, { dropClient() {} })
+      new ClientRevoker({ invalidateCache() {} }, new ClientSessions(logger), stream, { dropClient() {} }, api)
     );
     const gone = recorder();
     const kept = recorder();

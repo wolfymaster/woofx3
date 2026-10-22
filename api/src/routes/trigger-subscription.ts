@@ -6,10 +6,10 @@ export const triggerSubscriptionRoutes = routeModule({
     callback: {
       onTriggerChange(event: { type: string; moduleName: string }): Promise<void>;
     },
-    context?: { session: object }
+    context?: { session: object; clientId: string }
   ): Promise<void> {
     const held = holdStub(callback);
-    this.triggerSubscribers.set(held, context?.session ?? held);
+    this.triggerSubscribers.set(held, { session: context?.session ?? held, clientId: context?.clientId ?? null });
     onStubBroken(held, () => {
       if (this.triggerSubscribers.delete(held)) {
         releaseStub(held);
