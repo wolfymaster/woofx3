@@ -210,8 +210,18 @@ describe("parseHelixChatMessageResult", () => {
       result: { sent: false, dropReason: null },
     },
     {
-      name: "sent without a message id",
+      name: "sent without a message id is still sent, so nobody resends it",
       body: { data: [{ is_sent: true }] },
+      result: { sent: true, messageId: null },
+    },
+    {
+      name: "sent with an empty message id",
+      body: { data: [{ message_id: "", is_sent: true }] },
+      result: { sent: true, messageId: null },
+    },
+    {
+      name: "is_sent as text is not sent",
+      body: { data: [{ message_id: "abc", is_sent: "true" }] },
       result: { sent: false, dropReason: null },
     },
     { name: "no result", body: { data: [] }, result: { sent: false, dropReason: null } },

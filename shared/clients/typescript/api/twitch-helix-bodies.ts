@@ -5,9 +5,10 @@
  * returns, and a client reads either source with the same function.
  *
  * Each reader takes the parsed body as `unknown` and returns `null` when the
- * body is not the shape Helix documents for that call. Inside a list, an
- * entry missing a field the result cannot do without is skipped; an optional
- * field that is missing or of the wrong type reads as absent (`null` or
+ * body is not the shape Helix documents for that call. An empty string is
+ * read as absent, like a missing field. Inside a list, an entry missing a
+ * field the result cannot do without is skipped; an optional field that is
+ * missing, empty or of the wrong type reads as absent (`null` or
  * `undefined`). What a client says to a person about a failure is the
  * client's choice and is not decided here.
  */
@@ -144,17 +145,20 @@ export function parseHelixClip(body: unknown): HelixClip | null {
 /**
  * `POST /helix/chat/messages`. Twitch answers 200 even when it drops the
  * message (AutoMod, a duplicate, a blocked term), so whether it was sent is
- * read from the body. `dropReason` is Twitch's sentence, or null when it
- * gave none.
+ * read from the body's `is_sent`. A sent message is reported as sent even
+ * when Twitch gave no id for it: calling it dropped would invite a resend,
+ * and chat would get it twice. `dropReason` is Twitch's sentence, or null
+ * when it gave none.
  */
-export type HelixChatMessageResult = { sent: true; messageId: string } | { sent: false; dropReason: string | null };
+export type HelixChatMessageResult =
+  | { sent: true; messageId: string | null }
+  | { sent: false; dropReason: string | null };
 
-/** The outcome in a `POST /helix/chat/messages` body. A body that says nothing was not sent. */
+/** The outcome in a `POST /helix/chat/messages` body. A body that does not say it was sent was not. */
 export function parseHelixChatMessageResult(body: unknown): HelixChatMessageResult {
   const row = firstRow(body);
-  const messageId = text(row?.message_id);
-  if (row?.is_sent === true && messageId) {
-    return { sent: true, messageId };
+  if (row?.is_sent === true) {
+    return { sent: true, messageId: text(row.message_id) };
   }
   const drop = row?.drop_reason;
   return { sent: false, dropReason: isRecord(drop) ? text(drop.message) : null };
