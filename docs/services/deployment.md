@@ -29,10 +29,11 @@ runs its services directly and is reached on their own ports.
 
 ## Everything else stays on loopback
 
-db-proxy has no authentication, NATS trusts anyone holding its one shared
-token (see [Message bus hardening](#message-bus-hardening)), and hosts such as
-Railway put every service in a project on one private network. So every other
-listener binds `127.0.0.1` by default:
+db-proxy holds every credential the engine keeps, NATS trusts anyone holding its
+one shared token (see [Message bus hardening](#message-bus-hardening)), and hosts
+such as Railway put every service in a project on one private network. So every
+other listener binds `127.0.0.1` by default, and db-proxy also checks each caller
+(see [The db proxy](#the-db-proxy)):
 
 | Service | Setting | Default |
 |---|---|---|
@@ -155,6 +156,7 @@ browsers:
 | `barkloaderKey` / `WOOFX3_BARKLOADER_KEY` | Requests between the api, barkloader and the other services; upload grants; media proxy URLs. |
 | `sceneManagerTokenSecret` / `WOOFX3_SCENE_MANAGER_TOKEN_SECRET` | Overlay session and scene editor tokens. |
 | `messagebusToken` / `WOOFX3_MESSAGEBUS_TOKEN` | Every connection to the message bus (see [Message bus hardening](#message-bus-hardening)). |
+| `dbProxyToken` / `WOOFX3_DB_PROXY_TOKEN` | Every service's requests to db-proxy (see [The db proxy](#the-db-proxy)). |
 
 None ships in `.woofx3.json`. Before it starts any service, the orchestrator
 resolves each one from the first of these that holds a usable value:
@@ -164,7 +166,7 @@ resolves each one from the first of these that holds a usable value:
 3. the file the orchestrator wrote on an earlier run: `data/secrets/<name>`
    under the [data directory](./runtime.md#the-data-directory), or under the
    working directory when `WOOFX3_DATA_DIR` is unset (`barkloader-key`,
-   `scene-manager-token-secret`, `messagebus-token`). It sits beside the database, so it lives on
+   `scene-manager-token-secret`, `messagebus-token`, `db-proxy-token`). It sits beside the database, so it lives on
    the production image's `/app/data` volume and is copied along with the
    rest of `data/` when a data directory is first set;
 4. a new random 32-byte value, hex-encoded, written to that file with mode
@@ -187,7 +189,38 @@ for example `openssl rand -hex 32`. Do this for a container without a
 volume at `/app/data`, or the secrets change every time it is recreated. Services run
 without the orchestrator (in development, or one at a time) do not generate
 anything: sceneManager, the api, barkloader and the message bus refuse to
-start, naming the setting, unless they are given a usable value.
+start, naming the setting, unless they are given a usable value, and db-proxy
+and every service that calls it do the same for `dbProxyToken`.
+
+## The db proxy
+
+db-proxy answers only requests that carry the engine's service token as
+`Authorization: Bearer <dbProxyToken>` and name an allowed host. The api,
+barkloader, sceneManager, twitch, woofwoofwoof and the workflow engine all send
+the token on every call. A request without it, or with the wrong one, gets a
+Twirp `unauthenticated` error (HTTP 401). The token is the same for every
+service; there is no per-service list of allowed calls.
+
+The Host check stands against DNS rebinding: a web page that points its own
+domain at `127.0.0.1` still sends that domain as its Host, so it gets a Twirp
+`permission_denied` error (HTTP 403) before the token is considered. Loopback
+names (`localhost`, `127.0.0.1`, `::1`) are always allowed. Add the names other
+containers use to reach db-proxy, comma-separated, to
+`WOOFX3_DATABASE_PROXY_ALLOWED_HOSTS` (`docker-compose.dev.yml` sets `db`).
+
+The HTTP server also bounds how long it waits on a client and how much it reads:
+
+| Setting | Default |
+|---|---|
+| `WOOFX3_DATABASE_PROXY_READ_HEADER_TIMEOUT` | `5s` |
+| `WOOFX3_DATABASE_PROXY_READ_TIMEOUT` | `30s` |
+| `WOOFX3_DATABASE_PROXY_WRITE_TIMEOUT` | `60s` |
+| `WOOFX3_DATABASE_PROXY_IDLE_TIMEOUT` | `120s` |
+| `WOOFX3_DATABASE_PROXY_MAX_BODY_BYTES` | `8388608` (8 MiB) |
+
+Timeouts are Go durations (`45s`, `2m`). A request body declared larger than
+the cap is refused with HTTP 413. A value that does not parse, or is not
+positive, stops db-proxy at startup.
 
 ## Host and Origin checks
 

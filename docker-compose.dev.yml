@@ -31,6 +31,11 @@ x-dev-barkloader-key: &dev-barkloader-key ${WOOFX3_BARKLOADER_KEY:-920b1fd6f0f8b
 # WOOFX3_MESSAGEBUS_TOKEN in .env (at least 32 bytes) to use your own.
 x-dev-messagebus-token: &dev-messagebus-token ${WOOFX3_MESSAGEBUS_TOKEN:-a1a1e55da81b066ec63a4bdd57293d88db023e073fe10376f04a6f9ac91dbb4f}
 
+# The db proxy refuses callers without its service token, so the db service
+# and every service that dials it share this dev-only value. Set
+# WOOFX3_DB_PROXY_TOKEN in .env (at least 32 bytes) to use your own.
+x-dev-db-proxy-token: &dev-db-proxy-token ${WOOFX3_DB_PROXY_TOKEN:-c4fdfa693dbd3ff5feee0fd342421a1e8d59d0dda8ce1b4d21d58650624caee3}
+
 services:
   messagebus:
     image: woofx3-dev
@@ -66,6 +71,9 @@ services:
       WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
       WOOFX3_DATABASE_PROXY_HOST: 0.0.0.0
+      # Other containers reach the proxy by this service name.
+      WOOFX3_DATABASE_PROXY_ALLOWED_HOSTS: db
+      WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token
     volumes:
       - ./.woofx3.json:/app/.woofx3.json:ro
       - ./db:/app/db
@@ -92,6 +100,7 @@ services:
       WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
       WOOFX3_BARKLOADER_KEY: *dev-barkloader-key
+      WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token
     volumes:
       - ./.woofx3.json:/app/.woofx3.json:ro
       - ./workflow:/app/workflow
@@ -120,6 +129,7 @@ services:
       MESSAGEBUS_URL: nats://messagebus:4222
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
       WOOFX3_BARKLOADER_KEY: *dev-barkloader-key
+      WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token
     volumes:
       - ./.woofx3.json:/app/.woofx3.json:ro
       - ./barkloader:/app/barkloader
@@ -146,6 +156,7 @@ services:
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
       WOOFX3_API_HOST: 0.0.0.0
       WOOFX3_BARKLOADER_KEY: *dev-barkloader-key
+      WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token
     volumes:
       - ./.woofx3.json:/app/.woofx3.json:ro
       - ./api:/app/api
@@ -169,6 +180,7 @@ services:
       FORCE_COLOR: "1"
       WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
+      WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token
     volumes:
       - ./.woofx3.json:/app/.woofx3.json:ro
       - ./twitch:/app/twitch
@@ -192,6 +204,7 @@ services:
       WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
       WOOFX3_BARKLOADER_KEY: *dev-barkloader-key
+      WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token
     volumes:
       - ./.woofx3.json:/app/.woofx3.json:ro
       - ./woofwoofwoof:/app/woofwoofwoof

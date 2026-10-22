@@ -3,6 +3,7 @@ import { EventType as ChatEventType } from "@woofx3/common/cloudevents/Chat";
 import { EventType as CommandEventType } from "@woofx3/common/cloudevents/Command";
 import { EventType } from "@woofx3/common/cloudevents/Twitch";
 import type { Command } from "@woofx3/db/command.pb";
+import { dbProxyClientConfig } from "@woofx3/db/service-auth";
 
 /** The linked broadcaster, whose token the bot speaks with. */
 const BROADCASTER_ID = "b-1";
@@ -76,16 +77,19 @@ async function start(options: { commands?: () => Command[] | Promise<Command[]> 
 
   // The real client, so its lookup by id runs against a fake listing.
   const commands = options.commands ?? (() => []);
-  const db = Object.assign(new DatabaseClient("http://db-proxy.invalid"), {
-    listCommands: mock(async () => ({ status: { code: "OK" as const, message: "" }, commands: await commands() })),
-    hasPermission: mock(async () => ({ code: "PERMISSION_DENIED" as const, message: "" })),
-    listGroups: mock(async () => ({
-      status: { code: "OK" as const, message: "" },
-      groups: [{ id: "g-mod", name: "moderator", description: "", isBuiltIn: true }],
-    })),
-    addUserToGroup: mock(async () => ({ code: "OK" as const, message: "" })),
-    removeUserFromGroup: mock(async () => ({ code: "OK" as const, message: "" })),
-  });
+  const db = Object.assign(
+    new DatabaseClient(dbProxyClientConfig("http://db-proxy.invalid", "chat-trust-db-proxy-token")),
+    {
+      listCommands: mock(async () => ({ status: { code: "OK" as const, message: "" }, commands: await commands() })),
+      hasPermission: mock(async () => ({ code: "PERMISSION_DENIED" as const, message: "" })),
+      listGroups: mock(async () => ({
+        status: { code: "OK" as const, message: "" },
+        groups: [{ id: "g-mod", name: "moderator", description: "", isBuiltIn: true }],
+      })),
+      addUserToGroup: mock(async () => ({ code: "OK" as const, message: "" })),
+      removeUserFromGroup: mock(async () => ({ code: "OK" as const, message: "" })),
+    }
+  );
 
   const twitchChat = new TwitchChatClientService({
     requestToken: async () => {

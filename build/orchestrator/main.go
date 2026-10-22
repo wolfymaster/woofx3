@@ -1027,5 +1027,6 @@ func engineSecretSpecs() []SecretSpec {
 		{Name: "barkloader-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey"},
 		{Name: "scene-manager-token-secret", EnvKey: "WOOFX3_SCENE_MANAGER_TOKEN_SECRET", ConfigKey: "sceneManagerTokenSecret"},
 		{Name: "messagebus-token", EnvKey: "WOOFX3_MESSAGEBUS_TOKEN", ConfigKey: "messagebusToken"},
+		{Name: "db-proxy-token", EnvKey: "WOOFX3_DB_PROXY_TOKEN", ConfigKey: "dbProxyToken"},
 	}
 }

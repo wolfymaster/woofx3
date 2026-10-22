@@ -78,16 +78,27 @@ func main() {
 			}
 
 			// Database
+			dbProxyToken, err := cfg.dbProxyToken()
+			if err != nil {
+				return err
+			}
 			dbTimeout, err := cfg.dbRequestTimeout()
 			if err != nil {
 				return err
 			}
-			httpClient := newDBHTTPClient(dbTimeout)
+			httpClient, err := db.WithServiceToken(newDBHTTPClient(dbTimeout), dbProxyToken)
+			if err != nil {
+				return err
+			}
+			factHTTPClient, err := db.WithServiceToken(newFactHTTPClient(), dbProxyToken)
+			if err != nil {
+				return err
+			}
 			dbClient := db.NewDbProxyClient(cfg.DatabaseProxyURL, httpClient)
 			// The alert and viewer fact services are not on DbProxyClient,
 			// which predates them.
 			alertClient := db.NewAlertServiceProtobufClient(cfg.DatabaseProxyURL, httpClient)
-			factClient := db.NewViewerFactServiceProtobufClient(cfg.DatabaseProxyURL, newFactHTTPClient())
+			factClient := db.NewViewerFactServiceProtobufClient(cfg.DatabaseProxyURL, factHTTPClient)
 			dbProxyService := service.NewDbProxyService(dbClient, true)
 			logger.Info("Database client configured", "url", cfg.DatabaseProxyURL)
 

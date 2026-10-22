@@ -1,6 +1,7 @@
 import path from "node:path";
 import { createServiceLogger } from "@woofx3/common/logging";
 import { createApplication, createNATSMonitor, createRuntime, loadRuntimeEnv } from "@woofx3/common/runtime";
+import { dbProxyClientConfig } from "@woofx3/db/service-auth";
 import MessageBus from "@woofx3/nats";
 import Application, { type TwitchApiApplication } from "./application";
 import { TwitchEnvSchema } from "./config";
@@ -48,7 +49,15 @@ const runtime = createRuntime({
   livenessInterval: 300_000,
   runtimeInit: async (app: TwitchApiApplication) => {
     app.register("messageBus", new MessageBusService(bus));
-    app.register("dbProxy", new DbProxyService(loadedConfig.getConfig("woofx3DatabaseProxyUrl") as string));
+    app.register(
+      "dbProxy",
+      new DbProxyService(
+        dbProxyClientConfig(
+          loadedConfig.getConfig("woofx3DatabaseProxyUrl") as string,
+          loadedConfig.getConfig("woofx3DbProxyToken") as string
+        )
+      )
+    );
   },
   runtimeTerminate: async () => {},
 });

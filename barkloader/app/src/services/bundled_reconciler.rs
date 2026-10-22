@@ -186,6 +186,16 @@ fn read_archive(module: &BundledModule) -> Result<Vec<(String, Vec<u8>)>> {
 mod tests {
     use super::*;
 
+    /// The db-proxy client is configured once per process, so every test in
+    /// this binary that dials the fake db-proxy shares this one setup.
+    fn configure_db_proxy_auth() {
+        static CONFIGURED: std::sync::Once = std::sync::Once::new();
+        CONFIGURED.call_once(|| {
+            lib_module::db_proxy::configure_service_auth("bundled-reconciler-test-token")
+                .expect("configure the db proxy client");
+        });
+    }
+
     #[test]
     fn an_absent_module_installs() {
         assert!(needs_install(None, "0.1.0"));
@@ -292,6 +302,7 @@ mod tests {
             }
         })
         .to_string();
+        configure_db_proxy_auth();
         let server = FakeDbProxyServer::start(installed_version, "/RegisterActions");
         let dir = tempfile::tempdir().expect("tempdir");
         let repository =

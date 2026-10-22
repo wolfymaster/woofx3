@@ -6,8 +6,8 @@ import type {
   TwitchAccessToken,
   UpdateCommandInput,
 } from "@woofx3/api";
-import { TRIGGER_TYPE_COMMAND, type TaskDefinition } from "@woofx3/api/workflow-definition";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import { type TaskDefinition, TRIGGER_TYPE_COMMAND } from "@woofx3/api/workflow-definition";
 import ActionEvents from "@woofx3/common/cloudevents/Action";
 import ChatCommandEvents from "@woofx3/common/cloudevents/Chat/commands";
 import CommandEvents from "@woofx3/common/cloudevents/Command";
@@ -389,7 +389,7 @@ export const commandsRoutes = routeModule({
 
     // Same notification as setTwitchToken — the row changed, downstream
     // consumers should re-read. Their reload path will see an empty
-    // setting and back off (twitchBootstrap already throws on empty).
+    // setting and back off.
     try {
       await this.publishEvent("setting.integration.token.updated", {
         integration: "twitch",

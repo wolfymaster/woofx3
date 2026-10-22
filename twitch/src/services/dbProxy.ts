@@ -1,22 +1,23 @@
 import type { Service } from "@woofx3/common/runtime";
 import { Ping } from "@woofx3/db/common.pb";
+import type { DbProxyClientConfig } from "@woofx3/db/service-auth";
 
-type DbProxyClient = {
-  baseURL: string;
-};
-
-export default class DbProxyService implements Service<DbProxyClient> {
+/**
+ * The db-proxy connection. `client` is the configuration every generated RPC
+ * call is made with, so each call carries the service token.
+ */
+export default class DbProxyService implements Service<DbProxyClientConfig> {
   healthcheck: boolean;
   name: string;
   type: string;
-  client: DbProxyClient;
+  client: DbProxyClientConfig;
   connected: boolean;
 
-  constructor(baseURL: string) {
+  constructor(config: DbProxyClientConfig) {
     this.healthcheck = true;
     this.name = "dbProxy";
     this.type = "db";
-    this.client = { baseURL };
+    this.client = config;
     this.connected = false;
   }
 
@@ -29,7 +30,7 @@ export default class DbProxyService implements Service<DbProxyClient> {
       throw new Error("db proxy client not properly initialized");
     }
 
-    await Ping({}, { baseURL: this.client.baseURL });
+    await Ping({}, this.client);
     this.connected = true;
   }
 

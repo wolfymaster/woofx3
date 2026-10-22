@@ -1,6 +1,7 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
 import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import { loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
+import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { z } from "zod";
 import { DEFAULT_AUTH_CACHE_TTL_MS } from "./auth";
 import { type BarkloaderWebhookAuth, parseBarkloaderWebhookAuth } from "./barkloader-webhook-auth";
@@ -35,6 +36,8 @@ export interface ApiConfig {
   host: string;
   rootDir: string;
   databaseProxyUrl: string;
+  /** Service token db-proxy requires of every caller (`WOOFX3_DB_PROXY_TOKEN`). */
+  dbProxyToken: string;
   barkloaderUrl: string;
   /**
    * Barkloader's WebSocket endpoint. The api runs module functions over it
@@ -151,6 +154,7 @@ export const ApiEnvSchema = z.looseObject({
   woofx3TwitchPublicClientId: z.union([z.string(), z.number()]).optional(),
   woofx3TwitchClientId: z.union([z.string(), z.number()]).optional(),
   woofx3AuthCacheTtlMs: z.union([z.number(), z.string()]).optional(),
+  woofx3DbProxyToken: z.string().optional(),
 });
 
 /**
@@ -304,6 +308,10 @@ export function loadConfig(): ApiConfig {
   if (!barkloaderKeyCheck.ok) {
     throw new Error(barkloaderKeyCheck.error.message);
   }
+  const dbProxyTokenCheck = validateSecret(DB_PROXY_TOKEN_CONFIG_KEY, String(config.woofx3DbProxyToken ?? ""));
+  if (!dbProxyTokenCheck.ok) {
+    throw new Error(dbProxyTokenCheck.error.message);
+  }
 
   // Tiger Style: fail fast at startup on malformed URLs rather than
   // composing broken overlay URLs or proxying into the void at runtime.
@@ -354,6 +362,7 @@ export function loadConfig(): ApiConfig {
     port,
     host,
     databaseProxyUrl,
+    dbProxyToken: dbProxyTokenCheck.value,
     barkloaderUrl,
     barkloaderWsUrl,
     barkloaderKey,

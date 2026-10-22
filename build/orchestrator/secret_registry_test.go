@@ -11,7 +11,7 @@ func TestEngineSecretSpecsRegisterTheSecretsServicesRequire(t *testing.T) {
 	for _, spec := range specs {
 		registered[spec.EnvKey] = true
 	}
-	for _, want := range []string{"WOOFX3_MESSAGEBUS_TOKEN", "WOOFX3_BARKLOADER_KEY", "WOOFX3_SCENE_MANAGER_TOKEN_SECRET"} {
+	for _, want := range []string{"WOOFX3_MESSAGEBUS_TOKEN", "WOOFX3_BARKLOADER_KEY", "WOOFX3_SCENE_MANAGER_TOKEN_SECRET", "WOOFX3_DB_PROXY_TOKEN"} {
 		if !registered[want] {
 			t.Errorf("%s is not in the engine secret registry", want)
 		}
