@@ -134,6 +134,28 @@ mod tests {
     }
 
     #[test]
+    fn test_declared_event_reservation_platform_gateway_refused_for_uploads() {
+        for event in [
+            "platform.gateway.send",
+            "platform.gateway.capabilities",
+            "platform.gateway.field_options",
+        ] {
+            assert_eq!(
+                declared_event_reservation(event, "store", InstallProvenance::User),
+                Some("platform.gateway."),
+                "{event}"
+            );
+        }
+        for event in ["platform.gatewayx", "platform.other"] {
+            assert_eq!(
+                declared_event_reservation(event, "store", InstallProvenance::User),
+                None,
+                "{event}"
+            );
+        }
+    }
+
+    #[test]
     fn test_in_own_module_namespace() {
         for (event, module_id, own) in [
             ("module.store.order", "store", true),

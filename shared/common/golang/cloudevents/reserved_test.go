@@ -102,6 +102,8 @@ func TestReservedSubjectMatch(t *testing.T) {
 		{"stream.online", "stream.online"},
 		{"channel.cheer", "channel."},
 		{"session.ended", "session."},
+		{"platform.gateway.send", "platform.gateway."},
+		{"platform.gateway.field_options", "platform.gateway."},
 		{"command.created", "command."},
 		// Open: nothing reserves these.
 		{"dbx.thing", ""},
@@ -111,6 +113,9 @@ func TestReservedSubjectMatch(t *testing.T) {
 		{"custom.event", ""},
 		{"message.sent", ""},
 		{"message.send.later", ""},
+		{"platform.gatewayx", ""},
+		{"platform.gateway", ""},
+		{"platform.other", ""},
 	}
 	for _, tc := range cases {
 		match, reserved := ReservedSubjectMatch(tc.subject)
@@ -212,5 +217,34 @@ func TestEngineModuleSubjectsAreListedSegments(t *testing.T) {
 	})
 	if checked == 0 {
 		t.Fatal("found no module.* subjects in subjects.go; is it still parsed right?")
+	}
+}
+
+// The Go constants and the platform gateway contract name the same subjects.
+// The contract is read from disk so this module needs no dependency on the
+// generated platformgateway package.
+func TestPlatformGatewaySubjectsMatchTheGatewayContract(t *testing.T) {
+	raw, err := os.ReadFile("../../contracts/platform-gateway.json")
+	if err != nil {
+		t.Fatalf("read platform-gateway.json: %v", err)
+	}
+	var contract struct {
+		Subjects map[string]string `json:"subjects"`
+	}
+	if err := json.Unmarshal(raw, &contract); err != nil {
+		t.Fatalf("decode platform-gateway.json: %v", err)
+	}
+	want := map[string]Subject{
+		"send":         SubjectPlatformGatewaySend,
+		"capabilities": SubjectPlatformGatewayCapabilities,
+		"fieldOptions": SubjectPlatformGatewayFieldOptions,
+	}
+	if len(contract.Subjects) != len(want) {
+		t.Fatalf("contract declares %d subjects, constants cover %d", len(contract.Subjects), len(want))
+	}
+	for name, constant := range want {
+		if got := contract.Subjects[name]; got != string(constant) {
+			t.Errorf("subjects.%s = %q in the contract, %q in subjects.go", name, got, constant)
+		}
 	}
 }
