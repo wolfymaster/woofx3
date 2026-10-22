@@ -1,5 +1,9 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
-import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
+import {
+  ALLOWED_ORIGINS_SETTING,
+  parseRequestGuardPolicy,
+  type RequestGuardPolicy,
+} from "@woofx3/common/http/request-guard";
 import { loadRuntimeEnv } from "@woofx3/common/runtime";
 import { z } from "zod";
 import { type BarkloaderWebhookAuth, parseBarkloaderWebhookAuth } from "./barkloader-webhook-auth";
@@ -58,7 +62,8 @@ export interface ApiConfig {
   apiUrl: string;
   /**
    * Hosts and origins the HTTP server accepts (`WOOFX3_ALLOWED_HOSTS`,
-   * `WOOFX3_ALLOWED_ORIGINS`); both open unless set. See
+   * `WOOFX3_ALLOWED_ORIGINS`); both open unless set. `null` is refused: no
+   * sandboxed frame calls the api. See
    * shared/common/typescript/http/request-guard.ts.
    */
   requestGuard: RequestGuardPolicy;
@@ -287,6 +292,8 @@ export function loadConfig(): ApiConfig {
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: config.woofx3AllowedHosts,
     allowedOrigins: config.woofx3AllowedOrigins,
+    allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
+    opaqueOrigin: "refuse",
   });
   const marketplaceUrl = config.woofx3MarketplaceUrl ?? config.marketplaceUrl;
   const marketplaceDownloadHosts = config.woofx3MarketplaceDownloadHosts ?? config.marketplaceDownloadHosts;

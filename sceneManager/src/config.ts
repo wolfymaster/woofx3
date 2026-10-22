@@ -1,6 +1,10 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
+import {
+  ALLOWED_ORIGINS_SETTING,
+  parseRequestGuardPolicy,
+  type RequestGuardPolicy,
+} from "@woofx3/common/http/request-guard";
 import { dataDir, loadRuntimeEnv } from "@woofx3/common/runtime";
 import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
 import { z } from "zod";
@@ -30,7 +34,12 @@ export const SceneManagerEnvSchema = z.object({
   // Host and Origin allowlists (shared/common/typescript/http/request-guard.ts).
   woofx3AllowedHosts: z.union([z.string(), z.number(), z.boolean()]).optional(),
   woofx3AllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  // sceneManager's own origin list, used instead of woofx3AllowedOrigins when
+  // set: widget frames need `null`, which the api must never accept.
+  woofx3SceneManagerAllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
 });
+
+export const SCENE_MANAGER_ALLOWED_ORIGINS_SETTING = "WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS";
 
 export interface SceneManagerRuntimeConfig {
   port: number;
@@ -143,6 +152,22 @@ function nonBlank(value: unknown): string | undefined {
   return text === "" ? undefined : text;
 }
 
+/**
+ * The origin list sceneManager checks, and the setting it came from: its own
+ * list when that is set and not blank, else the list it shares with the api.
+ * A blank own list falls back rather than turning the check off, as a blank
+ * value never overrides another setting.
+ */
+function sceneManagerAllowedOrigins(
+  own: string | number | boolean | undefined,
+  shared: string | number | boolean | undefined
+): { allowedOrigins: string | number | boolean | undefined; allowedOriginsSetting: string } {
+  if (own !== undefined && String(own).trim() !== "") {
+    return { allowedOrigins: own, allowedOriginsSetting: SCENE_MANAGER_ALLOWED_ORIGINS_SETTING };
+  }
+  return { allowedOrigins: shared, allowedOriginsSetting: ALLOWED_ORIGINS_SETTING };
+}
+
 export function loadConfig(): SceneManagerRuntimeConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: SceneManagerEnvSchema });
   const c = result.config;
@@ -166,7 +191,8 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const mediaProxySecret = String(c.woofx3BarkloaderKey ?? "");
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: c.woofx3AllowedHosts,
-    allowedOrigins: c.woofx3AllowedOrigins,
+    ...sceneManagerAllowedOrigins(c.woofx3SceneManagerAllowedOrigins, c.woofx3AllowedOrigins),
+    opaqueOrigin: "allow",
   });
 
   return {

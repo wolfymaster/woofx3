@@ -1,22 +1,37 @@
 import { describe, expect, test } from "bun:test";
-import { OPEN_REQUEST_GUARD_POLICY, parseRequestGuardPolicy, RequestGuard } from "./request-guard";
+import {
+  ALLOWED_ORIGINS_SETTING,
+  OPEN_REQUEST_GUARD_POLICY,
+  parseRequestGuardPolicy,
+  RequestGuard,
+  type RequestGuardSettings,
+} from "./request-guard";
+
+/** Parses lists the way a service that allows `null` does, unless told otherwise. */
+function parse(settings: Partial<RequestGuardSettings>) {
+  return parseRequestGuardPolicy({
+    allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
+    opaqueOrigin: "allow",
+    ...settings,
+  });
+}
 
 function request(headers: Record<string, string>): Request {
   return new Request("http://engine.test/api", { headers });
 }
 
 function guardFor(allowedHosts?: string, allowedOrigins?: string): RequestGuard {
-  return new RequestGuard(parseRequestGuardPolicy({ allowedHosts, allowedOrigins }));
+  return new RequestGuard(parse({ allowedHosts, allowedOrigins }));
 }
 
 describe("parseRequestGuardPolicy", () => {
   test("unset, empty and blank lists disable both checks", () => {
-    expect(parseRequestGuardPolicy({})).toEqual(OPEN_REQUEST_GUARD_POLICY);
-    expect(parseRequestGuardPolicy({ allowedHosts: "", allowedOrigins: " , " })).toEqual(OPEN_REQUEST_GUARD_POLICY);
+    expect(parse({})).toEqual(OPEN_REQUEST_GUARD_POLICY);
+    expect(parse({ allowedHosts: "", allowedOrigins: " , " })).toEqual(OPEN_REQUEST_GUARD_POLICY);
   });
 
   test("parses hosts with and without ports, IPv6 bracketed", () => {
-    const policy = parseRequestGuardPolicy({ allowedHosts: "LocalHost, 127.0.0.1:8080 ,[::1]" });
+    const policy = parse({ allowedHosts: "LocalHost, 127.0.0.1:8080 ,[::1]" });
     expect(policy.allowedHosts).toEqual([
       { hostname: "localhost", port: null },
       { hostname: "127.0.0.1", port: "8080" },
@@ -25,7 +40,7 @@ describe("parseRequestGuardPolicy", () => {
   });
 
   test("parses exact, any-port and opaque origins", () => {
-    const policy = parseRequestGuardPolicy({
+    const policy = parse({
       allowedOrigins: "https://App.Example.com:443,http://localhost:*,null,http://127.0.0.1:5173/",
     });
     expect(policy.allowedOrigins).toEqual([
@@ -37,16 +52,32 @@ describe("parseRequestGuardPolicy", () => {
   });
 
   test("throws on malformed entries", () => {
-    expect(() => parseRequestGuardPolicy({ allowedHosts: "http://localhost" })).toThrow("WOOFX3_ALLOWED_HOSTS");
-    expect(() => parseRequestGuardPolicy({ allowedHosts: "*" })).toThrow("WOOFX3_ALLOWED_HOSTS");
-    expect(() => parseRequestGuardPolicy({ allowedOrigins: "localhost:3000" })).toThrow("WOOFX3_ALLOWED_ORIGINS");
-    expect(() => parseRequestGuardPolicy({ allowedOrigins: "https://a.example/path" })).toThrow(
-      "WOOFX3_ALLOWED_ORIGINS"
+    expect(() => parse({ allowedHosts: "http://localhost" })).toThrow("WOOFX3_ALLOWED_HOSTS");
+    expect(() => parse({ allowedHosts: "*" })).toThrow("WOOFX3_ALLOWED_HOSTS");
+    expect(() => parse({ allowedOrigins: "localhost:3000" })).toThrow("WOOFX3_ALLOWED_ORIGINS");
+    expect(() => parse({ allowedOrigins: "https://a.example/path" })).toThrow("WOOFX3_ALLOWED_ORIGINS");
+    expect(() => parse({ allowedOrigins: "*" })).toThrow("WOOFX3_ALLOWED_ORIGINS");
+    expect(() => parse({ allowedOrigins: "http://localhost:3000:*" })).toThrow("WOOFX3_ALLOWED_ORIGINS");
+  });
+});
+
+describe("parseRequestGuardPolicy opaque origin", () => {
+  test("a service that refuses null fails on a list naming it, and only then", () => {
+    expect(() => parse({ allowedOrigins: "https://app.example,null", opaqueOrigin: "refuse" })).toThrow(
+      'WOOFX3_ALLOWED_ORIGINS: "null" is not allowed'
     );
-    expect(() => parseRequestGuardPolicy({ allowedOrigins: "*" })).toThrow("WOOFX3_ALLOWED_ORIGINS");
-    expect(() => parseRequestGuardPolicy({ allowedOrigins: "http://localhost:3000:*" })).toThrow(
-      "WOOFX3_ALLOWED_ORIGINS"
+    expect(parse({ allowedOrigins: "https://app.example", opaqueOrigin: "refuse" }).allowedOrigins).toEqual([
+      { kind: "exact", origin: "https://app.example" },
+    ]);
+  });
+
+  test("errors name the setting the list came from", () => {
+    expect(() => parse({ allowedOrigins: "*", allowedOriginsSetting: "WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS" })).toThrow(
+      "WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS"
     );
+    expect(() =>
+      parse({ allowedOrigins: false, allowedOriginsSetting: "WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS" })
+    ).toThrow("WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS");
   });
 });
 
@@ -157,8 +188,8 @@ describe("RequestGuard desktop webview origins", () => {
   });
 
   test("an origin with no host cannot be listed", () => {
-    expect(() => parseRequestGuardPolicy({ allowedOrigins: "file:///" })).toThrow("WOOFX3_ALLOWED_ORIGINS");
-    expect(() => parseRequestGuardPolicy({ allowedOrigins: "mailto:a@b.example" })).toThrow("WOOFX3_ALLOWED_ORIGINS");
+    expect(() => parse({ allowedOrigins: "file:///" })).toThrow("WOOFX3_ALLOWED_ORIGINS");
+    expect(() => parse({ allowedOrigins: "mailto:a@b.example" })).toThrow("WOOFX3_ALLOWED_ORIGINS");
   });
 });
 
@@ -174,9 +205,9 @@ describe("RequestGuard default ports", () => {
 
 describe("parseRequestGuardPolicy coerced values", () => {
   test("a value the config loader coerced to a boolean or number is refused", () => {
-    expect(() => parseRequestGuardPolicy({ allowedHosts: true })).toThrow("WOOFX3_ALLOWED_HOSTS");
-    expect(() => parseRequestGuardPolicy({ allowedHosts: 8080 })).toThrow("WOOFX3_ALLOWED_HOSTS");
-    expect(() => parseRequestGuardPolicy({ allowedOrigins: false })).toThrow("WOOFX3_ALLOWED_ORIGINS");
+    expect(() => parse({ allowedHosts: true })).toThrow("WOOFX3_ALLOWED_HOSTS");
+    expect(() => parse({ allowedHosts: 8080 })).toThrow("WOOFX3_ALLOWED_HOSTS");
+    expect(() => parse({ allowedOrigins: false })).toThrow("WOOFX3_ALLOWED_ORIGINS");
   });
 });
 

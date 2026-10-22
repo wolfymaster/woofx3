@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  ALLOWED_ORIGINS_SETTING,
   OPEN_REQUEST_GUARD_POLICY,
   parseRequestGuardPolicy,
   type RequestGuardPolicy,
@@ -57,6 +58,8 @@ describe("sceneManager request guard set", () => {
   const policy = parseRequestGuardPolicy({
     allowedHosts: "127.0.0.1",
     allowedOrigins: "http://127.0.0.1:*,null",
+    allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
+    opaqueOrigin: "allow",
   });
 
   test("an unknown Host is 421", async () => {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  ALLOWED_ORIGINS_SETTING,
   OPEN_REQUEST_GUARD_POLICY,
   parseRequestGuardPolicy,
   type RequestGuardPolicy,
@@ -79,6 +80,8 @@ describe("api request guard set", () => {
   const policy = parseRequestGuardPolicy({
     allowedHosts: "127.0.0.1,localhost",
     allowedOrigins: "https://app.example",
+    allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
+    opaqueOrigin: "refuse",
   });
 
   test("an unknown Host is 421", async () => {

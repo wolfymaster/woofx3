@@ -75,3 +75,56 @@ describe("message bus token", () => {
     expect(loadConfig().nats.token).toBeUndefined();
   });
 });
+
+describe("origin allowlist", () => {
+  const snapshot = { ...process.env };
+
+  afterEach(() => {
+    for (const name of Object.keys(process.env)) {
+      if (!(name in snapshot)) {
+        delete process.env[name];
+      }
+    }
+    Object.assign(process.env, snapshot);
+  });
+
+  function withOrigins(shared: string | undefined, own: string | undefined): void {
+    delete process.env.WOOFX3_ALLOWED_ORIGINS;
+    delete process.env.WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS;
+    if (shared !== undefined) {
+      process.env.WOOFX3_ALLOWED_ORIGINS = shared;
+    }
+    if (own !== undefined) {
+      process.env.WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS = own;
+    }
+  }
+
+  it("is sceneManager's own list when set, null included", () => {
+    withOrigins("http://localhost:*", "http://localhost:*,null");
+
+    expect(loadConfig().requestGuard.allowedOrigins).toEqual([
+      { kind: "anyPort", protocol: "http:", hostname: "localhost" },
+      { kind: "opaque" },
+    ]);
+  });
+
+  it("is the shared list when its own is unset or blank", () => {
+    for (const own of [undefined, " "]) {
+      withOrigins("https://app.example", own);
+
+      expect(loadConfig().requestGuard.allowedOrigins).toEqual([{ kind: "exact", origin: "https://app.example" }]);
+    }
+  });
+
+  it("is open when neither is set", () => {
+    withOrigins(undefined, undefined);
+
+    expect(loadConfig().requestGuard.allowedOrigins).toBeNull();
+  });
+
+  it("refuses a malformed own list at startup, naming it", () => {
+    withOrigins("https://app.example", "*");
+
+    expect(() => loadConfig()).toThrow("WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS");
+  });
+});

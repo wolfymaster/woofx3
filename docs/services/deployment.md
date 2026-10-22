@@ -136,10 +136,14 @@ so an engine that sets neither accepts every request and answers CORS with
 |---|---|
 | `WOOFX3_ALLOWED_HOSTS` | A request whose `Host` is not listed is answered `421 Misdirected Request`. This stops DNS rebinding: a page on a hostile name that resolves to the engine still sends its own name as the Host. |
 | `WOOFX3_ALLOWED_ORIGINS` | A request that sends an `Origin` not listed is answered `403`, WebSocket upgrades and CORS preflights included. A request with no `Origin` is allowed. CORS echoes the request's origin with `Vary: Origin` instead of `*`. |
+| `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` | sceneManager's own origin list, checked the same way. When set and not blank, sceneManager uses it instead of `WOOFX3_ALLOWED_ORIGINS`; the api never reads it. |
 
-Each is a comma-separated list, read by both services, and each works without
-the other. A malformed entry stops the service at startup, and so does a value
-that is not a list at all, such as `true`.
+Each is a comma-separated list. `WOOFX3_ALLOWED_HOSTS` and
+`WOOFX3_ALLOWED_ORIGINS` are read by both services, and each works without the
+other. A malformed entry stops the service at startup, naming the setting it
+came from, and so does a value that is not a list at all, such as `true`. The
+api also refuses to start when its origin list contains `null`: nothing that
+calls the api sends it, and a listed `null` would admit every sandboxed page.
 
 Matching rules:
 
@@ -173,20 +177,21 @@ sceneManager:
   from sceneManager (web fonts, module scripts) send `Origin: null`, so list
   `null` when widgets load anything from sceneManager. A listed `null` cannot
   tell one sandboxed page from another; the Host check and the session tokens
-  remain the protection there. The api has no such caller, so give `null` to
-  sceneManager alone, through its own environment rather than the shared
-  `.woofx3.json`.
+  remain the protection there. The api has no such caller and refuses `null`,
+  so list it in `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` (with the rest of
+  sceneManager's origins), never in `WOOFX3_ALLOWED_ORIGINS`.
 - The **scene editor** WebSocket sends the dashboard's origin.
 
-For a desktop engine on loopback, for example:
+For a desktop engine on loopback, for example, all set in the one environment
+the orchestrator passes to every service:
 
 ```bash
 # both services
 WOOFX3_ALLOWED_HOSTS=localhost,127.0.0.1,[::1]
-# api (the tauri origins admit the desktop app's webview)
+# the api (the tauri origins admit the desktop app's webview)
 WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost
-# sceneManager
-WOOFX3_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost,null
+# sceneManager: the same origins, plus null for widget frames
+WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS=http://localhost:*,http://127.0.0.1:*,tauri://localhost,http://tauri.localhost,null
 ```
 
 ## Client registration

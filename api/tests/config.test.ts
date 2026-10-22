@@ -151,3 +151,27 @@ describe("confidential Twitch app", () => {
     expect(() => loadConfig()).toThrow("WOOFX3_TWITCH_CLIENT_ID");
   });
 });
+
+describe("origin allowlist", () => {
+  test("is the list WOOFX3_ALLOWED_ORIGINS gives", () => {
+    withEnv({ WOOFX3_ALLOWED_ORIGINS: "http://localhost:*,tauri://localhost" });
+
+    expect(loadConfig().requestGuard.allowedOrigins).toEqual([
+      { kind: "anyPort", protocol: "http:", hostname: "localhost" },
+      { kind: "exact", origin: "tauri://localhost" },
+    ]);
+  });
+
+  test("refuses null, which no caller of the api sends", () => {
+    withEnv({ WOOFX3_ALLOWED_ORIGINS: "http://localhost:*,null" });
+
+    expect(() => loadConfig()).toThrow('WOOFX3_ALLOWED_ORIGINS: "null" is not allowed');
+  });
+
+  test("ignores sceneManager's own list, null and all", () => {
+    delete process.env.WOOFX3_ALLOWED_ORIGINS;
+    withEnv({ WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS: "http://localhost:*,null" });
+
+    expect(loadConfig().requestGuard.allowedOrigins).toBeNull();
+  });
+});

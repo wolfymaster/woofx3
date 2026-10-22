@@ -1,7 +1,8 @@
 /**
  * Host and Origin checks shared by the engine's HTTP services (api,
  * sceneManager), configured by `WOOFX3_ALLOWED_HOSTS` and
- * `WOOFX3_ALLOWED_ORIGINS`.
+ * `WOOFX3_ALLOWED_ORIGINS`. sceneManager can have an origin list of its own,
+ * `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` (see sceneManager/src/config.ts).
  *
  * Both lists are off unless set. The hosted dashboard reaches engines
  * directly from several origins, so an engine that sets neither accepts
@@ -50,12 +51,25 @@ export type OriginRule =
   | { kind: "anyPort"; protocol: string; hostname: string }
   | { kind: "opaque" };
 
+/**
+ * Whether a service's origin list may contain `null`. Only a service that
+ * sandboxed frames call (sceneManager, for widget frames) has a use for it;
+ * any other service refuses it at startup, so a shared list that lists it
+ * cannot open that service to every sandboxed page.
+ */
+export type OpaqueOriginPolicy = "allow" | "refuse";
+
 export interface RequestGuardSettings {
   /** Comma-separated `WOOFX3_ALLOWED_HOSTS`; empty or undefined disables the check. */
   allowedHosts?: string | number | boolean;
-  /** Comma-separated `WOOFX3_ALLOWED_ORIGINS`; empty or undefined disables the check. */
+  /** Comma-separated origins; empty or undefined disables the check. */
   allowedOrigins?: string | number | boolean;
+  /** The setting allowedOrigins was read from, named in errors. */
+  allowedOriginsSetting: string;
+  opaqueOrigin: OpaqueOriginPolicy;
 }
+
+export const ALLOWED_ORIGINS_SETTING = "WOOFX3_ALLOWED_ORIGINS";
 
 const OPAQUE_ORIGIN = "null";
 
@@ -121,8 +135,11 @@ function parseHostRule(entry: string): HostRule {
   return parsed;
 }
 
-function parseOriginRule(entry: string): OriginRule {
+function parseOriginRule(setting: string, opaqueOrigin: OpaqueOriginPolicy, entry: string): OriginRule {
   if (entry === OPAQUE_ORIGIN) {
+    if (opaqueOrigin === "refuse") {
+      throw new Error(`${setting}: "null" is not allowed for this service; only sceneManager may list it`);
+    }
     return { kind: "opaque" };
   }
   const anyPort = entry.endsWith(":*");
@@ -131,16 +148,16 @@ function parseOriginRule(entry: string): OriginRule {
   try {
     url = new URL(base);
   } catch {
-    throw new Error(`WOOFX3_ALLOWED_ORIGINS: "${entry}" is not scheme://host[:port]`);
+    throw new Error(`${setting}: "${entry}" is not scheme://host[:port]`);
   }
   const hasPathOrMore = (url.pathname !== "/" && url.pathname !== "") || url.search !== "" || url.hash !== "";
   const origin = comparableOrigin(url);
   if (origin === null || hasPathOrMore || url.username !== "" || url.password !== "") {
-    throw new Error(`WOOFX3_ALLOWED_ORIGINS: "${entry}" is not scheme://host[:port]`);
+    throw new Error(`${setting}: "${entry}" is not scheme://host[:port]`);
   }
   if (anyPort) {
     if (url.port !== "") {
-      throw new Error(`WOOFX3_ALLOWED_ORIGINS: "${entry}" names both a port and :*`);
+      throw new Error(`${setting}: "${entry}" names both a port and :*`);
     }
     return { kind: "anyPort", protocol: url.protocol, hostname: url.hostname.toLowerCase() };
   }
@@ -153,10 +170,12 @@ function parseOriginRule(entry: string): OriginRule {
  */
 export function parseRequestGuardPolicy(settings: RequestGuardSettings): RequestGuardPolicy {
   const hosts = splitList("WOOFX3_ALLOWED_HOSTS", settings.allowedHosts);
-  const origins = splitList("WOOFX3_ALLOWED_ORIGINS", settings.allowedOrigins);
+  const origins = splitList(settings.allowedOriginsSetting, settings.allowedOrigins);
   return {
     allowedHosts: hosts ? hosts.map(parseHostRule) : null,
-    allowedOrigins: origins ? origins.map(parseOriginRule) : null,
+    allowedOrigins: origins
+      ? origins.map((entry) => parseOriginRule(settings.allowedOriginsSetting, settings.opaqueOrigin, entry))
+      : null,
   };
 }
 
