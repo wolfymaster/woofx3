@@ -94,22 +94,22 @@ const runtime = createRuntime({
       })
     );
 
-    const barkloaderWsUrl = config.getConfig("woofx3BarkloaderWsUrl") as string;
-    const barkloaderToken = config.getConfig("woofx3BarkloaderKey") as string;
     const barkloaderClient = new BarkloaderClient({
-      wsUrl: `${barkloaderWsUrl}?token=${barkloaderToken}`,
+      wsUrl: config.getConfig("woofx3BarkloaderWsUrl") as string,
+      key: config.getConfig("woofx3BarkloaderKey") as string,
       onOpen: () => {
-        console.log("socket opened");
+        logger.info("Connected to barkloader");
       },
       onClose: () => {
-        console.log("socket closed");
+        logger.warn("Barkloader connection closed");
       },
-      onError: (event: unknown) => {
-        console.log("socket error", event);
+      onError: (event) => {
+        const detail = event as Event & { message?: string };
+        logger.warn("Barkloader connection error", { type: detail.type, message: detail.message });
       },
       maxRetries: Infinity,
-      onReconnectAttempt: () => {
-        console.log("disconnecting.. attempting to reconnect");
+      onReconnectAttempt: (attempt) => {
+        logger.info("Reconnecting to barkloader", { attempt });
       },
       reconnectTimeout: 5000,
     });

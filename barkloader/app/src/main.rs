@@ -6,7 +6,7 @@ use crate::util::{
     get_config_value, get_env_or_default, get_env_or_default_with_key, validate_required_config,
     validate_required_config_keys,
 };
-use actix_web::{App, HttpServer, middleware::Logger, web::Data};
+use actix_web::{App, HttpServer, web::Data};
 use anyhow::Result;
 use lib_module::db_proxy::RequestContext as DbRequestContext;
 use lib_repository::{Repository, RepositoryFactory, RepositoryImpl};
@@ -14,6 +14,7 @@ use lib_sandbox::extensions::{ChatExtension, ObsExtension, TwitchExtension};
 use lib_sandbox::host::noop::{NoopChatSender, NoopNatsRequester, noop_host_context};
 use lib_sandbox::host::{ChatSender, ExtensionRegistry, NatsRequester};
 use lib_sandbox::{ModuleRegistry, SandboxActionRunner, SandboxFactory};
+use middleware::service_auth::{ALLOWED_HOST_CONFIG_KEY, ALLOWED_HOST_ENV_VAR, ServiceAuth};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
@@ -22,6 +23,7 @@ use woofx3_runtime::{SecretError, validate_secret};
 
 mod bundled_modules;
 mod callback;
+mod middleware;
 mod routes;
 mod services;
 mod types;
@@ -359,6 +361,31 @@ async fn main() -> std::io::Result<()> {
             std::process::exit(1);
         }
     };
+    let port: u16 = match get_env_or_default("BARKLOADER_PORT", "9653").parse() {
+        Ok(port) if port != 0 => port,
+        Ok(_) => {
+            tracing::error!(
+                "BARKLOADER_PORT must not be 0: the Host allow-list needs the bound port"
+            );
+            drop(logging);
+            std::process::exit(1);
+        }
+        Err(e) => {
+            tracing::error!("BARKLOADER_PORT must be a port number: {}", e);
+            drop(logging);
+            std::process::exit(1);
+        }
+    };
+    let allowed_host =
+        get_env_or_default_with_key(ALLOWED_HOST_ENV_VAR, Some(ALLOWED_HOST_CONFIG_KEY), "");
+    let service_auth = match ServiceAuth::new(&barkloader_key, port, &allowed_host) {
+        Ok(auth) => Arc::new(auth),
+        Err(e) => {
+            tracing::error!("{}", e);
+            drop(logging);
+            std::process::exit(1);
+        }
+    };
     if let Err(e) = validate_required_config_keys(&["databaseProxyUrl"]) {
         tracing::error!("{}", e);
         drop(logging);
@@ -379,9 +406,7 @@ async fn main() -> std::io::Result<()> {
     // setup
     let ctx = setup().await.expect("Failed to complete set up");
 
-    let host = String::from("127.0.0.1");
-    let port = get_env_or_default("BARKLOADER_PORT", "9653");
-    let bind_addr = format!("{}:{}", host, port);
+    let bind_addr = format!("127.0.0.1:{}", port);
 
     // One client for every request, so upstream connections are reused.
     let media_proxy = Data::new(routes::media::MediaProxyService::new(
@@ -401,17 +426,8 @@ async fn main() -> std::io::Result<()> {
             // shares the same swappable handle, so a storage reload takes
             // effect here too rather than pinning a stale backend.
             .app_data(Data::new(ctx.repository.clone()))
-            .wrap(Logger::default()) // Use default format
-            .configure(routes::media::configure)
-            .configure(routes::assets::configure)
-            .configure(routes::archives::configure)
-            .configure(routes::resources::configure)
-            .configure(routes::storage::configure)
-            .configure(routes::echo::configure)
-            .configure(routes::websocket::configure)
-            .configure(routes::functions::configure)
-            .configure(routes::oauth::configure)
-            .configure(routes::widgets::configure)
+            .wrap(middleware::access_log())
+            .configure(|cfg| routes::configure(cfg, service_auth.clone()))
     })
     .bind(bind_addr)?
     .shutdown_timeout(5)

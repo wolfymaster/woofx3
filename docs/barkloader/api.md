@@ -4,6 +4,53 @@
 
 **Base URL:** `http://localhost:9653`
 
+### Authentication
+
+Barkloader listens on loopback only, but that alone does not keep a web page
+in the streamer's browser out: a page can send simple cross-origin requests to
+`127.0.0.1`, and DNS rebinding can make it look same-origin. So every route
+except the public ones below requires all of:
+
+- `Authorization: Bearer <barkloaderKey>`, the engine secret. A missing or
+  wrong key is answered `401`.
+- No `Origin` header, and no `Sec-Fetch-Site` of `cross-site` or `same-site`.
+  A request from a browser context is answered `403`.
+- A `Host` header naming barkloader: `127.0.0.1:<port>`, `localhost:<port>` or
+  `[::1]:<port>`, where `<port>` is `BARKLOADER_PORT`, plus one more host set
+  with `barkloaderAllowedHost` (`WOOFX3_BARKLOADER_ALLOWED_HOST`) for a
+  deployment whose services reach barkloader by another name. Any other Host
+  is answered `403`. `X-Forwarded-Host` and `Forwarded` are ignored.
+
+A refusal has the body:
+
+```json
+{ "error": { "code": "unauthenticated", "message": "..." } }
+```
+
+with `code` `unauthenticated` (`401`) or `forbidden` (`403`). An unknown path
+is refused the same way rather than answered `404`.
+
+The key is accepted only in the header. A key in the query string
+(`/ws?token=...`) is ignored, and the access log records the path without its
+query string.
+
+Every engine service that calls an authenticated route sends the key. A
+manual `curl` needs it too:
+
+```bash
+curl -H "Authorization: Bearer $WOOFX3_BARKLOADER_KEY" http://127.0.0.1:9653/functions
+```
+
+**Public routes.** A browser reaches these through the scene manager's relays,
+so they take no service key. Each is public by design or guarded by its own
+token:
+
+| Route | Guard |
+|-------|-------|
+| `GET /assets/{key}` | none: module and user assets are public; only the bucket is private |
+| `GET /assets/media/{token}` | the signed media proxy token |
+| `PUT /assets/upload/{token}` | the signed upload grant |
+
 ### Upload Module
 
 Upload a module as a ZIP archive. The file is processed asynchronously -- the response returns immediately after the upload is accepted.
@@ -298,11 +345,17 @@ PATCH /functions/reload
 GET /echo
 ```
 
+Authenticated like every other management route.
+
 **Response (200):** `"Hello, Wolfy!"`
 
 ## WebSocket Protocol
 
 **Endpoint:** `ws://localhost:9653/ws`
+
+The upgrade request is authenticated like any management route (see
+[Authentication](#authentication)): the key goes in the `Authorization: Bearer`
+header of the upgrade request, never in the URL.
 
 Each WebSocket connection creates its own `Sandbox` instance backed by a shared `ModuleRegistry`. This means all connections see the same set of loaded modules, but execution is isolated per connection.
 

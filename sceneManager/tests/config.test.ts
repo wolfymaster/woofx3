@@ -20,7 +20,7 @@ const valid: SceneManagerRuntimeConfig = {
   fontCacheDir: "/tmp/fonts",
   databaseProxyUrl: "http://127.0.0.1:9000",
   barkloaderUrl: "http://127.0.0.1:9653",
-  mediaProxySecret: "media-secret-0123456789abcdef0123456789",
+  barkloaderKey: "media-secret-0123456789abcdef0123456789",
   requestGuard: OPEN_REQUEST_GUARD_POLICY,
   obs: { host: "127.0.0.1", port: "4455" },
   nats: { url: "ws://127.0.0.1:4225", name: "scene-manager" },
@@ -48,9 +48,9 @@ describe("validateConfig secrets", () => {
     ["tokenSecret", "sceneManagerTokenSecret", ""],
     ["tokenSecret", "sceneManagerTokenSecret", "CHANGE_ME"],
     ["tokenSecret", "sceneManagerTokenSecret", "short-secret"],
-    ["mediaProxySecret", "barkloaderKey", ""],
-    ["mediaProxySecret", "barkloaderKey", "CHANGE_ME"],
-    ["mediaProxySecret", "barkloaderKey", "short-secret"],
+    ["barkloaderKey", "barkloaderKey", ""],
+    ["barkloaderKey", "barkloaderKey", "CHANGE_ME"],
+    ["barkloaderKey", "barkloaderKey", "short-secret"],
   ] as const) {
     it(`refuses ${field} = "${value}"`, () => {
       expect(() => validateConfig({ ...valid, [field]: value })).toThrow(setting);
