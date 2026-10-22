@@ -1,5 +1,6 @@
 import type { Adapter, AdapterFactory } from "./adapter";
 import { ADAPTER_IDS, type AdapterId } from "./adapter-ids";
+import { subjectCovered } from "./scoped-bus";
 
 export type AdapterLoader = () => Promise<AdapterFactory>;
 
@@ -14,7 +15,8 @@ export const ADAPTERS: AdapterRegistry = {};
 /**
  * Loads every registered adapter, once. Fails startup when an entry names an
  * id the host does not know, or builds an adapter whose manifest claims a
- * different id.
+ * different id or subscribes to a subject it serves. The host alone holds
+ * served subjects; an adapter subscribed to one would race the host's answer.
  */
 export async function loadAdapters(registry: AdapterRegistry): Promise<Map<AdapterId, Adapter>> {
   const adapters = new Map<AdapterId, Adapter>();
@@ -29,6 +31,14 @@ export async function loadAdapters(registry: AdapterRegistry): Promise<Map<Adapt
     const adapter = (await load())();
     if (adapter.manifest.id !== id) {
       throw new Error(`the adapter registered as "${id}" says its id is "${adapter.manifest.id}"`);
+    }
+    for (const served of adapter.manifest.serves) {
+      const overlap = adapter.manifest.subscribes.find((pattern) => subjectCovered(pattern, served.subject));
+      if (overlap !== undefined) {
+        throw new Error(
+          `the adapter "${id}" subscribes to "${overlap}", which covers "${served.subject}" that it serves; the host answers served subjects`
+        );
+      }
     }
     adapters.set(id, adapter);
   }
