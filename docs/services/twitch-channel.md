@@ -275,6 +275,12 @@ which case Twitch may still have acted.
 | `twitchCreateClip()` | `POST /clips?broadcaster_id` | none | `twitch.clips` |
 | `twitchUpdateChatSettings(params)` | `PATCH /chat/settings?broadcaster_id&moderator_id` | body `{ emote_mode?, subscriber_mode?, follower_mode?, follower_mode_duration?, slow_mode?, slow_mode_wait_time? }` | `twitch.moderation` |
 
+A client reads the bodies with `@woofx3/api/twitch-helix-bodies`: one reader
+per call (`parseHelixUser`, `parseHelixChatSettings`, `parseHelixChatPin` and
+the rest), `collectHelixPages` for the paginated lists, and
+`helixErrorMessage` for Twitch's reason in a `helix` result's `body`. They take
+Twitch's JSON as it is, so they read a direct Helix call's body the same way.
+
 The token is the one the twitch service holds: the linked account's, from the
 dashboard that linked it (see [Who renews the token](#who-renews-the-token)),
 with the scopes that link was granted. The broadcaster is the engine's

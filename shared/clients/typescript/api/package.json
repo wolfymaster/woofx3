@@ -23,6 +23,7 @@
     "./google-fonts": "./google-fonts.ts",
     "./marketplace-catalog": "./marketplace-catalog.ts",
     "./resource-values": "./resource-values.ts",
+    "./twitch-helix-bodies": "./twitch-helix-bodies.ts",
     "./ui-schema": "./ui-schema.ts",
     "./workflow-definition": "./workflow-definition.ts",
     "./workflow-test-run": "./workflow-test-run.ts",
