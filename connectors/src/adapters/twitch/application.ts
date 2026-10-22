@@ -15,6 +15,7 @@ import { AdBreakScheduler } from "./lib/adBreakScheduler";
 import { AdBreakLeadSetting } from "./lib/adBreakSettings";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
+import { type PublishTarget, publishEvent } from "./lib/publishEvent";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
 import type TwitchApiClient from "./lib/twitch";
 import TwitchApiClientImpl, {
@@ -242,6 +243,7 @@ export default class TwitchApplication {
     );
     const events = new EventFactory({ source: "twitch" });
     const messageBus = ctx.bus;
+    const eventTarget: PublishTarget = { messageBus, logger: ctx.logger };
     const adBreakLeadSetting = new AdBreakLeadSetting(
       {
         listModuleSettings: async (moduleId) => (await ListModuleSettings({ moduleId }, db)).settings,
@@ -251,8 +253,7 @@ export default class TwitchApplication {
     const adBreakScheduler = new AdBreakScheduler({
       fetchSchedule: () => twitchApi.getAdSchedule({}),
       publishUpcoming: (event) => {
-        const [topic, data] = events.Twitch().adBreakUpcoming(event);
-        messageBus.publish(topic, data);
+        void publishEvent(eventTarget, events.Twitch().adBreakUpcoming(event));
       },
       logger: ctx.logger,
       readLeadSeconds: () => adBreakLeadSetting.read(),

@@ -1,6 +1,7 @@
 import type { EventSubChannelAdBreakBeginEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { Context } from "../../types";
+import { publishEvent } from "../publishEvent";
 
 export interface AdBreakTimers {
   setTimeout(fn: () => void, ms: number): unknown;
@@ -66,7 +67,7 @@ export class AdBreakAnnouncer {
       startedAt,
       endsAt: endedAt,
     });
-    this.ctx.messageBus.publish(topic, data);
+    void publishEvent(this.ctx, [topic, data]);
 
     const publishEnd = () => {
       this.pending = null;
@@ -76,7 +77,7 @@ export class AdBreakAnnouncer {
         startedAt,
         endedAt,
       });
-      this.ctx.messageBus.publish(endTopic, endData);
+      void publishEvent(this.ctx, [endTopic, endData]);
     };
     const handle = this.timers.setTimeout(publishEnd, Math.max(0, durationSeconds * 1000));
     this.pending = { handle, publishEnd, startedAt };

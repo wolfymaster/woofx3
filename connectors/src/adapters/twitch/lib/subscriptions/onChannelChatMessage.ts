@@ -2,6 +2,7 @@ import type { EventSubChannelChatMessageEvent, EventSubSubscription } from "@twu
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
 import type { Context } from "../../types";
+import { publishEvent } from "../publishEvent";
 
 /**
  * Map Twitch's badges onto the platform-neutral ChatterMembership shape.
@@ -73,13 +74,7 @@ export default function onChannelChatmessage(ctx: Context, listener: EventSubWsL
         message: messageText,
         membership,
       });
-      try {
-        ctx.messageBus.publish(topic, data);
-      } catch (err) {
-        ctx.logger.error("twitch: failed to publish chat message", {
-          err: err instanceof Error ? err.message : String(err),
-        });
-      }
+      await publishEvent(ctx, [topic, data]);
     }
   );
 }

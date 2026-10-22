@@ -1,6 +1,7 @@
 import type { EventSubChannelChatNotificationEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { Context } from "../../types";
+import { publishEvent } from "../publishEvent";
 
 function baseFields(event: EventSubChannelChatNotificationEvent) {
   return {
@@ -32,7 +33,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             userId: event.chatterId,
             userName: event.chatterDisplayName,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "resub": {
@@ -48,7 +49,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             gifterId: event.gifterId,
             gifterName: event.gifterDisplayName,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "sub_gift": {
@@ -58,7 +59,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             userId: event.recipientId,
             userName: event.recipientDisplayName,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "community_sub_gift": {
@@ -69,7 +70,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             isAnonymous: event.chatterIsAnonymous,
             tier: event.tier,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "gift_paid_upgrade": {
@@ -79,7 +80,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             gifterId: event.gifterId,
             gifterName: event.gifterDisplayName,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "prime_paid_upgrade": {
@@ -87,7 +88,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             ...base,
             tier: event.tier,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "raid": {
@@ -97,7 +98,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
         }
         case "unraid": {
           const [topic, data] = twitch.unraid({ ...base });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "pay_it_forward": {
@@ -107,7 +108,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             gifterId: event.gifterId,
             gifterName: event.gifterDisplayName,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "announcement": {
@@ -115,7 +116,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             ...base,
             color: event.announcementColor,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "charity_donation": {
@@ -125,7 +126,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             amount: event.amount.localizedValue,
             currency: event.amount.currency,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "bits_badge_tier": {
@@ -133,7 +134,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             ...base,
             newTier: event.newTier,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "watch_streak": {
@@ -142,7 +143,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             streakCount: event.streakCount,
             channelPointsAwarded: event.channelPointsAwarded,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "shared_chat_sub": {
@@ -153,7 +154,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             userId: event.chatterId,
             userName: event.chatterDisplayName,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "shared_chat_resub": {
@@ -169,7 +170,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             gifterId: event.gifterId,
             gifterName: event.gifterDisplayName,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "shared_chat_sub_gift": {
@@ -180,7 +181,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             userId: event.recipientId,
             userName: event.recipientDisplayName,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "shared_chat_community_sub_gift": {
@@ -192,7 +193,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             isAnonymous: event.chatterIsAnonymous,
             tier: event.tier,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "shared_chat_gift_paid_upgrade": {
@@ -202,7 +203,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             gifterId: event.gifterId,
             gifterName: event.gifterDisplayName,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "shared_chat_prime_paid_upgrade": {
@@ -210,7 +211,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             ...base,
             tier: event.tier,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "shared_chat_raid": {
@@ -220,7 +221,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             fromBroadcasterUserName: event.raiderDisplayName,
             viewers: event.viewerCount,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "shared_chat_pay_it_forward": {
@@ -230,7 +231,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             gifterId: event.gifterId,
             gifterName: event.gifterDisplayName,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         case "shared_chat_announcement": {
@@ -238,7 +239,7 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
             ...base,
             color: event.color,
           });
-          ctx.messageBus.publish(topic, data);
+          await publishEvent(ctx, [topic, data]);
           break;
         }
         default: {
