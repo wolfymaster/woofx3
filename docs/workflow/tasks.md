@@ -235,10 +235,10 @@ The event type is the subject the event goes out on, so a workflow could otherwi
 - when the workflow is saved (api) or registered (engine), if `eventType` is written out;
 - when the step runs, once an `eventType` built from an expression has resolved.
 
-Reserved names, defined in `shared/common/golang/cloudevents/reserved.go`. An entry ending in `.` reserves that whole namespace; any other entry reserves exactly that name.
+Reserved names, defined in `shared/common/contracts/reserved-subjects.json`. An entry ending in `.` reserves that whole namespace; any other entry reserves exactly that name.
 
 - **Commands** (also refused as events declared by an uploaded module): `webhook.`, `db.`, `engine.`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute`, `action.execute`.
-- **Engine events**: `HEARTBEAT`, `MESSAGEBUS_INIT`, `barkloader.`, `channel.`, `channelpoints.`, `chat.command.`, `module.`, `session.`, `setting.`, `stream.offline`, `stream.online`, `user.message`, `viewer.`, `widget.event`, `workflow.health.`, `workflow.run.`.
+- **Engine events**: `HEARTBEAT`, `MESSAGEBUS_INIT`, `barkloader.`, `channel.`, `channelpoints.`, `chat.command.`, `command.`, `module.`, `session.`, `setting.`, `stream.offline`, `stream.online`, `user.message`, `viewer.`, `widget.event`, `workflow.health.`, `workflow.run.`.
 
 Pick an event name of the workflow's own, such as `badge.awarded`. To test a workflow against a platform event (`channel.*`, `stream.online`, ...), fire it with the api's `simulateTwitchEvent` rather than publishing it.
 

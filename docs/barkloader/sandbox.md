@@ -90,10 +90,20 @@ In-process Lua execution via the `mlua` crate (vendored Lua 5.4).
 |----------|-------|
 | Extension | `.lua` |
 | Entry point | `main(args)` |
-| Sandboxing | `StdLib::NONE` -- no io, os, require, dofile |
+| Sandboxing | Allow-listed globals only; text chunks only |
 | Type mapping | JSON <-> LuaValue (nil, bool, number, string, table) |
 
-The adapter creates a `Lua` instance with an empty standard library, loads the source code, extracts the global `main` function, converts args from JSON to Lua tables, calls `main`, and converts the result back to JSON.
+The adapter creates a `Lua` instance with `StdLib::NONE`, strips the global environment down to an allow-list, loads the source code, extracts the global `main` function, converts args from JSON to Lua tables, calls `main`, and converts the result back to JSON.
+
+#### Globals and isolation
+
+`StdLib::NONE` leaves out `io`, `os`, `string`, `table`, `math`, `coroutine`, `debug` and `package`, but mlua always opens the base library. Before any host binding is installed, the adapter removes every global except these (`LUA_ALLOWED_GLOBALS` in `barkloader/lib_sandbox/src/runtime/lua.rs`):
+
+`assert`, `error`, `ipairs`, `next`, `pairs`, `pcall`, `rawequal`, `rawget`, `rawlen`, `rawset`, `select`, `setmetatable`, `getmetatable`, `tonumber`, `tostring`, `type`, `xpcall`, `_G`, `_VERSION`
+
+`ctx` is the only other value a module function receives. In particular `dofile`, `loadfile`, `load`, `loadstring`, `print`, `collectgarbage` and `require` are absent; the adapter checks that after the strip and fails the invocation if any survived.
+
+Module source is loaded in text mode: a source starting with the Lua bytecode signature (`\27Lua`) is refused with a syntax error, because the VM does not verify precompiled chunks.
 
 ### Echo (fallback)
 
@@ -106,6 +116,22 @@ Debug adapter for unrecognized file extensions.
 | Output | `{ "code": "<source>", "args": <args> }` |
 
 Returns the raw source code and arguments as JSON without executing anything.
+
+### Value conversion
+
+Every value that crosses between a runtime and the engine is converted to or from JSON: a function's return value, the arguments a module passes to a `ctx` function, a thrown value, and the event and host answers handed to the script. Each conversion is bounded (`SandboxLimits` in `barkloader/lib_sandbox/src/runtime/limits.rs`):
+
+| Limit | Default | Error |
+|-------|---------|-------|
+| Nesting depth (arrays and objects) | 64 | `ValueTooDeep` |
+| Values in one conversion | 100,000 | `ValueTooLarge` |
+| Text in one conversion (strings and keys) | 4 MiB | `ValueTooLarge` |
+
+A value that refers to itself exceeds the depth limit, so a cyclic return value fails the invocation with a clear error. A refused `ctx` argument is raised inside the script, where a `try`/`catch` or `pcall` can handle it; a value `ctx.log.*` cannot convert is logged as unloggable instead.
+
+A Lua table whose keys are exactly `1..n` becomes an array; any other table becomes an object keyed by its string and integer keys. An empty table is an object, except an empty array from the event, which round-trips as `[]`. A table holding both `[1]` and `['1']` is refused rather than silently keeping one. Functions, coroutines and userdata (in JavaScript: functions, promises, symbols and BigInts) have no JSON form and are refused with `UnsupportedValue`.
+
+A JavaScript entry point must return its result directly. The adapter does not run the promise job queue, so an `async` function (or any function returning a Promise) is refused with `AsyncEntryUnsupported`.
 
 ## Modules request, the engine acts
 
@@ -167,9 +193,9 @@ how a manifest declares these values and how they get registered at install time
 
 Neither runtime provides a host-visible logging facility on its own — QuickJS has no
 `console` (rquickjs doesn't even offer a `console` cargo feature in the version this
-project pins), and the Lua sandbox's `StdLib` is `NONE` (no `io`, no `print` byte
-sink). `ctx.log` is the only way a module function can emit a log line; both adapters
-build it as a namespace on `ctx` (`build_log_namespace` in
+project pins), and the Lua sandbox strips `print` and has no `io`
+([Globals and isolation](#globals-and-isolation)). `ctx.log` is the only way a module
+function can emit a log line; both adapters build it as a namespace on `ctx` (`build_log_namespace` in
 `barkloader/lib_sandbox/src/runtime/quickjs.rs`, and the equivalent inline block in
 `barkloader/lib_sandbox/src/runtime/lua.rs`), forwarding to the host's `log` crate:
 
@@ -353,5 +379,9 @@ Sandbox errors are categorized:
 | `QuickJSExecutionError` | QuickJS function call error |
 | `IoError` | File read/write failure |
 | `JsonError` | JSON serialization/deserialization failure |
+| `ValueTooDeep` | A converted value nests deeper than the depth limit, or refers to itself |
+| `ValueTooLarge` | A converted value has too many values or too much text |
+| `UnsupportedValue` | A value with no JSON form, such as a Lua function |
+| `AsyncEntryUnsupported` | A JavaScript entry point returned a Promise |
 
 All errors implement `std::error::Error` via `thiserror` and are converted to WebSocket error messages.

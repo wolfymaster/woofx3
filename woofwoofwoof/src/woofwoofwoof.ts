@@ -5,7 +5,8 @@ import { createApplication, createNATSMonitor, createRuntime, loadRuntimeEnv } f
 import MessageBus from "@woofx3/nats";
 import { requestTokenOverNats, type TwitchAuthCredentials } from "@woofx3/twitch";
 import WoofWoofWoof, { type WoofWoofWoofApplication } from "./application";
-import { WoofEnvSchema } from "./config";
+import { sentLineConfig, WoofEnvSchema } from "./config";
+import { SentLineRegistry } from "./sentLines";
 import BarkloaderClientService from "./services/barkloader";
 import DatabaseService from "./services/database";
 import MessageBusService from "./services/messageBus";
@@ -34,19 +35,22 @@ const loadedConfig = loadRuntimeEnv({
   injectIntoProcess: true,
 });
 
-const bus = await MessageBus.createMessageBus({
-  name: "woofwooofwoof",
-  url: loadedConfig.getConfig("woofx3MessagebusUrl") as string,
-  jwt: loadedConfig.getConfig("woofx3MessagebusJwt") as string,
-  nkeySeed: loadedConfig.getConfig("woofx3MessagebusNKey") as string,
-  token: String(loadedConfig.getConfig("woofx3MessagebusToken") ?? ""),
-});
-const messageBusService = new MessageBusService(bus);
-
 const logger = createServiceLogger({
   serviceName: "woofwoofwoof",
   logDir: path.join((loadedConfig.getConfig("woofx3RootPath") as string | undefined) ?? process.cwd(), "logs"),
 });
+
+const bus = await MessageBus.createMessageBus(
+  {
+    name: "woofwooofwoof",
+    url: loadedConfig.getConfig("woofx3MessagebusUrl") as string,
+    jwt: loadedConfig.getConfig("woofx3MessagebusJwt") as string,
+    nkeySeed: loadedConfig.getConfig("woofx3MessagebusNKey") as string,
+    token: String(loadedConfig.getConfig("woofx3MessagebusToken") ?? ""),
+  },
+  logger
+);
+const messageBusService = new MessageBusService(bus);
 
 const runtime = createRuntime({
   application: createApplication(new WoofWoofWoof()),
@@ -86,25 +90,26 @@ const runtime = createRuntime({
             userId: "",
           });
         },
+        sentLines: new SentLineRegistry(sentLineConfig(config), Date.now),
       })
     );
 
-    const barkloaderWsUrl = config.getConfig("woofx3BarkloaderWsUrl") as string;
-    const barkloaderToken = config.getConfig("woofx3BarkloaderKey") as string;
     const barkloaderClient = new BarkloaderClient({
-      wsUrl: `${barkloaderWsUrl}?token=${barkloaderToken}`,
+      wsUrl: config.getConfig("woofx3BarkloaderWsUrl") as string,
+      key: config.getConfig("woofx3BarkloaderKey") as string,
       onOpen: () => {
-        console.log("socket opened");
+        logger.info("Connected to barkloader");
       },
       onClose: () => {
-        console.log("socket closed");
+        logger.warn("Barkloader connection closed");
       },
-      onError: (event: unknown) => {
-        console.log("socket error", event);
+      onError: (event) => {
+        const detail = event as Event & { message?: string };
+        logger.warn("Barkloader connection error", { type: detail.type, message: detail.message });
       },
       maxRetries: Infinity,
-      onReconnectAttempt: () => {
-        console.log("disconnecting.. attempting to reconnect");
+      onReconnectAttempt: (attempt) => {
+        logger.info("Reconnecting to barkloader", { attempt });
       },
       reconnectTimeout: 5000,
     });

@@ -152,6 +152,7 @@ write_engine_config() {
   "messagebusServerListeningPort": $NATS_PORT,
   "messagebusWebSocketPort": $NATS_WS_PORT,
   "messagebusUrl": "ws://127.0.0.1:$NATS_WS_PORT",
+  "messagebusToken": "$(random_hex)",
   "messagebusJwt": "",
   "messagebusNKey": "",
   "sceneManagerHost": "127.0.0.1",

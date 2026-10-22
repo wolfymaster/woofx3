@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_SENT_LINE_CONFIG, type SentLineConfig } from "./sentLines";
 
 // Schema field names are the camelCase versions of WOOFX3_-prefixed env keys
 // (from .woofx3.json) or raw env keys (from .env / process.env).
@@ -21,6 +22,20 @@ export const WoofEnvSchema = z.object({
   woofx3TwitchClientSecret: z.string().optional(),
   woofx3RootPath: z.string().optional(),
   twitchRedirectUrl: z.string().default("http://localhost"),
+  // How many of the bot's own chat lines are remembered, and for how long, so
+  // their echo on the chat feed is not read as a chatter's message.
+  woofx3ChatSentLineCapacity: z.coerce.number().int().positive().default(DEFAULT_SENT_LINE_CONFIG.capacity),
+  woofx3ChatSentLineTtlMs: z.coerce.number().int().positive().default(DEFAULT_SENT_LINE_CONFIG.ttlMs),
 });
 
 export type WoofEnvConfig = z.infer<typeof WoofEnvSchema>;
+
+/** The sent-line registry's settings from validated config. */
+export function sentLineConfig(config: { getConfig(key: string): unknown }): SentLineConfig {
+  const capacity = config.getConfig("woofx3ChatSentLineCapacity");
+  const ttlMs = config.getConfig("woofx3ChatSentLineTtlMs");
+  if (typeof capacity !== "number" || typeof ttlMs !== "number") {
+    throw new Error("sent-line config was not validated: capacity and ttl must be numbers");
+  }
+  return { capacity, ttlMs };
+}

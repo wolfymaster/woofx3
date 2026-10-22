@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/database"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"gorm.io/gorm"
 )
@@ -60,7 +61,7 @@ func TestUpdateWorkflowRunStatus_FailedReadIsInternal(t *testing.T) {
 
 func TestGetWorkflow_FailedReadIsInternal(t *testing.T) {
 	db := newTestDB(t)
-	svc := NewWorkflowService(repo.NewWorkflowRepository(db), nil, db, nil, nil)
+	svc := NewWorkflowService(repo.NewWorkflowRepository(db, database.RandomIDs{}), nil, db, nil, nil)
 	closeDB(t, db)
 
 	_, err := svc.GetWorkflow(context.Background(), &client.GetWorkflowRequest{Id: uuid.NewString()})

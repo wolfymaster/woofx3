@@ -4,22 +4,32 @@ import { join } from "node:path";
 import { publishedEventTypeProblem, RESERVED_SUBJECT_PREFIXES } from "../../src/workflow/reserved-subjects";
 import { validateWorkflowDefinition } from "../../src/workflow/validate-definition";
 
-const GO_RESERVED = join(import.meta.dir, "../../../shared/common/golang/cloudevents/reserved.go");
+const CONTRACT = join(import.meta.dir, "../../../shared/common/contracts/reserved-subjects.json");
 
-/** The string entries of one `var Name = []string{...}` block in reserved.go. */
-function goList(source: string, name: string): string[] {
-  const block = new RegExp(`var ${name} = \\[\\]string\\{([\\s\\S]*?)\\n\\}`).exec(source);
-  if (!block) {
-    throw new Error(`reserved.go declares no ${name}`);
+/** One list of the contract, read from disk rather than through the import the module under test uses. */
+function contractList(name: string): string[] {
+  const contract: unknown = JSON.parse(readFileSync(CONTRACT, "utf8"));
+  if (typeof contract !== "object" || contract === null || !(name in contract)) {
+    throw new Error(`reserved-subjects.json declares no ${name}`);
   }
-  return [...block[1]!.matchAll(/"([^"]*)"/g)].map((m) => m[1]!);
+  const list: unknown = (contract as Record<string, unknown>)[name];
+  if (!Array.isArray(list) || !list.every((e) => typeof e === "string")) {
+    throw new Error(`reserved-subjects.json ${name} is not a list of strings`);
+  }
+  return list;
 }
 
 describe("reserved subjects", () => {
-  test("match the engine's list", () => {
-    const source = readFileSync(GO_RESERVED, "utf8");
-    const engine = [...goList(source, "CommandSubjectPrefixes"), ...goList(source, "EngineEventSubjectPrefixes")];
+  test("are the contract's command and engine-asserted lists", () => {
+    const engine = [...contractList("commandSubjectPrefixes"), ...contractList("engineAssertedPrefixes")];
     expect([...RESERVED_SUBJECT_PREFIXES].sort()).toEqual(engine.sort());
+  });
+
+  test("point every platform event entry at simulateTwitchEvent", () => {
+    for (const entry of contractList("platformEventEntries")) {
+      const subject = entry.endsWith(".") ? `${entry}x` : entry;
+      expect(publishedEventTypeProblem(subject)).toContain("simulateTwitchEvent");
+    }
   });
 
   test("name the prefix a subject falls under", () => {
@@ -30,6 +40,7 @@ describe("reserved subjects", () => {
     expect(publishedEventTypeProblem("custom.\u00a0event")).toContain("whitespace");
     expect(publishedEventTypeProblem("custom.\u0007event")).toContain("control character");
     expect(publishedEventTypeProblem("message.send")).not.toBeNull();
+    expect(publishedEventTypeProblem("command.created")).toBe('is reserved for the engine ("command.")');
     expect(publishedEventTypeProblem("message.sent")).toBeNull();
     expect(publishedEventTypeProblem("badge.awarded")).toBeNull();
     expect(publishedEventTypeProblem("stream.started.notification")).toBeNull();

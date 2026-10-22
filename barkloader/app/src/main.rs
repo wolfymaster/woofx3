@@ -1,4 +1,6 @@
-use crate::services::http_client::{HttpPolicy, ReqwestHttpClient};
+use crate::services::http_client::{
+    HttpClientLimits, HttpPolicy, HttpPolicyMode, ReqwestHttpClient,
+};
 use crate::services::http_storage_client::HttpStorageClient;
 use crate::services::oauth::{OAuthExtension, OAuthService, sealed_setting_writer};
 use crate::services::sandbox_resources::HttpResourceClient;
@@ -6,7 +8,7 @@ use crate::util::{
     get_config_value, get_env_or_default, get_env_or_default_with_key, validate_required_config,
     validate_required_config_keys,
 };
-use actix_web::{App, HttpServer, middleware::Logger, web::Data};
+use actix_web::{App, HttpServer, web::Data};
 use anyhow::Result;
 use lib_module::db_proxy::RequestContext as DbRequestContext;
 use lib_repository::{Repository, RepositoryFactory, RepositoryImpl};
@@ -14,13 +16,16 @@ use lib_sandbox::extensions::{ObsExtension, TwitchExtension};
 use lib_sandbox::host::noop::{NoopNatsRequester, noop_host_context};
 use lib_sandbox::host::{ExtensionRegistry, NatsRequester};
 use lib_sandbox::{ModuleRegistry, SandboxActionRunner, SandboxFactory};
+use middleware::service_auth::{ALLOWED_HOST_CONFIG_KEY, ALLOWED_HOST_ENV_VAR, ServiceAuth};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
 use types::{AppContext, SharedRepository};
+use woofx3_runtime::{SecretError, validate_secret};
 
 mod bundled_modules;
 mod callback;
+mod middleware;
 mod routes;
 mod services;
 mod types;
@@ -146,15 +151,20 @@ async fn setup() -> Result<AppContext> {
         }
 
         let http_policy = HttpPolicy::from_settings(
-            &get_env_or_default("WOOFX3_MODULE_HTTP", "log"),
-            &get_env_or_default("WOOFX3_MODULE_HTTP_ALLOW_PRIVATE", "false"),
-        )
-        .unwrap_or_else(|reason| panic!("{reason}"));
+            &get_env_or_default("WOOFX3_MODULE_HTTP", ""),
+            &get_env_or_default("WOOFX3_MODULE_HTTP_ALLOW_PRIVATE", ""),
+        )?;
         info!(
             "ctx.http policy: mode={:?} allow_private={}",
             http_policy.mode, http_policy.allow_private
         );
-        ctx.http = Arc::new(ReqwestHttpClient::new(http_policy));
+        if http_policy.mode == HttpPolicyMode::Log {
+            warn!("WOOFX3_MODULE_HTTP=log: modules may reach hosts they were not granted");
+        }
+        ctx.http = Arc::new(ReqwestHttpClient::new(
+            http_policy,
+            HttpClientLimits::from_lookup(|key| get_env_or_default(key, ""))?,
+        ));
 
         let oauth = Arc::new(OAuthService::new(
             registry.clone(),
@@ -284,6 +294,11 @@ async fn setup() -> Result<AppContext> {
         public_url_resolver,
         oauth: oauth_service,
         frame_cache: Arc::new(services::frame_cache::FrameCache::new()),
+        file_service: Arc::new(services::file_service::FileService::new(
+            &routes::functions::upload_dir(),
+            services::upload_limits::UploadLimits::from_env()?,
+        )?),
+        module_locks: Arc::new(types::ModuleLocks::new()),
     };
 
     Ok(ctx)
@@ -305,6 +320,15 @@ async fn boot_modules(
     .map_err(|e| anyhow::anyhow!("sandbox registry hydrate: {}", e))
 }
 
+/// The engine secret (`barkloaderKey`), read through `lookup(env_var,
+/// config_key)`. It authenticates the api and signs upload grants and media
+/// proxy URLs, so a blank, placeholder or short value stops startup.
+fn engine_secret(lookup: impl Fn(&str, &str) -> String) -> Result<String, SecretError> {
+    let secret = lookup("WOOFX3_BARKLOADER_KEY", "barkloaderKey");
+    validate_secret("barkloaderKey", &secret)?;
+    Ok(secret)
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // Console + file logging always; OpenTelemetry export only when configured.
@@ -317,6 +341,8 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
+    lib_module::load_reserved_subjects_contract();
+
     // Validate required config. Each fatal path drops the guard first so the
     // file and OpenTelemetry sinks flush before the process goes away.
     if let Err(e) = validate_required_config(&["WOOFX3_BARKLOADER_KEY"]) {
@@ -324,6 +350,41 @@ async fn main() -> std::io::Result<()> {
         drop(logging);
         std::process::exit(1);
     }
+    let barkloader_key = match engine_secret(|env_var, config_key| {
+        get_env_or_default_with_key(env_var, Some(config_key), "")
+    }) {
+        Ok(secret) => secret,
+        Err(e) => {
+            tracing::error!("{}", e);
+            drop(logging);
+            std::process::exit(1);
+        }
+    };
+    let port: u16 = match get_env_or_default("BARKLOADER_PORT", "9653").parse() {
+        Ok(port) if port != 0 => port,
+        Ok(_) => {
+            tracing::error!(
+                "BARKLOADER_PORT must not be 0: the Host allow-list needs the bound port"
+            );
+            drop(logging);
+            std::process::exit(1);
+        }
+        Err(e) => {
+            tracing::error!("BARKLOADER_PORT must be a port number: {}", e);
+            drop(logging);
+            std::process::exit(1);
+        }
+    };
+    let allowed_host =
+        get_env_or_default_with_key(ALLOWED_HOST_ENV_VAR, Some(ALLOWED_HOST_CONFIG_KEY), "");
+    let service_auth = match ServiceAuth::new(&barkloader_key, port, &allowed_host) {
+        Ok(auth) => Arc::new(auth),
+        Err(e) => {
+            tracing::error!("{}", e);
+            drop(logging);
+            std::process::exit(1);
+        }
+    };
     if let Err(e) = validate_required_config_keys(&["databaseProxyUrl"]) {
         tracing::error!("{}", e);
         drop(logging);
@@ -344,13 +405,11 @@ async fn main() -> std::io::Result<()> {
     // setup
     let ctx = setup().await.expect("Failed to complete set up");
 
-    let host = String::from("127.0.0.1");
-    let port = get_env_or_default("BARKLOADER_PORT", "9653");
-    let bind_addr = format!("{}:{}", host, port);
+    let bind_addr = format!("127.0.0.1:{}", port);
 
     // One client for every request, so upstream connections are reused.
     let media_proxy = Data::new(routes::media::MediaProxyService::new(
-        get_env_or_default_with_key("WOOFX3_BARKLOADER_KEY", Some("barkloaderKey"), ""),
+        barkloader_key,
         services::media_proxy::MediaFetcher::new(),
     ));
 
@@ -366,17 +425,8 @@ async fn main() -> std::io::Result<()> {
             // shares the same swappable handle, so a storage reload takes
             // effect here too rather than pinning a stale backend.
             .app_data(Data::new(ctx.repository.clone()))
-            .wrap(Logger::default()) // Use default format
-            .configure(routes::media::configure)
-            .configure(routes::assets::configure)
-            .configure(routes::archives::configure)
-            .configure(routes::resources::configure)
-            .configure(routes::storage::configure)
-            .configure(routes::echo::configure)
-            .configure(routes::websocket::configure)
-            .configure(routes::functions::configure)
-            .configure(routes::oauth::configure)
-            .configure(routes::widgets::configure)
+            .wrap(middleware::access_log())
+            .configure(|cfg| routes::configure(cfg, service_auth.clone()))
     })
     .bind(bind_addr)?
     .shutdown_timeout(5)
@@ -408,4 +458,43 @@ fn stop_on_ctrl_break(server: actix_web::dev::ServerHandle) {
             server.stop(true).await;
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lookup_returning(value: &'static str) -> impl Fn(&str, &str) -> String {
+        move |env_var, config_key| {
+            assert_eq!(
+                (env_var, config_key),
+                ("WOOFX3_BARKLOADER_KEY", "barkloaderKey")
+            );
+            value.to_string()
+        }
+    }
+
+    #[test]
+    fn test_engine_secret_refuses_unusable_values() {
+        let cases = [
+            ("", "empty"),
+            ("CHANGE_ME", "placeholder"),
+            ("short-key", "too short"),
+        ];
+        for (value, label) in cases {
+            let error = engine_secret(lookup_returning(value)).expect_err(label);
+            assert!(
+                error
+                    .to_string()
+                    .contains("barkloaderKey (WOOFX3_BARKLOADER_KEY)"),
+                "{label}: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_engine_secret_returns_a_valid_secret_unchanged() {
+        let secret = "0123456789abcdef0123456789abcdef";
+        assert_eq!(engine_secret(lookup_returning(secret)).unwrap(), secret);
+    }
 }

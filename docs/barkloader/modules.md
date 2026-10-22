@@ -75,7 +75,7 @@ The manifest uses **camelCase** JSON keys. All top-level sections are optional *
       "pattern": "!clip",
       "type": "prefix",
       "workflow": "create_clip_workflow",
-      "requiredRole": "public"
+      "requiredRole": "everyone"
     }
   ],
   "workflows": [
@@ -209,7 +209,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `name` | string | yes | Display name. Used only for presentation; never used as an identifier. |
 | `description` | string | no | Human-readable summary. |
 | `type` | string | yes | Trigger transport: `eventbus`, `webhook`, `command`, `schedule`. Determines how install wires the trigger up. See [Webhook triggers](#webhook-triggers) for `webhook`. |
-| `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. Must not start with `webhook.`, which is reserved. An uploaded module also may not use a subject the engine treats as a command, because a webhook handler can publish its module's eventbus trigger events verbatim: `db.`, `engine.`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute` and `action.execute` (prefix match). Rejected on a `webhook` trigger. |
+| `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. Must not start with `webhook.`, which is reserved. An uploaded module also may not use a subject the engine treats as a command, because a webhook handler can publish its module's eventbus trigger events verbatim: `db.`, `engine.`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute` and `action.execute` (prefix match). Nor may it claim an event the engine asserts: `command.`, `chat.command.`, `session.`, `setting.`, `viewer.`, `workflow.`, `barkloader.`, `HEARTBEAT`, `MESSAGEBUS_INIT`, or `module.` outside `module.<its id>.`. Platform events such as `channel.*`, `user.message` and `stream.online` stay open to the platform module that brings them. The full list is `shared/common/contracts/reserved-subjects.json` (see [Engine integrity](../services/engine-integrity.md#reserved-subjects)). Rejected on a `webhook` trigger. |
 | `handler` | string | yes (for `webhook`) | Manifest-local id of the function that handles inbound HTTP requests for a `webhook` trigger. Rejected on every other type. |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification (e.g. `["platform.twitch.chat", "function.chat"]`). Sent to RegisterTrigger as `taxonomy`. See [Taxonomy](#taxonomy). **Legacy:** superseded by `category`. |
 | `category` | string | no | **Legacy.** UX / registry grouping (e.g. `platform.twitch`). Still accepted; folded into a single-element `taxonomy` at parse time when `taxonomy` is unset, otherwise falls back to `type`. New manifests should use `taxonomy` instead. |
@@ -807,7 +807,15 @@ A module's `actions[]` list is not "things modules add to the engine." It's "con
 | `type` | string | yes | One of `prefix`, `exact`, `regex`. |
 | `actions` | array | no | The actions the command runs, in order. Each entry has the same shape as a workflow step (`id`, `action`, `parameters`, `dependsOn`); `action` names an action in the same manifest by `id`, or another module's by canonical id. Stored as the command's actions exactly as declared. Mutually exclusive with `workflow`. |
 | `workflow` | string | no | Reference to a workflow the command runs as its one action (use the workflow's `id`; resolved to its canonical id at install). Mutually exclusive with `actions`. |
-| `requiredRole` | string | no | Minimum role required to invoke (e.g. `public`, `subscriber`, `mod`). |
+| `requiredRole` | string | no | The least chat role that may invoke the command: `broadcaster`, `moderator`, `vip`, `subscriber`, `follower` or `everyone` (`mod` and `public` are accepted as spellings of `moderator` and `everyone`). Any other value refuses the manifest. Without it the command is open to everyone. |
+
+`requiredRole` sets who may use the command when it is first registered.
+Roles form a ladder, highest first, and a role admits itself and every role
+above it: a `subscriber` command is open to subscribers, VIPs, moderators and
+the broadcaster. The command is registered restricted to those built-in
+groups; `everyone` registers it public. Once registered the command belongs to
+the streamer, who may change who can use it, and reinstalling the module keeps
+their choice.
 
 A command declaring neither `actions` nor `workflow` runs nothing itself; it
 still matches and still publishes `chat.command.<slug>` for workflows listening
@@ -1554,6 +1562,13 @@ except `net:`, which names a host: an exact lowercase DNS name with no IP
 address, port or wildcard. Declaring a host does not declare its subdomains,
 so a module that calls `api.spotify.com` and `accounts.spotify.com` lists both.
 
+An unknown id or one listed twice fails the install. At runtime barkloader
+reads the permissions from the installed manifest, and a call to a function
+whose permission the invoking module did not declare throws before anything is
+sent, with `code` `permission_denied`. Permissions are declared by the module
+and enforced by the engine, and shown on the module install page (woofx3-ui
+feat/module-permissions-review).
+
 #### Where `ctx.http` may connect
 
 Module code reaches only the destinations its module was granted
@@ -1565,19 +1580,44 @@ Module code reaches only the destinations its module was granted
   `url` setting (`ctx.module.setSetting` refuses it), and a manifest cannot
   give one a default.
 
-Every redirect is checked like the first request, and every address a host
-name resolves to must not be loopback, private, link-local or otherwise local
-unless the engine sets `WOOFX3_MODULE_HTTP_ALLOW_PRIVATE=true` (a self-hosted
-engine whose modules talk to its own network). `WOOFX3_MODULE_HTTP` decides
-what happens to anything else: `log` (the default) logs it and sends the
-request, so modules written before host permissions can be found and updated;
-`enforce` refuses it with `permission_denied`.
-An unknown id or one listed twice fails the install. At runtime barkloader
-reads the permissions from the installed manifest, and a call to a function
-whose permission the invoking module did not declare throws before anything is
-sent, with `code` `permission_denied`. Permissions are declared by the module
-and enforced by the engine, and shown on the module install page (woofx3-ui
-feat/module-permissions-review).
+Every redirect is checked like the first request. By default a request to
+anything else throws with `code` `permission_denied` before it is sent (see
+the settings below).
+
+Two engine settings shape this, and are read once at startup; any value other
+than the ones listed stops barkloader from starting:
+
+| Setting | Values | Effect |
+|---|---|---|
+| `WOOFX3_MODULE_HTTP` | `enforce` (default), `log` | What happens to a destination the module was not granted. `log` writes a warning and sends the request anyway: a migration opt-in for finding modules written before host permissions, logged as a warning at startup |
+| `WOOFX3_MODULE_HTTP_ALLOW_PRIVATE` | `false` (default), `true` | Whether module code may reach loopback, private, link-local (cloud metadata), multicast and other non-routable addresses, as an IP literal or as any address a host name resolves to. Only for a self-hosted engine whose modules talk to its own network. When `false` these addresses are refused in both modes |
+
+Requests that carry credentials ([`ctx.oauth.request`](#oauth-integrations-oauth)
+and its token refreshes) always enforce the grant rule, even under
+`WOOFX3_MODULE_HTTP=log`, and are never followed across a redirect to another
+origin. On any other request, a redirect to another origin (scheme, host or
+port) drops the `Authorization`, `Proxy-Authorization` and `Cookie` headers
+before the next hop, as browsers do.
+
+#### Time and size limits on `ctx.http`
+
+A request is abandoned, with a `deadline_exceeded` error, when the invocation
+that made it runs out of time or after 25 seconds, whichever comes first;
+opening the connection has its own 5 second limit. The 25 seconds cover
+redirects and reading the response. A response body over 4 MiB fails with
+`response_too_large`, checked against `Content-Length` first and then as the
+body arrives, so a module cannot download more than that in one request. More
+than 5 redirects fails with `too_many_redirects`. `ctx.oauth.request` and its
+token refreshes follow the same limits. An operator can change them at
+startup; any value that is not a whole number above zero, or a time above
+30 seconds (the longest an invocation may take), stops barkloader from starting:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `WOOFX3_MODULE_HTTP_CONNECT_TIMEOUT_MS` | `5000` | Time allowed to open the connection |
+| `WOOFX3_MODULE_HTTP_REQUEST_TIMEOUT_MS` | `25000` | Ceiling on one request, redirects and body included |
+| `WOOFX3_MODULE_HTTP_MAX_RESPONSE_BYTES` | `4194304` | Largest response body |
+| `WOOFX3_MODULE_HTTP_MAX_REDIRECTS` | `5` | Redirects followed |
 
 ### OAuth integrations (`oauth[]`)
 
@@ -1622,7 +1662,9 @@ starting with `oauth.`. Module code then calls the provider with
 `ctx.oauth.request({ integration, url, method?, headers?, query?, body? })`:
 the engine attaches the access token, refreshes it when it is about to expire
 or the provider answers 401, and sends it only to `hosts`, through the same
-checks as `ctx.http` ([Where `ctx.http` may connect](#where-ctx-http-may-connect)).
+checks as `ctx.http` ([Where `ctx.http` may connect](#where-ctx-http-may-connect)),
+which these requests always enforce whatever `WOOFX3_MODULE_HTTP` says. A
+redirect to another origin is refused rather than followed.
 It throws while the integration is not connected. A token is used only with the `tokenUrl` and `hosts` it was issued under: once an update moves the `tokenUrl` or adds a host, `ctx.oauth.request` throws without sending anything until the streamer connects again, so an update cannot redirect the refresh token or the access token. Dropping a host needs no reconnect.
 
 A workflow step or command action that names another module's action runs that
@@ -1632,6 +1674,27 @@ every permission that module declares; otherwise the install fails, naming the
 reference and the missing permissions. The other module must be installed with
 a readable manifest. Bundled system modules are exempt, and references to the
 module's own actions need nothing beyond its own `permissions`.
+
+The built-in `woofx3:action:function` action invokes whichever function its
+`parameters.function` names, and that function runs with its own module's
+permissions and OAuth tokens. An uploaded module may therefore use it only to
+invoke a function it declares itself, named by its full canonical id
+(`my_module:function:greet`). The install fails when a workflow step or command
+action uses it with another module's function, with a `${...}` template (the
+target would only be known at run time), or with no literal canonical function
+id at all (including one with surrounding spaces). The same rule covers the
+module's own `type: "function"` actions: each must point at one of the module's
+own functions, so an action like
+`{ "id": "x", "type": "function", "function": "other_module:function:timeout" }`
+fails the install. Bundled system modules are exempt.
+
+```json
+{
+  "id": "greet",
+  "action": "woofx3:action:function",
+  "parameters": { "function": "my_module:function:greet", "name": "${trigger.data.user}" }
+}
+```
 
 ### Local endpoints (`local[]`)
 
@@ -1845,6 +1908,51 @@ Multipart upload → temp dir
 ```
 
 The HTTP **200** response is returned when the upload is accepted; install runs in a **background task**. If install fails, the error is logged (check server logs).
+
+### Upgrades and failed installs
+
+A module is identified by its manifest `id`. Installing an archive whose `id` is
+already installed upgrades that module in place; its `name` is display only and
+may change between versions. A `name` another installed module already uses is
+refused (`AlreadyExists` from the db proxy), so an upload cannot take over
+another module's row, and with it that module's functions, settings, secrets and
+storage. A `name` equal to another installed module's `id` is refused the same
+way, because the db proxy resolves a module name against both. A row written
+before module ids were recorded (empty `module_id`) is adopted by the first
+install whose `name` matches it.
+
+An upgrade never removes anything the installed version registered until every
+install step has succeeded:
+
+1. Before any database write, the installer reads the installed version (its
+   manifest, module key, version, functions and provenance): the row holding
+   the manifest `id`, or else a row with no module id that the install will
+   adopt by `name`. If it cannot be read, or its provenance is not one an
+   install writes, the install fails without writing anything.
+2. The steps run in order. `CreateModule` rewrites the module row and its
+   functions in one database transaction, so it lands whole or not at all.
+3. On success, resources the installed version declared and the new manifest
+   does not are archived (background tasks are deleted), and commands the new
+   manifest dropped are deleted.
+4. On failure after `CreateModule`:
+   - an **upgrade** is restored: the commands the install created and the
+     resources only the new manifest declares are removed, then the module row
+     and its functions are rewritten to the installed version. Resources both
+     versions declare keep the definitions the failed install registered.
+     If the restore itself fails, the install error says so.
+   - a **fresh install** is removed: its triggers, actions, widgets, background
+     tasks, workflows, the commands it created and its module row. The row is
+     deleted only when its name resolves to the row this install created;
+     otherwise it is left in place and the rollback logs why.
+
+   A failure at or before `CreateModule` has written nothing and compensates
+   nothing.
+
+Uploading with `force=true` only allows overwriting a version whose archive
+already exists; the install itself follows the same steps.
+
+A bundled module whose upgrade fails at boot therefore stays installed at its
+previous version.
 
 ### SafeTempDir
 

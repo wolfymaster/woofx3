@@ -12,7 +12,7 @@ export const moduleOAuthRoutes = routeModule({
     authorization: ModuleOAuthAuthorization
   ): Promise<ModuleOAuthConnected> {
     const path = `/modules/${encodeURIComponent(moduleId)}/oauth/${encodeURIComponent(integration)}/complete`;
-    const response = await fetch(`${this.getBarkloaderBaseUrl()}${path}`, {
+    const response = await this.barkloaderFetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(authorization),

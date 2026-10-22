@@ -69,8 +69,20 @@ func main() {
 			}
 			app.engine.SetOrderedTurnTimeout(turnTimeout)
 
+			retention, err := cfg.runRetention()
+			if err != nil {
+				return err
+			}
+			if err := app.engine.SetRetention(retention); err != nil {
+				return err
+			}
+
 			// Database
-			httpClient := &http.Client{}
+			dbTimeout, err := cfg.dbRequestTimeout()
+			if err != nil {
+				return err
+			}
+			httpClient := newDBHTTPClient(dbTimeout)
 			dbClient := db.NewDbProxyClient(cfg.DatabaseProxyURL, httpClient)
 			// The alert and viewer fact services are not on DbProxyClient,
 			// which predates them.
@@ -106,6 +118,12 @@ func main() {
 			// constructed pre-config in main(); the others are local to this scope.
 			app.SetServices(natsSvc, barkloaderService, dbClient, alertClient, factClient, cfg.SceneManagerURL)
 
+			runRecorder, err := newAsyncRunRecorder(dbClient.Workflow, defaultRecorderConfig(), logger, time.Now)
+			if err != nil {
+				return err
+			}
+			app.SetRunRecorder(runRecorder)
+
 			return nil
 		},
 		RuntimeTerminate: func(ctx context.Context, application runtime.Application) error {
@@ -135,6 +153,14 @@ func main() {
 	}
 
 	logger.Info("Workflow service stopped")
+}
+
+// newDBHTTPClient is the client every db proxy service but the fact service
+// shares. Its timeout caps each request, the definition lists included, so a
+// db proxy that stops answering surfaces as an error rather than a caller
+// waiting forever.
+func newDBHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout}
 }
 
 // newFactHTTPClient is the fact service's own HTTP client. Fact writes run on

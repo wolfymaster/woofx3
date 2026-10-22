@@ -18,4 +18,5 @@ pub mod session;
 pub mod signing;
 pub mod storage_settings;
 pub mod thumbnail;
+pub mod upload_limits;
 pub mod upload_token;

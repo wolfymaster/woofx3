@@ -64,7 +64,6 @@ func (s *streamGaugeService) RecordStreamGaugeSample(ctx context.Context, req *c
 	}
 
 	sample := &models.StreamGaugeSample{
-		ID:               uuid.New(),
 		SegmentID:        segment.ID,
 		SessionID:        segment.StreamSessionID,
 		SampledAt:        sampledAt.Truncate(time.Minute),

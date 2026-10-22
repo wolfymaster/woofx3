@@ -1,9 +1,11 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
 import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
-import { loadRuntimeEnv } from "@woofx3/common/runtime";
+import { loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
 import { z } from "zod";
+import { DEFAULT_AUTH_CACHE_TTL_MS } from "./auth";
 import { type BarkloaderWebhookAuth, parseBarkloaderWebhookAuth } from "./barkloader-webhook-auth";
-import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL, downloadOrigin } from "./marketplace-client";
+import { downloadOrigin } from "./guarded-download";
+import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL } from "./marketplace-client";
 import { type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
 import { UNVERSIONED } from "./version";
 
@@ -79,6 +81,11 @@ export interface ApiConfig {
    * api only names it on Helix calls.
    */
   twitchClientId: string | null;
+  /**
+   * How long a successful client credential check is reused, in milliseconds
+   * (`WOOFX3_AUTH_CACHE_TTL_MS`); DEFAULT_AUTH_CACHE_TTL_MS when unset.
+   */
+  authCacheTtlMs: number;
   nats: {
     url: string;
     name: string;
@@ -143,6 +150,7 @@ export const ApiEnvSchema = z.looseObject({
   // loadRuntimeEnv coerces an all-digit value to a number.
   woofx3TwitchPublicClientId: z.union([z.string(), z.number()]).optional(),
   woofx3TwitchClientId: z.union([z.string(), z.number()]).optional(),
+  woofx3AuthCacheTtlMs: z.union([z.number(), z.string()]).optional(),
 });
 
 /**
@@ -237,6 +245,24 @@ function resolveTwitchClientId(value: unknown, setting: string): string | null {
   return clientId;
 }
 
+/**
+ * `WOOFX3_AUTH_CACHE_TTL_MS` as a positive whole number of milliseconds, or
+ * DEFAULT_AUTH_CACHE_TTL_MS when unset or blank. Anything else stops startup.
+ */
+export function resolveAuthCacheTtlMs(value: unknown): number {
+  const text = nonBlank(value);
+  if (text === undefined) {
+    return DEFAULT_AUTH_CACHE_TTL_MS;
+  }
+  const ttlMs = Number(text);
+  if (!Number.isInteger(ttlMs) || ttlMs <= 0) {
+    throw new Error(
+      `Config error: woofx3AuthCacheTtlMs (WOOFX3_AUTH_CACHE_TTL_MS) must be a positive integer, got ${text}`
+    );
+  }
+  return ttlMs;
+}
+
 export function loadConfig(): ApiConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: ApiEnvSchema });
   const config = result.config;
@@ -274,8 +300,9 @@ export function loadConfig(): ApiConfig {
   if (!barkloaderWsUrl) {
     throw new Error("barkloaderWsUrl (or WOOFX3_BARKLOADER_WS_URL) is required");
   }
-  if (!barkloaderKey) {
-    throw new Error("barkloaderKey (or WOOFX3_BARKLOADER_KEY) is required");
+  const barkloaderKeyCheck = validateSecret("barkloaderKey", barkloaderKey);
+  if (!barkloaderKeyCheck.ok) {
+    throw new Error(barkloaderKeyCheck.error.message);
   }
 
   // Tiger Style: fail fast at startup on malformed URLs rather than
@@ -317,6 +344,7 @@ export function loadConfig(): ApiConfig {
     "woofx3TwitchClientId (WOOFX3_TWITCH_CLIENT_ID)"
   );
   const messageBusToken = nonBlank(config.woofx3MessagebusToken) ?? nonBlank(config.messagebusToken);
+  const authCacheTtlMs = resolveAuthCacheTtlMs(config.woofx3AuthCacheTtlMs);
 
   return {
     version,
@@ -338,6 +366,7 @@ export function loadConfig(): ApiConfig {
     twitchClientId,
     rootDir,
     requestGuard,
+    authCacheTtlMs,
     nats: {
       url: messageBusUrl,
       name: "woofx3-api",

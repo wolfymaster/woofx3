@@ -98,6 +98,20 @@ pub trait StorageClient: Send + Sync {
     ) -> Result<CompareAndSetOutcome, String>;
 }
 
+/// How strictly the host's HTTP client applies the grant rule to a request
+/// (see `crate::net`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Enforcement {
+    /// Follow the engine's configured policy, which may only log an
+    /// ungranted destination.
+    #[default]
+    Policy,
+    /// Refuse an ungranted destination, and any redirect to another origin,
+    /// whatever the engine's policy: for requests carrying credentials the
+    /// engine holds on the module's behalf.
+    Always,
+}
+
 /// The HTTP request a module makes, and where its module may connect.
 pub struct HttpRequest<'a> {
     /// The invoking module's manifest-local id, for the log line a refusal
@@ -110,6 +124,11 @@ pub struct HttpRequest<'a> {
     pub url: &'a str,
     pub method: &'a str,
     pub opts: Value,
+    pub enforcement: Enforcement,
+    /// When the invocation's caller stops waiting. The client gives up by
+    /// then, so a slow destination cannot outlive the call it serves. `None`
+    /// for a request made outside an invocation.
+    pub deadline: Option<std::time::Instant>,
 }
 
 pub trait HttpClient: Send + Sync {

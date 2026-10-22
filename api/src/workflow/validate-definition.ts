@@ -174,6 +174,39 @@ function validateWait(wait: unknown, prefix: string, errors: ValidationError[]):
   validateConditions(w.conditions as ConditionConfig[] | undefined, `${prefix}.conditions`, errors);
 }
 
+const ENV_REFERENCE_MARKER = "${env.";
+// Must match ErrEnvReference in workflow/internal/engine/env_refusal.go.
+export const ENV_REFERENCE_MESSAGE = "${env.*} is not available to workflows: use module settings or secrets";
+
+// Returns the path of the first string in the definition that references the
+// `env` source, which the engine refuses: workflows never read its
+// environment. Keys are visited in sorted order, as the engine does, so both
+// report the same path.
+function findEnvReference(value: unknown, path: string): string | null {
+  if (typeof value === "string") {
+    return value.includes(ENV_REFERENCE_MARKER) ? path : null;
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      const found = findEnvReference(value[i], `${path}[${i}]`);
+      if (found !== null) {
+        return found;
+      }
+    }
+    return null;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    for (const key of Object.keys(record).sort()) {
+      const found = findEnvReference(record[key], path === "" ? key : `${path}.${key}`);
+      if (found !== null) {
+        return found;
+      }
+    }
+  }
+  return null;
+}
+
 export interface ValidationOptions {
   /**
    * Accept a trigger of type "command". Only the command path sets it: such a
@@ -284,6 +317,11 @@ export function validateWorkflowDefinition(input: unknown, options: ValidationOp
         }
       });
     });
+  }
+
+  const envPath = findEnvReference(input, "");
+  if (envPath !== null) {
+    errors.push({ path: envPath, message: ENV_REFERENCE_MESSAGE });
   }
 
   if (errors.length > 0) {

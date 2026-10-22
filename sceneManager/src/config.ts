@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { parseRequestGuardPolicy, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
-import { dataDir, loadRuntimeEnv } from "@woofx3/common/runtime";
+import { dataDir, loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
 import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
 import { z } from "zod";
 
@@ -11,8 +11,8 @@ export const SceneManagerEnvSchema = z.object({
   // exposure in dev) is the public surface, never assumed here.
   woofx3SceneManagerHost: z.string().default("127.0.0.1"),
   // HS256 signing secret for the short-lived session JWT minted at
-  // `GET /scene/{sceneId}`. Required — fail fast rather than run with
-  // an absent/guessable secret.
+  // `GET /scene/{sceneId}`. Required and checked by validateConfig: fail
+  // fast rather than run with an absent or guessable secret.
   woofx3SceneManagerTokenSecret: z.string().optional(),
   woofx3RootPath: z.string().optional(),
   woofx3MessagebusUrl: z.string().default("ws://localhost:4225"),
@@ -42,8 +42,11 @@ export interface SceneManagerRuntimeConfig {
   fontCacheDir: string;
   databaseProxyUrl: string;
   barkloaderUrl: string;
-  /** Signs the media proxy URLs barkloader verifies (scene/media-proxy.ts). */
-  mediaProxySecret: string;
+  /**
+   * The engine secret: signs the media proxy URLs barkloader verifies
+   * (scene/media-proxy.ts) and authenticates to barkloader's management routes.
+   */
+  barkloaderKey: string;
   /** Which Host and Origin headers the HTTP server accepts; open unless set. */
   requestGuard: RequestGuardPolicy;
   /**
@@ -73,18 +76,13 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
   if (!config.bindHost) {
     throw new Error("sceneManager: bindHost must not be empty (WOOFX3_SCENE_MANAGER_HOST)");
   }
-  if (!config.tokenSecret) {
-    throw new Error(
-      "sceneManager: tokenSecret is required (WOOFX3_SCENE_MANAGER_TOKEN_SECRET) — refusing to mint session tokens with no secret"
-    );
-  }
+  // Session and editor tokens are signed with tokenSecret, and media proxy
+  // URLs and barkloader requests with barkloaderKey: a guessable secret lets
+  // anyone forge any of them.
+  assertSecret("sceneManagerTokenSecret", config.tokenSecret);
+  assertSecret("barkloaderKey", config.barkloaderKey);
   if (!config.barkloaderUrl) {
     throw new Error("sceneManager: barkloaderUrl must not be empty (WOOFX3_BARKLOADER_URL)");
-  }
-  if (!config.mediaProxySecret) {
-    throw new Error(
-      "sceneManager: barkloaderKey is required (WOOFX3_BARKLOADER_KEY) — external media in widget settings is signed with it"
-    );
   }
   try {
     new URL(config.barkloaderUrl);
@@ -111,6 +109,13 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
   const shimPath = join(config.publicDir, WIDGET_HOST_SHIM_FILE);
   if (!existsSync(shimPath)) {
     throw new Error(`sceneManager: widget host shim not found at ${shimPath} -- run \`bun run build:shim\``);
+  }
+}
+
+function assertSecret(name: string, value: string): void {
+  const result = validateSecret(name, value);
+  if (!result.ok) {
+    throw new Error(`sceneManager: ${result.error.message}`);
   }
 }
 
@@ -163,7 +168,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
 
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? "http://127.0.0.1:9653");
-  const mediaProxySecret = String(c.woofx3BarkloaderKey ?? "");
+  const barkloaderKey = String(c.woofx3BarkloaderKey ?? "");
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: c.woofx3AllowedHosts,
     allowedOrigins: c.woofx3AllowedOrigins,
@@ -179,7 +184,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     fontCacheDir: join(dataDir() ?? rootDir, "cache", "fonts"),
     databaseProxyUrl,
     barkloaderUrl,
-    mediaProxySecret,
+    barkloaderKey,
     requestGuard,
     obs: {
       host: obsHost,

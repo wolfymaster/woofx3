@@ -931,9 +931,11 @@ fn test_ctx_result_events_carry_the_calling_workflow_chain() {
     );
 }
 
-/// Records the grants each `ctx.http` request carries, and answers 200.
+/// Records the grants and deadline each `ctx.http` request carries, and
+/// answers 200.
 struct RecordingHttp {
     grants: Mutex<Vec<std::collections::HashSet<String>>>,
+    deadlines: Mutex<Vec<Option<std::time::Instant>>>,
 }
 
 impl lib_sandbox::host::HttpClient for RecordingHttp {
@@ -942,6 +944,7 @@ impl lib_sandbox::host::HttpClient for RecordingHttp {
         request: lib_sandbox::host::HttpRequest<'_>,
     ) -> Result<serde_json::Value, String> {
         self.grants.lock().unwrap().push(request.grants.clone());
+        self.deadlines.lock().unwrap().push(request.deadline);
         Ok(serde_json::json!({ "status": 200, "body": null }))
     }
 }
@@ -997,6 +1000,7 @@ fn a_url_settings_origin_is_granted_to_the_invocation() {
 
     let http = Arc::new(RecordingHttp {
         grants: Mutex::new(Vec::new()),
+        deadlines: Mutex::new(Vec::new()),
     });
     let mut host = noop_host_context();
     host.http = http.clone();
@@ -1024,4 +1028,49 @@ fn a_url_settings_origin_is_granted_to_the_invocation() {
     ]
     .into();
     assert_eq!(grants.as_slice(), &[expected]);
+}
+
+#[test]
+fn ctx_http_carries_the_invocations_deadline_in_both_runtimes() {
+    let cases = [
+        (
+            "js",
+            r#"function run(ctx) { ctx.http.request("https://api.example.com/", "GET", {}); return {}; }"#,
+        ),
+        (
+            "lua",
+            r#"function run(ctx) ctx.http.request("https://api.example.com/", "GET", {}) return {} end"#,
+        ),
+    ];
+    for (ext, code) in cases {
+        let registry = extension_test_module("http_deadline", "run", code, ext);
+        let http = Arc::new(RecordingHttp {
+            grants: Mutex::new(Vec::new()),
+            deadlines: Mutex::new(Vec::new()),
+        });
+        let mut host = noop_host_context();
+        host.http = http.clone();
+        let before = std::time::Instant::now();
+        Sandbox::new(registry, host)
+            .unwrap()
+            .invoke(InvokeRequest {
+                function: "http_deadline:function:run".to_string(),
+                event: serde_json::Value::Null,
+                user: None,
+                params: serde_json::Value::Null,
+                workflow_chain: None,
+                timeout_ms: Some(5_000),
+            })
+            .unwrap_or_else(|e| panic!("{ext}: {e}"));
+        let after = std::time::Instant::now();
+
+        let deadlines = http.deadlines.lock().unwrap();
+        assert_eq!(deadlines.len(), 1, "{ext}");
+        let deadline = deadlines[0].unwrap_or_else(|| panic!("{ext}: request had no deadline"));
+        let timeout = std::time::Duration::from_millis(5_000);
+        assert!(
+            deadline >= before + timeout && deadline <= after + timeout,
+            "{ext}"
+        );
+    }
 }
