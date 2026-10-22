@@ -44,7 +44,7 @@ for target in "${TARGETS[@]}"; do
     
     if [[ ! -d "$TARGET_DIR" ]]; then
         log_error "Target directory not found: $TARGET_DIR"
-        continue
+        exit 1
     fi
     
     log_info "Packaging $target..."
@@ -157,6 +157,7 @@ EOF
         log_info "  ✓ Created archive: $(basename "$ARCHIVE_FILE") ($ARCHIVE_SIZE)"
     else
         log_error "  ✗ Failed to create archive: $(basename "$ARCHIVE_FILE")"
+        exit 1
     fi
 done
 
