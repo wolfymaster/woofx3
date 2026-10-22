@@ -162,6 +162,7 @@ const CREDENTIALS: TwitchConfig = {
   channel: undefined,
   app: { clientId: "cid", clientSecret: "sec", redirectUri: "http://localhost/oauth" },
   membership: { ttlMs: TWITCH_DEFAULTS.membershipTtlMs, deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs },
+  sendQueueCap: TWITCH_DEFAULTS.sendQueueCap,
 };
 
 function reset() {

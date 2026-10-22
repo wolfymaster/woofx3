@@ -11,7 +11,13 @@ describe("twitchConfig", () => {
       channel: undefined,
       app: undefined,
       membership: { ttlMs: TWITCH_DEFAULTS.membershipTtlMs, deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs },
+      sendQueueCap: TWITCH_DEFAULTS.sendQueueCap,
     });
+  });
+
+  test("takes a send queue cap, zero included", () => {
+    expect(shaped({ woofx3TwitchSendQueueCap: 5 }).sendQueueCap).toBe(5);
+    expect(shaped({ woofx3TwitchSendQueueCap: 0 }).sendQueueCap).toBe(0);
   });
 
   const apps: Array<[name: string, env: Record<string, unknown>, app: TwitchConfig["app"]]> = [
@@ -47,6 +53,8 @@ describe("twitchConfig", () => {
     ["a zero membership TTL", { woofx3TwitchMembershipTtlMs: 0 }],
     ["a non-numeric membership deadline", { woofx3TwitchMembershipDeadlineMs: "soon" }],
     ["a non-boolean enrichment switch", { woofx3TwitchMembershipEnrichmentEnabled: "maybe" }],
+    ["a negative send queue cap", { woofx3TwitchSendQueueCap: -1 }],
+    ["a fractional send queue cap", { woofx3TwitchSendQueueCap: 1.5 }],
   ];
   for (const [name, env] of invalid) {
     test(`refuses ${name}`, () => {

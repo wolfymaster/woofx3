@@ -101,6 +101,7 @@ const CONFIG: TwitchConfig = {
   channel: undefined,
   app: undefined,
   membership: { ttlMs: TWITCH_DEFAULTS.membershipTtlMs, deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs },
+  sendQueueCap: TWITCH_DEFAULTS.sendQueueCap,
 };
 
 function newAdapter(time = new FakeTime()) {
