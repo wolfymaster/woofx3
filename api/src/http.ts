@@ -33,10 +33,7 @@ export interface HttpDeps {
 }
 
 /** What a WebSocket carries from its upgrade request to `open`, where its gateway connection is built. */
-interface SocketData {
-  origin: string | null;
-  remoteAddress: string | null;
-}
+type SocketData = Pick<ConnectionInfo, "origin" | "remoteAddress">;
 
 /** CORS for `/api` batch RPC, beside the origin headers the request guard picks. */
 const BATCH_CORS_HEADERS: Record<string, string> = {

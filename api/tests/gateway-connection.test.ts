@@ -75,8 +75,8 @@ describe("GatewayConnection", () => {
     expect(connection.remoteAddress).toBe("127.0.0.1");
     expect(connection.close).not.toBeNull();
 
-    connection.close?.(4401, "client revoked");
-    expect(await closed).toBe(4401);
+    connection.close?.(4000, "closed by the test");
+    expect(await closed).toBe(4000);
     client[Symbol.dispose]();
   });
 
