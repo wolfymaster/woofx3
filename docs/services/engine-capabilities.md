@@ -83,11 +83,11 @@ Since is the first release whose engine advertised the id, and `unreleased` unti
 | `workflow.catalog` | v0.40.0 | The triggers, actions and module functions a workflow can use, in one read: `getWorkflowCatalog`. See [Workflow API → getWorkflowCatalog](../workflow/api.md#getworkflowcatalog) |
 | `workflow.viewerFacts` | v0.36.0 | The values `${viewer.*}` can resolve, with their kinds, for a condition editor's field picker: `listViewerFacts`. See [Viewer facts](./viewer-facts.md#facts-in-workflows-viewer) |
 | `workflow.widgetVisibility` | v0.16.0 | The `scene.widget.visibility` workflow action, which saves a placement's `visible` on the published scene, and the `scenes` / `scenePlacements` field sources its form uses. See [Task types → scene.widget.visibility](../workflow/tasks.md#scene-widget-visibility) |
-| `workflow.delayWait` | unreleased | A `wait` task of type `delay` pauses the run for `durationMs`, and a wait's `timeout` is fired by a timer. See [Task types → wait](../workflow/tasks.md#wait) |
+| `workflow.delayWait` | unreleased | A `wait` task of type `delay` pauses the run for `durationMs`, and a wait's `timeout` is fired by a timer. See [Task types → Delay](../workflow/tasks.md#delay) |
 | `workflow.testRunOptions` | unreleased | `triggerWorkflowByName` takes `options` (sample `triggerData`, `platform`, `skipConditions`). See [Workflow API → triggerWorkflowByName](../workflow/api.md#triggerworkflowbyname) |
-| `workflow.dryRun` | unreleased | `triggerWorkflowByName` takes `options.dryRun`: steps with side effects record what they would do instead of doing it |
-| `workflow.realCancel` | unreleased | `cancelWorkflow` stops a running run and answers with an `outcome` |
-| `workflow.health` | unreleased | `getWorkflowHealth` and the `workflow.health.changed` and `workflow.health.snapshot` webhooks |
+| `workflow.dryRun` | unreleased | `triggerWorkflowByName` takes `options.dryRun`: steps with side effects record what they would do instead of doing it. See [Execution → Dry Runs](../workflow/execution.md#dry-runs) |
+| `workflow.realCancel` | unreleased | `cancelWorkflow` stops a running run and answers with an `outcome`. See [Workflow API → cancelWorkflow](../workflow/api.md#cancelworkflow) |
+| `workflow.health` | unreleased | `getWorkflowHealth` and the `workflow.health.changed` and `workflow.health.snapshot` webhooks. See [Execution → Workflow Health](../workflow/execution.md#workflow-health) |
 
 A test in `api/tests/engine-capabilities.test.ts` fails if an id in `ENGINE_CAPABILITIES` has no row here, or its row has no Since value (a release tag or `unreleased`).
 
