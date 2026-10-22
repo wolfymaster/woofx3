@@ -18,6 +18,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/workers"
+	"github.com/wolfymaster/woofx3/db/database/dbtest"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"gorm.io/gorm"
@@ -58,7 +59,7 @@ var testAlertRetention = AlertRetention{
 // differently.
 func forEachAlertDialect(t *testing.T, test func(t *testing.T, svc client.AlertService, db *gorm.DB)) {
 	t.Helper()
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		test(t, newAlertSvc(t, db), db)
 	})
 }
