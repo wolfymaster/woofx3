@@ -1,12 +1,13 @@
-use lib_sandbox::extensions::{ChatExtension, TwitchExtension};
+use lib_sandbox::extensions::TwitchExtension;
 use lib_sandbox::host::noop::noop_host_context;
 use lib_sandbox::host::{
-    ChatSender, ExtensionRegistry, HostExtension, HostFunction, NatsPublisher, NatsRequester,
-    RequestError,
+    ExtensionRegistry, HostExtension, HostFunction, NatsPublisher, NatsRequester, RequestError,
 };
 use lib_sandbox::models::function::Function;
 use lib_sandbox::models::request::InvokeRequest;
-use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule, Sandbox};
+use lib_sandbox::{
+    ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule, Sandbox, SandboxLimits,
+};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -66,6 +67,7 @@ fn build_registry() -> Arc<ModuleRegistry> {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
 
@@ -77,7 +79,7 @@ fn build_registry() -> Arc<ModuleRegistry> {
 
 fn test_sandbox_instance() -> Sandbox {
     let registry = build_registry();
-    Sandbox::new(registry, noop_host_context()).unwrap()
+    Sandbox::new(registry, noop_host_context(), SandboxLimits::default()).unwrap()
 }
 
 #[test]
@@ -185,6 +187,7 @@ fn test_js_instruction_limit() {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
 
@@ -192,7 +195,8 @@ fn test_js_instruction_limit() {
         .register_module("limits".to_string(), module)
         .unwrap();
 
-    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+    let mut sandbox =
+        Sandbox::new(registry, noop_host_context(), SandboxLimits::default()).unwrap();
 
     let result = sandbox.invoke(InvokeRequest {
         function: "limits:function:infinite".to_string(),
@@ -249,6 +253,7 @@ function isolation(ctx) {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
 
@@ -256,7 +261,8 @@ function isolation(ctx) {
         .register_module("example".to_string(), module)
         .unwrap();
 
-    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+    let mut sandbox =
+        Sandbox::new(registry, noop_host_context(), SandboxLimits::default()).unwrap();
 
     let result1 = sandbox
         .invoke(InvokeRequest {
@@ -324,6 +330,7 @@ fn test_ctx_event_data() {
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
 
@@ -331,7 +338,8 @@ fn test_ctx_event_data() {
         .register_module("example".to_string(), module)
         .unwrap();
 
-    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+    let mut sandbox =
+        Sandbox::new(registry, noop_host_context(), SandboxLimits::default()).unwrap();
 
     let result = sandbox
         .invoke(InvokeRequest {
@@ -346,77 +354,6 @@ fn test_ctx_event_data() {
 
     assert_eq!(result["has_event"], serde_json::json!(true));
     assert_eq!(result["amount"], serde_json::json!(500));
-}
-
-#[derive(Default)]
-struct CapturingChatSender {
-    sent: Mutex<Vec<String>>,
-}
-
-impl ChatSender for CapturingChatSender {
-    fn send_message(&self, text: &str) -> Result<(), String> {
-        self.sent.lock().unwrap().push(text.to_string());
-        Ok(())
-    }
-}
-
-#[test]
-fn test_ctx_chat_send_message_routes_to_host() {
-    let code = r#"function send(ctx) {
-    ctx.chat.sendMessage(ctx.event.text);
-    return { ok: true };
-}"#;
-
-    let registry = Arc::new(ModuleRegistry::new());
-    let mut functions = HashMap::new();
-    functions.insert(
-        "send".to_string(),
-        Function::new(
-            "send".to_string(),
-            "send.js".to_string(),
-            code.to_string(),
-            false,
-        ),
-    );
-    let module = RegisteredModule {
-        actions: Default::default(),
-        metadata: ModuleMetadata {
-            name: "chat_test".to_string(),
-            version: "1.0.0".to_string(),
-            installed_at: 0,
-            updated_at: 0,
-        },
-        functions,
-        state: ModuleState::Active,
-        event_types: Default::default(),
-        permissions: Default::default(),
-        url_settings: Default::default(),
-        oauth: Default::default(),
-    };
-    registry
-        .register_module("chat_test".to_string(), module)
-        .unwrap();
-
-    let capturing = Arc::new(CapturingChatSender::default());
-    let mut host_ctx = noop_host_context();
-    host_ctx.extensions =
-        Arc::new(ExtensionRegistry::new().with(Arc::new(ChatExtension::new(capturing.clone()))));
-
-    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
-    let result = sandbox
-        .invoke(InvokeRequest {
-            function: "chat_test:function:send".to_string(),
-            event: serde_json::json!({ "text": "hi from sandbox" }),
-            user: None,
-            params: serde_json::Value::Null,
-            workflow_chain: None,
-            timeout_ms: None,
-        })
-        .unwrap();
-
-    assert_eq!(result["ok"], serde_json::json!(true));
-    let captured = capturing.sent.lock().unwrap();
-    assert_eq!(captured.as_slice(), &["hi from sandbox".to_string()]);
 }
 
 #[derive(Default)]
@@ -464,6 +401,7 @@ fn extension_test_module(
         event_types: Default::default(),
         permissions: Default::default(),
         url_settings: Default::default(),
+        resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
     registry.register_module(name.to_string(), module).unwrap();
@@ -521,7 +459,7 @@ fn invoke_with_twitch(
     let mut host_ctx = noop_host_context();
     host_ctx.extensions =
         Arc::new(ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(twitch))));
-    Sandbox::new(registry, host_ctx)
+    Sandbox::new(registry, host_ctx, SandboxLimits::default())
         .unwrap()
         .invoke(InvokeRequest {
             function: "twitch_test:function:run".to_string(),
@@ -763,7 +701,7 @@ fn assert_nested_namespace_call_publishes(module: &str, func_name: &str, code: &
         ExtensionRegistry::new().with(Arc::new(NestedNamespaceExtension::new(nats.clone()))),
     );
 
-    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    let mut sandbox = Sandbox::new(registry, host_ctx, SandboxLimits::default()).unwrap();
     sandbox
         .invoke(InvokeRequest {
             function: format!("{module}:function:{func_name}"),
@@ -815,7 +753,7 @@ fn test_unregistered_extension_namespace_is_undefined() {
     let registry = extension_test_module("noext_test", "probe", code, "js");
 
     let host_ctx = noop_host_context();
-    let mut sandbox = Sandbox::new(registry, host_ctx).unwrap();
+    let mut sandbox = Sandbox::new(registry, host_ctx, SandboxLimits::default()).unwrap();
     let result = sandbox
         .invoke(InvokeRequest {
             function: "noext_test:function:probe".to_string(),
@@ -837,7 +775,8 @@ fn invoke_probe(
     ext: &str,
 ) -> Result<serde_json::Value, String> {
     let registry = extension_test_module(module, func, code, ext);
-    let mut sandbox = Sandbox::new(registry, noop_host_context()).unwrap();
+    let mut sandbox =
+        Sandbox::new(registry, noop_host_context(), SandboxLimits::default()).unwrap();
     sandbox
         .invoke(InvokeRequest {
             function: format!("{module}:function:{func}"),
@@ -930,7 +869,7 @@ fn invoke_announcer(
     let nats = Arc::new(CapturingNats::default());
     let mut host_ctx = noop_host_context();
     host_ctx.nats = nats.clone();
-    let result = Sandbox::new(registry, host_ctx)
+    let result = Sandbox::new(registry, host_ctx, SandboxLimits::default())
         .unwrap()
         .invoke(InvokeRequest {
             function: format!("announcer:function:{func_name}"),
@@ -1003,9 +942,11 @@ fn test_ctx_result_events_carry_the_calling_workflow_chain() {
     );
 }
 
-/// Records the grants each `ctx.http` request carries, and answers 200.
+/// Records the grants and deadline each `ctx.http` request carries, and
+/// answers 200.
 struct RecordingHttp {
     grants: Mutex<Vec<std::collections::HashSet<String>>>,
+    deadlines: Mutex<Vec<Option<std::time::Instant>>>,
 }
 
 impl lib_sandbox::host::HttpClient for RecordingHttp {
@@ -1014,6 +955,7 @@ impl lib_sandbox::host::HttpClient for RecordingHttp {
         request: lib_sandbox::host::HttpRequest<'_>,
     ) -> Result<serde_json::Value, String> {
         self.grants.lock().unwrap().push(request.grants.clone());
+        self.deadlines.lock().unwrap().push(request.deadline);
         Ok(serde_json::json!({ "status": 200, "body": null }))
     }
 }
@@ -1062,6 +1004,7 @@ fn a_url_settings_origin_is_granted_to_the_invocation() {
                 event_types: Default::default(),
                 permissions: ["net:api.example.com".to_string()].into(),
                 url_settings: ["server".to_string()].into(),
+                resource_link_settings: Default::default(),
                 oauth: Default::default(),
             },
         )
@@ -1069,6 +1012,7 @@ fn a_url_settings_origin_is_granted_to_the_invocation() {
 
     let http = Arc::new(RecordingHttp {
         grants: Mutex::new(Vec::new()),
+        deadlines: Mutex::new(Vec::new()),
     });
     let mut host = noop_host_context();
     host.http = http.clone();
@@ -1076,7 +1020,7 @@ fn a_url_settings_origin_is_granted_to_the_invocation() {
         "server".to_string(),
         serde_json::json!("http://homeassistant.local:8123/api/states"),
     )])));
-    let mut sandbox = Sandbox::new(registry, host).unwrap();
+    let mut sandbox = Sandbox::new(registry, host, SandboxLimits::default()).unwrap();
 
     sandbox
         .invoke(InvokeRequest {
@@ -1096,4 +1040,49 @@ fn a_url_settings_origin_is_granted_to_the_invocation() {
     ]
     .into();
     assert_eq!(grants.as_slice(), &[expected]);
+}
+
+#[test]
+fn ctx_http_carries_the_invocations_deadline_in_both_runtimes() {
+    let cases = [
+        (
+            "js",
+            r#"function run(ctx) { ctx.http.request("https://api.example.com/", "GET", {}); return {}; }"#,
+        ),
+        (
+            "lua",
+            r#"function run(ctx) ctx.http.request("https://api.example.com/", "GET", {}) return {} end"#,
+        ),
+    ];
+    for (ext, code) in cases {
+        let registry = extension_test_module("http_deadline", "run", code, ext);
+        let http = Arc::new(RecordingHttp {
+            grants: Mutex::new(Vec::new()),
+            deadlines: Mutex::new(Vec::new()),
+        });
+        let mut host = noop_host_context();
+        host.http = http.clone();
+        let before = std::time::Instant::now();
+        Sandbox::new(registry, host, SandboxLimits::default())
+            .unwrap()
+            .invoke(InvokeRequest {
+                function: "http_deadline:function:run".to_string(),
+                event: serde_json::Value::Null,
+                user: None,
+                params: serde_json::Value::Null,
+                workflow_chain: None,
+                timeout_ms: Some(5_000),
+            })
+            .unwrap_or_else(|e| panic!("{ext}: {e}"));
+        let after = std::time::Instant::now();
+
+        let deadlines = http.deadlines.lock().unwrap();
+        assert_eq!(deadlines.len(), 1, "{ext}");
+        let deadline = deadlines[0].unwrap_or_else(|| panic!("{ext}: request had no deadline"));
+        let timeout = std::time::Duration::from_millis(5_000);
+        assert!(
+            deadline >= before + timeout && deadline <= after + timeout,
+            "{ext}"
+        );
+    }
 }

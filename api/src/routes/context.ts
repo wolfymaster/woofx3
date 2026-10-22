@@ -44,7 +44,8 @@ import type { MarketplaceClient } from "../marketplace-client";
 import { RelayCredentialSource } from "../relay-credential-source";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchDeviceLogins } from "../twitch-device-login";
-import { TwitchTokenSource } from "../twitch-token-source";
+import { TwitchProfiles } from "../twitch-profiles";
+import { type TwitchLinkChange, TwitchTokenSource } from "../twitch-token-source";
 import { UNVERSIONED } from "../version";
 import type { WebhookClient } from "../webhook-client";
 import { rebuildWorkflowDefinition, timestampToIso } from "./helpers";
@@ -72,6 +73,8 @@ export interface ApiOptions {
   nats: NATSClient | null;
   functions: FunctionInvoker | null;
   barkloaderUrl: string;
+  /** The engine secret barkloader authenticates its management routes with. */
+  barkloaderKey: string;
   streamwareUrl?: string;
   sceneManagerUrl: string;
   apiUrl: string;
@@ -88,6 +91,8 @@ export interface ApiOptions {
   twitchClientId?: string | null;
   /** Twitch's OAuth endpoints; Twitch itself when absent. */
   twitchOAuth?: TwitchOAuthClient;
+  /** Epoch milliseconds now; `Date.now` when absent. */
+  clock?: () => number;
 }
 
 async function barkloaderRequestError(response: Response): Promise<Error> {
@@ -106,7 +111,7 @@ export class ApiRouteHost extends RpcTarget {
   protected streamEventBroadcaster: StreamEventBroadcaster | null = null;
   protected engineEventStream: EngineEventStream | null = null;
   protected eventLogSelection: EventLogSelectionSource | null = null;
-  protected authInvalidate: (() => void) | null = null;
+  protected authInvalidate: ((clientId: string) => void) | null = null;
   /**
    * The linked Twitch account's token. An instance property, not a method,
    * so capnweb never offers it to a client.
@@ -116,11 +121,15 @@ export class ApiRouteHost extends RpcTarget {
   readonly relayCredential: RelayCredentialSource;
   /** Twitch device logins in progress. An instance property for the same reason as `twitchToken`. */
   readonly twitchDeviceLogins: TwitchDeviceLogins;
+  /** The linked account's Helix profile. An instance property for the same reason as `twitchToken`. */
+  readonly twitchProfiles: TwitchProfiles;
 
   protected db: DbClient;
   protected nats: NATSClient | null;
   protected functions: FunctionInvoker | null;
   protected barkloaderUrl: string;
+  /** An instance property for the same reason as `twitchToken`. */
+  protected readonly barkloaderKey: string;
   protected streamwareUrl: string;
   protected sceneManagerUrl: string;
   protected apiUrl: string;
@@ -128,13 +137,21 @@ export class ApiRouteHost extends RpcTarget {
   protected version: string;
   protected hosting: EngineHosting | null;
   protected marketplace: MarketplaceClient | null;
+  protected readonly clock: () => number;
 
   protected getBarkloaderBaseUrl(): string {
     return this.barkloaderUrl.endsWith("/") ? this.barkloaderUrl.slice(0, -1) : this.barkloaderUrl;
   }
 
+  /** The one way to reach barkloader's HTTP routes: every one but public asset reads needs the bearer. */
+  protected barkloaderFetch(path: string, init?: RequestInit): Promise<Response> {
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${this.barkloaderKey}`);
+    return fetch(`${this.getBarkloaderBaseUrl()}${path}`, { ...init, headers });
+  }
+
   protected async barkloaderRequest(path: string, init?: RequestInit): Promise<Response> {
-    const response = await fetch(`${this.getBarkloaderBaseUrl()}${path}`, init);
+    const response = await this.barkloaderFetch(path, init);
     if (!response.ok) {
       throw await barkloaderRequestError(response);
     }
@@ -147,7 +164,7 @@ export class ApiRouteHost extends RpcTarget {
    * still throws.
    */
   protected async barkloaderRequestOrNull(path: string, init?: RequestInit): Promise<Response | null> {
-    const response = await fetch(`${this.getBarkloaderBaseUrl()}${path}`, init);
+    const response = await this.barkloaderFetch(path, init);
     if (response.status === 404) {
       await response.body?.cancel();
       return null;
@@ -233,6 +250,18 @@ export class ApiRouteHost extends RpcTarget {
   }
 
   /**
+   * Forgets the old account's profile and announces the change. The webhook
+   * is best effort: a reader that missed it reads `getTwitchLink`.
+   */
+  private onTwitchLinkChanged(change: TwitchLinkChange): void {
+    this.twitchProfiles.forget();
+    void this.emitWebhook(
+      { type: EngineEventType.TWITCH_LINK_CHANGED, ...change },
+      { revision: change.revision, twitchUserId: change.linked ? change.userId : null }
+    );
+  }
+
+  /**
    * Write the linked Twitch account's token, mark the integration enabled and
    * tell the services that hold one to reload it. `engineUserId` scopes the
    * row to the engine user who linked it, when known.
@@ -240,7 +269,7 @@ export class ApiRouteHost extends RpcTarget {
    * Linking again re-enables, so a Convex re-registration (which calls
    * setTwitchToken) switches a disabled integration back on.
    */
-  protected async storeTwitchToken(stored: object, engineUserId?: string): Promise<void> {
+  protected async storeTwitchToken<T extends { userId: string }>(stored: T, engineUserId?: string): Promise<void> {
     await this.twitchToken.store(stored, engineUserId);
     await this.writeIntegrationEnabled("twitch", true);
     await this.announceIntegrationChanged("twitch", true);
@@ -439,6 +468,9 @@ export class ApiRouteHost extends RpcTarget {
     if (!opts.barkloaderUrl) {
       throw new Error("ApiOptions.barkloaderUrl is required");
     }
+    if (!opts.barkloaderKey) {
+      throw new Error("ApiOptions.barkloaderKey is required");
+    }
     if (!opts.sceneManagerUrl) {
       throw new Error("ApiOptions.sceneManagerUrl is required");
     }
@@ -449,7 +481,10 @@ export class ApiRouteHost extends RpcTarget {
       dashboard: () => this.webhookClient,
       ownClientId: opts.twitchClientId ?? null,
       publicClient: twitchOAuth,
+      onLinkChanged: (change) => this.onTwitchLinkChanged(change),
+      now: opts.clock,
     });
+    this.twitchProfiles = new TwitchProfiles({ logger: opts.logger, now: opts.clock });
     this.twitchDeviceLogins = new TwitchDeviceLogins({
       clientId: opts.twitchPublicClientId ?? null,
       oauth: twitchOAuth,
@@ -466,6 +501,7 @@ export class ApiRouteHost extends RpcTarget {
     this.nats = opts.nats;
     this.functions = opts.functions;
     this.barkloaderUrl = opts.barkloaderUrl;
+    this.barkloaderKey = opts.barkloaderKey;
     this.streamwareUrl = opts.streamwareUrl ?? "";
     this.sceneManagerUrl = opts.sceneManagerUrl;
     this.apiUrl = opts.apiUrl;
@@ -473,6 +509,7 @@ export class ApiRouteHost extends RpcTarget {
     this.version = opts.version ?? UNVERSIONED;
     this.hosting = opts.hosting ?? null;
     this.marketplace = opts.marketplace ?? null;
+    this.clock = opts.clock ?? (() => Date.now());
   }
 }
 

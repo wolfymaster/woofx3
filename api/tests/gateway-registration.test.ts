@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { REGISTRATION_REFUSED } from "@woofx3/api/rpc";
+import { isRegistrationRefused } from "@woofx3/api/rpc";
 import { Api } from "../src/api";
 import { ApiGateway } from "../src/gateway";
 import { type RegistrationMode, resolveRegistrationPolicy } from "../src/registration";
@@ -38,6 +38,7 @@ function gateway(registrationToken: string | null, mode?: RegistrationMode) {
     nats: null,
     functions: null,
     barkloaderUrl: "http://b",
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger,
@@ -70,7 +71,7 @@ describe("registerClient on an engine with a registration token", () => {
 
     const err = await refusal(gw.registerClient("ui", {}));
 
-    expect(err.name).toBe(REGISTRATION_REFUSED);
+    expect(isRegistrationRefused(err)).toBe(true);
     expect(createClient).not.toHaveBeenCalled();
   });
 
@@ -79,7 +80,7 @@ describe("registerClient on an engine with a registration token", () => {
 
     for (const wrong of ["", "nope", `${TOKEN}x`, TOKEN.slice(1)]) {
       const err = await refusal(gw.registerClient("ui", { registrationToken: wrong }));
-      expect(err.name).toBe(REGISTRATION_REFUSED);
+      expect(isRegistrationRefused(err)).toBe(true);
     }
     expect(createClient).not.toHaveBeenCalled();
   });
@@ -100,8 +101,8 @@ describe("registerClient on an engine with a registration token", () => {
   });
 });
 
-describe("registerClient on an engine without a registration token", () => {
-  it("registers any caller, as bring-your-own engines always have", async () => {
+describe("registerClient on an engine without a registration token or mode", () => {
+  it("registers the first caller", async () => {
     const { gateway: gw } = gateway(null);
 
     const result = await gw.registerClient("ui", {});
@@ -109,11 +110,49 @@ describe("registerClient on an engine without a registration token", () => {
     expect(result.clientId).toBe("c1");
   });
 
-  it("warns once at startup that registration is open", () => {
+  it("refuses a second registration, since there is no token to present", async () => {
+    const { gateway: gw, createClient } = gateway(null);
+    await gw.registerClient("ui", {});
+
+    const err = await refusal(gw.registerClient("intruder", {}));
+
+    expect(isRegistrationRefused(err)).toBe(true);
+    expect(createClient).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not warn that registration is open", () => {
     const { logger } = gateway(null);
 
-    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).not.toHaveBeenCalled();
   });
+});
+
+describe("registerClient callback URLs", () => {
+  const refused = [
+    "file:///etc/passwd",
+    "http://internal.example/hook",
+    "https://user:pass@example.com/hook",
+    "https://example.com/hook#fragment",
+    "gopher://example.com/hook",
+  ];
+  for (const callbackUrl of refused) {
+    it(`refuses ${callbackUrl} before creating a client`, async () => {
+      const { gateway: gw, createClient } = gateway(null);
+
+      const err = await refusal(gw.registerClient("ui", { callbackUrl }));
+
+      expect(isRegistrationRefused(err)).toBe(true);
+      expect(createClient).not.toHaveBeenCalled();
+    });
+  }
+
+  for (const callbackUrl of ["https://example.convex.site/api/webhooks/woofx3", "http://127.0.0.1:3000/hook"]) {
+    it(`accepts ${callbackUrl}`, async () => {
+      const { gateway: gw } = gateway(null, "open");
+
+      expect((await gw.registerClient("ui", { callbackUrl })).clientId).toBe("c1");
+    });
+  }
 });
 
 describe("registerClient in first mode", () => {
@@ -130,9 +169,9 @@ describe("registerClient in first mode", () => {
     await gw.registerClient("desktop", {});
 
     const err = await refusal(gw.registerClient("intruder", {}));
-    expect(err.name).toBe(REGISTRATION_REFUSED);
+    expect(isRegistrationRefused(err)).toBe(true);
     const wrong = await refusal(gw.registerClient("intruder", { registrationToken: "nope" }));
-    expect(wrong.name).toBe(REGISTRATION_REFUSED);
+    expect(isRegistrationRefused(wrong)).toBe(true);
 
     const second = await gw.registerClient("dashboard", { registrationToken: TOKEN });
     expect(second.clientId).toBe("c2");
@@ -145,7 +184,7 @@ describe("registerClient in first mode", () => {
 
     const err = await refusal(gw.registerClient("intruder", { registrationToken: "anything" }));
 
-    expect(err.name).toBe(REGISTRATION_REFUSED);
+    expect(isRegistrationRefused(err)).toBe(true);
   });
 
   it("admits only one of two callers racing on an empty engine", async () => {
@@ -178,7 +217,7 @@ describe("registerClient in an explicit mode", () => {
   it("token mode admits only a caller presenting the token", async () => {
     const { gateway: gw } = gateway(TOKEN, "token");
 
-    expect((await refusal(gw.registerClient("ui", {}))).name).toBe(REGISTRATION_REFUSED);
+    expect(isRegistrationRefused(await refusal(gw.registerClient("ui", {})))).toBe(true);
     expect((await gw.registerClient("ui", { registrationToken: TOKEN })).clientId).toBe("c1");
   });
 
@@ -187,5 +226,11 @@ describe("registerClient in an explicit mode", () => {
 
     await gw.registerClient("a", {});
     expect((await gw.registerClient("b", {})).clientId).toBe("c2");
+  });
+
+  it("open mode warns once at startup", () => {
+    const { logger } = gateway(null, "open");
+
+    expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 });

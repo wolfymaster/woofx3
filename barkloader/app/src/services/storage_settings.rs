@@ -53,7 +53,7 @@ struct SettingPayload {
 pub async fn get_setting(db_proxy_url: &str, key: &str) -> Result<Option<String>> {
     let url = format!("{}/twirp/setting.SettingService/GetSetting", db_proxy_url);
     let body = GetSettingRequest { key };
-    let client = reqwest::Client::new();
+    let client = lib_module::db_proxy::http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")
@@ -83,14 +83,14 @@ pub async fn get_setting(db_proxy_url: &str, key: &str) -> Result<Option<String>
         .filter(|s| !s.is_empty()))
 }
 
-/// Readiness probe against db-proxy's public `Ping` RPC. That route is
-/// deliberately exempt from authorization and touches no database (see
-/// `db/app/routes/ping.go`), so a successful response means the process
-/// is up and serving Twirp -- the same signal the Go and TypeScript
+/// Readiness probe against db-proxy's `Ping` RPC. That route has no
+/// permission hook and touches no database (see `db/app/routes/ping.go`),
+/// so a successful response means the process is up, serving Twirp and
+/// accepting this service's token -- the same signal the Go and TypeScript
 /// runtimes check through their registered `db` service.
 pub async fn ping(db_proxy_url: &str) -> Result<()> {
     let url = format!("{}/twirp/common.CommonService/Ping", db_proxy_url);
-    let client = reqwest::Client::new();
+    let client = lib_module::db_proxy::http_client()?;
     let response = client
         .post(&url)
         .header("Content-Type", "application/json")

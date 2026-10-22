@@ -34,7 +34,6 @@ concurrency:
 
 env:
   IMAGE_NAME: ghcr.io/wolfymaster/woofx3
-  BUN_VERSION: "1.3.14"
 
 jobs:
   deploy:
@@ -76,6 +75,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # .bun-version is the one pin CI shares with mise.toml.
+      - name: Read the Bun version
+        run: echo "BUN_VERSION=$(cat .bun-version)" >> "$GITHUB_ENV"
 
       # The image reports its own tag as its version, which is what the
       # maintenance API waits for on /ready.

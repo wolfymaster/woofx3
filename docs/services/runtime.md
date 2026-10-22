@@ -361,10 +361,42 @@ var EnvSchema = schema.NewSchema(map[string]*schema.Field{
 
 :::
 
-Every service's message bus client reads `messagebusUrl` and, when the bus
-requires one, `messagebusToken` (`WOOFX3_MESSAGEBUS_TOKEN`). A blank token sends
-none. See [Message bus hardening](./deployment.md#message-bus-hardening) for the
+Every service's message bus client reads `messagebusUrl` and
+`messagebusToken` (`WOOFX3_MESSAGEBUS_TOKEN`), which the bus requires unless it
+was started without authentication. A blank token sends none. See [Message bus hardening](./deployment.md#message-bus-hardening) for the
 server side and which key each client reads.
+
+### Staying connected to the message bus
+
+The shared message bus clients (Go and TypeScript) own one connection each,
+for the life of the process, and never give up on it:
+
+- **Reconnects are unlimited.** When the bus goes away the connection retries
+  every second plus up to half a second of random jitter, so a fleet of
+  services does not reconnect in lockstep. Messages published meanwhile are
+  buffered, and every subscription is restored on reconnect. Messages the bus
+  sent while a subscriber was away are not replayed; a TypeScript consumer that
+  mirrors state uses `onReconnect` to resynchronise.
+- **The first connect waits for the bus.** The Go client returns at once and
+  keeps dialling in the background. The TypeScript client retries its first
+  dial 30 times, a second apart, then rejects, so a service that can run
+  without the bus (the scene manager, the API's offline mode) is not held back
+  forever. Both paces are named defaults: `DefaultReconnectWait` and `DefaultReconnectJitter` in Go,
+  `DEFAULT_RECONNECT_POLICY` (overridable per client through
+  `NATSConfig.reconnect`) in TypeScript.
+- **Closed is final.** A connection closes only after an explicit close (or a
+  failure the library gives up on, such as a revoked credential). The client
+  does not dial a replacement, which would silently carry none of the old
+  subscriptions: every later call fails with "NATS connection is closed", the
+  Go client's `Healthy()` reports false, and the TypeScript client's
+  `isClosed()` reports true. The runtime notices a closed Go connection
+  because the NATS health monitor's liveness publish then fails with the
+  closed error.
+- **Connection events are logged.** Connect, disconnect, reconnect and close
+  are logged through the injected logger. In Go, asynchronous errors are too:
+  a slow consumer that is dropping messages logs its subject, the error, and
+  its pending message and byte counts and dropped total. The TypeScript client
+  requires a logger; there is no console fallback.
 
 ## Graceful Shutdown
 

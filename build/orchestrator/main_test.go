@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	woofx3config "github.com/wolfymaster/woofx3/common/config"
 	"github.com/wolfymaster/woofx3/common/logging"
 )
 
@@ -1087,11 +1088,11 @@ func TestTheAPIsHealthCheckFollowsItsPortFromTheRuntimeConfig(t *testing.T) {
 			t.Setenv("WOOFX3_CONFIG", "")
 			t.Setenv("WOOFX3_API_PORT", tc.envPort)
 
-			getenv, err := runtimeGetenv()
+			sources, err := woofx3config.LoadSources(woofx3config.ResolveLocation(""))
 			if err != nil {
-				t.Fatalf("runtimeGetenv: %v", err)
+				t.Fatalf("LoadSources: %v", err)
 			}
-			config, err := loadConfig(filepath.Join("..", "config", "services.json"), getenv)
+			config, err := loadConfig(filepath.Join("..", "config", "services.json"), runtimeGetenv(sources))
 			if err != nil {
 				t.Fatalf("load services.json: %v", err)
 			}

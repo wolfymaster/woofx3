@@ -18,6 +18,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/workers"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"gorm.io/gorm"
@@ -27,19 +28,20 @@ import (
 // a test reads back exactly the snapshots the api would project to callbacks.
 func newAlertSvc(t *testing.T, db *gorm.DB) client.AlertService {
 	t.Helper()
-	// The outbox row's id comes from a Postgres column default that the
-	// SQLite schema lacks, so the test supplies one.
-	err := db.Callback().Create().Before("gorm:create").Register("test:worker_event_id", func(tx *gorm.DB) {
-		if event, ok := tx.Statement.Dest.(*models.WorkerEvent); ok && event.ID == "" {
-			event.ID = uuid.NewString()
-		}
-	})
-	if err != nil {
-		t.Fatalf("register outbox id callback: %v", err)
-	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	publisher := workers.NewEventPublisher(repo.NewDbEventRepository(db), logger)
-	return NewAlertService(repo.NewAlertRepository(db), publisher)
+	svc, err := NewAlertService(repo.NewAlertRepository(db, database.RandomIDs{}), publisher, testAlertRetention)
+	if err != nil {
+		t.Fatalf("NewAlertService: %v", err)
+	}
+	return svc
+}
+
+// testAlertRetention keeps a week of alerts, measured from countWindowStart
+// plus one week, so a week-long window from countWindowStart is just inside it.
+var testAlertRetention = AlertRetention{
+	Period: 7 * 24 * time.Hour,
+	Now:    func() time.Time { return countWindowStart.Add(7 * 24 * time.Hour) },
 }
 
 // forEachAlertDialect runs an alert test against SQLite and, when configured,

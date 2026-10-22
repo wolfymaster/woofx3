@@ -15,7 +15,7 @@ Module code runs inside two host-managed environments:
 - **Function sandbox** — Rust-hosted QuickJS (JS) or mlua (Lua). The
   host builds a `ctx` object per invocation and registers namespaces
   on it: `crypto`, `storage`, `http`, `resources`, `module`, `log`,
-  plus any extensions the engine deployment wired up (`twitch`, `chat`).
+  plus any extensions the engine deployment wired up (`twitch`, `obs`, `oauth`).
 - **Widget iframe** — streamware loads your widget bundle into a
   sandboxed iframe and assigns `widgetHost` onto its `window` once the
   load event fires.
@@ -41,13 +41,25 @@ workspace path alias — no install needed.
 function increment(ctx) {
   const count = (ctx.storage.get("count") ?? 0) + 1;
   ctx.storage.set("count", count);
-  return ctx.response(true, `Count is now ${count}.`);
+  return ctx.success(`Count is now ${count}.`, { count });
 }
 ```
 
 The returned value becomes the `function` step's output. A command that
-should answer in chat follows the step with a `chat.reply` step that
-reads it, e.g. `${<stepId>.message}`.
+should answer in chat follows the step with a "Send chat message" step
+(`chat.reply`) that posts `${<stepId>.message}`. Modules never write to
+chat themselves, so the streamer can reword or remove the reply in the
+workflow. When a failure should stay out of chat, put a condition on the
+reply step so it runs only when `${<stepId>.success}` is true.
+
+`ctx.success` and `ctx.failure` exist only on engines that ship them. A
+module that must also run on an older engine can feature-detect:
+
+```js
+const done = ctx.success
+  ? ctx.success(message, fields)
+  : Object.assign(ctx.response(true, message), fields);
+```
 
 A function asks the engine to act by returning a value, never by
 driving the bus itself. See
@@ -62,6 +74,7 @@ v0.1.0):
 | `ctx.event` | the triggering CloudEvent (opaque) |
 | `ctx.user` | user context (opaque) |
 | `ctx.response` | `(success, message)` — see [Sandbox → `ctx.response`](./sandbox.md#ctxresponse) |
+| `ctx.success` / `ctx.failure` | `(message, fields?)` — see [Sandbox → `ctx.success` and `ctx.failure`](./sandbox.md#ctxsuccess-and-ctxfailure) |
 | `ctx.result` | `(value, events?)` — see [Sandbox → `ctx.result`](./sandbox.md#ctxresult) |
 | `ctx.crypto` | `hmac(algorithm, key, data, encoding?)`, `verifyEd25519(publicKey, signature, message, encoding?)`, `timingSafeEqual(a, b)` — see [Sandbox → `ctx.crypto`](./sandbox.md#ctxcrypto) |
 | `ctx.storage` | `get(key)`, `set(key, value, options?)` |
@@ -71,7 +84,6 @@ v0.1.0):
 | `ctx.module` | `id`, `name`, `version` (invoking module's identity), `settings` (resolved `module_settings` values — see [Module-level settings](./modules.md#module-level-settings-settings)), `setSetting(key, value)`, `compareAndSetSetting(key, expected, value)` |
 | `ctx.log` | `info(value)`, `warn(value)`, `error(value)` — forwards to the host's log, prefixed with the module id. No `console` global exists in this sandbox; this is the only way to emit a log line. |
 | `ctx.twitch?` | `clip()`, `shoutout({ userId \| userName })`, `createMarker({ description? })`, `getUser({ userId \| userName })`, `timeout({ userId \| userName, durationSeconds, reason? })`, `updateStream({ title?, category?, categoryId?, tags? })`. Each waits for the twitch service and returns its result, or throws its message with an optional `code`. `timeout` needs the manifest permission `twitch.moderation` and `updateStream` needs `twitch.channel`; see [Twitch channel controls](../services/twitch-channel.md#modules) |
-| `ctx.chat?` | `sendMessage(text)` |
 | `ctx.oauth?` | `request({ integration, url, method?, headers?, query?, body? })` — a provider the manifest declares under `oauth[]`, with the streamer's token, which the engine attaches and refreshes; see [Module format → OAuth integrations](./modules.md#oauth-integrations-oauth) |
 
 `ctx.storage.set` takes an optional third argument. Passing

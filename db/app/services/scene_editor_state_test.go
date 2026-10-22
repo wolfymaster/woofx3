@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/migrate/migrations/postgres"
 	"github.com/wolfymaster/woofx3/db/database/repository"
 	pgdriver "gorm.io/driver/postgres"
@@ -29,6 +30,9 @@ func newScenePostgresSvc(t *testing.T) (client.SceneService, *gorm.DB) {
 	db, err := gorm.Open(pgdriver.Open(url), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open postgres: %v", err)
+	}
+	if err := database.RegisterIDAssignment(db, database.RandomIDs{}); err != nil {
+		t.Fatalf("register id assignment: %v", err)
 	}
 	var tables int64
 	if err := db.Raw(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'`).

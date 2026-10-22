@@ -10,6 +10,7 @@ import (
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/common/runtime/service"
 	"github.com/wolfymaster/woofx3/db/app/workers"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/repository"
 	"gorm.io/gorm"
 )
@@ -19,6 +20,7 @@ type WorkerService struct {
 	logger          *slog.Logger
 	databaseSvc     *DatabaseService
 	natsSvc         *service.NATSService
+	ids             database.IDSource
 	db              *gorm.DB
 	natsConn        *nats.Conn
 	eventCache      *workers.EventCache
@@ -27,14 +29,23 @@ type WorkerService struct {
 	cleanupWorker   *workers.CleanupWorker
 	metricsWorker   *workers.MetricsWorker
 	eventPublisher  *workers.EventPublisher
+	config          workers.Config
 }
 
-func NewWorkerService(logger *slog.Logger, databaseSvc *DatabaseService, natsSvc *service.NATSService) *WorkerService {
+func NewWorkerService(
+	logger *slog.Logger,
+	databaseSvc *DatabaseService,
+	natsSvc *service.NATSService,
+	ids database.IDSource,
+	config workers.Config,
+) *WorkerService {
 	svc := &WorkerService{
+		config:      config,
 		BaseService: runtime.NewBaseServiceWithDeps[*WorkerService]("workers", "workers", nil, false, []string{"database", "nats"}),
 		logger:      logger,
 		databaseSvc: databaseSvc,
 		natsSvc:     natsSvc,
+		ids:         ids,
 	}
 	// Initialize client after struct creation
 	svc.SetClient(svc)
@@ -69,7 +80,7 @@ func (s *WorkerService) initializeWorkers() error {
 	workersRepo := repository.NewDbEventRepository(s.db)
 	eventCache := workers.NewEventCache()
 	eventPublisher := workers.NewEventPublisher(workersRepo, s.logger)
-	workersConfig := workers.LoadConfig()
+	workersConfig := s.config
 
 	s.publisherWorker = workers.NewPublisherWorker(workersRepo, s.natsConn, eventCache, s.logger, workersConfig)
 	s.ackWorker = workers.NewAckWorker(workersRepo, s.natsConn, eventCache, s.logger)
@@ -77,8 +88,8 @@ func (s *WorkerService) initializeWorkers() error {
 		Outbox:     workersRepo,
 		Facts:      repository.NewViewerFactRepository(s.db),
 		UserEvents: repository.NewUserEventRepository(s.db),
-		Alerts:     repository.NewAlertRepository(s.db),
-		Workflows:  repository.NewWorkflowRepository(s.db),
+		Alerts:     repository.NewAlertRepository(s.db, s.ids),
+		Workflows:  repository.NewWorkflowRepository(s.db, s.ids),
 	}, s.logger, workersConfig)
 	s.metricsWorker = workers.NewMetricsWorker(eventCache, s.logger, 30*time.Second)
 	s.eventCache = eventCache

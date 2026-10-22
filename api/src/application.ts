@@ -1,3 +1,4 @@
+import { describeRequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { ApplicationContext, IApplication, Application as RuntimeApplication } from "@woofx3/common/runtime";
 import type { Msg } from "@woofx3/nats/src/types";
@@ -76,7 +77,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { serveRelayCredential },
       { serveShoutoutQueue },
       { UserEventRecorder },
-      { WebhookClient },
+      { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
       { WorkflowHealthEmitter },
@@ -131,7 +132,10 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     const logger = ctx.logger as SharedLogger;
     const db = ctx.services.db.client;
 
-    logger.info("Starting API server", { port: config.port || 8080 });
+    logger.info("Starting API server", {
+      port: config.port || 8080,
+      ...describeRequestGuardPolicy(config.requestGuard),
+    });
 
     // NATS is best-effort and non-blocking — kept outside the runtime's
     // health-monitor-gated service connect so the API still serves traffic
@@ -156,7 +160,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     // Runs module functions and waits for their result. It reconnects on its
     // own; until it is up, a webhook handler request answers 503.
     const functions = new BarkloaderClient({
-      wsUrl: `${config.barkloaderWsUrl}?token=${encodeURIComponent(config.barkloaderKey)}`,
+      wsUrl: config.barkloaderWsUrl,
+      key: config.barkloaderKey,
       onOpen: () => logger.info("Connected to barkloader"),
       onClose: () => logger.warn("Barkloader connection closed"),
       onError: () => logger.warn("Barkloader connection error"),
@@ -170,6 +175,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       nats: natsClient,
       functions,
       barkloaderUrl: config.barkloaderUrl,
+      barkloaderKey: config.barkloaderKey,
       streamwareUrl: config.streamwareUrl,
       sceneManagerUrl: config.sceneManagerUrl,
       apiUrl: config.apiUrl,
@@ -200,7 +206,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     const engineEventStream = new EngineEventStream(logger);
     this.engineEventStream = engineEventStream;
     api.setEngineEventStream(engineEventStream);
-    const webhookClient = new WebhookClient(db, logger, engineEventStream);
+    const webhookClient = new WebhookClient(db, logger, engineEventStream, DEFAULT_WEBHOOK_CLIENT_CONFIG);
     api.setWebhookClient(webhookClient);
     try {
       await webhookClient.refreshCallbackUrls();
@@ -288,8 +294,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       await workflowHealthEmitter.start();
     }
 
-    const auth = new ClientAuth(db, logger);
-    api.setAuthInvalidate(() => auth.invalidateCache());
+    const auth = new ClientAuth(db, logger, { ttlMs: config.authCacheTtlMs });
+    api.setAuthInvalidate((clientId) => auth.invalidateCache(clientId));
     const gateway = new ApiGateway(api, auth, db, logger, config.registration);
     gateway.setWebhookClient(webhookClient);
 

@@ -6,11 +6,13 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 mod otel;
+mod secret;
 
 pub use otel::{
     OtelConfig, OTEL_ENABLED_KEY, OTEL_EXPORTER_ENDPOINT_KEY, OTEL_LOCAL_FILE_ENABLED_KEY,
     OTEL_TRACING_ENABLED_KEY,
 };
+pub use secret::{validate_secret, SecretError, MIN_SECRET_BYTES};
 
 /// Config file names read from a config root, in order of preference. Must
 /// match `FileNames` in `shared/common/golang/config/location.go` and

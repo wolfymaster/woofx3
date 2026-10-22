@@ -18,12 +18,8 @@ import {
   type MarketplaceProvenance,
   marketplaceProvenance,
 } from "../engine-modules";
-import {
-  fetchModuleArchive,
-  handArchiveToBarkloader,
-  sendAlreadyInstalled,
-  sendInstallFailed,
-} from "../module-install";
+import { isSha256Hex } from "../guarded-download";
+import { handArchiveToBarkloader, sendAlreadyInstalled, sendInstallFailed } from "../module-install";
 import { declaredResourceKinds } from "../resource-kinds";
 import { routeModule } from "./context";
 
@@ -197,6 +193,8 @@ export const modulesRoutes = routeModule({
       version: string;
       source: "marketplace";
       marketplaceModuleId: string;
+      /** Lowercase hex SHA-256 of the archive; the download is refused when it differs. */
+      sha256?: string;
     }
   ): Promise<{ success: boolean; message?: string; alreadyInstalled?: boolean }> {
     const { clientId, name, version, source, marketplaceModuleId } = context;
@@ -205,6 +203,17 @@ export const modulesRoutes = routeModule({
     }
     if (!moduleKey) {
       throw new Error("moduleKey is required to install a module from URL");
+    }
+    const sha256 = context.sha256 === undefined ? undefined : String(context.sha256).toLowerCase();
+    if (sha256 !== undefined && !isSha256Hex(sha256)) {
+      throw new Error("sha256 must be 64 hex characters to install a module from URL");
+    }
+    // The URL comes from the caller, so it is fetched only through the
+    // marketplace's guarded downloader: an engine with the marketplace off
+    // has no download allow-list and fetches nothing.
+    const marketplace = this.marketplace;
+    if (!marketplace) {
+      throw new Error("Marketplace installs are turned off on this engine (marketplaceUrl is blank)");
     }
 
     this.logger.info("Installing module from URL", {
@@ -229,7 +238,7 @@ export const modulesRoutes = routeModule({
 
     let archiveBytes: Uint8Array;
     try {
-      archiveBytes = await fetchModuleArchive(downloadUrl);
+      archiveBytes = await marketplace.fetchArchive({ url: downloadUrl, sha256 });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error("Marketplace fetch failed", { clientId, moduleKey, message });

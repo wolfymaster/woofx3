@@ -12,7 +12,13 @@
 // "capnweb" directly — RpcTarget is re-exported below so local interfaces
 // can extend it without a second dependency.
 
-import { newHttpBatchRpcSession, newWebSocketRpcSession, type RpcCompatible, RpcTarget } from "capnweb";
+import {
+  newHttpBatchRpcSession,
+  newMessagePortRpcSession,
+  newWebSocketRpcSession,
+  type RpcCompatible,
+  RpcTarget,
+} from "capnweb";
 import type { ApiGatewayContract } from "./rpc";
 
 /** Capnweb's structural RpcTarget marker, re-exported so consumers tag
@@ -22,6 +28,15 @@ export { RpcTarget };
 /** Capnweb's structural RpcCompatible constraint, re-exported for the same
  * reason as RpcTarget. */
 export type { RpcCompatible };
+
+/**
+ * Capnweb's session over a `MessagePort`, re-exported so an in-process
+ * session (a test's fake engine on one end of a `MessageChannel`) comes from
+ * the same capnweb copy as `RpcTarget`. capnweb recognises targets by its own
+ * class, so a target built from one copy is not a target to a session from
+ * another.
+ */
+export { newMessagePortRpcSession };
 
 /**
  * Normalize a user-configured instance URL to the capnweb HTTP batch endpoint.

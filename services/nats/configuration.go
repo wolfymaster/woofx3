@@ -2,13 +2,17 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/wolfymaster/woofx3/common/config"
 )
 
 type Configuration struct {
@@ -25,36 +29,122 @@ type Configuration struct {
 	// variable. That keeps a boolean written as "true" in the file and one set
 	// as an environment string parsing the same way.
 
-	// Token, when set, is required from every client on both listeners.
-	// Unset, the server accepts anyone who can reach it.
+	// Token is required from every client on both listeners. Validate
+	// refuses a blank one unless AllowUnauthenticated is set.
 	Token string `json:"-"`
+	// AllowUnauthenticated lets the server start with no token, accepting
+	// anyone who can reach it. Only an explicit "true" sets it.
+	AllowUnauthenticated bool `json:"-"`
 	// TCPDisabled turns off the plain NATS listener, leaving only the
 	// WebSocket one that the engine's own clients use.
 	TCPDisabled bool `json:"-"`
 	// WebSocketSameOrigin rejects a WebSocket upgrade whose Origin header
 	// names a different host than the one it was sent to. A request with no
 	// Origin header, which is what the engine's own clients send, is accepted.
+	// On by default: it is what keeps a web page in any browser on this
+	// machine off the bus.
 	WebSocketSameOrigin bool `json:"-"`
 	// WebSocketAllowedOrigins, when not empty, admits only upgrades whose
 	// Origin is listed. As with WebSocketSameOrigin, no Origin is accepted.
+	// NATS applies both checks when both are set, so a list only admits a
+	// foreign origin with WebSocketSameOrigin turned off.
 	WebSocketAllowedOrigins []string `json:"-"`
 }
 
-// DefaultConfiguration listens on loopback only. Unless a token is
-// configured the server has no authentication, and in a shared-network
-// deployment anything reachable beyond loopback is reachable by every
-// neighbour.
+// Listener defaults. DefaultClientPort is NATS's own default for its TCP
+// listener; DefaultWebSocketPort must match the port in messagebusUrl in
+// build/config/.woofx3.json, which is how the engine's services connect.
+const (
+	DefaultHost          = "127.0.0.1"
+	DefaultClientPort    = 4222
+	DefaultWebSocketPort = 4225
+)
+
+// DefaultConfiguration listens on loopback only, on fixed ports. In a
+// shared-network deployment anything reachable beyond loopback is reachable
+// by every neighbour.
 func DefaultConfiguration() *Configuration {
 	return &Configuration{
-		Host: "127.0.0.1",
+		Host:                DefaultHost,
+		Port:                DefaultClientPort,
+		WebSocketPort:       DefaultWebSocketPort,
+		WebSocketSameOrigin: true,
 	}
+}
+
+// The ways Validate refuses a configuration, for errors.Is.
+var (
+	ErrNoToken            = errors.New("no message bus token is configured: set messagebusToken (WOOFX3_MESSAGEBUS_TOKEN) to a random value of at least 32 bytes, or set WOOFX3_MESSAGEBUS_ALLOW_UNAUTHENTICATED=true to run the bus without authentication")
+	ErrPortsCollide       = errors.New("the TCP and WebSocket listeners are set to the same port")
+	ErrInvalidOrigin      = errors.New("allowed origin is not an http(s) origin: write it as scheme://host[:port], with no path")
+	ErrOriginsUnreachable = errors.New("messagebusWebSocketAllowedOrigins admits only same-origin pages while messagebusWebSocketSameOrigin is on: set WOOFX3_MESSAGEBUS_WEBSOCKET_SAME_ORIGIN=false to admit the listed origins")
+)
+
+// Validate refuses a configuration the server must not start with. Each
+// problem is one the operator has to resolve; none has a safe guess.
+func (c *Configuration) Validate() error {
+	if strings.TrimSpace(c.Host) == "" {
+		return errors.New("messagebusHost is blank: a blank host must keep the loopback default")
+	}
+	if err := checkPort("messagebusServerListeningPort", c.Port); err != nil {
+		return err
+	}
+	if err := checkPort("messagebusWebSocketPort", c.WebSocketPort); err != nil {
+		return err
+	}
+	if !c.TCPDisabled && c.Port == c.WebSocketPort {
+		return fmt.Errorf("%w (%d): set messagebusServerListeningPort and messagebusWebSocketPort apart, or disable TCP", ErrPortsCollide, c.Port)
+	}
+	for _, origin := range c.WebSocketAllowedOrigins {
+		if !isHTTPOrigin(origin) {
+			return fmt.Errorf("messagebusWebSocketAllowedOrigins entry %q: %w", origin, ErrInvalidOrigin)
+		}
+	}
+	if c.WebSocketSameOrigin && len(c.WebSocketAllowedOrigins) > 0 {
+		return ErrOriginsUnreachable
+	}
+	if strings.TrimSpace(c.Token) == "" {
+		if c.AllowUnauthenticated {
+			return nil
+		}
+		return ErrNoToken
+	}
+	return config.ValidateSecret(tokenConfigKey, c.Token)
+}
+
+// tokenConfigKey is the .woofx3.json key of the token; config.ValidateSecret
+// derives WOOFX3_MESSAGEBUS_TOKEN (envToken) from it.
+const tokenConfigKey = "messagebusToken"
+
+// isHTTPOrigin reports whether origin is written the way a browser sends an
+// Origin header: http or https, a host, an optional port, and nothing else.
+func isHTTPOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	// Browsers send the scheme lower-case and never an empty port.
+	if !strings.HasPrefix(origin, u.Scheme+"://") || strings.HasSuffix(u.Host, ":") {
+		return false
+	}
+	return u.Hostname() != "" && u.User == nil && u.Opaque == "" && u.Path == "" && u.RawQuery == "" && !u.ForceQuery && u.Fragment == ""
+}
+
+func checkPort(key string, port int) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("%s = %d is not a port number", key, port)
+	}
+	return nil
 }
 
 func (c *Configuration) Load(path string) error {
 	if path != "" {
 		data, err := os.ReadFile(path)
 		if err == nil {
-			return json.Unmarshal(data, c)
+			return c.applyFile(data)
 		}
 	}
 
@@ -82,11 +172,41 @@ func (c *Configuration) Load(path string) error {
 			if readErr != nil {
 				continue
 			}
-			return json.Unmarshal(data, c)
+			return c.applyFile(data)
 		}
 	}
 
 	return os.ErrNotExist
+}
+
+// applyFile sets the fields a config file holds. A key whose value is blank
+// (null, or a string that is empty once trimmed) is left out, so a "" left in
+// a template keeps the default instead of masking it, the same rule
+// config.MergeByPrecedence applies between sources.
+func (c *Configuration) applyFile(data []byte) error {
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(data, &values); err != nil {
+		return err
+	}
+	for key, raw := range values {
+		if isBlankJSON(raw) {
+			delete(values, key)
+		}
+	}
+	filtered, err := json.Marshal(values)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(filtered, c)
+}
+
+func isBlankJSON(raw json.RawMessage) bool {
+	var text *string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		// Not a string: a number, boolean, array or object is a value.
+		return false
+	}
+	return text == nil || strings.TrimSpace(*text) == ""
 }
 
 // The WOOFX3_MESSAGEBUS_* keys the server reads. A config file key arrives as
@@ -98,6 +218,7 @@ const (
 	envListeningPort           = "WOOFX3_MESSAGEBUS_SERVER_LISTENING_PORT"
 	envWebSocketPort           = "WOOFX3_MESSAGEBUS_WEBSOCKET_PORT"
 	envToken                   = "WOOFX3_MESSAGEBUS_TOKEN"
+	envAllowUnauthenticated    = "WOOFX3_MESSAGEBUS_ALLOW_UNAUTHENTICATED"
 	envTCPDisabled             = "WOOFX3_MESSAGEBUS_TCP_DISABLED"
 	envWebSocketSameOrigin     = "WOOFX3_MESSAGEBUS_WEBSOCKET_SAME_ORIGIN"
 	envWebSocketAllowedOrigins = "WOOFX3_MESSAGEBUS_WEBSOCKET_ALLOWED_ORIGINS"
@@ -113,6 +234,7 @@ var knownMessagebusKeys = map[string]bool{
 	envListeningPort:           true,
 	envWebSocketPort:           true,
 	envToken:                   true,
+	envAllowUnauthenticated:    true,
 	envTCPDisabled:             true,
 	envWebSocketSameOrigin:     true,
 	envWebSocketAllowedOrigins: true,
@@ -198,6 +320,9 @@ func (c *Configuration) OverlayFromMap(env map[string]string) error {
 	if v := strings.TrimSpace(env[envToken]); v != "" {
 		c.Token = v
 	}
+	if err := overlayStrictBool(env, envAllowUnauthenticated, &c.AllowUnauthenticated); err != nil {
+		return err
+	}
 	if err := overlayBool(env, envTCPDisabled, &c.TCPDisabled); err != nil {
 		return err
 	}
@@ -216,7 +341,7 @@ func overlayPort(env map[string]string, key string, target *int) error {
 		return nil
 	}
 	port, err := strconv.Atoi(v)
-	if err != nil || port < 0 || port > 65535 {
+	if err != nil || port < 1 || port > 65535 {
 		return fmt.Errorf("%s = %q is not a port number", key, v)
 	}
 	*target = port
@@ -236,6 +361,24 @@ func overlayBool(env map[string]string, key string, target *bool) error {
 	return nil
 }
 
+// overlayStrictBool reads a switch that turns protection off, so it accepts
+// only "true" and "false" (blank leaves target alone): a "1" or "yes" that
+// one reader takes as true and another as false must not decide whether the
+// bus has authentication.
+func overlayStrictBool(env map[string]string, key string, target *bool) error {
+	switch v := strings.TrimSpace(env[key]); v {
+	case "":
+		return nil
+	case "true":
+		*target = true
+	case "false":
+		*target = false
+	default:
+		return fmt.Errorf("%s = %q must be \"true\" or \"false\"", key, v)
+	}
+	return nil
+}
+
 // splitList reads a comma-separated list, dropping blank entries.
 func splitList(v string) []string {
 	var out []string
@@ -247,15 +390,12 @@ func splitList(v string) []string {
 	return out
 }
 
-// reachableWithoutToken reports whether the server would accept anyone from
-// beyond this machine: it binds a non-loopback host and requires no token.
-func reachableWithoutToken(host string, token string) bool {
-	if strings.TrimSpace(token) != "" {
-		return false
-	}
+// isLoopbackHost reports whether host binds loopback only, so nothing beyond
+// this machine can reach the server.
+func isLoopbackHost(host string) bool {
 	if strings.EqualFold(host, "localhost") {
-		return false
+		return true
 	}
 	ip := net.ParseIP(host)
-	return ip == nil || !ip.IsLoopback()
+	return ip != nil && ip.IsLoopback()
 }

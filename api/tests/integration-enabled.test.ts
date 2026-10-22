@@ -49,6 +49,7 @@ function harness(faults: { enabledWrite?: boolean; publish?: boolean } = {}): Ha
     nats: nats as unknown as ApiOptions["nats"],
     functions: null,
     barkloaderUrl: "http://barkloader.local",
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger: { debug: mock(() => {}), info: mock(() => {}), warn, error: mock(() => {}) } as never,
@@ -92,7 +93,13 @@ describe("integration enabled setting", () => {
     const { rpc, warn, settings } = harness({ publish: true });
     await expect(rpc.setTwitchToken(TOKEN)).resolves.toEqual({ ok: true });
     expect(settings.get(ENABLED_KEY)).toBe("true");
-    expect(warn).toHaveBeenCalledTimes(2);
+    const publishWarnings = warn.mock.calls
+      .map(([message]) => message)
+      .filter((m) => m.startsWith("Failed to publish"));
+    expect(publishWarnings).toEqual([
+      "Failed to publish setting.integration.enabled.updated",
+      "Failed to publish setting.integration.token.updated",
+    ]);
   });
 
   test("a failed enabled write fails setTwitchToken and publishes nothing", async () => {

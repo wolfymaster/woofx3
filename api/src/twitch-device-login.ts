@@ -262,7 +262,12 @@ export class TwitchDeviceLogins {
     }
     login.storing = true;
     try {
-      await this.opts.storeToken({ ...token, userId: validation.userId, publicClientId: clientId });
+      await this.opts.storeToken({
+        ...token,
+        scope: token.scope ?? validation.scopes,
+        userId: validation.userId,
+        publicClientId: clientId,
+      });
     } catch (err) {
       this.finish(login, "failed", `could not store the Twitch token: ${errorMessage(err)}`);
       return;

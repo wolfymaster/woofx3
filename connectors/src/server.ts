@@ -20,11 +20,12 @@ import MessageBusService from "./services/message-bus";
 const loaded = loadRuntimeEnv({ schema: ConnectorsEnvSchema, injectIntoProcess: true });
 const config = connectorsConfig(loaded.config);
 
-const bus = await MessageBus.createMessageBus({ name: "connectors", ...config.bus });
 const logger = createServiceLogger({
   serviceName: "connectors",
   logDir: path.join(config.rootPath ?? process.cwd(), "logs"),
 });
+
+const bus = await MessageBus.createMessageBus({ name: "connectors", ...config.bus }, logger);
 
 const application = new ConnectorsApplication({
   config,
