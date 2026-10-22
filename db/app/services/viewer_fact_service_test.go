@@ -37,16 +37,6 @@ const chatEmits = `{"fields": [
 
 func newFactSvc(t *testing.T, db *gorm.DB) *viewerFactService {
 	t.Helper()
-	// The outbox row's id comes from a Postgres column default that the
-	// SQLite schema lacks, so the test supplies one.
-	err := db.Callback().Create().Before("gorm:create").Register("test:worker_event_id", func(tx *gorm.DB) {
-		if event, ok := tx.Statement.Dest.(*models.WorkerEvent); ok && event.ID == "" {
-			event.ID = uuid.NewString()
-		}
-	})
-	if err != nil {
-		t.Fatalf("register outbox id callback: %v", err)
-	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := NewViewerFactService(
 		repo.NewViewerFactRepository(db),
