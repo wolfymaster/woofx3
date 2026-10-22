@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -26,38 +27,43 @@ var sqlSourceDirs = []string{
 var portableAlternative = regexp.MustCompile(`(?i)\bpublic\.[a-z_]|\bnow\(\)|gen_random_uuid\(|uuid_generate_v4\(|datetime\('now'\)`)
 
 // dialectOnly matches SQL that only one dialect accepts and that has no
-// shared spelling. It may appear only in a function that branches on the
-// dialect.
+// shared spelling. It may appear only on a dialect-checked path.
 var dialectOnly = regexp.MustCompile(`(?i)::[a-z]|->>|\bilike\b|\bpg_[a-z]|\bextract\(|\bjsonb_[a-z]|\bjson_extract\(|\bstrftime\(|\bstatement_timestamp\(`)
 
-// dialectBranch is what a function that picks SQL per dialect contains.
-var dialectBranch = regexp.MustCompile(`Dialector\.Name\(\)|isPostgres\(\)`)
+// dialectCheck is what a condition that picks SQL per dialect contains.
+var dialectCheck = regexp.MustCompile(`Dialector\.Name\(\)|isPostgres\(\)`)
 
 // TestSQLStringsWorkOnBothDialects reads the source of every package that
-// writes to the system database and fails on a string literal holding SQL
-// that only one dialect accepts, unless the function holding it branches on
-// the dialect. It catches the spellings that broke SQLite engines before;
-// the per-dialect tests prove what each query does.
+// writes to the system database, subpackages included, and fails on a string
+// literal holding SQL that only one dialect accepts, unless it sits on a
+// dialect-checked path (see dialectGuard).
+//
+// It is a tripwire for the spellings that broke SQLite engines, not a proof:
+// it misses SQL assembled from fragments, and a package-level constant
+// holding one dialect's SQL is flagged even when only a guarded path uses
+// it. The per-dialect tests prove what each query does.
 func TestSQLStringsWorkOnBothDialects(t *testing.T) {
 	var violations []string
 	scanned := 0
-	for _, dir := range sqlSourceDirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatalf("read %s: %v", dir, err)
-		}
-		for _, entry := range entries {
-			name := entry.Name()
-			if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, ".pb.go") {
-				continue
+	for _, root := range sqlSourceDirs {
+		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
 			}
-			path := filepath.Join(dir, name)
+			name := entry.Name()
+			if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") || strings.HasSuffix(name, ".pb.go") {
+				return nil
+			}
 			source, err := os.ReadFile(path)
 			if err != nil {
-				t.Fatalf("read %s: %v", path, err)
+				return err
 			}
 			violations = append(violations, lintSQLStrings(t, path, source)...)
 			scanned++
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", root, err)
 		}
 	}
 	if scanned == 0 {
@@ -68,6 +74,13 @@ func TestSQLStringsWorkOnBothDialects(t *testing.T) {
 	}
 }
 
+// sqlLinter checks the string literals of one file.
+type sqlLinter struct {
+	fset       *token.FileSet
+	source     []byte
+	violations []string
+}
+
 func lintSQLStrings(t *testing.T, path string, source []byte) []string {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -75,32 +88,83 @@ func lintSQLStrings(t *testing.T, path string, source []byte) []string {
 	if err != nil {
 		t.Fatalf("parse %s: %v", path, err)
 	}
-	var violations []string
-	report := func(lit *ast.BasicLit, why string) {
-		violations = append(violations, fset.Position(lit.Pos()).String()+": "+why+": "+lit.Value)
-	}
+	l := &sqlLinter{fset: fset, source: source}
 	for _, decl := range file.Decls {
-		fn, isFunc := decl.(*ast.FuncDecl)
-		branches := isFunc && fn.Body != nil &&
-			dialectBranch.Match(source[fset.Position(fn.Body.Pos()).Offset:fset.Position(fn.Body.End()).Offset])
-		ast.Inspect(decl, func(node ast.Node) bool {
+		l.walk(decl, false)
+	}
+	return l.violations
+}
+
+// walk checks every string literal under node. `guarded` is true on a path
+// only one dialect reaches, where that dialect's SQL is allowed.
+func (l *sqlLinter) walk(node ast.Node, guarded bool) {
+	ast.Inspect(node, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.Field:
 			// Struct tags carry gorm column defaults, which describe the
 			// Postgres schema and are never sent as SQL by themselves.
-			if _, ok := node.(*ast.Field); ok {
-				return false
-			}
-			lit, ok := node.(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
+			return false
+		case *ast.BlockStmt:
+			l.walkBlock(n.List, guarded)
+			return false
+		case *ast.IfStmt:
+			if !l.isDialectCheck(n.Cond) {
 				return true
 			}
-			if portableAlternative.MatchString(lit.Value) {
-				report(lit, "SQL with a portable spelling")
+			l.walk(n.Cond, guarded)
+			l.walk(n.Body, true)
+			if n.Else != nil {
+				l.walk(n.Else, true)
 			}
-			if dialectOnly.MatchString(lit.Value) && !branches {
-				report(lit, "one dialect's SQL outside a function that branches on the dialect")
-			}
-			return true
-		})
+			return false
+		case *ast.BasicLit:
+			l.check(n, guarded)
+		}
+		return true
+	})
+}
+
+// walkBlock walks a statement list, treating everything after a dialect
+// guard as guarded too.
+func (l *sqlLinter) walkBlock(stmts []ast.Stmt, guarded bool) {
+	for _, stmt := range stmts {
+		l.walk(stmt, guarded)
+		if l.isDialectGuard(stmt) {
+			guarded = true
+		}
 	}
-	return violations
+}
+
+// isDialectGuard reports whether stmt is `if <dialect check> { ...; return }`:
+// one dialect leaves there, so the statements after it run for the other one
+// only.
+func (l *sqlLinter) isDialectGuard(stmt ast.Stmt) bool {
+	ifStmt, ok := stmt.(*ast.IfStmt)
+	if !ok || ifStmt.Else != nil || !l.isDialectCheck(ifStmt.Cond) || len(ifStmt.Body.List) == 0 {
+		return false
+	}
+	_, returns := ifStmt.Body.List[len(ifStmt.Body.List)-1].(*ast.ReturnStmt)
+	return returns
+}
+
+func (l *sqlLinter) isDialectCheck(cond ast.Expr) bool {
+	start := l.fset.Position(cond.Pos()).Offset
+	end := l.fset.Position(cond.End()).Offset
+	return dialectCheck.Match(l.source[start:end])
+}
+
+func (l *sqlLinter) check(lit *ast.BasicLit, guarded bool) {
+	if lit.Kind != token.STRING {
+		return
+	}
+	if portableAlternative.MatchString(lit.Value) {
+		l.report(lit, "SQL with a portable spelling")
+	}
+	if dialectOnly.MatchString(lit.Value) && !guarded {
+		l.report(lit, "one dialect's SQL outside a dialect-checked path")
+	}
+}
+
+func (l *sqlLinter) report(lit *ast.BasicLit, why string) {
+	l.violations = append(l.violations, l.fset.Position(lit.Pos()).String()+": "+why+": "+lit.Value)
 }
