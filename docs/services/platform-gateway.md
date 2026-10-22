@@ -255,6 +255,27 @@ of connectors forgets every key.
 | `rate_limited` | The request waited behind busy requests until its deadline passed; nothing was attempted. |
 | `upstream` | The gateway itself failed; the error is logged. |
 
+### Discovery
+
+`platform.gateway.capabilities` and `platform.gateway.field_options` answer
+from the loaded adapters' manifests and the supervisor's current state, with a
+budget of 2000 ms. Both reply as a CloudEvent (types
+`platform.gateway.capabilities.result` and
+`platform.gateway.field_options.result`) whose `data` is:
+
+- **capabilities** (the request body is ignored):
+  `{ platforms: [{ id, displayName, state, connected, enabled, actions }] }`,
+  one entry per platform with an adapter. `state` is the adapter's lifecycle
+  state, `connected` and `enabled` its last link reading (both false before the
+  first read), and `actions` the actions it can perform whatever its state.
+- **field_options**: the request is `{ action }`; the envelope form
+  `{ data: { action } }`, which the api sends for a module field, is read the
+  same way. The reply is `[{ value, label }]`, one per platform that is
+  connected, enabled and able to perform the action. `all` and `origin` are not
+  listed, since a field's manifest pins them. An unknown action, or a request
+  without one, gets `{ error }`, the failure shape the api relays to the UI as
+  the reason a picker is empty.
+
 ### Adding egress to an adapter
 
 A platform adapter (one whose id is a platform id) declares its handlers in
