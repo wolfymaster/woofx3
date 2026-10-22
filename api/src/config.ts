@@ -7,6 +7,7 @@ import { DEFAULT_AUTH_CACHE_TTL_MS } from "./auth";
 import { type BarkloaderWebhookAuth, parseBarkloaderWebhookAuth } from "./barkloader-webhook-auth";
 import { downloadOrigin } from "./guarded-download";
 import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL } from "./marketplace-client";
+import { DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS } from "./platform-gateway-client";
 import { assertRegistrationExposure, type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
 import { UNVERSIONED } from "./version";
 
@@ -89,6 +90,12 @@ export interface ApiConfig {
    * (`WOOFX3_AUTH_CACHE_TTL_MS`); DEFAULT_AUTH_CACHE_TTL_MS when unset.
    */
   authCacheTtlMs: number;
+  /**
+   * How long a send to the platform gateway waits for its reply, in
+   * milliseconds (`WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS`);
+   * DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS when unset.
+   */
+  platformGatewayTimeoutMs: number;
   nats: {
     url: string;
     name: string;
@@ -154,6 +161,7 @@ export const ApiEnvSchema = z.looseObject({
   woofx3TwitchPublicClientId: z.union([z.string(), z.number()]).optional(),
   woofx3TwitchClientId: z.union([z.string(), z.number()]).optional(),
   woofx3AuthCacheTtlMs: z.union([z.number(), z.string()]).optional(),
+  woofx3PlatformGatewayTimeoutMs: z.union([z.number(), z.string()]).optional(),
   // True where the edge listens beyond loopback and forwards to the api; the production image sets it.
   woofx3BehindEdge: z.boolean().optional(),
   woofx3DbProxyToken: z.string().optional(),
@@ -269,6 +277,25 @@ export function resolveAuthCacheTtlMs(value: unknown): number {
   return ttlMs;
 }
 
+/**
+ * `WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` as a positive whole number of
+ * milliseconds, or DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS when unset or blank.
+ * Anything else stops startup.
+ */
+export function resolvePlatformGatewayTimeoutMs(value: unknown): number {
+  const text = nonBlank(value);
+  if (text === undefined) {
+    return DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS;
+  }
+  const timeoutMs = Number(text);
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(
+      `Config error: woofx3PlatformGatewayTimeoutMs (WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS) must be a positive integer, got ${text}`
+    );
+  }
+  return timeoutMs;
+}
+
 export function loadConfig(): ApiConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: ApiEnvSchema });
   const config = result.config;
@@ -361,6 +388,7 @@ export function loadConfig(): ApiConfig {
   );
   const messageBusToken = nonBlank(config.woofx3MessagebusToken) ?? nonBlank(config.messagebusToken);
   const authCacheTtlMs = resolveAuthCacheTtlMs(config.woofx3AuthCacheTtlMs);
+  const platformGatewayTimeoutMs = resolvePlatformGatewayTimeoutMs(config.woofx3PlatformGatewayTimeoutMs);
 
   return {
     version,
@@ -384,6 +412,7 @@ export function loadConfig(): ApiConfig {
     rootDir,
     requestGuard,
     authCacheTtlMs,
+    platformGatewayTimeoutMs,
     nats: {
       url: messageBusUrl,
       name: "woofx3-api",

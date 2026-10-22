@@ -5,7 +5,16 @@
  * turns per-platform results into a reply's `ok`. See
  * docs/services/platform-gateway.md.
  */
-import type { PlatformOutcome, PlatformResults, Target } from "./platform-gateway.gen";
+import type {
+  EgressActionId,
+  EgressPayloads,
+  GatewayReply,
+  PlatformId,
+  PlatformOptions,
+  PlatformOutcome,
+  PlatformResults,
+  Target,
+} from "./platform-gateway.gen";
 
 export * from "./platform-gateway.gen";
 
@@ -38,3 +47,32 @@ export function replyOk(target: Target, results: PlatformResults): boolean {
     }
   }
 }
+
+/**
+ * What `sendToPlatforms` asks for: one action to the named platforms.
+ * Checking `action` narrows `payload`. The engine adds who is asking.
+ */
+export type SendToPlatformsParams = {
+  [A in EgressActionId]: {
+    action: A;
+    platforms: PlatformId[];
+    payload: EgressPayloads[A];
+    options?: PlatformOptions;
+    /** Repeating a key replays the first reply instead of sending again. */
+    idempotencyKey: string;
+  };
+}[EgressActionId];
+
+/**
+ * Why the gateway gave no reply. `timeout` and `failed` mean the message may
+ * have been sent; `unavailable` and `invalid` mean it was not.
+ */
+export type PlatformGatewayFailureCode = "unavailable" | "timeout" | "invalid" | "failed";
+
+/**
+ * `sendToPlatforms`' answer. `ok: true` means the gateway replied; read the
+ * reply's own `ok` and `results` for what each platform did.
+ */
+export type PlatformGatewayResult =
+  | { ok: true; reply: GatewayReply }
+  | { ok: false; code: PlatformGatewayFailureCode; error: string };

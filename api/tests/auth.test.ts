@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { AUTH_UNAVAILABLE, isAuthenticationRefused, refusalReason } from "@woofx3/api/rpc";
 import { type AuthResult, ClientAuth, DEFAULT_AUTH_CACHE_TTL_MS } from "../src/auth";
-import { resolveAuthCacheTtlMs } from "../src/config";
+import { resolveAuthCacheTtlMs, resolvePlatformGatewayTimeoutMs } from "../src/config";
 import { ApiGateway } from "../src/gateway";
 import { resolveRegistrationPolicy } from "../src/registration";
 
@@ -281,6 +281,27 @@ describe("resolveAuthCacheTtlMs", () => {
   for (const value of ["0", "-5", "1.5", "soon", 0]) {
     test(`${JSON.stringify(value)} stops startup`, () => {
       expect(() => resolveAuthCacheTtlMs(value)).toThrow("WOOFX3_AUTH_CACHE_TTL_MS");
+    });
+  }
+});
+
+describe("resolvePlatformGatewayTimeoutMs", () => {
+  const valid: [unknown, number][] = [
+    [undefined, 12_000],
+    ["", 12_000],
+    ["  ", 12_000],
+    [20_000, 20_000],
+    ["15000", 15_000],
+  ];
+  for (const [value, expected] of valid) {
+    test(`${JSON.stringify(value)} resolves to ${expected}`, () => {
+      expect(resolvePlatformGatewayTimeoutMs(value)).toBe(expected);
+    });
+  }
+
+  for (const value of ["0", "-5", "1.5", "soon", 0]) {
+    test(`${JSON.stringify(value)} stops startup`, () => {
+      expect(() => resolvePlatformGatewayTimeoutMs(value)).toThrow("WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS");
     });
   }
 });

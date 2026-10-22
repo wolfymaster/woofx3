@@ -1,6 +1,7 @@
 // Shared API Types for woofx3 UI and Backend
 
 import type { EngineCapabilities } from "./capabilities";
+import type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
 import type {
   ConfigBundle,
   ConfigExportOptions,
@@ -10,7 +11,16 @@ import type {
 } from "./config-bundle";
 import type { EngineEventSubscribeOptions, EngineEventSubscriber, EngineRequestAnswer } from "./engine-events";
 import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "./marketplace-catalog";
+import type { PlatformGatewayResult, SendToPlatformsParams } from "./platform-gateway";
 import type { RegisterClientOptions } from "./rpc";
+import type {
+  EventLogPage,
+  EventLogQuery,
+  EventLogSelection,
+  EventLogSettings,
+  StreamEventSubscriber,
+} from "./stream-events";
+import type { TwitchDeviceLoginStartResult, TwitchDeviceLoginStateResult } from "./twitch-device-login";
 import type {
   TwitchAddBlockedTermParams,
   TwitchBanUserParams,
@@ -30,14 +40,6 @@ import type {
   TwitchUnbanUserParams,
   TwitchUpdateChatSettingsParams,
 } from "./twitch-helix";
-import type { TwitchDeviceLoginStartResult, TwitchDeviceLoginStateResult } from "./twitch-device-login";
-import type {
-  EventLogPage,
-  EventLogQuery,
-  EventLogSelection,
-  EventLogSettings,
-  StreamEventSubscriber,
-} from "./stream-events";
 import type {
   ActionDefinition,
   AlertSnapshot,
@@ -48,7 +50,6 @@ import type {
   WorkflowRunSnapshot,
   WorkflowRunStepSnapshot,
 } from "./webhooks";
-import type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
 import type { TaskDefinition, WorkflowDefinition } from "./workflow-definition";
 
 export type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
@@ -2570,6 +2571,17 @@ export interface Woofx3EngineApi {
    * `modules.localEndpoints` capability.
    */
   setRelayConfig(config: RelayConfig | null): Promise<{ ok: true }>;
+
+  /**
+   * Send one chat action (`chat.send`, `chat.announce`, `chat.pin`) to the
+   * named platforms through the platform gateway. Never rejects for a send
+   * that did not happen: `ok: false` carries `unavailable` or `invalid` (not
+   * sent), or `timeout` or `failed` (may have been sent). With `ok: true`,
+   * `reply.results` holds each platform's own outcome. Repeating an
+   * `idempotencyKey` replays the first reply instead of sending again.
+   * Requires the `platform.gateway` capability.
+   */
+  sendToPlatforms(params: SendToPlatformsParams): Promise<PlatformGatewayResult>;
 
   // Overlay Tokens
   //
