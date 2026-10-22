@@ -341,10 +341,14 @@ pub struct InvocationContext {
     /// grants of its `url` settings (see `crate::net`). Empty for builtin
     /// invocations.
     pub permissions: HashSet<String>,
-    /// The ids of the module's `url` settings. Module code may not write
-    /// them (`ctx.module.setSetting`): a value there grants `ctx.http` its
-    /// origin, so only the streamer may set it.
-    pub url_settings: HashSet<String>,
+    /// The settings module code may not write (`ctx.module.setSetting`),
+    /// with the reason: a `url` setting's value grants `ctx.http` its origin,
+    /// and a local endpoint's host, port and password decide where the engine
+    /// connects, so only the streamer (or the companion) may set them.
+    pub protected_settings: crate::protected_settings::ProtectedSettings,
+    /// The invoking module's `local[]` endpoints. Empty for builtin
+    /// invocations.
+    pub local_endpoints: Vec<crate::protected_settings::RegisteredLocalEndpoint>,
     /// The ids of the module's resource-link settings. Their values are the
     /// instances the streamer linked to the module, which it may read and run
     /// (`crate::resource_access`), so module code may not write them either.

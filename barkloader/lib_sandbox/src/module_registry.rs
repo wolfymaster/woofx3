@@ -1,5 +1,6 @@
 use crate::error::Error;
 use crate::models::function::Function;
+use crate::protected_settings::{ProtectedReason, ProtectedSettings, RegisteredLocalEndpoint};
 use std::collections::{HashMap, HashSet};
 use std::sync::RwLock;
 
@@ -28,9 +29,12 @@ pub struct RegisteredModule {
     /// The manifest's `permissions`: the privileged host functions this
     /// module's code may call. See `crate::permissions`.
     pub permissions: HashSet<String>,
-    /// The ids of the module's `url` settings, whose values' origins
-    /// `ctx.http` may reach. See `crate::net`.
-    pub url_settings: HashSet<String>,
+    /// The settings module code may not write, with the reason: its `url`
+    /// settings, whose values' origins `ctx.http` may reach (`crate::net`),
+    /// and the host, port and password settings of its `local_endpoints`.
+    pub protected_settings: ProtectedSettings,
+    /// The module's `local[]` endpoints, in manifest order.
+    pub local_endpoints: Vec<RegisteredLocalEndpoint>,
     /// The ids of the module's resource-link (`resource_ref`) settings, whose
     /// values name the instances the streamer linked to the module. See
     /// `crate::resource_access`.
@@ -192,7 +196,33 @@ impl ModuleRegistry {
         let modules = self.modules.read().unwrap();
         modules
             .get(name)
-            .map(|m| m.url_settings.clone())
+            .map(|m| {
+                m.protected_settings
+                    .iter()
+                    .filter(|(_, reason)| matches!(reason, ProtectedReason::Url))
+                    .map(|(id, _)| id.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The settings the module's code may not write; none for a module that
+    /// is not registered.
+    pub fn protected_settings(&self, name: &str) -> ProtectedSettings {
+        let modules = self.modules.read().unwrap();
+        modules
+            .get(name)
+            .map(|m| m.protected_settings.clone())
+            .unwrap_or_default()
+    }
+
+    /// The module's `local[]` endpoints; none for a module that is not
+    /// registered.
+    pub fn local_endpoints(&self, name: &str) -> Vec<RegisteredLocalEndpoint> {
+        let modules = self.modules.read().unwrap();
+        modules
+            .get(name)
+            .map(|m| m.local_endpoints.clone())
             .unwrap_or_default()
     }
 
@@ -236,7 +266,8 @@ mod tests {
             state: ModuleState::Active,
             event_types: Default::default(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             oauth: Default::default(),
         }
@@ -323,5 +354,38 @@ mod tests {
         let registry = ModuleRegistry::new();
         let result = registry.get_function("invalid_path");
         assert!(matches!(result, Err(Error::InvalidFunctionPath(_))));
+    }
+    #[test]
+    fn test_registry_carries_local_endpoints_and_protected_settings() {
+        use crate::protected_settings::LocalEndpointProtocol;
+        let registry = ModuleRegistry::new();
+        let mut module = test_module("obs");
+        module.protected_settings = [
+            ("server".to_string(), ProtectedReason::Url),
+            (
+                "obs_host".to_string(),
+                ProtectedReason::LocalEndpointAddress {
+                    endpoint_id: "obs".into(),
+                },
+            ),
+        ]
+        .into();
+        module.local_endpoints = vec![RegisteredLocalEndpoint {
+            id: "obs".into(),
+            protocol: LocalEndpointProtocol::Websocket,
+        }];
+        registry.register_module("obs".to_string(), module).unwrap();
+
+        assert_eq!(
+            registry.local_endpoints("obs"),
+            vec![RegisteredLocalEndpoint {
+                id: "obs".into(),
+                protocol: LocalEndpointProtocol::Websocket,
+            }]
+        );
+        assert_eq!(registry.protected_settings("obs").len(), 2);
+        assert_eq!(registry.url_settings("obs"), ["server".to_string()].into());
+        assert!(registry.local_endpoints("missing").is_empty());
+        assert!(registry.protected_settings("missing").is_empty());
     }
 }
