@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  type ConfigField,
   type ConfigFieldOption,
   type DataShape,
   type DataShapeField,
+  isFieldVisible,
   mergePinnedOptions,
   parseDataShape,
+  parseFieldList,
 } from "@woofx3/api/ui-schema";
 
 // parseDataShape is the one place that decides whether a trigger's `emits` /
@@ -177,5 +180,33 @@ describe("mergePinnedOptions", () => {
     mergePinnedOptions(pinned, fetched);
     expect(pinned).toEqual([origin]);
     expect(fetched).toEqual([twitch]);
+  });
+});
+
+describe("isFieldVisible", () => {
+  const plain: ConfigField = { id: "color", label: "Colour", type: "text" };
+  const gated: ConfigField = {
+    ...plain,
+    visibleWhen: { field: "platform", oneOf: ["twitch", "kick"] },
+  };
+
+  const cases: [string, ConfigField, Record<string, unknown>, boolean][] = [
+    ["no condition is always shown", plain, {}, true],
+    ["sibling holds a listed value", gated, { platform: "twitch" }, true],
+    ["sibling holds another listed value", gated, { platform: "kick" }, true],
+    ["sibling holds an unlisted value", gated, { platform: "youtube" }, false],
+    ["sibling is unset", gated, {}, false],
+    ["sibling is not a string", gated, { platform: 1 }, false],
+    ["sibling is null", gated, { platform: null }, false],
+  ];
+
+  test.each(cases)("%s", (_name, field, values, expected) => {
+    expect(isFieldVisible(field, values)).toBe(expected);
+  });
+
+  test("a stored field list carries null for an absent condition", () => {
+    const stored = JSON.stringify([{ id: "color", label: "Colour", type: "text", visibleWhen: null }]);
+    const [field] = parseFieldList(stored);
+    expect(isFieldVisible(field, {})).toBe(true);
   });
 });
