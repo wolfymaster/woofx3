@@ -1,13 +1,13 @@
 package repository
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ClientRepository struct {
@@ -57,25 +57,24 @@ func (r *ClientRepository) Update(client *models.Client) error {
 }
 
 // Delete removes the client with `id` and records it as it stood. A client
-// already gone is not an error and records nothing.
+// already gone, including one a concurrent delete removed first, is not an
+// error and records nothing: the row comes back from the DELETE itself, so
+// only the delete that removed it records it.
 func (r *ClientRepository) Delete(id int, record RecordClientChange) error {
 	return r.db.Transaction(func(tx *gorm.DB) error {
-		var client models.Client
-		err := tx.First(&client, id).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		res := tx.Delete(&models.Client{}, id)
+		var deleted []models.Client
+		res := tx.Clauses(clause.Returning{}).Where("id = ?", id).Delete(&deleted)
 		if res.Error != nil {
 			return res.Error
 		}
-		if res.RowsAffected != 1 {
-			return fmt.Errorf("delete client %d removed %d rows", id, res.RowsAffected)
+		switch len(deleted) {
+		case 0:
+			return nil
+		case 1:
+			return record(tx, &deleted[0])
+		default:
+			return fmt.Errorf("delete client %d removed %d rows", id, len(deleted))
 		}
-		return record(tx, &client)
 	})
 }
 

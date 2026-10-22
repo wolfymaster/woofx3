@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -217,4 +218,40 @@ func TestNewClientServiceNeedsItsDependencies(t *testing.T) {
 	if _, err := NewClientService(nil, publisher, nil); err == nil {
 		t.Error("no clock was accepted")
 	}
+}
+
+func TestClientServiceConcurrentDeletesOfOneClientBothSucceedAndRecordOnce(t *testing.T) {
+	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		svc := newClientSvc(t, db)
+		created := createClient(t, svc, &client.CreateClientRequest{
+			Description: "desktop", Kind: client.ClientKind_CLIENT_KIND_REGISTERED,
+		})
+
+		var wg sync.WaitGroup
+		statuses := make([]*client.ResponseStatus, 2)
+		errs := make([]error, 2)
+		for i := range statuses {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				statuses[i], errs[i] = svc.DeleteClient(context.Background(), &client.DeleteClientRequest{Id: created.Id})
+			}()
+		}
+		wg.Wait()
+
+		for i := range statuses {
+			if errs[i] != nil || statuses[i].Code != client.ResponseStatus_OK {
+				t.Errorf("delete %d = %v, %v; want OK", i, statuses[i], errs[i])
+			}
+		}
+		deletes := 0
+		for _, event := range clientEvents(t, db) {
+			if event.Operation == "deleted" {
+				deletes++
+			}
+		}
+		if deletes != 1 {
+			t.Errorf("recorded %d deletions, want 1", deletes)
+		}
+	})
 }
