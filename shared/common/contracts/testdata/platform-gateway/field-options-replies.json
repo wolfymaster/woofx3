@@ -2,7 +2,7 @@
   "cases": [
     { "name": "one option", "invalidField": null, "reply": [{ "value": "twitch", "label": "Twitch" }] },
     { "name": "no options", "invalidField": null, "reply": [] },
-    { "name": "an error", "invalidField": null, "reply": { "error": "unknown action \"chat.shout\"" } },
+    { "name": "an error", "invalidField": null, "reply": { "error": "action: unknown action \"chat.shout\"" } },
     {
       "name": "an unknown key on an option is ignored",
       "invalidField": null,

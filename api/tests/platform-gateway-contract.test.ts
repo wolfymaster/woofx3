@@ -190,11 +190,6 @@ describe("discovery parsers refuse wrong JSON types", () => {
     ["platforms that are not an array", parseCapabilitiesReply({ platforms: {} }), "platforms"],
     ["an error that is not a string", parseCapabilitiesReply({ error: 1 }), "error"],
     [
-      "a missing connected",
-      parseCapabilitiesReply({ platforms: [{ ...capability, connected: undefined }] }),
-      "platforms[0].connected",
-    ],
-    [
       "an enabled that is not a boolean",
       parseCapabilitiesReply({ platforms: [{ ...capability, enabled: "yes" }] }),
       "platforms[0].enabled",

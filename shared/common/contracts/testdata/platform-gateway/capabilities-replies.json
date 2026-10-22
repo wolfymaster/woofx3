@@ -1,6 +1,13 @@
 {
   "cases": [
     {
+      "name": "a platform without connected or enabled reads as not linked",
+      "invalidField": null,
+      "reply": {
+        "platforms": [{ "id": "twitch", "displayName": "Twitch", "state": "stopped", "actions": [] }]
+      }
+    },
+    {
       "name": "one platform with every action",
       "invalidField": null,
       "reply": {
