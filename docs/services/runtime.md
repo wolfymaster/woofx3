@@ -442,3 +442,39 @@ func CalculateNextBackoffDelay(currentDelay time.Duration) time.Duration {
 ```
 
 :::
+
+## Signal-driven shutdown helper
+
+TypeScript entrypoints call `installShutdown` from `@woofx3/common/runtime` instead of hand-rolling signal handlers. Everything it touches is injected, so tests drive it with a fake process and fake timers.
+
+```typescript
+import { installShutdown } from "@woofx3/common/runtime";
+
+installShutdown({
+  stop: () => runtime.stop(), // the runtime's own stop()
+  logger,
+  deadlineMs: config.shutdownDeadlineMs,
+  exit: (code) => process.exit(code),
+  process,
+  timers: { setTimeout, clearTimeout },
+});
+```
+
+- `SIGTERM`, `SIGINT` and `SIGBREAK` (the orchestrator's stop request on Windows) are trapped. The first one calls `stop`.
+- A second signal, or `deadlineMs` elapsing before `stop` settles, exits with code 1 and logs which of the two happened.
+- A clean stop exits 0; a `stop` that throws exits 1.
+- `uncaughtException` is logged and then shuts down like a signal, but always exits 1. `unhandledRejection` is logged and the process keeps running.
+- `deadlineMs` must be greater than 0; there is no default, the caller names its own.
+- `dispose()` removes the listeners, cancels a pending deadline, and stops an in-flight stop from exiting the process.
+
+## Capped backoff helper
+
+`createBackoff({ baseMs, maxMs }, random)` from `@woofx3/common/runtime` returns `{ next(), reset() }` for retry loops (connection re-dials, refresh retries).
+
+- Exponential with full jitter: the nth failure waits a random time between 0 and `min(maxMs, baseMs * 2^n)`.
+- At the cap the ceiling stays put, so a long outage neither overflows nor waits longer than `maxMs`.
+- `reset()` starts over after a success.
+- The configuration must satisfy `0 < baseMs <= maxMs < Infinity`, otherwise construction throws. The `RandomSource` must return values in `[0, 1)`; `next()` throws otherwise. There are no default values; callers pass their own named constants.
+- `RandomSource` and `Clock` are small interfaces so tests use a seeded source instead of `Math.random`.
+
+This is separate from the service-retry strategy above, which keeps its own fixed doubling schedule.
