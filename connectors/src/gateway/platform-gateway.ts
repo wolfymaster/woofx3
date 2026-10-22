@@ -27,7 +27,7 @@ import {
 } from "../host/host-requests";
 import type { ScopedBus } from "../host/scoped-bus";
 import { type AdapterStatusSource, whenSettled } from "../host/served-subjects";
-import { GatewayDiscovery } from "./discovery";
+import { GatewayDiscovery, type GatewayDiscoveryDeps } from "./discovery";
 import type { EgressRegistry } from "./egress-registry";
 import { fingerprint, IdempotencyCache } from "./idempotency";
 import { resolveTarget, type TargetResolution, type TargetView, withOriginReply } from "./targets";
@@ -56,6 +56,8 @@ export interface PlatformGatewayDeps {
   requests: HostRequests;
   clock: Clock;
   logger: Logger;
+  /** Display names for discovery; defaults to the contract table. */
+  displayNames?: GatewayDiscoveryDeps["displayNames"];
 }
 
 export type OutcomeCounts = Partial<
@@ -99,7 +101,12 @@ export class PlatformGateway {
   private readonly discovery: GatewayDiscovery;
 
   constructor(private readonly deps: PlatformGatewayDeps) {
-    this.discovery = new GatewayDiscovery({ egress: deps.egress, adapters: deps.adapters, requests: deps.requests });
+    this.discovery = new GatewayDiscovery({
+      egress: deps.egress,
+      adapters: deps.adapters,
+      requests: deps.requests,
+      displayNames: deps.displayNames,
+    });
     this.idempotency = new IdempotencyCache(deps.config.idempotency, deps.clock);
     this.view = {
       platforms: deps.egress.platforms,

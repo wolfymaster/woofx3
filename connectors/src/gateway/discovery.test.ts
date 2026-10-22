@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { type EgressActionId, PLATFORM_GATEWAY_SUBJECTS, type PlatformId } from "@woofx3/api/platform-gateway";
+import {
+  type EgressActionId,
+  PLATFORM_DISPLAY_NAMES,
+  PLATFORM_GATEWAY_SUBJECTS,
+  type PlatformId,
+} from "@woofx3/api/platform-gateway";
 import type { AdapterManifest, AdapterStatus, EgressHandlers } from "../host/adapter";
 import type { AdapterId } from "../host/adapter-ids";
 import { HostRequests } from "../host/host-requests";
@@ -83,6 +88,7 @@ async function setup() {
       CATALOG
     ),
     adapters: platforms,
+    displayNames: { ...PLATFORM_DISPLAY_NAMES, [KICK]: "Kick" },
     requests: new HostRequests({ clock: time, ids: countingIds(), timers: time, logger }),
   });
   await discovery.serve(scope);
@@ -97,7 +103,6 @@ async function setup() {
   };
   return {
     platforms,
-    discovery,
     capabilities: () => ask<CapabilitiesReply>(CAPABILITIES, "{}", GATEWAY_CAPABILITIES_RESULT_TYPE),
     options: (body: unknown) =>
       ask<FieldOptionsReply>(
@@ -208,5 +213,16 @@ describe("platform.gateway.field_options", () => {
     expect(await options({ id: "e-1", type: "x", data: { action: "chat.pin" } })).toEqual([
       { value: "twitch", label: "Twitch" },
     ]);
+  });
+
+  test("refuses to start when a platform has no display name", () => {
+    const time = new FakeTime();
+    const build = () =>
+      new GatewayDiscovery({
+        egress: EgressRegistry.fromManifests([manifest(KICK, { "chat.send": handler })], CATALOG),
+        adapters: new FakePlatforms(),
+        requests: new HostRequests({ clock: time, ids: countingIds(), timers: time, logger: new RecordingLogger() }),
+      });
+    expect(build).toThrow('platform "kick" has no display name');
   });
 });

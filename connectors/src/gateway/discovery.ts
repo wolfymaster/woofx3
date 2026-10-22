@@ -5,6 +5,7 @@ import {
   PLATFORM_GATEWAY_SUBJECTS,
   type PlatformId,
 } from "@woofx3/api/platform-gateway";
+import { GATEWAY_DEFAULTS } from "../config/gateway";
 import type { AdapterState } from "../host/adapter";
 import { platformAdapterId } from "../host/adapter";
 import { type HostRequests, type ParseResult, parsed, parseFailed } from "../host/host-requests";
@@ -17,13 +18,6 @@ export const GATEWAY_CAPABILITIES_RESULT_TYPE = "platform.gateway.capabilities.r
 
 /** The CloudEvent type of every platform.gateway.field_options reply. */
 export const GATEWAY_FIELD_OPTIONS_RESULT_TYPE = "platform.gateway.field_options.result";
-
-/**
- * Budget of both discovery subjects. They only read in-memory state, so this
- * is far below the callers' own timeouts (the api waits 10_000 for field
- * options) and only bounds a request that queued behind busy handlers.
- */
-export const DISCOVERY_BUDGET_MS = 2_000;
 
 export interface PlatformCapability {
   id: PlatformId;
@@ -52,6 +46,8 @@ export interface GatewayDiscoveryDeps {
   egress: EgressRegistry;
   adapters: DiscoveryAdapters;
   requests: HostRequests;
+  /** Display name per platform; defaults to the contract table. */
+  displayNames?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -60,20 +56,29 @@ export interface GatewayDiscoveryDeps {
  * Callers use it to offer only platforms that can perform an action.
  */
 export class GatewayDiscovery {
-  constructor(private readonly deps: GatewayDiscoveryDeps) {}
+  private readonly displayNames: Readonly<Record<string, string>>;
+
+  constructor(private readonly deps: GatewayDiscoveryDeps) {
+    this.displayNames = deps.displayNames ?? PLATFORM_DISPLAY_NAMES;
+    for (const platform of deps.egress.platforms) {
+      if (!this.displayNames[platform]) {
+        throw new Error(`platform "${platform}" has no display name`);
+      }
+    }
+  }
 
   /** The subjects and budgets served, for the host scope's grants and its shutdown bound. */
   get served(): ReadonlyArray<{ subject: string; budgetMs: number }> {
     return [
-      { subject: PLATFORM_GATEWAY_SUBJECTS.capabilities, budgetMs: DISCOVERY_BUDGET_MS },
-      { subject: PLATFORM_GATEWAY_SUBJECTS.fieldOptions, budgetMs: DISCOVERY_BUDGET_MS },
+      { subject: PLATFORM_GATEWAY_SUBJECTS.capabilities, budgetMs: GATEWAY_DEFAULTS.discoveryBudgetMs },
+      { subject: PLATFORM_GATEWAY_SUBJECTS.fieldOptions, budgetMs: GATEWAY_DEFAULTS.discoveryBudgetMs },
     ];
   }
 
   async serve(scope: ScopedBus): Promise<void> {
     await this.deps.requests.serveRequest<undefined, CapabilitiesReply>(scope, {
       subject: PLATFORM_GATEWAY_SUBJECTS.capabilities,
-      budgetMs: DISCOVERY_BUDGET_MS,
+      budgetMs: GATEWAY_DEFAULTS.discoveryBudgetMs,
       replyMode: "cloudevent",
       replyType: GATEWAY_CAPABILITIES_RESULT_TYPE,
       // The request carries nothing; whatever a caller sends is ignored.
@@ -83,7 +88,7 @@ export class GatewayDiscovery {
     });
     await this.deps.requests.serveRequest<EgressActionId | UnknownAction, FieldOptionsReply>(scope, {
       subject: PLATFORM_GATEWAY_SUBJECTS.fieldOptions,
-      budgetMs: DISCOVERY_BUDGET_MS,
+      budgetMs: GATEWAY_DEFAULTS.discoveryBudgetMs,
       replyMode: "cloudevent",
       replyType: GATEWAY_FIELD_OPTIONS_RESULT_TYPE,
       parse: parseFieldOptionsRequest,
@@ -92,13 +97,13 @@ export class GatewayDiscovery {
     });
   }
 
-  capabilities(): PlatformCapability[] {
+  private capabilities(): PlatformCapability[] {
     return this.deps.egress.platforms.map((platform) => {
       const adapter = platformAdapterId(platform);
       const link = this.deps.adapters.link(adapter);
       return {
         id: platform,
-        displayName: PLATFORM_DISPLAY_NAMES[platform],
+        displayName: this.displayNames[platform] as string,
         state: this.deps.adapters.status(adapter).state,
         connected: link?.connected ?? false,
         enabled: link?.enabled ?? false,

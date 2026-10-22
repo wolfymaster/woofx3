@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   type GatewayReply,
+  PLATFORM_DISPLAY_NAMES,
   PLATFORM_GATEWAY_SUBJECTS,
   type PlatformId,
   type PlatformOutcome,
@@ -118,6 +119,7 @@ async function setup(manifests: AdapterManifest[], env: Record<string, unknown> 
     config: gatewayConfig(GatewayEnvSchema.parse(env)),
     egress: EgressRegistry.fromManifests(manifests, CATALOG),
     adapters: platforms,
+    displayNames: { ...PLATFORM_DISPLAY_NAMES, [KICK]: "Kick" },
     requests,
     clock: time,
     logger,
