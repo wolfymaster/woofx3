@@ -1,5 +1,5 @@
-//! `ctx.obs`: asks the scene manager, which holds the engine's one OBS
-//! WebSocket connection, to change OBS or to list its names, and returns what
+//! `ctx.obs`: asks the connectors host, whose `obs` adapter holds the engine's
+//! one OBS WebSocket connection, to change OBS or to list its names, and returns what
 //! it answered.
 //!
 //! A module chooses what to ask for; the engine chooses where the request goes.
@@ -7,7 +7,7 @@
 //! for a change and `engine.obs.options` for a listing, made on the sandbox's
 //! blocking thread, so module code learns that OBS applied the change, or why
 //! it did not (OBS not running, a scene renamed since the step was saved), and
-//! can fail its step with that reason. The scene manager owns every OBS rule
+//! can fail its step with that reason. The connectors OBS adapter owns every OBS rule
 //! and answers a refusal with its own message, which is thrown to the module
 //! unchanged.
 //!
@@ -36,9 +36,9 @@ const NAMESPACE: &str = "obs";
 /// The CloudEvent `source` of every request, naming the service that sent it.
 const EVENT_SOURCE: &str = "barkloader";
 
-/// The longest one call waits for the scene manager. It gives up on OBS
+/// The longest one call waits for the connectors host. It gives up on OBS
 /// itself after 3.5 seconds and answers with the reason, so this only bounds a
-/// hung scene manager. A call never waits past the invocation's deadline
+/// hung connectors host. A call never waits past the invocation's deadline
 /// either.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -46,7 +46,7 @@ pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 /// a scene does a handful; more is a loop.
 pub const MAX_CALLS_PER_INVOCATION: u32 = 10;
 
-/// How many `ctx.obs` requests may wait on the scene manager at once, across
+/// How many `ctx.obs` requests may wait on the connectors host at once, across
 /// every invocation. Each holds a blocking thread.
 pub const MAX_IN_FLIGHT: usize = 32;
 
@@ -54,7 +54,7 @@ pub const MAX_IN_FLIGHT: usize = 32;
 pub const IN_FLIGHT_WAIT: Duration = Duration::from_secs(2);
 
 /// `code`s a module can branch on, besides `PERMISSION_DENIED`. A refusal
-/// from the scene manager (OBS not connected, no scene by that name) carries
+/// from the connectors host (OBS not connected, no scene by that name) carries
 /// only its message.
 pub const TIMEOUT: &str = "timeout";
 pub const UNAVAILABLE: &str = "unavailable";
@@ -63,7 +63,7 @@ pub const CALL_LIMIT: &str = "call_limit";
 pub const BUSY: &str = "busy";
 pub const INVALID_ARGUMENTS: &str = "invalid_arguments";
 
-/// What a function asks the scene manager for.
+/// What a function asks the connectors host for.
 #[derive(Clone, Copy)]
 enum Operation {
     /// A change to OBS, carried as the `data` of an `engine.obs.command`.
@@ -234,7 +234,7 @@ fn request(
             };
             return Err(HostError::with_code(
                 format!(
-                    "ctx.obs.{name}: the scene manager did not answer within {:.1}s{after}",
+                    "ctx.obs.{name}: the connectors host did not answer within {:.1}s{after}",
                     timeout.as_secs_f64()
                 ),
                 TIMEOUT,
@@ -242,7 +242,7 @@ fn request(
         }
         Err(RequestError::NoResponders) => {
             return Err(HostError::with_code(
-                format!("ctx.obs.{name}: no scene manager is running to reach OBS"),
+                format!("ctx.obs.{name}: no connectors host is running to reach OBS"),
                 UNAVAILABLE,
             ));
         }
@@ -260,7 +260,7 @@ fn request(
     }
 }
 
-/// The scene manager answers a command with `{ ok: true }` or
+/// The connectors host answers a command with `{ ok: true }` or
 /// `{ ok: false, error }`, the `ObsControlReply` in
 /// shared/common/typescript/cloudevents/Obs/commands.ts.
 fn read_command_reply(name: &str, reply: Value) -> Result<Value, HostError> {
@@ -276,13 +276,13 @@ fn read_command_reply(name: &str, reply: Value) -> Result<Value, HostError> {
             Err(HostError::new(message))
         }
         None => Err(HostError::with_code(
-            format!("ctx.obs.{name}: the scene manager's reply has no ok flag"),
+            format!("ctx.obs.{name}: the connectors host's reply has no ok flag"),
             REQUEST_FAILED,
         )),
     }
 }
 
-/// The scene manager answers a listing with the options array, or `{ error }`
+/// The connectors host answers a listing with the options array, or `{ error }`
 /// when it cannot list (OBS not connected, say).
 fn read_list_reply(name: &str, reply: Value) -> Result<Value, HostError> {
     if reply.is_array() {
@@ -291,7 +291,7 @@ fn read_list_reply(name: &str, reply: Value) -> Result<Value, HostError> {
     match reply.get("error").and_then(Value::as_str) {
         Some(error) if !error.is_empty() => Err(HostError::new(error)),
         _ => Err(HostError::with_code(
-            format!("ctx.obs.{name}: the scene manager's reply is neither a list nor an error"),
+            format!("ctx.obs.{name}: the connectors host's reply is neither a list nor an error"),
             REQUEST_FAILED,
         )),
     }
@@ -302,7 +302,7 @@ fn switch_scene(name: &str, args: &Map<String, Value>) -> Result<Value, HostErro
     Ok(json!({ "command": "switch_scene", "sceneName": scene_name }))
 }
 
-/// `sceneName` is optional: the scene manager uses the current program scene
+/// `sceneName` is optional: the connectors host uses the current program scene
 /// when it is absent, so an empty one is left off rather than sent.
 fn set_source_visibility(name: &str, args: &Map<String, Value>) -> Result<Value, HostError> {
     let source_name = required_string(name, args, "sourceName")?;
@@ -319,7 +319,7 @@ fn set_source_visibility(name: &str, args: &Map<String, Value>) -> Result<Value,
     Ok(command)
 }
 
-/// `visibility` is "visible", "hidden" or "toggle", which the scene manager
+/// `visibility` is "visible", "hidden" or "toggle", which the connectors host
 /// resolves against what OBS shows when the command runs. Without it,
 /// `visible` (true by default) is read as "visible" or "hidden"; `visibility`
 /// wins when both are given.
@@ -986,7 +986,7 @@ mod tests {
             (
                 Err(RequestError::NoResponders),
                 UNAVAILABLE,
-                "no scene manager is running",
+                "no connectors host is running",
             ),
             (
                 Err(RequestError::Failed("broken pipe".into())),

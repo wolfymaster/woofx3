@@ -1,6 +1,6 @@
 // The engine's relay configuration: which local endpoints go through the
 // companion's bridge, and where that bridge is. The api stores it (it is the
-// only service that talks to the dashboard) and sceneManager's endpoint dialer
+// only service that talks to the dashboard) and the connectors host's endpoint dialer
 // reads it. See docs/services/local-endpoints.md.
 
 import type { RelayConfig, RelayEndpoint } from "@woofx3/api";
