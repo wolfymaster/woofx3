@@ -41,3 +41,34 @@ describe("classifyOptionsProbe", () => {
     });
   }
 });
+
+describe("the probe's wire text, as engines already shipped send it", () => {
+  test("the options refusal never changes", () => {
+    expect(TRIGGER_OPTIONS_NEED_DATA_MESSAGE).toBe(
+      "options.platform and options.skipConditions only apply with options.triggerData"
+    );
+  });
+
+  test("the not-found message never changes", () => {
+    expect(workflowNotFoundMessage("Follow alert")).toBe('Workflow "Follow alert" not found');
+  });
+
+  const shipped: { name: string; rejection: Error; support: TriggerOptionsSupport }[] = [
+    {
+      name: "an engine with options",
+      rejection: new Error("options.platform and options.skipConditions only apply with options.triggerData"),
+      support: "supported",
+    },
+    {
+      name: "an engine without options",
+      rejection: new Error('Workflow "\u0000woofx3-options-probe" not found'),
+      support: "unsupported",
+    },
+  ];
+
+  for (const { name, rejection, support } of shipped) {
+    test(`${name}, in its literal words -> ${support}`, () => {
+      expect(classifyOptionsProbe(rejection)).toBe(support);
+    });
+  }
+});

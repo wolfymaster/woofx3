@@ -8,9 +8,16 @@
  * engine with options refuses that combination before it looks the workflow
  * up (`TRIGGER_OPTIONS_NEED_DATA_MESSAGE`); an older one ignores the options
  * and fails to find the workflow (`workflowNotFoundMessage`). Neither starts
- * a run. The engine throws both messages from these definitions
- * (api/src/routes/workflows-execution.ts), so the probe and the engine
- * cannot drift apart.
+ * a run.
+ *
+ * Both messages are wire text that engines already shipped send, so their
+ * wording must never change: a reworded message would make every older
+ * engine probe as `unknown`. The engine throws them from these definitions
+ * (api/src/routes/workflows-execution.ts), and the tests pin the literal
+ * text.
+ *
+ * Like the other shared readers, a rejection that carries no message reads
+ * as no answer (`unknown`).
  */
 
 /** A workflow name no workflow can have: a control character cannot be typed into one. */
@@ -19,11 +26,11 @@ export const OPTIONS_PROBE_WORKFLOW = "\u0000woofx3-options-probe";
 /** The probe's options: `platform` without `triggerData`, the combination an engine with options refuses. */
 export const OPTIONS_PROBE_OPTIONS = { platform: "probe" } as const;
 
-/** What an engine with options throws for `platform` or `skipConditions` without `triggerData`. */
+/** What an engine with options throws for `platform` or `skipConditions` without `triggerData`. Frozen wire text. */
 export const TRIGGER_OPTIONS_NEED_DATA_MESSAGE =
   "options.platform and options.skipConditions only apply with options.triggerData";
 
-/** What any engine throws for a workflow it cannot find by id or name. */
+/** What any engine throws for a workflow it cannot find by id or name. Frozen wire text. */
 export function workflowNotFoundMessage(workflowNameOrId: string): string {
   return `Workflow "${workflowNameOrId}" not found`;
 }
