@@ -293,7 +293,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `required` | boolean | no | Marks the field as mandatory in the form. |
 | `placeholder` | string | no | Placeholder shown inside empty inputs. |
 | `unit` | string | no | Suffix shown next to numeric inputs (e.g. `bits`). |
-| `options` | array | no | Static `{ value, label }` choices. Required for `select` unless a `source` supplies them. |
+| `options` | array | no | Static `{ value, label }` choices with distinct values. Required for `select` unless a `source` supplies them; beside a `source` they are pinned ahead of the fetched ones. |
 | `source` | object | no | Dynamic option source; see [dynamic-source select fields](#dynamic-source-select-fields-source-kind). |
 | `defaultValue` | any | no | Initial value used when none is set. |
 | `min`, `max` | number | no | Bounds for `number` / `range`. |
@@ -328,7 +328,7 @@ Five of them carry extra requirements, each checked at install:
 
 | Type | Requires | Why |
 |---|---|---|
-| `select` | `options` or a `source` | A select with nothing to select is a dead control. |
+| `select` | `options` or a `source` | A select with nothing to select is a dead control. Without a `source`, also a `defaultValue` that is one of the `options`. |
 | `resource_ref` | `resourceKind` | A picker that does not say what to pick lists nothing. |
 | `button` | `action` | A button with nothing to fire does nothing. |
 | `layout` | `surface` | A canvas that does not say which widgets it may hold can place nothing. |
@@ -448,6 +448,8 @@ The request is sent verbatim, so for an uploaded module barkloader accepts an `i
 - `twitchapi`, for the reads in `TWITCHAPI_FORM_READS` (`barkloader/lib_module/src/manifest_validate.rs`), today only `listChannelPointRewards`. The subject answers any method of the Twitch client, writes included.
 
 The bundled system module's forms may also read engine subjects. Engine-held names a platform module offers, such as OBS's scenes, come from one of its own functions calling a host extension (`ctx.obs.listScenes`), through `barkloader.module.field_options`.
+
+A select may carry `options` beside an `internal` source. The options are pinned: the form lists them first, then what the source returns, and a fetched option whose value a pinned one already names is dropped (`mergePinnedOptions` in `shared/clients/typescript/api/ui-schema.ts`). A platform picker can pin `origin` and `all` this way and leave the connected platforms to the source. Barkloader checks option values are distinct; without a `source` the `defaultValue` must be one of the options, and with a `source` it must be a string, since it may name a value only the source knows.
 
 An `internal` source or action is supported on top-level fields only. The api and the UI do not resolve one inside a `list` field's `itemFields`, so barkloader refuses it there, for every module.
 
