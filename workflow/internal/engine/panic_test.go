@@ -71,9 +71,7 @@ func (h *panicHarness) fire(t *testing.T, eventType, workflowID string) *types.W
 
 func (h *panicHarness) runOf(t *testing.T, workflowID string) string {
 	t.Helper()
-	h.engine.executionsMu.RLock()
-	defer h.engine.executionsMu.RUnlock()
-	for id, execution := range h.engine.executions {
+	for id, execution := range h.engine.runs.executions() {
 		if execution.WorkflowID == workflowID {
 			return id
 		}
@@ -83,10 +81,8 @@ func (h *panicHarness) runOf(t *testing.T, workflowID string) string {
 }
 
 func (h *panicHarness) runCount(workflowID string) int {
-	h.engine.executionsMu.RLock()
-	defer h.engine.executionsMu.RUnlock()
 	count := 0
-	for _, execution := range h.engine.executions {
+	for _, execution := range h.engine.runs.executions() {
 		if execution.WorkflowID == workflowID {
 			count++
 		}
