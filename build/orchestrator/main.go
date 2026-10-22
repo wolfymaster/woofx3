@@ -148,6 +148,14 @@ func main() {
 	}
 
 	supervisor.StopAll()
+	if runOnceFailure == nil {
+		// A step can fail just as a signal arrives, and select may take the
+		// signal; the failure still decides the exit.
+		select {
+		case runOnceFailure = <-supervisor.RunOnceFailed():
+		default:
+		}
+	}
 	if runOnceFailure != nil {
 		// The services that depend on the step never started, so the engine
 		// cannot come up: exit non-zero, as a failed deploy, rather than wait
@@ -158,7 +166,7 @@ func main() {
 	reporter.stopped()
 }
 
-// fatalExit reports a startup failure and terminates. os.Exit skips deferred
+// fatalExit reports a fatal failure and terminates. os.Exit skips deferred
 // closers, so the logger and the status output are flushed here before the
 // process goes away.
 func fatalExit(logger *logging.Logger, reporter *statusReporter, message string, err error) {
@@ -284,8 +292,8 @@ type Service struct {
 	// RunOnce marks a step that runs to completion rather than a service that
 	// keeps running, such as the database migration. It is started once, the
 	// services that depend on it start once it exits with status 0, and any
-	// other exit stops the orchestrator. It is never restarted, never asked
-	// to stop, and has no health check.
+	// other exit, or a failure to start it, stops the orchestrator. It is
+	// never restarted, never asked to stop, and has no health check.
 	RunOnce bool `json:"run_once,omitempty"`
 
 	// healthURL and healthTimeout are HealthEndpoint, with its variables
@@ -494,7 +502,8 @@ type Supervisor struct {
 	readyReported bool
 
 	// runOnceFailed receives the failure of the first run-once step that
-	// exits with anything but status 0 while the supervisor is not stopping.
+	// cannot be started, or exits with anything but status 0 while the
+	// supervisor is not stopping.
 	runOnceFailed chan error
 
 	clock        clock
@@ -543,8 +552,9 @@ func NewSupervisor(baseDir string, logger *slog.Logger, reporter *statusReporter
 	return supervisor
 }
 
-// RunOnceFailed delivers the failure of a run-once step, after which the
-// services that depend on it never start.
+// RunOnceFailed delivers the failure of a run-once step, one that could not
+// be started or exited non-zero, after which the services that depend on it
+// never start.
 func (s *Supervisor) RunOnceFailed() <-chan error {
 	return s.runOnceFailed
 }
@@ -878,6 +888,13 @@ func (s *Supervisor) manageService(serviceProcess *ServiceProcess) {
 				if err := s.startServiceProcess(serviceProcess, binaryPath); err != nil {
 					s.logger.Error("Failed to start service", "service", service.Name, "error", err)
 					s.reporter.failure(service.Name, fmt.Sprintf("failed to start: %v", err))
+					if service.RunOnce {
+						// Nothing starts a step again, and its dependents
+						// wait for it: a step that cannot start fails the
+						// engine as one that exits non-zero does.
+						s.deliverRunOnceFailure(fmt.Errorf("%s: failed to start: %w", service.Name, err))
+						return
+					}
 					if err := s.clock.Sleep(s.ctx, s.config.startFailureDelay); err != nil {
 						return
 					}

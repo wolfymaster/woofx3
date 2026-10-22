@@ -1272,3 +1272,37 @@ func TestShippedServicesJSONMigratesBeforeDBProxyStarts(t *testing.T) {
 		t.Errorf("startup order %v starts db-proxy before migrate", order)
 	}
 }
+
+// A step that cannot be started is never tried again, and its dependents wait
+// for it: it must fail the engine as a step that exits non-zero does, not
+// leave it waiting forever.
+func TestARunOnceStepThatCannotStartIsDelivered(t *testing.T) {
+	supervisor, processes, output := newFakeSupervisor(t, migrateAndDBProxy(), func(string) bool { return true })
+	if err := os.Remove(filepath.Join(supervisor.baseDir, binaryFileName(Service{Output: "migrate"}))); err != nil {
+		t.Fatalf("remove the step's binary: %v", err)
+	}
+
+	order, err := supervisor.GetStartupOrder()
+	if err != nil {
+		t.Fatalf("startup order: %v", err)
+	}
+	supervisor.StartInOrder(order)
+
+	select {
+	case failure := <-supervisor.RunOnceFailed():
+		if !strings.Contains(failure.Error(), "migrate") || !strings.Contains(failure.Error(), "binary not found") {
+			t.Errorf("failure = %q, want the step and why it did not start", failure)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("a step that could not start was never delivered; events %v", summary(output.events(t)))
+	}
+	supervisor.StopAll()
+
+	if got := processes.startedServices(); len(got) != 0 {
+		t.Errorf("started %v, want nothing", got)
+	}
+	events := output.events(t)
+	if len(events) == 0 || events[0].Event != eventError || events[0].Name != "migrate" {
+		t.Errorf("events = %v, want an error about the step", summary(events))
+	}
+}

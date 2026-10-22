@@ -282,8 +282,8 @@ has exited with status 0. The image's entrypoint, the release archives'
 `start.sh` and `start.bat`, and a desktop shell that runs the orchestrator
 itself all go through it. Migrations are tracked in the database's
 `migrations` table, so a database that is already up to date makes the step a
-no-op. A failed migration stops every service and exits the orchestrator, and
-so the container, non-zero: a deploy fails instead of booting services
+no-op. A failed migration, or a `migrate` that cannot be started, stops every
+service and exits the orchestrator, and so the container, non-zero: a deploy fails instead of booting services
 against a half-migrated schema.
 
 The image runs as UID 65532 and keeps its state in `/app/data`. A host that
@@ -430,7 +430,8 @@ Each line is one event, with an RFC 3339 `time`:
   `stopped` (with how it exited in `message`), or was `skipped` because its
   prebuilt binary is not installed. A run-once step (`migrate`) is `starting`
   while it runs and `completed` once it exits with status 0; any other exit is
-  reported `stopped`, followed by an `error` naming it.
+  reported `stopped`, followed by an `error` naming it. A step that cannot be
+  started at all gets the `error` alone.
 - `ready` — every service is healthy, and every run-once step completed, at
   once; sent once per run. A service with
   a `health_endpoint` in `services.json` is healthy when a `GET` of it answers
