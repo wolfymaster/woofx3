@@ -3741,10 +3741,8 @@ mod tests {
             r#""defaultValue": "fetched-later", {OWN_FIELD_OPTIONS_SOURCE}"#
         )))
         .expect("a sourced default may name a value only the source knows");
-        validate(&action_with_select(&format!(
-            r#"{OWN_FIELD_OPTIONS_SOURCE}"#
-        )))
-        .expect("a sourced select may leave the default out");
+        validate(&action_with_select(OWN_FIELD_OPTIONS_SOURCE))
+            .expect("a sourced select may leave the default out");
     }
 
     #[test]
