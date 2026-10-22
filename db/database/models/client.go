@@ -62,9 +62,3 @@ func GetClientByClientID(db *gorm.DB, clientID uuid.UUID) (*Client, error) {
 	err := db.Where("client_id = ?", clientID).First(&client).Error
 	return &client, err
 }
-
-func ValidateClient(db *gorm.DB, clientID uuid.UUID, clientSecret string) (*Client, error) {
-	var client Client
-	err := db.Where("client_id = ? AND client_secret = ?", clientID, clientSecret).First(&client).Error
-	return &client, err
-}
