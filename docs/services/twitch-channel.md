@@ -490,6 +490,34 @@ before its key was sealed is sealed when db-proxy starts, before it serves
 requests; a sealed value that does not open (the secrets key changed) is
 refused rather than served, and linking Twitch again replaces it.
 
+### Connected and enabled
+
+Two facts are kept apart. Twitch is *connected* when `twitch_token` is
+non-empty. It is *enabled* when the `integration.twitch.enabled` setting is
+`"true"`. The adapter that talks to Twitch should run while it is both. The
+setting's key, its strict parser and the resolution rule live in
+`shared/common/typescript/integrations/integration-settings.ts`; only `"true"`
+and `"false"` count as a decision, and an empty, missing or unreadable value
+falls back to connected, so an account linked before the setting existed
+keeps running.
+
+The api writes the setting where it already writes the token:
+
+- `storeTwitchToken` (setTwitchToken and device login) stores the token, then
+  `enabled="true"`, then announces. Linking again re-enables.
+- `deleteTwitchToken` clears the token, then stores `enabled="false"`, then
+  announces.
+
+Announcing publishes `setting.integration.enabled.updated` (payload
+`{ integration, enabled }`) and then `setting.integration.token.updated`
+(payload `{ integration }`), so a listener woken by the token event already
+sees the new flag. Each publish is best effort and logs a warning on failure.
+A failed write of the flag makes the RPC return an error. The token and the
+flag are two rows, not one transaction; a missed event or a crash between the
+writes is healed by the host's periodic reconcile. The flag is not sealed.
+
+Nothing enforces the flag yet: it is recorded for the connectors host.
+
 ### Events
 
 All three carry `platform: "twitch"`, and all three are forwarded to browser

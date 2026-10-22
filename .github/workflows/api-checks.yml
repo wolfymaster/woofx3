@@ -90,3 +90,8 @@ jobs:
       - name: Test the scene package
         working-directory: shared/clients/typescript/scene
         run: bun test
+
+      # api's own test run does not reach shared/common/typescript.
+      - name: Test the integration settings
+        working-directory: shared/common/typescript
+        run: bun test integrations/

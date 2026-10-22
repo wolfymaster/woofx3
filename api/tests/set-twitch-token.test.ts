@@ -11,6 +11,10 @@ function session(clientId: string, twitch: Partial<Pick<ApiOptions, "twitchPubli
     setSetting: mock(async (key: string, value: string) => {
       settings.set(key, value);
     }),
+    trySetSetting: mock(async (key: string, value: string) => {
+      settings.set(key, value);
+      return true;
+    }),
     findOrCreateByWoofx3UIUserId: mock(async () => ({ id: "engine-user" })),
   };
   const api = new Api({
@@ -95,5 +99,6 @@ describe("Twitch device login over RPC", () => {
     expect(stored).toMatchObject({ accessToken: "a1", refreshToken: "r1", userId: "42", publicClientId: "public-app" });
     expect(stored.clientId).toBeUndefined();
     expect(selectStrategy(stored)).toBe("engineRefresh");
+    expect(settings.get("integration.twitch.enabled")).toBe("true");
   });
 });

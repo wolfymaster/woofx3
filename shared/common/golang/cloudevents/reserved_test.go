@@ -77,7 +77,8 @@ func TestSubjectsConsumedOutsideGoAreReserved(t *testing.T) {
 		"widget.queue.state":                   "sceneManager alert queue read",
 		"db.scene.updated.*":                   "sceneManager/src/nats-subscriptions.ts",
 		"db.ack.>":                             "db/app/workers/ack_worker.go",
-		"setting.integration.token.updated":    "api/src/routes/commands.ts",
+		"setting.integration.token.updated":    "api/src/routes/context.ts",
+		"setting.integration.enabled.updated":  "api/src/routes/context.ts",
 		"barkloader.module.field_options":      "barkloader/app/src/services/field_options.rs",
 		"webhook.woofx3_throne.throne_webhook": "webhook trigger events the engine fires",
 	}

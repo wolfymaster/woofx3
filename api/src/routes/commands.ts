@@ -387,16 +387,8 @@ export const commandsRoutes = routeModule({
     await this.twitchToken.clear();
     this.logger.info("Twitch token cleared from settings");
 
-    // Same notification as setTwitchToken — the row changed, downstream
-    // consumers should re-read. Their reload path will see an empty
-    // setting and back off (twitchBootstrap already throws on empty).
-    try {
-      await this.publishEvent("setting.integration.token.updated", {
-        integration: "twitch",
-      });
-    } catch (err) {
-      this.logger.warn("Failed to publish setting.integration.token.updated", { err });
-    }
+    await this.writeIntegrationEnabled("twitch", false);
+    await this.announceIntegrationChanged("twitch", false);
 
     return { ok: true };
   },
