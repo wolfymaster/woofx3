@@ -1,5 +1,6 @@
 import type { Service } from "@woofx3/common/runtime";
 import type NATSClient from "@woofx3/nats/src/client";
+import { errorMessage, type Logger } from "../host/deps";
 
 /**
  * The host's one bus connection. Tracks whether it is up from the client's
@@ -12,7 +13,10 @@ export default class MessageBusService implements Service<NATSClient> {
   connected = false;
   private reachable = false;
 
-  constructor(readonly client: NATSClient) {}
+  constructor(
+    readonly client: NATSClient,
+    private readonly logger: Logger
+  ) {}
 
   async connect(): Promise<void> {
     if (this.connected) {
@@ -22,7 +26,10 @@ export default class MessageBusService implements Service<NATSClient> {
     this.connected = true;
     this.reachable = true;
     // A status stream that fails leaves nothing to tell us the bus came back, so report it down.
-    void this.watchStatus().catch(() => {
+    void this.watchStatus().catch((error: unknown) => {
+      this.logger.error("bus status stream failed; reporting the bus down from now on", {
+        error: errorMessage(error),
+      });
       this.reachable = false;
     });
   }
