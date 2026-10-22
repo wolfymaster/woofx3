@@ -53,6 +53,7 @@ async function setup() {
     limits: { concurrency: 4, queueCap: 8 },
     logger,
     counters: new ScopeCounters(),
+    clock: time,
   });
   const watcher = new SettingsWatcher({
     adapters: ["twitch"],

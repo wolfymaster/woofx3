@@ -277,6 +277,7 @@ export class Supervisor {
       limits: this.config.subscriptionLimits,
       logger: this.deps.logger,
       counters: slot.busCounters,
+      clock: this.deps.clock,
     });
     slot.abort = abort;
     slot.scope = scope;

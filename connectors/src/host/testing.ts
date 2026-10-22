@@ -1,6 +1,6 @@
 // Fakes shared by the host's tests: a hand-driven clock and timers, a bus,
 // a recording logger and a scriptable adapter. Not imported by the host.
-import type { Adapter, AdapterContext, AdapterManifest, ServedSubject } from "./adapter";
+import type { Adapter, AdapterContext, AdapterManifest, ServedSubject, Unavailable } from "./adapter";
 import type { AdapterId } from "./adapter-ids";
 import type { Clock, IdSource, Logger, LogMetadata, RandomSource, TimerHandle, Timers } from "./deps";
 import type { LinkState } from "./link-readers";
@@ -272,6 +272,17 @@ export class FakeAdapter implements Adapter {
     }
     return Promise.resolve();
   }
+}
+
+/** A served subject that echoes the request, and names the reason and link state when unavailable. */
+export function servedSubject(subject: string, budgetMs: number, handle?: ServedSubject["handle"]): ServedSubject {
+  return {
+    subject,
+    budgetMs,
+    handle: handle ?? (async (request) => bytes(`answered ${text(request)}`)),
+    unavailableReply: (unavailable: Unavailable) =>
+      bytes(`unavailable ${unavailable.reason} connected=${unavailable.link?.connected ?? "unknown"}`),
+  };
 }
 
 export const linked: LinkState = { connected: true, enabled: true };

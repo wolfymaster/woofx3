@@ -55,8 +55,9 @@ export class ServedSubjects {
       // The adapter's handler owns its wire format, including bad requests.
       parse: (raw) => parsed(raw),
       handle: (request, ctx) => this.answer(id, served, request, ctx),
-      // Only reached if answering itself throws; handler errors are caught below.
-      errorReply: () => served.unavailableReply(this.unavailable(id, "stopped")),
+      // Parsing never fails and handler errors are caught below, so this only
+      // answers a request that expired in the queue, or answering itself throwing.
+      errorReply: (code) => served.unavailableReply(this.unavailable(id, code === "expired" ? "starting" : "stopped")),
     });
   }
 

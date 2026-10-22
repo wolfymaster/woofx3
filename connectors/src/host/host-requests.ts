@@ -1,6 +1,6 @@
 import type { Clock, IdSource, Logger, Timers } from "./deps";
 import { errorMessage } from "./deps";
-import type { BusMessage, ScopedBus } from "./scoped-bus";
+import type { BusMessage, Delivery, ScopedBus } from "./scoped-bus";
 
 /** The CloudEvent `source` of every reply the host wraps. */
 export const HOST_REQUEST_SOURCE = "connectors";
@@ -15,13 +15,19 @@ export function parseFailed<T>(error: string): ParseResult<T> {
   return { ok: false, error };
 }
 
-export type HostRequestErrorCode = "invalid" | "internal";
+/**
+ * Why the host answered instead of the handler: the request did not parse,
+ * the parser or handler threw, or it waited for a free handler slot until
+ * its budget was gone.
+ */
+export type HostRequestErrorCode = "invalid" | "internal" | "expired";
 
 export interface RequestContext {
   /** Clock time by which the reply should be on its way: arrival plus the subject's budget. */
   deadline: number;
   /** Aborts at the deadline. */
   signal: AbortSignal;
+  /** Clock time the request came off the bus, before any wait for a free handler slot. */
   arrivedAt: number;
 }
 
@@ -57,6 +63,7 @@ export interface HostRequestCounters {
   replied: number;
   invalid: number;
   internal: number;
+  expired: number;
   no_inbox: number;
 }
 
@@ -87,9 +94,16 @@ export class HostRequests {
     if (this.counters.has(spec.subject)) {
       throw new Error(`${spec.subject} is already served`);
     }
-    const counters: HostRequestCounters = { received: 0, replied: 0, invalid: 0, internal: 0, no_inbox: 0 };
+    const counters: HostRequestCounters = {
+      received: 0,
+      replied: 0,
+      invalid: 0,
+      internal: 0,
+      expired: 0,
+      no_inbox: 0,
+    };
     this.counters.set(spec.subject, counters);
-    await scope.subscribe(spec.subject, (msg) => this.answer(spec, counters, msg));
+    await scope.subscribe(spec.subject, (msg, delivery) => this.answer(spec, counters, msg, delivery));
   }
 
   /** Per-subject counts, for /health. */
@@ -104,7 +118,8 @@ export class HostRequests {
   private async answer<Req, Rep>(
     spec: ServeRequestSpec<Req, Rep>,
     counters: HostRequestCounters,
-    msg: BusMessage
+    msg: BusMessage,
+    delivery: Delivery
   ): Promise<void> {
     counters.received++;
     if (!msg.reply) {
@@ -113,7 +128,24 @@ export class HostRequests {
       return;
     }
 
-    const arrivedAt = this.deps.clock.now();
+    // The budget runs from arrival: time spent queued behind busy handlers is time the caller is already waiting.
+    const arrivedAt = delivery.receivedAt;
+    const deadline = arrivedAt + spec.budgetMs;
+    const remainingMs = deadline - this.deps.clock.now();
+    if (remainingMs <= 0) {
+      counters.expired++;
+      this.deps.logger.warn("request waited past its budget for a free handler; answered without handling", {
+        subject: spec.subject,
+        budgetMs: spec.budgetMs,
+      });
+      this.reply(
+        counters,
+        msg,
+        errorOf(spec, "expired", `waited past the ${spec.budgetMs}ms budget for a free handler`)
+      );
+      return;
+    }
+
     let request: ParseResult<Req>;
     try {
       request = spec.parse(msg.data);
@@ -132,8 +164,8 @@ export class HostRequests {
     const controller = new AbortController();
     const timer = this.deps.timers.setTimeout(() => {
       controller.abort(new Error(`${spec.subject}: the ${spec.budgetMs}ms budget ran out`));
-    }, spec.budgetMs);
-    const ctx: RequestContext = { arrivedAt, deadline: arrivedAt + spec.budgetMs, signal: controller.signal };
+    }, remainingMs);
+    const ctx: RequestContext = { arrivedAt, deadline, signal: controller.signal };
     let outcome: Reply<Rep>;
     try {
       outcome = await handleWith(spec, request.value, ctx);

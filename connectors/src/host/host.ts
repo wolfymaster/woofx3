@@ -79,6 +79,7 @@ export class Host {
       limits: deps.config.subscriptionLimits,
       logger: deps.logger.child({ scope: HOST_SCOPE }),
       counters: this.hostCounters,
+      clock: deps.clock,
     });
     this.served = new ServedSubjects({
       requests: this.requests,

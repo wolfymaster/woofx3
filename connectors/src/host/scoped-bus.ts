@@ -1,4 +1,4 @@
-import { errorMessage, type Logger } from "./deps";
+import { type Clock, errorMessage, type Logger } from "./deps";
 
 /** One message as the bus hands it over. `respond` is a no-op returning false when there is no `reply` inbox. */
 export interface BusMessage {
@@ -9,6 +9,15 @@ export interface BusMessage {
 }
 
 export type BusHandler = (msg: BusMessage) => void | Promise<void>;
+
+/** What the scope knows about a message besides its content. */
+export interface Delivery {
+  /** Clock time the scope took the message off the bus, before it waited for a free handler slot. */
+  receivedAt: number;
+}
+
+/** A handler on a scoped subscription. Queue time counts against any deadline, so it gets the arrival time. */
+export type ScopedHandler = (msg: BusMessage, delivery: Delivery) => void | Promise<void>;
 
 export interface BusSubscription {
   unsubscribe(): void;
@@ -93,6 +102,8 @@ export interface ScopedBusOptions {
   limits: SubscriptionLimits;
   logger: Logger;
   counters: ScopeCounters;
+  /** Stamps each message's arrival. */
+  clock: Clock;
   /** Called after a handler throws, once the error is logged and counted. */
   onHandlerError?: (subject: string, error: unknown) => void;
 }
@@ -127,12 +138,12 @@ class LimitedSubscription {
   private running = 0;
   private dropping = false;
   private closed = false;
-  private readonly queue: BusMessage[] = [];
+  private readonly queue: Array<{ msg: BusMessage; delivery: Delivery }> = [];
   private readonly inFlight = new Set<Promise<void>>();
 
   constructor(
     private readonly subject: string,
-    private readonly handler: BusHandler,
+    private readonly handler: ScopedHandler,
     private readonly options: ScopedBusOptions,
     private readonly counters: SubscriptionCounters
   ) {}
@@ -142,12 +153,13 @@ class LimitedSubscription {
       return;
     }
     this.counters.received++;
+    const delivery: Delivery = { receivedAt: this.options.clock.now() };
     if (this.running < this.options.limits.concurrency) {
-      this.run(msg);
+      this.run(msg, delivery);
       return;
     }
     if (this.queue.length < this.options.limits.queueCap) {
-      this.queue.push(msg);
+      this.queue.push({ msg, delivery });
       return;
     }
     this.counters.dropped++;
@@ -170,10 +182,10 @@ class LimitedSubscription {
     await Promise.allSettled([...this.inFlight]);
   }
 
-  private run(msg: BusMessage): void {
+  private run(msg: BusMessage, delivery: Delivery): void {
     this.running++;
     const done = Promise.resolve()
-      .then(() => this.handler(msg))
+      .then(() => this.handler(msg, delivery))
       .then(
         () => {
           this.counters.handled++;
@@ -201,12 +213,12 @@ class LimitedSubscription {
     if (this.closed) {
       return;
     }
-    const msg = this.queue.shift();
-    if (msg === undefined) {
+    const queued = this.queue.shift();
+    if (queued === undefined) {
       this.dropping = false;
       return;
     }
-    this.run(msg);
+    this.run(queued.msg, queued.delivery);
   }
 }
 
@@ -246,7 +258,7 @@ export class ScopedBus {
     return this.options.client.request(subject, data, opts);
   }
 
-  async subscribe(subject: string, handler: BusHandler): Promise<void> {
+  async subscribe(subject: string, handler: ScopedHandler): Promise<void> {
     this.allow("subscribe", subject, this.options.grants.subscribes);
     const limited = new LimitedSubscription(subject, handler, this.options, this.options.counters.forSubject(subject));
     const subscription = await this.options.client.subscribe(subject, (msg) => limited.accept(msg));

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ScopeCounters, ScopedBus, ScopedBusRefusal, type SubjectGrants, subjectCovered } from "./scoped-bus";
-import { bytes, FakeBus, flush, RecordingLogger } from "./testing";
+import { bytes, FakeBus, FakeTime, flush, RecordingLogger } from "./testing";
 
 const grants: SubjectGrants = {
   publishes: ["twitch.events.>"],
@@ -13,6 +13,7 @@ function setup(limits = { concurrency: 2, queueCap: 1 }) {
   const logger = new RecordingLogger();
   const counters = new ScopeCounters();
   const errors: string[] = [];
+  const time = new FakeTime();
   const bus = new ScopedBus({
     scope: "twitch",
     client,
@@ -20,9 +21,10 @@ function setup(limits = { concurrency: 2, queueCap: 1 }) {
     limits,
     logger,
     counters,
+    clock: time,
     onHandlerError: (subject) => errors.push(subject),
   });
-  return { client, logger, counters, bus, errors };
+  return { client, logger, counters, bus, errors, time };
 }
 
 describe("subjectCovered", () => {

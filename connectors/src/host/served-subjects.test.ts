@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ServedSubject, Unavailable } from "./adapter";
+import type { ServedSubject } from "./adapter";
 import { HostRequests } from "./host-requests";
 import type { LinkState } from "./link-readers";
 import { ScopeCounters, ScopedBus } from "./scoped-bus";
@@ -16,18 +16,9 @@ import {
   halfRandom,
   linked,
   RecordingLogger,
+  servedSubject,
   text,
 } from "./testing";
-
-function servedSubject(subject: string, budgetMs: number, handle?: ServedSubject["handle"]): ServedSubject {
-  return {
-    subject,
-    budgetMs,
-    handle: handle ?? (async (request) => bytes(`answered ${text(request)}`)),
-    unavailableReply: (unavailable: Unavailable) =>
-      bytes(`unavailable ${unavailable.reason} connected=${unavailable.link?.connected ?? "unknown"}`),
-  };
-}
 
 async function setup(serves: ServedSubject[]) {
   const time = new FakeTime();
@@ -52,6 +43,7 @@ async function setup(serves: ServedSubject[]) {
     limits: { concurrency: 8, queueCap: 8 },
     logger,
     counters: new ScopeCounters(),
+    clock: time,
   });
   const served = new ServedSubjects({ requests, scope, adapters: supervisor, logger });
   await served.serveAll("twitch", serves);
@@ -165,6 +157,7 @@ describe("ServedSubjects", () => {
     await flush();
     await apply(linked);
     const afterRestart = ask("twitchapi", "again");
+    await flush();
     await time.advance(20_000);
 
     expect(held.map(text)).toEqual(["answered held"]);

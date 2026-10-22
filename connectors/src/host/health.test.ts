@@ -65,6 +65,7 @@ describe("health", () => {
       replied: 0,
       invalid: 0,
       internal: 0,
+      expired: 0,
       no_inbox: 0,
     });
   });

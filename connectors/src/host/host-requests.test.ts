@@ -25,6 +25,7 @@ function setup() {
     limits: { concurrency: 4, queueCap: 4 },
     logger,
     counters: new ScopeCounters(),
+    clock: time,
   });
   return { time, client, logger, requests, scope };
 }
@@ -49,7 +50,14 @@ describe("HostRequests", () => {
     const replies = client.deliver("echo.raw", bytes('{"say":"hi"}'), "inbox.1");
     await flush();
     expect(replies.map(text)).toEqual(["heard hi"]);
-    expect(requests.snapshot()["echo.raw"]).toEqual({ received: 1, replied: 1, invalid: 0, internal: 0, no_inbox: 0 });
+    expect(requests.snapshot()["echo.raw"]).toEqual({
+      received: 1,
+      replied: 1,
+      invalid: 0,
+      internal: 0,
+      expired: 0,
+      no_inbox: 0,
+    });
   });
 
   test("cloudevent mode wraps the reply with an id, type, source and time from the injected sources", async () => {
@@ -156,6 +164,50 @@ describe("HostRequests", () => {
     expect(replies).toHaveLength(0);
     await time.advance(1);
     expect(replies.map(text)).toEqual(["gave up"]);
+  });
+
+  const holdUntilAbort = rawSpec(
+    (req, ctx) =>
+      new Promise<Uint8Array>((resolve) => {
+        ctx.signal.addEventListener("abort", () => resolve(bytes(`gave up ${req.say}`)));
+      })
+  );
+
+  test("a request queued behind busy handlers keeps the deadline of its arrival", async () => {
+    const { client, requests, scope, time } = setup();
+    await requests.serveRequest(scope, holdUntilAbort);
+
+    // Four held requests take every handler slot (concurrency 4); the fifth queues 500 ms later.
+    for (let i = 0; i < 4; i++) {
+      client.deliver("echo.raw", bytes(`{"say":"held${i}"}`), `inbox.${i}`);
+    }
+    await flush();
+    await time.advance(500);
+    const queued = client.deliver("echo.raw", bytes('{"say":"queued"}'), "inbox.queued");
+    await flush();
+
+    await time.advance(500);
+    expect(queued).toHaveLength(0);
+    await time.advance(499);
+    expect(queued).toHaveLength(0);
+    await time.advance(1);
+    expect(queued.map(text)).toEqual(["gave up queued"]);
+  });
+
+  test("a request whose budget ran out in the queue gets the expired error reply without being handled", async () => {
+    const { client, requests, scope, time, logger } = setup();
+    await requests.serveRequest(scope, holdUntilAbort);
+
+    for (let i = 0; i < 4; i++) {
+      client.deliver("echo.raw", bytes(`{"say":"held${i}"}`), `inbox.${i}`);
+    }
+    const queued = client.deliver("echo.raw", bytes('{"say":"queued"}'), "inbox.queued");
+    await flush();
+    await time.advance(1_000);
+
+    expect(queued.map(text)).toEqual(["expired:waited past the 1000ms budget for a free handler"]);
+    expect(requests.snapshot()["echo.raw"]).toMatchObject({ received: 5, replied: 5, expired: 1 });
+    expect(logger.at("warn").some((entry) => entry.message.includes("past its budget"))).toBe(true);
   });
 
   test("serving a subject twice, or with a budget that is not a positive integer, is refused", async () => {
