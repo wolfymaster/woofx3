@@ -1,0 +1,41 @@
+{
+  "subjects": {
+    "send": "platform.gateway.send",
+    "capabilities": "platform.gateway.capabilities",
+    "fieldOptions": "platform.gateway.field_options"
+  },
+  "platforms": [{ "id": "twitch", "displayName": "Twitch" }],
+  "requesters": ["workflow", "dispatcher", "api"],
+  "failureCodes": ["invalid", "rate_limited", "forbidden", "upstream"],
+  "outcomeStatuses": ["delivered", "dropped", "unsupported", "unavailable", "unconfirmed", "failed"],
+  "unavailableReasons": ["not_linked", "disabled", "stopped", "starting", "parked"],
+  "actions": [
+    {
+      "id": "chat.send",
+      "fields": [
+        { "name": "message", "type": "string", "required": true, "maxLength": 500 },
+        { "name": "replyToMessageId", "type": "string", "required": false, "maxLength": 200 }
+      ]
+    },
+    {
+      "id": "chat.announce",
+      "fields": [{ "name": "message", "type": "string", "required": true, "maxLength": 500 }]
+    },
+    {
+      "id": "chat.pin",
+      "oneOf": [
+        {
+          "name": "existing",
+          "fields": [{ "name": "messageId", "type": "string", "required": true, "maxLength": 200 }]
+        },
+        {
+          "name": "new",
+          "fields": [
+            { "name": "message", "type": "string", "required": true, "maxLength": 500 },
+            { "name": "durationSeconds", "type": "integer", "required": false, "min": 30, "max": 1200 }
+          ]
+        }
+      ]
+    }
+  ]
+}
