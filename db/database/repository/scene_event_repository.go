@@ -63,8 +63,8 @@ func (r *SceneEventRepository) RecordDelivery(sceneEventID uuid.UUID, instanceID
 		return tx.Model(&models.SceneEventDelivery{}).
 			Where("scene_event_id = ? AND instance_id = ?", sceneEventID, instanceID).
 			Updates(map[string]interface{}{
-				"delivered_at":    gorm.Expr("NOW()"),
-				"last_attempt_at": gorm.Expr("NOW()"),
+				"delivered_at":    gorm.Expr("CURRENT_TIMESTAMP"),
+				"last_attempt_at": gorm.Expr("CURRENT_TIMESTAMP"),
 			}).Error
 	})
 }
@@ -99,16 +99,19 @@ func (r *SceneEventRepository) appendLog(
 		if err != nil {
 			return err
 		}
+		// A raw insert runs no model hooks, so the id is set here; the
+		// SQLite schema has no column default for it.
 		entry := &models.SceneEventLogEntry{
+			ID:           uuid.New(),
 			SceneEventID: sceneEventID,
 			SceneID:      delivery.SceneID,
 			InstanceID:   instanceID,
 			Kind:         kind,
 		}
 		if err := tx.Exec(
-			`INSERT INTO public.scene_event_log (scene_event_id, scene_id, instance_id, kind, occurred_at)
-			 VALUES (?, ?, ?, ?, NOW())`,
-			entry.SceneEventID, entry.SceneID, entry.InstanceID, entry.Kind,
+			`INSERT INTO scene_event_log (id, scene_event_id, scene_id, instance_id, kind, occurred_at)
+			 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+			entry.ID, entry.SceneEventID, entry.SceneID, entry.InstanceID, entry.Kind,
 		).Error; err != nil {
 			return err
 		}
