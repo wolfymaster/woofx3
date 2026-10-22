@@ -228,15 +228,17 @@ func (r *AlertRepository) CountByHour(
 // hourInWindowSQL is the hour of the window a row was created in, counted
 // from `@since_unix` (epoch seconds, on the hour), as a SQL expression.
 //
-// SQLite reads its stored layout (SQLiteTimestampLayout, offset included)
-// with strftime, which drops the fraction: a row a microsecond before an hour
-// falls in the hour before, as it should. Integer division then floors, since
-// every row in the window is at or after `@since_unix`.
+// SQLite stores SQLiteTimestampLayout, always in UTC. strftime reads only its
+// first 19 characters (`YYYY-MM-DD HH:MM:SS`), so neither the fraction nor
+// the offset depends on how a SQLite version parses them, and a row a
+// microsecond before an hour falls in the hour before, as it should. Integer
+// division then floors, since every row in the window is at or after
+// `@since_unix`.
 func (r *AlertRepository) hourInWindowSQL() string {
 	if r.isPostgres() {
 		return "FLOOR((EXTRACT(EPOCH FROM created_at) - @since_unix) / 3600)::int"
 	}
-	return "(CAST(strftime('%s', created_at) AS INTEGER) - @since_unix) / 3600"
+	return "(CAST(strftime('%s', substr(created_at, 1, 19)) AS INTEGER) - @since_unix) / 3600"
 }
 
 // timeBound is `t` as a bound on a timestamp column. SQLite compares the text
