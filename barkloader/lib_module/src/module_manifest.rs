@@ -280,6 +280,22 @@ pub struct ManifestConfigField {
     /// to the UI.
     #[serde(default)]
     pub missing_text: Option<String>,
+    /// Shows the field only while a sibling holds one of the listed values.
+    /// A hidden field's value is dropped on save and its `required` does not
+    /// apply. Not allowed inside `itemFields`.
+    #[serde(default)]
+    pub visible_when: Option<VisibleWhen>,
+}
+
+/// A `visibleWhen` condition: the field is shown while the top-level sibling
+/// `field` holds one of the `one_of` values.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VisibleWhen {
+    /// The `id` of another top-level field of the same list.
+    pub field: String,
+    /// The values of that field that show this one; text, as a select's are.
+    pub one_of: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -510,6 +526,7 @@ fn theme_setting_field() -> ManifestConfigField {
         example_payload: None,
         any_text: None,
         missing_text: None,
+        visible_when: None,
     }
 }
 
