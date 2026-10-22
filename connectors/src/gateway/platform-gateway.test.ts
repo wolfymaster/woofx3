@@ -382,7 +382,7 @@ describe("PlatformGateway fan-out", () => {
     expect(reply.ok).toBe(false);
     expect(reply.results.twitch).toEqual({
       status: "unconfirmed",
-      message: `twitch did not answer within ${DEADLINE_MS}ms; it may have acted`,
+      message: "twitch did not answer before the deadline; it may have acted",
     });
   });
 
@@ -480,7 +480,7 @@ describe("PlatformGateway fan-out", () => {
 
     expect(gateway.snapshot()).toEqual({
       outcomes: { twitch: { "chat.send": { delivered: 1, unavailable: 1 } } },
-      idempotency: { replayed: 1, coalesced: 0, mismatched: 0, held: 2 },
+      idempotency: { replayed: 1, coalesced: 0, mismatched: 0, held: 1 },
     });
   });
 });
@@ -562,6 +562,18 @@ describe("PlatformGateway idempotency", () => {
     expect(twitch.calls).toHaveLength(2);
   });
 
+  test("a reply in which nothing reached a platform does not hold the key", async () => {
+    const twitch = recording<"chat.send">();
+    const { platforms, send } = await setup([manifest("twitch", { "chat.send": twitch.spec })]);
+    platforms.set("twitch", linked, { state: "stopped" });
+
+    const retried = request();
+    expect((await send(retried)).results.twitch).toEqual({ status: "unavailable", reason: "stopped" });
+    platforms.running("twitch");
+    expect((await send(retried)).ok).toBe(true);
+    expect(twitch.calls).toHaveLength(1);
+  });
+
   test("a refused target does not hold the key", async () => {
     const twitch = recording<"chat.send">();
     const { platforms, send } = await setup([manifest("twitch", { "chat.send": twitch.spec })]);
@@ -576,6 +588,37 @@ describe("PlatformGateway idempotency", () => {
       })
     );
     expect((await send(request({ idempotencyKey: "retry-me" }))).ok).toBe(true);
+  });
+});
+
+describe("PlatformGateway whole-request refusals", () => {
+  test("a request that queued past its budget is rate_limited and attempts nothing", async () => {
+    const twitch = recording<"chat.send">(() => new Promise<PlatformOutcome>(() => {}));
+    const { platforms, time, ask } = await setup([manifest("twitch", { "chat.send": twitch.spec })]);
+    platforms.running("twitch");
+
+    for (let i = 0; i < 16; i++) {
+      await ask(request());
+    }
+    const queued = await ask(request());
+    await time.advance(DEADLINE_MS);
+    const reply = only(queued);
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe("rate_limited");
+    expect(twitch.calls).toHaveLength(16);
+  });
+
+  test("a failure inside the gateway is upstream", async () => {
+    const twitch = recording<"chat.send">();
+    const { platforms, send } = await setup([manifest("twitch", { "chat.send": twitch.spec })]);
+    platforms.running("twitch");
+    platforms.link = () => {
+      throw new Error("link store broke");
+    };
+
+    const reply = await send(request());
+    expect(reply.ok).toBe(false);
+    expect(reply.error).toEqual({ code: "upstream", message: "link store broke" });
   });
 });
 

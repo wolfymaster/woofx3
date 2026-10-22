@@ -232,7 +232,10 @@ The gateway keeps the replies it sent, keyed by `requestedBy.kind` plus
 
 - The same key and the same request within the TTL gets the stored reply
   again, without reaching any platform. This holds for a reply that was not
-  ok, too: a caller that wants a fresh attempt uses a new key.
+  ok, too, as long as some platform delivered, dropped or left it unconfirmed.
+  A reply in which nothing reached a platform (every platform unavailable,
+  unsupported or failed) is not stored, so retrying the key after a transient
+  outage makes a real attempt.
 - The same key with a different request is refused as `invalid`.
 - A repeat that arrives while the first is still running waits for it and
   gets its reply.

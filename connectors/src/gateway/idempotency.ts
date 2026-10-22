@@ -34,7 +34,9 @@ interface Running<T> {
 /**
  * Runs work at most once per key within the TTL, in memory only: a restart
  * forgets every key. Work that throws is not stored, so the next call with
- * the key runs it again; only completed values are replayed.
+ * the key runs it again; only completed values are replayed. A caller can
+ * also decline to keep a completed value (see `keep`), so a later call with
+ * the key runs the work again.
  */
 export class IdempotencyCache<T> {
   /** Map order is recency order: the first entry is the least recently used. */
@@ -58,7 +60,16 @@ export class IdempotencyCache<T> {
     return this.completed.size;
   }
 
-  async run(key: string, fingerprint: string, work: () => Promise<T>): Promise<IdempotencyOutcome<T>> {
+  /**
+   * `keep` decides whether a completed value is stored for replay. Calls that
+   * were waiting on this run still receive the value either way.
+   */
+  async run(
+    key: string,
+    fingerprint: string,
+    work: () => Promise<T>,
+    keep: (value: T) => boolean = () => true
+  ): Promise<IdempotencyOutcome<T>> {
     const completed = this.fresh(key);
     if (completed !== undefined) {
       if (completed.fingerprint !== fingerprint) {
@@ -81,7 +92,9 @@ export class IdempotencyCache<T> {
     this.running.set(key, { fingerprint, done });
     try {
       const value = await done;
-      this.store(key, { fingerprint, value, completedAt: this.clock.now() });
+      if (keep(value)) {
+        this.store(key, { fingerprint, value, completedAt: this.clock.now() });
+      }
       return { kind: "fresh", value };
     } finally {
       this.running.delete(key);

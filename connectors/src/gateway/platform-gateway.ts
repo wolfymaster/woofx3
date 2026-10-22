@@ -67,6 +67,18 @@ export interface GatewayCounters {
   idempotency: { replayed: number; coalesced: number; mismatched: number; held: number };
 }
 
+/**
+ * Whether a reply is worth replaying for its key. A reply in which nothing
+ * reached a platform (all unavailable, unsupported or failed) is not kept, so
+ * a caller retrying with the same key after a transient outage gets a real
+ * attempt instead of the stale refusal.
+ */
+function reachedAPlatform(reply: GatewayReply): boolean {
+  return Object.values(reply.results).some(
+    (outcome) => outcome.status === "delivered" || outcome.status === "dropped" || outcome.status === "unconfirmed"
+  );
+}
+
 /** How one platform's handler call ended, as seen from the deadline. */
 type HandlerRun = { kind: "done"; value: unknown } | { kind: "failed"; error: unknown } | { kind: "deadline" };
 
@@ -125,7 +137,12 @@ export class PlatformGateway {
     }
 
     const key = `${request.requestedBy.kind}:${request.idempotencyKey}`;
-    const run = await this.idempotency.run(key, fingerprint(request), () => this.fanOut(request, resolution, ctx));
+    const run = await this.idempotency.run(
+      key,
+      fingerprint(request),
+      () => this.fanOut(request, resolution, ctx),
+      reachedAPlatform
+    );
     switch (run.kind) {
       case "fresh":
         this.log("sent", request, { ok: run.value.ok, results: statuses(run.value.results) });
@@ -237,7 +254,7 @@ export class PlatformGateway {
       if (sent) {
         return {
           status: "unconfirmed",
-          message: `${platform} did not answer within ${this.deps.config.adapterDeadlineMs}ms; it may have acted`,
+          message: `${platform} did not answer before the deadline; it may have acted`,
         };
       }
       return { status: "failed", code: "upstream", message: "did not reach the platform before the deadline" };
