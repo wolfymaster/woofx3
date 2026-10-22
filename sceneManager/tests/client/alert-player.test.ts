@@ -14,6 +14,7 @@ import { type AlertFrameFacts, parseDelivery, playAlert } from "../../public/sce
 class FakeElement implements RenderElement<FakeElement> {
   readonly style = {} as RenderStyle;
   readonly children: FakeElement[] = [];
+  readonly attributes = new Map<string, string>();
   parent: FakeElement | null = null;
 
   appendChild(child: FakeElement): unknown {
@@ -29,7 +30,9 @@ class FakeElement implements RenderElement<FakeElement> {
     }
   }
 
-  setAttribute(): void {}
+  setAttribute(name: string, value: string): void {
+    this.attributes.set(name, value);
+  }
 
   animate(): RenderAnimation {
     return { startTime: null, currentTime: null, pause: () => {}, cancel: () => {} };
@@ -97,6 +100,17 @@ function alertOf(ids: string[], behaviors: Record<string, BehaviorDocument> = {}
     ids.map((id, index) => [id, placement(`a${index + 1}`, { visible: !hidden.includes(id) })])
   );
   return { layout: { width: 1920, height: 1080 }, widgets, behaviors } satisfies CompositionDocument;
+}
+
+/** The box the renderer made for widget `id` under `root`. */
+function boxOf(root: FakeElement, id: string): FakeElement {
+  const search = (element: FakeElement): FakeElement | undefined =>
+    element.attributes.get("data-scene-widget") === id ? element : element.children.map(search).find(Boolean);
+  const box = search(root);
+  if (box === undefined) {
+    throw new Error(`no box for ${id}`);
+  }
+  return box;
 }
 
 function setup(doc: CompositionDocument) {
@@ -212,6 +226,16 @@ describe("playAlert", () => {
     expect(finished()).toBeNull();
     clock.advanceTo(UNTIMED_ALERT_MS + 400);
     expect(finished()).toBe(UNTIMED_ALERT_MS + 400);
+  });
+
+  it("keeps a widget that has not painted transparent, never visibility-hidden, so its frame can paint", () => {
+    const { stage, frame } = setup(alertOf(["text"]));
+    const box = boxOf(stage, "text");
+    expect(box.style.opacity).toBe("0");
+    expect(box.style.visibility).toBeUndefined();
+    frame("text").subscribed(false);
+    frame("text").rendered();
+    expect(box.style.opacity).toBe("1");
   });
 
   it("never mounts a hidden widget, and does not wait for it", () => {

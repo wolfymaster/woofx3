@@ -108,6 +108,9 @@ export function playAlert<TElement extends RenderElement<TElement>, THandle>(
   const renderer = createDomRenderer({
     document: options.document,
     root: options.stage,
+    // A widget enters once its frame has painted, which a frame under
+    // `visibility: hidden` never does.
+    hideWith: "opacity",
     mountContent: (slot, widgetId) => {
       // The engine dispatched only the widget kinds each widget declares
       // (see alert-layout.ts in the server), so every one left is played.
