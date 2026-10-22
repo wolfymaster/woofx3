@@ -277,6 +277,7 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
         let client = invocation.host.http.clone();
         let module_id = invocation.module_id.clone();
         let grants = invocation.permissions.clone();
+        let deadline = invocation.deadline;
         let request_fn = lua.create_function(
             move |lua, (url, method, opts): (String, String, LuaValue)| {
                 let json_opts: Value = serde_json::to_value(&opts)
@@ -289,6 +290,7 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
                         method: &method,
                         opts: json_opts,
                         enforcement: crate::host::Enforcement::Policy,
+                        deadline: Some(deadline),
                     })
                     .map_err(mlua::Error::RuntimeError)?;
                 lua.to_value(&result)
