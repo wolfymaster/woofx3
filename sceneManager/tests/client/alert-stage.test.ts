@@ -271,6 +271,26 @@ describe("stageAlert", () => {
     expect(sent).toEqual([["text", state]]);
   });
 
+  it("hands a staged widget its own entrance only once the alert starts", () => {
+    const typewriter: BehaviorDocument = {
+      type: "transition",
+      kind: "typewriter",
+      target: "text",
+      order: "a0",
+      timing: { anchor: "enter", offsetMs: 0, durationMs: 800, easing: "ease-out" },
+      params: { phase: "in" },
+    };
+    const { clock, frame, sent, player } = setup(alertOf(["text"], { typewriter }), { start: false });
+    frame("text").subscribed(false);
+    frame("text").rendered();
+    clock.advanceTo(5_000);
+    expect(sent).toEqual([]);
+
+    player.start();
+
+    expect(sent.map(([widgetId, state]) => [widgetId, state?.kind])).toEqual([["text", "typewriter"]]);
+  });
+
   it("stops without reporting the alert finished", () => {
     const { clock, frame, player, finished, unmounted } = setup(alertOf(["text"]));
     player.stop();

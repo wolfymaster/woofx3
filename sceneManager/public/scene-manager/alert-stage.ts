@@ -14,6 +14,7 @@ import { type CompositionDocument, type NodeId, PROFILES } from "@woofx3/scene/m
 import {
   createDomRenderer,
   createScheduler,
+  type DelegateRequest,
   type RenderDocument,
   type RenderElement,
   type Scheduler,
@@ -86,6 +87,9 @@ export function stageAlert<TElement extends RenderElement<TElement>, THandle>(
   const subscribed = new Set<NodeId>();
   const relay = new BehaviorRelay((widgetId, state) => frames.get(widgetId)?.sendBehavior(state), options.log);
   const clock = createPreviewClock(options.clock);
+  // A widget plays a behavior handed to it from the moment it hears it, so
+  // what the runtime hands over while the alert is held waits for `start`.
+  const heldDelegations: Array<{ widgetId: NodeId; request: DelegateRequest }> = [];
   let scheduler: Scheduler | null = null;
   let started = false;
   let stopped = false;
@@ -132,7 +136,13 @@ export function stageAlert<TElement extends RenderElement<TElement>, THandle>(
         frame.unmount();
       };
     },
-    onDelegate: (widgetId, request) => relay.handle(widgetId, request),
+    onDelegate: (widgetId, request) => {
+      if (started) {
+        relay.handle(widgetId, request);
+      } else {
+        heldDelegations.push({ widgetId, request });
+      }
+    },
   });
   // Held at 0 ms with the clock, so no animation runs before `start`.
   renderer.pause();
@@ -168,6 +178,9 @@ export function stageAlert<TElement extends RenderElement<TElement>, THandle>(
         throw new Error("alert: started after it was stopped");
       }
       started = true;
+      for (const { widgetId, request } of heldDelegations.splice(0)) {
+        relay.handle(widgetId, request);
+      }
       renderer.play();
       clock.play();
       scheduler?.resync();
