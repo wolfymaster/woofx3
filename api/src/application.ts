@@ -288,8 +288,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       await workflowHealthEmitter.start();
     }
 
-    const auth = new ClientAuth(db, logger);
-    api.setAuthInvalidate(() => auth.invalidateCache());
+    const auth = new ClientAuth(db, logger, { ttlMs: config.authCacheTtlMs });
+    api.setAuthInvalidate((clientId) => auth.invalidateCache(clientId));
     const gateway = new ApiGateway(api, auth, db, logger, config.registration);
     gateway.setWebhookClient(webhookClient);
 

@@ -228,6 +228,14 @@ registration, so the lock survives restarts; removing every client opens
 registration again. Registrations are handled one at a time in this mode, so two
 callers racing on a new engine cannot both be first.
 
+A client then calls `authenticate` with its id and secret. The api asks the db
+proxy to check them and reuses a successful check for
+`WOOFX3_AUTH_CACHE_TTL_MS` milliseconds (default `60000`), keyed on the id and
+a hash of the secret. Failed checks are never reused. When the db proxy cannot
+be reached, `authenticate` rejects with an error named `AuthUnavailable`
+rather than `Invalid client credentials`, so the caller can retry. Deleting a
+client drops its cached checks at once.
+
 ## Barkloader processing callbacks
 
 barkloader reports asynchronous asset jobs (thumbnails) by POSTing to the api's

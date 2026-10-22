@@ -43,6 +43,14 @@ export interface RegisterClientOptions {
 export const REGISTRATION_REFUSED = "RegistrationRefused";
 
 /**
+ * The error `authenticate` rejects with when the engine could not check the
+ * credentials (its database did not answer), as opposed to rejecting them.
+ * Its `name` survives the capnweb boundary; the same credentials may succeed
+ * on a retry.
+ */
+export const AUTH_UNAVAILABLE = "AuthUnavailable";
+
+/**
  * The unauthenticated capnweb entry point served by the engine. Connecting
  * to the engine's `/api` URL via capnweb HTTP batch (or WebSocket) gives
  * back a stub of this shape.
