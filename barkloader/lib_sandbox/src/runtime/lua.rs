@@ -2,7 +2,8 @@ use crate::error::Error;
 use crate::host::{HostError, InvocationContext};
 use crate::runtime::RuntimeAdapter;
 use mlua::{
-    Function, HookTriggers, Lua, LuaOptions, LuaSerdeExt, StdLib, Value as LuaValue, VmState,
+    ChunkMode, Function, HookTriggers, Lua, LuaOptions, LuaSerdeExt, StdLib, Value as LuaValue,
+    VmState,
 };
 use serde_json::Value;
 use std::cell::{Cell, RefCell};
@@ -11,6 +12,49 @@ use std::rc::Rc;
 const DEFAULT_MEMORY_LIMIT: usize = 16 * 1024 * 1024;
 const DEFAULT_MAX_INSTRUCTIONS: u64 = 10_000_000;
 const HOOK_INTERVAL: u32 = 10_000;
+
+/// The only globals module code may see. mlua opens the base library even
+/// under `StdLib::NONE`, so every other global is removed before host
+/// bindings are installed. Notable omissions: `dofile` and `loadfile` read
+/// host files (and echo their contents in parse errors); `load` and
+/// `loadstring` compile code at runtime, including unverified binary chunks,
+/// which are a memory-corruption primitive; `print` writes to the engine's
+/// stdout; `collectgarbage` lets a module stall or tune the host's collector;
+/// `require` loads code by a caller-supplied name.
+const LUA_ALLOWED_GLOBALS: &[&str] = &[
+    "assert",
+    "error",
+    "ipairs",
+    "next",
+    "pairs",
+    "pcall",
+    "rawequal",
+    "rawget",
+    "rawlen",
+    "rawset",
+    "select",
+    "setmetatable",
+    "getmetatable",
+    "tonumber",
+    "tostring",
+    "type",
+    "xpcall",
+    "_G",
+    "_VERSION",
+];
+
+/// Globals that reach outside the sandbox. Checked after the strip so a
+/// change to the allow-list or to mlua's base library fails the invocation
+/// instead of handing these to module code.
+const LUA_FORBIDDEN_GLOBALS: &[&str] = &[
+    "dofile",
+    "loadfile",
+    "load",
+    "loadstring",
+    "print",
+    "collectgarbage",
+    "require",
+];
 
 pub struct LuaAdapter {
     memory_limit: usize,
@@ -35,6 +79,7 @@ impl RuntimeAdapter for LuaAdapter {
     ) -> Result<Value, Error> {
         let lua = Lua::new_with(StdLib::NONE, LuaOptions::new())?;
         lua.set_memory_limit(self.memory_limit)?;
+        strip_globals(&lua)?;
 
         let max_instr = self.max_instructions;
         let count = Cell::new(0u64);
@@ -55,12 +100,42 @@ impl RuntimeAdapter for LuaAdapter {
 
         let ctx_table = build_lua_ctx(&lua, invocation)?;
 
-        lua.load(code).exec()?;
+        lua.load(code).set_mode(ChunkMode::Text).exec()?;
         let main: Function = lua.globals().get(entry_point)?;
         let result = main.call::<LuaValue>(ctx_table)?;
 
         Ok(serde_json::to_value(&result)?)
     }
+}
+
+/// Removes every global not in [`LUA_ALLOWED_GLOBALS`], then asserts none of
+/// [`LUA_FORBIDDEN_GLOBALS`] survived.
+fn strip_globals(lua: &Lua) -> Result<(), Error> {
+    let globals = lua.globals();
+    let mut removed = Vec::new();
+    for pair in globals.pairs::<LuaValue, LuaValue>() {
+        let (key, _) = pair?;
+        let allowed = match &key {
+            LuaValue::String(name) => LUA_ALLOWED_GLOBALS
+                .iter()
+                .any(|allowed| *name.as_bytes() == *allowed.as_bytes()),
+            _ => false,
+        };
+        if !allowed {
+            removed.push(key);
+        }
+    }
+    for key in removed {
+        globals.raw_remove(key)?;
+    }
+    for name in LUA_FORBIDDEN_GLOBALS {
+        if !globals.raw_get::<LuaValue>(*name)?.is_nil() {
+            return Err(Error::RuntimeError(format!(
+                "Lua global `{name}` survived the sandbox allow-list"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Stringifies a value for the `ctx.log.*` functions: Lua strings are
@@ -481,9 +556,9 @@ fn build_lua_ctx(lua: &Lua, invocation: &InvocationContext) -> Result<mlua::Tabl
     }
 
     // log namespace — forwards to the host's `log` crate, prefixed with
-    // the calling module's id. Lua has no host-visible logging facility of
-    // its own (the sandbox's StdLib is NONE), so this is the only way for
-    // a module function to emit a log line.
+    // the calling module's id. `print` is stripped from the globals (see
+    // `LUA_ALLOWED_GLOBALS`), so this is the only way for a module function
+    // to emit a log line.
     let log = lua.create_table()?;
     {
         let module_id = invocation.module_id.clone();
@@ -583,7 +658,10 @@ fn bind_extensions(
     ctx: &mlua::Table,
     invocation: &InvocationContext,
 ) -> mlua::Result<()> {
-    let raise_on_failure: Function = lua.load(RAISE_ON_FAILURE).eval()?;
+    let raise_on_failure: Function = lua
+        .load(RAISE_ON_FAILURE)
+        .set_mode(ChunkMode::Text)
+        .eval()?;
     let error_meta = lua.create_table()?;
     error_meta.set(
         "__tostring",
