@@ -29,6 +29,11 @@ processes:
     command: cloudflared tunnel --url http://127.0.0.1:5050 --http-host-header api.dev.woofx3.tv
     disabled: true
 
+  connectors:
+    command: bun run src/server.ts
+    description: Platform and local connections (Twitch)
+    working_dir: connectors
+
   db:
     command: go run .
     description: proxy for accessing databases
@@ -43,11 +48,6 @@ processes:
     command: bun run dev
     description: Overlays & Stream software
     working_dir: sceneManager
-
-  twitch:
-    command: bun run src/api.ts
-    description: Twitch API + Eventbus
-    working_dir: twitch
 
   workflow:
     command: go run .
