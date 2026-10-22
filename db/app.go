@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/casbin/casbin/v2/model"
@@ -18,16 +19,23 @@ import (
 	"github.com/wolfymaster/woofx3/db/app/types"
 	outbox "github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/config"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/repository"
 )
 
 type DatabaseAppConfig struct {
 	Logger *slog.Logger
+	// IDs and Now are the process-wide id source and clock; every repository
+	// built from the App shares them with the database connection.
+	IDs database.IDSource
+	Now func() time.Time
 }
 
 type DatabaseApp struct {
 	*runtime.BaseApplication
 	logger          *slog.Logger
+	ids             database.IDSource
+	now             func() time.Time
 	db              *gorm.DB
 	moduleStorage   *sql.DB
 	casbin          *casbin.Enforcer
@@ -43,9 +51,14 @@ type DatabaseApp struct {
 }
 
 func NewDatabaseApp(cfg *DatabaseAppConfig) *DatabaseApp {
+	if cfg.IDs == nil || cfg.Now == nil {
+		panic("database app: id source and clock are required")
+	}
 	return &DatabaseApp{
 		BaseApplication: runtime.NewBaseApplication(),
 		logger:          cfg.Logger,
+		ids:             cfg.IDs,
+		now:             cfg.Now,
 	}
 }
 
@@ -54,6 +67,8 @@ func (a *DatabaseApp) App() *types.App {
 		ModuleStorage:   a.moduleStorage,
 		Casbin:          a.casbin,
 		Db:              a.db,
+		IDs:             a.ids,
+		Now:             a.now,
 		Logger:          a.logger,
 		NATSConn:        a.natsConn,
 		EventCache:      a.eventCache,

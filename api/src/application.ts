@@ -156,7 +156,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     // Runs module functions and waits for their result. It reconnects on its
     // own; until it is up, a webhook handler request answers 503.
     const functions = new BarkloaderClient({
-      wsUrl: `${config.barkloaderWsUrl}?token=${encodeURIComponent(config.barkloaderKey)}`,
+      wsUrl: config.barkloaderWsUrl,
+      key: config.barkloaderKey,
       onOpen: () => logger.info("Connected to barkloader"),
       onClose: () => logger.warn("Barkloader connection closed"),
       onError: () => logger.warn("Barkloader connection error"),
@@ -170,6 +171,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       nats: natsClient,
       functions,
       barkloaderUrl: config.barkloaderUrl,
+      barkloaderKey: config.barkloaderKey,
       streamwareUrl: config.streamwareUrl,
       sceneManagerUrl: config.sceneManagerUrl,
       apiUrl: config.apiUrl,
@@ -288,8 +290,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       await workflowHealthEmitter.start();
     }
 
-    const auth = new ClientAuth(db, logger);
-    api.setAuthInvalidate(() => auth.invalidateCache());
+    const auth = new ClientAuth(db, logger, { ttlMs: config.authCacheTtlMs });
+    api.setAuthInvalidate((clientId) => auth.invalidateCache(clientId));
     const gateway = new ApiGateway(api, auth, db, logger, config.registration);
     gateway.setWebhookClient(webhookClient);
 

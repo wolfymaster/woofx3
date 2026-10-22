@@ -40,16 +40,13 @@ func main() {
 	// default logger route through the shared transports as well.
 	slog.SetDefault(logger)
 
-	host, wsPort, err := findPort(cfg)
-	if err != nil {
-		fatalExit(sharedLogger, "Failed to resolve ports", "error", err)
-	}
-	if reachableWithoutToken(host, cfg.Token) {
-		logger.Warn("NATS listens beyond loopback without a token: anyone who can reach it can read and publish every engine message; set WOOFX3_MESSAGEBUS_TOKEN",
-			"host", host)
+	if cfg.Token == "" {
+		logger.Warn("NATS RUNS WITHOUT AUTHENTICATION (WOOFX3_MESSAGEBUS_ALLOW_UNAUTHENTICATED=true): any process that can reach it can read and publish every engine message, including requests for the Twitch token; set WOOFX3_MESSAGEBUS_TOKEN instead",
+			"host", cfg.Host,
+			"reachable_beyond_loopback", !isLoopbackHost(cfg.Host))
 	}
 
-	ns, err := createServer(cfg, logger, host, wsPort)
+	ns, err := createServer(cfg, logger)
 	if err != nil {
 		fatalExit(sharedLogger, "Failed to create server", "error", err)
 	}
@@ -58,7 +55,7 @@ func main() {
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
 	<-sigCh
-	gracefulShutdown(cfg, ns)
+	gracefulShutdown(ns)
 }
 
 func readFlags() string {
@@ -73,6 +70,9 @@ func loadConfiguration(confPath string) (*Configuration, error) {
 		return nil, err
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	if cfg.RootPath == "" {
 		return nil, &configError{msg: "rootPath must be set"}
 	}
@@ -98,33 +98,11 @@ func (e *configError) Error() string {
 	return e.msg
 }
 
-func findPort(cfg *Configuration) (host string, wsPort int, err error) {
-	host = cfg.Host
-	if host == "" {
-		host = "0.0.0.0"
-	}
-
-	if cfg.WebSocketPort > 0 {
-		wsPort = cfg.WebSocketPort
-	} else {
-		preferredWSPorts := []int{4222}
-		wsPort, err = findAvailablePort(host, preferredWSPorts)
-		if err != nil {
-			return "", 0, err
-		}
-	}
-
-	// if err := writePIDFile(cfg.RootPath, wsPort); err != nil {
-	// 	return "", 0, err
-	// }
-	return host, wsPort, nil
-}
-
-func createServer(cfg *Configuration, logger *slog.Logger, host string, wsPort int) (*server.Server, error) {
+func createServer(cfg *Configuration, logger *slog.Logger) (*server.Server, error) {
 	opts := &server.Options{
 		// The client (TCP) listener binds the same host as the WebSocket one;
 		// left unset, NATS binds it on every interface.
-		Host:   host,
+		Host:   cfg.Host,
 		Port:   cfg.Port,
 		NoLog:  cfg.NoLog,
 		NoSigs: cfg.NoSigs,
@@ -133,8 +111,8 @@ func createServer(cfg *Configuration, logger *slog.Logger, host string, wsPort i
 		Authorization: cfg.Token,
 		DontListen:    cfg.TCPDisabled,
 		Websocket: server.WebsocketOpts{
-			Host:           host,
-			Port:           wsPort,
+			Host:           cfg.Host,
+			Port:           cfg.WebSocketPort,
 			NoTLS:          true,
 			SameOrigin:     cfg.WebSocketSameOrigin,
 			AllowedOrigins: cfg.WebSocketAllowedOrigins,
@@ -160,8 +138,7 @@ func createServer(cfg *Configuration, logger *slog.Logger, host string, wsPort i
 	return ns, nil
 }
 
-func gracefulShutdown(_ *Configuration, ns *server.Server) {
-	// cleanupPIDFile(cfg.RootPath)
+func gracefulShutdown(ns *server.Server) {
 	ns.Shutdown()
 	os.Exit(0)
 }

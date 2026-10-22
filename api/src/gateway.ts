@@ -1,4 +1,9 @@
-import { type ApiGatewayContract, REGISTRATION_REFUSED, type RegisterClientOptions } from "@woofx3/api/rpc";
+import {
+  type ApiGatewayContract,
+  AUTH_UNAVAILABLE,
+  REGISTRATION_REFUSED,
+  type RegisterClientOptions,
+} from "@woofx3/api/rpc";
 import { secretsMatch } from "@woofx3/common/http/secrets";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { RpcTarget } from "capnweb";
@@ -17,6 +22,18 @@ export class RegistrationRefused extends Error {
   constructor(message: string) {
     super(message);
     this.name = REGISTRATION_REFUSED;
+  }
+}
+
+/**
+ * Credentials the engine could not check because the db proxy did not answer.
+ * Named so a caller can tell it from a rejection and retry; see
+ * AUTH_UNAVAILABLE.
+ */
+export class AuthUnavailable extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = AUTH_UNAVAILABLE;
   }
 }
 
@@ -62,12 +79,16 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
 
   async authenticate(clientId: string, clientSecret: string): Promise<ApiSession> {
     const result = await this.auth.validate(clientId, clientSecret);
-    if (!result.valid) {
+    if (!result.ok) {
+      if (result.error.kind === "auth_unavailable") {
+        throw new AuthUnavailable("The engine could not check client credentials right now; try again.");
+      }
+      // woofx3-ui matches this exact text to tell a rejected client from a failed call.
       throw new Error("Invalid client credentials");
     }
-    this.logger.info("Authenticated client", {
+    this.logger.debug("Authenticated client", {
       clientId,
-      description: result.description,
+      description: result.value.description,
     });
     return new ApiSession(this.api, clientId);
   }

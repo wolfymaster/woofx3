@@ -1,8 +1,15 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
-const initMock = mock(async () => {});
+/** The account the bot speaks as: the user of the token handed out for the chat intent. */
+const SPEAKER_ID = "42";
+
+const chatAuthProvider = {
+  getAccessTokenForIntent: async (_intent: string) => ({ userId: SPEAKER_ID }),
+};
+const initMock = mock(async (): Promise<unknown> => chatAuthProvider);
 const chatConnectMock = mock(() => {});
 const chatQuitMock = mock(() => {});
+const chatSayMock = mock(async (_channel: string, _text: string, _opts?: unknown) => {});
 
 let lastConstructedArgs: unknown;
 
@@ -14,13 +21,18 @@ mock.module("@woofx3/twitch", () => ({
     }
     init = initMock;
     ChatClient() {
-      return { connect: chatConnectMock, quit: chatQuitMock };
+      return { connect: chatConnectMock, quit: chatQuitMock, say: chatSayMock };
     }
-    broadcaster = async () => ({ id: "42", name: "linked-login" });
+    broadcaster = async () => ({ id: SPEAKER_ID, name: "linked-login" });
   },
 }));
 
 const { default: TwitchChatClientService } = await import("./twitchChat");
+const { DEFAULT_SENT_LINE_CONFIG, SentLineRegistry } = await import("../sentLines");
+
+function sentLines() {
+  return new SentLineRegistry(DEFAULT_SENT_LINE_CONFIG, () => 0);
+}
 
 const noDashboard = async (): Promise<never> => {
   throw new Error("no dashboard in this test");
@@ -40,6 +52,7 @@ describe("TwitchChatClientService", () => {
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
       requestToken: noDashboard,
       getSetting: async () => undefined,
+      sentLines: sentLines(),
     });
 
     expect(svc.name).toBe("twitchchat");
@@ -55,6 +68,7 @@ describe("TwitchChatClientService", () => {
       credentials: { clientId: "cid", clientSecret: "sec", redirectUri: "http://r" },
       requestToken: noDashboard,
       getSetting,
+      sentLines: sentLines(),
     });
 
     await svc.connect();
@@ -80,6 +94,7 @@ describe("TwitchChatClientService", () => {
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
       requestToken: noDashboard,
       getSetting: async () => undefined,
+      sentLines: sentLines(),
     });
 
     await svc.connect();
@@ -95,6 +110,7 @@ describe("TwitchChatClientService", () => {
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
       requestToken: noDashboard,
       getSetting: async () => undefined,
+      sentLines: sentLines(),
     });
     await svc.connect();
 
@@ -111,6 +127,7 @@ describe("TwitchChatClientService", () => {
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
       requestToken: noDashboard,
       getSetting: async () => undefined,
+      sentLines: sentLines(),
     });
 
     await svc.disconnect();
@@ -124,6 +141,7 @@ describe("TwitchChatClientService", () => {
       credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
       requestToken: noDashboard,
       getSetting: async () => undefined,
+      sentLines: sentLines(),
     });
     await svc.connect();
     await svc.disconnect();
@@ -140,6 +158,7 @@ describe("TwitchChatClientService before and after Twitch is linked", () => {
     credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
     requestToken: noDashboard,
     getSetting: async () => undefined,
+    sentLines: sentLines(),
   };
 
   function notLinked(): Error {
@@ -191,5 +210,73 @@ describe("TwitchChatClientService before and after Twitch is linked", () => {
 
     await expect(svc.connect()).rejects.toThrow("Twitch is down");
     expect(svc.healthcheck).toBe(false);
+  });
+});
+
+describe("TwitchChatClientService and its own lines", () => {
+  async function connected() {
+    const svc = new TwitchChatClientService({
+      channel: "chan",
+      credentials: { clientId: "c", clientSecret: "s", redirectUri: "http://localhost" },
+      requestToken: noDashboard,
+      getSetting: async () => undefined,
+      sentLines: sentLines(),
+    });
+    await svc.connect();
+    return svc;
+  }
+
+  beforeEach(() => {
+    initMock.mockClear();
+    chatSayMock.mockClear();
+  });
+
+  test("a reply that would run a command is said with a zero-width space first", async () => {
+    const svc = await connected();
+
+    await svc.say("!title pwned");
+    await svc.say("plain words");
+
+    expect(chatSayMock.mock.calls.map((call) => call[1])).toEqual(["​!title pwned", "plain words"]);
+  });
+
+  test("recognises the echo of a line it said, once, from the account it speaks as", async () => {
+    const svc = await connected();
+    await svc.say("!title pwned");
+
+    expect(svc.consumeOwnEcho("someone-else", "!title pwned")).toBe(false);
+    expect(svc.consumeOwnEcho(SPEAKER_ID, "!title pwned")).toBe(true);
+    expect(svc.consumeOwnEcho(SPEAKER_ID, "!title pwned")).toBe(false);
+  });
+
+  test("a line from the bot's account it never said is not an echo", async () => {
+    const svc = await connected();
+    await svc.say("hello");
+
+    expect(svc.consumeOwnEcho(SPEAKER_ID, "!title mine")).toBe(false);
+  });
+
+  test("refuses to connect when the chat token does not name the user it speaks as", async () => {
+    for (const token of [null, { userId: "" }]) {
+      initMock.mockImplementationOnce(async () => ({ getAccessTokenForIntent: async () => token }));
+      const svc = new TwitchChatClientService({
+        channel: "chan",
+        requestToken: noDashboard,
+        getSetting: async () => undefined,
+        sentLines: sentLines(),
+      });
+
+      await expect(svc.connect()).rejects.toThrow("chat intent");
+      expect(svc.connected).toBe(false);
+      expect(svc.healthcheck).toBe(false);
+    }
+  });
+
+  test("nothing is an echo while chat is not connected", async () => {
+    const svc = await connected();
+    await svc.say("hello");
+    await svc.disconnect();
+
+    expect(svc.consumeOwnEcho(SPEAKER_ID, "hello")).toBe(false);
   });
 });

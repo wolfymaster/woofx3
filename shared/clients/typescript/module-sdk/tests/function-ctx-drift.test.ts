@@ -106,7 +106,6 @@ const KNOWN_EXTENSIONS: Record<string, string[]> = {
     "listSources",
     "listInputs",
   ],
-  chat: ["sendMessage"],
   oauth: ["request"],
 };
 
