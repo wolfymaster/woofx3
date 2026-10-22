@@ -66,6 +66,8 @@ export interface WidgetBridgeCallbacks {
   /** Widget acked completion of a delivered event. */
   onEventComplete(subId: string, eventId: string): void;
   onDispose(): void;
+  /** The frame's shim has said hello and been answered: its document has loaded, the widget's own scripts are next. */
+  onReady?(): void;
   /** The frame has painted (the shim's `rendered`). */
   onRendered?(): void;
 }
@@ -127,8 +129,14 @@ export class WidgetBridge {
         this.sendReject(`unsupported protocol version ${msg.v}`);
         return;
       }
+      // The shim repeats hello until it hears init; only the first one is
+      // the frame becoming ready.
+      const first = !this.initialized;
       this.initialized = true;
       this.sendInit({});
+      if (first) {
+        this.callbacks.onReady?.();
+      }
       return;
     }
     if (msg.type === "rendered") {
