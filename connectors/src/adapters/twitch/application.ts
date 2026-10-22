@@ -11,6 +11,7 @@ import type { TwitchConfig } from "../../config/twitch";
 import { type Clock, errorMessage, type IdSource, type Logger } from "../../host/deps";
 import type { BusMessage, ScopedBus } from "../../host/scoped-bus";
 import type { DbProxyClientConfig } from "../../services/db-proxy";
+import { TWITCH_EVENT_SOURCE } from "./event-source";
 import { AdBreakScheduler } from "./lib/adBreakScheduler";
 import { AdBreakLeadSetting } from "./lib/adBreakSettings";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
@@ -376,7 +377,7 @@ export default class TwitchApplication {
       this.deps.selfSent,
       enqueueShoutoutOverNats(busRequest(ctx.bus))
     );
-    const events = new EventFactory({ source: "twitch" });
+    const events = new EventFactory({ source: TWITCH_EVENT_SOURCE });
     const messageBus: EventPublisher = {
       publish: (subject, data) => this.track(ctx.bus.publish(subject, data)),
     };
