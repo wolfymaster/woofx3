@@ -85,8 +85,9 @@ default, or does not expand to an absolute `http`/`https` URL.
 A service with `"run_once": true` is a step that runs to completion instead of
 a service that keeps running. It is started once, with its `args`, and the
 services that depend on it start once it exits with status 0. Any other exit
-stops every service and the orchestrator, which exits non-zero; a step is never
-restarted, and takes no `health_endpoint` or `health_timeout`. The shipped
+stops every service and the orchestrator, which exits non-zero. A step is never restarted, never asked to stop (it is
+killed only when the stop grace period is up), and takes no `health_endpoint`
+or `health_timeout`. The shipped
 `services.json` has one: `migrate` runs `migrate -cmd up`, and db-proxy, the
 only service that opens the database, depends on it. Every way of running the
 orchestrator therefore migrates before the engine starts, and an already

@@ -368,18 +368,30 @@ database).
 
 ### Shutdown
 
-On SIGTERM the orchestrator stops the services in two phases and kills whatever
-is still running after 25 seconds.
+On SIGTERM the orchestrator stops the services in reverse dependency order and
+kills whatever is still running after 25 seconds. A service is signalled only
+once every service that depends on it has exited, so the services stop in
+waves: first those nothing depends on (the edge, wooflow, twitch,
+woofwoofwoof), then the api and sceneManager, then barkloader, and last
+db-proxy and the message bus.
 
-1. The services that depend on others are signalled first and get up to 8
-   seconds. This is when the workflow engine lets runs in flight finish, and
-   records the ones it has to abandon as failed (see
+1. The waves before the last share the first 8 seconds. This is when the
+   workflow engine lets runs in flight finish, and records the ones it has to
+   abandon as failed (see
    [Stopping the Engine](../workflow/execution.md#stopping-the-engine)). db-proxy
    and the message bus are still up, so those outcomes can be written and
-   announced.
-2. db-proxy and the message bus are signalled once those services have exited,
-   or their 8 seconds are up. db-proxy stops serving, then closes module
-   storage, which makes the final flush to the replica (bounded at 10 seconds).
+   announced. A wave still running when the 8 seconds are up no longer holds
+   back the next.
+2. db-proxy and the message bus are signalled once everything else has exited,
+   or the 8 seconds are up. db-proxy stops serving, then closes module storage,
+   which makes the final flush to the replica (bounded at 10 seconds).
+
+A run-once step (the migration) is never signalled: cut off partway, a
+migration can leave a half-applied schema. One still running when the engine
+stops has the whole 25 seconds to finish and is killed only then. Its
+migrations do not run in a transaction, because the SQLite migrations that
+rebuild tables must turn foreign key enforcement off, which cannot change
+inside one.
 
 The host must allow at least 25 seconds between SIGTERM and SIGKILL; on
 Railway, set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` to 30 or more.
@@ -452,14 +464,14 @@ Consumers must ignore event types and fields they do not know.
 ### Windows
 
 Windows has no SIGTERM, so the orchestrator stops services differently there.
-The two phases and the 25 seconds are the same.
+The stop order and the 25 seconds are the same.
 
 - **Stopping a service.** Each service starts in a console process group of its
   own. To ask one to stop, the orchestrator sends it `CTRL_BREAK_EVENT`, and
   kills it if it has not exited when the grace period is up. Go services and
   Caddy receive the event as `os.Interrupt`, Bun services as `SIGBREAK`, and
   barkloader through its ctrl-break handler. All of them treat it as a graceful
-  shutdown.
+  shutdown. A run-once step is never sent it.
 - **The orchestrator needs a console.** A console control event can only be
   sent through a console that the sender shares with the target. A parent that
   starts the orchestrator without a visible window should use

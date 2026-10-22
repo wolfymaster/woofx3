@@ -284,8 +284,8 @@ type Service struct {
 	// RunOnce marks a step that runs to completion rather than a service that
 	// keeps running, such as the database migration. It is started once, the
 	// services that depend on it start once it exits with status 0, and any
-	// other exit stops the orchestrator. It is never restarted and has no
-	// health check.
+	// other exit stops the orchestrator. It is never restarted, never asked
+	// to stop, and has no health check.
 	RunOnce bool `json:"run_once,omitempty"`
 
 	// healthURL and healthTimeout are HealthEndpoint, with its variables
@@ -670,15 +670,21 @@ func (s *Supervisor) monitorDependencies(serviceProcess *ServiceProcess) {
 	}
 }
 
-// StopAll stops the services in two phases and kills whatever is still running
-// once the grace period is over. It returns once every service's exit has been
-// reported, so the caller's own final status comes after them.
+// StopAll stops the services in waves, in reverse dependency order, and kills
+// whatever is still running once the grace period is over. It returns once
+// every service's exit has been reported, so the caller's own final status
+// comes after them.
 //
-// Services that depend on others are stopped first, and the services with no
-// dependencies (db-proxy and the message bus) only once those have exited or
-// used up their share of the time. A service shutting down still has work to
-// write down and announce, and it can do neither after the database proxy and
-// the bus have gone.
+// A service shutting down still has work to write down and announce, and it
+// can do neither after the database proxy and the bus have gone, so each
+// service is asked to stop only once every service that depends on it has
+// exited (see stopWaves). The waves before the last share the dependent stop
+// period; the last, the services everything else depends on, has what is
+// left of the grace period.
+//
+// A run-once step is never asked to stop: cut off partway, a migration can
+// leave a half-applied schema. It has until the end of the grace period to
+// finish, and is killed only then.
 func (s *Supervisor) StopAll() {
 	deadline := s.clock.Now().Add(s.config.stopGracePeriod)
 	s.mu.Lock()
@@ -687,19 +693,17 @@ func (s *Supervisor) StopAll() {
 	s.mu.Unlock()
 	s.cancel()
 
-	var dependents, foundations []string
-	for name, serviceProcess := range s.services {
-		if len(serviceProcess.Service.Dependencies) > 0 {
-			dependents = append(dependents, name)
-		} else {
-			foundations = append(foundations, name)
+	waves := s.stopWaves()
+	dependentsDeadline := s.clock.Now().Add(s.config.dependentStopPeriod)
+	for i, wave := range waves {
+		s.signalStop(wave)
+		waveDeadline := dependentsDeadline
+		if i == len(waves)-1 {
+			waveDeadline = deadline
 		}
+		s.waitForExit(wave, waveDeadline)
 	}
-
-	s.signalStop(dependents)
-	s.waitForExit(dependents, s.clock.Now().Add(s.config.dependentStopPeriod))
-	s.signalStop(foundations)
-	s.waitForExit(append(dependents, foundations...), deadline)
+	s.waitForExit(s.serviceNames(), deadline)
 
 	for name, serviceProcess := range s.services {
 		if process := s.process(serviceProcess); process != nil {
@@ -709,6 +713,71 @@ func (s *Supervisor) StopAll() {
 	}
 
 	s.waitForGoroutines()
+}
+
+// stopWaves groups the services that are asked to stop, run-once steps left
+// out, so that each wave holds only services whose dependents are all in
+// earlier waves. A service's wave is how long the longest chain of services
+// depending on it is: services nothing depends on come first, the services
+// everything rests on (db-proxy, the message bus) last. A dependency on a
+// run-once step does not count: a step is not running once its dependents
+// have started, so it needs nothing kept up for it.
+func (s *Supervisor) stopWaves() [][]string {
+	dependents := make(map[string][]string)
+	for name, serviceProcess := range s.services {
+		if serviceProcess.Service.RunOnce {
+			continue
+		}
+		for _, dependency := range serviceProcess.Service.Dependencies {
+			dependents[dependency] = append(dependents[dependency], name)
+		}
+	}
+
+	depth := make(map[string]int)
+	visiting := make(map[string]bool)
+	var depthOf func(name string) int
+	depthOf = func(name string) int {
+		if known, ok := depth[name]; ok {
+			return known
+		}
+		if visiting[name] {
+			// GetStartupOrder refuses a cycle before any service starts. Were
+			// one here anyway, its members share a wave rather than the
+			// shutdown failing and leaving the engine running.
+			return 0
+		}
+		visiting[name] = true
+		deepest := 0
+		for _, dependent := range dependents[name] {
+			deepest = max(deepest, depthOf(dependent)+1)
+		}
+		visiting[name] = false
+		depth[name] = deepest
+		return deepest
+	}
+
+	var waves [][]string
+	for _, name := range s.serviceNames() {
+		if s.services[name].Service.RunOnce {
+			continue
+		}
+		wave := depthOf(name)
+		for len(waves) <= wave {
+			waves = append(waves, nil)
+		}
+		waves[wave] = append(waves[wave], name)
+	}
+	return waves
+}
+
+// serviceNames is every service's name, sorted.
+func (s *Supervisor) serviceNames() []string {
+	names := make([]string, 0, len(s.services))
+	for name := range s.services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // waitForGoroutines waits up to the exit record period for the supervisor's
@@ -758,12 +827,15 @@ func (s *Supervisor) requestStop(name string, process serviceHandle) {
 }
 
 // stopLateStart stops a process that was started while StopAll was already
-// under way, as StopAll does: a stop request, then a kill at the deadline. The
+// under way, as StopAll does: a stop request (none to a run-once step), then a
+// kill at the deadline. The
 // phase of StopAll that would have signalled it may have looked before it
 // existed, so it cannot be left to StopAll.
 func (s *Supervisor) stopLateStart(serviceProcess *ServiceProcess, process serviceHandle, deadline time.Time) {
 	name := serviceProcess.Service.Name
-	s.requestStop(name, process)
+	if !serviceProcess.Service.RunOnce {
+		s.requestStop(name, process)
+	}
 	running := func() bool { return s.process(serviceProcess) == process }
 	for running() && s.clock.Now().Before(deadline) {
 		s.clock.Sleep(context.Background(), s.config.stopPollInterval)
@@ -962,6 +1034,15 @@ func (s *Supervisor) startServiceProcess(serviceProcess *ServiceProcess, binaryP
 	return nil
 }
 
+// deliverRunOnceFailure hands a run-once step's failure to RunOnceFailed. Only
+// the first is kept; one is enough to stop the orchestrator.
+func (s *Supervisor) deliverRunOnceFailure(err error) {
+	select {
+	case s.runOnceFailed <- err:
+	default:
+	}
+}
+
 // recordExit waits for a service's process to exit and records how it ended.
 // A service is restarted once its dependencies allow, unless the supervisor is
 // stopping. A run-once step never is: it completes on status 0, and any other
@@ -999,10 +1080,7 @@ func (s *Supervisor) recordExit(serviceProcess *ServiceProcess, process serviceH
 		s.logger.Info("All services are healthy")
 	}
 	if failed {
-		select {
-		case s.runOnceFailed <- fmt.Errorf("%s: %s", service.Name, exit.description):
-		default:
-		}
+		s.deliverRunOnceFailure(fmt.Errorf("%s: %s", service.Name, exit.description))
 	}
 	if !service.RunOnce && !stopping {
 		s.spawn(func() { s.monitorDependencies(serviceProcess) })

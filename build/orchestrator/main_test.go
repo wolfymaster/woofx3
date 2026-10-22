@@ -1178,9 +1178,13 @@ func TestAFailedRunOnceStepKeepsItsDependentsDownAndIsDelivered(t *testing.T) {
 	if !strings.Contains(failure.Error(), "migrate") || !strings.Contains(failure.Error(), "exit status 1") {
 		t.Errorf("failure = %q, want the step and how it exited", failure)
 	}
-	// db-proxy's dependency monitor polls on the fake clock; give it rounds
-	// in which it could start db-proxy, were a stopped step enough.
-	time.Sleep(50 * time.Millisecond)
+	// db-proxy's dependency monitor polls on the fake clock; let that clock
+	// run through rounds in which it could start db-proxy, were a stopped
+	// step enough.
+	failedAt := supervisor.clock.Now()
+	waitFor(t, "the dependency monitor to poll", func() bool {
+		return supervisor.clock.Now().Sub(failedAt) > 20*supervisor.config.pollInterval
+	})
 	supervisor.StopAll()
 
 	if got := processes.startedServices(); !reflect.DeepEqual(got, []string{"migrate"}) {
