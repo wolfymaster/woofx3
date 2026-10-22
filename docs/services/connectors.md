@@ -355,8 +355,9 @@ Each `user.message` goes through these steps in order:
    [Own lines on the chat feed](#own-lines-on-the-chat-feed)) is dropped. A
    line with no known `platform` attribute or no speaker id is refused. A
    line is trusted only when its CloudEvent `source` is its platform
-   adapter's (`twitch` for Twitch). An untrusted line, such as one the api's
-   event simulator published, still runs commands, but its badges count as
+   adapter's (`twitch` for Twitch), and a trusted line with no speaker login
+   is refused. An untrusted line, such as one the api's event simulator
+   published, still runs commands, but its badges count as
    unknown: they never satisfy a role, and it writes no groups. A line said
    in a partner channel during a shared chat session never counts as the
    broadcaster or a moderator, and writes no groups either.

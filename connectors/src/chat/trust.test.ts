@@ -35,6 +35,8 @@ describe("readChatLine", () => {
     { name: "no speaker id", value: envelope({}, { chatterId: undefined }), problem: "no speaker id" },
     { name: "a blank speaker id", value: envelope({}, { chatterId: "  " }), problem: "no speaker id" },
     { name: "no text", value: envelope({}, { message: 42 }), problem: "no message text" },
+    { name: "trust but no login", value: envelope({}, { chatterLogin: undefined }), problem: "no speaker login" },
+    { name: "trust but a blank login", value: envelope({}, { chatterLogin: " " }), problem: "no speaker login" },
     {
       name: "no message id and no event id",
       value: envelope({ id: undefined }, { messageId: undefined }),
@@ -105,8 +107,8 @@ describe("readChatLine", () => {
     expect(reading.kind === "line" && reading.line.membership).toEqual(membership);
   });
 
-  test("without a login, the display name stands in, lowercased", () => {
-    const reading = readChatLine(envelope({}, { chatterLogin: undefined, chatterName: "WolfyMaster" }));
+  test("an untrusted line without a login has its display name stand in, lowercased", () => {
+    const reading = readChatLine(envelope({ source: "api" }, { chatterLogin: undefined, chatterName: "WolfyMaster" }));
     expect(reading.kind === "line" && reading.line.chatterLogin).toBe("wolfymaster");
   });
 });

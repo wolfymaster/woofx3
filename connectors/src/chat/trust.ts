@@ -58,7 +58,10 @@ export type LineReading =
 /**
  * Reads a `user.message` CloudEvent. A line with no platform, no speaker id
  * or no text is refused rather than guessed at: every per-viewer decision
- * after this keys on the speaker's id.
+ * after this keys on the speaker's id. A trusted line with no login is
+ * refused too, since its login names the groups it writes and the grants it
+ * reads. An untrusted line's identity is the publisher's say-so either way,
+ * so its display name stands in for a missing login.
  */
 export function readChatLine(envelope: unknown): LineReading {
   if (!isRecord(envelope)) {
@@ -89,6 +92,10 @@ export function readChatLine(envelope: unknown): LineReading {
   if (lineId === undefined) {
     return refused("the line has no message id and the event has no id");
   }
+  const reportedLogin = nonBlank(data.chatterLogin);
+  if (trusted && reportedLogin === undefined) {
+    return refused("a trusted line names no speaker login");
+  }
   const chatterName = nonBlank(data.chatterName) ?? chatterId;
   const sharedChat = nonBlank(data.channelId) !== undefined;
   return {
@@ -96,7 +103,7 @@ export function readChatLine(envelope: unknown): LineReading {
     line: {
       platform,
       viewer: viewerKey(platform, chatterId),
-      chatterLogin: (nonBlank(data.chatterLogin) ?? chatterName).toLowerCase(),
+      chatterLogin: (reportedLogin ?? chatterName).toLowerCase(),
       chatterName,
       text: data.message,
       messageId: trusted ? platformMessageId : undefined,
