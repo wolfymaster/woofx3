@@ -15,6 +15,7 @@ import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import { frameVersion } from "./frame-catalog";
 import { frameMediaProxyBase, type MediaProxy } from "./media-proxy";
 import type { OverlayHost } from "./scene-host";
+import { StageTimings } from "../stage-timings";
 
 /**
  * Uniform blank document: served byte-for-byte identically for an
@@ -121,7 +122,16 @@ export interface FrameAssemblerOptions {
   /** Points external media in a themeable widget's boot settings at the
    *  engine's media proxy. Settings pass through as they are when absent. */
   mediaProxy?: MediaProxy;
+  /** Milliseconds on a monotonic clock, for the `Server-Timing` header; `performance.now` when absent. */
+  now?: () => number;
 }
+
+/**
+ * The stages a frame document's `Server-Timing` names: reading back the alert
+ * event it belongs to, asking barkloader for the widget's entry, and reading
+ * the module's linked resources.
+ */
+type FrameStage = "event" | "frame" | "links";
 
 /** A frame document whose URL carries its current version never changes. */
 const CACHED_FRAME_CACHE_CONTROL = "public, max-age=31536000, immutable";
@@ -149,6 +159,7 @@ function defaultNonce(): string {
  */
 export class FrameAssembler {
   private readonly generateNonce: () => string;
+  private readonly now: () => number;
 
   constructor(
     private readonly host: OverlayHost,
@@ -156,6 +167,7 @@ export class FrameAssembler {
     private readonly opts: FrameAssemblerOptions
   ) {
     this.generateNonce = opts.generateNonce ?? defaultNonce;
+    this.now = opts.now ?? (() => performance.now());
   }
 
   /** Uniform blank response — identical bytes for every refusal path. */
@@ -179,7 +191,10 @@ export class FrameAssembler {
   ): Promise<Response> {
     const themeId = themeParam?.trim() || undefined;
     const widgetCanonicalId = `${moduleId}:widget:${manifestId}`;
-    const frameInfo = await this.loadFrameInfo(moduleId, manifestId, widgetCanonicalId, themeId);
+    const timings = new StageTimings<FrameStage>(this.now);
+    const frameInfo = await timings.time("frame", () =>
+      this.loadFrameInfo(moduleId, manifestId, widgetCanonicalId, themeId)
+    );
     if (frameInfo === null) {
       this.logger.warn("widget entry document unavailable", { widgetCanonicalId });
       return new Response("<!doctype html><!-- widget entry unavailable -->", {
@@ -206,7 +221,7 @@ export class FrameAssembler {
       ...frameFonts(frameInfo),
     };
     const cacheable = versionParam !== null && versionParam === frameVersion(frameInfo);
-    return this.render(frameInfo, boot, cacheable ? CACHED_FRAME_CACHE_CONTROL : "no-cache");
+    return this.render(frameInfo, boot, cacheable ? CACHED_FRAME_CACHE_CONTROL : "no-cache", timings);
   }
 
   /**
@@ -223,7 +238,8 @@ export class FrameAssembler {
     widgetId: string,
     nonceParam: string | null
   ): Promise<Response> {
-    const event = await this.host.loadSceneEvent(sceneId, eventId);
+    const timings = new StageTimings<FrameStage>(this.now);
+    const event = await timings.time("event", () => this.host.loadSceneEvent(sceneId, eventId));
     const delivery = event?.type === ALERT_EVENT_TYPE ? parseAlertDelivery(event.value) : null;
     const widget =
       delivery && Object.hasOwn(delivery.layout.widgets, widgetId) ? delivery.layout.widgets[widgetId] : undefined;
@@ -241,7 +257,8 @@ export class FrameAssembler {
         settings: widget.settings,
         surface: "alert",
       },
-      nonceParam
+      nonceParam,
+      timings
     );
   }
 
@@ -262,14 +279,16 @@ export class FrameAssembler {
     }
   }
 
-  private async assembleFrame(sceneId: string, target: FrameTarget, nonceParam: string | null): Promise<Response> {
+  private async assembleFrame(
+    sceneId: string,
+    target: FrameTarget,
+    nonceParam: string | null,
+    timings: StageTimings<FrameStage>
+  ): Promise<Response> {
     const nonce = nonceParam && NONCE_PATTERN.test(nonceParam) ? nonceParam : this.generateNonce();
 
-    const frameInfo = await this.loadFrameInfo(
-      target.moduleId,
-      target.manifestId,
-      target.widgetCanonicalId,
-      selectedThemeId(target.settings)
+    const frameInfo = await timings.time("frame", () =>
+      this.loadFrameInfo(target.moduleId, target.manifestId, target.widgetCanonicalId, selectedThemeId(target.settings))
     );
     if (frameInfo === null) {
       this.logger.warn("widget entry document unavailable", {
@@ -294,7 +313,7 @@ export class FrameAssembler {
       });
     }
 
-    const linkedResources = await this.loadLinkedResources(target.moduleId);
+    const linkedResources = await timings.time("links", () => this.loadLinkedResources(target.moduleId));
     const boot: WidgetBootPayload = {
       v: PROTOCOL_VERSION,
       nonce,
@@ -310,7 +329,7 @@ export class FrameAssembler {
       linkedResources,
       ...frameFonts(frameInfo),
     };
-    return this.render(frameInfo, boot, "no-store");
+    return this.render(frameInfo, boot, "no-store", timings);
   }
 
   /**
@@ -329,10 +348,14 @@ export class FrameAssembler {
   private render(
     frameInfo: BarkloaderFrameInfo,
     boot: WidgetBootPayload | WidgetFrameBoot,
-    cacheControl: string
+    cacheControl: string,
+    timings: StageTimings<FrameStage>
   ): Response {
     const { html, headers } = frameDocument(frameInfo, boot);
-    return new Response(html, { status: 200, headers: { ...headers, "Cache-Control": cacheControl } });
+    return new Response(html, {
+      status: 200,
+      headers: { ...headers, "Cache-Control": cacheControl, "Server-Timing": timings.serverTiming() },
+    });
   }
 
   private async loadFrameInfo(

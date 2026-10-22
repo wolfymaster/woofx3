@@ -8,6 +8,7 @@ import {
   parseAlertLayout,
 } from "../scene/alert-layout";
 import type { OverlayHost } from "../scene/scene-host";
+import { StageTimings } from "../stage-timings";
 import type { DeliveryStore } from "./delivery-store";
 
 /** The `ui.notify.alert` envelope the workflow engine publishes and records. */
@@ -90,7 +91,16 @@ export interface AlertDispatchDeps {
   host: Pick<OverlayHost, "loadWidgetCatalog" | "loadSceneById">;
   deliveryStore: Pick<DeliveryStore, "connectedSceneIds" | "recordEvent">;
   logger: Logger;
+  /** Milliseconds on a monotonic clock, for the dispatch's stage timings; `performance.now` when absent. */
+  now?: () => number;
 }
+
+/**
+ * The stages an alert's dispatch is timed by: reading its layout against the
+ * widget catalog, finding the alert widgets of each running scene, and
+ * recording (then pushing) each scene's delivery.
+ */
+type DispatchStage = "layout" | "scenes" | "record";
 
 /** Where an alert went: queued on `scenes` running scenes, or refused with a reason. */
 export type AlertDispatchOutcome = { ok: true; scenes: number } | { ok: false; reason: string };
@@ -112,7 +122,9 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
   const target: AlertReportTarget = { rowId: typeof raw.rowId === "string" ? raw.rowId : "", envelopeId: alertId };
   const parameters =
     typeof raw.parameters === "object" && raw.parameters !== null ? (raw.parameters as Record<string, unknown>) : {};
-  const parsed = parseAlertLayout(parameters.layout, await host.loadWidgetCatalog());
+  const timings = new StageTimings<DispatchStage>(deps.now ?? (() => performance.now()));
+  const catalog = await timings.time("layout", () => host.loadWidgetCatalog());
+  const parsed = parseAlertLayout(parameters.layout, catalog);
   if (!parsed.ok) {
     logger.warn("ui.notify.alert: unusable parameters.layout; dropping", { alertId, reason: parsed.reason });
     await reportAlertNotPlayed(db, logger, { target, reason: parsed.reason });
@@ -157,7 +169,13 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
     layout: parsed.layout,
     event: eventType ? { type: eventType, data: raw.event?.data ?? null } : null,
   };
-  return fanOutAlert({ target: alertTarget(parameters), report: target, delivery }, deps);
+  const outcome = await fanOutAlert({ target: alertTarget(parameters), report: target, delivery }, deps, timings);
+  if (outcome.ok) {
+    // One line per alert, so where an alert's time went before any page
+    // heard of it can be read off the log. Alert volume is low.
+    logger.info("ui.notify.alert: dispatched", { alertId, scenes: outcome.scenes, ...timings.logFields() });
+  }
+  return outcome;
 }
 
 /**
@@ -198,13 +216,14 @@ export async function reportAlertNotPlayed(
  */
 async function fanOutAlert(
   alert: { target: string; report: AlertReportTarget; delivery: AlertDelivery },
-  deps: AlertDispatchDeps
+  deps: AlertDispatchDeps,
+  timings: StageTimings<DispatchStage>
 ): Promise<AlertDispatchOutcome> {
   const { db, host, deliveryStore, logger } = deps;
   const connectedSceneIds = deliveryStore.connectedSceneIds();
   let recorded = 0;
   for (const sceneId of connectedSceneIds) {
-    const state = await host.loadSceneById(sceneId);
+    const state = await timings.time("scenes", () => host.loadSceneById(sceneId));
     // An alert composition is played by steps, never delivered to: only a
     // scene's alert widgets receive alerts, even if a page were open on one.
     if (!state || state.kind !== "scene") {
@@ -214,13 +233,15 @@ async function fanOutAlert(
     if (targetInstanceIds.length === 0) {
       continue;
     }
-    const eventId = await deliveryStore.recordEvent({
-      sceneId,
-      type: ALERT_EVENT_TYPE,
-      key: alert.delivery.alertId,
-      value: alert.delivery,
-      targetInstanceIds,
-    });
+    const eventId = await timings.time("record", () =>
+      deliveryStore.recordEvent({
+        sceneId,
+        type: ALERT_EVENT_TYPE,
+        key: alert.delivery.alertId,
+        value: alert.delivery,
+        targetInstanceIds,
+      })
+    );
     if (!eventId) {
       logger.warn("fanOutAlert: recordEvent failed", { sceneId, alertId: alert.delivery.alertId });
       continue;

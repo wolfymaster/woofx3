@@ -35,7 +35,7 @@ class FakeArea implements AlertArea {
   dispose(): void {
     this.finish();
   }
-  readAhead(): void {}
+  delivered(): void {}
 }
 
 function setup() {

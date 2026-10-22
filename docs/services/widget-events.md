@@ -158,6 +158,29 @@ none. Once every timed widget is done, or after 5 seconds when none is timed, th
 widgets play their exits; once those are over the page removes the frames, acks the
 scene event, and plays the alert widget's next alert.
 
+#### Measuring an alert's latency
+
+Where an alert's time goes is recorded at both ends, so a slow alert can be traced
+without adding logging:
+
+- **Dispatch.** The scene manager logs `ui.notify.alert: dispatched` once per alert it
+  delivers, with `layoutMs` (reading the layout against the widget catalog), `scenesMs`
+  (finding each running scene's alert widgets), `recordMs` (recording and pushing each
+  scene's delivery) and `totalMs`, timed from the moment the alert arrived on the bus.
+- **Frame documents.** Every widget frame document carries a `Server-Timing` header:
+  `event` (reading the alert's scene event back), `frame` (barkloader's widget entry),
+  `links` (the module's linked resources) and `total`. Browser devtools show it on the
+  frame's request.
+- **The page.** The overlay writes User Timing marks named
+  `woofx3.alert/{eventId}/{stage}` for `delivered`, `started` and `finished`, and
+  `woofx3.alert/{eventId}/{widgetId}/{stage}` for each frame's `mounted`, `ready` (the
+  shim's hello was answered: the document has loaded), `subscribed` (the widget's own
+  script has run) and `rendered`. The measure `woofx3.alert/{eventId}/on-screen` spans
+  from delivery to the first widget's paint. They appear in the devtools Performance
+  panel, and `performance.getEntriesByType("mark")` reads them from a script. Only the
+  most recent 20 alerts' entries are kept, since an overlay can stay open for a whole
+  stream.
+
 #### Skip, clear and replay
 
 An operator can act on the alerts queued in open overlays through the api's

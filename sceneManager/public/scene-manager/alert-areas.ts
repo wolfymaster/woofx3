@@ -12,11 +12,12 @@ import {
   type WidgetBridge,
   type WidgetStatusReportPayload,
 } from "@woofx3/widget-host/page";
+import { AlertTimings, BROWSER_MARKS } from "./alert-timing";
 import { AlertWidget, type AlertWidgetOptions } from "./alert-widget";
 import { PAGE_CLOCK } from "./page-clock";
 
 /** What the page plays an area's alerts with: an `AlertWidget`. */
-export type AlertArea = Pick<AlertWidget, "play" | "stop" | "dispose" | "readAhead">;
+export type AlertArea = Pick<AlertWidget, "play" | "stop" | "dispose" | "delivered">;
 
 export interface AlertAreasDeps {
   /** Where an area's element, and its alerts' stages and frames, are made. */
@@ -41,12 +42,17 @@ export interface AlertAreasDeps {
   /** What alerts play on; the page clock (page-clock.ts) when absent. */
   clock?: SchedulerClock<unknown>;
   host?: PageHost;
+  /** Where alerts' steps are marked; the browser's User Timing when absent. */
+  timings?: AlertTimings;
 }
 
 export class AlertAreas {
   private readonly areas = new Map<string, AlertArea>();
+  private readonly timings: AlertTimings;
 
-  constructor(private readonly deps: AlertAreasDeps) {}
+  constructor(private readonly deps: AlertAreasDeps) {
+    this.timings = deps.timings ?? new AlertTimings(BROWSER_MARKS);
+  }
 
   /** Draw the alert area for placement `instanceId` in `slot`; the result removes it. */
   mount(instanceId: string, slot: HTMLElement): () => void {
@@ -70,6 +76,7 @@ export class AlertAreas {
       document: deps.document,
       clock: deps.clock ?? PAGE_CLOCK,
       host: deps.host ?? BROWSER_HOST,
+      timings: this.timings,
       onFinished: (eventId) => {
         if (registration !== null) {
           deps.queues.complete(registration, eventId);
@@ -110,8 +117,8 @@ export class AlertAreas {
     };
   }
 
-  /** An alert delivered to placement `instanceId`: start reading its files before its turn. */
-  readAhead(instanceId: string, value: unknown): void {
-    this.areas.get(instanceId)?.readAhead(value);
+  /** Alert `eventId` was delivered to placement `instanceId`; nothing happens when that is not an alert area. */
+  delivered(instanceId: string, eventId: string, value: unknown): void {
+    this.areas.get(instanceId)?.delivered(eventId, value);
   }
 }

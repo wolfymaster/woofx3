@@ -34,6 +34,7 @@ import {
   type WidgetBridge,
   type WidgetStatusReportPayload,
 } from "@woofx3/widget-host/page";
+import type { AlertTimings } from "./alert-timing";
 import { BehaviorRelay, entranceOf } from "./widget-behaviors";
 
 /** The slice of the server's `AlertDelivery` the page needs. */
@@ -178,6 +179,8 @@ export interface AlertWidgetOptions {
   /** What alerts play on (page-clock.ts). */
   clock: SchedulerClock<unknown>;
   host: PageHost;
+  /** Where each step of an alert is marked (alert-timing.ts). */
+  timings: AlertTimings;
 }
 
 export class AlertWidget {
@@ -222,10 +225,11 @@ export class AlertWidget {
   }
 
   /**
-   * Start reading the files an alert's widgets will ask for, as soon as the
-   * alert is delivered rather than when its turn comes.
+   * Alert `eventId` reached the page: mark when, and start reading the files
+   * its widgets will ask for now rather than when its turn comes.
    */
-  readAhead(value: unknown): void {
+  delivered(eventId: string, value: unknown): void {
+    this.opts.timings.alert(eventId, "delivered");
     const delivery = parseDelivery(value);
     if (delivery) {
       readAheadAlertAssets(this.opts.assets, delivery.layout);
@@ -233,7 +237,8 @@ export class AlertWidget {
   }
 
   private run(eventId: string, delivery: AlertDelivery): void {
-    const { element } = this.opts;
+    const { element, timings } = this.opts;
+    timings.alert(eventId, "started");
     const canvas = canvasOf(delivery.layout);
 
     const stage = this.opts.document.createElement("div");
@@ -269,6 +274,7 @@ export class AlertWidget {
       mountFrame: (slot, widgetId, entrance, facts) =>
         this.mountFrame(eventId, alertEvent, delivery.layout, slot, widgetId, entrance, facts),
       onFinished: () => {
+        timings.alert(eventId, "finished");
         tearDown();
         this.opts.onFinished(eventId);
       },
@@ -284,7 +290,7 @@ export class AlertWidget {
     entrance: WidgetBehaviorState | null,
     facts: AlertFrameFacts
   ): AlertFrame {
-    const { sceneBase, bridges } = this.opts;
+    const { sceneBase, bridges, timings } = this.opts;
     const instanceId = `${eventId}.${widgetId}`;
     const placement = layout.widgets[widgetId];
     const moduleId = placement ? moduleIdOfCanonicalId(placement.widget) : null;
@@ -303,16 +309,22 @@ export class AlertWidget {
       callbacks: ({ bridge }) => ({
         onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId ?? "", report),
         onAssetLoad: this.opts.assets.loaderFor(moduleId),
+        onReady: () => timings.frame(eventId, widgetId, "ready"),
         onEventsSubscribe: (subId, queue) => {
+          timings.frame(eventId, widgetId, "subscribed");
           facts.subscribed(queue?.autoComplete === false);
           bridge().sendEvent(subId, alertEvent);
         },
         onEventsUnsubscribe: () => {},
         onEventComplete: () => facts.completed(),
         onDispose: () => {},
-        onRendered: () => facts.rendered(),
+        onRendered: () => {
+          timings.frame(eventId, widgetId, "rendered");
+          facts.rendered();
+        },
       }),
     });
+    timings.frame(eventId, widgetId, "mounted");
     return {
       sendBehavior: (state) => frame.bridge.sendBehavior(state),
       unmount: () => frame.unmount(),

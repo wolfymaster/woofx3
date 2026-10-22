@@ -61,6 +61,19 @@ describe("FrameAssembler.assembleAlertWidget", () => {
     expect(resp.headers.get("Content-Security-Policy")).toBe("connect-src 'none'; sandbox allow-scripts");
   });
 
+  it("says in Server-Timing how long reading the event, the widget's entry and its links took", async () => {
+    let time = 0;
+    const assembler = new FrameAssembler(hostWithEvent({ type: "alert", value: delivery }), fakeLogger(), {
+      barkloader,
+      now: () => {
+        time += 2;
+        return time;
+      },
+    });
+    const resp = await assembler.assembleAlertWidget("scene-1", "evt-1", "t1", null);
+    expect(resp.headers.get("Server-Timing")).toBe("event;dur=2, frame;dur=2, links;dur=2, total;dur=14");
+  });
+
   it("frames a widget of a composition-shaped delivery", async () => {
     const composed = {
       alertId: "alert-2",

@@ -8,6 +8,7 @@ import type { RenderAnimation, RenderStyle } from "@woofx3/scene/runtime";
 import { generateNonce, type PageHost } from "@woofx3/widget-host/page";
 import { encodeStreamFrame, type StreamFrame } from "../../contract/overlay-stream";
 import type { SceneConfig } from "../../contract/scene-config";
+import type { PageMarks } from "../../public/scene-manager/alert-timing";
 import { createOverlay, type OverlayEnv } from "../../public/scene-manager/overlay";
 import type { ReconnectCoordinator } from "../../public/scene-manager/reconnect-coordinator";
 
@@ -206,6 +207,12 @@ function setup(options: { refreshStatus?: number } = {}) {
     stop: () => {},
   };
   const connected: boolean[] = [];
+  const marked: string[] = [];
+  const marks: PageMarks = {
+    mark: (name) => marked.push(name),
+    measure: (name) => marked.push(name),
+    clear: () => {},
+  };
   const body = new FakeElement("body");
   const root = new FakeElement("div");
   const document = {
@@ -236,6 +243,7 @@ function setup(options: { refreshStatus?: number } = {}) {
       clearTimer: (handle) => timers.clearTimeout(handle),
     },
     coordinator,
+    marks,
   };
   createOverlay(env);
   const frames = () => root.descendants().filter((element) => element.tag === "iframe");
@@ -246,7 +254,7 @@ function setup(options: { refreshStatus?: number } = {}) {
       listener(event as unknown as MessageEvent);
     }
   };
-  return { env, timers, warnings, streams, requests, reloads, peerReloads, connected, body, frames, fromFrame };
+  return { env, timers, warnings, streams, requests, reloads, peerReloads, connected, marked, body, frames, fromFrame };
 }
 
 describe("an overlay page", () => {
@@ -297,6 +305,53 @@ describe("an overlay page", () => {
     const ack = page.requests.find((request) => request.url.includes("/delivered"));
     expect(ack?.method).toBe("POST");
     expect(ack?.url).toContain("ev-1");
+  });
+
+  it("marks each step of an alert, from its delivery to its widget's first paint", async () => {
+    const page = setup();
+    await settle();
+    await page.streams[0]!.send({ kind: "hello", bootId: "boot-1", seq: 0, draftSeq: 0 });
+    const layout = {
+      layout: { width: 800, height: 600 },
+      widgets: {
+        t1: {
+          widget: "woofx3:widget:text",
+          x: 0,
+          y: 0,
+          width: 100,
+          height: 100,
+          visible: true,
+          z: "a1",
+          settings: {},
+          name: "",
+          rotation: 0,
+          opacity: 1,
+          locked: false,
+          extra: {},
+        },
+      },
+      behaviors: {},
+    };
+
+    await page.streams[0]!.send({
+      kind: "delivery",
+      frame: { eventId: "ev-9", instanceId: "a1", type: "alert", key: "alert-9", value: { layout, event: null } },
+    });
+    await page.timers.advance(10);
+    const frame = page.frames().find((element) => element.src.includes("/alert/ev-9/"))!;
+    page.fromFrame(frame, { type: "hello", instanceId: "ev-9.t1", sdkVersion: "test" });
+    page.fromFrame(frame, { type: "events.subscribe", subId: "sub-1" });
+    page.fromFrame(frame, { type: "rendered" });
+
+    expect(page.marked).toEqual([
+      "woofx3.alert/ev-9/delivered",
+      "woofx3.alert/ev-9/started",
+      "woofx3.alert/ev-9/t1/mounted",
+      "woofx3.alert/ev-9/t1/ready",
+      "woofx3.alert/ev-9/t1/subscribed",
+      "woofx3.alert/ev-9/t1/rendered",
+      "woofx3.alert/ev-9/on-screen",
+    ]);
   });
 
   it("reloads, telling the other overlays first, when the server it reconnects to has restarted", async () => {
