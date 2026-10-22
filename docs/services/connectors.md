@@ -369,7 +369,12 @@ Each `user.message` goes through these steps in order:
    platforms.
 4. **Authorise.** A public command runs for anyone. A command that allows
    roles runs for a speaker the platform reported in one. Anyone else needs
-   a grant on `command/<name>`. A refused speaker is told so.
+   a grant on `command/<name>`. A refused speaker is told so. The grant is
+   looked up by the login the line names, and an untrusted line's login is
+   whatever its publisher wrote, so anything that can publish on the bus can
+   run a command granted to a login it names. Bus publishers are not yet
+   authenticated per identity; until they are, a grant is only as strong as
+   the bus's own access control.
 5. **Cooldown.** The cooldown is per command. A line inside it is dropped
    completely and is not announced.
 6. **Handler.** The invocation is announced on `chat.command.<slug>`
