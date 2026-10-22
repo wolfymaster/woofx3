@@ -54,7 +54,11 @@ type StoredDashboardToken = TwitchTokenGrant & { dashboardClientId: string };
  * value, so the access token and the refresh token that goes with it are
  * always written together.
  */
-export type StoredPublicToken = PublicClientToken & { userId: string; publicClientId: string };
+export type StoredPublicToken = Omit<PublicClientToken, "scope"> & {
+  scope: string[];
+  userId: string;
+  publicClientId: string;
+};
 
 /** What `TwitchTokenSource` needs to refresh a public app's token; `TwitchOAuthClient` provides it. */
 export type PublicClientRefresher = Pick<TwitchOAuthClient, "refresh">;
@@ -351,7 +355,12 @@ export class TwitchTokenSource implements TwitchCredentials {
       }
       throw new Error(`could not refresh the Twitch token: ${errorMessage(err)}`);
     }
-    const next: StoredPublicToken = { ...refreshed, userId: current.userId, publicClientId: current.publicClientId };
+    const next: StoredPublicToken = {
+      ...refreshed,
+      scope: refreshed.scope ?? current.scope,
+      userId: current.userId,
+      publicClientId: current.publicClientId,
+    };
     let saved: boolean;
     try {
       saved = await this.savePublicToken(current.refreshToken, next);

@@ -577,6 +577,26 @@ describe("the link", () => {
     expect((await source.link()).account?.authFailedAt).toBeNull();
   });
 
+  test("a public refresh whose answer lists no scopes keeps the stored ones, and is not announced", async () => {
+    const { db, state } = store(PUBLIC);
+    const refresh = mock(
+      async (): Promise<PublicClientToken> => ({
+        accessToken: "access-2",
+        refreshToken: "refresh-2",
+        scope: null,
+        expiresIn: 3600,
+        obtainmentTimestamp: LATER,
+      })
+    );
+    const { source, changes } = watched({ db, publicClient: { refresh } });
+
+    await source.servedToken(false);
+
+    expect(JSON.parse(state.value ?? "").scope).toEqual(PUBLIC.scope);
+    expect((await source.link()).account?.scopes).toEqual(PUBLIC.scope);
+    expect(changes).toEqual([]);
+  });
+
   test("an ordinary renewal of the same account and scopes is not announced", async () => {
     const { db } = store(PUBLIC);
     const refresh = mock(
