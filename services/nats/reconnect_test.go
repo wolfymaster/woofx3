@@ -26,7 +26,8 @@ func startTCPServer(t *testing.T, port int) *server.Server {
 	cfg := DefaultConfiguration()
 	cfg.Port = port
 	cfg.NoLog = true
-	ns, err := createServer(cfg, slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)), cfg.Host, -1)
+	cfg.WebSocketPort = -1
+	ns, err := createServer(cfg, slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)))
 	if err != nil {
 		t.Fatalf("createServer: %v", err)
 	}
