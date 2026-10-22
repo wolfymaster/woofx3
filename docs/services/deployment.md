@@ -228,6 +228,29 @@ registration, so the lock survives restarts; removing every client opens
 registration again. Registrations are handled one at a time in this mode, so two
 callers racing on a new engine cannot both be first.
 
+### Refusals
+
+capnweb sends a rejected call's error name and message, but the receiving side
+rebuilds any name it does not know as a plain `Error`. So each refusal is
+carried in its message, which starts with a marker that a guard from
+`@woofx3/api/rpc` recognises:
+
+| Call | Message starts with | Guard |
+|---|---|---|
+| `registerClient` | `RegistrationRefused: ` | `isRegistrationRefused` |
+| `authenticate` | `AuthenticationRefused: ` | `isAuthenticationRefused` |
+
+The marker is for code, not people: `refusalReason(err)` returns the sentence
+after it, to show to a user, or null when the error is not a refusal.
+
+An authentication refusal means db-proxy does not know the client id and
+secret. Retrying the same credentials cannot succeed, so a client stops and
+asks for new ones instead of backing off. When the api cannot ask db-proxy, or
+db-proxy fails, `authenticate` rejects with an ordinary error, which a client
+retries. Accepted credentials are trusted for a minute without asking db-proxy
+again, keyed by the client id and a hash of the secret, so neither a wrong
+secret nor an earlier success changes the answer for another secret.
+
 ## Barkloader processing callbacks
 
 barkloader reports asynchronous asset jobs (thumbnails) by POSTing to the api's
