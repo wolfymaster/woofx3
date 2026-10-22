@@ -47,15 +47,18 @@ func NewAlertService(
 	alertRepo *repo.AlertRepository,
 	publisher *workers.EventPublisher,
 	retention AlertRetention,
-) client.AlertService {
-	if retention.Period <= 0 || retention.Now == nil {
-		panic("NewAlertService: retention needs a positive period and a clock")
+) (client.AlertService, error) {
+	if retention.Period <= 0 {
+		return nil, fmt.Errorf("alert retention period must be positive, got %s", retention.Period)
+	}
+	if retention.Now == nil {
+		return nil, fmt.Errorf("alert retention needs a clock")
 	}
 	return &alertService{
 		repo:      alertRepo,
 		publisher: publisher,
 		retention: retention,
-	}
+	}, nil
 }
 
 // alertOutcomeToProto maps every repository outcome to its wire value.

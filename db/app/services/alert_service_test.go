@@ -39,7 +39,11 @@ func newAlertSvc(t *testing.T, db *gorm.DB) client.AlertService {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	publisher := workers.NewEventPublisher(repo.NewDbEventRepository(db), logger)
-	return NewAlertService(repo.NewAlertRepository(db), publisher, testAlertRetention)
+	svc, err := NewAlertService(repo.NewAlertRepository(db), publisher, testAlertRetention)
+	if err != nil {
+		t.Fatalf("NewAlertService: %v", err)
+	}
+	return svc
 }
 
 // testAlertRetention keeps a week of alerts, measured from countWindowStart

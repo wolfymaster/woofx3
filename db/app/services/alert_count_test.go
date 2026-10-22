@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -163,4 +164,24 @@ func TestCountAlertsByHourRefusesAnInvalidWindow(t *testing.T) {
 			t.Fatalf("a week is refused: %v", err)
 		}
 	})
+}
+
+func TestNewAlertServiceRefusesAnUnusableRetention(t *testing.T) {
+	tests := []struct {
+		name      string
+		retention AlertRetention
+		want      string
+	}{
+		{"no period", AlertRetention{Period: 0, Now: time.Now}, "must be positive"},
+		{"a negative period", AlertRetention{Period: -time.Hour, Now: time.Now}, "must be positive"},
+		{"no clock", AlertRetention{Period: time.Hour}, "needs a clock"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, err := NewAlertService(nil, nil, tc.retention)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || svc != nil {
+				t.Fatalf("NewAlertService = %v, %v; want an error containing %q", svc, err, tc.want)
+			}
+		})
+	}
 }
