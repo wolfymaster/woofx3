@@ -248,6 +248,10 @@ export type TwitchApiCommand = (typeof TWITCH_API_COMMANDS)[number];
 export interface TwitchApiCall {
   /** How long a `helix` operation may take in all, at most HELIX_DEADLINE_MS. */
   helixDeadlineMs: number;
+  /** Ends a `helix` operation early, when its caller stops waiting (see HelixRunOptions). */
+  signal?: AbortSignal;
+  /** Called once just before a `helix` request leaves for Twitch (see HelixRunOptions). */
+  onSent?(): void;
 }
 
 export function isTwitchApiCommand(command: string): command is TwitchApiCommand {
@@ -660,7 +664,11 @@ export default class TwitchApi {
     args: unknown,
     call: TwitchApiCall = { helixDeadlineMs: HELIX_DEADLINE_MS }
   ): Promise<HelixCommandResult> {
-    return runHelixOperation(this.helixAuth, this.broadcaster.id, args, call.helixDeadlineMs);
+    return runHelixOperation(this.helixAuth, this.broadcaster.id, args, {
+      deadlineMs: call.helixDeadlineMs,
+      signal: call.signal,
+      onSent: call.onSent,
+    });
   }
 
   /**

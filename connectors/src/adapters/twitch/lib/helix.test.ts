@@ -2,10 +2,14 @@ import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from 
 import type { HelixOperationName } from "@woofx3/common/cloudevents/Twitch/commands";
 import {
   buildHelixRequest,
+  guardChatLine,
   HELIX_OPERATIONS,
   type HelixAuth,
+  HelixNoAnswer,
   type HelixRequest,
+  readSentChatMessage,
   runHelixOperation,
+  type SentChatMessage,
   validateHelixParams,
 } from "./helix";
 import { TwitchApiError } from "./twitchApiError";
@@ -282,6 +286,21 @@ const REQUESTS: [HelixOperationName, Record<string, unknown>, HelixRequest][] = 
     },
   ],
   [
+    "sendChatMessage",
+    { message: "same here", reply_parent_message_id: "parent-1" },
+    {
+      method: "POST",
+      url: "chat/messages",
+      query: {},
+      jsonBody: {
+        broadcaster_id: BROADCASTER_ID,
+        sender_id: BROADCASTER_ID,
+        message: "same here",
+        reply_parent_message_id: "parent-1",
+      },
+    },
+  ],
+  [
     "getChatPins",
     {},
     { method: "GET", url: "chat/pins", query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID } },
@@ -296,6 +315,15 @@ const REQUESTS: [HelixOperationName, Record<string, unknown>, HelixRequest][] = 
     },
   ],
   [
+    "pinChatMessage",
+    { message_id: "m-1", duration: 120 },
+    {
+      method: "PUT",
+      url: "chat/pins",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID, message_id: "m-1", duration: "120" },
+    },
+  ],
+  [
     "unpinChatMessage",
     { message_id: "m-1" },
     {
@@ -306,6 +334,65 @@ const REQUESTS: [HelixOperationName, Record<string, unknown>, HelixRequest][] = 
   ],
   ["createClip", {}, { method: "POST", url: "clips", query: { broadcaster_id: BROADCASTER_ID } }],
 ];
+
+describe("guardChatLine", () => {
+  const rows: [name: string, line: string, guarded: string][] = [
+    ["a command", "!title pwned", "\u200b!title pwned"],
+    ["the prefix alone", "!", "\u200b!"],
+    ["plain text", "hello chat", "hello chat"],
+    ["a prefix later in the line", "say !hi", "say !hi"],
+    ["a line already guarded", "\u200b!hi", "\u200b!hi"],
+    ["a leading space", " !hi", " !hi"],
+    ["an empty line", "", ""],
+  ];
+  for (const [name, line, guarded] of rows) {
+    test(name, () => {
+      expect(guardChatLine(line)).toBe(guarded);
+    });
+  }
+
+  test("guards every operation that says a chat line, and only its chat line", () => {
+    const chatLines = Object.entries(HELIX_OPERATIONS)
+      .filter(([, declared]) => declared.chatLine !== undefined)
+      .map(([operation, declared]) => [operation, declared.chatLine]);
+    expect(chatLines).toEqual([
+      ["sendChatMessage", "message"],
+      ["sendChatAnnouncement", "message"],
+    ]);
+  });
+});
+
+describe("readSentChatMessage", () => {
+  const rows: [name: string, body: unknown, read: SentChatMessage | null][] = [
+    ["a posted line", { data: [{ message_id: "m-1", is_sent: true }] }, { sent: true, messageId: "m-1" }],
+    [
+      "a dropped line with Twitch's reason",
+      { data: [{ message_id: "", is_sent: false, drop_reason: { code: "msg_duplicate", message: "duplicate" } }] },
+      { sent: false, dropReason: "duplicate" },
+    ],
+    [
+      "a dropped line with only a code",
+      { data: [{ is_sent: false, drop_reason: { code: "automod_held" } }] },
+      { sent: false, dropReason: "automod_held" },
+    ],
+    [
+      "a dropped line with no reason",
+      { data: [{ is_sent: false }] },
+      { sent: false, dropReason: "Twitch did not post the message" },
+    ],
+    ["a posted line without an id", { data: [{ is_sent: true }] }, null],
+    ["a posted line with an empty id", { data: [{ message_id: "", is_sent: true }] }, null],
+    ["no is_sent", { data: [{ message_id: "m-1" }] }, null],
+    ["an empty data list", { data: [] }, null],
+    ["no body", null, null],
+    ["a body that is a list", [{ is_sent: true }], null],
+  ];
+  for (const [name, body, read] of rows) {
+    test(name, () => {
+      expect(readSentChatMessage(body)).toEqual(read);
+    });
+  }
+});
 
 describe("buildHelixRequest", () => {
   for (const [operation, params, expected] of REQUESTS) {
@@ -537,7 +624,7 @@ describe("runHelixOperation", () => {
     );
 
     await expect(
-      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" }, 20)
+      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "createStreamMarker" }, { deadlineMs: 20 })
     ).rejects.toThrow("helix createStreamMarker: no answer within 0.02s; Twitch may still have acted");
     expect(sent).toHaveLength(1);
     expect(sent[0]?.aborted).toBe(true);
@@ -548,7 +635,7 @@ describe("runHelixOperation", () => {
     fetchAnswering(new Response(endless, { status: 200 }));
 
     await expect(
-      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getChannelInformation" }, 20)
+      runHelixOperation(fakeAuth(), BROADCASTER_ID, { operation: "getChannelInformation" }, { deadlineMs: 20 })
     ).rejects.toThrow("no answer within 0.02s");
   });
 
@@ -556,9 +643,9 @@ describe("runHelixOperation", () => {
     const { sent } = fetchAnswering(json(200, { data: [] }));
     const auth = { ...fakeAuth(), getAccessTokenForUser: () => new Promise<never>(() => {}) };
 
-    await expect(runHelixOperation(auth, BROADCASTER_ID, { operation: "getChannelInformation" }, 20)).rejects.toThrow(
-      "no answer within 0.02s, before a request was sent"
-    );
+    await expect(
+      runHelixOperation(auth, BROADCASTER_ID, { operation: "getChannelInformation" }, { deadlineMs: 20 })
+    ).rejects.toThrow("no answer within 0.02s, before a request was sent");
     expect(sent).toEqual([]);
   });
 
@@ -566,9 +653,9 @@ describe("runHelixOperation", () => {
     const { sent } = fetchAnswering(new Response("", { status: 401 }), json(200, { data: [] }));
     const auth = { ...fakeAuth(), refreshAccessTokenForUser: () => new Promise<never>(() => {}) };
 
-    await expect(runHelixOperation(auth, BROADCASTER_ID, { operation: "createStreamMarker" }, 20)).rejects.toThrow(
-      "Twitch may still have acted"
-    );
+    await expect(
+      runHelixOperation(auth, BROADCASTER_ID, { operation: "createStreamMarker" }, { deadlineMs: 20 })
+    ).rejects.toThrow("Twitch may still have acted");
     expect(sent).toHaveLength(1);
   });
 
@@ -580,5 +667,100 @@ describe("runHelixOperation", () => {
       expect(err.code).toBe("invalid_arguments");
     }
     expect(sent).toEqual([]);
+  });
+});
+
+describe("runHelixOperation, cancelled and observed", () => {
+  test("guards a chat line sent through the legacy helix command", async () => {
+    const { sent } = fetchAnswering(json(200, { data: [{ message_id: "m-1", is_sent: true }] }));
+
+    await runHelixOperation(fakeAuth(), BROADCASTER_ID, {
+      operation: "sendChatMessage",
+      params: { message: "!hi" },
+    });
+    expect(sent[0]?.body).toEqual({ broadcaster_id: BROADCASTER_ID, sender_id: BROADCASTER_ID, message: "\u200b!hi" });
+  });
+
+  test("calls onSent once, before the request, even when a 401 makes it send again", async () => {
+    const order: string[] = [];
+    stubFetch(async () => {
+      order.push("fetch");
+      return order.filter((step) => step === "fetch").length === 1
+        ? new Response("", { status: 401 })
+        : json(200, { data: [] });
+    });
+
+    await runHelixOperation(
+      fakeAuth(),
+      BROADCASTER_ID,
+      { operation: "createStreamMarker" },
+      { onSent: () => order.push("sent") }
+    );
+    expect(order).toEqual(["sent", "fetch", "fetch"]);
+  });
+
+  test("does not call onSent when it never sends", async () => {
+    const { sent } = fetchAnswering();
+    let onSentCalls = 0;
+    const auth = { ...fakeAuth(), getAccessTokenForUser: async () => null };
+
+    await expect(
+      runHelixOperation(auth, BROADCASTER_ID, { operation: "createStreamMarker" }, { onSent: () => onSentCalls++ })
+    ).rejects.toThrow("no Twitch token");
+    expect(onSentCalls).toBe(0);
+    expect(sent).toEqual([]);
+  });
+
+  test("gives up when the caller's signal aborts after the request left, and says it was sent", async () => {
+    stubFetch(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal as AbortSignal;
+          signal.addEventListener("abort", () => reject(signal.reason));
+        })
+    );
+    const caller = new AbortController();
+    const run = runHelixOperation(
+      fakeAuth(),
+      BROADCASTER_ID,
+      { operation: "sendChatMessage", params: { message: "hi" } },
+      { signal: caller.signal, onSent: () => queueMicrotask(() => caller.abort(new Error("deadline"))) }
+    );
+
+    const err = await run.catch((error: unknown) => error);
+    expect(err).toBeInstanceOf(HelixNoAnswer);
+    expect((err as HelixNoAnswer).sent).toBe(true);
+    expect((err as HelixNoAnswer).message).toBe(
+      "helix sendChatMessage: the caller stopped waiting; Twitch may still have acted"
+    );
+  });
+
+  test("sends nothing for a caller whose signal already aborted, and says it was not sent", async () => {
+    const { sent } = fetchAnswering(json(200, { data: [] }));
+    const caller = new AbortController();
+    caller.abort(new Error("gone"));
+
+    const err = await runHelixOperation(
+      fakeAuth(),
+      BROADCASTER_ID,
+      { operation: "createStreamMarker" },
+      { signal: caller.signal }
+    ).catch((error: unknown) => error);
+    expect(err).toBeInstanceOf(HelixNoAnswer);
+    expect((err as HelixNoAnswer).sent).toBe(false);
+    expect(sent).toEqual([]);
+  });
+
+  test("reports a deadline that passed before sending as not sent", async () => {
+    const auth = { ...fakeAuth(), getAccessTokenForUser: () => new Promise<never>(() => {}) };
+
+    const err = await runHelixOperation(
+      auth,
+      BROADCASTER_ID,
+      { operation: "createStreamMarker" },
+      { deadlineMs: 20 }
+    ).catch((error: unknown) => error);
+    expect(err).toBeInstanceOf(HelixNoAnswer);
+    expect((err as HelixNoAnswer).sent).toBe(false);
   });
 });
