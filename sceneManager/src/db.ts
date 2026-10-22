@@ -9,7 +9,6 @@ import * as overlay_token from "@woofx3/db/overlay_token.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as scene_event from "@woofx3/db/scene_event.pb";
 import type { DbProxyClientConfig } from "@woofx3/db/service-auth";
-import * as setting from "@woofx3/db/setting.pb";
 import * as storage from "@woofx3/db/storage.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
 
@@ -133,28 +132,10 @@ export class DbClient {
     return resp.module?.moduleKey || null;
   }
 
-  /** A module's stored manifest JSON (as barkloader re-serialized it at install), or null when it is not installed. */
-  async getModuleManifest(moduleId: string): Promise<string | null> {
-    const resp = await GetModuleByModuleId({ moduleId }, this.config);
-    return resp.module?.manifest || null;
-  }
-
   // A module's settings. A secret's value is never in these records.
   async listModuleSettings(moduleId: string): Promise<module_setting.ModuleSettingRecord[]> {
     const resp = await module_setting.ListModuleSettings({ moduleId }, this.config);
     return resp.settings;
-  }
-
-  // Opens a module's secret settings; callers must never log or forward them.
-  async getModuleSecretValues(moduleId: string): Promise<Record<string, string>> {
-    const resp = await module_setting.GetModuleSecretValues({ moduleId }, this.config);
-    const values: Record<string, string> = {};
-    for (const [key, value] of Object.entries(resp.values)) {
-      if (value !== undefined) {
-        values[key] = value;
-      }
-    }
-    return values;
   }
 
   async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {
@@ -182,11 +163,6 @@ export class DbClient {
   // `replayed` is the only status UpdateAlertStatus accepts.
   async markAlertReplayed(req: { id: string }): Promise<alert.AlertResponse> {
     return alert.UpdateAlertStatus({ id: req.id, status: "replayed" }, this.config);
-  }
-
-  async getSetting(key: string): Promise<string | null> {
-    const resp = await setting.GetSetting({ key }, this.config);
-    return resp.setting?.value?.stringValue ?? null;
   }
 
   /** One module's stored value, decoded, or `undefined` when the key holds nothing. */

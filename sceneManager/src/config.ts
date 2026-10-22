@@ -35,9 +35,6 @@ export const SceneManagerEnvSchema = z.object({
   woofx3MessagebusJwt: z.string().optional(),
   woofx3MessagebusNkey: z.string().optional(),
   woofx3MessagebusToken: z.union([z.string(), z.number()]).optional(),
-  woofx3ObsHost: z.string().default("127.0.0.1"),
-  woofx3ObsPort: z.union([z.number(), z.string()]).default("4455"),
-  woofx3ObsRpcToken: z.string().optional(),
   woofx3DatabaseProxyUrl: z.string().default(""),
   woofx3BarkloaderUrl: z.string().default("http://127.0.0.1:9653"),
   // The engine secret barkloader verifies media proxy URLs with (see
@@ -78,15 +75,6 @@ export interface SceneManagerRuntimeConfig {
   barkloaderKey: string;
   /** Which Host and Origin headers the HTTP server accepts, with their defaults resolved. */
   requestGuard: RequestGuardPolicy;
-  /**
-   * Not used by sceneManager, which holds no OBS connection: connectors' obs
-   * adapter reads the same WOOFX3_OBS_* variables (connectors/src/config/obs.ts).
-   */
-  obs: {
-    host: string;
-    port: string;
-    token?: string;
-  };
   obsRefresh: ObsRefreshConfig;
   nats: {
     url: string;
@@ -206,10 +194,6 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const nkeySeed = c.woofx3MessagebusNkey ? String(c.woofx3MessagebusNkey) : undefined;
   const token = nonBlank(c.woofx3MessagebusToken);
 
-  const obsHost = String(c.woofx3ObsHost ?? "127.0.0.1");
-  const obsPort = String(c.woofx3ObsPort ?? "4455");
-  const obsToken = c.woofx3ObsRpcToken ? String(c.woofx3ObsRpcToken) : undefined;
-
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? "");
   const dbProxyToken = String(c.woofx3DbProxyToken ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? "http://127.0.0.1:9653");
@@ -237,11 +221,6 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     barkloaderUrl,
     barkloaderKey,
     requestGuard,
-    obs: {
-      host: obsHost,
-      port: obsPort,
-      token: obsToken,
-    },
     obsRefresh: {
       requestTimeoutMs: Number(c.woofx3SceneManagerObsRefreshRequestTimeoutMs),
       retryBaseMs: Number(c.woofx3SceneManagerObsRefreshRetryBaseMs),

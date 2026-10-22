@@ -23,7 +23,6 @@ const valid: SceneManagerRuntimeConfig = {
   barkloaderUrl: "http://127.0.0.1:9653",
   barkloaderKey: "media-secret-0123456789abcdef0123456789",
   requestGuard: OPEN_REQUEST_GUARD_POLICY,
-  obs: { host: "127.0.0.1", port: "4455" },
   obsRefresh: OBS_REFRESH_DEFAULTS,
   nats: { url: "ws://127.0.0.1:4225", name: "scene-manager" },
 };
