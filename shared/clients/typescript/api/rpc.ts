@@ -94,9 +94,14 @@ export function refusalReason(err: unknown): string | null {
 
 /**
  * The WebSocket close code the engine ends a session with when its client is
- * deleted. Every call still in flight on that session is refused with an
- * error `isAuthenticationRefused` recognises, so the client's credentials
- * will not work again: reconnecting with them is refused too.
+ * deleted. A client matches on this code, never on the close reason. The
+ * credentials are gone: authenticating with them again is refused, so a
+ * client stops or obtains new credentials rather than reconnecting. Calls that
+ * reach the session after the deletion are refused with an error
+ * `isAuthenticationRefused` recognises.
+ *
+ * It follows the 4000 + HTTP status convention of the scene editor's
+ * `CLOSE_CODES` (401: the credentials are no longer valid).
  */
 export const CLIENT_REVOKED_CLOSE_CODE = 4401;
 

@@ -257,18 +257,21 @@ secret nor an earlier success changes the answer for another secret.
 client and ends every session it already holds:
 
 - each of its WebSockets is closed with code `4401` (`CLIENT_REVOKED_CLOSE_CODE`
-  in `@woofx3/api/rpc`) and reason `client revoked`;
-- any call that still reaches one of its sessions, including one in an HTTP
-  batch, which has no socket to close, is refused with `AuthenticationRefused:
-  client revoked`;
+  in `@woofx3/api/rpc`) and reason `client revoked`, after the reply to the
+  `deleteClient` call is sent, so a client that deletes itself still gets its
+  answer;
+- any call that starts on one of its sessions afterwards, including one in an
+  HTTP batch, which has no socket to close, is refused with
+  `AuthenticationRefused: client revoked`; a call already running when the
+  client is deleted finishes;
 - its trusted credentials are forgotten, so authenticating with them again is
   refused;
 - a session that was still authenticating when the client was deleted is
   refused rather than admitted;
 - its event-stream subscriptions are dropped.
 
-A socket that also carries a session of another client closes with it; that
-client reconnects and authenticates again.
+A socket that also carries a live session of another client stays open for
+that session; only the deleted client's sessions on it end.
 
 ## Barkloader processing callbacks
 
