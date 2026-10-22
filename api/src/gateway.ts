@@ -1,6 +1,5 @@
 import {
   AUTHENTICATION_REFUSED,
-  type ApiGatewayContract,
   authenticationRefusedMessage,
   REGISTRATION_REFUSED,
   type RegisterClientOptions,
@@ -8,11 +7,11 @@ import {
 } from "@woofx3/api/rpc";
 import { secretsMatch } from "@woofx3/common/http/secrets";
 import type { SharedLogger } from "@woofx3/common/logging";
-import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 import { ApiSession } from "./api-session";
 import type { ClientAuth } from "./auth";
 import type { DbClient } from "./db-client";
+import type { ConnectionInfo } from "./gateway-connection";
 import type { RegistrationPolicy } from "./registration";
 import type { WebhookClient } from "./webhook-client";
 
@@ -40,7 +39,12 @@ export class AuthenticationRefused extends Error {
   }
 }
 
-export class ApiGateway extends RpcTarget implements ApiGatewayContract {
+/**
+ * The unauthenticated gateway's behaviour, shared by every connection. It is
+ * not served itself: capnweb serves a `GatewayConnection` per connection,
+ * which calls in here with what it knows about that connection.
+ */
+export class ApiGateway {
   private webhookClient: WebhookClient | null = null;
 
   /**
@@ -61,7 +65,6 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     private logger: SharedLogger,
     private registration: RegistrationPolicy
   ) {
-    super();
     if (registration.mode === "open") {
       logger.warn(
         "WOOFX3_REGISTRATION_TOKEN is not set: any caller that reaches this engine can register a client. Set it on any engine reachable from the internet."
@@ -80,7 +83,7 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     this.webhookClient = client;
   }
 
-  async authenticate(clientId: string, clientSecret: string): Promise<ApiSession> {
+  async authenticate(clientId: string, clientSecret: string, connection: ConnectionInfo): Promise<ApiSession> {
     const verdict = await this.auth.validate(clientId, clientSecret);
     if (verdict.kind === "refused") {
       throw new AuthenticationRefused("Invalid client credentials");
@@ -88,6 +91,8 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     this.logger.info("Authenticated client", {
       clientId,
       description: verdict.description,
+      origin: connection.origin,
+      remoteAddress: connection.remoteAddress,
     });
     return new ApiSession(this.api, clientId);
   }

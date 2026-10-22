@@ -5,10 +5,13 @@ import { Api } from "../src/api";
 import { ApiSession } from "../src/api-session";
 import { ClientAuth } from "../src/auth";
 import { ApiGateway, AuthenticationRefused } from "../src/gateway";
+import { type ConnectionInfo, GatewayConnection } from "../src/gateway-connection";
 import { EngineEventStream } from "../src/engine-event-stream";
 import { WebhookClient } from "../src/webhook-client";
 
 const OPEN = { mode: "open", token: null } as const;
+
+const BATCH: ConnectionInfo = { origin: null, remoteAddress: "127.0.0.1", close: null };
 
 function fakeLogger() {
   return {
@@ -123,13 +126,13 @@ describe("ApiGateway.authenticate", () => {
   const NOT_FOUND = async () => ({ status: { code: "NOT_FOUND", message: "Invalid credentials" } });
 
   it("returns a session for accepted credentials", async () => {
-    const session = await gatewayOver(ACCEPTED).authenticate("c1", "s1");
+    const session = await gatewayOver(ACCEPTED).authenticate("c1", "s1", BATCH);
 
     expect(session).toBeInstanceOf(ApiSession);
   });
 
   it("rejects credentials db-proxy does not know with a named refusal", async () => {
-    const err = await rejectionOf(gatewayOver(NOT_FOUND).authenticate("c1", "wrong"));
+    const err = await rejectionOf(gatewayOver(NOT_FOUND).authenticate("c1", "wrong", BATCH));
 
     expect(err).toBeInstanceOf(AuthenticationRefused);
     expect((err as Error).name).toBe(AUTHENTICATION_REFUSED);
@@ -140,7 +143,7 @@ describe("ApiGateway.authenticate", () => {
     const err = await rejectionOf(
       gatewayOver(async () => {
         throw new Error("fetch failed");
-      }).authenticate("c1", "s1")
+      }).authenticate("c1", "s1", BATCH)
     );
 
     expect(err).toBeInstanceOf(Error);
@@ -150,7 +153,7 @@ describe("ApiGateway.authenticate", () => {
 
   it("keeps the refusal recognisable across a capnweb session", async () => {
     const channel = new MessageChannel();
-    const server = newMessagePortRpcSession(channel.port1, gatewayOver(NOT_FOUND));
+    const server = newMessagePortRpcSession(channel.port1, new GatewayConnection(gatewayOver(NOT_FOUND), BATCH));
     const client = newMessagePortRpcSession<ApiGatewayContract>(channel.port2);
     try {
       const err = await rejectionOf(client.authenticate("c1", "wrong"));
