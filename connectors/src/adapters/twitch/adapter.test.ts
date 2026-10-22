@@ -116,6 +116,7 @@ const CONFIG: TwitchConfig = {
   app: undefined,
   membership: { ttlMs: TWITCH_DEFAULTS.membershipTtlMs, deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs },
   sendQueueCap: TWITCH_DEFAULTS.sendQueueCap,
+  selfSent: { capacity: TWITCH_DEFAULTS.selfSentCapacity, ttlMs: TWITCH_DEFAULTS.selfSentTtlMs },
 };
 
 function newAdapter(time = new FakeTime()) {
@@ -227,6 +228,7 @@ describe("TwitchAdapter under the supervisor", () => {
     expect(adapter.detail()).toEqual({
       broadcasterId: "broadcaster-1",
       eventSub: { established: expect.any(Number), expected: expect.any(Number), ready: true },
+      ownLinesAwaitingEcho: 0,
     });
   });
 
@@ -239,7 +241,7 @@ describe("TwitchAdapter under the supervisor", () => {
     const status = supervisor.status("twitch");
     expect(status.state).toBe("degraded");
     expect(status.state === "degraded" ? status.reason : "").toContain("not linked");
-    expect(adapter.detail()).toEqual({ broadcasterId: null, eventSub: null });
+    expect(adapter.detail()).toEqual({ broadcasterId: null, eventSub: null, ownLinesAwaitingEcho: 0 });
   });
 
   test("start, stop, start leaves one relink listener", async () => {

@@ -6,6 +6,7 @@ import type {
   UpdateStreamArgs,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import { HELIX_DEADLINE_MS, type HelixAuth, runHelixOperation } from "./helix";
+import type { SelfSentRecorder } from "./self-sent";
 import type { EnqueueShoutout } from "./shoutoutQueue";
 import { httpStatusOf, TwitchApiError } from "./twitchApiError";
 
@@ -252,6 +253,8 @@ export interface TwitchApiCall {
   signal?: AbortSignal;
   /** Called once just before a `helix` request leaves for Twitch (see HelixRunOptions). */
   onSent?(): void;
+  /** The chain of workflow runs saying a `helix` chat line, carried onto its echo (see HelixRunOptions). */
+  workflowChain?: string;
 }
 
 export function isTwitchApiCommand(command: string): command is TwitchApiCommand {
@@ -342,13 +345,15 @@ function wholeSeconds(raw: number | string | undefined): number {
 export default class TwitchApi {
   /**
    * `helixAuth` is the auth provider behind `apiClient`, which `helix` sends
-   * with directly. `enqueueShoutout` hands shoutouts to the dashboard's
-   * queue; without it, every shoutout is sent directly.
+   * with directly. `selfSent` records every chat line `helix` says, so its
+   * echo is marked as the engine's own. `enqueueShoutout` hands shoutouts to
+   * the dashboard's queue; without it, every shoutout is sent directly.
    */
   constructor(
     private apiClient: ApiClient,
     private broadcaster: HelixUser,
     private helixAuth: HelixAuth,
+    private selfSent: SelfSentRecorder,
     private enqueueShoutout?: EnqueueShoutout
   ) {}
 
@@ -668,6 +673,8 @@ export default class TwitchApi {
       deadlineMs: call.helixDeadlineMs,
       signal: call.signal,
       onSent: call.onSent,
+      selfSent: this.selfSent,
+      workflowChain: call.workflowChain,
     });
   }
 

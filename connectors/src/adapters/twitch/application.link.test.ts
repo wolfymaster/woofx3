@@ -4,6 +4,7 @@ import type { EventSubSubscription } from "@twurple/eventsub-base";
 import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
 import { countingIds, FakeTime, RecordingLogger } from "../../host/testing";
 import type { TwitchAppContext } from "./application";
+import { SelfSentRegistry } from "./lib/self-sent";
 
 /** Whether listeners confirm subscriptions; false leaves TwitchEventBus waiting to settle. */
 let confirmSubscriptions = true;
@@ -124,7 +125,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 function newApp(): InstanceType<typeof TwitchApplication> {
-  return new TwitchApplication({ clock: new FakeTime(), ids: countingIds() });
+  return new TwitchApplication({ clock: new FakeTime(), ids: countingIds(), selfSent: selfSentLines() });
 }
 
 function context(config: Partial<TwitchConfig> = {}) {
@@ -163,7 +164,15 @@ const CREDENTIALS: TwitchConfig = {
   app: { clientId: "cid", clientSecret: "sec", redirectUri: "http://localhost/oauth" },
   membership: { ttlMs: TWITCH_DEFAULTS.membershipTtlMs, deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs },
   sendQueueCap: TWITCH_DEFAULTS.sendQueueCap,
+  selfSent: { capacity: TWITCH_DEFAULTS.selfSentCapacity, ttlMs: TWITCH_DEFAULTS.selfSentTtlMs },
 };
+
+function selfSentLines(): SelfSentRegistry {
+  return new SelfSentRegistry(
+    { capacity: TWITCH_DEFAULTS.selfSentCapacity, ttlMs: TWITCH_DEFAULTS.selfSentTtlMs },
+    new FakeTime()
+  );
+}
 
 function reset() {
   linked = false;

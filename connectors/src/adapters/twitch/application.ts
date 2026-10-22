@@ -16,6 +16,7 @@ import { AdBreakLeadSetting } from "./lib/adBreakSettings";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
 import { type PublishTarget, publishEvent } from "./lib/publishEvent";
+import type { SelfSentRegistry } from "./lib/self-sent";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
 import type TwitchApiClient from "./lib/twitch";
 import TwitchApiClientImpl, {
@@ -95,6 +96,14 @@ export interface TwitchReplyDeps {
   ids: IdSource;
 }
 
+export interface TwitchApplicationDeps extends TwitchReplyDeps {
+  /**
+   * The engine's own chat lines awaiting their echo. Outlives the run, so a
+   * line said just before a restart is still known when it comes back.
+   */
+  selfSent: SelfSentRegistry;
+}
+
 /** How a connect attempt ended. `not_linked`: no Twitch token is stored. */
 export type ConnectOutcome = "connected" | "not_linked";
 
@@ -145,7 +154,7 @@ const decoder = new TextDecoder();
  * commands. The adapter builds one per start and stops it on stop.
  */
 export default class TwitchApplication {
-  constructor(private readonly deps: TwitchReplyDeps) {}
+  constructor(private readonly deps: TwitchApplicationDeps) {}
 
   /**
    * "waiting" while no Twitch account is linked, then "connected". The
@@ -364,6 +373,7 @@ export default class TwitchApplication {
       apiClient,
       broadcaster,
       authProvider,
+      this.deps.selfSent,
       enqueueShoutoutOverNats(busRequest(ctx.bus))
     );
     const events = new EventFactory({ source: "twitch" });
@@ -393,6 +403,7 @@ export default class TwitchApplication {
       messageBus,
       events,
       membershipEnricher: this.buildMembershipEnricher(ctx, apiClient),
+      selfSent: this.deps.selfSent,
       onStreamLiveChange: (live: boolean) => adBreakScheduler.setLive(live),
     };
     const eventBus = new TwitchEventBus(eventBusCtx, listener);

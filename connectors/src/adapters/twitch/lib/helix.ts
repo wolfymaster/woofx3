@@ -6,6 +6,7 @@ import type {
   HelixOperationName,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import { COMMAND_PREFIX } from "../../../chat/command-prefix";
+import type { SelfSentLine, SelfSentRecorder } from "./self-sent";
 import { TwitchApiError } from "./twitchApiError";
 
 // Twurple passes these straight to fetch and leaves declaring the ones a
@@ -48,6 +49,13 @@ interface HelixOperation {
    * `guardChatLine` before it is sent.
    */
   chatLine?: string;
+  /**
+   * The line comes back on EventSub's `channel.chat.message` as the
+   * broadcaster's, so it is recorded with HelixRunOptions.selfSent to be told
+   * apart from the streamer typing. An announcement comes back as a chat
+   * notification instead, and is not recorded.
+   */
+  echoesAsChatMessage?: true;
 }
 
 /** U+200B ZERO WIDTH SPACE. */
@@ -220,6 +228,7 @@ export const HELIX_OPERATIONS: Readonly<Record<HelixOperationName, HelixOperatio
     broadcasterQuery: [],
     broadcasterBody: ["broadcaster_id", "sender_id"],
     chatLine: "message",
+    echoesAsChatMessage: true,
   },
   sendChatAnnouncement: {
     method: "POST",
@@ -468,6 +477,13 @@ export interface HelixRunOptions {
    * `HelixNoAnswer.sent`.
    */
   onSent?(): void;
+  /**
+   * Remembers a chat line just before it leaves, for an operation whose line
+   * echoes as a chat message, so the echo is marked as the engine's own.
+   */
+  selfSent?: SelfSentRecorder;
+  /** The chain of workflow runs saying the line, carried onto its echo. */
+  workflowChain?: string;
 }
 
 /**
@@ -508,9 +524,11 @@ export async function runHelixOperation(
   args: unknown,
   options: HelixRunOptions = {}
 ): Promise<HelixCommandResult> {
-  const { deadlineMs = HELIX_DEADLINE_MS, signal: callerSignal, onSent } = options;
+  const { deadlineMs = HELIX_DEADLINE_MS, signal: callerSignal, onSent, selfSent, workflowChain } = options;
   const { operation, params } = parseHelixArgs(args);
-  const request = buildHelixRequest(operation, broadcasterId, validateHelixParams(operation, params));
+  const validated = validateHelixParams(operation, params);
+  const request = buildHelixRequest(operation, broadcasterId, validated);
+  const echoedLine = echoedChatLine(operation, validated);
   // Not `AbortSignal.timeout`: in Bun 1.3 its timer stops for good once its
   // last abort listener is removed, which every wait here does as it settles.
   const deadline = new AbortController();
@@ -526,10 +544,15 @@ export async function runHelixOperation(
   }
   const signal = deadline.signal;
   let sent = false;
+  let ownLine: SelfSentLine | undefined;
   const send = (accessToken: string) => {
     signal.throwIfAborted();
     if (!sent) {
       sent = true;
+      // Before the request leaves: the echo can arrive before Twitch's answer.
+      if (echoedLine !== undefined) {
+        ownLine = selfSent?.begin(echoedLine, workflowChain);
+      }
       onSent?.();
     }
     return untilAborted(
@@ -565,17 +588,53 @@ export async function runHelixOperation(
   }
 
   if (!response.ok) {
+    ownLine?.failed();
     return { ok: false, status: response.status, body: text };
   }
   if (text === "") {
     return { ok: true, body: null };
   }
+  let body: unknown;
   try {
-    return { ok: true, body: JSON.parse(text) };
+    body = JSON.parse(text);
   } catch (err) {
     throw new Error(`helix ${operation}: Twitch answered ${response.status} with something that is not JSON`, {
       cause: err,
     });
+  }
+  if (ownLine !== undefined) {
+    settleOwnLine(ownLine, body);
+  }
+  return { ok: true, body };
+}
+
+/** The chat line `operation` says, when its echo comes back as a chat message. */
+function echoedChatLine(
+  operation: HelixOperationName,
+  params: Record<string, string | number | boolean | string[]>
+): string | undefined {
+  const declared = HELIX_OPERATIONS[operation];
+  if (!declared.echoesAsChatMessage || declared.chatLine === undefined) {
+    return undefined;
+  }
+  const line = params[declared.chatLine];
+  return typeof line === "string" ? line : undefined;
+}
+
+/**
+ * Settles a recorded line by Twitch's answer. An answer that cannot be read
+ * leaves the line recorded, to be claimed by its text or to expire: Twitch
+ * may have posted it.
+ */
+function settleOwnLine(line: SelfSentLine, body: unknown): void {
+  const outcome = readSentChatMessage(body);
+  if (outcome === null) {
+    return;
+  }
+  if (outcome.sent) {
+    line.sent(outcome.messageId);
+  } else {
+    line.failed();
   }
 }
 
