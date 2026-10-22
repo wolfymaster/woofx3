@@ -25,10 +25,7 @@ fi
 
 woofx3_set_output_dir "$CONFIG_FILE"
 
-# Go services from config, plus Go tools: binaries shipped beside the services
-# (the migrate tool the entrypoint runs before boot) that the orchestrator
-# never starts, because it reads only `.services`.
-readarray -t GO_SERVICES < <(jq -c '(.services[] | select(.type == "go" and .enabled == true)), (.tools[]? | select(.type == "go"))' "$CONFIG_FILE")
+readarray -t GO_SERVICES < <(jq -c '.services[] | select(.type == "go" and .enabled == true)' "$CONFIG_FILE")
 
 if [[ ${#GO_SERVICES[@]} -eq 0 ]]; then
     log_info "No enabled go services found"
@@ -46,13 +43,13 @@ for service_json in "${GO_SERVICES[@]}"; do
     # Check if service directory exists
     if [[ ! -d "$SERVICE_PATH" ]]; then
         log_error "Service directory not found: $SERVICE_PATH"
-        continue
+        exit 1
     fi
     
     # Check if go.mod exists
     if [[ ! -f "$SERVICE_PATH/go.mod" ]]; then
         log_error "go.mod not found: $SERVICE_PATH/go.mod"
-        continue
+        exit 1
     fi
     
     # Build for each target
@@ -70,7 +67,7 @@ for service_json in "${GO_SERVICES[@]}"; do
                 ;;
             *)
                 log_error "Unsupported target: $target"
-                continue
+                exit 1
                 ;;
         esac
         
@@ -100,6 +97,7 @@ for service_json in "${GO_SERVICES[@]}"; do
             log_info "  ✓ Built successfully: $(basename "$OUTPUT_PATH")"
         else
             log_error "  ✗ Build failed: $(basename "$OUTPUT_PATH")"
+            exit 1
         fi
     done
 done

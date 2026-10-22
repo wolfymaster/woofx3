@@ -44,7 +44,7 @@ for target in "${TARGETS[@]}"; do
     
     if [[ ! -d "$TARGET_DIR" ]]; then
         log_error "Target directory not found: $TARGET_DIR"
-        continue
+        exit 1
     fi
     
     log_info "Packaging $target..."
@@ -69,11 +69,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 export WOOFX3_ROOT_PATH="${WOOFX3_ROOT_PATH:-$DIR}"
 
-# Migrate before any service starts, as the container entrypoint does: a
-# failed migration stops here rather than booting against a stale schema.
-"$DIR/migrate" -cmd up
-
-# Start the orchestrator
+# The orchestrator migrates the database before any service starts.
 exec "$DIR/orchestrator"
 EOF
             chmod +x "$TARGET_DIR/start.sh"
@@ -83,7 +79,6 @@ EOF
 @echo off
 cd /d "%~dp0"
 if not defined WOOFX3_ROOT_PATH set WOOFX3_ROOT_PATH=%cd%
-migrate.exe -cmd up || exit /b 1
 orchestrator.exe
 EOF
             ;;
@@ -162,6 +157,7 @@ EOF
         log_info "  ✓ Created archive: $(basename "$ARCHIVE_FILE") ($ARCHIVE_SIZE)"
     else
         log_error "  ✗ Failed to create archive: $(basename "$ARCHIVE_FILE")"
+        exit 1
     fi
 done
 

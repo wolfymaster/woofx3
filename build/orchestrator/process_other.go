@@ -17,7 +17,7 @@ func startOSProcess(path string, argv []string, attr *os.ProcAttr) (serviceHandl
 }
 
 // RequestStop sends SIGTERM, which every service handles as a graceful
-// shutdown.
+// shutdown. Run-once steps are never sent it (see StopAll).
 func (p osProcess) RequestStop() error {
 	return p.process.Signal(syscall.SIGTERM)
 }

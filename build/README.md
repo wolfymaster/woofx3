@@ -82,6 +82,18 @@ therefore follows its port however it is set. The orchestrator refuses to start
 when an enabled service's endpoint names a variable that is unset and has no
 default, or does not expand to an absolute `http`/`https` URL.
 
+A service with `"run_once": true` is a step that runs to completion instead of
+a service that keeps running. It is started once, with its `args`, and the
+services that depend on it start once it exits with status 0. Any other exit,
+or a failure to start it at all, stops every service and the orchestrator,
+which exits non-zero. A step is never restarted, never asked to stop (it is
+killed only when the stop grace period is up), and takes no `health_endpoint`
+or `health_timeout`. The shipped
+`services.json` has one: `migrate` runs `migrate -cmd up`, and db-proxy, the
+only service that opens the database, depends on it. Every way of running the
+orchestrator therefore migrates before the engine starts, and an already
+migrated database makes the step a no-op.
+
 ### Environment Variables
 
 Override settings with BUILD_* environment variables in `.env`:
@@ -154,7 +166,7 @@ rustup target add x86_64-pc-windows-gnu
 1. Extract the appropriate archive on your target system
 2. Edit `.woofx3.json` (packaged template — replace `CHANGE_ME` secrets)
 3. Run `./start.sh` (Linux) or `start.bat` (Windows) from the package directory
-4. The orchestrator will start and manage all enabled services
+4. The orchestrator will migrate the database, then start and manage all enabled services
 
 Services that ship static assets (e.g. `sceneManager`) expect a `public/`
 directory next to their binary; `start.sh` / `start.bat` set `WOOFX3_ROOT_PATH`

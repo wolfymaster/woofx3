@@ -5,8 +5,8 @@
 #         Configure with WOOFX3_* variables (they override the baked
 #         /app/.woofx3.json); mount a volume at /app/data for state.
 #
-# The entrypoint migrates the database before the orchestrator starts any
-# service, and exits non-zero if migration fails.
+# The orchestrator migrates the database before it starts any service, and
+# the container exits non-zero if migration fails.
 #
 # Override with: docker build --build-arg BUN_VERSION=... (must support
 # streaming fetch request bodies; see sceneManager's upload relay)

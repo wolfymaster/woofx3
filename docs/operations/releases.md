@@ -27,8 +27,8 @@ argument reports `dev`.
 - `woofx3-v…-linux-amd64.zip`, extracted from the image, and
   `woofx3-v…-windows-amd64.zip`, cross-compiled separately. Each holds the
   orchestrator and every service binary, and starts through `start.sh` /
-  `start.bat`, which migrate the database before starting the orchestrator, as
-  the image's entrypoint does.
+  `start.bat`, which run the orchestrator as the image's entrypoint does; the
+  orchestrator migrates the database before any service starts.
 - The release's entry in `CHANGELOG.md`, committed to `master` as
   `chore(release): v… [skip ci]`. The `v…` git tag points at that commit, whose
   parent is the commit the image and archives were built from; the two differ
