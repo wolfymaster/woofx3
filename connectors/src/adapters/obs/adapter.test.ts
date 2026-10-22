@@ -102,10 +102,29 @@ describe("ObsAdapter unavailable replies", () => {
 
   test("the refresh request, which only the host's own failure reaches, asks to be retried", () => {
     expect(reply("engine.obs.browser_source.refresh", "stopped")).toEqual({
-      status: "invalid",
+      status: "unavailable",
       error: "the OBS adapter could not take the request in time",
     });
   });
+});
+
+describe("ObsAdapter handlers reached while no run exists", () => {
+  const { manifest } = newAdapter();
+  const cases: Array<[subject: string, expected: unknown]> = [
+    ["engine.obs.command", { ok: false, error: "OBS is turned off in this engine" }],
+    ["engine.obs.options", { error: "OBS is turned off in this engine" }],
+    ["engine.obs.status", { state: "stopped", failure: null, address: null }],
+  ];
+  for (const [subject, expected] of cases) {
+    test(`${subject} answers as stopped instead of throwing`, async () => {
+      const served = manifest.serves.find((s) => s.subject === subject);
+      if (served === undefined) {
+        throw new Error(`${subject} is not served`);
+      }
+      const answered = await served.handle(command("main"), {} as Parameters<typeof served.handle>[1]);
+      expect(parsed(answered)).toEqual(expected);
+    });
+  }
 });
 
 describe("obsAdapterModule", () => {

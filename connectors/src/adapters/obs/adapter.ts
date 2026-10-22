@@ -132,7 +132,10 @@ export class ObsAdapter implements Adapter<RefreshLatch> {
         {
           subject: OBS_STATUS_SUBJECT,
           budgetMs: OBS_SERVED_BUDGETS_MS.status,
-          handle: async () => json(this.requireRun(OBS_STATUS_SUBJECT).service.status()),
+          handle: async () => {
+            const run = this.run;
+            return run === undefined ? obsStatusUnavailableReply() : json(run.service.status());
+          },
           unavailableReply: () => obsStatusUnavailableReply(),
         },
         {
@@ -142,7 +145,7 @@ export class ObsAdapter implements Adapter<RefreshLatch> {
           handle: async (request, ctx: ServedRequestContext<RefreshLatch>) =>
             answerRefreshRequest(request, ctx.hostState),
           unavailableReply: () =>
-            json({ status: "invalid", error: REFRESH_NOT_TAKEN } satisfies ObsBrowserSourceRefreshReply),
+            json({ status: "unavailable", error: REFRESH_NOT_TAKEN } satisfies ObsBrowserSourceRefreshReply),
         },
       ],
     };
@@ -200,17 +203,16 @@ export class ObsAdapter implements Adapter<RefreshLatch> {
     return {
       subject,
       budgetMs,
-      handle: (request) => answer(this.requireRun(subject), request),
+      handle: (request) => {
+        // stop() can clear the run between the host's availability check and
+        // this call; that is an ordinary stop, answered like one.
+        const run = this.run;
+        return run === undefined ? Promise.resolve(unavailable(UNAVAILABLE_MESSAGES.stopped)) : answer(run, request);
+      },
       unavailableReply: ({ reason }) => unavailable(UNAVAILABLE_MESSAGES[reason]),
     };
   }
 
-  private requireRun(subject: string): ObsRun {
-    if (this.run === undefined) {
-      throw new Error(`${subject} reached the obs adapter while it is not running`);
-    }
-    return this.run;
-  }
 }
 
 async function answerCommand(run: ObsRun, request: Uint8Array): Promise<Uint8Array> {

@@ -122,6 +122,9 @@ async function attemptOnce(
   if (reply.value.status === "invalid") {
     return { accepted: false, reason: `refused as invalid: ${reply.value.error}` };
   }
+  if (reply.value.status === "unavailable") {
+    return { accepted: false, reason: `the OBS adapter could not take it yet: ${reply.value.error}` };
+  }
   if (reply.value.bootId !== bootId) {
     return { accepted: false, reason: "the reply answers another boot id" };
   }
