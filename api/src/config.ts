@@ -278,9 +278,10 @@ export function resolveAuthCacheTtlMs(value: unknown): number {
 }
 
 /**
- * `WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` as a positive whole number of
- * milliseconds, or DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS when unset or blank.
- * Anything else stops startup.
+ * `WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` as a whole number of milliseconds no
+ * lower than DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS, or that default when unset
+ * or blank. A lower wait would report a timeout for sends the gateway still
+ * answers normally. Anything else stops startup.
  */
 export function resolvePlatformGatewayTimeoutMs(value: unknown): number {
   const text = nonBlank(value);
@@ -288,9 +289,9 @@ export function resolvePlatformGatewayTimeoutMs(value: unknown): number {
     return DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS;
   }
   const timeoutMs = Number(text);
-  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+  if (!Number.isInteger(timeoutMs) || timeoutMs < DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS) {
     throw new Error(
-      `Config error: woofx3PlatformGatewayTimeoutMs (WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS) must be a positive integer, got ${text}`
+      `Config error: woofx3PlatformGatewayTimeoutMs (WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS) must be a whole number of at least ${DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS} (the gateway's caller window), got ${text}`
     );
   }
   return timeoutMs;

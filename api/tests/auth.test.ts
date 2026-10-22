@@ -299,7 +299,7 @@ describe("resolvePlatformGatewayTimeoutMs", () => {
     });
   }
 
-  for (const value of ["0", "-5", "1.5", "soon", 0]) {
+  for (const value of ["0", "-5", "1.5", "soon", 0, "11999", 3000]) {
     test(`${JSON.stringify(value)} stops startup`, () => {
       expect(() => resolvePlatformGatewayTimeoutMs(value)).toThrow("WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS");
     });
