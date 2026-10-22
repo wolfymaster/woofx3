@@ -5,6 +5,7 @@ use serde_json::Value;
 pub mod crypto;
 pub mod echo;
 pub mod host_bindings;
+pub mod limits;
 pub mod lua;
 pub mod quickjs;
 pub mod storage_event;

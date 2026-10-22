@@ -201,7 +201,7 @@ A `delay` takes only `type` and `durationMs`; setting `event`, `conditions`, `ag
 
 ### Wait conditions
 
-A wait's `conditions` are evaluated against the event being considered, not the run. The only [expression source](#sources) they can reference is `event`, plus `env`:
+A wait's `conditions` are evaluated against the event being considered, not the run. The only [expression source](#sources) they can reference is `event`:
 
 | Path | Description |
 |------|-------------|
@@ -315,8 +315,9 @@ All string values in task parameters, conditions, and workflow configs support t
 |--------|-------------|---------|
 | `trigger` | The event that triggered the workflow | `${trigger.data.amount}`, `${trigger.type}`, `${trigger.id}` |
 | `<taskId>` | Exported values from a completed task | `${check-amount.result}`, `${fetch-user.name}` |
-| `env` | Environment variables | `${env.API_KEY}` |
 | `viewer` | Facts of the viewer the triggering event is about; see [Viewer facts](../services/viewer-facts.md#facts-in-workflows-viewer) | `${viewer.user.messages}`, `${viewer.name}` |
+
+There is no `env` source: a definition that references `${env.*}` is refused, with the path of the value, when it is saved and when the engine loads it. Keep API keys and tokens in [module settings](../barkloader/modules.md#module-level-settings-settings), which the module's functions read.
 
 ### Path Navigation
 

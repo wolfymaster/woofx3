@@ -402,11 +402,12 @@ All services read from a shared `.woofx3.json` at the repo root (gitignored). Cr
   "databaseUrl": "postgres://...",
   "storagePath": "./data/module-storage.db",
   "barkloaderKey": "...",
+  "messagebusToken": "...",
   "databaseProxyPort": "8080"
 }
 ```
 
-Adjust the values to match your environment. When running locally with process-compose, use `nats://localhost:4222` for `messagebusUrl` instead.
+Adjust the values to match your environment. `barkloaderKey` and `messagebusToken` must each be a random value of at least 32 bytes (`openssl rand -hex 32`); `docker-compose.dev.yml` supplies development values for both. When running locally with process-compose, use `nats://localhost:4222` for `messagebusUrl` instead.
 
 ---
 

@@ -45,7 +45,7 @@ export class Api extends ApiRouteHost {
     this.webhookClient = client;
   }
 
-  setAuthInvalidate(fn: () => void): void {
+  setAuthInvalidate(fn: (clientId: string) => void): void {
     this.authInvalidate = fn;
   }
 

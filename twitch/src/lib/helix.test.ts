@@ -231,6 +231,28 @@ const REQUESTS: [HelixOperationName, Record<string, unknown>, HelixRequest][] = 
       jsonBody: { message: "Giveaway at 9", color: "purple" },
     },
   ],
+  // Said as the broadcaster, so it comes back on the chat feed as the
+  // broadcaster's: a line that would run a command must not start with "!".
+  [
+    "sendChatMessage",
+    { message: "!title pwned" },
+    {
+      method: "POST",
+      url: "chat/messages",
+      query: {},
+      jsonBody: { broadcaster_id: BROADCASTER_ID, sender_id: BROADCASTER_ID, message: "\u200b!title pwned" },
+    },
+  ],
+  [
+    "sendChatAnnouncement",
+    { message: "!title pwned" },
+    {
+      method: "POST",
+      url: "chat/announcements",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID },
+      jsonBody: { message: "\u200b!title pwned" },
+    },
+  ],
   [
     "sendShoutout",
     { to_broadcaster_id: "42" },

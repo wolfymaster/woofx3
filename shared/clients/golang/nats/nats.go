@@ -2,7 +2,6 @@ package nats
 
 import (
 	"log/slog"
-	"os"
 	"reflect"
 )
 
@@ -40,26 +39,4 @@ func FromConfig(appConfig any) (Config, bool) {
 		}
 	}
 	return Config{}, false
-}
-
-func FromEnv(logger *slog.Logger) (*Client, error) {
-	url := os.Getenv("NATS_URL")
-	if url == "" {
-		url = "nats://localhost:4222"
-	}
-
-	name := os.Getenv("NATS_CLIENT_NAME")
-	if name == "" {
-		name = "unnamed-client"
-	}
-
-	config := Config{
-		URL:      url,
-		Name:     name,
-		JWT:      os.Getenv("NATS_JWT"),
-		NKeySeed: os.Getenv("NATS_NKEY_SEED"),
-		Token:    os.Getenv("NATS_TOKEN"),
-	}
-
-	return CreateMessageBus(config, logger)
 }

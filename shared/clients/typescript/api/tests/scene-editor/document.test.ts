@@ -1,13 +1,16 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { STRICT_REGISTRY, TOLERANT_REGISTRY, withoutWidget } from "../../../scene/model";
 import {
   applyOps,
   composeOps,
   diffDocuments,
+  invalidExternalOps,
   invalidOps,
   invalidResult,
   invertOps,
   isSceneDocument,
+  type Json0Component,
+  KEY_MAX_LENGTH,
   type Ops,
   parseSnapshot,
   type SceneDocument,
@@ -163,6 +166,129 @@ describe("invalidOps", () => {
     expect(invalidOps(ops)).toBeNull();
     expect(invalidResult(applyOps(doc, ops), ops)).toBe("placement a would not be valid: invalid placement name");
     expect(invalidResult(doc, [{ p: ["widgets", "a", "x"], od: 0, oi: 1 }])).toBeNull();
+  });
+});
+
+describe("keys that reach the prototype chain", () => {
+  // Components are parsed from JSON, as they arrive over the wire, so a
+  // `__proto__` key in a value is an own property rather than a prototype.
+  const component = (json: string): Json0Component => JSON.parse(json) as Json0Component;
+  const doc = (): SceneDocument =>
+    sceneDoc({ a: placement({ settings: { font: {} } }) }, { b: behavior({ params: { phase: "in" } }) });
+  const prototypeOf = (value: object): unknown => Object.getPrototypeOf(value);
+  const polluted = () => ({}) as Record<string, unknown>;
+
+  afterEach(() => {
+    delete (Object.prototype as Record<string, unknown>).polluted;
+    delete (Object.prototype.toString as unknown as Record<string, unknown>).polluted;
+  });
+
+  const refused: Array<[string, Json0Component]> = [
+    ["a settings key", { p: ["widgets", "a", "settings", "__proto__", "polluted"], oi: "yes" }],
+    ["a nested settings key", { p: ["widgets", "a", "settings", "font", "__proto__", "polluted"], oi: "yes" }],
+    [
+      "a settings key reaching a constructor",
+      { p: ["widgets", "a", "settings", "constructor", "prototype", "polluted"], oi: "yes" },
+    ],
+    ["a params key", { p: ["behaviors", "b", "params", "__proto__", "polluted"], oi: "yes" }],
+    ["a layout key", { p: ["layout", "__proto__"], oi: { polluted: "yes" } }],
+    ["a placement id", { p: ["widgets", "__proto__"], oi: placement() }],
+    ["a behavior id", { p: ["behaviors", "constructor"], oi: behavior() }],
+    ["a placement field", { p: ["widgets", "a", "constructor"], od: {}, oi: {} }],
+  ];
+  for (const [name, op] of refused) {
+    test(`refuses __proto__, prototype and constructor as ${name}, and applying it changes no prototype`, () => {
+      expect(invalidOps([op])).not.toBeNull();
+      expect(() => applyOps(doc(), [op])).toThrow("reserved key");
+      expect(polluted().polluted).toBeUndefined();
+    });
+  }
+
+  test("refuses a value holding an own __proto__ key, at any depth", () => {
+    const shallow = component('{"p":["widgets","a","settings","font"],"oi":{"__proto__":{"polluted":"yes"}}}');
+    const deep = component('{"p":["widgets","b"],"oi":{"settings":{"list":[{"__proto__":{"polluted":"yes"}}]}}}');
+    expect(invalidOps([shallow])).toBe(
+      'a key in a value is 1 to 128 characters and not __proto__, prototype, constructor, found "__proto__"'
+    );
+    expect(invalidOps([deep])).toBe(
+      'a key in a value is 1 to 128 characters and not __proto__, prototype, constructor, found "__proto__"'
+    );
+    expect(invalidOps([{ p: ["widgets", "a", "settings", "font"], oi: { constructor: 1 } }])).toBe(
+      'a key in a value is 1 to 128 characters and not __proto__, prototype, constructor, found "constructor"'
+    );
+    const applied = applyOps(doc(), [shallow]);
+    expect(prototypeOf(applied.widgets.a!.settings.font as object)).toBe(Object.prototype);
+    expect(polluted().polluted).toBeUndefined();
+  });
+
+  test("walks a cyclic value to its end and refuses an empty or over-long key", () => {
+    const cyclic: Record<string, unknown> = { fine: 1 };
+    cyclic.self = cyclic;
+    expect(invalidOps([{ p: ["widgets", "a", "settings", "font"], oi: cyclic }])).toBeNull();
+    const empty = invalidOps([{ p: ["widgets", "a", "settings", "font"], oi: { "": 1 } }]);
+    expect(empty).toContain("1 to 128 characters");
+    const long = invalidOps([{ p: ["widgets", "a", "settings", "font"], oi: { ["k".repeat(129)]: 1 } }]);
+    expect(long).toContain("1 to 128 characters");
+  });
+
+  test("refuses inputs holding an own __proto__ key", () => {
+    const op = component('{"p":["inputs"],"oi":[{"id":"x","type":"text","label":"X","__proto__":{"polluted":1}}]}');
+    expect(invalidExternalOps([op])).toBe(
+      'a key in a value is 1 to 128 characters and not __proto__, prototype, constructor, found "__proto__"'
+    );
+  });
+
+  const badNames: Array<[string, Json0Component, string]> = [
+    ["a layout key with a space", { p: ["layout", "bad key"], oi: 1 }, "a layout key is"],
+    ["an empty layout key", { p: ["layout", ""], oi: 1 }, "a layout key is"],
+    ["a placement id with a slash", { p: ["widgets", "a/b"], oi: placement() }, "a placement id is"],
+    [
+      "a placement id too long",
+      { p: ["widgets", "a".repeat(KEY_MAX_LENGTH + 1)], oi: placement() },
+      "a placement id is",
+    ],
+    [
+      "a settings key too long",
+      { p: ["widgets", "a", "settings", "k".repeat(KEY_MAX_LENGTH + 1)], oi: 1 },
+      "a key in settings is",
+    ],
+    ["an empty settings key", { p: ["widgets", "a", "settings", ""], oi: 1 }, "a key in settings is"],
+  ];
+  for (const [name, op, message] of badNames) {
+    test(`refuses ${name}`, () => {
+      expect(invalidOps([op])).toStartWith(message);
+    });
+  }
+
+  const accepted: Array<[string, Json0Component]> = [
+    ["a generated placement id", { p: ["widgets", "w-0a1b2c3d"], oi: placement() }],
+    ["an id with dots, colons and underscores", { p: ["behaviors", "b_1.x:y"], oi: behavior({ target: "a" }) }],
+    ["a layout key", { p: ["layout", "backgroundColor"], oi: "#000" }],
+    ["a settings key with spaces", { p: ["widgets", "a", "settings", "font colour"], oi: "red" }],
+    ["a settings key at the length limit", { p: ["widgets", "a", "settings", "k".repeat(KEY_MAX_LENGTH)], oi: 1 }],
+    ["a nested settings key", { p: ["widgets", "a", "settings", "font", "size"], oi: 12 }],
+    ["a settings value holding objects and lists", { p: ["widgets", "a", "settings", "list"], oi: [{ a: [1] }] }],
+  ];
+  for (const [name, op] of accepted) {
+    test(`accepts and applies ${name}`, () => {
+      expect(invalidOps([op])).toBeNull();
+      expect(() => applyOps(doc(), [op])).not.toThrow();
+    });
+  }
+
+  test("applying refuses a path through an inherited property that invalidOps cannot see", () => {
+    const op: Json0Component = { p: ["widgets", "a", "settings", "toString", "polluted"], oi: "yes" };
+    expect(invalidOps([op])).toBeNull();
+    expect(() => applyOps(doc(), [op])).toThrow("leaves the document");
+    expect((Object.prototype.toString as unknown as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  test("applying walks each component against the document the earlier ones made", () => {
+    const ops: Ops = [
+      { p: ["widgets", "a", "settings", "theme"], oi: {} },
+      { p: ["widgets", "a", "settings", "theme", "accent"], oi: "red" },
+    ];
+    expect(applyOps(doc(), ops).widgets.a!.settings).toEqual({ font: {}, theme: { accent: "red" } });
   });
 });
 

@@ -66,6 +66,8 @@ export interface ApiOptions {
   nats: NATSClient | null;
   functions: FunctionInvoker | null;
   barkloaderUrl: string;
+  /** The engine secret barkloader authenticates its management routes with. */
+  barkloaderKey: string;
   streamwareUrl?: string;
   sceneManagerUrl: string;
   apiUrl: string;
@@ -102,7 +104,7 @@ export class ApiRouteHost extends RpcTarget {
   protected streamEventBroadcaster: StreamEventBroadcaster | null = null;
   protected engineEventStream: EngineEventStream | null = null;
   protected eventLogSelection: EventLogSelectionSource | null = null;
-  protected authInvalidate: (() => void) | null = null;
+  protected authInvalidate: ((clientId: string) => void) | null = null;
   /**
    * The linked Twitch account's token. An instance property, not a method,
    * so capnweb never offers it to a client.
@@ -119,6 +121,8 @@ export class ApiRouteHost extends RpcTarget {
   protected nats: NATSClient | null;
   protected functions: FunctionInvoker | null;
   protected barkloaderUrl: string;
+  /** An instance property for the same reason as `twitchToken`. */
+  protected readonly barkloaderKey: string;
   protected streamwareUrl: string;
   protected sceneManagerUrl: string;
   protected apiUrl: string;
@@ -132,8 +136,15 @@ export class ApiRouteHost extends RpcTarget {
     return this.barkloaderUrl.endsWith("/") ? this.barkloaderUrl.slice(0, -1) : this.barkloaderUrl;
   }
 
+  /** The one way to reach barkloader's HTTP routes: every one but public asset reads needs the bearer. */
+  protected barkloaderFetch(path: string, init?: RequestInit): Promise<Response> {
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${this.barkloaderKey}`);
+    return fetch(`${this.getBarkloaderBaseUrl()}${path}`, { ...init, headers });
+  }
+
   protected async barkloaderRequest(path: string, init?: RequestInit): Promise<Response> {
-    const response = await fetch(`${this.getBarkloaderBaseUrl()}${path}`, init);
+    const response = await this.barkloaderFetch(path, init);
     if (!response.ok) {
       throw await barkloaderRequestError(response);
     }
@@ -146,7 +157,7 @@ export class ApiRouteHost extends RpcTarget {
    * still throws.
    */
   protected async barkloaderRequestOrNull(path: string, init?: RequestInit): Promise<Response | null> {
-    const response = await fetch(`${this.getBarkloaderBaseUrl()}${path}`, init);
+    const response = await this.barkloaderFetch(path, init);
     if (response.status === 404) {
       await response.body?.cancel();
       return null;
@@ -416,6 +427,9 @@ export class ApiRouteHost extends RpcTarget {
     if (!opts.barkloaderUrl) {
       throw new Error("ApiOptions.barkloaderUrl is required");
     }
+    if (!opts.barkloaderKey) {
+      throw new Error("ApiOptions.barkloaderKey is required");
+    }
     if (!opts.sceneManagerUrl) {
       throw new Error("ApiOptions.sceneManagerUrl is required");
     }
@@ -446,6 +460,7 @@ export class ApiRouteHost extends RpcTarget {
     this.nats = opts.nats;
     this.functions = opts.functions;
     this.barkloaderUrl = opts.barkloaderUrl;
+    this.barkloaderKey = opts.barkloaderKey;
     this.streamwareUrl = opts.streamwareUrl ?? "";
     this.sceneManagerUrl = opts.sceneManagerUrl;
     this.apiUrl = opts.apiUrl;

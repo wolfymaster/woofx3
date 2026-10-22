@@ -115,7 +115,6 @@ where
         &self,
         archive_key: &str,
         db_proxy_url: Option<&str>,
-        force: bool,
         composite_module_key: &str,
         client_id: &str,
         marketplace: Option<&MarketplaceOrigin>,
@@ -123,7 +122,6 @@ where
         self.install_with_provenance(
             archive_key,
             db_proxy_url,
-            force,
             composite_module_key,
             client_id,
             InstallProvenance::User,
@@ -138,13 +136,11 @@ where
         &self,
         archive_key: &str,
         db_proxy_url: Option<&str>,
-        force: bool,
         composite_module_key: &str,
         client_id: &str,
         provenance: InstallProvenance,
         marketplace: Option<&MarketplaceOrigin>,
     ) -> Result<()> {
-        let cleanup_old = force;
         let manifest = self
             .stored_manifest
             .as_ref()
@@ -158,7 +154,6 @@ where
             client
                 .as_ref()
                 .map(|c| c as &dyn super::db_proxy_client::ModuleDbProxy),
-            cleanup_old,
             composite_module_key,
             client_id,
             provenance,

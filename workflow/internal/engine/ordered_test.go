@@ -69,10 +69,8 @@ func (h *orderHarness) hold(t *testing.T, name string) (release func()) {
 // executionOf is the id of the one run begun for a workflow.
 func (h *orderHarness) executionOf(t *testing.T, workflowID string) string {
 	t.Helper()
-	h.engine.executionsMu.RLock()
-	defer h.engine.executionsMu.RUnlock()
 	var found []string
-	for id, execution := range h.engine.executions {
+	for id, execution := range h.engine.runs.executions() {
 		if execution.WorkflowID == workflowID {
 			found = append(found, id)
 		}
