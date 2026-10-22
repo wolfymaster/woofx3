@@ -1154,7 +1154,7 @@ fn check_theme_files(manifest: &ModuleManifest, files: &[ModuleFile]) -> Result<
 
 /// A user-provenance install that knows of no `systemOnly` actions, so it
 /// refuses no reference as reserved. Uploads go through
-/// `ModuleService::execute_plan`, which carries the bundled set.
+/// `ModuleService::install`, which carries the bundled set.
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub async fn run_install<R: Repository>(

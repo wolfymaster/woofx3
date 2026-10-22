@@ -110,8 +110,8 @@ async fn install<R: Repository + Clone>(
         service.add_file(kind, name, contents);
     }
 
-    let plan = service
-        .create_plan()
+    service
+        .load_manifest()
         .map_err(|e| anyhow!("parse bundled manifest: {}", e))?;
 
     // Same `{id}:{version}:{hash}` composite every install uses; the hash
@@ -127,8 +127,7 @@ async fn install<R: Repository + Clone>(
     let archive_key = format!("archives/{}.zip", composite_module_key);
 
     service
-        .execute_plan_with_provenance(
-            &plan,
+        .install_with_provenance(
             &archive_key,
             Some(db_proxy_url),
             // Not a force install: go through the diff-aware upgrade path so a

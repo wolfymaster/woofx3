@@ -300,24 +300,20 @@ async fn upload_handler(
         }
         tracing::info!("=== END FILES ADDED ===");
 
-        // run workflow to create module and upload files to repository
-        let module_plan = match module.create_plan() {
-            Ok(v) => v,
-            Err(err) => {
-                let err_msg = err.to_string();
-                error!("Failed to create module plan: {}", err_msg);
-                notify_install(
-                    db_proxy_ref,
-                    "unknown",
-                    "unknown",
-                    "failed",
-                    &err_msg,
-                    request_context.as_ref(),
-                )
-                .await;
-                return;
-            }
-        };
+        if let Err(err) = module.load_manifest() {
+            let err_msg = err.to_string();
+            error!("Failed to load module manifest: {}", err_msg);
+            notify_install(
+                db_proxy_ref,
+                "unknown",
+                "unknown",
+                "failed",
+                &err_msg,
+                request_context.as_ref(),
+            )
+            .await;
+            return;
+        }
 
         let (module_id, module_name, module_version) = match (
             module.module_id(),
@@ -326,7 +322,7 @@ async fn upload_handler(
         ) {
             (Some(id), Some(n), Some(v)) => (id, n, v),
             _ => {
-                let err_msg = "module identity missing after create_plan";
+                let err_msg = "module identity missing after load_manifest";
                 error!("{}", err_msg);
                 notify_install(
                     db_proxy_ref,
@@ -408,8 +404,7 @@ async fn upload_handler(
             .map(|rc| rc.client_id.clone())
             .unwrap_or_default();
         if let Err(e) = module
-            .execute_plan(
-                &module_plan,
+            .install(
                 &archive_key,
                 ctx.db_proxy_url.as_deref(),
                 force,
@@ -843,7 +838,7 @@ async fn versions_handler(
 
 /// Rolls a module back to a previously installed version by re-running
 /// the same diff-aware install path (`run_install`, via
-/// `ModuleService::create_plan`/`execute_plan`) against that version's
+/// `ModuleService::load_manifest`/`install`) against that version's
 /// archived manifest — treating "roll back" as "install this old
 /// manifest over the current state," exactly like any other upgrade.
 /// Removed-then-restored resources are re-added, resources the newer
@@ -943,7 +938,7 @@ async fn rollback_handler(
         module.add_file(kind, file_name, contents);
     }
 
-    let module_plan = module.create_plan().map_err(|e| {
+    module.load_manifest().map_err(|e| {
         actix_web::error::ErrorInternalServerError(format!(
             "Failed to parse archived manifest: {}",
             e
@@ -958,7 +953,7 @@ async fn rollback_handler(
         (Some(id), Some(n), Some(v)) => (id.to_string(), n.to_string(), v.to_string()),
         _ => {
             return Err(actix_web::error::ErrorInternalServerError(
-                "module identity missing after create_plan",
+                "module identity missing after load_manifest",
             ));
         }
     };
@@ -966,8 +961,7 @@ async fn rollback_handler(
         format!("{}:{}:{}", manifest_module_id, resolved_version, hash_short);
 
     module
-        .execute_plan(
-            &module_plan,
+        .install(
             &archive_key,
             Some(db_proxy_url),
             false, // not force — go through the diff-aware upgrade path, same as any install
