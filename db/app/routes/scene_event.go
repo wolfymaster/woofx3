@@ -15,7 +15,7 @@ import (
 // Symmetric with `WidgetStatusRoutes` — engine-internal (sceneManager
 // only), no Casbin middleware yet.
 func SceneEventRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMiddleware) {
-	r := repo.NewSceneEventRepository(app.Db)
+	r := repo.NewSceneEventRepository(app.Db, app.Now)
 	s := svc.NewSceneEventService(r)
 	handler := client.NewSceneEventServiceServer(
 		s,
