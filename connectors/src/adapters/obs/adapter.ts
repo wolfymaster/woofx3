@@ -103,9 +103,12 @@ interface ObsRun {
 /**
  * OBS as a host adapter: keeps one obs-websocket session open, reached
  * directly or through the companion, and answers the engine's OBS requests
- * through the host. It always runs: OBS being closed is the connection's to
- * retry, not a reason to stop. Each start builds a fresh OBS service; the
- * overlay refresh latch lives in the host state and outlives every run.
+ * through the host. It runs while a module that controls OBS is installed
+ * and active, or WOOFX3_OBS_HOST is set (adapters/obs/link.ts). While it
+ * runs, OBS being closed is the connection's to retry, not a reason to stop.
+ * Each start builds a fresh OBS service; the overlay refresh latch lives in
+ * the host state and outlives every run, so a refresh requested while the
+ * adapter is stopped is carried out when it next starts.
  */
 export class ObsAdapter implements Adapter<RefreshLatch> {
   readonly manifest: AdapterManifest<RefreshLatch>;

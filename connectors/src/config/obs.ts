@@ -51,7 +51,9 @@ const unsetWhenBlank = (value: unknown) => (typeof value === "string" && value.t
 const positiveMs = z.number().int().positive();
 
 export const ObsEnvSchema = z.object({
-  woofx3ObsHost: z.string().default(OBS_DEFAULTS.host),
+  // No default here: whether the host was set at all decides if OBS runs
+  // without an OBS module (obsConfig's hostExplicit).
+  woofx3ObsHost: z.string().optional(),
   woofx3ObsPort: z.preprocess(unsetWhenBlank, z.number().int().min(1).max(65_535).default(OBS_DEFAULTS.port)),
   woofx3ObsRpcToken: z.union([z.string(), z.number()]).optional(),
   woofx3ObsBackoffInitialMs: positiveMs.default(OBS_DEFAULTS.backoffInitialMs),
@@ -73,6 +75,11 @@ export interface ObsConnectionConfig {
 export interface ObsConfig {
   /** Where OBS is when the OBS module's settings leave a value empty. */
   fallback: ObsFallback;
+  /**
+   * WOOFX3_OBS_HOST holds a value. The adapter then runs without any OBS
+   * module installed, for an engine that is pointed at OBS by configuration.
+   */
+  hostExplicit: boolean;
   connection: ObsConnectionConfig;
   /** How long one command or listing may take in OBS before the session is recycled. */
   commandTimeoutMs: number;
@@ -102,7 +109,7 @@ export function obsConfigProblems(env: ObsEnv): string[] {
 }
 
 export function obsConfig(env: ObsEnv): ObsConfig {
-  const host = env.woofx3ObsHost.trim();
+  const host = env.woofx3ObsHost?.trim() ?? "";
   const token = env.woofx3ObsRpcToken === undefined ? "" : String(env.woofx3ObsRpcToken).trim();
   return {
     fallback: {
@@ -110,6 +117,7 @@ export function obsConfig(env: ObsEnv): ObsConfig {
       port: String(env.woofx3ObsPort),
       token: token === "" ? undefined : token,
     },
+    hostExplicit: host !== "",
     connection: {
       backoff: { baseMs: env.woofx3ObsBackoffInitialMs, maxMs: env.woofx3ObsBackoffMaxMs },
       connectTimeoutMs: env.woofx3ObsConnectTimeoutMs,

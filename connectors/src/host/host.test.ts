@@ -9,16 +9,17 @@ import { GatewayEnvSchema, gatewayConfig } from "../config/gateway";
 import { HostEnvSchema, hostConfig } from "../config/host";
 import type { Adapter, EgressHandlers, ServedSubject } from "./adapter";
 import { Host } from "./host";
-import { LINK_READERS, type SettingsReader } from "./link-readers";
 import {
   bytes,
   countingIds,
   FakeAdapter,
   FakeBus,
   FakeTime,
+  fixedLinkStore,
   flush,
   halfRandom,
   RecordingLogger,
+  shippedLinkReaders,
   text,
 } from "./testing";
 
@@ -39,7 +40,7 @@ const chatSend: EgressHandlers = {
 
 async function setup(served: ServedSubject = twitchapi, env: Record<string, unknown> = {}, adapterOverride?: Adapter) {
   const values: Record<string, string> = {};
-  const settings: SettingsReader = { getSetting: async (key) => values[key] ?? null };
+  const settings = fixedLinkStore(values);
   const bus = new FakeBus();
   const adapter = new FakeAdapter("twitch", [served], chatSend);
   const time = new FakeTime();
@@ -50,10 +51,10 @@ async function setup(served: ServedSubject = twitchapi, env: Record<string, unkn
     dbProxy: { baseURL: "http://db.test" },
     bus,
     busConnected: () => true,
-    settings,
+    linkStore: settings,
     adapters: new Map([["twitch", adapterOverride ?? adapter]]),
     hostStates: new Map([["twitch", undefined]]),
-    readers: LINK_READERS,
+    readers: shippedLinkReaders(),
     clock: time,
     random: halfRandom,
     ids: countingIds(),
@@ -101,10 +102,10 @@ describe("Host", () => {
         dbProxy: { baseURL: "http://db.test" },
         bus: new FakeBus(),
         busConnected: () => true,
-        settings: { getSetting: async () => null },
+        linkStore: fixedLinkStore({}),
         adapters: new Map([["twitch", new FakeAdapter("twitch", [twitchapi])]]),
         hostStates: new Map(),
-        readers: LINK_READERS,
+        readers: shippedLinkReaders(),
         clock: time,
         random: halfRandom,
         ids: countingIds(),

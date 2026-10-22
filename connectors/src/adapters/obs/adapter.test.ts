@@ -6,11 +6,23 @@ import { HostEnvSchema, hostConfig } from "../../config/host";
 import { OBS_SERVED_BUDGETS_MS, type ObsConfig, ObsEnvSchema, obsConfig } from "../../config/obs";
 import { systemTimers } from "../../host/deps";
 import { Host } from "../../host/host";
-import { LINK_READERS, type LinkReader, type LinkState } from "../../host/link-readers";
-import { bytes, countingIds, FakeBus, FakeTime, flush, halfRandom, RecordingLogger, text } from "../../host/testing";
+import type { InstalledModule, LinkState } from "../../host/link-readers";
+import {
+  bytes,
+  countingIds,
+  FakeBus,
+  FakeTime,
+  fixedLinkStore,
+  flush,
+  halfRandom,
+  RecordingLogger,
+  shippedLinkReaders,
+  text,
+} from "../../host/testing";
 import { MODULE_SETTING_UPDATED_SUBJECT, ObsAdapter, obsAdapterModule } from "./adapter";
 import { OBS_NOT_CONNECTED } from "./control";
 import { type FakeObsServer, startFakeObs } from "./fake-obs-server";
+import { obsLinkReader } from "./link";
 import { RefreshLatch } from "./refresh-latch";
 
 const OVERLAY_PORT = 9101;
@@ -23,8 +35,8 @@ const emptyStore: EndpointStore = {
 };
 
 /** The shipped OBS configuration, pointed at `port` on this machine. */
-function obsAt(port: number): ObsConfig {
-  return obsConfig(ObsEnvSchema.parse({ woofx3ObsPort: port }));
+function obsAt(port: number, env: Record<string, unknown> = {}): ObsConfig {
+  return obsConfig(ObsEnvSchema.parse({ woofx3ObsPort: port, ...env }));
 }
 
 /** A port nothing listens on, as on an engine whose OBS is closed. */
@@ -32,6 +44,15 @@ const CLOSED_OBS = obsAt(1);
 
 function newAdapter(config: ObsConfig = CLOSED_OBS, latch = new RefreshLatch(), store = emptyStore): ObsAdapter {
   return new ObsAdapter({ config, endpointStore: () => store, random: halfRandom, timers: systemTimers }, latch);
+}
+
+/** The OBS module as barkloader stores it, trimmed to what the link reader reads. */
+function obsModule(disabled = false): InstalledModule {
+  return {
+    moduleId: "woofx3_obs",
+    manifest: JSON.stringify({ id: "woofx3_obs", permissions: ["obs.control"] }),
+    disabled,
+  };
 }
 
 const command = (sceneName: string) => bytes(JSON.stringify({ data: { command: "switch_scene", sceneName } }));
@@ -162,15 +183,14 @@ describe("ObsAdapter desired", () => {
 });
 
 /**
- * The OBS adapter alone under the real host and supervisor. Its link reads as
- * `link.enabled`, so a test can stop and start it; the host re-reads it on the
- * backstop interval.
+ * The OBS adapter alone under the real host, supervisor and OBS link reader.
+ * `modules` is what db-proxy lists as installed, the OBS module (active) to
+ * begin with; `setEnabled` switches that module on or off and lets the
+ * host's backstop pass apply it.
  */
-function hosted(config: ObsConfig = CLOSED_OBS, store = emptyStore) {
+function hosted(config: ObsConfig = CLOSED_OBS, store = emptyStore, modules: InstalledModule[] = [obsModule()]) {
   const time = new FakeTime();
   const bus = new FakeBus();
-  const link: LinkState = { connected: true, enabled: true };
-  const reader: LinkReader = { watches: [], read: async () => ({ ...link, flag: null }) };
   const latch = new RefreshLatch();
   const adapter = newAdapter(config, latch, store);
   const hostDefaults = hostConfig(HostEnvSchema.parse({}));
@@ -180,22 +200,30 @@ function hosted(config: ObsConfig = CLOSED_OBS, store = emptyStore) {
     dbProxy: { baseURL: "http://db.test" },
     bus,
     busConnected: () => true,
-    settings: { getSetting: async () => null },
+    linkStore: fixedLinkStore({}, modules),
     adapters: new Map([["obs", adapter]]),
     hostStates: new Map([["obs", latch]]),
-    readers: { ...LINK_READERS, obs: reader },
+    readers: { ...shippedLinkReaders(), obs: obsLinkReader({ hostExplicit: config.hostExplicit }) },
     clock: time,
     random: halfRandom,
     ids: countingIds(),
     timers: time,
     logger: new RecordingLogger(),
   });
-  /** Sets the link and lets the host's next backstop pass apply it. */
+  /** Switches the OBS module on or off; db-proxy announces neither, so it waits for the backstop pass. */
   const setEnabled = async (enabled: boolean) => {
-    link.enabled = enabled;
+    modules.splice(0, modules.length, obsModule(!enabled));
     await time.advance(hostDefaults.reconcileIntervalMs);
     await host.settled();
   };
+  /** Installs or removes the OBS module and announces it as db-proxy does. */
+  const setInstalled = async (installed: boolean) => {
+    modules.splice(0, modules.length, ...(installed ? [obsModule()] : []));
+    bus.deliver(installed ? "db.module.installed.system" : "db.module.deleted.system", bytes("{}"));
+    await flush();
+    await host.settled();
+  };
+  const obsState = () => host.snapshot().adapters.find((a) => a.id === "obs")?.status.state;
   /** Delivers a request and waits for its one reply. */
   const ask = async (subject: string, data: Uint8Array) => {
     const replies = bus.deliver(subject, data, "inbox");
@@ -203,7 +231,7 @@ function hosted(config: ObsConfig = CLOSED_OBS, store = emptyStore) {
     await until(() => replies.length > 0);
     return replies;
   };
-  return { adapter, bus, host, setEnabled, ask };
+  return { adapter, bus, host, setEnabled, setInstalled, obsState, ask };
 }
 
 describe("ObsAdapter in the host", () => {
@@ -278,6 +306,80 @@ describe("ObsAdapter in the host", () => {
     const [reply] = await ask("engine.obs.command", command("Raid"));
     expect(parsed(reply)).toEqual({ ok: true });
     expect(fake.requests).toContain("SetCurrentProgramScene");
+  });
+});
+
+describe("When the OBS adapter runs", () => {
+  let running: { host: Host; fake?: FakeObsServer } | undefined;
+
+  afterEach(async () => {
+    await running?.host.stop();
+    running?.fake?.stop();
+    running = undefined;
+  });
+
+  test("with no OBS module and no host set: stopped, never dials, and ctx.obs hears it is turned off", async () => {
+    const fake = startFakeObs();
+    const { host, ask, obsState } = hosted(obsAt(fake.port), emptyStore, []);
+    running = { host, fake };
+    await host.start();
+    await host.settled();
+
+    expect(obsState()).toBe("stopped");
+    const [reply] = await ask("engine.obs.command", command("Raid"));
+    expect(parsed(reply)).toEqual({ ok: false, error: "OBS is turned off in this engine" });
+    const [status] = await ask("engine.obs.status", bytes("{}"));
+    expect(parsed(status)).toEqual({ state: "stopped", failure: null, address: null });
+    await settle();
+    expect(fake.upgrades).toHaveLength(0);
+  });
+
+  test("installing the OBS module starts it at once, and removing it stops it, without a restart", async () => {
+    const fake = startFakeObs();
+    const { host, adapter, setInstalled, obsState } = hosted(obsAt(fake.port), emptyStore, []);
+    running = { host, fake };
+    await host.start();
+    await host.settled();
+
+    await setInstalled(true);
+    expect(obsState()).toBe("connected");
+    await until(() => adapter.detail().state === "connected");
+
+    await setInstalled(false);
+    expect(obsState()).toBe("stopped");
+    expect(adapter.detail()).toEqual({ state: "stopped", route: null, address: null });
+  });
+
+  test("switching the OBS module off stops it on the next backstop pass", async () => {
+    const { host, setEnabled, obsState } = hosted();
+    running = { host };
+    await host.start();
+    await host.settled();
+    expect(obsState()).toBe("connected");
+
+    await setEnabled(false);
+    expect(obsState()).toBe("stopped");
+  });
+
+  test("WOOFX3_OBS_HOST set keeps it running with no OBS module installed", async () => {
+    const fake = startFakeObs();
+    const { host, adapter, obsState } = hosted(obsAt(fake.port, { woofx3ObsHost: "127.0.0.1" }), emptyStore, []);
+    running = { host, fake };
+    await host.start();
+    await host.settled();
+
+    expect(obsState()).toBe("connected");
+    await until(() => adapter.detail().state === "connected");
+  });
+
+  test("an OBS module whose manifest cannot be read does not start it", async () => {
+    const { host, obsState } = hosted(CLOSED_OBS, emptyStore, [
+      { moduleId: "woofx3_obs", manifest: "{", disabled: false },
+    ]);
+    running = { host };
+    await host.start();
+    await host.settled();
+    expect(obsState()).toBe("stopped");
   });
 });
 

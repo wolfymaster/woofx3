@@ -8,23 +8,28 @@ function shaped(env: Record<string, unknown>): ObsConfig {
 describe("obsConfig", () => {
   const cases: Array<[name: string, env: Record<string, unknown>, expected: Partial<ObsConfig>]> = [
     [
-      "nothing set: obs-websocket on this machine",
+      "nothing set: obs-websocket on this machine, run only for an OBS module",
       {},
-      { fallback: { host: "127.0.0.1", port: "4455", token: undefined } },
+      { fallback: { host: "127.0.0.1", port: "4455", token: undefined }, hostExplicit: false },
     ],
     [
       "every connection value set",
       { woofx3ObsHost: "obs.lan", woofx3ObsPort: 4460, woofx3ObsRpcToken: "hunter2" },
-      { fallback: { host: "obs.lan", port: "4460", token: "hunter2" } },
+      { fallback: { host: "obs.lan", port: "4460", token: "hunter2" }, hostExplicit: true },
+    ],
+    [
+      "the default host set explicitly still counts as set",
+      { woofx3ObsHost: "127.0.0.1" },
+      { fallback: defaultFallback(), hostExplicit: true },
     ],
     [
       "a numeric password, as loadRuntimeEnv coerces it",
       { woofx3ObsRpcToken: 1234 },
-      { fallback: { ...defaultFallback(), token: "1234" } },
+      { fallback: { ...defaultFallback(), token: "1234" }, hostExplicit: false },
     ],
-    ["a blank password", { woofx3ObsRpcToken: "  " }, { fallback: defaultFallback() }],
-    ["a blank host", { woofx3ObsHost: " " }, { fallback: defaultFallback() }],
-    ["a blank port", { woofx3ObsPort: "" }, { fallback: defaultFallback() }],
+    ["a blank password", { woofx3ObsRpcToken: "  " }, { fallback: defaultFallback(), hostExplicit: false }],
+    ["a blank host is unset", { woofx3ObsHost: " " }, { fallback: defaultFallback(), hostExplicit: false }],
+    ["a blank port", { woofx3ObsPort: "" }, { fallback: defaultFallback(), hostExplicit: false }],
     [
       "the shipped tunables",
       {},
