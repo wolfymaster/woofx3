@@ -106,8 +106,13 @@ interface Connection {
   client: TwitchClient;
   adBreakScheduler?: AdBreakScheduler;
   eventBus?: TwitchEventBus;
-  /** Set once closed: a relink replaced it or its connect failed, so it no longer speaks for the run. */
-  closed?: boolean;
+  /**
+   * Set once closed by stop, a failed connect or a reconnecting relink, so a
+   * late renewal failure from it is ignored. An in-place token swap keeps the
+   * connection open and may still see one late fault from the old token; the
+   * restart it causes recovers on its own.
+   */
+  closed: boolean;
 }
 
 /** The parts of a finished connect the rest of the run reads. */
@@ -278,6 +283,7 @@ export default class TwitchApplication {
     this.link = "connecting";
     const db = ctx.db;
     const connection: Connection = {
+      closed: false,
       client: new TwitchClient({
         logger: ctx.logger,
         onAuthFailure: (err, { provider }) => this.onAuthFailure(ctx, connection, err, provider),
