@@ -1,7 +1,7 @@
 import * as alert from "@woofx3/db/alert.pb";
 import type * as common from "@woofx3/db/common.pb";
 import { Ping } from "@woofx3/db/common.pb";
-import { GetModuleByModuleId, GetResourceInstance, ListWidgets, RegisterWidgets } from "@woofx3/db/module.pb";
+import { GetResourceInstance, ListWidgets, RegisterWidgets } from "@woofx3/db/module.pb";
 import type * as module_resource_instance from "@woofx3/db/module_resource_instance.pb";
 import * as module_setting from "@woofx3/db/module_setting.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
@@ -121,15 +121,6 @@ export class DbClient {
 
   async registerWidgets(req: module_widget.RegisterWidgetsRequest): Promise<module_widget.ListWidgetsResponse> {
     return RegisterWidgets(req, this.config);
-  }
-
-  // Resolves a module's current composite module_key from its stable
-  // manifest id — used for built-in widget catalog registration parity
-  // checks. Module-widget frame resolution itself now happens
-  // server-to-server against Barkloader's own endpoint, not here.
-  async getModuleKeyForModuleId(moduleId: string): Promise<string | null> {
-    const resp = await GetModuleByModuleId({ moduleId }, this.config);
-    return resp.module?.moduleKey || null;
   }
 
   // A module's settings. A secret's value is never in these records.

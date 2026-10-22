@@ -86,7 +86,6 @@ export function createFakeDb(): FakeDb {
       status: OK,
       widgets: [widget("alert", { hostsSurface: "alert", surfaces: ["scene"] }), widget("text")],
     }),
-    getModuleKeyForModuleId: async (moduleId: string) => moduleId,
     listModuleSettings: async () => [],
     getModuleStorageValue: async (namespace: string, key: string) => storage.get(`${namespace}:${key}`) ?? null,
     getResourceInstance: async () => null,
