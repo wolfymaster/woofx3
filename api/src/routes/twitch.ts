@@ -33,6 +33,14 @@ export const TWITCH_HELIX_TIMEOUT_MS = 10_000;
 /** The codes the twitch service sends with a `helix` refusal that a caller can branch on. */
 const FORWARDED_REFUSAL_CODES = new Set(["invalid_arguments", "not_linked"]);
 
+/**
+ * The code connectors answers with while the twitch adapter is linked but
+ * turned off, starting or parked. Its own message may name host internals,
+ * so callers get this one under `unavailable`.
+ */
+const INTEGRATION_UNAVAILABLE_CODE = "integration_unavailable";
+const INTEGRATION_UNAVAILABLE_MESSAGE = "Twitch is turned off or not running in this engine";
+
 type Requester = Pick<NATSClient, "request">;
 
 function errorMessage(err: unknown): string {
@@ -68,6 +76,9 @@ export function readHelixReply(operation: HelixOperationName, raw: unknown): Twi
   const data =
     typeof envelope.data === "object" && envelope.data !== null ? (envelope.data as Record<string, unknown>) : {};
   if (envelope.type === "twitchapi.error") {
+    if (data.code === INTEGRATION_UNAVAILABLE_CODE) {
+      return { ok: false, code: "unavailable", error: INTEGRATION_UNAVAILABLE_MESSAGE };
+    }
     const error = typeof data.error === "string" && data.error !== "" ? data.error : `${operation} was refused`;
     if (typeof data.code === "string" && FORWARDED_REFUSAL_CODES.has(data.code)) {
       return { ok: false, code: data.code as "invalid_arguments" | "not_linked", error };

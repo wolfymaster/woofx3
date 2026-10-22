@@ -14,7 +14,7 @@
  * - `invalid_arguments`: the engine refused the arguments before calling
  *   Twitch (an unknown or misshapen parameter).
  * - `not_linked`: no Twitch account is linked to the engine.
- * - `unavailable`: the engine's twitch service is not running.
+ * - `unavailable`: Twitch is turned off in this engine, or not running.
  * - `timeout`: the twitch service did not answer within 10 seconds. Twitch
  *   may still have acted.
  * - `failed`: anything else; `error` says what.

@@ -210,6 +210,24 @@ describe("twitch route results", () => {
     });
   });
 
+  test("the twitch adapter turned off or not running is unavailable", async () => {
+    const off = busAnswering(
+      twitchError("Twitch is turned off or not running in this engine", "integration_unavailable")
+    );
+    expect(await call(off.nats, "twitchGetChannelInformation")).toEqual({
+      ok: false,
+      code: "unavailable",
+      error: "Twitch is turned off or not running in this engine",
+    });
+
+    const parked = busAnswering(twitchError("it failed repeatedly", "integration_unavailable"));
+    expect(await call(parked.nats, "twitchGetChannelInformation")).toEqual({
+      ok: false,
+      code: "unavailable",
+      error: "Twitch is turned off or not running in this engine",
+    });
+  });
+
   test("an uncoded refusal, or one with a code it does not forward, is failed", async () => {
     const uncoded = busAnswering(twitchError("Unknown command: helix"));
     expect(await call(uncoded.nats, "twitchGetChannelInformation")).toEqual({
