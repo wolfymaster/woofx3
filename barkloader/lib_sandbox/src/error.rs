@@ -1,3 +1,4 @@
+use crate::runtime::limits::SizeLimit;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -52,6 +53,18 @@ pub enum Error {
 
     #[error("Instruction limit exceeded")]
     InstructionLimitExceeded,
+
+    #[error("value nests deeper than {max_depth} levels")]
+    ValueTooDeep { max_depth: usize },
+
+    #[error("value is too large: {limit}")]
+    ValueTooLarge { limit: SizeLimit },
+
+    #[error("a {type_name} value cannot be converted to JSON")]
+    UnsupportedValue { type_name: String },
+
+    #[error("entry point returned a Promise; async functions are not supported")]
+    AsyncEntryUnsupported,
 }
 
 /// Thread-safe error returned by [`crate::SandboxFactory::invoke_blocking`].

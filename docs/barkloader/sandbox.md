@@ -117,6 +117,22 @@ Debug adapter for unrecognized file extensions.
 
 Returns the raw source code and arguments as JSON without executing anything.
 
+### Value conversion
+
+Every value that crosses between a runtime and the engine is converted to or from JSON: a function's return value, the arguments a module passes to a `ctx` function, a thrown value, and the event and host answers handed to the script. Each conversion is bounded (`SandboxLimits` in `barkloader/lib_sandbox/src/runtime/limits.rs`):
+
+| Limit | Default | Error |
+|-------|---------|-------|
+| Nesting depth (arrays and objects) | 64 | `ValueTooDeep` |
+| Values in one conversion | 100,000 | `ValueTooLarge` |
+| Text in one conversion (strings and keys) | 4 MiB | `ValueTooLarge` |
+
+A value that refers to itself exceeds the depth limit, so a cyclic return value fails the invocation with a clear error. A refused `ctx` argument is raised inside the script, where a `try`/`catch` or `pcall` can handle it; a value `ctx.log.*` cannot convert is logged as unloggable instead.
+
+A Lua table whose keys are exactly `1..n` becomes an array; any other table becomes an object keyed by its string and integer keys. An empty table is an object, except an empty array from the event, which round-trips as `[]`. A table holding both `[1]` and `['1']` is refused rather than silently keeping one. Functions, coroutines and userdata (in JavaScript: functions, promises, symbols and BigInts) have no JSON form and are refused with `UnsupportedValue`.
+
+A JavaScript entry point must return its result directly. The adapter does not run the promise job queue, so an `async` function (or any function returning a Promise) is refused with `AsyncEntryUnsupported`.
+
 ## Modules request, the engine acts
 
 Module functions never drive the engine. A function returns a value in a platform-defined shape and the engine decides what to do with it; [`ctx.response`](#ctxresponse) is the model. Read [Engine integrity](../services/engine-integrity.md) before adding any host binding.
@@ -363,5 +379,9 @@ Sandbox errors are categorized:
 | `QuickJSExecutionError` | QuickJS function call error |
 | `IoError` | File read/write failure |
 | `JsonError` | JSON serialization/deserialization failure |
+| `ValueTooDeep` | A converted value nests deeper than the depth limit, or refers to itself |
+| `ValueTooLarge` | A converted value has too many values or too much text |
+| `UnsupportedValue` | A value with no JSON form, such as a Lua function |
+| `AsyncEntryUnsupported` | A JavaScript entry point returned a Promise |
 
 All errors implement `std::error::Error` via `thiserror` and are converted to WebSocket error messages.

@@ -166,7 +166,7 @@ impl Harness {
             url_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
-        let returned = QuickJSAdapter::new()
+        let returned = QuickJSAdapter::new(crate::runtime::limits::SandboxLimits::default())
             .unwrap()
             .execute(self.source, entry_point, &invocation)
             .map_err(|err| err.to_string())?;

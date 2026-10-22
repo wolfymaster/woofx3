@@ -3,6 +3,7 @@ use crate::host::InvocationContext;
 use crate::models::function::Function;
 use crate::runtime::RuntimeAdapter;
 use crate::runtime::echo::EchoAdapter;
+use crate::runtime::limits::SandboxLimits;
 use crate::runtime::lua::LuaAdapter;
 use crate::runtime::quickjs::QuickJSAdapter;
 use serde_json::Value;
@@ -10,12 +11,14 @@ use std::collections::HashMap;
 
 pub struct FunctionExecutor {
     adapters: HashMap<String, Box<dyn RuntimeAdapter>>,
+    limits: SandboxLimits,
 }
 
 impl FunctionExecutor {
     pub fn new() -> Self {
         Self {
             adapters: HashMap::new(),
+            limits: SandboxLimits::default(),
         }
     }
 
@@ -34,8 +37,8 @@ impl FunctionExecutor {
         if !self.adapters.contains_key(extension) {
             let adapter: Box<dyn RuntimeAdapter> = match extension {
                 "echo" => Box::new(EchoAdapter::new()),
-                "lua" => Box::new(LuaAdapter::new()?),
-                "js" => Box::new(QuickJSAdapter::new()?),
+                "lua" => Box::new(LuaAdapter::new(self.limits)?),
+                "js" => Box::new(QuickJSAdapter::new(self.limits)?),
                 other => return Err(Error::UnsupportedRuntime(other.to_string())),
             };
             self.adapters.insert(extension.to_string(), adapter);
