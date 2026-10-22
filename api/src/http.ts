@@ -4,6 +4,7 @@ import type { ServerWebSocket } from "bun";
 import { hasBarkloaderBearer } from "./barkloader-webhook-auth";
 import { newHttpBatchRpcResponse, newWebSocketRpcSession } from "capnweb";
 import type { ApiGateway } from "./gateway";
+import { type ConnectionInfo, GatewayConnection } from "./gateway-connection";
 import type { Health } from "./health";
 import type { Readiness } from "./readiness";
 
@@ -31,6 +32,12 @@ export interface HttpDeps {
   barkloaderWebhookSecret: string | null;
 }
 
+/** What a WebSocket carries from its upgrade request to `open`, where its gateway connection is built. */
+interface SocketData {
+  origin: string | null;
+  remoteAddress: string | null;
+}
+
 /** CORS for `/api` batch RPC, beside the origin headers the request guard picks. */
 const BATCH_CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -43,7 +50,7 @@ const BATCH_CORS_HEADERS: Record<string, string> = {
  */
 class BunWebSocketAdapter {
   private listeners: Map<string, Set<(event: any) => void>> = new Map();
-  private bunWs: ServerWebSocket<unknown>;
+  private bunWs: ServerWebSocket<SocketData>;
   private logger: SharedLogger;
 
   // Standard WebSocket readyState constants
@@ -52,7 +59,7 @@ class BunWebSocketAdapter {
   static readonly CLOSING = 2;
   static readonly CLOSED = 3;
 
-  constructor(bunWs: ServerWebSocket<unknown>, logger: SharedLogger) {
+  constructor(bunWs: ServerWebSocket<SocketData>, logger: SharedLogger) {
     this.bunWs = bunWs;
     this.logger = logger;
   }
@@ -160,9 +167,9 @@ export function createHttpServer(deps: HttpDeps) {
   const requestGuard = new RequestGuard(deps.requestGuard);
 
   // Map to track WebSocket adapters by their Bun WebSocket (capnweb path)
-  const wsAdapters = new WeakMap<ServerWebSocket<unknown>, BunWebSocketAdapter>();
+  const wsAdapters = new WeakMap<ServerWebSocket<SocketData>, BunWebSocketAdapter>();
 
-  return Bun.serve({
+  return Bun.serve<SocketData>({
     port,
     hostname,
     async fetch(req, server) {
@@ -188,7 +195,9 @@ export function createHttpServer(deps: HttpDeps) {
           path: url.pathname,
           origin: req.headers.get("origin"),
         });
-        const upgraded = server.upgrade(req);
+        const upgraded = server.upgrade(req, {
+          data: { origin: req.headers.get("origin"), remoteAddress: server.requestIP(req)?.address ?? null },
+        });
         if (!upgraded) {
           logger.error("WebSocket upgrade failed");
           return new Response("WebSocket upgrade failed", { status: 500 });
@@ -216,7 +225,12 @@ export function createHttpServer(deps: HttpDeps) {
             path: url.pathname,
             contentLength: req.headers.get("content-length"),
           });
-          const response = await newHttpBatchRpcResponse(req, gateway, {
+          const connection: ConnectionInfo = {
+            origin: req.headers.get("origin"),
+            remoteAddress: server.requestIP(req)?.address ?? null,
+            close: null,
+          };
+          const response = await newHttpBatchRpcResponse(req, new GatewayConnection(gateway, connection), {
             onSendError(error: Error) {
               logger.error("RPC method error", {
                 error: error.message,
@@ -318,7 +332,11 @@ export function createHttpServer(deps: HttpDeps) {
         try {
           const adapter = new BunWebSocketAdapter(ws, logger);
           wsAdapters.set(ws, adapter);
-          newWebSocketRpcSession(adapter as any, gateway, {
+          const connection: ConnectionInfo = {
+            ...ws.data,
+            close: (code, reason) => adapter.close(code, reason),
+          };
+          newWebSocketRpcSession(adapter as any, new GatewayConnection(gateway, connection), {
             onSendError(error: Error) {
               logger.error("WebSocket RPC method error", {
                 error: error.message,
