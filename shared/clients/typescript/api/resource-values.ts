@@ -19,7 +19,10 @@ export function resourceValueStorageKey(canonicalId: string): string {
   return `${RESOURCE_VALUE_KEY_PREFIX}${canonicalId}`;
 }
 
-/** The canonical id whose value `key` holds, or null for a key that holds no resource value. */
+/**
+ * The canonical id whose value `key` holds, or null for a key that holds no
+ * resource value. A bare prefix names no id, so it reads as null too.
+ */
 export function canonicalIdForStorageKey(key: string): string | null {
   if (!key.startsWith(RESOURCE_VALUE_KEY_PREFIX)) {
     return null;

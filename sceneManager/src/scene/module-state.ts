@@ -99,11 +99,15 @@ function parseSettings(settingsJson: string): Record<string, unknown> {
   }
 }
 
-/** The canonical id a resource key names, or null for a key that names none. */
+/**
+ * The canonical id a resource key names, or null for a key that names none,
+ * including a bare prefix (as `canonicalIdForStorageKey` reads one).
+ */
 export function resourceKeyInstance(key: string): string | null {
   for (const prefix of [RESOURCE_VALUE_KEY_PREFIX, RESOURCE_PREFIX]) {
     if (key.startsWith(prefix)) {
-      return key.slice(prefix.length);
+      const canonicalId = key.slice(prefix.length);
+      return canonicalId === "" ? null : canonicalId;
     }
   }
   return null;
