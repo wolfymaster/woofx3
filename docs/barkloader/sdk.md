@@ -41,13 +41,25 @@ workspace path alias — no install needed.
 function increment(ctx) {
   const count = (ctx.storage.get("count") ?? 0) + 1;
   ctx.storage.set("count", count);
-  return ctx.response(true, `Count is now ${count}.`);
+  return ctx.success(`Count is now ${count}.`, { count });
 }
 ```
 
 The returned value becomes the `function` step's output. A command that
-should answer in chat follows the step with a `chat.reply` step that
-reads it, e.g. `${<stepId>.message}`.
+should answer in chat follows the step with a "Send chat message" step
+(`chat.reply`) that posts `${<stepId>.message}`. Modules never write to
+chat themselves, so the streamer can reword or remove the reply in the
+workflow. When a failure should stay out of chat, put a condition on the
+reply step so it runs only when `${<stepId>.success}` is true.
+
+`ctx.success` and `ctx.failure` exist only on engines that ship them. A
+module that must also run on an older engine can feature-detect:
+
+```js
+const done = ctx.success
+  ? ctx.success(message, fields)
+  : Object.assign(ctx.response(true, message), fields);
+```
 
 A function asks the engine to act by returning a value, never by
 driving the bus itself. See
@@ -62,6 +74,7 @@ v0.1.0):
 | `ctx.event` | the triggering CloudEvent (opaque) |
 | `ctx.user` | user context (opaque) |
 | `ctx.response` | `(success, message)` — see [Sandbox → `ctx.response`](./sandbox.md#ctxresponse) |
+| `ctx.success` / `ctx.failure` | `(message, fields?)` — see [Sandbox → `ctx.success` and `ctx.failure`](./sandbox.md#ctxsuccess-and-ctxfailure) |
 | `ctx.result` | `(value, events?)` — see [Sandbox → `ctx.result`](./sandbox.md#ctxresult) |
 | `ctx.crypto` | `hmac(algorithm, key, data, encoding?)`, `verifyEd25519(publicKey, signature, message, encoding?)`, `timingSafeEqual(a, b)` — see [Sandbox → `ctx.crypto`](./sandbox.md#ctxcrypto) |
 | `ctx.storage` | `get(key)`, `set(key, value, options?)` |
