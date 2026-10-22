@@ -460,7 +460,8 @@ Each line is one event, with an RFC 3339 `time`:
   written, and the orchestrator is exiting. A service that cannot be reaped
   within 5 seconds of being killed may be missing its event.
 
-Consumers must ignore event types and fields they do not know.
+Consumers must ignore event types, service statuses and fields they do not
+know; new ones may be added.
 
 ### Windows
 

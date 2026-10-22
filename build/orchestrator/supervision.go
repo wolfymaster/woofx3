@@ -59,8 +59,8 @@ func parseSupervisionOptions(args []string, getenv func(string) string) (supervi
 	return options, nil
 }
 
-// Status events. A consumer must ignore event types and fields it does not
-// know, so that more can be added.
+// Status events. A consumer must ignore event types, service statuses and
+// fields it does not know, so that more can be added.
 const (
 	eventService = "service"
 	eventReady   = "ready"
