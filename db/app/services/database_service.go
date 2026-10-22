@@ -33,7 +33,7 @@ func (s *DatabaseService) Connect(ctx context.Context, appCtx *runtime.Applicati
 	if err != nil {
 		return err
 	}
-	s.logger.Info("Connecting to system database", "dialect", parsed.Dialect, "url", s.databaseURL)
+	s.logger.Info("Connecting to system database", "dialect", parsed.Dialect, "target", parsed.LogSafe())
 
 	db, err := database.InitializeDB(s.databaseURL, s.logger, s.ids)
 	if err != nil {

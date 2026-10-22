@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/wolfymaster/woofx3/common/runtime"
@@ -151,4 +152,57 @@ func TestInitializeDB_SQLiteMemory(t *testing.T) {
 		t.Fatalf("ping: %v", err)
 	}
 	_ = sqlDB.Close()
+}
+
+func TestParsedDSN_LogSafe(t *testing.T) {
+	t.Setenv(runtime.DataDirEnv, "")
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"postgres password", "postgresql://user:hunter2@db:5432/woofx3", "postgresql://user:xxxxx@db:5432/woofx3"},
+		{"postgres query credentials", "postgres://user@db/woofx3?password=hunter2&sslmode=require", "postgres://user@db/woofx3"},
+		{"sqlite path", "sqlite:///var/lib/woofx3.db", "/var/lib/woofx3.db"},
+		{"postgres fragment", "postgres://user:hunter2@db/woofx3#hunter2", "postgres://user:xxxxx@db/woofx3"},
+		{"memory", ":memory:", ":memory:"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			parsed, err := ParseDatabaseURL(tc.raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := parsed.LogSafe()
+			if got != tc.want {
+				t.Fatalf("LogSafe() = %q, want %q", got, tc.want)
+			}
+			if strings.Contains(got, "hunter2") {
+				t.Fatalf("LogSafe() leaked the password: %q", got)
+			}
+		})
+	}
+}
+
+func TestParseDatabaseURL_ErrorsOmitPassword(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{"bad port", "postgres://u:hunter2@db:badport/x"},
+		{"bad escape", "postgres://u:hunter2%zz@db/x"},
+		{"no scheme", "u:hunter2@db/x"},
+		{"unsupported scheme", "mysql://u:hunter2@db/x"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseDatabaseURL(tc.raw)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if strings.Contains(err.Error(), "hunter2") {
+				t.Fatalf("error leaked the password: %q", err)
+			}
+		})
+	}
 }
