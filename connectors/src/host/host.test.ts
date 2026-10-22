@@ -186,6 +186,31 @@ describe("Host", () => {
     );
   });
 
+  test("refuses an adapter that serves the gateway's subject", async () => {
+    const rival: Adapter = {
+      manifest: {
+        id: "twitch",
+        publishes: [],
+        subscribes: [],
+        requests: [],
+        serves: [
+          {
+            subject: "platform.gateway.send",
+            budgetMs: 1_000,
+            handle: async () => new Uint8Array(),
+            unavailableReply: () => new Uint8Array(),
+          },
+        ],
+      },
+      desired: () => false,
+      start: async () => {},
+      stop: async () => {},
+    };
+    await expect(setup(twitchapi, {}, rival)).rejects.toThrow(
+      'adapter "twitch" serves "platform.gateway.send", which the host serves itself'
+    );
+  });
+
   test("refuses a second start", async () => {
     const { host } = await setup();
     await host.start();

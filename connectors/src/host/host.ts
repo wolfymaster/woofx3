@@ -224,6 +224,9 @@ function assertNoSecondResponder(
       if (covering !== undefined) {
         throw new Error(`adapter "${id}" subscribes to "${covering}", which covers the host's ${subject}`);
       }
+      if (adapter.manifest.serves.some((own) => own.subject === subject)) {
+        throw new Error(`adapter "${id}" serves "${subject}", which the host serves itself`);
+      }
     }
   }
 }
