@@ -52,7 +52,7 @@ const runtime = createRuntime({
   livenessInterval: RUNTIME_LIVENESS_INTERVAL_MS,
   runtimeInit: async (app) => {
     app.register("messageBus", new MessageBusService(bus));
-    app.register("dbProxy", new DbProxyService(config.dbProxyUrl));
+    app.register("dbProxy", new DbProxyService(config.dbProxyUrl, config.host.dbProxyTimeoutMs));
   },
 });
 

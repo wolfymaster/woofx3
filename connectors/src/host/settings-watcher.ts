@@ -6,6 +6,7 @@ import {
   isIntegrationId,
 } from "@woofx3/common/integrations/integration-settings";
 import type { AdapterId } from "./adapter-ids";
+import { bounded } from "./bounded";
 import { type Clock, errorMessage, type Logger, type TimerHandle, type Timers } from "./deps";
 import type { LinkReaderRegistry, LinkState, SettingsReader } from "./link-readers";
 import type { BusMessage, ScopedBus } from "./scoped-bus";
@@ -28,6 +29,8 @@ export interface SettingsWatcherDeps {
   timers: Timers;
   logger: Logger;
   reconcileIntervalMs: number;
+  /** One adapter's link read may take this long before the pass gives up on it and keeps its last state. */
+  readTimeoutMs: number;
 }
 
 /** One pass waiting to run: which adapters to read, and which of them a settings event named. */
@@ -66,7 +69,10 @@ export class SettingsWatcher {
     await this.idle();
   }
 
-  /** Stops the backstop and lets the pass in flight finish. The host scope's close drops the subscriptions. */
+  /**
+   * Stops the backstop and lets the pass in flight finish, which takes at
+   * most readTimeoutMs. The host scope's close drops the subscriptions.
+   */
   async stop(): Promise<void> {
     this.stopped = true;
     this.pending = undefined;
@@ -132,16 +138,29 @@ export class SettingsWatcher {
     const links = new Map<AdapterId, LinkState>();
     await Promise.all(
       [...pass.read].map(async (id) => {
-        try {
-          const reading = await this.deps.readers[id].read(this.deps.settings);
-          this.logFlag(id, reading.flag);
-          links.set(id, { connected: reading.connected, enabled: reading.enabled });
-        } catch (error) {
-          // Leaving it out of `links` keeps the supervisor on the last state it was given.
-          this.deps.logger.warn("could not read link state; keeping the last one", {
-            adapter: id,
-            error: errorMessage(error),
-          });
+        const outcome = await bounded(
+          () => this.deps.readers[id].read(this.deps.settings),
+          this.deps.readTimeoutMs,
+          this.deps.timers
+        );
+        // An adapter left out of `links` keeps the supervisor on the last state it was given.
+        switch (outcome.kind) {
+          case "done":
+            this.logFlag(id, outcome.value.flag);
+            links.set(id, { connected: outcome.value.connected, enabled: outcome.value.enabled });
+            return;
+          case "failed":
+            this.deps.logger.warn("could not read link state; keeping the last one", {
+              adapter: id,
+              error: errorMessage(outcome.error),
+            });
+            return;
+          case "timeout":
+            this.deps.logger.warn("link state read timed out; keeping the last one", {
+              adapter: id,
+              readTimeoutMs: this.deps.readTimeoutMs,
+            });
+            return;
         }
       })
     );

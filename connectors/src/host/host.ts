@@ -97,6 +97,7 @@ export class Host {
       timers: deps.timers,
       logger: deps.logger,
       reconcileIntervalMs: deps.config.reconcileIntervalMs,
+      readTimeoutMs: deps.config.dbProxyTimeoutMs,
     });
   }
 

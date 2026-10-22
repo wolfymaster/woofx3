@@ -9,6 +9,8 @@ import { ScopeCounters, ScopedBus } from "./scoped-bus";
 import { type LinkSink, SETTINGS_SUBJECTS, SettingsWatcher } from "./settings-watcher";
 import { bytes, FakeBus, FakeTime, flush, RecordingLogger } from "./testing";
 
+const READ_TIMEOUT_MS = 2_000;
+
 interface Applied {
   links: Record<string, LinkState>;
   changed: AdapterId[];
@@ -65,6 +67,7 @@ async function setup() {
     timers: time,
     logger,
     reconcileIntervalMs: 60_000,
+    readTimeoutMs: READ_TIMEOUT_MS,
   });
   return { time, bus, logger, settings, applied, watcher };
 }
@@ -127,6 +130,29 @@ describe("SettingsWatcher", () => {
 
     expect(applied).toHaveLength(1);
     expect(logger.at("warn").some((entry) => entry.message.includes("keeping the last one"))).toBe(true);
+  });
+
+  test("a read that never answers times out, keeps the last state, and does not stall later passes or stop", async () => {
+    const { time, settings, logger, applied, watcher } = await setup();
+    await watcher.start();
+    settings.gate = new Promise<void>(() => {});
+
+    await time.advance(60_000);
+    expect(applied).toHaveLength(1);
+    await time.advance(READ_TIMEOUT_MS);
+    expect(logger.at("warn").some((entry) => entry.message.includes("timed out"))).toBe(true);
+    const passAfterTimeout = watcher.lastPass;
+    expect(passAfterTimeout).toBe(time.now());
+
+    settings.gate = undefined;
+    await time.advance(60_000);
+    expect(applied).toHaveLength(2);
+
+    settings.gate = new Promise<void>(() => {});
+    await time.advance(60_000);
+    const stopping = watcher.stop();
+    await time.advance(READ_TIMEOUT_MS);
+    await stopping;
   });
 
   test("an absent flag is logged once at info, an invalid one once per value at warn", async () => {

@@ -16,6 +16,7 @@ describe("connectorsConfig", () => {
       backoff: { baseMs: HOST_DEFAULTS.backoffBaseMs, maxMs: HOST_DEFAULTS.backoffMaxMs },
       park: { afterFailures: HOST_DEFAULTS.parkAfterFailures, windowMs: HOST_DEFAULTS.parkWindowMs },
       stopDeadlineMs: HOST_DEFAULTS.stopDeadlineMs,
+      dbProxyTimeoutMs: HOST_DEFAULTS.dbProxyTimeoutMs,
       subscriptionLimits: { concurrency: HOST_DEFAULTS.adapterConcurrency, queueCap: HOST_DEFAULTS.adapterQueueCap },
       shutdownDeadlineMs: HOST_DEFAULTS.shutdownDeadlineMs,
     });
@@ -62,8 +63,14 @@ describe("connectorsConfig", () => {
     [
       "shutdown deadline no longer than an adapter stop",
       { ...required, woofx3ConnectorsShutdownDeadlineMs: 10_000 },
-      "must exceed woofx3ConnectorsStopDeadlineMs",
+      "must exceed woofx3ConnectorsDbProxyTimeoutMs plus woofx3ConnectorsStopDeadlineMs",
     ],
+    [
+      "shutdown deadline that leaves no room for a link read in flight",
+      { ...required, woofx3ConnectorsStopDeadlineMs: 10_000, woofx3ConnectorsShutdownDeadlineMs: 11_000 },
+      "must exceed woofx3ConnectorsDbProxyTimeoutMs plus woofx3ConnectorsStopDeadlineMs (12000)",
+    ],
+    ["zero db-proxy timeout", { ...required, woofx3ConnectorsDbProxyTimeoutMs: 0 }, "woofx3ConnectorsDbProxyTimeoutMs"],
   ];
   for (const [name, env, problem] of invalid) {
     test(`refuses ${name}`, () => {

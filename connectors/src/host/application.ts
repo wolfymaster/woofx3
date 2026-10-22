@@ -56,13 +56,13 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
     if (this.adapters === undefined) {
       throw new Error("run before init: the adapters are not loaded");
     }
-    const { messageBus } = ctx.services;
+    const { messageBus, dbProxy } = ctx.services;
     const host = new Host({
       config: this.deps.config.host,
       dbProxyUrl: this.deps.config.dbProxyUrl,
       bus: messageBus.client,
       busConnected: () => messageBus.isUp(),
-      settings: dbProxySettings(this.deps.config.dbProxyUrl),
+      settings: dbProxySettings(dbProxy.client),
       adapters: this.adapters,
       readers: assertLinkReaders(this.deps.readers),
       clock: this.deps.clock,
