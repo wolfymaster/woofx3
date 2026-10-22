@@ -34,15 +34,6 @@ func TestPublishEventInCarriesItsSubjectAsTypeAndItsExtensionsOntoTheWire(t *tes
 	if err := gormigrate.New(db, migrations.Options, chain).Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	// The outbox row's id comes from a Postgres column default that the
-	// SQLite schema lacks, so the test supplies one.
-	if err := db.Callback().Create().Before("gorm:create").Register("test:worker_event_id", func(tx *gorm.DB) {
-		if event, ok := tx.Statement.Dest.(*models.WorkerEvent); ok && event.ID == "" {
-			event.ID = "e1"
-		}
-	}); err != nil {
-		t.Fatalf("register outbox id callback: %v", err)
-	}
 	publisher := NewEventPublisher(repository.NewDbEventRepository(db), slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	if err := publisher.PublishEventIn(db, "viewer.segment.entered", "user:segment:chatty",
@@ -88,5 +79,40 @@ func TestPublishEventInCarriesItsSubjectAsTypeAndItsExtensionsOntoTheWire(t *tes
 	ce = cloudevents.NewEvent()
 	if err := setEventExtensions(&ce, &plain); err != nil || len(ce.Extensions()) != 0 {
 		t.Fatalf("an event without extensions got %v, %v", ce.Extensions(), err)
+	}
+}
+
+func TestPublishInWritesOutboxRowsOnTheSQLiteSchema(t *testing.T) {
+	db, err := gorm.Open(gsqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("sql db: %v", err)
+	}
+	// Every connection to :memory: is a separate database.
+	sqlDB.SetMaxOpenConns(1)
+	chain, err := migrations.For(database.DialectSQLite)
+	if err != nil {
+		t.Fatalf("migrations.For: %v", err)
+	}
+	if err := gormigrate.New(db, migrations.Options, chain).Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	publisher := NewEventPublisher(repository.NewDbEventRepository(db), slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	for _, id := range []string{"a", "b"} {
+		if err := publisher.PublishIn(db, PublishOptions{EntityType: "thing", EntityID: id, Operation: "created"}); err != nil {
+			t.Fatalf("PublishIn(%s): %v", id, err)
+		}
+	}
+
+	var ids []string
+	if err := db.Model(&models.WorkerEvent{}).Order("entity_id").Pluck("id", &ids).Error; err != nil {
+		t.Fatalf("read outbox: %v", err)
+	}
+	if len(ids) != 2 || ids[0] == "" || ids[0] == ids[1] {
+		t.Errorf("outbox ids = %q, want two distinct ids", ids)
 	}
 }

@@ -147,6 +147,8 @@ export class ApiGateway {
       description,
       callbackUrl: callbackUrl ?? "",
       callbackToken: callbackToken ?? "",
+      kind: "CLIENT_KIND_REGISTERED",
+      origin: "",
     });
     if (!resp.client) {
       throw new Error("Failed to create client");

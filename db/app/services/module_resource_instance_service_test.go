@@ -42,16 +42,6 @@ func newInstanceSvc(t *testing.T) (*moduleService, *gorm.DB) {
 	if err := db.Create(module).Error; err != nil {
 		t.Fatalf("install module: %v", err)
 	}
-	// The outbox row's id comes from a Postgres column default that the
-	// SQLite schema lacks, so the test supplies one.
-	err = db.Callback().Create().Before("gorm:create").Register("test:worker_event_id", func(tx *gorm.DB) {
-		if event, ok := tx.Statement.Dest.(*models.WorkerEvent); ok && event.ID == "" {
-			event.ID = uuid.NewString()
-		}
-	})
-	if err != nil {
-		t.Fatalf("register outbox id callback: %v", err)
-	}
 	publisher := workers.NewEventPublisher(repo.NewDbEventRepository(db), slog.New(slog.DiscardHandler))
 	svc := NewModuleService(
 		repo.NewModuleRepository(db),

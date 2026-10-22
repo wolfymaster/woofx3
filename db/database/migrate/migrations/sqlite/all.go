@@ -75,5 +75,6 @@ func All() []*gormigrate.Migration {
 		AddCommandWorkflowError(),
 		CreateSceneBackupsTable(),
 		AddLocalUISettings(),
+		AddClientKindOrigin(),
 	}
 }

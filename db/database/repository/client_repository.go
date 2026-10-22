@@ -1,9 +1,13 @@
 package repository
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ClientRepository struct {
@@ -14,8 +18,20 @@ func NewClientRepository(db *gorm.DB) *ClientRepository {
 	return &ClientRepository{db: db}
 }
 
-func (r *ClientRepository) Create(client *models.Client) error {
-	return r.db.Create(client).Error
+// RecordClientChange records a client a write changed, in the same
+// transaction as the write: the service writes the client's outbox entry
+// with it, so the write and its event commit or roll back together.
+// Returning an error rolls the write back.
+type RecordClientChange func(tx *gorm.DB, row *models.Client) error
+
+// Create inserts `client` and records it.
+func (r *ClientRepository) Create(client *models.Client, record RecordClientChange) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(client).Error; err != nil {
+			return err
+		}
+		return record(tx, client)
+	})
 }
 
 func (r *ClientRepository) GetByID(id int) (*models.Client, error) {
@@ -40,8 +56,36 @@ func (r *ClientRepository) Update(client *models.Client) error {
 	return r.db.Save(client).Error
 }
 
-func (r *ClientRepository) Delete(id int) error {
-	return r.db.Delete(&models.Client{}, id).Error
+// Delete removes the client with `id` and records it as it stood. A client
+// already gone, including one a concurrent delete removed first, is not an
+// error and records nothing: the row comes back from the DELETE itself, so
+// only the delete that removed it records it.
+func (r *ClientRepository) Delete(id int, record RecordClientChange) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var deleted []models.Client
+		res := tx.Clauses(clause.Returning{}).Where("id = ?", id).Delete(&deleted)
+		if res.Error != nil {
+			return res.Error
+		}
+		switch len(deleted) {
+		case 0:
+			return nil
+		case 1:
+			return record(tx, &deleted[0])
+		default:
+			return fmt.Errorf("delete client %d removed %d rows", id, len(deleted))
+		}
+	})
+}
+
+// RecordAuthentication stamps `at` as the client's last authentication, and
+// reports whether the client exists.
+func (r *ClientRepository) RecordAuthentication(clientID uuid.UUID, at time.Time) (bool, error) {
+	res := r.db.Model(&models.Client{}).Where("client_id = ?", clientID).Update("last_authenticated_at", at)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
 }
 
 func (r *ClientRepository) ValidateClient(clientID uuid.UUID, clientSecret string) (*models.Client, error) {
