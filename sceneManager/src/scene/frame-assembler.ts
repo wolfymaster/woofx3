@@ -183,20 +183,21 @@ export class FrameAssembler {
       ...frameFonts(frameInfo),
     };
     const cacheable = versionParam !== null && versionParam === frameVersion(frameInfo);
-    return this.render(frameInfo, boot, cacheable ? CACHED_FRAME_CACHE_CONTROL : "no-cache", timings);
+    return this.render(frameInfo, boot, cacheable ? CACHED_FRAME_CACHE_CONTROL : "no-cache", cacheable, timings);
   }
 
   private render(
     frameInfo: BarkloaderFrameInfo,
     boot: WidgetFrameBoot,
     cacheControl: string,
+    cacheable: boolean,
     timings: StageTimings<FrameStage>
   ): Response {
     const { html, headers } = frameDocument(frameInfo, boot);
     // A cached response is replayed unchanged, so its timings would describe
     // the first miss on every later hit.
     const responseHeaders: Record<string, string> = { ...headers, "Cache-Control": cacheControl };
-    if (cacheControl !== CACHED_FRAME_CACHE_CONTROL) {
+    if (!cacheable) {
       responseHeaders["Server-Timing"] = timings.serverTiming();
     }
     return new Response(html, { status: 200, headers: responseHeaders });
