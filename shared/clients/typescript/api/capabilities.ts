@@ -84,6 +84,12 @@ export const ENGINE_CAPABILITIES = {
    */
   modulesLocalEndpoints: "modules.localEndpoints",
   /**
+   * The `ctx.local` host extension: module code sends to, and requests from,
+   * its own declared websocket `local[]` endpoints through the connectors
+   * host's companion gateway.
+   */
+  modulesLocalEndpointCalls: "modules.localEndpointCalls",
+  /**
    * A manifest's `oauth[]` integrations, `ctx.oauth.request`, and finishing a
    * connect with `completeModuleOAuth`.
    */
