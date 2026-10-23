@@ -38,6 +38,7 @@ import {
   twitchEgress,
 } from "./egress";
 import { HELIX_DEADLINE_MS, type HelixAuth, HelixNoAnswer, runHelixOperation } from "./lib/helix";
+import { SelfSentRegistry } from "./lib/self-sent";
 import { SendQueue } from "./lib/send-queue";
 import type { TwitchApiCall } from "./lib/twitch";
 import { TwitchApiError } from "./lib/twitchApiError";
@@ -241,6 +242,16 @@ describe("twitch egress, Helix requests", () => {
 
     calls[0]?.call.onSent?.();
     expect(roomy.marks()).toBe(1);
+  });
+
+  // The line's echo carries the chain, which is how the workflow engine sees a workflow answering itself.
+  test("hands each call the request's workflow chain", async () => {
+    const { session, calls } = scriptedSession(posted("m-1"), posted("m-2"));
+    const chained = context();
+
+    await perform(session, "chat.send", { message: "a" }, undefined, { ...chained.ctx, workflowChain: "wf-a,wf-b" });
+    await perform(session, "chat.send", { message: "b" });
+    expect(calls.map((call) => call.call.workflowChain)).toEqual(["wf-a,wf-b", undefined]);
   });
 
   test("answers unavailable without a Helix call while the adapter is stopped or reconnecting", async () => {
@@ -474,6 +485,7 @@ describe("twitch egress through the platform gateway", () => {
     const time = new FakeTime();
     const bus = new FakeBus();
     const logger = new RecordingLogger();
+    const selfSent = new SelfSentRegistry({ capacity: 8, ttlMs: 30_000 }, time);
     const session: TwitchEgressSession = {
       kind: "ready",
       helix: (args, call) =>
@@ -481,6 +493,8 @@ describe("twitch egress through the platform gateway", () => {
           deadlineMs: call.helixDeadlineMs,
           signal: call.signal,
           onSent: call.onSent,
+          selfSent,
+          workflowChain: call.workflowChain,
         }),
     };
     const manifest: AdapterManifest = {
@@ -515,7 +529,7 @@ describe("twitch egress through the platform gateway", () => {
       logger,
     });
     await gateway.serve(scope);
-    return async (request: Record<string, unknown>): Promise<GatewayReply> => {
+    const send = async (request: Record<string, unknown>): Promise<GatewayReply> => {
       const replies = bus.deliver(PLATFORM_GATEWAY_SUBJECTS.send, bytes(JSON.stringify(request)), "inbox");
       for (let i = 0; i < 20 && replies.length === 0; i++) {
         await flush();
@@ -527,6 +541,7 @@ describe("twitch egress through the platform gateway", () => {
       }
       return reply.value;
     };
+    return { send, selfSent };
   }
 
   const hello = (message: string) => ({
@@ -538,7 +553,7 @@ describe("twitch egress through the platform gateway", () => {
   });
 
   test("posts a guarded command line and replies delivered with its message id", async () => {
-    const send = await gatewayWithTwitch(linked, { state: "connected", since: 0 });
+    const { send } = await gatewayWithTwitch(linked, { state: "connected", since: 0 });
 
     expect(await send(hello("!hi"))).toEqual({
       ok: true,
@@ -547,8 +562,18 @@ describe("twitch egress through the platform gateway", () => {
     expect(sent).toEqual([{ broadcaster_id: BROADCASTER_ID, sender_id: BROADCASTER_ID, message: "​!hi" }]);
   });
 
+  test("records the posted line with the request's workflow chain, for its echo to carry", async () => {
+    const { send, selfSent } = await gatewayWithTwitch(linked, { state: "connected", since: 0 });
+
+    await send({ ...hello("counter is 3"), workflowChain: "wf-a,wf-b" });
+
+    expect(selfSent.claimEcho({ messageId: "m-1", text: "counter is 3", fromBroadcaster: true })).toEqual({
+      workflowChain: "wf-a,wf-b",
+    });
+  });
+
   test("replies unavailable, not linked, once Twitch is unlinked, without calling Twitch", async () => {
-    const send = await gatewayWithTwitch(unlinked, { state: "stopped" });
+    const { send } = await gatewayWithTwitch(unlinked, { state: "stopped" });
 
     expect(await send(hello("hi"))).toEqual({
       ok: false,

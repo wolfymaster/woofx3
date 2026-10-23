@@ -347,7 +347,8 @@ egress: {
 request's `workflowChain` for the adapter to attach to the platform's echo of
 the line. An adapter that is not a platform declaring egress, an unknown
 action, or an action registered twice stops connectors at startup. The Twitch adapter's handlers are described under
-[Chat egress](./connectors.md#chat-egress).
+[Chat egress](./connectors.md#chat-egress), and how it marks the echo under
+[Own lines on the chat feed](./connectors.md#own-lines-on-the-chat-feed).
 
 ### Configuration and health
 

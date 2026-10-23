@@ -299,6 +299,39 @@ sent. Once `WOOFX3_TWITCH_SEND_QUEUE_CAP` writes are waiting, the next is
 whose turn comes while the adapter is stopped or reconnecting after a relink
 is `unavailable` with `stopped` or `starting`.
 
+### Own lines on the chat feed
+
+The engine speaks with the broadcaster's token, so every line it says comes
+back on EventSub's chat feed as the broadcaster's. The adapter tells those
+lines apart from the streamer typing and marks them on the `user.message`
+event (`lib/self-sent.ts`):
+
+- Every Send Chat Message call is recorded just before the request leaves,
+  whether it comes from the platform gateway or the legacy `twitchapi`
+  `helix` command, along with the gateway request's `workflowChain` when
+  there is one. Twitch's answer settles the record: a posted line is kept
+  under its message id, and a refused or dropped line is forgotten. A call
+  with no answer keeps the record, because Twitch may have posted the line.
+- A chat message is the engine's when its id matches a recorded line. An echo
+  that arrives before Twitch has answered the send matches by its text
+  instead, ignoring whitespace and the guard's zero-width space, and only
+  when the broadcaster sent it. A command the engine said behind the guard is
+  not matched by an echo that starts with a bare `!`, since that is the
+  streamer running the command. Each record answers for one echo only, so the
+  streamer typing the same words afterwards is still the streamer.
+- A matched message is published with `fromEngine: true`, and its CloudEvent
+  carries the sending run's `workflowChain`, which is how the workflow loop
+  guard sees a workflow answering its own line. Every other message has
+  `fromEngine: false` and no chain. Lines sent through the legacy `twitchapi`
+  command are marked `fromEngine` but never carry a chain.
+
+Records expire after `WOOFX3_TWITCH_SELF_SENT_TTL_MS`, and at most
+`WOOFX3_TWITCH_SELF_SENT_CAPACITY` are held, the oldest forgotten first. They
+live as long as the adapter, so a line said just before a restart is still
+known when it echoes after it; `/health` shows how many are waiting as
+`ownLinesAwaitingEcho`. Announcements are not recorded: Twitch hands them
+back as chat notifications, not chat messages.
+
 connectors pins its `@twurple/*` packages to the release
 `shared/clients/typescript/twitch` resolves. TypeScript only treats the two
 copies' classes as one type when name and version match, so upgrade both
@@ -380,6 +413,8 @@ The Twitch adapter reads:
 | `WOOFX3_TWITCH_MEMBERSHIP_TTL_MS` | `600000` | How long a looked-up answer is kept. |
 | `WOOFX3_TWITCH_MEMBERSHIP_DEADLINE_MS` | `250` | How long a chat message waits on a lookup before it is published without it. |
 | `WOOFX3_TWITCH_SEND_QUEUE_CAP` | `100` | How many platform gateway chat writes may wait behind the one being sent; one more is refused as rate limited. |
+| `WOOFX3_TWITCH_SELF_SENT_CAPACITY` | `256` | How many of the engine's own chat lines are remembered while their echo is awaited. |
+| `WOOFX3_TWITCH_SELF_SENT_TTL_MS` | `30000` | How long one of the engine's own lines waits for its echo before it is forgotten. |
 
 The OBS adapter reads, for whatever the OBS module's settings leave empty:
 

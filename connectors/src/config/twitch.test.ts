@@ -12,12 +12,20 @@ describe("twitchConfig", () => {
       app: undefined,
       membership: { ttlMs: TWITCH_DEFAULTS.membershipTtlMs, deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs },
       sendQueueCap: TWITCH_DEFAULTS.sendQueueCap,
+      selfSent: { capacity: TWITCH_DEFAULTS.selfSentCapacity, ttlMs: TWITCH_DEFAULTS.selfSentTtlMs },
     });
   });
 
   test("takes a send queue cap, zero included", () => {
     expect(shaped({ woofx3TwitchSendQueueCap: 5 }).sendQueueCap).toBe(5);
     expect(shaped({ woofx3TwitchSendQueueCap: 0 }).sendQueueCap).toBe(0);
+  });
+
+  test("takes the own-line echo bounds", () => {
+    expect(shaped({ woofx3TwitchSelfSentCapacity: 8, woofx3TwitchSelfSentTtlMs: 5_000 }).selfSent).toEqual({
+      capacity: 8,
+      ttlMs: 5_000,
+    });
   });
 
   const apps: Array<[name: string, env: Record<string, unknown>, app: TwitchConfig["app"]]> = [
@@ -55,6 +63,8 @@ describe("twitchConfig", () => {
     ["a non-boolean enrichment switch", { woofx3TwitchMembershipEnrichmentEnabled: "maybe" }],
     ["a negative send queue cap", { woofx3TwitchSendQueueCap: -1 }],
     ["a fractional send queue cap", { woofx3TwitchSendQueueCap: 1.5 }],
+    ["a zero own-line capacity", { woofx3TwitchSelfSentCapacity: 0 }],
+    ["a zero own-line TTL", { woofx3TwitchSelfSentTtlMs: 0 }],
   ];
   for (const [name, env] of invalid) {
     test(`refuses ${name}`, () => {

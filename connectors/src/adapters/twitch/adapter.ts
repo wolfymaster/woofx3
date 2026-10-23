@@ -14,6 +14,7 @@ import type {
 import type { LinkState } from "../../host/link-readers";
 import TwitchApplication, { type TwitchAppContext, type TwitchReplyDeps, twitchApiErrorReply } from "./application";
 import { type TwitchEgressSession, twitchEgress } from "./egress";
+import { SelfSentRegistry } from "./lib/self-sent";
 import { SendQueue } from "./lib/send-queue";
 import { SHOUTOUT_ENQUEUE_SUBJECT } from "./lib/shoutoutQueue";
 
@@ -61,14 +62,17 @@ export interface TwitchAdapterDeps extends TwitchReplyDeps {
  * EventSub into bus events, answers `twitchapi` through the host, and
  * performs the platform gateway's chat actions. Each start builds a fresh
  * TwitchApplication, so nothing from an earlier run leaks into the next one.
- * The send queue lives as long as the adapter, so writes stay in order
- * across a restart.
+ * The send queue and the record of the engine's own chat lines live as long
+ * as the adapter, so writes stay in order, and a line said before a restart
+ * is still known when it echoes after it.
  */
 export class TwitchAdapter implements Adapter {
   readonly manifest: AdapterManifest;
   private run: { app: TwitchApplication; ctx: TwitchAppContext } | undefined;
+  private readonly selfSent: SelfSentRegistry;
 
   constructor(private readonly deps: TwitchAdapterDeps) {
+    this.selfSent = new SelfSentRegistry(deps.config.selfSent, deps.clock);
     const queue = new SendQueue(deps.config.sendQueueCap);
     this.manifest = {
       id: "twitch",
@@ -100,7 +104,7 @@ export class TwitchAdapter implements Adapter {
     if (this.run !== undefined) {
       throw new Error("the twitch adapter is already running; the host never starts it twice");
     }
-    const app = new TwitchApplication(this.deps);
+    const app = new TwitchApplication({ clock: this.deps.clock, ids: this.deps.ids, selfSent: this.selfSent });
     const appCtx: TwitchAppContext = {
       logger: ctx.logger,
       bus: ctx.bus,
@@ -126,6 +130,7 @@ export class TwitchAdapter implements Adapter {
     return {
       broadcasterId: run?.ctx.broadcaster?.id ?? null,
       eventSub: run?.app.eventSubStatus() ?? null,
+      ownLinesAwaitingEcho: this.selfSent.size,
     };
   }
 

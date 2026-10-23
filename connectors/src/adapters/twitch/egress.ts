@@ -225,7 +225,8 @@ type HelixAttempt = { kind: "answered"; body: unknown } | { kind: "ended"; outco
 /**
  * One Helix call as the broadcaster, bounded by the request's deadline and
  * HELIX_DEADLINE_MS, whichever is first. Marks the request sent just before
- * it leaves, so the gateway reports a deadline after that as unconfirmed.
+ * it leaves, so the gateway reports a deadline after that as unconfirmed, and
+ * hands on the request's workflow chain, which a chat line's echo carries.
  */
 async function attemptHelix(deps: TwitchEgressDeps, ctx: EgressContext, args: HelixCommandArgs): Promise<HelixAttempt> {
   const session = deps.session();
@@ -236,6 +237,7 @@ async function attemptHelix(deps: TwitchEgressDeps, ctx: EgressContext, args: He
     helixDeadlineMs: Math.max(0, Math.min(HELIX_DEADLINE_MS, ctx.deadline - deps.clock.now())),
     signal: ctx.signal,
     onSent: () => ctx.markSent(),
+    workflowChain: ctx.workflowChain,
   };
   let result: HelixCommandResult;
   try {

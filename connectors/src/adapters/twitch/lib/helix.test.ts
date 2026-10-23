@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
 import type { HelixOperationName } from "@woofx3/common/cloudevents/Twitch/commands";
+import { FakeTime } from "../../../host/testing";
 import {
   buildHelixRequest,
   guardChatLine,
@@ -12,6 +13,7 @@ import {
   type SentChatMessage,
   validateHelixParams,
 } from "./helix";
+import { SelfSentRegistry } from "./self-sent";
 import { TwitchApiError } from "./twitchApiError";
 
 const BROADCASTER_ID = "broadcaster-1";
@@ -762,5 +764,100 @@ describe("runHelixOperation, cancelled and observed", () => {
     ).catch((error: unknown) => error);
     expect(err).toBeInstanceOf(HelixNoAnswer);
     expect((err as HelixNoAnswer).sent).toBe(false);
+  });
+});
+
+describe("runHelixOperation, the engine's own chat lines", () => {
+  const SEND = { operation: "sendChatMessage", params: { message: "!hi chat" } };
+  const fromBroadcaster = (messageId: string, text = "!hi chat") => ({ messageId, text, fromBroadcaster: true });
+
+  function ownLines(): SelfSentRegistry {
+    return new SelfSentRegistry({ capacity: 8, ttlMs: 30_000 }, new FakeTime());
+  }
+
+  const answers: Array<[name: string, answer: Response, held: boolean]> = [
+    [
+      "a line Twitch dropped",
+      json(200, { data: [{ message_id: "", is_sent: false, drop_reason: { code: "x" } }] }),
+      false,
+    ],
+    ["a refusal", json(400, { error: "Bad Request", status: 400, message: "nope" }), false],
+    ["an answer that cannot be read", json(200, { data: [] }), true],
+  ];
+  for (const [name, answer, held] of answers) {
+    test(`${held ? "keeps" : "forgets"} the line after ${name}`, async () => {
+      fetchAnswering(answer);
+      const selfSent = ownLines();
+
+      await runHelixOperation(fakeAuth(), BROADCASTER_ID, SEND, { selfSent });
+      expect(selfSent.size).toBe(held ? 1 : 0);
+    });
+  }
+
+  test("records a posted line under its id, with the workflow chain that said it", async () => {
+    fetchAnswering(json(200, { data: [{ message_id: "m-1", is_sent: true }] }));
+    const selfSent = ownLines();
+
+    await runHelixOperation(fakeAuth(), BROADCASTER_ID, SEND, { selfSent, workflowChain: "wf-a" });
+    expect(selfSent.claimEcho(fromBroadcaster("typed-again"))).toBeNull();
+    expect(selfSent.claimEcho(fromBroadcaster("m-1"))).toEqual({ workflowChain: "wf-a" });
+  });
+
+  // EventSub can hand the echo back before Helix answers.
+  test("records the line before the request leaves", async () => {
+    const selfSent = ownLines();
+    let heldWhenSent = -1;
+    stubFetch(async () => {
+      heldWhenSent = selfSent.size;
+      return json(200, { data: [{ message_id: "m-1", is_sent: true }] });
+    });
+
+    await runHelixOperation(fakeAuth(), BROADCASTER_ID, SEND, { selfSent });
+    expect(heldWhenSent).toBe(1);
+  });
+
+  test("keeps a line that may have been posted when no answer came", async () => {
+    stubFetch(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal as AbortSignal;
+          signal.addEventListener("abort", () => reject(signal.reason));
+        })
+    );
+    const selfSent = ownLines();
+
+    await expect(runHelixOperation(fakeAuth(), BROADCASTER_ID, SEND, { selfSent, deadlineMs: 20 })).rejects.toThrow(
+      HelixNoAnswer
+    );
+    expect(selfSent.claimEcho(fromBroadcaster("echo-1", "​!hi chat"))).not.toBeNull();
+  });
+
+  test("records nothing for a line that never left", async () => {
+    const auth = { ...fakeAuth(), getAccessTokenForUser: async () => null };
+    const selfSent = ownLines();
+
+    await expect(runHelixOperation(auth, BROADCASTER_ID, SEND, { selfSent })).rejects.toThrow("no Twitch token");
+    expect(selfSent.size).toBe(0);
+  });
+
+  // Twitch hands an announcement back as a chat notification, not a chat message.
+  test("records no announcement", async () => {
+    fetchAnswering(new Response(null, { status: 204 }));
+    const selfSent = ownLines();
+
+    await runHelixOperation(
+      fakeAuth(),
+      BROADCASTER_ID,
+      { operation: "sendChatAnnouncement", params: { message: "giveaway" } },
+      { selfSent }
+    );
+    expect(selfSent.size).toBe(0);
+  });
+
+  test("declares only Send Chat Message as echoing on the chat feed", () => {
+    const echoing = Object.entries(HELIX_OPERATIONS)
+      .filter(([, operation]) => operation.echoesAsChatMessage)
+      .map(([name]) => name);
+    expect(echoing).toEqual(["sendChatMessage"]);
   });
 });
