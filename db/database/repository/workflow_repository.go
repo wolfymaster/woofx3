@@ -5,18 +5,23 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
 )
 
 // WorkflowRepository represents the db functions for Workflows
 type WorkflowRepository struct {
-	db *gorm.DB
+	db  *gorm.DB
+	ids database.IDSource
 }
 
 // NewWorkflowRepository returns a new instance of WorkflowRepository
-func NewWorkflowRepository(db *gorm.DB) *WorkflowRepository {
-	return &WorkflowRepository{db: db}
+func NewWorkflowRepository(db *gorm.DB, ids database.IDSource) *WorkflowRepository {
+	if ids == nil {
+		panic("workflow repository: id source is required")
+	}
+	return &WorkflowRepository{db: db, ids: ids}
 }
 
 // Create creates a new WorkflowDefinition
@@ -58,7 +63,7 @@ func (r *WorkflowRepository) Upsert(wf *models.WorkflowDefinition) error {
 			trigger = EXCLUDED.trigger,
 			taxonomy = EXCLUDED.taxonomy
 		RETURNING id, enabled
-	`, wf.ID, wf.Name, wf.Steps, wf.Trigger, wf.CreatedByType, wf.CreatedByRef, wf.ManifestID, wf.Taxonomy, wf.Enabled).Scan(&result).Error
+	`, rowID(r.ids, wf.ID), wf.Name, wf.Steps, wf.Trigger, wf.CreatedByType, wf.CreatedByRef, wf.ManifestID, wf.Taxonomy, wf.Enabled).Scan(&result).Error
 	if err != nil {
 		return err
 	}

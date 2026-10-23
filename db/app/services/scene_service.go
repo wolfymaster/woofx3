@@ -115,10 +115,7 @@ func (s *sceneService) CreateScene(ctx context.Context, req *client.CreateSceneR
 		return nil, err
 	}
 
-	// The id is assigned here: the column default is Postgres-only
-	// (uuid_generate_v4()), and on SQLite every row would get the zero UUID.
 	scene := &models.Scene{
-		ID:            uuid.New(),
 		Kind:          kind,
 		BehaviorsJSON: behaviorsJSON,
 		InputsJSON:    inputsJSON,
@@ -547,7 +544,6 @@ func (s *sceneService) CreateSceneBackups(ctx context.Context, req *client.Creat
 			return nil, twirp.InvalidArgumentError(fmt.Sprintf("backups[%d].reason", i), "must be unreadable_column or unreadable_placements")
 		}
 		rows = append(rows, &models.SceneBackup{
-			ID:           uuid.New(),
 			SceneID:      sceneID,
 			Version:      backup.Version,
 			SourceColumn: backup.Column,

@@ -8,7 +8,6 @@ use super::module_file::ModuleFile;
 use super::module_file::ModuleFileKind;
 use super::module_install::run_install_with_provenance;
 use super::module_manifest::ModuleManifest;
-use super::module_plan::ModulePlan;
 
 /// How strongly an archive member name reads as the module manifest: lower
 /// is preferred, `None` is not a manifest name at all. Real modules ship
@@ -90,7 +89,9 @@ where
         Ok(manifests[0])
     }
 
-    pub fn create_plan(&mut self) -> Result<ModulePlan> {
+    /// Picks and parses the archive's manifest and records the module's
+    /// identity. Must run before [`Self::install`].
+    pub fn load_manifest(&mut self) -> Result<()> {
         let manifest_file = self.pick_manifest_file()?;
         let manifest = manifest_file.parse_as_manifest()?;
 
@@ -98,8 +99,7 @@ where
         self.module_name = Some(manifest.name.clone());
         self.module_version = Some(manifest.version.clone());
         self.stored_manifest = Some(manifest);
-
-        Ok(ModulePlan::new(self.stored_manifest.clone()))
+        Ok(())
     }
 
     pub fn add_file(&mut self, kind: ModuleFileKind, name: impl Into<String>, contents: Vec<u8>) {
@@ -111,21 +111,17 @@ where
     /// bundled-module reconciler is a user upload. `marketplace` names the
     /// listing the upload came from, when it came from the marketplace.
     #[allow(clippy::too_many_arguments)]
-    pub async fn execute_plan(
+    pub async fn install(
         &self,
-        plan: &ModulePlan,
         archive_key: &str,
         db_proxy_url: Option<&str>,
-        force: bool,
         composite_module_key: &str,
         client_id: &str,
         marketplace: Option<&MarketplaceOrigin>,
     ) -> Result<()> {
-        self.execute_plan_with_provenance(
-            plan,
+        self.install_with_provenance(
             archive_key,
             db_proxy_url,
-            force,
             composite_module_key,
             client_id,
             InstallProvenance::User,
@@ -136,22 +132,19 @@ where
 
     /// See `run_install_with_provenance` for what `System` unlocks.
     #[allow(clippy::too_many_arguments)]
-    pub async fn execute_plan_with_provenance(
+    pub async fn install_with_provenance(
         &self,
-        _plan: &ModulePlan,
         archive_key: &str,
         db_proxy_url: Option<&str>,
-        force: bool,
         composite_module_key: &str,
         client_id: &str,
         provenance: InstallProvenance,
         marketplace: Option<&MarketplaceOrigin>,
     ) -> Result<()> {
-        let cleanup_old = force;
         let manifest = self
             .stored_manifest
             .as_ref()
-            .ok_or_else(|| anyhow!("execute_plan: manifest not loaded; call create_plan first"))?;
+            .ok_or_else(|| anyhow!("install: manifest not loaded; call load_manifest first"))?;
         let client = db_proxy_url.map(HttpDbProxyClient::new);
         run_install_with_provenance(
             manifest,
@@ -161,7 +154,6 @@ where
             client
                 .as_ref()
                 .map(|c| c as &dyn super::db_proxy_client::ModuleDbProxy),
-            cleanup_old,
             composite_module_key,
             client_id,
             provenance,
@@ -214,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn create_plan_prefers_manifest_json_over_module_json() {
+    fn load_manifest_prefers_manifest_json_over_module_json() {
         // manifest.json is what every real example module ships; module.json
         // is a legacy/unused convention that should still work but lose the
         // tie when both are present in one archive.
@@ -229,20 +221,20 @@ mod tests {
             ),
         ]);
         service
-            .create_plan()
-            .expect("create_plan should pick a manifest");
+            .load_manifest()
+            .expect("load_manifest should pick a manifest");
         assert_eq!(service.module_id(), Some("real_id"));
     }
 
     #[test]
-    fn create_plan_still_accepts_module_json_alone() {
+    fn load_manifest_still_accepts_module_json_alone() {
         let mut service = service_with(&[(
             "module.json",
             br#"{"id":"legacy_id","name":"Legacy","version":"0.1.0"}"#,
         )]);
         service
-            .create_plan()
-            .expect("create_plan should still pick module.json when it's the only manifest");
+            .load_manifest()
+            .expect("load_manifest should still pick module.json when it's the only manifest");
         assert_eq!(service.module_id(), Some("legacy_id"));
     }
 

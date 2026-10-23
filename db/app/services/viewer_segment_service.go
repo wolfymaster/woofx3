@@ -70,7 +70,7 @@ func (s *viewerFactService) UpsertSegmentDefinition(ctx context.Context, req *cl
 	var facts map[string]segmentFact
 	var conditionErr error
 	prepare := func(tx *gorm.DB, in *models.SegmentDefinition) error {
-		loaded, err := loadSegmentFacts(s.segments.WithDB(tx), repo.NewModuleRepository(tx, s.now), factIDs)
+		loaded, err := loadSegmentFacts(s.segments.WithDB(tx), s.triggers.WithDB(tx), factIDs)
 		if err != nil {
 			return err
 		}
@@ -341,7 +341,7 @@ func (s *viewerFactService) fillSegment(tx *gorm.DB, segment *models.SegmentDefi
 		return false, err
 	}
 	factIDs := read[segment.ID]
-	facts, err := loadSegmentFacts(segments, repo.NewModuleRepository(tx, s.now), factIDs)
+	facts, err := loadSegmentFacts(segments, s.triggers.WithDB(tx), factIDs)
 	if err != nil {
 		return false, err
 	}
@@ -481,7 +481,7 @@ func (s *viewerFactService) diffSegments(tx *gorm.DB, batch repo.FactBatch, chan
 	factIDs = slices.Compact(factIDs)
 	// One status resolution for every fact any reached segment reads, with
 	// each trigger looked up once.
-	facts, err := loadSegmentFacts(segments, repo.NewModuleRepository(tx, s.now), factIDs)
+	facts, err := loadSegmentFacts(segments, s.triggers.WithDB(tx), factIDs)
 	if err != nil {
 		return err
 	}

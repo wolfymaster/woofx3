@@ -433,7 +433,7 @@ describe("installMarketplaceListing", () => {
     });
     const h = host();
 
-    await expect(install(h, "obs_scenes", APPROVED)).rejects.toThrow("does not match the marketplace's sha256");
+    await expect(install(h, "obs_scenes", APPROVED)).rejects.toThrow("does not match its expected sha256");
     expect(h.barkloaderUploads).toEqual([]);
     expect(h.webhooks).toHaveLength(1);
     expect(h.webhooks[0].clientId).toBe("client-1");
@@ -454,7 +454,7 @@ describe("installMarketplaceListing", () => {
     });
     const h = host();
 
-    await expect(install(h, "obs_scenes", APPROVED)).rejects.toThrow("but the marketplace recorded");
+    await expect(install(h, "obs_scenes", APPROVED)).rejects.toThrow("were expected");
     expect(h.barkloaderUploads).toEqual([]);
   });
 
@@ -685,6 +685,9 @@ describe("resolveMarketplaceConfig", () => {
     expect(() => resolveMarketplaceConfig("ftp://x", undefined)).toThrow("marketplaceUrl");
     expect(() => resolveMarketplaceConfig(undefined, "https://a.example/path")).toThrow(
       "WOOFX3_MARKETPLACE_DOWNLOAD_HOSTS"
+    );
+    expect(() => resolveMarketplaceConfig(undefined, "http://minio.internal:9000")).toThrow(
+      "http only on a loopback host"
     );
   });
 });

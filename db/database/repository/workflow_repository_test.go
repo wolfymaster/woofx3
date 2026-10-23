@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/dbtest"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
@@ -11,7 +12,7 @@ import (
 
 func TestWorkflowUpsertKeepsIdentityAndEnabledOnEveryDialect(t *testing.T) {
 	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
-		r := NewWorkflowRepository(db)
+		r := NewWorkflowRepository(db, database.RandomIDs{})
 		workflow := func(name string, enabled bool) *models.WorkflowDefinition {
 			return &models.WorkflowDefinition{
 				ID: uuid.New(), Name: name, Steps: "[]", Trigger: "{}", Taxonomy: "[]",

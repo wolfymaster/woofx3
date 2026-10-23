@@ -8,14 +8,13 @@
 package dbtest
 
 import (
+	"log/slog"
 	"os"
 	"testing"
 
 	"github.com/go-gormigrate/gormigrate/v2"
-	"github.com/libtnb/sqlite"
 	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/migrate/migrations"
-	pgdriver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
@@ -41,16 +40,7 @@ func ForEachDialect(t *testing.T, test func(t *testing.T, db *gorm.DB)) {
 // migration chain applied.
 func OpenSQLite(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatalf("sql db: %v", err)
-	}
-	// Every connection to :memory: is a separate database.
-	sqlDB.SetMaxOpenConns(1)
+	db := open(t, "sqlite:///:memory:")
 	migrate(t, db, database.DialectSQLite)
 	return db
 }
@@ -65,10 +55,7 @@ func OpenPostgres(t *testing.T) *gorm.DB {
 	if url == "" {
 		t.Skipf("%s not set", PostgresURLEnv)
 	}
-	db, err := gorm.Open(pgdriver.Open(url), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
+	db := open(t, url)
 	var tables int64
 	if err := db.Raw(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'`).
 		Scan(&tables).Error; err != nil {
@@ -95,10 +82,18 @@ func OpenPostgres(t *testing.T) *gorm.DB {
 			t.Errorf("close postgres: %v", err)
 		}
 	})
-	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error; err != nil {
-		t.Fatalf("enable uuid-ossp: %v", err)
-	}
 	migrate(t, db, database.DialectPostgres)
+	return db
+}
+
+// open connects the way db-proxy does, so tests run with its connection
+// settings and its id assignment on creates.
+func open(t *testing.T, url string) *gorm.DB {
+	t.Helper()
+	db, err := database.InitializeDB(url, slog.New(slog.DiscardHandler), database.RandomIDs{})
+	if err != nil {
+		t.Fatalf("open %s database: %v", url, err)
+	}
 	return db
 }
 

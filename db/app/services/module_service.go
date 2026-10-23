@@ -94,77 +94,14 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 	// the new manifest drops are archived (not deleted) — a workflow step
 	// that invokes a dropped function by canonical id keeps resolving
 	// instead of failing at execution time. See migration 0029.
-	if existing := s.installedModule(manifestModuleID, req.Name); existing != nil {
-		existing.ModuleKey = req.ModuleKey
-		existing.ModuleID = manifestModuleID
-		if req.Name != "" {
-			existing.Name = req.Name
-		}
-		existing.Version = req.Version
-		existing.Manifest = req.Manifest
-		existing.ArchiveKey = req.ArchiveKey
-		existing.State = "active"
-		if req.CreatedByType != "" {
-			existing.CreatedByType = req.CreatedByType
-		}
-		if req.CreatedByRef != "" {
-			existing.CreatedByRef = req.CreatedByRef
-		}
-		if req.MarketplaceListingId != nil {
-			existing.MarketplaceListingID = req.MarketplaceListingId
-			existing.MarketplaceEdition = req.MarketplaceEdition
-		}
-
-		if err := s.repo.Update(existing); err != nil {
+	existing, err := s.installedModule(manifestModuleID, req.Name)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		if err := s.replaceModule(existing, manifestModuleID, req); err != nil {
 			return nil, err
 		}
-
-		priorFunctions, err := s.repo.ListActiveFunctionsByModuleID(existing.ID)
-		if err != nil {
-			return nil, err
-		}
-		newManifestIDs := make(map[string]bool, len(req.Functions))
-		for _, f := range req.Functions {
-			if f.ManifestId != "" {
-				newManifestIDs[f.ManifestId] = true
-			}
-		}
-		for _, prior := range priorFunctions {
-			if prior.ManifestID != "" && !newManifestIDs[prior.ManifestID] {
-				if err := s.repo.ArchiveFunctionByManifestID(existing.ID, prior.ManifestID); err != nil {
-					return nil, err
-				}
-			}
-		}
-
-		functions := make([]models.ModuleFunction, 0, len(req.Functions))
-		for _, f := range req.Functions {
-			fn := models.ModuleFunction{
-				ID:         uuid.New(),
-				ModuleID:   existing.ID,
-				ManifestID: f.ManifestId,
-				Name:       f.Name,
-				FileName:   f.FileName,
-				FileKey:    f.FileKey,
-				EntryPoint: f.EntryPoint,
-				Runtime:    f.Runtime,
-			}
-			if err := s.repo.UpsertFunction(&fn); err != nil {
-				return nil, err
-			}
-			functions = append(functions, fn)
-		}
-		existing.Functions = functions
-
-		if s.publisher != nil && len(functions) > 0 {
-			s.publisher.Publish(workers.PublishOptions{
-				EntityType:      "module.function",
-				Operation:       "registered",
-				Data:            buildFunctionRegisteredData(existing.ID.String(), existing.ModuleID, existing.ModuleKey, existing.Name, existing.Version, functions),
-				AutoAcknowledge: true,
-			})
-		}
-
 		return &client.ModuleResponse{
 			Status: &client.ResponseStatus{
 				Code:    client.ResponseStatus_OK,
@@ -174,10 +111,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 		}, nil
 	}
 
-	// Ids are assigned here rather than left to the column defaults, which
-	// are Postgres-only (uuid_generate_v4()) and absent on SQLite.
 	m := models.Module{
-		ID:            uuid.New(),
 		ModuleKey:     req.ModuleKey,
 		ModuleID:      manifestModuleID,
 		Name:          req.Name,
@@ -194,7 +128,6 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 
 	for _, f := range req.Functions {
 		m.Functions = append(m.Functions, models.ModuleFunction{
-			ID:         uuid.New(),
 			ManifestID: f.ManifestId,
 			Name:       f.Name,
 			FileName:   f.FileName,
@@ -204,8 +137,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 		})
 	}
 
-	err := s.repo.Create(&m)
-	if err != nil {
+	if err := s.repo.Create(&m); err != nil {
 		return nil, err
 	}
 
@@ -225,6 +157,91 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 		},
 		Module: moduleToProto(&m),
 	}, nil
+}
+
+// replaceModule rewrites the installed row `existing` to the version in req,
+// in one transaction: the row, the archive of functions the new manifest
+// drops, the function upserts and the registration event all commit
+// together or not at all. A failure leaves the previous install exactly as
+// it was, which is what lets barkloader restore it by installing it again.
+func (s *moduleService) replaceModule(existing *models.Module, manifestModuleID string, req *client.CreateModuleRequest) error {
+	existing.ModuleKey = req.ModuleKey
+	existing.ModuleID = manifestModuleID
+	if req.Name != "" {
+		existing.Name = req.Name
+	}
+	existing.Version = req.Version
+	existing.Manifest = req.Manifest
+	existing.ArchiveKey = req.ArchiveKey
+	existing.State = "active"
+	if req.CreatedByType != "" {
+		existing.CreatedByType = req.CreatedByType
+	}
+	if req.CreatedByRef != "" {
+		existing.CreatedByRef = req.CreatedByRef
+	}
+	if req.MarketplaceListingId != nil {
+		existing.MarketplaceListingID = req.MarketplaceListingId
+		existing.MarketplaceEdition = req.MarketplaceEdition
+	}
+
+	newManifestIDs := make(map[string]bool, len(req.Functions))
+	for _, f := range req.Functions {
+		if f.ManifestId != "" {
+			newManifestIDs[f.ManifestId] = true
+		}
+	}
+
+	functions := make([]models.ModuleFunction, 0, len(req.Functions))
+	err := s.repo.Transaction(func(tx *gorm.DB) error {
+		modules := s.repo.WithDB(tx)
+		if err := modules.Update(existing); err != nil {
+			return err
+		}
+
+		priorFunctions, err := modules.ListActiveFunctionsByModuleID(existing.ID)
+		if err != nil {
+			return err
+		}
+		for _, prior := range priorFunctions {
+			if prior.ManifestID != "" && !newManifestIDs[prior.ManifestID] {
+				if err := modules.ArchiveFunctionByManifestID(existing.ID, prior.ManifestID); err != nil {
+					return err
+				}
+			}
+		}
+
+		for _, f := range req.Functions {
+			fn := models.ModuleFunction{
+				ModuleID:   existing.ID,
+				ManifestID: f.ManifestId,
+				Name:       f.Name,
+				FileName:   f.FileName,
+				FileKey:    f.FileKey,
+				EntryPoint: f.EntryPoint,
+				Runtime:    f.Runtime,
+			}
+			if err := modules.UpsertFunction(&fn); err != nil {
+				return err
+			}
+			functions = append(functions, fn)
+		}
+
+		if s.publisher == nil || len(functions) == 0 {
+			return nil
+		}
+		return s.publisher.PublishIn(tx, workers.PublishOptions{
+			EntityType:      "module.function",
+			Operation:       "registered",
+			Data:            buildFunctionRegisteredData(existing.ID.String(), existing.ModuleID, existing.ModuleKey, existing.Name, existing.Version, functions),
+			AutoAcknowledge: true,
+		})
+	})
+	if err != nil {
+		return fmt.Errorf("replace module %q: %w", manifestModuleID, err)
+	}
+	existing.Functions = functions
+	return nil
 }
 
 func (s *moduleService) UpdateModule(ctx context.Context, req *client.UpdateModuleRequest) (*client.ModuleResponse, error) {
@@ -468,7 +485,6 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 			return nil, fmt.Errorf("marshal taxonomy for trigger %q: %w", in.Name, err)
 		}
 		t := &models.Trigger{
-			ID:            uuid.New(),
 			Taxonomy:      string(taxonomyJSON),
 			Name:          in.Name,
 			Description:   in.Description,
@@ -636,7 +652,6 @@ func (s *moduleService) RegisterActions(ctx context.Context, req *client.Registe
 			return nil, fmt.Errorf("marshal taxonomy for action %q: %w", in.Name, err)
 		}
 		a := &models.Action{
-			ID:            uuid.New(),
 			Name:          in.Name,
 			Description:   in.Description,
 			Call:          in.Call,
@@ -828,21 +843,73 @@ func validateMarketplaceProvenance(req *client.CreateModuleRequest) error {
 	return nil
 }
 
-// installedModule finds the row an install replaces: the one with the same
-// manifest id, which is what identifies a module across versions and
-// marketplace editions (a later edition may rename the module), or else the
-// one with the same name, for rows written before module_id was recorded.
-func (s *moduleService) installedModule(manifestModuleID, name string) *models.Module {
-	if existing, err := s.repo.GetByModuleID(manifestModuleID); err == nil && existing != nil {
-		return existing
+// installedModule finds the row an install replaces. A module's identity is
+// its manifest id, which stays the same across versions and marketplace
+// editions (a later edition may rename the module); the name is display only.
+//
+// A row found only by name is adopted when it has no module_id, for rows
+// written before module_id was recorded. A name held by a different module
+// is refused with AlreadyExists rather than taken over: replacing that row
+// would hand the new upload everything keyed to it (functions, settings,
+// secrets, storage), including the system module's.
+func (s *moduleService) installedModule(manifestModuleID, name string) (*models.Module, error) {
+	var byID *models.Module
+	found, err := s.repo.GetByModuleID(manifestModuleID)
+	switch {
+	case err == nil:
+		byID = found
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		return nil, twirp.InternalErrorWith(fmt.Errorf("look up module %q: %w", manifestModuleID, err))
 	}
 	if name == "" {
+		return byID, nil
+	}
+	if err := s.refuseNameThatIsAnotherModulesID(manifestModuleID, name); err != nil {
+		return nil, err
+	}
+
+	byName, err := s.repo.GetByDisplayName(name)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return byID, nil
+	}
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("look up module name %q: %w", name, err))
+	}
+	if byID != nil && byName.ID == byID.ID {
+		return byID, nil
+	}
+	if byID == nil && byName.ModuleID == "" {
+		return byName, nil
+	}
+	return nil, twirp.NewError(twirp.AlreadyExists, fmt.Sprintf("module name %q already used by %s", name, nameHolder(byName)))
+}
+
+// refuseNameThatIsAnotherModulesID refuses a name equal to a different
+// module's manifest id. DeleteModule and GetModuleByName resolve their
+// argument against both the module_id and the name column, so such a name
+// would let a delete by this module's name (barkloader's fresh-install
+// rollback, an uninstall) resolve to the other module's row.
+func (s *moduleService) refuseNameThatIsAnotherModulesID(manifestModuleID, name string) error {
+	if name == manifestModuleID {
 		return nil
 	}
-	if existing, err := s.repo.GetByName(name); err == nil && existing != nil {
-		return existing
+	holder, err := s.repo.GetByModuleID(name)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil
 	}
-	return nil
+	if err != nil {
+		return twirp.InternalErrorWith(fmt.Errorf("look up module %q: %w", name, err))
+	}
+	return twirp.NewError(twirp.AlreadyExists, fmt.Sprintf("module name %q is the id of module %s", name, nameHolder(holder)))
+}
+
+// nameHolder names the module that holds a name, for the AlreadyExists
+// message: its manifest id, or its name for a row with none.
+func nameHolder(m *models.Module) string {
+	if m.ModuleID == "" {
+		return fmt.Sprintf("the module installed as %q", m.Name)
+	}
+	return m.ModuleID
 }
 
 func resolveManifestModuleID(req *client.CreateModuleRequest) string {
@@ -910,7 +977,6 @@ func (s *moduleService) CreateModuleResource(ctx context.Context, req *client.Cr
 	}
 
 	res := &models.ModuleResource{
-		ID:              uuid.New(),
 		ModuleID:        moduleID,
 		ResourceType:    req.ResourceType,
 		ResourceID:      resourceID,
@@ -1403,7 +1469,6 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 			return nil, fmt.Errorf("marshal behavior kinds for widget %q: %w", in.Name, err)
 		}
 		w := &models.Widget{
-			ID:             uuid.New(),
 			Name:           in.Name,
 			Description:    in.Description,
 			Directory:      in.Directory,
@@ -1517,7 +1582,6 @@ func (s *moduleService) RegisterBackgroundTasks(ctx context.Context, req *client
 	saved := make([]*models.BackgroundTask, 0, len(req.Tasks))
 	for _, in := range req.Tasks {
 		t := &models.BackgroundTask{
-			ID:            uuid.New(),
 			Name:          in.Name,
 			Description:   in.Description,
 			Function:      in.Function,
@@ -1733,7 +1797,6 @@ func (s *moduleService) RegisterAssets(ctx context.Context, req *client.Register
 	saved := make([]*models.Asset, 0, len(req.Assets))
 	for _, in := range req.Assets {
 		a := &models.Asset{
-			ID:            uuid.New(),
 			Name:          in.Name,
 			Description:   in.Description,
 			ManifestPath:  in.ManifestPath,

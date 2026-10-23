@@ -3,6 +3,7 @@ use crate::host::InvocationContext;
 use crate::models::function::Function;
 use crate::runtime::RuntimeAdapter;
 use crate::runtime::echo::EchoAdapter;
+use crate::runtime::limits::SandboxLimits;
 use crate::runtime::lua::LuaAdapter;
 use crate::runtime::quickjs::QuickJSAdapter;
 use serde_json::Value;
@@ -10,12 +11,14 @@ use std::collections::HashMap;
 
 pub struct FunctionExecutor {
     adapters: HashMap<String, Box<dyn RuntimeAdapter>>,
+    limits: SandboxLimits,
 }
 
 impl FunctionExecutor {
-    pub fn new() -> Self {
+    pub fn new(limits: SandboxLimits) -> Self {
         Self {
             adapters: HashMap::new(),
+            limits,
         }
     }
 
@@ -34,8 +37,8 @@ impl FunctionExecutor {
         if !self.adapters.contains_key(extension) {
             let adapter: Box<dyn RuntimeAdapter> = match extension {
                 "echo" => Box::new(EchoAdapter::new()),
-                "lua" => Box::new(LuaAdapter::new()?),
-                "js" => Box::new(QuickJSAdapter::new()?),
+                "lua" => Box::new(LuaAdapter::new(self.limits)),
+                "js" => Box::new(QuickJSAdapter::new(self.limits)?),
                 other => return Err(Error::UnsupportedRuntime(other.to_string())),
             };
             self.adapters.insert(extension.to_string(), adapter);
@@ -57,12 +60,6 @@ impl FunctionExecutor {
         let adapter = self.adapter_for(&extension)?;
         let entry_point = function.resolved_entry_point();
         adapter.execute(&function.code, entry_point, invocation)
-    }
-}
-
-impl Default for FunctionExecutor {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -99,6 +96,7 @@ mod tests {
             module_version: String::new(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         }
     }
@@ -107,13 +105,13 @@ mod tests {
     fn test_new_executor_builds_no_adapters_up_front() {
         // Adapter construction is lazy: a fresh executor hasn't paid for
         // any runtime (echo/lua/js) until execute() actually needs one.
-        let executor = FunctionExecutor::new();
+        let executor = FunctionExecutor::new(SandboxLimits::default());
         assert!(executor.adapters.is_empty());
     }
 
     #[test]
     fn test_execute_only_builds_the_requested_runtime() {
-        let mut executor = FunctionExecutor::new();
+        let mut executor = FunctionExecutor::new(SandboxLimits::default());
         let adapter = Box::new(MockRuntimeAdapter);
         executor.add_adapter("mock".to_string(), adapter);
 
@@ -135,7 +133,7 @@ mod tests {
 
     #[test]
     fn test_add_adapter() {
-        let mut executor = FunctionExecutor::new();
+        let mut executor = FunctionExecutor::new(SandboxLimits::default());
         let adapter = Box::new(MockRuntimeAdapter);
 
         executor.add_adapter("mock".to_string(), adapter);
@@ -144,7 +142,7 @@ mod tests {
 
     #[test]
     fn test_execute_with_adapter() {
-        let mut executor = FunctionExecutor::new();
+        let mut executor = FunctionExecutor::new(SandboxLimits::default());
         let adapter = Box::new(MockRuntimeAdapter);
         executor.add_adapter("mock".to_string(), adapter);
 
@@ -168,7 +166,7 @@ mod tests {
 
     #[test]
     fn test_execute_without_adapter() {
-        let mut executor = FunctionExecutor::new();
+        let mut executor = FunctionExecutor::new(SandboxLimits::default());
         let function = Function {
             name: "test_function".to_string(),
             file_name: "test_function.nonexistent".to_string(),
@@ -186,7 +184,7 @@ mod tests {
 
     #[test]
     fn test_execute_with_unknown_extension() {
-        let mut executor = FunctionExecutor::new();
+        let mut executor = FunctionExecutor::new(SandboxLimits::default());
         let function = Function {
             name: "test_function".to_string(),
             file_name: "test_function".to_string(),

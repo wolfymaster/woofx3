@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/dbtest"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -25,7 +26,7 @@ func TestUpdateModuleReplacesItsFunctionsOnEveryDialect(t *testing.T) {
 		if err := db.Create(module).Error; err != nil {
 			t.Fatalf("install module: %v", err)
 		}
-		svc := NewModuleService(repo.NewModuleRepository(db, time.Now), nil, nil, nil)
+		svc := NewModuleService(repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }), nil, nil, nil)
 
 		resp, err := svc.UpdateModule(context.Background(), &client.UpdateModuleRequest{
 			Id:      module.ID.String(),

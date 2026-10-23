@@ -76,7 +76,6 @@ func (s *userEventService) RecordUserEvent(ctx context.Context, req *client.Reco
 	}
 
 	event := &models.UserEvent{
-		ID:             uuid.New(),
 		EventID:        req.EventId,
 		Source:         req.Source,
 		EventType:      req.EventType,

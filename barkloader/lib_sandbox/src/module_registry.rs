@@ -31,6 +31,10 @@ pub struct RegisteredModule {
     /// The ids of the module's `url` settings, whose values' origins
     /// `ctx.http` may reach. See `crate::net`.
     pub url_settings: HashSet<String>,
+    /// The ids of the module's resource-link (`resource_ref`) settings, whose
+    /// values name the instances the streamer linked to the module. See
+    /// `crate::resource_access`.
+    pub resource_link_settings: HashSet<String>,
     /// The OAuth providers the module's code calls through `ctx.oauth`.
     pub oauth: Vec<crate::oauth::OAuthIntegration>,
     /// Manifest-local action id to the manifest-local id of the function it
@@ -175,8 +179,6 @@ impl ModuleRegistry {
         })
     }
 
-    /// The ids of the module's `url` settings; none for a module that is not
-    /// registered.
     /// The function a module's action runs, as a manifest-local function id;
     /// `None` for an unknown module or action, or one that is not a function.
     pub fn action_function(&self, module: &str, action: &str) -> Option<String> {
@@ -184,11 +186,23 @@ impl ModuleRegistry {
         modules.get(module)?.actions.get(action).cloned()
     }
 
+    /// The ids of the module's `url` settings; none for a module that is not
+    /// registered.
     pub fn url_settings(&self, name: &str) -> HashSet<String> {
         let modules = self.modules.read().unwrap();
         modules
             .get(name)
             .map(|m| m.url_settings.clone())
+            .unwrap_or_default()
+    }
+
+    /// The ids of the module's resource-link settings; none for a module that
+    /// is not registered.
+    pub fn resource_link_settings(&self, name: &str) -> HashSet<String> {
+        let modules = self.modules.read().unwrap();
+        modules
+            .get(name)
+            .map(|m| m.resource_link_settings.clone())
             .unwrap_or_default()
     }
 }
@@ -223,6 +237,7 @@ mod tests {
             event_types: Default::default(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             oauth: Default::default(),
         }
     }

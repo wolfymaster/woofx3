@@ -54,12 +54,13 @@ async function startEngine() {
     nats: null,
     functions: null,
     barkloaderUrl: "http://b",
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger,
   });
   api.setStreamEventBroadcaster(broadcaster);
-  const auth = { validate: async () => ({ kind: "accepted", description: "dashboard" }) };
+  const auth = { validate: async () => ({ ok: true, value: { description: "dashboard" } }) };
   const gateway = new ApiGateway(api, auth as never, db as never, logger, resolveRegistrationPolicy({}));
   server = createHttpServer({
     port: 0,

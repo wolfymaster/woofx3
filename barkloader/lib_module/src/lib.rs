@@ -11,9 +11,10 @@ pub mod module_delete;
 mod module_file;
 mod module_install;
 pub mod module_manifest;
-mod module_plan;
 mod module_service;
 pub mod registry_loader;
+mod reserved_subjects;
+pub use reserved_subjects::load_contract as load_reserved_subjects_contract;
 pub mod resource_kind_ref;
 pub mod theme;
 

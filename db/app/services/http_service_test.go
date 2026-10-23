@@ -62,7 +62,7 @@ func TestEnsureRoutesRegistersOnce(t *testing.T) {
 	if registrations != 1 {
 		t.Fatalf("routes registered %d times, want exactly 1", registrations)
 	}
-	if !svc.routesInitialized {
+	if !svc.routesInitialized.Load() {
 		t.Fatal("routesInitialized is false after ensureRoutes succeeded")
 	}
 }
@@ -85,7 +85,7 @@ func TestEnsureRoutesReportsAFailedSetupWithoutLatching(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "retention period") {
 		t.Fatalf("ensureRoutes = %v, want the setup failure", err)
 	}
-	if svc.routesInitialized {
+	if svc.routesInitialized.Load() {
 		t.Fatal("routesInitialized is true after setup failed")
 	}
 	if err := svc.ensureRoutes(&types.App{}); err == nil || attempts != 2 {

@@ -1,3 +1,5 @@
+import { validateSecret } from "@woofx3/common/runtime";
+import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { z } from "zod";
 
 export const TwitchEnvSchema = z.object({
@@ -10,6 +12,16 @@ export const TwitchEnvSchema = z.object({
   // can start before its streamer has linked an account.
   woofx3TwitchChannelName: z.string().optional(),
   woofx3DatabaseProxyUrl: z.string().min(1, "woofx3DatabaseProxyUrl is required"),
+  // Defaults to blank so a missing token fails with the secret rule's message.
+  woofx3DbProxyToken: z
+    .string()
+    .default("")
+    .superRefine((value, ctx) => {
+      const check = validateSecret(DB_PROXY_TOKEN_CONFIG_KEY, value);
+      if (!check.ok) {
+        ctx.addIssue({ code: "custom", message: check.error.message });
+      }
+    }),
   // An engine's own Twitch app, for refreshing tokens itself. Absent when its
   // Twitch token comes from a dashboard, which owns the app and refreshes.
   woofx3TwitchClientId: z.string().optional(),

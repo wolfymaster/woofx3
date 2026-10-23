@@ -11,6 +11,7 @@ import (
 	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/database"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 )
 
@@ -27,7 +28,7 @@ func newProvenanceSvc(t *testing.T) *moduleService {
 		t.Fatalf("migrate: %v", err)
 	}
 	return NewModuleService(
-		repo.NewModuleRepository(db, time.Now),
+		repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }),
 		repo.NewResourceReferenceRepository(db),
 		repo.NewModuleResourceInstanceRepository(db),
 		nil,

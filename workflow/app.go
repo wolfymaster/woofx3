@@ -56,17 +56,18 @@ func (p *NATSEventPublisher) Publish(event *types.Event) error {
 
 type WorkflowApp struct {
 	*runtime.BaseApplication
-	engine           *engine.Engine[AppServices]
-	logger           tasks.Logger
-	manager          *WorkflowManager
-	natsSvc          *service.NATSService
-	barkloaderSvc    *service.BarkloaderService
-	moduleDbClient   dbv1.ModuleService
-	alertDbClient    dbv1.AlertService
-	workflowDbClient dbv1.WorkflowService
-	factDbClient     dbv1.ViewerFactService
-	scheduleReg      *triggers.ScheduleTriggerRegistrar
-	deliveries       *recentDeliveries
+	engine         *engine.Engine[AppServices]
+	logger         tasks.Logger
+	manager        *WorkflowManager
+	natsSvc        *service.NATSService
+	barkloaderSvc  *service.BarkloaderService
+	moduleDbClient dbv1.ModuleService
+	alertDbClient  dbv1.AlertService
+	factDbClient   dbv1.ViewerFactService
+	scheduleReg    *triggers.ScheduleTriggerRegistrar
+	deliveries     *recentDeliveries
+	// runRecorder is nil when there is no db proxy to write run history to.
+	runRecorder *asyncRunRecorder
 	// facts is nil when there is no fact service to write to; events then
 	// go straight to the engine.
 	facts      *facts.Projector
@@ -109,10 +110,14 @@ func (a *WorkflowApp) SetServices(
 	a.barkloaderSvc = barkloaderSvc
 	a.moduleDbClient = dbClient.Module
 	a.alertDbClient = alertClient
-	a.workflowDbClient = dbClient.Workflow
 	a.factDbClient = factClient
 	a.manager.SetDbClient(dbClient.Workflow)
 	a.engine.SetAssetURLResolver(NewSceneManagerURLResolver(dbClient.Setting, sceneManagerURL, a.logger))
+}
+
+// SetRunRecorder wires the recorder Run starts and Terminate drains.
+func (a *WorkflowApp) SetRunRecorder(recorder *asyncRunRecorder) {
+	a.runRecorder = recorder
 }
 
 func (a *WorkflowApp) Init(ctx context.Context) error {
@@ -208,11 +213,12 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	// Run history. Optional on purpose: without a db proxy the engine runs
 	// exactly as before and simply keeps no record, which is better than
 	// refusing to run workflows because their history cannot be written.
-	if a.workflowDbClient != nil {
-		a.engine.SetRunRecorder(newDBRunRecorder(a.workflowDbClient, a.logger))
+	if a.runRecorder != nil {
+		a.runRecorder.Start()
+		a.engine.SetRunRecorder(a.runRecorder)
 		a.logger.Info("Run recorder configured")
 	} else {
-		a.logger.Warn("No workflow db client; runs will not be recorded")
+		a.logger.Warn("No run recorder; runs will not be recorded")
 	}
 
 	// DB-proxy workflow lifecycle events (source of truth for registry updates).
@@ -337,7 +343,15 @@ func (a *WorkflowApp) Terminate(ctx context.Context) error {
 	if a.scheduleReg != nil {
 		a.scheduleReg.Stop()
 	}
-	return a.engine.Stop()
+	engineErr := a.engine.Stop()
+	// After the engine, which records the outcome of every run it stops.
+	// The runtime's ctx has already ended here, so the drain has its own.
+	if a.runRecorder == nil {
+		return engineErr
+	}
+	drainCtx, cancel := context.WithTimeout(context.Background(), a.runRecorder.DrainTimeout())
+	defer cancel()
+	return errors.Join(engineErr, a.runRecorder.Stop(drainCtx))
 }
 
 func (a *WorkflowApp) Engine() *engine.Engine[AppServices] {
