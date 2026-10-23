@@ -72,6 +72,31 @@ export class AlertFrameUnavailableError extends Error {
   }
 }
 
+export interface FrameCatalogOptions {
+  /** A module's linked instances; none are linked when absent. */
+  linkedResources?: (moduleId: string) => Promise<Record<string, string>>;
+  /** `ALERT_FRAME_RETRY_DELAY_MS` when absent. */
+  alertRetryDelayMs?: number;
+}
+
+function waitUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 type Framer = (moduleId: string, manifestId: string, themeId: string | undefined) => Promise<Framing>;
 
 interface FramingMemo {
@@ -97,12 +122,23 @@ export interface AlertFraming {
  * are read once.
  */
 export class FrameCatalog implements PlacementFraming, AlertFraming {
+  private readonly linkedResources?: (moduleId: string) => Promise<Record<string, string>>;
+  private readonly alertRetryDelayMs: number;
+  private readonly shutdown = new AbortController();
+
   constructor(
     private readonly barkloader: BarkloaderFrameClient,
     private readonly logger: Logger,
-    private readonly linkedResources?: (moduleId: string) => Promise<Record<string, string>>,
-    private readonly alertRetryDelayMs: number = ALERT_FRAME_RETRY_DELAY_MS
-  ) {}
+    options: FrameCatalogOptions = {}
+  ) {
+    this.linkedResources = options.linkedResources;
+    this.alertRetryDelayMs = options.alertRetryDelayMs ?? ALERT_FRAME_RETRY_DELAY_MS;
+  }
+
+  /** Abandons alert framings waiting to ask barkloader again; their `frameAlert` rejects. */
+  stop(): void {
+    this.shutdown.abort(new Error("the frame catalog stopped"));
+  }
 
   async frame(instances: OverlayWidgetInstance[]): Promise<OverlayWidgetInstance[]> {
     const memo = this.newMemo((moduleId, manifestId, themeId) => this.framing(moduleId, manifestId, themeId));
@@ -191,7 +227,7 @@ export class FrameCatalog implements PlacementFraming, AlertFraming {
     if (first.frameUnavailable !== true) {
       return first;
     }
-    await new Promise((resolve) => setTimeout(resolve, this.alertRetryDelayMs));
+    await waitUnlessAborted(this.alertRetryDelayMs, this.shutdown.signal);
     return this.framing(moduleId, manifestId, themeId);
   }
 

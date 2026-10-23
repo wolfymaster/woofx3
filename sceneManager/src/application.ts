@@ -50,6 +50,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
   readonly __finalContextType!: SceneManagerContext;
   private server: ReturnType<typeof Bun.serve> | null = null;
   private deliveryStore: DeliveryStore | null = null;
+  private framing: FrameCatalog | null = null;
   private obs: ObsService | null = null;
   private sceneDocuments: SceneDocuments | null = null;
   private nats: NATSClient | null = null;
@@ -83,7 +84,10 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const db = ctx.services.db.client;
     const resolver = new OverlayTokenResolver(db, logger);
     const barkloader = new HttpBarkloaderFrameClient(runtimeConfig.barkloaderUrl, runtimeConfig.barkloaderKey, logger);
-    const framing = new FrameCatalog(barkloader, logger, (moduleId) => linkedResources(db, moduleId));
+    const framing = new FrameCatalog(barkloader, logger, {
+      linkedResources: (moduleId) => linkedResources(db, moduleId),
+    });
+    this.framing = framing;
     const host = new OverlayHost(resolver, db, logger, { framing });
     const mediaProxy = new MediaProxy(runtimeConfig.barkloaderKey);
     const sessionTokens = new SessionTokenService(runtimeConfig.tokenSecret);
@@ -181,6 +185,8 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     this.sceneDocuments = null;
     this.deliveryStore?.stopSweep();
     this.deliveryStore = null;
+    this.framing?.stop();
+    this.framing = null;
     // Forced: open event streams would otherwise hold the server, and their
     // heartbeats, past shutdown.
     await this.server?.stop(true);

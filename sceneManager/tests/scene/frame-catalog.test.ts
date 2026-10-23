@@ -49,7 +49,7 @@ describe("FrameCatalog", () => {
   it("gives each placement its widget's versioned document and its module's links", async () => {
     const barkloader: BarkloaderFrameClient = { fetchWidgetFrame: mock(async () => INFO) };
     const links = mock(async () => ({ timer: "mod:timer:a" }));
-    const catalog = new FrameCatalog(barkloader, logger(), links);
+    const catalog = new FrameCatalog(barkloader, logger(), { linkedResources: links });
     const [framed] = await catalog.frame([placement({ settings: { theme: "pack:theme:neon" } })]);
     expect(framed!.frameUrl).toBe(frameDocumentUrl("mod", "w", "pack:theme:neon", frameVersion(INFO)));
     expect(framed!.frameUrl).toBe(`/frames/mod/w?theme=pack%3Atheme%3Aneon&v=${frameVersion(INFO)}`);
@@ -59,7 +59,7 @@ describe("FrameCatalog", () => {
   it("asks once per widget and theme, and once per module, however many placements", async () => {
     const fetchWidgetFrame = mock(async () => INFO);
     const links = mock(async () => ({}));
-    const catalog = new FrameCatalog({ fetchWidgetFrame }, logger(), links);
+    const catalog = new FrameCatalog({ fetchWidgetFrame }, logger(), { linkedResources: links });
     await catalog.frame([
       placement({ id: "a" }),
       placement({ id: "b" }),
@@ -85,8 +85,10 @@ describe("FrameCatalog", () => {
         },
       },
       logger(),
-      async () => {
-        throw new Error("db down");
+      {
+        linkedResources: async () => {
+          throw new Error("db down");
+        },
       }
     );
     const [framed] = await catalog.frame([placement({})]);
@@ -128,7 +130,7 @@ describe("FrameCatalog.frameAlert", () => {
   it("frames each layout widget at the document a placement of it loads, asking once per widget and theme", async () => {
     const fetchWidgetFrame = mock(async () => INFO);
     const links = mock(async () => ({ timer: "mod:timer:a" }));
-    const catalog = new FrameCatalog({ fetchWidgetFrame }, logger(), links);
+    const catalog = new FrameCatalog({ fetchWidgetFrame }, logger(), { linkedResources: links });
 
     const frames = await catalog.frameAlert(
       layoutOf({
@@ -158,20 +160,35 @@ describe("FrameCatalog.frameAlert", () => {
 
   it("asks again for a widget barkloader could not answer for, so the alert's media is signed", async () => {
     let calls = 0;
-    const themed: BarkloaderFrameInfo = { ...INFO, theme: { css: "", tokens: {} } as never };
+    const themed: BarkloaderFrameInfo = {
+      ...INFO,
+      resourceBaseUrl: "https://engine.example.com/assets/modules/mod/abc/widgets/w/",
+      theme: { css: "", tokens: {} } as never,
+    };
     const fetchWidgetFrame = mock(async () => {
       calls += 1;
       return calls === 1 ? null : themed;
     });
-    const catalog = new FrameCatalog({ fetchWidgetFrame }, logger(), undefined, 0);
+    const catalog = new FrameCatalog({ fetchWidgetFrame }, logger(), { alertRetryDelayMs: 0 });
     const frames = await catalog.frameAlert(layoutOf({ t1: { widget: "mod:widget:w", settings: {} } }));
     expect(fetchWidgetFrame).toHaveBeenCalledTimes(2);
     expect(frames.t1!.frameUrl).toBe(frameDocumentUrl("mod", "w", undefined, frameVersion(themed)));
+    expect(frames.t1!.mediaProxyBase).toBe("https://engine.example.com/assets/media/");
+  });
+
+  it("abandons a pending retry when stopped, without asking barkloader again", async () => {
+    const fetchWidgetFrame = mock(async () => null);
+    const catalog = new FrameCatalog({ fetchWidgetFrame }, logger(), { alertRetryDelayMs: 60_000 });
+    const framed = catalog.frameAlert(layoutOf({ t1: { widget: "mod:widget:w", settings: {} } }));
+    await Promise.resolve();
+    catalog.stop();
+    await expect(framed).rejects.toThrow("stopped");
+    expect(fetchWidgetFrame).toHaveBeenCalledTimes(1);
   });
 
   it("refuses an alert whose widget barkloader still cannot answer for", async () => {
     const fetchWidgetFrame = mock(async () => null);
-    const catalog = new FrameCatalog({ fetchWidgetFrame }, logger(), undefined, 0);
+    const catalog = new FrameCatalog({ fetchWidgetFrame }, logger(), { alertRetryDelayMs: 0 });
     const framed = catalog.frameAlert(layoutOf({ t1: { widget: "mod:widget:w", settings: {} } }));
     await expect(framed).rejects.toBeInstanceOf(AlertFrameUnavailableError);
     expect(fetchWidgetFrame).toHaveBeenCalledTimes(2);
