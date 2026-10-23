@@ -201,7 +201,7 @@ The runtime includes a health monitoring system that:
 
 1. Checks liveness every 3 seconds
 2. Sends heartbeat every 5 seconds  
-3. Performs health checks on all registered services every 5 seconds
+3. Performs health checks on all registered services every 5 seconds (`HEALTH_CHECK_INTERVAL_MS`)
 4. Automatically retries failed services with exponential backoff
 
 ::: code-group
