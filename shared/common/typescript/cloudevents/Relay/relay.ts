@@ -173,6 +173,27 @@ export type DashboardCredentialReply =
  */
 export const COMPANION_RELAY_CONFIG_SET_SUBJECT = "engine.companion.relay_config.set";
 
+// The timeouts around a dashboard's relay requests, in ascending order: each
+// side waits longer than the step it waits on, so it hears why that step
+// failed instead of timing out itself.
+
+/** The companion gateway's budget for storing a configuration on `COMPANION_RELAY_CONFIG_SET_SUBJECT`. */
+export const RELAY_CONFIG_SET_BUDGET_MS = 4_500;
+
+/**
+ * The api's default wait for the companion gateway's answer on
+ * `COMPANION_RELAY_CONFIG_SET_SUBJECT`, and its wait for a dashboard's
+ * answer to a request. Above `RELAY_CONFIG_SET_BUDGET_MS`.
+ */
+export const RELAY_API_REQUEST_TIMEOUT_MS = 5_000;
+
+/**
+ * The companion gateway's wait for the api's answer on
+ * `COMPANION_DASHBOARD_CREDENTIAL_SUBJECT`. Above
+ * `RELAY_API_REQUEST_TIMEOUT_MS`, the api's own wait for the dashboard.
+ */
+export const RELAY_DASHBOARD_REQUEST_TIMEOUT_MS = 6_000;
+
 export interface RelayConfigSetRequest {
   config: StoredRelayConfig | null;
 }
