@@ -857,7 +857,7 @@ fn build_module_namespace<'js>(
     // not require `key` to be manifest-declared.
     let host_for_set = invocation.host.clone();
     let module_id_for_set = invocation.module_id.clone();
-    let url_settings = invocation.url_settings.clone();
+    let protected_settings = invocation.protected_settings.clone();
     let link_settings = invocation.resource_link_settings.clone();
     let set_setting_fn = JsFunction::new(
         ctx.clone(),
@@ -865,7 +865,7 @@ fn build_module_namespace<'js>(
             super::host_bindings::set_module_setting(
                 &host_for_set,
                 &module_id_for_set,
-                &url_settings,
+                &protected_settings,
                 &link_settings,
                 &key,
                 &value,
@@ -881,7 +881,7 @@ fn build_module_namespace<'js>(
     // while the setting still holds `expected`; answers `{ swapped, current }`.
     let host_for_cas = invocation.host.clone();
     let module_id_for_cas = invocation.module_id.clone();
-    let url_settings_for_cas = invocation.url_settings.clone();
+    let protected_settings_for_cas = invocation.protected_settings.clone();
     let link_settings_for_cas = invocation.resource_link_settings.clone();
     let compare_and_set_setting_fn = JsFunction::new(
         ctx.clone(),
@@ -891,7 +891,7 @@ fn build_module_namespace<'js>(
             let outcome = super::host_bindings::compare_and_set_module_setting(
                 &host_for_cas,
                 &module_id_for_cas,
-                &url_settings_for_cas,
+                &protected_settings_for_cas,
                 &link_settings_for_cas,
                 &key,
                 &json_expected,
@@ -1079,7 +1079,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1106,7 +1107,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1151,7 +1153,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1184,7 +1187,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1206,7 +1210,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1240,7 +1245,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1260,7 +1266,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1281,7 +1288,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         }
@@ -1298,7 +1306,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1398,7 +1407,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1427,7 +1437,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1490,8 +1501,10 @@ mod tests {
 
     fn list_settings_invocation(
         items: serde_json::Value,
-        url_settings: std::collections::HashSet<String>,
+        protected_settings: crate::protected_settings::ProtectedSettings,
     ) -> (InvocationContext, Arc<ListSettings>) {
+        let protected_settings =
+            crate::protected_settings::LiveProtectedSettings::new(protected_settings);
         let settings = Arc::new(ListSettings {
             items: std::sync::Mutex::new(items),
         });
@@ -1505,7 +1518,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings,
+            protected_settings,
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1538,7 +1552,11 @@ mod tests {
     fn quickjs_ctx_module_compare_and_set_setting_refuses_a_url_setting() {
         let (invocation, _) = list_settings_invocation(
             serde_json::json!([]),
-            std::collections::HashSet::from(["items".to_string()]),
+            [(
+                "items".to_string(),
+                crate::protected_settings::ProtectedReason::Url,
+            )]
+            .into(),
         );
         let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let code = "function run(ctx) { return ctx.module.compareAndSetSetting('items', [], []); }";
@@ -1567,7 +1585,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };

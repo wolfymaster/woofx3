@@ -53,7 +53,24 @@ export default function onChannelChatmessage(ctx: Context, listener: EventSubWsL
     ctx.broadcaster.id,
     ctx.broadcaster.id,
     async (event: EventSubChannelChatMessageEvent) => {
-      const { bits, chatterId, chatterDisplayName, sourceBroadcasterName, sourceBroadcasterId, messageText } = event;
+      const {
+        bits,
+        chatterId,
+        chatterName,
+        chatterDisplayName,
+        messageId,
+        sourceBroadcasterName,
+        sourceBroadcasterId,
+        messageText,
+      } = event;
+
+      // Claimed before any wait, so a line is matched while its record is
+      // freshest. A claim never outlives this one message.
+      const ownLine = ctx.selfSent.claimEcho({
+        messageId,
+        text: messageText,
+        fromBroadcaster: chatterId === ctx.broadcaster.id,
+      });
 
       // Following and subscription tier are not on the message at all, so
       // they come from Helix. The enricher bounds how long that may take and
@@ -64,16 +81,22 @@ export default function onChannelChatmessage(ctx: Context, listener: EventSubWsL
         ? await ctx.membershipEnricher.enrich(ctx.broadcaster.id, chatterId, badged)
         : badged;
 
-      const [topic, data] = ctx.events.Twitch().chatMessage({
-        amount: bits,
-        channelId: sourceBroadcasterId,
-        channelName: sourceBroadcasterName,
-        chatterId,
-        chatterName: chatterDisplayName,
-        isPaid: Boolean(bits),
-        message: messageText,
-        membership,
-      });
+      const [topic, data] = ctx.events.Twitch().chatMessage(
+        {
+          messageId,
+          amount: bits,
+          channelId: sourceBroadcasterId,
+          channelName: sourceBroadcasterName,
+          chatterId,
+          chatterName: chatterDisplayName,
+          chatterLogin: chatterName,
+          isPaid: Boolean(bits),
+          message: messageText,
+          membership,
+          fromEngine: ownLine !== null,
+        },
+        { workflowChain: ownLine?.workflowChain }
+      );
       await publishEvent(ctx, [topic, data]);
     }
   );

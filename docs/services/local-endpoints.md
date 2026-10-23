@@ -23,12 +23,16 @@ is dialed directly.
 ## The companion gateway
 
 The connectors host's [companion gateway](./companion-gateway.md) is the only
-part of the engine that finds a route to a local endpoint, and its `obs`
-adapter the only part that holds a connection to one, OBS's
-(`woofx3_obs/obs`). On every connect attempt the gateway reads the module's
-stored manifest, settings and secrets and the relay configuration afresh,
-builds the direct address (each empty setting falling back to connectors' own
-`WOOFX3_OBS_*` configuration), and picks the route; see
+part of the engine that finds a route to a local endpoint or holds a
+connection to one. Its `obs` adapter holds OBS's (`woofx3_obs/obs`), and the
+gateway holds the sessions module code uses through `ctx.local` for its own
+unclaimed websocket endpoints (see
+[Companion gateway → Module requests](./companion-gateway.md#module-requests)).
+On every connect attempt the gateway reads the module's stored manifest,
+settings and secrets and the relay configuration afresh, builds the direct
+address (for OBS, each empty setting falls back to connectors' own
+`WOOFX3_OBS_*` configuration; module code gets no fallback), and picks the
+route; see
 [Companion gateway → Routes](./companion-gateway.md#routes) for the table.
 
 Once the ticket is in hand, any failure to open OBS through the bridge other
@@ -74,8 +78,8 @@ setting the same way.
 
 `setRelayConfig` fails when the gateway does not store the configuration: it
 refused it, the write failed, or nothing answered within
-`WOOFX3_COMPANION_REQUEST_TIMEOUT_MS` (5 seconds by default; the gateway
-answers within 4.5). That is the case while connectors is down. The
+`WOOFX3_COMPANION_REQUEST_TIMEOUT_MS` (5 seconds by default, and above the
+4.5 seconds the gateway answers within). That is the case while connectors is down. The
 dashboard's syncEngine retries, and the gateway's next credential renewal
 applies the dashboard's configuration anyway (see below), so a missed call
 heals.

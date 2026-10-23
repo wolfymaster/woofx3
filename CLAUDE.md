@@ -18,7 +18,7 @@ Woofx3 consists of the following tools:
 Subsystem behavior, public APIs, module formats, and workflow design are documented under **`docs/`** as a **VitePress** site (see `docs/package.json`). Use it together with this file when you need service-level depth beyond the mono-repo overview.
 
 - **Entry:** `docs/index.md`
-- **Major sections:** `docs/workflow/` (engine schema, execution, API), `docs/barkloader/` (modules, sandbox, API), `docs/woofwoofwoof/` (application and services), `docs/services/` (shared runtime, CloudEvents)
+- **Major sections:** `docs/workflow/` (engine schema, execution, API), `docs/barkloader/` (modules, sandbox, API), `docs/services/` (shared runtime, CloudEvents)
 
 ```bash
 cd docs && bun run docs           # VitePress dev
@@ -206,6 +206,6 @@ The project backlog is tracked in Notion in the **Backlog** database (ID: `272a5
 
 **Important notes:**
 - UI and Website project tasks are **not** in this repository -- they live in a separate codebase. Filter them out when looking for work to do here.
-- Projects that map to this repo: API, Barkloader, Db, Module, Shared, Wooflow, WoofWoofWoof, Treats, Twitch, Tauri.
+- Projects that map to this repo: API, Barkloader, Db, Module, Shared, Wooflow, Connectors, Treats, Twitch, Tauri.
 - When picking up a task, update its Status to "In progress" in Notion.
 - When completing a task, update its Status to "Done" in Notion.

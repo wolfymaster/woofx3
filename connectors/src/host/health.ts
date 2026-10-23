@@ -1,6 +1,9 @@
+import type { ModuleSessionStatus, ModuleSessionsStatus } from "../companion/endpoint-sessions";
+import type { ModuleRequestCounters } from "../companion/module-requests";
 import type { BridgeOpensStatus, CompanionGatewayStatus, EndpointStatus } from "../companion/types";
 import type { GatewayCounters } from "../gateway/platform-gateway";
 import type { AdapterStatus } from "./adapter";
+import type { ChatSnapshot } from "./chat-service";
 import type { HostRequestCounters } from "./host-requests";
 import type { ScopeCounters } from "./scoped-bus";
 import type { AdapterReport } from "./supervisor";
@@ -17,6 +20,7 @@ export interface HealthSnapshot {
   hostRequests: Record<string, HostRequestCounters>;
   hostBus: ReturnType<ScopeCounters["snapshot"]>;
   gateway: GatewayCounters;
+  chat: ChatSnapshot;
   companion: CompanionGatewayStatus;
 }
 
@@ -30,6 +34,7 @@ export interface HealthBody {
     hostRequests: Record<string, HostRequestCounters>;
     hostBus: ReturnType<ScopeCounters["snapshot"]>;
     gateway: GatewayCounters;
+    chat: ChatSnapshot;
   };
 }
 
@@ -46,7 +51,10 @@ export interface AdapterHealth {
   detail: Record<string, unknown> | null;
 }
 
-/** The companion gateway: each claimed local endpoint and where it was last reached. */
+/**
+ * The companion gateway: each claimed local endpoint and where it was last
+ * reached, and the sessions held for module requests.
+ */
 export interface CompanionHealth {
   hosting: CompanionGatewayStatus["hosting"];
   endpoints: Array<
@@ -55,6 +63,12 @@ export interface CompanionHealth {
     }
   >;
   bridgeOpens: BridgeOpensStatus;
+  modules: {
+    sessions: Omit<ModuleSessionsStatus, "sessions"> & {
+      sessions: Array<Omit<ModuleSessionStatus, "openedAt"> & { openedAt: string }>;
+    };
+    requests: ModuleRequestCounters;
+  };
 }
 
 const REDACTED = "[redacted]";
@@ -88,7 +102,12 @@ export function healthBody(snapshot: HealthSnapshot): HealthBody {
     loop: { alive, lastPassAt: iso(snapshot.lastPassAt) },
     adapters: snapshot.adapters.map(adapterHealth),
     companion: companionHealth(snapshot.companion),
-    counters: { hostRequests: snapshot.hostRequests, hostBus: snapshot.hostBus, gateway: snapshot.gateway },
+    counters: {
+      hostRequests: snapshot.hostRequests,
+      hostBus: snapshot.hostBus,
+      gateway: snapshot.gateway,
+      chat: snapshot.chat,
+    },
   };
 }
 
@@ -124,6 +143,16 @@ function companionHealth(status: CompanionGatewayStatus): CompanionHealth {
           : { ...endpoint.lastFailure, at: new Date(endpoint.lastFailure.at).toISOString() },
     })),
     bridgeOpens: status.bridgeOpens,
+    modules: {
+      sessions: {
+        ...status.modules.sessions,
+        sessions: status.modules.sessions.sessions.map((session) => ({
+          ...session,
+          openedAt: new Date(session.openedAt).toISOString(),
+        })),
+      },
+      requests: status.modules.requests,
+    },
   };
   return redactDetail(body) as CompanionHealth;
 }

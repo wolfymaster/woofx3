@@ -8,6 +8,9 @@ import {
   parseRelayConfigSetRequest,
   parseRelayCredentialResponse,
   parseStoredRelayConfig,
+  RELAY_API_REQUEST_TIMEOUT_MS,
+  RELAY_CONFIG_SET_BUDGET_MS,
+  RELAY_DASHBOARD_REQUEST_TIMEOUT_MS,
   readStoredRelayConfig,
 } from "./relay";
 
@@ -165,4 +168,11 @@ describe("parseRelayConfigSetReply", () => {
       ["a failure with no error", { status: "failed", error: 7 }],
     ]
   );
+});
+
+describe("relay request timeouts", () => {
+  test("each side waits longer than the step it waits on", () => {
+    expect(RELAY_CONFIG_SET_BUDGET_MS).toBeLessThan(RELAY_API_REQUEST_TIMEOUT_MS);
+    expect(RELAY_API_REQUEST_TIMEOUT_MS).toBeLessThan(RELAY_DASHBOARD_REQUEST_TIMEOUT_MS);
+  });
 });

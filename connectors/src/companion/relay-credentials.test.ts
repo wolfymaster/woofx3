@@ -221,6 +221,47 @@ describe("RelayCredentialSource", () => {
     expect(state.config).toEqual(fresh);
   });
 
+  test("stop abandons a renewal waiting on the dashboard before it writes, and refuses later calls", async () => {
+    const moved = { ...GRANT, bridgeOrigin: "https://c-zyxwvutsrqpo.woofx3.tv" };
+    const { state, request, writeConfig, changes, source } = harness([]);
+    const held = heldAnswer(request);
+    const renewal = source.current();
+    await held.sent();
+    await source.stop();
+    held.release({ relay: moved });
+    await expect(renewal).rejects.toThrow("stopped");
+    expect(writeConfig).not.toHaveBeenCalled();
+    expect(changes).toEqual([]);
+    expect(state.config).toEqual(STORED);
+    await expect(source.current()).rejects.toThrow("stopped");
+    await expect(source.setConfig(null)).rejects.toThrow("stopped");
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  test("stop waits for a write already under way", async () => {
+    const { writeConfig, source } = harness([], null);
+    let finishWrite: () => void = () => {};
+    writeConfig.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishWrite = resolve;
+        })
+    );
+    const set = source.setConfig(STORED);
+    while (writeConfig.mock.calls.length === 0) {
+      await Bun.sleep(1);
+    }
+    let stopped = false;
+    const stop = source.stop().then(() => {
+      stopped = true;
+    });
+    await Bun.sleep(1);
+    expect(stopped).toBe(false);
+    finishWrite();
+    await Promise.all([set, stop]);
+    expect(stopped).toBe(true);
+  });
+
   test("stores the client id of the dashboard that answered when it registered again under a new one", async () => {
     const { state, request, source } = harness([{ relay: GRANT }], STORED, "dash-client-2");
     expect(await source.current()).toEqual(GRANT);

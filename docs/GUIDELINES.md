@@ -171,7 +171,7 @@ export function myFunction(param1: string, param2?: number): Promise<void> {
 
 ```bash
 # Generate specific service
-bun run docs:generate woofwoofwoof
+bun run docs:generate {service}
 
 # Generate all services
 bun run docs:generate all
@@ -193,7 +193,7 @@ docs/
 │   ├── parser.ts         # TypeScript parsing
 │   ├── markdown.ts       # Markdown generation
 │   └── config.ts        # Config loading
-├── woofwoofwoof/
+├── {service}/
 │   ├── config.json
 │   ├── index.md
 │   ├── application.md

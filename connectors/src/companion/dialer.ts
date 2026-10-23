@@ -8,10 +8,17 @@ import type { EngineHosting, RelayConfig } from "@woofx3/api";
 import { type RelayGrant, routesEndpoint } from "@woofx3/common/cloudevents/Relay/relay";
 import { RELAY_TICKET_TTL_MS } from "../config/companion";
 import { errorMessage, type Logger, type TimerHandle, type Timers } from "../host/deps";
+import { abortable } from "./abortable";
 import type { BridgeOpenPermit, BridgeOpens } from "./bridge-opens";
 import { endpointKey } from "./claims";
 import type { DirectDecision, RoutePolicy } from "./route-policy";
-import type { EndpointResolution, EndpointUnavailable, LocalEndpointRef, ResolveOptions } from "./types";
+import type {
+  EndpointResolution,
+  EndpointUnavailable,
+  EndpointUnavailableReason,
+  LocalEndpointRef,
+  ResolveOptions,
+} from "./types";
 
 export type Fetch = (url: URL, init: RequestInit) => Promise<Response>;
 
@@ -31,6 +38,18 @@ export interface DialerDeps {
 }
 
 const TICKET = /^[A-Za-z0-9_-]{43}$/;
+
+/**
+ * Refusals about the endpoint itself rather than its address. No route can
+ * fix them, so the bridge is never tried; the other refusals only mean there
+ * is no direct route, which the bridge may still provide.
+ */
+const ENDPOINT_REFUSALS: ReadonlySet<EndpointUnavailableReason> = new Set([
+  "not_declared",
+  "adapter_owned",
+  "protocol_unsupported",
+  "store_unreadable",
+]);
 
 type TicketOutcome =
   | { kind: "ticket"; ticket: string; expiresInMs: number }
@@ -61,12 +80,15 @@ export class EndpointDialer {
     const { signal } = opts;
     signal.throwIfAborted();
     const direct = await abortable(policy.direct(ref, opts.fallback), signal);
+    if (!direct.ok && ENDPOINT_REFUSALS.has(direct.reason)) {
+      return direct;
+    }
     let config: RelayConfig | null;
     try {
       config = await abortable(this.deps.relayConfig(), signal);
     } catch (error) {
       signal.throwIfAborted();
-      if (this.deps.hosting === "local" || direct.ok) {
+      if (policy.directWithoutRelayConfig && (this.deps.hosting === "local" || direct.ok)) {
         // Only the bridge needs the relay configuration; an engine that cannot
         // read it still reaches an endpoint it can address directly.
         this.deps.logger.warn("relay configuration unreadable; resolving the endpoint directly", {
@@ -76,6 +98,9 @@ export class EndpointDialer {
         });
         return direct;
       }
+      // Deliberately fail closed, even on a `local` engine where the
+      // configuration would only be read for a warning: a policy without
+      // directWithoutRelayConfig never proceeds on a store it could not read.
       return unavailable("store_unreadable", `the relay configuration could not be read: ${errorMessage(error)}`);
     }
     if (!config || !routesEndpoint(config, ref.moduleId, ref.endpointId)) {
@@ -245,25 +270,4 @@ function unavailable(reason: EndpointUnavailable["reason"], message: string, add
     result.address = address;
   }
   return result;
-}
-
-/** `work`, or a rejection with the signal's reason as soon as it aborts. */
-function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) {
-    return Promise.reject(signal.reason);
-  }
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason);
-    signal.addEventListener("abort", onAbort, { once: true });
-    work.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      }
-    );
-  });
 }

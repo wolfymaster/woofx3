@@ -7,7 +7,7 @@ import { emptyEndpointStore, FakeTime, flush, RecordingLogger } from "../host/te
 import { BridgeOpens } from "./bridge-opens";
 import { type DialerDeps, EndpointDialer, type Fetch } from "./dialer";
 import type { EndpointStore } from "./endpoint-store";
-import { adapterPolicy } from "./route-policy";
+import { adapterPolicy, type DirectDecision, type RoutePolicy } from "./route-policy";
 import type { EndpointResolution } from "./types";
 
 const ORIGIN = "https://c-x.woofx3.tv";
@@ -311,6 +311,47 @@ describe("EndpointDialer bridge", () => {
         reason: "store_unreadable",
       });
     });
+  });
+});
+
+describe("EndpointDialer policy refusals", () => {
+  const fixed = (decision: DirectDecision, directWithoutRelayConfig = true): RoutePolicy => ({
+    directWithoutRelayConfig,
+    direct: async () => decision,
+  });
+  const signal = () => new AbortController().signal;
+
+  for (const reason of ["not_declared", "adapter_owned", "protocol_unsupported", "store_unreadable"] as const) {
+    it(`never tries the bridge for ${reason}, even when the relay configuration routes the endpoint`, async () => {
+      const { dialer, fetchMock, relayCredential } = setup({ relayConfig: routed });
+      const refusal: DirectDecision = { ok: false, reason, message: reason };
+      expect(await dialer.dial(fixed(refusal), OBS_ENDPOINT, { signal: signal() })).toEqual(refusal);
+      expect(relayCredential).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+  }
+
+  for (const reason of ["not_routed", "address_refused"] as const) {
+    it(`still takes the bridge for ${reason}: only the direct route is missing`, async () => {
+      const { dialer } = setup({ relayConfig: routed, hosting: "managed" });
+      const refusal: DirectDecision = { ok: false, reason, message: reason };
+      expect(await dialer.dial(fixed(refusal), OBS_ENDPOINT, { signal: signal() })).toMatchObject({
+        ok: true,
+        route: "companion",
+      });
+    });
+  }
+
+  it("answers store_unreadable for a policy that fails closed, even with a direct route", async () => {
+    const { dialer } = setup({
+      relayConfig: async () => {
+        throw new Error("db-proxy GetSetting: unavailable");
+      },
+      hosting: "local",
+    });
+    expect(await dialer.dial(fixed(DIRECT as DirectDecision, false), OBS_ENDPOINT, { signal: signal() })).toMatchObject(
+      { ok: false, reason: "store_unreadable" }
+    );
   });
 });
 

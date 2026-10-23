@@ -7,13 +7,17 @@
 import { COMPANION_DASHBOARD_CREDENTIAL_SUBJECT } from "@woofx3/common/cloudevents/Relay/relay";
 import type { CompanionConfig } from "../config/companion";
 import type { AdapterId } from "../host/adapter-ids";
-import type { Clock, Logger, Timers } from "../host/deps";
+import type { Clock, IdSource, Logger, Timers } from "../host/deps";
 import type { HostRequests } from "../host/host-requests";
 import type { ScopedBus } from "../host/scoped-bus";
 import { BridgeOpens } from "./bridge-opens";
 import { type ClaimRegistry, endpointKey } from "./claims";
 import { EndpointDialer, type Fetch } from "./dialer";
+import { EndpointSessions, type OpenSocket } from "./endpoint-sessions";
 import type { EndpointStore } from "./endpoint-store";
+import { boundedResolver, type NameResolver } from "./local-address";
+import { ModuleRequests } from "./module-requests";
+import { modulePolicy } from "./module-route-policy";
 import { RelayConfigRequests } from "./relay-config-requests";
 import { askDashboardOverBus, RelayCredentialSource } from "./relay-credentials";
 import { adapterPolicy, type RoutePolicy } from "./route-policy";
@@ -40,10 +44,14 @@ export interface CompanionGatewayDeps {
   /** Read afresh on every resolution; the gateway is the one writer of its relay configuration. */
   store: EndpointStore;
   fetch: Fetch;
-  /** Serves the relay configuration writes on the host's scope. */
+  /** Resolves a `.local` name in a module endpoint's address. */
+  resolver: NameResolver;
+  openSocket: OpenSocket;
+  /** Serves the relay configuration writes and module requests on the host's scope. */
   requests: HostRequests;
   clock: Clock;
   timers: Timers;
+  ids: IdSource;
   logger: Logger;
 }
 
@@ -67,6 +75,8 @@ export class EngineCompanionGateway implements CompanionGateway {
   private readonly records = new Map<string, EndpointRecord>();
   private readonly relayCredentials: RelayCredentialSource;
   private readonly relayConfigRequests: RelayConfigRequests;
+  private readonly sessions: EndpointSessions;
+  private readonly moduleRequests: ModuleRequests;
 
   constructor(private readonly deps: CompanionGatewayDeps) {
     const logger = deps.logger;
@@ -94,6 +104,33 @@ export class EngineCompanionGateway implements CompanionGateway {
       logger,
     });
     this.claimedPolicy = adapterPolicy({ store: deps.store, logger });
+    // Unclaimed endpoints are reachable only by their own module's code, under a policy that fails closed.
+    const unclaimedPolicy = modulePolicy({
+      store: deps.store,
+      claims: deps.claims,
+      hosting: deps.config.hosting,
+      localDirect: deps.config.moduleLocalDirect,
+      resolver: boundedResolver(deps.resolver, deps.config.moduleSessions.resolveTimeoutMs, deps.timers),
+    });
+    this.sessions = new EndpointSessions({
+      limits: deps.config.moduleSessions,
+      resolve: (ref, signal) =>
+        this.dialer.dial(unclaimedPolicy, ref, { signal: AbortSignal.any([signal, this.lifetime.signal]) }),
+      onRouteChange: (ref, listener) => this.watch.listen(ref, listener),
+      openSocket: deps.openSocket,
+      clock: deps.clock,
+      timers: deps.timers,
+      ids: deps.ids,
+      logger,
+    });
+    this.moduleRequests = new ModuleRequests({
+      policy: unclaimedPolicy,
+      sessions: this.sessions,
+      budgetMs: deps.config.moduleSessions.requestBudgetMs,
+      clock: deps.clock,
+      timers: deps.timers,
+      logger,
+    });
     for (const { ref, owner } of deps.claims.claims()) {
       this.records.set(endpointKey(ref), { ref, owner, attempt: null, failure: null });
     }
@@ -101,12 +138,13 @@ export class EngineCompanionGateway implements CompanionGateway {
 
   /** The subjects the gateway answers, for the host's grants and drain budget. */
   get served(): ReadonlyArray<{ subject: string; budgetMs: number }> {
-    return this.relayConfigRequests.served;
+    return [...this.relayConfigRequests.served, ...this.moduleRequests.served];
   }
 
   /**
-   * Follows route changes and stores relay configurations on the host's
-   * scope, which also carries the bridge credential requests.
+   * Follows route changes, stores relay configurations and answers module
+   * requests on the host's scope, which also carries the bridge credential
+   * requests.
    */
   async start(scope: Pick<ScopedBus, "request" | "subscribe">): Promise<void> {
     if (this.scope !== null) {
@@ -115,6 +153,7 @@ export class EngineCompanionGateway implements CompanionGateway {
     this.scope = scope;
     await this.watch.subscribe(scope);
     await this.deps.requests.serveRequest(scope, this.relayConfigRequests.spec());
+    await this.deps.requests.serveRequest(scope, this.moduleRequests.spec());
   }
 
   forAdapter(id: AdapterId): CompanionHandle {
@@ -144,12 +183,15 @@ export class EngineCompanionGateway implements CompanionGateway {
         lastFailure: failure,
       })),
       bridgeOpens: this.opens.status(),
+      modules: { sessions: this.sessions.status(), requests: this.moduleRequests.snapshot() },
     };
   }
 
   async stop(): Promise<void> {
     this.lifetime.abort(new Error("the companion gateway stopped"));
+    await this.sessions.stop();
     this.dialer.stop();
+    await this.relayCredentials.stop();
   }
 
   private async resolveClaimed(ref: LocalEndpointRef, opts: ResolveOptions): Promise<EndpointResolution> {

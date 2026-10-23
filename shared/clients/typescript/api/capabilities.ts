@@ -84,6 +84,12 @@ export const ENGINE_CAPABILITIES = {
    */
   modulesLocalEndpoints: "modules.localEndpoints",
   /**
+   * The `ctx.local` host extension: module code sends to, and requests from,
+   * its own declared websocket `local[]` endpoints through the connectors
+   * host's companion gateway.
+   */
+  modulesLocalEndpointCalls: "modules.localEndpointCalls",
+  /**
    * A manifest's `oauth[]` integrations, `ctx.oauth.request`, and finishing a
    * connect with `completeModuleOAuth`.
    */
@@ -156,6 +162,12 @@ export const ENGINE_CAPABILITIES = {
    * `twitchUnpinChatMessage`, and `pin` on `twitchSendChatMessage`.
    */
   twitchPins: "twitch.pins",
+  /**
+   * One platform-neutral send through the platform gateway in connectors,
+   * answered with each platform's own outcome: `sendToPlatforms`. Coexists
+   * with the Twitch-only `twitch*` methods.
+   */
+  platformGateway: "platform.gateway",
   /** The Clip button's Helix call, made and answered like `twitch.streamInfo`'s: `twitchCreateClip`. */
   twitchClips: "twitch.clips",
   /**

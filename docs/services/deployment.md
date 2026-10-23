@@ -92,7 +92,7 @@ server and every client:
 | Client | Used by | Reads |
 |---|---|---|
 | Go, `shared/clients/golang/nats` | db, workflow | `WOOFX3_MESSAGEBUS_TOKEN` (`Config.Token`) |
-| TypeScript, `shared/clients/typescript/nats` | api, connectors, sceneManager, woofwoofwoof | `woofx3MessagebusToken` (also `messagebusToken` in api and sceneManager) |
+| TypeScript, `shared/clients/typescript/nats` | api, connectors, sceneManager | `woofx3MessagebusToken` (also `messagebusToken` in api and sceneManager) |
 | Rust, `barkloader/app/src/services/nats.rs` | barkloader | `WOOFX3_MESSAGEBUS_TOKEN`, then `messagebusToken` |
 
 Services run without the orchestrator (one at a time, under process-compose,
@@ -196,7 +196,7 @@ and every service that calls it do the same for `dbProxyToken`.
 
 db-proxy answers only requests that carry the engine's service token as
 `Authorization: Bearer <dbProxyToken>` and name an allowed host. The api,
-barkloader, connectors, sceneManager, woofwoofwoof and the workflow engine all send
+barkloader, connectors, sceneManager and the workflow engine all send
 the token on every call. A request without it, or with the wrong one, gets a
 Twirp `unauthenticated` error (HTTP 401). The token is the same for every
 service; there is no per-service list of allowed calls.
@@ -384,6 +384,10 @@ proxy to check them and reuses a successful check for
 a hash of the secret, so neither a wrong secret nor an earlier success changes
 the answer for another secret. Failed checks are never reused. Deleting a
 client drops its cached checks at once.
+
+`WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` (default `12000`) is how long
+`sendToPlatforms` waits for the platform gateway's reply; it cannot be set below
+`12000`, the gateway's caller window (see [Platform gateway](./platform-gateway.md)).
 
 ### Refusals
 
@@ -584,7 +588,7 @@ Each line is one event, with an RFC 3339 `time`:
   - connectors' `GET /health` answered `200`: its bus connection is up and
     its reconcile loop is running (on `WOOFX3_CONNECTORS_PORT`, `9102` by
     default). A stopped or parked Twitch adapter does not fail it;
-  - the message bus, wooflow, woofwoofwoof and the edge each have a
+  - the message bus, wooflow and the edge each have a
     running process. None of them serves an HTTP health route, so nothing more
     is known about them, beyond the bus working for barkloader.
 
@@ -707,6 +711,23 @@ For connectors it decides how local endpoints such as OBS are reached (see
 
 Development worktrees (`scripts/worktree.sh`) write `local`.
 
+Module code can also reach its own declared endpoints through connectors (see
+[Companion gateway → Module requests](./companion-gateway.md#module-requests)).
+Because module code sends whatever frames it likes, a direct dial for it is
+stricter than for the OBS adapter:
+
+| Value | Module requests to their own endpoints |
+|---|---|
+| `local` | dialed directly, to an address on the streamer's network |
+| `self` | through the companion's bridge when the dashboard routes the endpoint there; directly only when `WOOFX3_MODULE_LOCAL_DIRECT=true` |
+| `managed`, unset | through the companion's bridge only |
+
+`WOOFX3_MODULE_LOCAL_DIRECT` is `false` unless set to `true`; any other value
+stops connectors at startup. Turn it on only for a self-hosted engine on the
+streamer's own network: on a VPS it would let module code reach the
+provider's network. It is the same posture as barkloader's
+`WOOFX3_MODULE_HTTP_ALLOW_PRIVATE`, and the two are set separately.
+
 Readiness is deliberately strict about the message bus. barkloader reports
 ready once its bundled modules are installed, and it can only report anything
 while it holds a bus connection, so an engine whose bus never comes up stays
@@ -725,9 +746,9 @@ register at all.
 An engine exists before its streamer connects Twitch. connectors runs its
 Twitch adapter only while Twitch is linked (a `twitch_token` is stored) and
 enabled (`integration.twitch.enabled`, which the api writes on link and
-unlink), and stays up and healthy without it. woofwoofwoof starts **idle**
-when no account is linked: it stays up, reports ready on its heartbeat, and
-says it is waiting for a Twitch link. Neither needs
+unlink), and stays up and healthy without it. With no account linked, the chat command
+dispatcher inside connectors still runs, but no chat lines arrive and any
+reply is reported as unavailable. Neither needs
 `WOOFX3_TWITCH_CHANNEL_NAME`; without one, the channel is whoever links the
 account. `twitchapi` requests answered while no account is linked report that
 Twitch is not linked (`not_linked`), and while Twitch is linked but turned off
@@ -735,7 +756,7 @@ or not running, `integration_unavailable`.
 
 Linking, relinking and unlinking in the UI write the token to engine settings
 and publish `setting.integration.token.updated`. That starts, reloads or stops
-the Twitch adapter, and reloads woofwoofwoof's chat client, with no restart
+the Twitch adapter, with no restart
 (see [Connectors host](./connectors.md)).
 
 ## OBS

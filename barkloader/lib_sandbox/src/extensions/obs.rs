@@ -15,6 +15,7 @@
 //! invocation's deadline, by a per-invocation call count, and by a limit on
 //! requests in flight at once.
 
+use super::args::describe;
 use super::in_flight::InFlight;
 use crate::host::{CallScope, HostError, HostExtension, HostFunction, NatsRequester, RequestError};
 use crate::permissions::OBS_CONTROL;
@@ -419,18 +420,6 @@ fn invalid(name: &str, key: &str, expected: &str, got: Option<&Value>) -> HostEr
         ),
         INVALID_ARGUMENTS,
     )
-}
-
-fn describe(value: Option<&Value>) -> String {
-    match value {
-        None | Some(Value::Null) => "nothing".to_string(),
-        Some(Value::String(text)) if text.is_empty() => "an empty string".to_string(),
-        Some(Value::String(text)) => format!("{text:?}"),
-        Some(Value::Bool(flag)) => flag.to_string(),
-        Some(Value::Number(number)) => number.to_string(),
-        Some(Value::Array(_)) => "a list".to_string(),
-        Some(Value::Object(_)) => "an object".to_string(),
-    }
 }
 
 fn required_string(name: &str, args: &Map<String, Value>, key: &str) -> Result<String, HostError> {

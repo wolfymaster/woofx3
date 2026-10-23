@@ -1,3 +1,4 @@
+import { lookup } from "node:dns/promises";
 import type { IApplication } from "@woofx3/common/runtime";
 import { dbProxyEndpointStore } from "../companion/endpoint-store";
 import type { ConnectorsConfig } from "../config";
@@ -59,10 +60,13 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
     const host = new Host({
       config: this.deps.config.host,
       gateway: this.deps.config.gateway,
+      chat: this.deps.config.chat,
       companion: {
         config: this.deps.config.companion,
         store: dbProxyEndpointStore(dbProxy.client),
         fetch: (url, init) => fetch(url, init),
+        resolver: async (name) => (await lookup(name, { all: true })).map((answer) => answer.address),
+        openSocket: (url) => new WebSocket(url),
       },
       dbProxy: dbProxy.client,
       bus: messageBus.client,

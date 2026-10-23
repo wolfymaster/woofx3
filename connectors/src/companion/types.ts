@@ -4,6 +4,8 @@
 
 import type { EngineHosting } from "@woofx3/api";
 import type { AdapterId } from "../host/adapter-ids";
+import type { ModuleSessionsStatus } from "./endpoint-sessions";
+import type { ModuleRequestCounters } from "./module-requests";
 
 /** One module's `local[]` endpoint. Both ids follow the relay's bridge path rules (isModuleId, isEndpointId). */
 export interface LocalEndpointRef {
@@ -126,6 +128,8 @@ export interface CompanionGatewayStatus {
   hosting: EngineHosting | null;
   endpoints: EndpointStatus[];
   bridgeOpens: BridgeOpensStatus;
+  /** The sessions held for module requests, and the requests answered. */
+  modules: { sessions: ModuleSessionsStatus; requests: ModuleRequestCounters };
 }
 
 export interface BridgeOpensStatus {
@@ -139,6 +143,6 @@ export interface CompanionGateway {
   /** A handle scoped to the refs this adapter's manifest claims, like ScopedBus for subjects. */
   forAdapter(id: AdapterId): CompanionHandle;
   status(): CompanionGatewayStatus;
-  /** Abandons every resolution in flight and releases every bridge open. */
+  /** Abandons every resolution in flight, closes every module session and releases every bridge open. */
   stop(): Promise<void>;
 }
