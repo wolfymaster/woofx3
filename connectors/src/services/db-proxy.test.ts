@@ -52,6 +52,8 @@ describe("dbProxyClientConfig", () => {
 });
 
 describe("DbProxyService.healthcheck", () => {
+  const FAILURES = 3;
+
   async function withServer(fetch: () => Response | Promise<Response>, run: (url: string) => Promise<void>) {
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch });
     try {
@@ -61,32 +63,64 @@ describe("DbProxyService.healthcheck", () => {
     }
   }
 
+  const pong = () => new Response(new Uint8Array(), { headers: { "content-type": "application/protobuf" } });
+  const refuse = () => Response.json({ code: "unavailable", msg: "db down" }, { status: 503 });
+
   test("is healthy while db-proxy answers the ping", async () => {
+    await withServer(pong, async (url) => {
+      expect(await new DbProxyService(url, TOKEN, 1_000, FAILURES).healthcheck()).toBe(true);
+    });
+  });
+
+  test("stays healthy through fewer failed pings in a row than the limit, and fails at the limit", async () => {
+    await withServer(refuse, async (url) => {
+      const service = new DbProxyService(url, TOKEN, 1_000, FAILURES);
+      for (let ping = 1; ping < FAILURES; ping++) {
+        expect(await service.healthcheck()).toBe(true);
+      }
+      expect(await service.healthcheck()).toBe(false);
+    });
+  });
+
+  test("a ping that succeeds resets the failure count", async () => {
+    let up = false;
     await withServer(
-      () => new Response(new Uint8Array(), { headers: { "content-type": "application/protobuf" } }),
+      () => (up ? pong() : refuse()),
       async (url) => {
-        expect(await new DbProxyService(url, TOKEN, 1_000).healthcheck()).toBe(true);
+        const service = new DbProxyService(url, TOKEN, 1_000, FAILURES);
+        for (let ping = 1; ping < FAILURES; ping++) {
+          expect(await service.healthcheck()).toBe(true);
+        }
+        up = true;
+        expect(await service.healthcheck()).toBe(true);
+        up = false;
+        for (let ping = 1; ping < FAILURES; ping++) {
+          expect(await service.healthcheck()).toBe(true);
+        }
+        expect(await service.healthcheck()).toBe(false);
       }
     );
   });
 
-  test("is unhealthy when db-proxy answers the ping with an error", async () => {
-    await withServer(
-      () => Response.json({ code: "unavailable", msg: "db down" }, { status: 503 }),
-      async (url) => {
-        expect(await new DbProxyService(url, TOKEN, 1_000).healthcheck()).toBe(false);
-      }
-    );
-  });
-
-  test("is unhealthy once a ping db-proxy never answers times out", async () => {
+  test("a ping db-proxy never answers times out and counts as failed", async () => {
     await withServer(
       () => new Promise<Response>(() => {}),
       async (url) => {
         const started = performance.now();
-        expect(await new DbProxyService(url, TOKEN, 50).healthcheck()).toBe(false);
+        expect(await new DbProxyService(url, TOKEN, 50, 1).healthcheck()).toBe(false);
         expect(performance.now() - started).toBeLessThan(2_000);
       }
     );
   });
+
+  for (const [name, failures] of [
+    ["zero", 0],
+    ["fractional", 1.5],
+  ] as const) {
+    test(`refuses a ${name} failure count`, () => {
+      expect(() => new DbProxyService("http://127.0.0.1:1", TOKEN, 1_000, failures)).toThrow(
+        "db-proxy health failure count"
+      );
+    });
+  }
 });

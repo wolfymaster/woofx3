@@ -30,15 +30,27 @@ export function dbProxyClientConfig(baseURL: string, token: string, timeoutMs: n
 /**
  * db-proxy over HTTP. Connecting pings it, so the runtime waits for it before
  * the host starts, and the runtime's health check pings it again so a db-proxy
- * that goes away later restarts the host instead of leaving it running blind.
+ * that stays away restarts the host instead of leaving it running blind.
  */
 export default class DbProxyService implements Service<DbProxyClientConfig> {
   readonly name = "dbProxy";
   readonly type = "db";
   readonly client: DbProxyClientConfig;
   connected = false;
+  private failedPings = 0;
 
-  constructor(baseURL: string, token: string, timeoutMs: number) {
+  /** `unhealthyAfterFailures` is how many failed health pings in a row make the check fail. */
+  constructor(
+    baseURL: string,
+    token: string,
+    timeoutMs: number,
+    private readonly unhealthyAfterFailures: number
+  ) {
+    if (!(Number.isInteger(unhealthyAfterFailures) && unhealthyAfterFailures > 0)) {
+      throw new Error(
+        `the db-proxy health failure count must be a whole number above 0, got ${unhealthyAfterFailures}`
+      );
+    }
     this.client = dbProxyClientConfig(baseURL, token, timeoutMs);
   }
 
@@ -51,20 +63,24 @@ export default class DbProxyService implements Service<DbProxyClientConfig> {
   }
 
   /**
-   * Pings db-proxy. The client aborts the ping after its timeout
-   * (HOST_DEFAULTS.dbProxyTimeoutMs unless configured), so the check is bounded.
+   * Pings db-proxy, and fails only once `unhealthyAfterFailures` pings in a
+   * row have failed; a ping that succeeds resets the count. The client aborts
+   * each ping after its timeout, so the check is bounded.
    */
   async healthcheck(): Promise<boolean> {
     try {
       await Ping({}, this.client);
+      this.failedPings = 0;
       return true;
     } catch {
       // The runtime only needs the verdict: a failed check disconnects and reconnects, and connect's ping reports why.
-      return false;
+      this.failedPings++;
+      return this.failedPings < this.unhealthyAfterFailures;
     }
   }
 
   async disconnect(): Promise<void> {
     this.connected = false;
+    this.failedPings = 0;
   }
 }

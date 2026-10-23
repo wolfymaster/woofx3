@@ -22,6 +22,12 @@ export const HOST_DEFAULTS = {
    * a warning instead of stalling every pass after it.
    */
   dbProxyTimeoutMs: 2_000,
+  /**
+   * The runtime's health check counts db-proxy unhealthy only after this many
+   * failed pings in a row. A failed check reconnects every service, so one
+   * dropped ping must not restart the host.
+   */
+  dbProxyHealthFailures: 3,
   /** Handlers one subscription runs at once, and messages it queues behind them before dropping. */
   adapterConcurrency: 16,
   adapterQueueCap: 256,
@@ -56,6 +62,7 @@ export const HostEnvSchema = z.object({
   woofx3ConnectorsParkWindowMs: positiveMs.default(HOST_DEFAULTS.parkWindowMs),
   woofx3ConnectorsStopDeadlineMs: positiveMs.default(HOST_DEFAULTS.stopDeadlineMs),
   woofx3ConnectorsDbProxyTimeoutMs: positiveMs.default(HOST_DEFAULTS.dbProxyTimeoutMs),
+  woofx3ConnectorsDbProxyHealthFailures: z.number().int().positive().default(HOST_DEFAULTS.dbProxyHealthFailures),
   woofx3ConnectorsAdapterConcurrency: z.number().int().positive().default(HOST_DEFAULTS.adapterConcurrency),
   woofx3ConnectorsAdapterQueueCap: z.number().int().nonnegative().default(HOST_DEFAULTS.adapterQueueCap),
   woofx3ConnectorsShutdownDeadlineMs: positiveMs.default(HOST_DEFAULTS.shutdownDeadlineMs),
@@ -70,6 +77,7 @@ export interface HostConfig {
   park: { afterFailures: number; windowMs: number };
   stopDeadlineMs: number;
   dbProxyTimeoutMs: number;
+  dbProxyHealthFailures: number;
   subscriptionLimits: { concurrency: number; queueCap: number };
   shutdownDeadlineMs: number;
 }
@@ -102,6 +110,7 @@ export function hostConfig(env: HostEnv): HostConfig {
     park: { afterFailures: env.woofx3ConnectorsParkAfterFailures, windowMs: env.woofx3ConnectorsParkWindowMs },
     stopDeadlineMs: env.woofx3ConnectorsStopDeadlineMs,
     dbProxyTimeoutMs: env.woofx3ConnectorsDbProxyTimeoutMs,
+    dbProxyHealthFailures: env.woofx3ConnectorsDbProxyHealthFailures,
     subscriptionLimits: {
       concurrency: env.woofx3ConnectorsAdapterConcurrency,
       queueCap: env.woofx3ConnectorsAdapterQueueCap,

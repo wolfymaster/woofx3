@@ -20,6 +20,7 @@ describe("connectorsConfig", () => {
       park: { afterFailures: HOST_DEFAULTS.parkAfterFailures, windowMs: HOST_DEFAULTS.parkWindowMs },
       stopDeadlineMs: HOST_DEFAULTS.stopDeadlineMs,
       dbProxyTimeoutMs: HOST_DEFAULTS.dbProxyTimeoutMs,
+      dbProxyHealthFailures: HOST_DEFAULTS.dbProxyHealthFailures,
       subscriptionLimits: { concurrency: HOST_DEFAULTS.adapterConcurrency, queueCap: HOST_DEFAULTS.adapterQueueCap },
       shutdownDeadlineMs: HOST_DEFAULTS.shutdownDeadlineMs,
     });
