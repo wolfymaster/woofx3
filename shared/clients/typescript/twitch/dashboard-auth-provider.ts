@@ -17,6 +17,17 @@ type UserIdResolvable = Parameters<AuthProvider["getCurrentScopesForUser"]>[0];
 /** A token this close to its expiry is replaced before use rather than after Twitch refuses it. */
 const EXPIRY_MARGIN_MS = 60_000;
 
+export interface DashboardAuthProviderOptions {
+  /** Clock milliseconds; defaults to the wall clock. */
+  now?: () => number;
+  /**
+   * Called once per failed request for a new token, whether the request
+   * failed or the api service refused it, before the error reaches the
+   * caller. Must not throw.
+   */
+  onRequestFailure?: (error: Error) => void;
+}
+
 /**
  * An auth provider for an engine whose Twitch token a dashboard owns.
  *
@@ -33,13 +44,17 @@ const EXPIRY_MARGIN_MS = 60_000;
 export class DashboardAuthProvider implements AuthProvider {
   private token: DashboardToken;
   private pending: Promise<DashboardToken> | null = null;
+  private readonly now: () => number;
+  private readonly onRequestFailure: ((error: Error) => void) | undefined;
 
   constructor(
     initial: DashboardToken,
     private readonly request: RequestDashboardToken,
-    private readonly now: () => number = () => Date.now()
+    options: DashboardAuthProviderOptions = {}
   ) {
     this.token = initial;
+    this.now = options.now ?? (() => Date.now());
+    this.onRequestFailure = options.onRequestFailure;
   }
 
   get clientId(): string {
@@ -98,7 +113,8 @@ export class DashboardAuthProvider implements AuthProvider {
 
   /**
    * The token to use now. Concurrent callers needing a new one share a single
-   * request, so a burst of Helix calls at expiry asks the dashboard once.
+   * request, so a burst of Helix calls at expiry asks the dashboard once, and
+   * a failed request is reported once.
    */
   private async current(force: boolean): Promise<DashboardToken> {
     if (!force && !this.expiresSoon()) {
@@ -106,10 +122,17 @@ export class DashboardAuthProvider implements AuthProvider {
     }
     if (!this.pending) {
       this.pending = this.request(force)
-        .then((token) => {
-          this.token = token;
-          return token;
-        })
+        .then(
+          (token) => {
+            this.token = token;
+            return token;
+          },
+          (err: unknown) => {
+            const error = err instanceof Error ? err : new Error(String(err));
+            this.onRequestFailure?.(error);
+            throw error;
+          }
+        )
         .finally(() => {
           this.pending = null;
         });

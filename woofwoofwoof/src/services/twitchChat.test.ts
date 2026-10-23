@@ -34,6 +34,8 @@ function sentLines() {
   return new SentLineRegistry(DEFAULT_SENT_LINE_CONFIG, () => 0);
 }
 
+const silentLogger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
+
 const noDashboard = async (): Promise<never> => {
   throw new Error("no dashboard in this test");
 };
@@ -53,6 +55,7 @@ describe("TwitchChatClientService", () => {
       requestToken: noDashboard,
       getSetting: async () => undefined,
       sentLines: sentLines(),
+      logger: silentLogger,
     });
 
     expect(svc.name).toBe("twitchchat");
@@ -69,6 +72,7 @@ describe("TwitchChatClientService", () => {
       requestToken: noDashboard,
       getSetting,
       sentLines: sentLines(),
+      logger: silentLogger,
     });
 
     await svc.connect();
@@ -77,6 +81,7 @@ describe("TwitchChatClientService", () => {
       channel: "mychannel",
       getSetting,
       requestToken: noDashboard,
+      logger: silentLogger,
     });
     expect(initMock).toHaveBeenCalledWith({
       clientId: "cid",
@@ -95,6 +100,7 @@ describe("TwitchChatClientService", () => {
       requestToken: noDashboard,
       getSetting: async () => undefined,
       sentLines: sentLines(),
+      logger: silentLogger,
     });
 
     await svc.connect();
@@ -111,6 +117,7 @@ describe("TwitchChatClientService", () => {
       requestToken: noDashboard,
       getSetting: async () => undefined,
       sentLines: sentLines(),
+      logger: silentLogger,
     });
     await svc.connect();
 
@@ -128,6 +135,7 @@ describe("TwitchChatClientService", () => {
       requestToken: noDashboard,
       getSetting: async () => undefined,
       sentLines: sentLines(),
+      logger: silentLogger,
     });
 
     await svc.disconnect();
@@ -142,6 +150,7 @@ describe("TwitchChatClientService", () => {
       requestToken: noDashboard,
       getSetting: async () => undefined,
       sentLines: sentLines(),
+      logger: silentLogger,
     });
     await svc.connect();
     await svc.disconnect();
@@ -159,6 +168,7 @@ describe("TwitchChatClientService before and after Twitch is linked", () => {
     requestToken: noDashboard,
     getSetting: async () => undefined,
     sentLines: sentLines(),
+    logger: silentLogger,
   };
 
   function notLinked(): Error {
@@ -221,6 +231,7 @@ describe("TwitchChatClientService and its own lines", () => {
       requestToken: noDashboard,
       getSetting: async () => undefined,
       sentLines: sentLines(),
+      logger: silentLogger,
     });
     await svc.connect();
     return svc;
@@ -264,6 +275,7 @@ describe("TwitchChatClientService and its own lines", () => {
         requestToken: noDashboard,
         getSetting: async () => undefined,
         sentLines: sentLines(),
+        logger: silentLogger,
       });
 
       await expect(svc.connect()).rejects.toThrow("chat intent");
