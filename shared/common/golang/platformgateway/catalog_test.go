@@ -89,6 +89,79 @@ func TestReplyFixtures(t *testing.T) {
 	}
 }
 
+func TestCapabilitiesReplyFixtures(t *testing.T) {
+	for _, tc := range readFixtures[replyFixture](t, "capabilities-replies.json") {
+		t.Run(tc.Name, func(t *testing.T) {
+			var reply CapabilitiesReply
+			if err := json.Unmarshal(tc.Reply, &reply); err != nil {
+				t.Fatalf("decoding reply: %v", err)
+			}
+			assertInvalidAt(t, reply.Validate(), tc.InvalidField)
+		})
+	}
+}
+
+func TestFieldOptionsRequestFixtures(t *testing.T) {
+	for _, tc := range readFixtures[requestFixture](t, "field-options-requests.json") {
+		t.Run(tc.Name, func(t *testing.T) {
+			var request FieldOptionsRequest
+			if err := json.Unmarshal(tc.Request, &request); err != nil {
+				t.Fatalf("decoding request: %v", err)
+			}
+			assertInvalidAt(t, request.Validate(), tc.InvalidField)
+		})
+	}
+}
+
+func TestFieldOptionsReplyFixtures(t *testing.T) {
+	for _, tc := range readFixtures[replyFixture](t, "field-options-replies.json") {
+		t.Run(tc.Name, func(t *testing.T) {
+			var reply FieldOptionsReply
+			err := json.Unmarshal(tc.Reply, &reply)
+			if err == nil {
+				err = reply.Validate()
+			}
+			assertInvalidAt(t, err, tc.InvalidField)
+		})
+	}
+}
+
+// Each discovery reply has two wire forms; marshalling picks one and never
+// mixes them, and a nil list is written as an empty one.
+func TestDiscoveryRepliesMarshal(t *testing.T) {
+	cases := []struct {
+		name  string
+		reply any
+		want  string
+	}{
+		{"capabilities", CapabilitiesReply{Platforms: []PlatformCapability{{
+			ID: PlatformTwitch, DisplayName: "Twitch", State: PlatformStateConnected, Connected: true, Enabled: true,
+			Actions: []ActionID{ActionChatSend},
+		}}}, `{"platforms":[{"id":"twitch","displayName":"Twitch","state":"connected","connected":true,"enabled":true,"actions":["chat.send"]}]}`},
+		{"capabilities without platforms", CapabilitiesReply{}, `{"platforms":[]}`},
+		{"capabilities error", CapabilitiesReply{Platforms: []PlatformCapability{}, Error: "boom"}, `{"error":"boom"}`},
+		{"field options", FieldOptionsReply{Options: []FieldOption{{Value: PlatformTwitch, Label: "Twitch"}}}, `[{"value":"twitch","label":"Twitch"}]`},
+		{"no field options", FieldOptionsReply{}, `[]`},
+		{"field options error", FieldOptionsReply{Options: []FieldOption{}, Error: "boom"}, `{"error":"boom"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := json.Marshal(tc.reply)
+			if err != nil {
+				t.Fatalf("Marshal() = %v", err)
+			}
+			if string(raw) != tc.want {
+				t.Fatalf("got %s, want %s", raw, tc.want)
+			}
+		})
+	}
+}
+
+func TestFieldOptionsReplyRefusesNull(t *testing.T) {
+	var reply FieldOptionsReply
+	assertInvalidAt(t, json.Unmarshal([]byte("null"), &reply), field("reply"))
+}
+
 func mustPayload(t *testing.T, payload any) json.RawMessage {
 	t.Helper()
 	raw, err := json.Marshal(payload)

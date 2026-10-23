@@ -95,7 +95,13 @@ export class TwitchAdapter implements Adapter {
       throw new Error("the twitch adapter is already running; the host never starts it twice");
     }
     const app = new TwitchApplication(this.deps);
-    const appCtx: TwitchAppContext = { logger: ctx.logger, bus: ctx.bus, db: ctx.dbProxy, config: this.deps.config };
+    const appCtx: TwitchAppContext = {
+      logger: ctx.logger,
+      bus: ctx.bus,
+      db: ctx.dbProxy,
+      config: this.deps.config,
+      reportFault: (reason) => ctx.reportFault(reason),
+    };
     this.run = { app, ctx: appCtx };
     const outcome = await app.start(appCtx, signal);
     if (outcome === "not_linked") {

@@ -216,6 +216,24 @@ it for the host:
   `setting.integration.token.updated` as a relink. The running adapter ignores
   an update that leaves no token stored (debug log) and keeps its connection
   until the host reads the link as disconnected and stops it.
+- **Token renewal.** Who renews the stored token depends on where it came
+  from (`selectStrategy` and `publicClientIdOf` in
+  `shared/clients/typescript/twitch/token-strategy.ts` decide, for every
+  service alike):
+
+  | Token from | Renewed by | How the adapter gets a new one |
+  |---|---|---|
+  | A dashboard's Twitch app | The dashboard, which keeps the refresh token and app secret | Asks the api service on `engine.twitch.token` |
+  | The engine's public Twitch app (a device login) | The api service alone, since its refresh tokens are single-use | Asks the api service on `engine.twitch.token` |
+  | The engine's confidential app (`WOOFX3_TWITCH_CLIENT_ID` and `_SECRET`) | Each service holding the token, with the app's credentials | Refreshes it and writes it back to `twitch_token`, unless a relink replaced the stored token meanwhile |
+
+  A renewal that fails (Twitch refuses the refresh, or the api service is
+  unreachable or refuses) is logged and reported as a fault, reason
+  `Twitch token renewal failed (<provider>): <error>`: the adapter goes
+  `degraded`, its restart reads the stored token afresh, and repeated failures
+  park it until Twitch is relinked or re-enabled. The reason shows under the
+  adapter's status in `/health`. A failure from a connection already closed
+  (by stop or a relink) is ignored.
 - **Stop.** Aborts a connect or relink still in progress, stops the ad
   heads-up scheduler, disconnects EventSub, closes the Twitch client, and
   waits for event publishes still in flight, all within the host's stop

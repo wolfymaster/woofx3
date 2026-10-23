@@ -6,7 +6,7 @@ import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/i
 import { type Span, SpanKind, withSpan } from "@woofx3/common/logging";
 import { ListModuleSettings } from "@woofx3/db/module_setting.pb";
 import { GetSetting, SetSetting } from "@woofx3/db/setting.pb";
-import TwitchClient, { requestTokenOverNats } from "@woofx3/twitch";
+import TwitchClient, { requestTokenOverNats, type TwitchAuthProviderKind } from "@woofx3/twitch";
 import type { TwitchConfig } from "../../config/twitch";
 import { type Clock, errorMessage, type IdSource, type Logger } from "../../host/deps";
 import type { BusMessage, ScopedBus } from "../../host/scoped-bus";
@@ -80,6 +80,8 @@ export type TwitchAppContext = {
   bus: TwitchBus;
   db: DbProxyClientConfig;
   config: TwitchConfig;
+  /** Tells the host this run lost Twitch, so it restarts the adapter with backoff (see AdapterContext). */
+  reportFault(reason: string): void;
   /** Absent until connected. */
   broadcaster?: HelixUser;
   twitchEventBus?: TwitchEventBus;
@@ -104,6 +106,13 @@ interface Connection {
   client: TwitchClient;
   adBreakScheduler?: AdBreakScheduler;
   eventBus?: TwitchEventBus;
+  /**
+   * Set once closed by stop, a failed connect or a reconnecting relink, so a
+   * late renewal failure from it is ignored. An in-place token swap keeps the
+   * connection open and may still see one late fault from the old token; the
+   * restart it causes recovers on its own.
+   */
+  closed: boolean;
 }
 
 /** The parts of a finished connect the rest of the run reads. */
@@ -116,6 +125,7 @@ interface Connected {
 
 /** Stops everything a connection built, however far its connect got. */
 async function closeConnection(connection: Connection): Promise<void> {
+  connection.closed = true;
   try {
     connection.eventBus?.disconnect();
   } finally {
@@ -273,7 +283,10 @@ export default class TwitchApplication {
     this.link = "connecting";
     const db = ctx.db;
     const connection: Connection = {
+      closed: false,
       client: new TwitchClient({
+        logger: ctx.logger,
+        onAuthFailure: (err, { provider }) => this.onAuthFailure(ctx, connection, err, provider),
         channel: ctx.config.channel,
         getSetting: async (key) => {
           const response = await GetSetting({ key }, db);
@@ -421,6 +434,26 @@ export default class TwitchApplication {
         err: errorMessage(err),
       });
     }
+  }
+
+  /**
+   * A token renewal failed, so every Helix call and EventSub reconnect made
+   * with the token fails until one succeeds. That is a lost connection: the
+   * host restarts the adapter with backoff, which reads the stored token
+   * afresh, and parks it after repeated failures, with the reason in /health.
+   * Ignored after stop and for a connection a relink already replaced.
+   */
+  private onAuthFailure(
+    ctx: TwitchAppContext,
+    connection: Connection,
+    err: Error,
+    provider: TwitchAuthProviderKind
+  ): void {
+    if (this.lifetime.signal.aborted || connection.closed) {
+      ctx.logger.debug("twitch: ignoring a token renewal failure from a closed connection", { provider });
+      return;
+    }
+    ctx.reportFault(`Twitch token renewal failed (${provider}): ${err.message}`);
   }
 
   /** Keeps `work` in `inFlight` until it settles, for `stop` to wait on. */

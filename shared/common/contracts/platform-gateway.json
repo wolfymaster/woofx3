@@ -4,11 +4,17 @@
     "capabilities": "platform.gateway.capabilities",
     "fieldOptions": "platform.gateway.field_options"
   },
+  "replyTypes": {
+    "send": "platform.gateway.send.result",
+    "capabilities": "platform.gateway.capabilities.result",
+    "fieldOptions": "platform.gateway.field_options.result"
+  },
   "platforms": [{ "id": "twitch", "displayName": "Twitch" }],
   "requesters": ["workflow", "dispatcher", "api"],
   "failureCodes": ["invalid", "rate_limited", "forbidden", "upstream"],
   "outcomeStatuses": ["delivered", "dropped", "unsupported", "unavailable", "unconfirmed", "failed"],
   "unavailableReasons": ["not_linked", "disabled", "stopped", "starting", "parked"],
+  "platformStates": ["stopped", "starting", "connected", "degraded", "parked", "stopping"],
   "actions": [
     {
       "id": "chat.send",

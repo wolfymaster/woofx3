@@ -1,44 +1,19 @@
 import {
+  type CapabilitiesReply,
   EgressActionId,
-  isEgressActionId,
+  type FieldOptionsReply,
   PLATFORM_DISPLAY_NAMES,
+  PLATFORM_GATEWAY_REPLY_TYPES,
   PLATFORM_GATEWAY_SUBJECTS,
-  type PlatformId,
+  type PlatformCapability,
+  parseFieldOptionsRequest,
 } from "@woofx3/api/platform-gateway";
 import { GATEWAY_DEFAULTS } from "../config/gateway";
-import type { AdapterState } from "../host/adapter";
 import { platformAdapterId } from "../host/adapter";
 import { type HostRequests, type ParseResult, parsed, parseFailed } from "../host/host-requests";
 import type { ScopedBus } from "../host/scoped-bus";
 import type { AdapterStatusSource } from "../host/served-subjects";
 import type { EgressRegistry } from "./egress-registry";
-
-/** The CloudEvent type of every platform.gateway.capabilities reply. */
-export const GATEWAY_CAPABILITIES_RESULT_TYPE = "platform.gateway.capabilities.result";
-
-/** The CloudEvent type of every platform.gateway.field_options reply. */
-export const GATEWAY_FIELD_OPTIONS_RESULT_TYPE = "platform.gateway.field_options.result";
-
-export interface PlatformCapability {
-  id: PlatformId;
-  displayName: string;
-  /** The platform adapter's lifecycle state. */
-  state: AdapterState;
-  connected: boolean;
-  enabled: boolean;
-  /** The actions the platform has an egress handler for, whatever its state. */
-  actions: EgressActionId[];
-}
-
-export type CapabilitiesReply = { platforms: PlatformCapability[] } | { error: string };
-
-export interface FieldOption {
-  value: PlatformId;
-  label: string;
-}
-
-/** The options of a select field, or the reason there are none: the shape every field-options reply takes. */
-export type FieldOptionsReply = FieldOption[] | { error: string };
 
 export type DiscoveryAdapters = Pick<AdapterStatusSource, "status" | "link">;
 
@@ -80,18 +55,18 @@ export class GatewayDiscovery {
       subject: PLATFORM_GATEWAY_SUBJECTS.capabilities,
       budgetMs: GATEWAY_DEFAULTS.discoveryBudgetMs,
       replyMode: "cloudevent",
-      replyType: GATEWAY_CAPABILITIES_RESULT_TYPE,
+      replyType: PLATFORM_GATEWAY_REPLY_TYPES.capabilities,
       // The request carries nothing; whatever a caller sends is ignored.
       parse: () => parsed(undefined),
       handle: async () => ({ platforms: this.capabilities() }),
       errorReply: (_code, message) => ({ error: message }),
     });
-    await this.deps.requests.serveRequest<EgressActionId | UnknownAction, FieldOptionsReply>(scope, {
+    await this.deps.requests.serveRequest<EgressActionId, FieldOptionsReply>(scope, {
       subject: PLATFORM_GATEWAY_SUBJECTS.fieldOptions,
       budgetMs: GATEWAY_DEFAULTS.discoveryBudgetMs,
       replyMode: "cloudevent",
-      replyType: GATEWAY_FIELD_OPTIONS_RESULT_TYPE,
-      parse: parseFieldOptionsRequest,
+      replyType: PLATFORM_GATEWAY_REPLY_TYPES.fieldOptions,
+      parse: parseRequest,
       handle: async (action) => this.fieldOptions(action),
       errorReply: (_code, message) => ({ error: message }),
     });
@@ -117,47 +92,36 @@ export class GatewayDiscovery {
    * and able to perform it. `all` and `origin` are not listed, since the
    * field's manifest pins them.
    */
-  private fieldOptions(action: EgressActionId | UnknownAction): FieldOptionsReply {
-    if (typeof action !== "string") {
-      return { error: `unknown action "${action.unknown}"` };
-    }
+  private fieldOptions(action: EgressActionId): FieldOptionsReply {
     return this.capabilities()
       .filter((platform) => platform.connected && platform.enabled && platform.actions.includes(action))
       .map((platform) => ({ value: platform.id, label: platform.displayName }));
   }
 }
 
-/** An action name the catalog does not have, kept to say so in the reply. */
-interface UnknownAction {
-  unknown: string;
-}
-
 const decoder = new TextDecoder();
 
 /**
  * The request is `{ action }`. The api relays a module field's request as a
- * CloudEvent envelope, so `{ data: { action } }` is read the same way.
+ * CloudEvent envelope, so `{ data: { action } }` is read the same way. A
+ * refusal, such as an unknown action, becomes the reply's error.
  */
-function parseFieldOptionsRequest(raw: Uint8Array): ParseResult<EgressActionId | UnknownAction> {
+function parseRequest(raw: Uint8Array): ParseResult<EgressActionId> {
   let value: unknown;
   try {
     value = JSON.parse(decoder.decode(raw));
   } catch {
     return parseFailed("request is not JSON");
   }
-  const body = unwrap(value);
-  const action = body?.action;
-  if (typeof action !== "string" || action === "") {
-    return parseFailed("action is required");
+  const request = parseFieldOptionsRequest(unwrap(value));
+  if (!request.ok) {
+    return parseFailed(`${request.error.field}: ${request.error.problem}`);
   }
-  return parsed(isEgressActionId(action) ? action : { unknown: action });
+  return parsed(request.value.action);
 }
 
-function unwrap(value: unknown): { action?: unknown } | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  if (!("action" in value) && isRecord(value.data)) {
+function unwrap(value: unknown): unknown {
+  if (isRecord(value) && !("action" in value) && isRecord(value.data)) {
     return value.data;
   }
   return value;
