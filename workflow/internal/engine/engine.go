@@ -927,7 +927,7 @@ func describeUnmet(unmet []UnmetCondition) string {
 
 // beginExecution creates a run, registers it, and announces it.
 // refuseLoop fails a just-begun run when the chain of runs that led to its
-// event is too long (see MaxWorkflowChain), and says so. The run is recorded
+// event is too long (see checkWorkflowChain), and says so. The run is recorded
 // failed with the loop as its error rather than dropped, so the loop shows in
 // the run history where the user would look for a workflow that stopped.
 func (e *Engine[TServices]) refuseLoop(wf *types.WorkflowDefinition, execution *types.WorkflowExecution, event *types.Event) bool {

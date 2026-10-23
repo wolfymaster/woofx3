@@ -1,6 +1,7 @@
+import type { PlatformId } from "@woofx3/api/platform-gateway";
+import Event, { type BaseEvent } from "../BaseEvent";
 import { commandNameToSubjectSegment } from "../slug";
 import { encode } from "../utils";
-import Event, { type BaseEvent } from "../BaseEvent";
 
 export interface ChatCommandEventData {
   command: string;
@@ -13,7 +14,8 @@ export interface ChatCommandEventData {
    *  variable names (e.g. "user.name") build nested objects. */
   variables: Record<string, unknown>;
   chatter: string;
-  platform: "twitch";
+  /** The platform the invoking line was said on. */
+  platform: PlatformId;
   channelId?: string;
 }
 
@@ -24,7 +26,7 @@ export type ChatCommandEvent = BaseEvent<ChatCommandEventData>;
 
 /** Who the invocation came from, carried as CloudEvents extension attributes. */
 export interface ChatCommandAttributes {
-  platform?: string;
+  platform?: PlatformId;
   triggeredBy?: string;
 }
 

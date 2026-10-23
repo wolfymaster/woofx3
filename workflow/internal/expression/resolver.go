@@ -94,8 +94,15 @@ func (r *Resolver) Resolve(value any) (any, error) {
 	}
 }
 
+// HasExpression reports whether s holds a `${...}` expression, the text
+// ResolveString evaluates. A parameter validated before its step runs uses it
+// to accept a value that is only known once resolved.
+func HasExpression(s string) bool {
+	return strings.Contains(s, "${")
+}
+
 func (r *Resolver) ResolveString(s string) (any, error) {
-	if !strings.Contains(s, "${") {
+	if !HasExpression(s) {
 		return s, nil
 	}
 

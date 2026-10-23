@@ -41,8 +41,8 @@ The system follows a microservices architecture with three primary communication
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌──────────────┐    NATS/CloudEvents    ┌──────────────────────────────┐  │
-│  │  WoofWoofWoof │ ──────────────────────│  Wooflow (Workflow Engine)    │  │
-│  │  (Chatbot)    │                         │                               │  │
+│  │  Connectors   │ ──────────────────────│  Wooflow (Workflow Engine)    │  │
+│  │  (Platforms)  │                         │                               │  │
 │  └──────┬───────┘                         └───────────────┬──────────────┘  │
 │         │                                                 │                  │
 │         │ WebSocket                              gRPC/Twirp               │
@@ -52,12 +52,10 @@ The system follows a microservices architecture with three primary communication
 │  │ (Plugins)    │                         │   (Postgres/SQLite)          │  │
 │  └──────────────┘                         └──────────────────────────────┘  │
 │                                                   ▲                         │
-│         NATS/CloudEvents                         │                         │
-│         ▼                                         │                         │
-│  ┌──────────────┐    NATS/CloudEvents     ┌────────┴───────────┐            │
-│  │  Twitch      │────────────────────────│   Shared Services  │            │
-│  │  Service     │                         │   (Message Bus)    │            │
-│  └──────────────┘                         └────────────────────┘            │
+│                                           ┌────────┴───────────┐            │
+│                                           │   Shared Services  │            │
+│                                           │   (Message Bus)    │            │
+│                                           └────────────────────┘            │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -69,8 +67,7 @@ The system follows a microservices architecture with three primary communication
 | **db** | Go | 26257 (gRPC) | Database proxy for all data access |
 | **wooflow** | Go | 26533 (gRPC) | Workflow orchestration engine |
 | **barkloader** | Rust | 9653 (HTTP/WS) | Module/plugin management and sandbox execution |
-| **twitch** | TypeScript/Bun | 26633 (HTTP) | Twitch API integration and EventBus |
-| **woofwoofwoof** | TypeScript/Bun | 26666 (HTTP) | Twitch chatbot and command processing |
+| **connectors** | TypeScript/Bun | - | Platform connectors host (Twitch and OBS adapters) and the platform-neutral chat command dispatcher |
 | **api** | TypeScript/Bun | 3000 (HTTP) | Public API for UI clients |
 | **messagebus-gateway** | Go | 8080 (WS) | WebSocket-to-NATS bridge |
 
@@ -294,9 +291,9 @@ Events → Fact Updates → Rete Network → Rule Evaluation → Actions/Fire
 
 ### 3.5 Twitch Integration
 
-#### 3.5.1 Twitch Service
+#### 3.5.1 Connectors Twitch adapter
 
-**Purpose**: Integrate with Twitch API and distribute channel events.
+**Purpose**: Integrate with the Twitch API and distribute channel events. The adapter runs inside the connectors host.
 
 **Responsibilities**:
 
@@ -316,9 +313,9 @@ Events → Fact Updates → Rete Network → Rule Evaluation → Actions/Fire
 | `raid.channel.twitch` | Raid incoming |
 | `channel.state.twitch` | Stream state change |
 
-#### 3.5.2 WoofWoofWoof (Chatbot)
+#### 3.5.2 Connectors chat dispatcher
 
-**Purpose**: Process Twitch chat messages, execute commands, and interact with the module system.
+**Purpose**: Process chat messages from any connected platform, execute commands, and interact with the module system.
 
 **Responsibilities**:
 
@@ -676,7 +673,7 @@ The following capabilities are identified for future development:
 | **Twirp** | RPC framework using protocol buffers |
 | **Barkloader** | The module/plugin system |
 | **Wooflow** | The workflow orchestration engine |
-| **WoofWoofWoof** | The Twitch chatbot service |
+| **Connectors** | The host that runs platform adapters and the chat command dispatcher |
 
 ---
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { loadConfig } from "../src/config";
+import { DEFAULT_COMPANION_REQUEST_TIMEOUT_MS, loadConfig, resolveCompanionRequestTimeoutMs } from "../src/config";
 
 /** The minimum loadConfig requires; each test adds what it is about. */
 const REQUIRED: Record<string, string> = {
@@ -236,4 +236,32 @@ describe("db proxy token", () => {
 
     expect(loadConfig().dbProxyToken).toBe(REQUIRED.WOOFX3_DB_PROXY_TOKEN);
   });
+});
+
+describe("companion request timeout", () => {
+  test("defaults when unset and reads WOOFX3_COMPANION_REQUEST_TIMEOUT_MS when set", () => {
+    withEnv({});
+    expect(loadConfig().companionRequestTimeoutMs).toBe(DEFAULT_COMPANION_REQUEST_TIMEOUT_MS);
+    withEnv({ WOOFX3_COMPANION_REQUEST_TIMEOUT_MS: "7000" });
+    expect(loadConfig().companionRequestTimeoutMs).toBe(7_000);
+  });
+
+  const valid: [unknown, number][] = [
+    [undefined, DEFAULT_COMPANION_REQUEST_TIMEOUT_MS],
+    ["", DEFAULT_COMPANION_REQUEST_TIMEOUT_MS],
+    ["  ", DEFAULT_COMPANION_REQUEST_TIMEOUT_MS],
+    [6_000, 6_000],
+    ["4501", 4_501],
+  ];
+  for (const [value, expected] of valid) {
+    test(`${JSON.stringify(value)} resolves to ${expected}`, () => {
+      expect(resolveCompanionRequestTimeoutMs(value)).toBe(expected);
+    });
+  }
+
+  for (const value of ["0", "-5", "1.5", "soon", 0, "250", "4500", 4_500]) {
+    test(`${JSON.stringify(value)} stops startup`, () => {
+      expect(() => resolveCompanionRequestTimeoutMs(value)).toThrow("WOOFX3_COMPANION_REQUEST_TIMEOUT_MS");
+    });
+  }
 });

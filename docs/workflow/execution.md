@@ -380,11 +380,16 @@ trigger event plus the run's workflow:
 | A module function step that returns [`ctx.result`](../barkloader/sandbox.md#ctxresult) events | barkloader, on each announced event; the engine passes the chain with the invoke |
 | A sub-workflow step | the engine, on the sub-workflow's trigger event |
 | The run's own `workflow.run.*` lifecycle events | the engine |
+| A [`chat.reply`](./tasks.md#chatreply) or [`chat.pin`](./tasks.md#chatpin) step's posted line, echoed on the chat feed | the engine passes the chain to the platform gateway; the platform adapter stamps the `user.message` echo of the line |
+| A [`chat.announce`](./tasks.md#chatannounce) step's announcement | the engine passes the chain to the platform gateway, but Twitch echoes an announcement as a chat notification, not a `user.message`, so it comes back with no chain and the loop guard cannot follow it |
 
 An event nothing in a workflow caused — a platform event, a dashboard request, a
 background task such as the timer expiry check — has no chain, and starts one.
 
-**A run is refused when the chain behind it holds `MaxWorkflowChain` (8) runs.**
+**A run is refused when the chain behind it holds 8 runs**, the
+`limits.maxWorkflowChainRuns` of the
+[platform gateway contract](../services/platform-gateway.md#one-contract-generated),
+which also bounds the chain a chat step hands the gateway.
 The refused run is recorded as failed, with an error naming the loop:
 `stopped a workflow loop: Counter changed keeps triggering itself (Counter changed →
 Counter changed), 8 runs deep`, or the whole chain when it does not close on the

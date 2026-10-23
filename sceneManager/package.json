@@ -17,13 +17,11 @@
     "@woofx3/module-sdk": "file:../shared/clients/typescript/module-sdk",
     "@woofx3/nats": "file:../shared/clients/typescript/nats",
     "jose": "^5.9.6",
-    "obs-websocket-js": "^5.0.6",
     "ot-json0": "1.1.0",
     "zod": "^4.6.6"
   },
   "devDependencies": {
-    "@msgpack/msgpack": "^2.8.0",
-    "@types/bun": "latest",
+    "@types/bun": "1.3.14",
     "typescript": "^5.0.0"
   }
 }

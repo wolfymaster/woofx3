@@ -1,7 +1,8 @@
 # Twitch channel controls
 
-The twitch service (`twitch/`) turns the streamer's Twitch channel into
-engine events (EventSub), and is the one place the engine talks to Twitch's
+The Twitch adapter of the connectors service
+(`connectors/src/adapters/twitch/`, called the adapter below) turns the
+streamer's Twitch channel into engine events (EventSub), and is the one place the engine talks to Twitch's
 Helix API on the streamer's behalf. Every other engine surface (the chatbot's
 built-in commands, a module function's `ctx.twitch`, and a manifest field's
 options source) asks it to act by sending a command on the `twitchapi` NATS
@@ -35,12 +36,15 @@ message:
 | `rate_limited` | `shoutout` refused by Twitch's shoutout limit (one every 2 minutes, one per channel every 60 minutes), or an ad command refused with HTTP 429. |
 | `missing_scope` | An ad command whose scope the link does not carry. Relinking Twitch fixes it. |
 | `unauthorized` | An ad command whose token Twitch refused. |
-| `invalid_arguments` | `helix` refused its arguments before calling Twitch: an unknown operation, or a parameter the operation does not declare, is missing, or has the wrong type. |
-| `not_linked` | `helix` while no Twitch account is linked. The other commands answer this refusal with no code. |
+| `invalid_arguments` | A command's args have the wrong shape (a field of the wrong type, or a required one missing), or `helix` refused its arguments: an unknown operation, or a parameter the operation does not declare, is missing, or has the wrong type. Nothing was sent to Twitch. Fields a command does not take are ignored. |
+| `not_linked` | No Twitch account is linked. While the adapter is stopped, the connectors host answers every command with this code; a running adapter that finds no account sends it for `helix` only. While a running adapter reconnects after a relink to another account, it answers every command `integration_unavailable`. |
+| `integration_unavailable` | Twitch is linked, but the adapter is turned off (`integration.twitch.enabled` is false), still connecting, or parked after failing repeatedly. The connectors host sends it for every command. See [Connectors host](./connectors.md). |
 
-Only the commands below are served (`TWITCH_API_COMMANDS` in
-`twitch/src/lib/twitch.ts`); anything else is answered with
-`Unknown command: <name>`.
+Only the commands below are served (`TWITCHAPI_COMMANDS` in
+`shared/common/typescript/cloudevents/Twitch/commands.ts`, each checked against
+its args schema in `connectors/src/adapters/twitch/lib/twitchApiCommands.ts`);
+anything else is answered with `Unknown command: <name>`. `args`, when present,
+must be an object.
 
 | Command | Args | Result | Scope |
 |---|---|---|---|
@@ -106,7 +110,7 @@ so a bad tag never lets the title through on its own.
 
 ## Field options
 
-A manifest field can list options from the twitch service with an
+A manifest field can list options from the connectors Twitch adapter with an
 [`internal` source](../barkloader/modules.md#dynamic-source-select-fields-source-kind),
 as `channelpoints.redeem`'s reward picker does with
 `listChannelPointRewards`. The descriptor's `payload` is static: it is sent
@@ -119,8 +123,9 @@ themselves.
 
 ## Chatbot built-ins
 
-woofwoofwoof registers these commands itself. Each waits for the twitch
-service's answer and says the outcome in chat. When nothing answers in time
+The chat command dispatcher in connectors registers these commands itself
+(see [Connectors](./connectors.md#chat-command-dispatcher)). Each waits for the Twitch
+adapter's answer and says the outcome in chat. When nothing answers in time
 the reply says the outcome is unknown, not that it failed: the change may
 still land.
 
@@ -147,12 +152,12 @@ is only ever reached through a grant.
 
 ## Modules
 
-A module function reaches the twitch service through `ctx.twitch`
+A module function reaches the connectors Twitch adapter through `ctx.twitch`
 (`barkloader/lib_sandbox/src/extensions/twitch.rs`). Each call is a request
 on `twitchapi` made while the function runs: it waits up to 10 seconds, and
 never past the time the function's caller gives it (30 seconds at most), and
 returns the command's result, or throws. A function may make at most 10
-`ctx.twitch` calls per run, and at most 32 requests wait on the twitch service
+`ctx.twitch` calls per run, and at most 32 requests wait on the connectors Twitch adapter
 at once across the engine, since each one holds a sandbox thread.
 
 | Call | Returns | Manifest permission |
@@ -179,18 +184,20 @@ An undeclared call throws before anything is sent. Moderator changes, the
 ad commands and `helix` are not reachable from modules at all.
 
 A failed call throws an `Error` (Lua: raises a table `{ message, code? }`)
-with the twitch service's own message, so the rules above reach the module
+with the connectors Twitch adapter's own message, so the rules above reach the module
 unchanged. `code` is:
 
 | `code` | When |
 |---|---|
 | `permission_denied` | The manifest does not declare the permission the call needs. Nothing was sent. |
-| `timeout` | The function's run is out of time, or the twitch service did not answer within 10 seconds. The action may still have happened. |
+| `timeout` | The function's run is out of time, or the connectors Twitch adapter did not answer within 10 seconds. The action may still have happened. |
 | `call_limit` | The run already made 10 `ctx.twitch` calls. Nothing was sent. |
 | `busy` | 32 twitch requests were already waiting and none finished within 2 seconds. Nothing was sent. |
-| `unavailable` | The twitch service is not running. |
+| `unavailable` | The connectors service is not running. |
+| `not_linked` | No Twitch account is linked. |
+| `integration_unavailable` | Twitch is linked but turned off in this engine, still connecting, or parked after failing repeatedly. |
 | `request_failed` | The request could not be sent or the reply could not be read. |
-| absent | The twitch service refused: invalid input, Twitch not linked yet, or Twitch's own error. Its refusals carry a message only. |
+| absent | The connectors Twitch adapter refused: invalid input, or Twitch's own error. Its refusals carry a message only. |
 
 A platform module exposes these to workflows as actions backed by functions,
 the same way `twitch.shoutout` is. See
@@ -219,8 +226,8 @@ only its message. The codes:
 | `helix` | Twitch answered with an error status. `status` is Twitch's, `body` is Twitch's error body as it sent it (`{"error","status","message"}`), and `error` reads `Twitch answered <status>: <message>`. |
 | `invalid_arguments` | A parameter the method does not take, a missing required one, or a value of the wrong type. Nothing was sent to Twitch. |
 | `not_linked` | No Twitch account is linked to the engine. |
-| `unavailable` | The twitch service is not running. |
-| `timeout` | The twitch service did not answer within 10 seconds. Twitch may still have acted. |
+| `unavailable` | The connectors service is not running, or Twitch is turned off in this engine, still connecting, or parked (`error` reads "Twitch is turned off or not running in this engine"). |
+| `timeout` | The connectors Twitch adapter did not answer within 10 seconds. Twitch may still have acted. |
 | `failed` | Anything else, such as Twitch not being reachable at all. |
 
 Parameters use Helix's own names. The ids that name the broadcaster are
@@ -233,9 +240,9 @@ an unban or a lookup is a parameter the caller gives. Only the shape of a
 parameter is checked: lengths, ranges and allowed values are Twitch's to
 enforce, and its refusal comes back as a `helix` result.
 
-Each method is the api's request to the twitch service's `helix` command,
+Each method is the api's request to the connectors Twitch adapter's `helix` command,
 which performs one operation from `HELIX_OPERATIONS` in
-`twitch/src/lib/helix.ts`. Every operation is sent once, reads included, as
+`connectors/src/adapters/twitch/lib/helix.ts`. Every operation is sent once, reads included, as
 the dashboard's own Helix calls are: a 5xx or a failed connection is
 answered as it is, never retried, because Twitch may have sent the chat
 message or made the clip before failing. The one exception is a 401, which
@@ -245,7 +252,7 @@ makes exactly one request, rather than its API client, whose retries would
 break that rule, and uses the same auth provider for its token.
 
 An operation has 8 seconds in all, waiting for the token included, so the
-twitch service answers `failed` before the api's 10-second wait runs out and
+Twitch adapter answers `failed` before the api's 10-second wait runs out and
 the caller learns why. Its error says whether a request had been sent, in
 which case Twitch may still have acted.
 
@@ -275,7 +282,13 @@ which case Twitch may still have acted.
 | `twitchCreateClip()` | `POST /clips?broadcaster_id` | none | `twitch.clips` |
 | `twitchUpdateChatSettings(params)` | `PATCH /chat/settings?broadcaster_id&moderator_id` | body `{ emote_mode?, subscriber_mode?, follower_mode?, follower_mode_duration?, slow_mode?, slow_mode_wait_time? }` | `twitch.moderation` |
 
-The token is the one the twitch service holds: the linked account's, from the
+The Helix methods above are Twitch-only. To send a chat line, announcement or
+pin without choosing the platform, the dashboard can use `sendToPlatforms`
+(capability `platform.gateway`), which goes through the platform gateway and
+reports Twitch's outcome with its message id. See
+[Platform gateway → Sending from the dashboard](./platform-gateway.md#sending-from-the-dashboard).
+
+The token is the one the connectors Twitch adapter holds: the linked account's, from the
 dashboard that linked it (see [Who renews the token](#who-renews-the-token)),
 with the scopes that link was granted. The broadcaster is the engine's
 broadcaster, which is the linked account unless `woofx3TwitchChannelName`
@@ -354,8 +367,8 @@ is cancelled or replaced, or the api shuts down.
 When Twitch issues the token, the engine validates it (`GET /oauth2/validate`)
 to learn the linked user, and refuses one issued to any other app. It then
 stores it the way `setTwitchToken` stores a token: the `twitch_token` setting,
-then `setting.integration.token.updated`, so a waiting twitch service connects
-and a connected one reloads. The stored token has its refresh token and no
+then `setting.integration.token.updated`, so the connectors host starts the
+Twitch adapter, or a running one reloads. The stored token has its refresh token and no
 `clientId`, so its strategy is `engineRefresh`, and its `publicClientId`
 names the public app that refreshes it (see
 [Who renews the token](#who-renews-the-token)).
@@ -379,11 +392,11 @@ the current access token expires, null when it does not), `authFailedAt` and
 `revision`. It never returns a token.
 
 `login`, `displayName` and `profileImageUrl` come from Helix
-(`GET /helix/users`, asked through the twitch service as the linked
+(`GET /helix/users`, asked through the connectors Twitch adapter as the linked
 broadcaster) and are kept for an hour (`TwitchProfiles`,
 `api/src/twitch-profiles.ts`), or until the link next changes. Concurrent reads
 share one Helix call. `profileImageUrl` is only ever an `https:` URL. When the
-twitch service is not running or Twitch refuses, the three are null and the
+Twitch adapter is not running or Twitch refuses, the three are null and the
 next read asks again; the link itself is still described.
 
 `authFailedAt` is when renewing the token was refused: Twitch refused a device
@@ -392,7 +405,7 @@ login's refresh token, or the dashboard that sent the token answered
 has to link Twitch again. A failure to reach Twitch or the dashboard does not
 set it. It is kept in the api's memory, because the api is the only service
 that renews these tokens: after a restart it is null until the next renewal
-is refused. A token the twitch service refreshes with the engine's own
+is refused. A token the connectors Twitch adapter refreshes with the engine's own
 confidential app is renewed in that service, so its failures do not set it.
 
 Every change to the link sends a `twitch.link.changed` webhook
@@ -424,14 +437,14 @@ starts and ends, and a way to push the next one back.
 
 ### Who does what
 
-Everything Twitch-specific about ads lives in the twitch service. The generic
+Everything Twitch-specific about ads lives in the connectors Twitch adapter. The generic
 engine only carries the resulting events.
 
 | Piece | Where | What it does |
 |-------|-------|--------------|
-| Heads-up scheduler | twitch service (`twitch/src/lib/adBreakScheduler.ts`) | Polls the Helix ad schedule while the stream is live and publishes `channel.ad_break.upcoming` |
-| Begin / end events | twitch service (`twitch/src/lib/subscriptions/onChannelAdBreakBegin.ts`) | Publishes `channel.ad_break.begin` from EventSub and synthesizes `channel.ad_break.end` |
-| `getAdSchedule` / `snoozeNextAd` | twitch service, `twitchapi` commands (`twitch/src/lib/twitch.ts`) | Helix reads and snoozes on request over NATS |
+| Heads-up scheduler | Twitch adapter (`connectors/src/adapters/twitch/lib/adBreakScheduler.ts`) | Polls the Helix ad schedule while the stream is live and publishes `channel.ad_break.upcoming` |
+| Begin / end events | Twitch adapter (`connectors/src/adapters/twitch/lib/subscriptions/onChannelAdBreakBegin.ts`) | Publishes `channel.ad_break.begin` from EventSub and synthesizes `channel.ad_break.end` |
+| `getAdSchedule` / `snoozeNextAd` | Twitch adapter, `twitchapi` commands (`connectors/src/adapters/twitch/lib/twitch.ts`) | Helix reads and snoozes on request over NATS |
 | Browser delivery | api (`StreamEventBroadcaster`) | Forwards the three `channel.ad_break.*` events to `subscribeStreamEvents` clients that ask for them, and to every client that names no types |
 | Triggers | `woofx3_twitch` platform module (woofx3-modules) | Declares the three events as workflow triggers |
 | Dashboard widget | woofx3-ui | Reads the schedule and snoozes from Convex actions, through the engine's `twitchGetAdSchedule` and `twitchSnoozeNextAd` (see [Dashboard Helix calls](#dashboard-helix-calls)) or straight to Helix on an engine without `twitch.ads` |
@@ -452,11 +465,11 @@ Both are **optional**. A link without them loses the ad features and nothing
 else:
 
 - The `channel.ad_break.begin` EventSub subscription is attempted at connect
-  like every other, but it is outside the readiness set. The twitch service
-  reports ready once every *required* subscription is confirmed; a refused ad
-  subscription logs one warning naming the scope and is otherwise ignored.
-  Treating it as required would hold the service unready, and restart it,
-  over something only relinking Twitch in the UI can fix.
+  like every other, but it is outside the readiness set. The adapter's
+  `/health` detail reports EventSub ready once every *required* subscription
+  is confirmed; a refused ad subscription logs one warning naming the scope
+  and is otherwise ignored. Treating it as required would report Twitch
+  broken over something only relinking Twitch in the UI can fix.
 - The `getAdSchedule` and `snoozeNextAd` commands reply with an error whose
   message ends "reconnect Twitch to allow ad controls".
 - The heads-up scheduler backs off (below) and logs once.
@@ -465,13 +478,14 @@ else:
 
 "Reconnect Twitch" takes effect without a restart. The UI's relink writes the
 new token to the `twitch_token` setting and publishes
-`setting.integration.token.updated`. A connected twitch service then:
+`setting.integration.token.updated`. A connected Twitch adapter then:
 
 1. hands the new token to its running auth provider (`TwitchClient.reloadToken`),
    so Helix calls such as `snoozeNextAd` use the new scopes at once;
 2. requests every EventSub subscription again (`TwitchEventBus.resubscribe`),
    which is the only retry an optional subscription refused for a missing
-   scope gets. Readiness drops only until Twitch confirms the new batch.
+   scope gets. EventSub readiness in `/health` drops only until Twitch
+   confirms the new batch.
 
 If the relink is to a different Twitch account and no channel is configured,
 the broadcaster itself changes, so the service reconnects from scratch.
@@ -492,7 +506,7 @@ holds it decides how the token is renewed:
   the dashboard that sent it. When it is about to expire, or Twitch refuses
   it, the api service sends that dashboard a `twitch.token.requested` request
   (`TwitchTokenSource`, `api/src/twitch-token-source.ts`) and stores the
-  access token it answers with. The twitch service and woofwoofwoof ask the
+  access token it answers with. The connectors service asks the
   api service on the `engine.twitch.token` NATS subject
   (`DashboardAuthProvider`, `shared/clients/typescript/twitch`), and need no
   Twitch app credentials of their own.
@@ -505,11 +519,12 @@ holds it decides how the token is renewed:
   link would be lost. So the api service alone refreshes it
   (`TwitchTokenSource.publicToken`), with the client id and no secret, and
   writes the new access and refresh tokens together, as one `twitch_token`
-  value, before it hands the access token out. The twitch service and
-  woofwoofwoof ask the api service for it on `engine.twitch.token`, exactly as
+  value, before it hands the access token out. The connectors service
+  asks the api service for it on `engine.twitch.token`, exactly as
   for a dashboard's token. When Twitch refuses the refresh token, every ask
   answers "link Twitch again", and the api service does not try that refresh
-  token again; the twitch service then cannot connect and reports not ready.
+  token again; the connectors Twitch adapter then cannot connect, and the connectors host
+retries it with backoff and finally parks it until Twitch is linked again.
   A refresh that cannot be stored is kept in memory and written again on the
   next ask, because the refresh token in the stored row is already spent.
   Every write of `twitch_token` in the api service (a new link, a refresh,
@@ -540,6 +555,34 @@ in one place in db-proxy (`SealedSettingKeys`). A value stored in plain text
 before its key was sealed is sealed when db-proxy starts, before it serves
 requests; a sealed value that does not open (the secrets key changed) is
 refused rather than served, and linking Twitch again replaces it.
+
+### Connected and enabled
+
+Two facts are kept apart. Twitch is *connected* when `twitch_token` is
+non-empty. It is *enabled* when the `integration.twitch.enabled` setting is
+`"true"`. The adapter that talks to Twitch should run while it is both. The
+setting's key, its strict parser and the resolution rule live in
+`shared/common/typescript/integrations/integration-settings.ts`; only `"true"`
+and `"false"` count as a decision, and an empty, missing or unreadable value
+falls back to connected, so an account linked before the setting existed
+keeps running.
+
+The api writes the setting where it already writes the token:
+
+- `storeTwitchToken` (setTwitchToken and device login) stores the token, then
+  `enabled="true"`, then announces. Linking again re-enables.
+- `deleteTwitchToken` clears the token, then stores `enabled="false"`, then
+  announces.
+
+Announcing publishes `setting.integration.enabled.updated` (payload
+`{ integration, enabled }`) and then `setting.integration.token.updated`
+(payload `{ integration }`), so a listener woken by the token event already
+sees the new flag. Each publish is best effort and logs a warning on failure.
+A failed write of the flag makes the RPC return an error. The token and the
+flag are two rows, not one transaction; a missed event or a crash between the
+writes is healed by the host's periodic reconcile. The flag is not sealed.
+
+Nothing enforces the flag yet: it is recorded for the connectors host.
 
 ### Events
 
@@ -578,7 +621,7 @@ minute while the stream is live and arms a timer for the lead time before
   for 5, and a rate limit for 2 minutes, doubling on each consecutive 429 up
   to 30. Each failure kind is logged when it first appears, not on every poll.
 - **Single instance.** Which ads were announced is kept in memory, so the
-  scheduler assumes one twitch service per engine. A restart inside a lead
+  scheduler assumes one Twitch adapter per engine. A restart inside a lead
   window announces that ad again.
 
 #### `channel.ad_break.begin`
@@ -613,7 +656,7 @@ that switches to an "ad" scene on begin can switch back on this. If a new
 break begins while an end is still pending, that end is published at once,
 before the new begin, so every begin is paired with exactly one end. EventSub
 delivers at least once, so a begin with the same start time as the pending
-break is treated as a redelivery and ignored. A twitch service restart or
+break is treated as a redelivery and ignored. A Twitch adapter restart or
 disconnect during a break drops the pending end.
 
 ### `twitchapi` ad commands
@@ -640,7 +683,7 @@ snoozeNextAd(): Promise<{
 Every time is ISO-8601 or null. Helix has sent these fields as RFC3339
 strings, as Unix seconds (number or numeric string), and as `""` when nothing
 is scheduled or the channel is offline; `normalizeHelixTime`
-(`twitch/src/lib/twitch.ts`) maps all of them, and anything unreadable
+(`connectors/src/adapters/twitch/lib/twitch.ts`) maps all of them, and anything unreadable
 becomes null rather than failing the call. `serverNow` lets a countdown
 correct for the difference between the browser's clock and the engine's.
 

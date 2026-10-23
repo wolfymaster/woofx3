@@ -29,7 +29,7 @@ func hugEvent() *types.Event {
 	return &types.Event{
 		ID:       "evt-1",
 		Type:     "chat.command.hug",
-		Source:   "woofwoofwoof",
+		Source:   "connectors",
 		Time:     time.Now(),
 		Platform: "twitch",
 		Data:     map[string]any{"chatter": "wolfy", "command": "hug"},

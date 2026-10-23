@@ -1,6 +1,7 @@
 package nats
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -231,6 +232,24 @@ func (c *Client) Request(subject string, data []byte, timeout time.Duration) ([]
 	}
 
 	msg, err := conn.Request(subject, data, timeout)
+	if err != nil {
+		c.logger.Error("Failed to send request", "error", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+
+	c.logger.Debug("Received response", "subject", subject, "size", len(msg.Data))
+	return msg.Data, nil
+}
+
+// RequestWithContext is Request bounded by ctx instead of a fixed timeout: it
+// returns once a reply arrives or ctx is done, whichever is first.
+func (c *Client) RequestWithContext(ctx context.Context, subject string, data []byte) ([]byte, error) {
+	conn, err := c.conn()
+	if err != nil {
+		return nil, err
+	}
+
+	msg, err := conn.RequestWithContext(ctx, subject, data)
 	if err != nil {
 		c.logger.Error("Failed to send request", "error", err)
 		return nil, fmt.Errorf("failed to send request: %w", err)

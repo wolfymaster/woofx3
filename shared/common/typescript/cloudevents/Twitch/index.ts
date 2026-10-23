@@ -100,8 +100,8 @@ const PLATFORM = "twitch";
 export default class TwitchEvents {
   constructor(private source: string) {}
 
-  chatMessage(event: TwitchEvent.ChatMessage): EventTuple {
-    return this.encodeEvent(TwitchEvent.EventType.ChatMessage, event);
+  chatMessage(event: TwitchEvent.ChatMessage, attributes: TwitchEvent.ChatMessageAttributes = {}): EventTuple {
+    return this.encodeEvent(TwitchEvent.EventType.ChatMessage, event, attributes);
   }
 
   cheer(event: TwitchEvent.Cheer): EventTuple {
@@ -224,8 +224,12 @@ export default class TwitchEvents {
    *  event type. Every event this class builds is stamped with its platform
    *  here rather than at each call site, so a new event cannot be added
    *  without provenance. */
-  private encodeEvent<T extends TwitchEvent.EventType>(type: T, event: TwitchEventPayloads[T]): EventTuple {
+  private encodeEvent<T extends TwitchEvent.EventType>(
+    type: T,
+    event: TwitchEventPayloads[T],
+    attributes: TwitchEvent.ChatMessageAttributes = {}
+  ): EventTuple {
     assertPlainPayload(event);
-    return [type, encode(Event({ type, source: this.source, platform: PLATFORM }, event))];
+    return [type, encode(Event({ ...attributes, type, source: this.source, platform: PLATFORM }, event))];
   }
 }

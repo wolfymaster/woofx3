@@ -531,7 +531,7 @@ async fn validate_theme_dependencies(
 /// in barkloader/app/src/services/field_options.rs.
 const FIELD_OPTIONS_SUBJECT: &str = "barkloader.module.field_options";
 
-/// The Twitch service's request subject. It answers any method of its Twitch
+/// The connectors Twitch adapter's request subject. It answers any method of its Twitch
 /// client, writes included (a shoutout, adding a moderator), so a form may
 /// request only the reads listed in `TWITCHAPI_FORM_READS`.
 const TWITCHAPI_SUBJECT: &str = "twitchapi";
@@ -984,6 +984,7 @@ fn validate_local(manifest: &ModuleManifest) -> Result<()> {
             "text",
             &mut named,
         )?;
+        require_loopback_host_default(manifest, &context, &endpoint.host_setting)?;
         require_local_setting(
             manifest,
             &context,
@@ -1032,6 +1033,37 @@ fn validate_local(manifest: &ModuleManifest) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Whether a host setting default can only ever aim at the engine's own
+/// machine: `localhost` or an IP literal in 127/8 or `::1`.
+fn is_loopback_host(value: &str) -> bool {
+    value.eq_ignore_ascii_case("localhost")
+        || value
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
+/// A local endpoint's host setting may ship a default only if it is empty or
+/// loopback. On a local or opted-in self engine the module path dials whatever
+/// the setting holds, so a default must never point at another device.
+fn require_loopback_host_default(
+    manifest: &ModuleManifest,
+    context: &str,
+    host_setting: &str,
+) -> Result<()> {
+    let default = manifest
+        .settings
+        .iter()
+        .find(|s| s.id == host_setting)
+        .and_then(|s| s.default_value.as_deref())
+        .unwrap_or("");
+    if default.is_empty() || is_loopback_host(default) {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "{context}: the default for hostSetting must be empty or a loopback address, not {default}"
+    ))
 }
 
 /// A setting a local endpoint field names: declared, of the wanted type, and
@@ -1986,6 +2018,89 @@ fn refuse_any_text(fields: &[ManifestConfigField], context: &str) -> Result<()> 
     Ok(())
 }
 
+/// A select's `options` are distinct values. Without a `source` they are the
+/// whole list, so the default must be one of them. With a `source` they are
+/// pinned entries the form lists ahead of the fetched ones, and the default
+/// may name a fetched value the manifest cannot know, so it is only required
+/// to be text.
+fn validate_select_options(field: &ManifestConfigField, context: &str) -> Result<()> {
+    let options = field.options.as_deref().unwrap_or_default();
+    let mut seen: HashSet<&str> = HashSet::with_capacity(options.len());
+    for option in options {
+        if !seen.insert(option.value.as_str()) {
+            return Err(anyhow!(
+                "{context}: option value {:?} is listed twice",
+                option.value
+            ));
+        }
+    }
+    if field.source.is_some() {
+        if let Some(default) = &field.default_value
+            && !default.is_string()
+        {
+            return Err(anyhow!(
+                "{context}: `defaultValue` {default} must be a string; a select's values are text"
+            ));
+        }
+        return Ok(());
+    }
+    match field.default_value.as_ref().and_then(|d| d.as_str()) {
+        Some(default) if seen.contains(default) => Ok(()),
+        Some(default) => Err(anyhow!(
+            "{context}: `defaultValue` {default:?} is not one of the `options`"
+        )),
+        None => Err(anyhow!(
+            "{context}: a `select` without a `source` needs a `defaultValue` that is one of its `options`"
+        )),
+    }
+}
+
+/// Field types whose value is never a string; a `visibleWhen` on one of them
+/// can never match.
+const NON_TEXT_FIELD_TYPES: [&str; 6] = ["number", "range", "toggle", "button", "layout", "list"];
+
+/// `visibleWhen` names another field of the same top-level list, one that is
+/// itself always shown, and the values that reveal this one.
+fn validate_visible_when(
+    field: &ManifestConfigField,
+    siblings: &[ManifestConfigField],
+    context: &str,
+) -> Result<()> {
+    let Some(condition) = &field.visible_when else {
+        return Ok(());
+    };
+    if condition.field == field.id {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` cannot name the field itself"
+        ));
+    }
+    let Some(target) = siblings.iter().find(|s| s.id == condition.field) else {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` {:?} is not a field of this list",
+            condition.field
+        ));
+    };
+    if target.visible_when.is_some() {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` {:?} has a `visibleWhen` of its own; conditions go one level only",
+            condition.field
+        ));
+    }
+    if NON_TEXT_FIELD_TYPES.contains(&target.field_type.as_str()) {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` {:?} is a `{}` field, which never holds text, so the condition could not match",
+            condition.field,
+            target.field_type
+        ));
+    }
+    if condition.one_of.is_empty() || condition.one_of.iter().any(|v| v.trim().is_empty()) {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.oneOf` must list at least one non-empty value"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<()> {
     let mut seen: HashSet<&str> = HashSet::with_capacity(fields.len());
     for (i, field) in fields.iter().enumerate() {
@@ -2013,6 +2128,9 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
                 "{context} field #{i} ({id}): `select` needs `options` or a `source`"
             ));
         }
+        if field.field_type == "select" {
+            validate_select_options(field, &format!("{context} field #{i} ({id})"))?;
+        }
         if field.field_type == "resource_ref" {
             let Some(kind) = field.resource_kind.as_deref() else {
                 return Err(anyhow!(
@@ -2036,6 +2154,7 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
             )?;
         }
         validate_item_fields(field, &format!("{context} field #{i} ({id})"))?;
+        validate_visible_when(field, fields, &format!("{context} field #{i} ({id})"))?;
         validate_operators(field, &format!("{context} field #{i} ({id})"))?;
         // An empty `anyText` is meaningful - it drops the part of the sentence -
         // but whitespace alone is neither that nor words, so it is a slip.
@@ -2128,6 +2247,12 @@ fn validate_list_rows(
         ));
     }
     for (i, item) in item_fields.iter().enumerate() {
+        if item.visible_when.is_some() {
+            return Err(anyhow!(
+                "{context}: item field #{i} ({}) has `visibleWhen`, which a list row does not take",
+                item.id
+            ));
+        }
         if !LIST_ITEM_FIELD_TYPES.contains(&item.field_type.as_str()) {
             return Err(anyhow!(
                 "{context}: item field #{i} ({}) has type {:?}; a list row takes only: {}",
@@ -3384,6 +3509,9 @@ mod tests {
             "workflow.cancel",
             "workflow.command.execute",
             "action.execute",
+            "platform.gateway.send",
+            "platform.gateway.capabilities",
+            "platform.gateway.field_options",
             "viewer.segment.entered",
             "viewer.segment.left",
         ] {
@@ -3522,6 +3650,8 @@ mod tests {
             "engine.obs.options",
             "message.send",
             "workflow.execute",
+            "platform.gateway.send",
+            "platform.gateway.field_options",
             "some.service.command",
         ] {
             let err = validate(&action_with_field_source(event, "{}"))
@@ -3620,6 +3750,106 @@ mod tests {
         ))
     }
 
+    fn action_with_select(select_extras: &str) -> ModuleManifest {
+        parse(&format!(
+            r#"{{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "actions": [{{ "id": "a", "name": "A", "type": "function", "function": "f",
+                "schema": [{{ "id": "platform", "label": "Platform", "type": "select", {select_extras} }}] }}],
+            "functions": [{{ "id": "f", "name": "F", "runtime": "js", "path": "f.js" }}]}}"#
+        ))
+    }
+
+    const PINNED_PLATFORM_OPTIONS: &str = r#""options": [
+        { "value": "origin", "label": "Where it came from" },
+        { "value": "all", "label": "Everywhere" }]"#;
+    const OWN_FIELD_OPTIONS_SOURCE: &str = r#""source": { "kind": "internal", "request": {
+        "event": "barkloader.module.field_options",
+        "payload": { "moduleId": "mod", "functionId": "f" } } }"#;
+
+    #[test]
+    fn test_select_options_pinned_beside_an_internal_source_validate() {
+        validate(&action_with_select(&format!(
+            r#""defaultValue": "origin", {PINNED_PLATFORM_OPTIONS}, {OWN_FIELD_OPTIONS_SOURCE}"#
+        )))
+        .expect("pinned origin and all may sit beside a source");
+    }
+
+    #[test]
+    fn test_select_options_duplicate_values_are_refused() {
+        for extras in [
+            r#""defaultValue": "a", "options": [
+                { "value": "a", "label": "A" }, { "value": "a", "label": "Again" }]"#
+                .to_string(),
+            format!(
+                r#""defaultValue": "a", "options": [
+                    {{ "value": "a", "label": "A" }}, {{ "value": "a", "label": "Again" }}], {OWN_FIELD_OPTIONS_SOURCE}"#
+            ),
+        ] {
+            let err = validate(&action_with_select(&extras))
+                .expect_err("a value listed twice is ambiguous")
+                .to_string();
+            assert!(err.contains("is listed twice"), "{extras}: {err}");
+        }
+    }
+
+    #[test]
+    fn test_select_default_without_a_source_must_be_an_option() {
+        for (extras, expected) in [
+            (
+                format!(r#""defaultValue": "nowhere", {PINNED_PLATFORM_OPTIONS}"#),
+                "is not one of the `options`",
+            ),
+            (
+                format!(r#""defaultValue": 3, {PINNED_PLATFORM_OPTIONS}"#),
+                "needs a `defaultValue`",
+            ),
+            (
+                PINNED_PLATFORM_OPTIONS.to_string(),
+                "needs a `defaultValue`",
+            ),
+        ] {
+            let err = validate(&action_with_select(&extras))
+                .expect_err("a static select needs a default it can show")
+                .to_string();
+            assert!(err.contains(expected), "{extras}: {err}");
+        }
+        validate(&action_with_select(&format!(
+            r#""defaultValue": "all", {PINNED_PLATFORM_OPTIONS}"#
+        )))
+        .expect("a default among the options is fine");
+    }
+
+    #[test]
+    fn test_select_default_with_a_source_must_be_a_string() {
+        let err = validate(&action_with_select(&format!(
+            r#""defaultValue": 7, {OWN_FIELD_OPTIONS_SOURCE}"#
+        )))
+        .expect_err("select values are text")
+        .to_string();
+        assert!(err.contains("must be a string"), "{err}");
+        validate(&action_with_select(&format!(
+            r#""defaultValue": "fetched-later", {OWN_FIELD_OPTIONS_SOURCE}"#
+        )))
+        .expect("a sourced default may name a value only the source knows");
+        validate(&action_with_select(OWN_FIELD_OPTIONS_SOURCE))
+            .expect("a sourced select may leave the default out");
+    }
+
+    #[test]
+    fn test_select_source_inside_a_list_row_stays_refused_with_pinned_options() {
+        let m = action_with_list_row(&format!(
+            r#"{{ "id": "pick", "label": "Pick", "type": "select", "defaultValue": "origin",
+                {PINNED_PLATFORM_OPTIONS}, {OWN_FIELD_OPTIONS_SOURCE} }}"#
+        ));
+        let err = validate(&m)
+            .expect_err("pinned options do not make a nested source resolvable")
+            .to_string();
+        assert!(
+            err.contains("internal sources are only supported on top-level fields"),
+            "{err}"
+        );
+    }
+
     fn action_with_list_row(row_field: &str) -> ModuleManifest {
         parse(&format!(
             r#"{{"id": "mod", "name": "Mod", "version": "1.0.0",
@@ -3667,6 +3897,31 @@ mod tests {
             r#"{ "id": "cmd", "label": "Command", "type": "select", "source": { "kind": "commands" } }"#,
         ))
         .expect("only bus requests are limited to top-level fields");
+    }
+
+    // `ctx.local` asks on this subject on module code's behalf, stamping the
+    // module's id from the invocation. A form or button sends the payload
+    // its manifest declares, moduleId included, so an upload must never
+    // reach it there.
+    #[test]
+    fn test_validate_refuses_an_upload_form_request_to_the_companion_gateway() {
+        let subject = lib_sandbox::contracts::companion_gateway::SUBJECT_MODULE_REQUEST;
+        let payload = r#"{ "op": "send", "moduleId": "woofx3_obs", "endpointId": "obs", "message": "x", "budgetMs": 4500 }"#;
+        let err = validate(&action_with_field_source(subject, payload))
+            .expect_err("a field source may not request the companion gateway")
+            .to_string();
+        assert!(err.contains("may request only"), "{err}");
+        assert!(err.contains("`source`"), "{err}");
+
+        let button = parse(&format!(
+            r#"{{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "settings": [{{ "id": "go", "label": "Go", "type": "button",
+                "action": {{ "kind": "internal", "request": {{ "event": "{subject}", "payload": {payload} }} }} }}]}}"#
+        ));
+        let err = validate(&button)
+            .expect_err("a settings button may not request the companion gateway")
+            .to_string();
+        assert!(err.contains("setting #0 (go): `action`"), "{err}");
     }
 
     #[test]
@@ -4093,9 +4348,13 @@ mod tests {
     }
 
     fn resource_with_field(field: &str) -> ModuleManifest {
+        resource_with_fields(&format!("[{field}]"))
+    }
+
+    fn resource_with_fields(fields: &str) -> ModuleManifest {
         minimal(&format!(
             r#",
-            "resources": [{{ "kind": "counter", "name": "Counter", "schema": [{field}] }}]"#
+            "resources": [{{ "kind": "counter", "name": "Counter", "schema": {fields} }}]"#
         ))
     }
 
@@ -4124,6 +4383,77 @@ mod tests {
         );
         let err = validate(&empty).expect_err("list with an empty row");
         assert!(err.to_string().contains("at least one field"), "{err}");
+    }
+
+    #[test]
+    fn test_visible_when_accepts_a_sibling() {
+        let both = resource_with_fields(
+            r#"[{ "id": "mode", "label": "Mode", "type": "text" },
+                { "id": "color", "label": "Colour", "type": "text",
+                  "visibleWhen": { "field": "mode", "oneOf": ["a", "b"] } }]"#,
+        );
+        validate(&both).expect("visibleWhen on a sibling validates");
+    }
+
+    #[test]
+    fn test_visible_when_rejects_misuse() {
+        let cases = [
+            (
+                r#"[{ "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "x", "oneOf": ["a"] } }]"#,
+                "cannot name the field itself",
+            ),
+            (
+                r#"[{ "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "ghost", "oneOf": ["a"] } }]"#,
+                "is not a field of this list",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": [] } }]"#,
+                "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": [""] } }]"#,
+                "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": [" "] } }]"#,
+                "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "toggle" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": ["a"] } }]"#,
+                "never holds text",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "n", "label": "N", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": ["a"] } },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "n", "oneOf": ["a"] } }]"#,
+                "one level only",
+            ),
+            (
+                r#"[{ "id": "goals", "label": "Goals", "type": "list", "itemFields": [
+                    { "id": "a", "label": "A", "type": "text" },
+                    { "id": "b", "label": "B", "type": "text",
+                      "visibleWhen": { "field": "a", "oneOf": ["x"] } }] }]"#,
+                "a list row does not take",
+            ),
+        ];
+        for (fields, expected) in cases {
+            let err = validate(&resource_with_fields(fields))
+                .expect_err("invalid visibleWhen")
+                .to_string();
+            assert!(err.contains(expected), "{expected}: {err}");
+        }
     }
 
     #[test]
@@ -5911,6 +6241,50 @@ mod tests {
         validate(&with_local(&none)).expect("no discovery installs");
         let no_password = OBS_LOCAL.replace(r#", "passwordSetting": "password""#, "");
         validate(&with_local(&no_password)).expect("no password installs");
+    }
+
+    #[test]
+    fn test_validate_local_host_default_cases() {
+        let with_default = |default: Option<&str>| {
+            let settings = match default {
+                Some(v) => OBS_SETTINGS.replace(
+                    r#""id": "host", "label": "Host", "type": "text""#,
+                    &format!(
+                        r#""id": "host", "label": "Host", "type": "text", "defaultValue": "{v}""#
+                    ),
+                ),
+                None => OBS_SETTINGS.to_string(),
+            };
+            validate(&minimal(&format!("{settings}, {OBS_LOCAL}")))
+        };
+        for accepted in [
+            None,
+            Some(""),
+            Some("localhost"),
+            Some("LocalHost"),
+            Some("127.0.0.1"),
+            Some("127.1.2.3"),
+            Some("::1"),
+        ] {
+            with_default(accepted).unwrap_or_else(|e| panic!("{accepted:?} should install: {e}"));
+        }
+        for refused in [
+            "192.168.1.1",
+            "10.0.0.2",
+            "obs-pc.lan",
+            "0.0.0.0",
+            "example.com",
+            "::ffff:127.0.0.1",
+            "[::1]",
+            "localhost.",
+        ] {
+            let err = with_default(Some(refused)).unwrap_err().to_string();
+            assert!(
+                err.contains("local[0] (obs): the default for hostSetting must be empty or a loopback address")
+                    && err.contains(refused),
+                "{refused}: {err}"
+            );
+        }
     }
 
     #[test]

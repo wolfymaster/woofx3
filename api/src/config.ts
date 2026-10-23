@@ -1,4 +1,6 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
+import { CALLER_TIMEOUT_MS } from "@woofx3/api/platform-gateway";
+import { RELAY_API_REQUEST_TIMEOUT_MS, RELAY_CONFIG_SET_BUDGET_MS } from "@woofx3/common/cloudevents/Relay/relay";
 import { parseRequestGuardPolicy, type RequestGuardPolicy, resolveExposure } from "@woofx3/common/http/request-guard";
 import { loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
 import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
@@ -80,7 +82,7 @@ export interface ApiConfig {
   twitchPublicClientId: string | null;
   /**
    * The engine's confidential Twitch app (`WOOFX3_TWITCH_CLIENT_ID`), or null
-   * when it has none. The twitch service refreshes a token issued to it; the
+   * when it has none. The connectors host's Twitch adapter refreshes a token issued to it; the
    * api only names it on Helix calls.
    */
   twitchClientId: string | null;
@@ -89,6 +91,18 @@ export interface ApiConfig {
    * (`WOOFX3_AUTH_CACHE_TTL_MS`); DEFAULT_AUTH_CACHE_TTL_MS when unset.
    */
   authCacheTtlMs: number;
+  /**
+   * How long `setRelayConfig` waits for the connectors host's companion
+   * gateway to store a relay configuration, in milliseconds
+   * (`WOOFX3_COMPANION_REQUEST_TIMEOUT_MS`); DEFAULT_COMPANION_REQUEST_TIMEOUT_MS when unset.
+   */
+  companionRequestTimeoutMs: number;
+  /**
+   * How long a send to the platform gateway waits for its reply, in
+   * milliseconds (`WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS`); the contract's
+   * CALLER_TIMEOUT_MS when unset.
+   */
+  platformGatewayTimeoutMs: number;
   nats: {
     url: string;
     name: string;
@@ -154,6 +168,8 @@ export const ApiEnvSchema = z.looseObject({
   woofx3TwitchPublicClientId: z.union([z.string(), z.number()]).optional(),
   woofx3TwitchClientId: z.union([z.string(), z.number()]).optional(),
   woofx3AuthCacheTtlMs: z.union([z.number(), z.string()]).optional(),
+  woofx3CompanionRequestTimeoutMs: z.union([z.number(), z.string()]).optional(),
+  woofx3PlatformGatewayTimeoutMs: z.union([z.number(), z.string()]).optional(),
   // True where the edge listens beyond loopback and forwards to the api; the production image sets it.
   woofx3BehindEdge: z.boolean().optional(),
   woofx3DbProxyToken: z.string().optional(),
@@ -269,6 +285,51 @@ export function resolveAuthCacheTtlMs(value: unknown): number {
   return ttlMs;
 }
 
+/**
+ * Above the companion gateway's budget for storing a relay configuration, so
+ * its answer, a failure included, arrives before the api gives up.
+ */
+export const DEFAULT_COMPANION_REQUEST_TIMEOUT_MS = RELAY_API_REQUEST_TIMEOUT_MS;
+
+/**
+ * `WOOFX3_COMPANION_REQUEST_TIMEOUT_MS` as a whole number of milliseconds
+ * above RELAY_CONFIG_SET_BUDGET_MS, or DEFAULT_COMPANION_REQUEST_TIMEOUT_MS
+ * when unset or blank. Anything else stops startup.
+ */
+export function resolveCompanionRequestTimeoutMs(value: unknown): number {
+  const text = nonBlank(value);
+  if (text === undefined) {
+    return DEFAULT_COMPANION_REQUEST_TIMEOUT_MS;
+  }
+  const timeoutMs = Number(text);
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= RELAY_CONFIG_SET_BUDGET_MS) {
+    throw new Error(
+      `Config error: woofx3CompanionRequestTimeoutMs (WOOFX3_COMPANION_REQUEST_TIMEOUT_MS) must be an integer above the companion gateway's ${RELAY_CONFIG_SET_BUDGET_MS}ms budget, got ${text}`
+    );
+  }
+  return timeoutMs;
+}
+
+/**
+ * `WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` as a whole number of milliseconds no
+ * lower than the contract's CALLER_TIMEOUT_MS, or that default when unset
+ * or blank. A lower wait would report a timeout for sends the gateway still
+ * answers normally. Anything else stops startup.
+ */
+export function resolvePlatformGatewayTimeoutMs(value: unknown): number {
+  const text = nonBlank(value);
+  if (text === undefined) {
+    return CALLER_TIMEOUT_MS;
+  }
+  const timeoutMs = Number(text);
+  if (!Number.isInteger(timeoutMs) || timeoutMs < CALLER_TIMEOUT_MS) {
+    throw new Error(
+      `Config error: woofx3PlatformGatewayTimeoutMs (WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS) must be a whole number of at least ${CALLER_TIMEOUT_MS} (the gateway's caller window), got ${text}`
+    );
+  }
+  return timeoutMs;
+}
+
 export function loadConfig(): ApiConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: ApiEnvSchema });
   const config = result.config;
@@ -361,6 +422,8 @@ export function loadConfig(): ApiConfig {
   );
   const messageBusToken = nonBlank(config.woofx3MessagebusToken) ?? nonBlank(config.messagebusToken);
   const authCacheTtlMs = resolveAuthCacheTtlMs(config.woofx3AuthCacheTtlMs);
+  const companionRequestTimeoutMs = resolveCompanionRequestTimeoutMs(config.woofx3CompanionRequestTimeoutMs);
+  const platformGatewayTimeoutMs = resolvePlatformGatewayTimeoutMs(config.woofx3PlatformGatewayTimeoutMs);
 
   return {
     version,
@@ -384,6 +447,8 @@ export function loadConfig(): ApiConfig {
     rootDir,
     requestGuard,
     authCacheTtlMs,
+    companionRequestTimeoutMs,
+    platformGatewayTimeoutMs,
     nats: {
       url: messageBusUrl,
       name: "woofx3-api",

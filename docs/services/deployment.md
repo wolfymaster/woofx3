@@ -92,7 +92,7 @@ server and every client:
 | Client | Used by | Reads |
 |---|---|---|
 | Go, `shared/clients/golang/nats` | db, workflow | `WOOFX3_MESSAGEBUS_TOKEN` (`Config.Token`) |
-| TypeScript, `shared/clients/typescript/nats` | api, sceneManager, twitch, woofwoofwoof | `woofx3MessagebusToken` (also `messagebusToken` in api and sceneManager) |
+| TypeScript, `shared/clients/typescript/nats` | api, connectors, sceneManager | `woofx3MessagebusToken` (also `messagebusToken` in api and sceneManager) |
 | Rust, `barkloader/app/src/services/nats.rs` | barkloader | `WOOFX3_MESSAGEBUS_TOKEN`, then `messagebusToken` |
 
 Services run without the orchestrator (one at a time, under process-compose,
@@ -196,7 +196,7 @@ and every service that calls it do the same for `dbProxyToken`.
 
 db-proxy answers only requests that carry the engine's service token as
 `Authorization: Bearer <dbProxyToken>` and name an allowed host. The api,
-barkloader, sceneManager, twitch, woofwoofwoof and the workflow engine all send
+barkloader, connectors, sceneManager and the workflow engine all send
 the token on every call. A request without it, or with the wrong one, gets a
 Twirp `unauthenticated` error (HTTP 401). The token is the same for every
 service; there is no per-service list of allowed calls.
@@ -384,6 +384,10 @@ proxy to check them and reuses a successful check for
 a hash of the secret, so neither a wrong secret nor an earlier success changes
 the answer for another secret. Failed checks are never reused. Deleting a
 client drops its cached checks at once.
+
+`WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` (default `12000`) is how long
+`sendToPlatforms` waits for the platform gateway's reply; it cannot be set below
+`12000`, the gateway's caller window (see [Platform gateway](./platform-gateway.md)).
 
 ### Refusals
 
@@ -581,7 +585,10 @@ Each line is one event, with an RFC 3339 `time`:
     (see [Readiness and version](#readiness-and-version) below);
   - sceneManager's `GET /health` answered `200`: its HTTP server is listening
     (on `WOOFX3_SCENE_MANAGER_PORT`, `9101` by default);
-  - the message bus, twitch, wooflow, woofwoofwoof and the edge each have a
+  - connectors' `GET /health` answered `200`: its bus connection is up and
+    its reconcile loop is running (on `WOOFX3_CONNECTORS_PORT`, `9102` by
+    default). A stopped or parked Twitch adapter does not fail it;
+  - the message bus, wooflow and the edge each have a
     running process. None of them serves an HTTP health route, so nothing more
     is known about them, beyond the bus working for barkloader.
 
@@ -686,9 +693,40 @@ holds only descriptive facts that are safe for anyone to read:
   It includes the hosting ids for `WOOFX3_HOSTING`, as below.
 
 `WOOFX3_HOSTING` declares how the engine is run: `managed`, `self` or `local`.
-`getEngineInfo()` reports it as `hosting`, and `local` adds the
+Both the api and connectors read it, so set it where both read their
+configuration. `getEngineInfo()` reports it as `hosting`, and `local` adds the
 `engine.localMode` capability. Unset, `getEngineInfo()` has no `hosting` field
-and no hosting capability is listed; any other value stops the api at startup.
+and no hosting capability is listed; any other value stops the api and
+connectors at startup.
+
+For connectors it decides how local endpoints such as OBS are reached (see
+[Companion gateway → Routes](./companion-gateway.md#routes)):
+
+| Value | Who runs the engine | Local endpoints |
+|---|---|---|
+| `local` | the desktop app, on the streamer's own PC | always dialed directly; a relay configuration that routes an endpoint through the companion is ignored and logged once |
+| `self` | its owner, on infrastructure they operate | through the companion's bridge when the dashboard routes the endpoint there, otherwise directly |
+| `managed` | the woofx3 cloud | the same as `self` |
+| unset | not declared | the same as `self` |
+
+Development worktrees (`scripts/worktree.sh`) write `local`.
+
+Module code can also reach its own declared endpoints through connectors (see
+[Companion gateway → Module requests](./companion-gateway.md#module-requests)).
+Because module code sends whatever frames it likes, a direct dial for it is
+stricter than for the OBS adapter:
+
+| Value | Module requests to their own endpoints |
+|---|---|
+| `local` | dialed directly, to an address on the streamer's network |
+| `self` | through the companion's bridge when the dashboard routes the endpoint there; directly only when `WOOFX3_MODULE_LOCAL_DIRECT=true` |
+| `managed`, unset | through the companion's bridge only |
+
+`WOOFX3_MODULE_LOCAL_DIRECT` is `false` unless set to `true`; any other value
+stops connectors at startup. Turn it on only for a self-hosted engine on the
+streamer's own network: on a VPS it would let module code reach the
+provider's network. It is the same posture as barkloader's
+`WOOFX3_MODULE_HTTP_ALLOW_PRIVATE`, and the two are set separately.
 
 Readiness is deliberately strict about the message bus. barkloader reports
 ready once its bundled modules are installed, and it can only report anything
@@ -705,17 +743,39 @@ register at all.
 
 ## The Twitch link
 
-An engine exists before its streamer connects Twitch, so `twitch` and
-`woofwoofwoof` start **idle** when no account is linked: they stay up, report
-ready on their heartbeat, and say they are waiting for a Twitch link. Neither
-needs `WOOFX3_TWITCH_CHANNEL_NAME`; without one, the channel is whoever links
-the account. `twitchapi` requests answered while idle report that Twitch is not
-linked.
+An engine exists before its streamer connects Twitch. connectors runs its
+Twitch adapter only while Twitch is linked (a `twitch_token` is stored) and
+enabled (`integration.twitch.enabled`, which the api writes on link and
+unlink), and stays up and healthy without it. With no account linked, the chat command
+dispatcher inside connectors still runs, but no chat lines arrive and any
+reply is reported as unavailable. Neither needs
+`WOOFX3_TWITCH_CHANNEL_NAME`; without one, the channel is whoever links the
+account. `twitchapi` requests answered while no account is linked report that
+Twitch is not linked (`not_linked`), and while Twitch is linked but turned off
+or not running, `integration_unavailable`.
 
-Linking in the UI writes the token to engine settings and publishes
-`setting.integration.token.updated`, which is what moves both services from
-waiting to connected, with no restart.
+Linking, relinking and unlinking in the UI write the token to engine settings
+and publish `setting.integration.token.updated`. That starts, reloads or stops
+the Twitch adapter, with no restart
+(see [Connectors host](./connectors.md)).
 
-**Known gap:** relinking or unlinking *while twitch is already connected* does
-not rebuild its EventSub connection; it keeps the one it has until the engine
-restarts. woofwoofwoof's chat client does reload on that event.
+## OBS
+
+connectors holds the engine's OBS connection (its `obs` adapter), not
+sceneManager. Set `WOOFX3_OBS_HOST`, `WOOFX3_OBS_PORT` and
+`WOOFX3_OBS_RPC_TOKEN`, when an engine needs them at all, where connectors
+reads its configuration; the OBS module's own settings take precedence over
+them. connectors connects to OBS only while a module that controls OBS is
+installed and active, or while `WOOFX3_OBS_HOST` is set; an engine with
+neither never dials OBS. With connectors stopped, OBS control fails: `ctx.obs` reports that nothing answered, and the OBS
+module's page shows the status as unanswered. Overlays still recover after a
+sceneManager restart when connectors starts later, because sceneManager keeps
+asking for the refresh until connectors accepts it (see
+[Local endpoints → Overlay recovery](./local-endpoints.md#overlay-recovery)).
+
+connectors also holds the companion relay configuration and the bridge
+credential, which the api asks the dashboard for on its behalf. While
+connectors is stopped, the dashboard's `setRelayConfig` fails and the
+dashboard retries it; the api waits `WOOFX3_COMPANION_REQUEST_TIMEOUT_MS`
+(default `5000`) for connectors to store it. See
+[Local endpoints → The relay configuration](./local-endpoints.md#the-relay-configuration-relay-config).

@@ -16,7 +16,15 @@ on:
       - "**.go"
       - "**/go.mod"
       - "**/go.sum"
+      # The contract generator's golden test compares the committed outputs
+      # with fresh ones, so a change to a contract or to a generated file alone
+      # must run it. The generated TypeScript and Rust paths must match the
+      # outputs in CONTRACTS in scripts/gen-contracts.sh; generated Go matches
+      # "**.go".
       - "shared/common/contracts/**"
+      - "shared/clients/typescript/api/platform-gateway.gen.ts"
+      - "shared/common/typescript/cloudevents/Companion/module-request.gen.ts"
+      - "barkloader/lib_sandbox/src/contracts/companion_gateway.gen.rs"
       - ".github/workflows/go-checks.yml"
   pull_request:
     paths:
@@ -24,6 +32,9 @@ on:
       - "**/go.mod"
       - "**/go.sum"
       - "shared/common/contracts/**"
+      - "shared/clients/typescript/api/platform-gateway.gen.ts"
+      - "shared/common/typescript/cloudevents/Companion/module-request.gen.ts"
+      - "barkloader/lib_sandbox/src/contracts/companion_gateway.gen.rs"
       - ".github/workflows/go-checks.yml"
   workflow_dispatch:
 
@@ -49,7 +60,9 @@ jobs:
           - shared/common/golang/conditions
           - shared/common/golang/config
           - shared/common/golang/logging
+          - shared/common/golang/platformgateway
           - shared/common/golang/runtime
+          - shared/common/contracts/gen
     steps:
       - uses: actions/checkout@v4
 
@@ -127,7 +140,9 @@ jobs:
           - shared/common/golang/conditions
           - shared/common/golang/config
           - shared/common/golang/logging
+          - shared/common/golang/platformgateway
           - shared/common/golang/runtime
+          - shared/common/contracts/gen
     steps:
       - uses: actions/checkout@v4
 

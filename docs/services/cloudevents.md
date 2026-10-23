@@ -23,6 +23,7 @@ interface BaseEvent<T> {
   id: string;           // unique event ID
   time: Date;           // event timestamp
   platform?: string;    // extension attribute: where the event came from
+  workflowChain?: string; // extension attribute: the workflow runs that led to it
   data: T;              // event-specific payload
 }
 ```
@@ -34,6 +35,12 @@ originating platform — module lifecycle, db outbox, scheduler — and, today, 
 absent from every family except Twitch, because only that factory stamps it
 (`Twitch/index.ts:112-118`). See [Stream sessions](./stream-sessions.md) for why
 the next extension attribute is stamped centrally instead.
+
+`workflowChain` names the workflow runs that led to the event, oldest first, as
+comma-joined workflow ids. The workflow engine refuses a run whose chain is too
+long, which stops a workflow that keeps triggering itself. Absent on an event
+nothing in a workflow caused; a `user.message` carries it when the line is one
+a workflow said through the platform gateway.
 
 ## EventFactory
 
@@ -60,13 +67,17 @@ Each factory method returns an `EventTuple` — a `[subject, payload]` pair read
 ```typescript
 const nats = // ... your NATS connection
 const [subject, payload] = factory.Twitch().chatMessage({
+    messageId: 'abc-1',
     channelId: '123',
     channelName: 'wolfymaster',
     chatterId: '456',
-    chatterName: 'viewer1',
+    chatterName: 'Viewer1',
+    chatterLogin: 'viewer1',
     message: 'hello world',
     amount: 0,
     isPaid: false,
+    membership: { isBroadcaster: false, isModerator: false, isSubscriber: false, isVip: false },
+    fromEngine: false,
 });
 
 nats.publish(subject, payload);
@@ -89,7 +100,7 @@ Twitch channel events carry a full CloudEvent envelope. The NATS subject doubles
 | `streamOnline` | `stream.online` | The stream went online |
 | `subscribe` | `channel.subscribe` | A viewer subscribed |
 | `subscriptionGift` | `channel.subscriptionGift` | A subscription was gifted |
-| `adBreakUpcoming` | `channel.ad_break.upcoming` | An ad break is scheduled soon (published by the twitch service; see [Twitch ad breaks](/services/twitch-channel)) |
+| `adBreakUpcoming` | `channel.ad_break.upcoming` | An ad break is scheduled soon (published by the connectors Twitch adapter; see [Twitch ad breaks](/services/twitch-channel)) |
 | `adBreakBegin` | `channel.ad_break.begin` | An ad break started |
 | `adBreakEnd` | `channel.ad_break.end` | An ad break is due to have ended (synthesized, not from Twitch) |
 
@@ -99,13 +110,17 @@ Twitch channel events carry a full CloudEvent envelope. The NATS subject doubles
 
 ```typescript
 interface ChatMessage {
+    messageId: string;    // Twitch's id for the line, what a reply or pin names
     amount: number;       // dollar amount if paid message, otherwise 0
     isPaid: boolean;
     channelId: string | null;
     channelName: string | null;
     chatterId: string;
-    chatterName: string;
+    chatterName: string;  // display name
+    chatterLogin: string; // account name, lowercase
     message: string;
+    membership: ChatterMembership;
+    fromEngine: boolean;  // a line the engine said itself, handed back by Twitch
 }
 ```
 
@@ -209,7 +224,7 @@ A raid on this channel is published once, as `channel.raid`, from the `channel.r
 ## Running a command's workflow
 
 `workflow.command.execute` asks the workflow engine to run the workflow a chat
-command is linked to, for one invocation. Published by woofwoofwoof once a
+command is linked to, for one invocation. Published by the connectors chat dispatcher once a
 command has matched and passed its permission and cooldown checks, after it
 has announced the match on `chat.command.<slug>`, and by the engine api's
 `executeCommand` (which publishes it first, then the announcement). `event` is
@@ -219,12 +234,16 @@ workflow service runs that one workflow (`Engine.RunCommand`), which must have
 a trigger of type `"command"` whose `event` matches `event.type`; its trigger
 conditions apply, nothing else is checked again.
 
+`data.platform` and the `platform` attribute name the platform the invoking
+line was said on, one of the platform gateway's platform ids (`twitch`
+today).
+
 ```jsonc
 // subject: "workflow.command.execute"
 {
   "workflowId": "3f1c…",
   "event": {                     // the invocation; the run's ${trigger...}
-    "specversion": "1.0.0", "id": "...", "type": "chat.command.hug", "source": "woofwoofwoof", "time": "...",
+    "specversion": "1.0.0", "id": "...", "type": "chat.command.hug", "source": "connectors", "time": "...",
     "sessionId": "...", "platform": "twitch", "triggeredBy": "twitch",
     "data": { "command": "hug", "chatter": "wolfy", "text": "", "args": [], "variables": {}, "rawMessage": "!hug", "platform": "twitch" }
   }
@@ -240,7 +259,7 @@ time. The subject is reserved: no workflow or module may publish it.
 `action.execute` asks the workflow engine to run a list of actions that
 belongs to no workflow — the actions of a chat command that has no workflow,
 or anything else with actions to run and nothing to hang them on. Published
-by the engine api's `runActions(input)` RPC and by woofwoofwoof when such a
+by the engine api's `runActions(input)` RPC and by the connectors chat dispatcher when such a
 chat command matches;
 consumed by the workflow service, which runs them through the same executor,
 resolver and action handlers a workflow run uses.
@@ -252,7 +271,7 @@ resolver and action handlers a workflow run uses.
   "actions": [                   // run in order; a step may declare dependsOn
     { "id": "action-1", "action": "chat.reply", "parameters": { "message": "hugs ${trigger.data.chatter}" } }
   ],
-  "event": { "id": "...", "type": "chat.command.hug", "source": "woofwoofwoof", "time": "...", "data": { } }
+  "event": { "id": "...", "type": "chat.command.hug", "source": "connectors", "time": "...", "data": { } }
 }
 ```
 
@@ -262,7 +281,7 @@ workflow id this run does not have.
 
 ## Twitch API Commands
 
-`TwitchApi` events use a command envelope rather than a CloudEvent. All commands publish to the `twitchapi` NATS subject; the twitch service reads the bare envelope and a CloudEvent carrying it as `data` alike.
+`TwitchApi` events use a command envelope rather than a CloudEvent. All commands publish to the `twitchapi` NATS subject; the connectors Twitch adapter reads the bare envelope and a CloudEvent carrying it as `data` alike.
 
 ```typescript
 // shared/common/typescript/cloudevents/Twitch/commands.ts
@@ -298,7 +317,7 @@ interface CreateMarkerArgs {
 }
 ```
 
-The twitch service serves more commands than these helpers build; the full list, the replies and the rules it checks are in [Twitch channel controls](./twitch-channel.md).
+The connectors Twitch adapter serves more commands than these helpers build; the full list, the replies and the rules it checks are in [Twitch channel controls](./twitch-channel.md).
 
 ### Usage
 
@@ -313,7 +332,7 @@ nats.publish(subject, payload);
 
 ### OBS control (`engine.obs.command`)
 
-barkloader's `ctx.obs` host extension controls OBS through the scene manager
+barkloader's `ctx.obs` host extension controls OBS through the connectors host's obs adapter
 with a request/reply CloudEvent on `engine.obs.command`, on behalf of module
 code holding the `obs.control` permission. Every request is answered with `{ ok, error? }`. `ctx.obs.listScenes` and its siblings read OBS
 over the separate, read-only `engine.obs.options`. See [OBS control](./obs.md).

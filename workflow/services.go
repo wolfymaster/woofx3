@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 
 	barkloader "github.com/wolfymaster/woofx3/clients/barkloader"
@@ -22,28 +23,29 @@ func registerService[T any](name string, factory ServiceFactory[T]) {
 	serviceFactories[name] = factory
 }
 
-func resolveService[T any](name string) T {
+func resolveService[T any](name string) (T, error) {
+	var zero T
+
 	serviceFactoriesMu.RLock()
 	factory, ok := serviceFactories[name]
 	serviceFactoriesMu.RUnlock()
 	if !ok {
-		var zero T
-		return zero
+		return zero, fmt.Errorf("service %q is not registered", name)
 	}
 
 	typedFactory, ok := factory.(ServiceFactory[T])
 	if !ok {
-		var zero T
-		return zero
+		return zero, fmt.Errorf("service %q is registered as %T, not the requested type", name, factory)
 	}
 
-	return typedFactory()
+	return typedFactory(), nil
 }
 
 type AppServices struct {
 	barkloader *barkloader.Client
 	messageBus *natsclient.Client
 	alertLog   dbv1.AlertService
+	gateway    PlatformGateway
 }
 
 func (s AppServices) Barkloader() *barkloader.Client {
@@ -61,12 +63,30 @@ func (s AppServices) AlertLog() dbv1.AlertService {
 	return s.alertLog
 }
 
-func buildAppServices() AppServices {
-	return AppServices{
-		barkloader: resolveService[*barkloader.Client]("barkloader"),
-		messageBus: resolveService[*natsclient.Client]("messageBus"),
-		alertLog:   resolveService[dbv1.AlertService]("alertLog"),
+// PlatformGateway is the one way an action produces an effect on a streaming
+// platform, such as posting a chat line.
+func (s AppServices) PlatformGateway() PlatformGateway {
+	return s.gateway
+}
+
+func buildAppServices() (AppServices, error) {
+	bark, err := resolveService[*barkloader.Client]("barkloader")
+	if err != nil {
+		return AppServices{}, err
 	}
+	bus, err := resolveService[*natsclient.Client]("messageBus")
+	if err != nil {
+		return AppServices{}, err
+	}
+	alertLog, err := resolveService[dbv1.AlertService]("alertLog")
+	if err != nil {
+		return AppServices{}, err
+	}
+	gateway, err := resolveService[PlatformGateway]("platformGateway")
+	if err != nil {
+		return AppServices{}, err
+	}
+	return AppServices{barkloader: bark, messageBus: bus, alertLog: alertLog, gateway: gateway}, nil
 }
 
 func WithServices[TServices any](services TServices, action tasks.ActionFunc[TServices]) tasks.ActionFunc[TServices] {

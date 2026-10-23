@@ -1,0 +1,162 @@
+import type { AdapterStatus, ServedSubject, Unavailable, UnavailableReason } from "./adapter";
+import type { AdapterId } from "./adapter-ids";
+import { errorMessage, type Logger } from "./deps";
+import { type HostRequests, parsed, type RequestContext } from "./host-requests";
+import type { LinkState } from "./link-readers";
+import type { ScopedBus } from "./scoped-bus";
+import type { StatusListener } from "./supervisor";
+
+/** The slice of the supervisor that answering for an adapter needs. */
+export interface AdapterStatusSource {
+  status(id: AdapterId): AdapterStatus;
+  link(id: AdapterId): LinkState | null;
+  onStatusChange(listener: StatusListener): () => void;
+  recordServedError(id: AdapterId): void;
+}
+
+export interface ServedSubjectsDeps {
+  requests: HostRequests;
+  /** The host's own scope: adapters never subscribe to the subjects they serve. */
+  scope: ScopedBus;
+  adapters: AdapterStatusSource;
+  /** Each adapter module's host state, passed to its served handlers. */
+  hostStates: ReadonlyMap<AdapterId, unknown>;
+  logger: Logger;
+}
+
+/** What a held request ends up doing once its adapter's state settles, or its budget runs out. */
+export type Settled = { kind: "handle" } | { kind: "unavailable"; reason: UnavailableReason };
+
+/**
+ * Answers every adapter's served subjects for the whole life of the process.
+ * The host holds the subscription rather than the adapter, so there is never
+ * a gap while one stops and another start subscribes, and a caller always
+ * gets one reply:
+ *
+ * - connected: the adapter's handler answers.
+ * - stopped or parked: `unavailableReply` at once.
+ * - starting, degraded or stopping: held until the adapter connects (handler
+ *   answers), settles stopped or parked (unavailable at once), or the
+ *   subject's budget runs out (unavailable, `starting`).
+ *
+ * A subject whose availability is "always" skips all of that: its handler
+ * answers in every state, with the module's host state.
+ */
+export class ServedSubjects {
+  constructor(private readonly deps: ServedSubjectsDeps) {}
+
+  /** Subscribes to every subject the adapter serves. A subject served twice fails startup. */
+  async serveAll(id: AdapterId, served: readonly ServedSubject[]): Promise<void> {
+    for (const subject of served) {
+      await this.serve(id, subject);
+    }
+  }
+
+  private async serve(id: AdapterId, served: ServedSubject): Promise<void> {
+    await this.deps.requests.serveRequest<Uint8Array, never>(this.deps.scope, {
+      subject: served.subject,
+      budgetMs: served.budgetMs,
+      replyMode: "raw",
+      // The adapter's handler owns its wire format, including bad requests.
+      parse: (raw) => parsed(raw),
+      handle: (request, ctx) => this.answer(id, served, request, ctx),
+      // Parsing never fails and handler errors are caught below, so this only
+      // answers a request that expired in the queue, or answering itself throwing.
+      errorReply: (code) => served.unavailableReply(this.unavailable(id, code === "expired" ? "starting" : "stopped")),
+    });
+  }
+
+  private async answer(
+    id: AdapterId,
+    served: ServedSubject,
+    request: Uint8Array,
+    ctx: RequestContext
+  ): Promise<Uint8Array> {
+    if (served.availability !== "always") {
+      const settled = await whenSettled(this.deps.adapters, id, ctx.signal);
+      if (settled.kind === "unavailable") {
+        return served.unavailableReply(this.unavailable(id, settled.reason));
+      }
+    }
+    try {
+      return await served.handle(request, {
+        deadline: ctx.deadline,
+        signal: ctx.signal,
+        hostState: this.hostStateFor(id),
+      });
+    } catch (error) {
+      this.deps.adapters.recordServedError(id);
+      this.deps.logger.error("served subject handler failed", {
+        adapter: id,
+        subject: served.subject,
+        error: errorMessage(error),
+      });
+      return served.unavailableReply(this.unavailable(id, "stopped"));
+    }
+  }
+
+  /** A missing entry is a wiring mistake, never "a module without host state" (that is an entry holding undefined). */
+  private hostStateFor(id: AdapterId): unknown {
+    if (!this.deps.hostStates.has(id)) {
+      throw new Error(`no host state entry for the adapter "${id}"`);
+    }
+    return this.deps.hostStates.get(id);
+  }
+
+  private unavailable(id: AdapterId, reason: UnavailableReason): Unavailable {
+    return { reason, link: this.deps.adapters.link(id) };
+  }
+}
+
+/**
+ * Resolves at once for a settled state; otherwise on the adapter's next
+ * settled state, or with unavailable `starting` when `signal` aborts.
+ */
+export function whenSettled(
+  adapters: Pick<AdapterStatusSource, "status" | "onStatusChange">,
+  id: AdapterId,
+  signal: AbortSignal
+): Promise<Settled> {
+  const now = settledFor(adapters.status(id));
+  if (now !== undefined) {
+    return Promise.resolve(now);
+  }
+  return new Promise<Settled>((resolve) => {
+    const finish = (outcome: Settled) => {
+      unsubscribe();
+      signal.removeEventListener("abort", onAbort);
+      resolve(outcome);
+    };
+    const onAbort = () => finish({ kind: "unavailable", reason: "starting" });
+    const unsubscribe = adapters.onStatusChange((changed, status) => {
+      if (changed !== id) {
+        return;
+      }
+      const outcome = settledFor(status);
+      if (outcome !== undefined) {
+        finish(outcome);
+      }
+    });
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Undefined while the adapter is on its way somewhere: a request waits for it to arrive. */
+function settledFor(status: AdapterStatus): Settled | undefined {
+  switch (status.state) {
+    case "connected":
+      return { kind: "handle" };
+    case "stopped":
+      return { kind: "unavailable", reason: "stopped" };
+    case "parked":
+      return { kind: "unavailable", reason: "parked" };
+    case "starting":
+    case "degraded":
+    case "stopping":
+      return undefined;
+  }
+}

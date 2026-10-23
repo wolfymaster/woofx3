@@ -1,7 +1,11 @@
+import { z } from "zod";
+
 // Logical OBS command intent in the Convex webhook contract, for a Convex-side
 // OBS Controller. It names logical targets; the mapping to OBS scene and source
 // names lives in Convex's PlatformActionMap. See woofx3/browser-source-spec.md.
 // Not the payload of `engine.obs.command`, which is ObsControlCommand below.
+
+import { asRecord, type ParseResult } from "../utils";
 
 export type OBSCommandType =
   | "scene_transition"
@@ -25,45 +29,70 @@ export interface OBSCommand {
 }
 
 /** Show a source, hide it, or flip whichever it is when the command runs. */
-export type SourceVisibility = "visible" | "hidden" | "toggle";
+export const SOURCE_VISIBILITIES = ["visible", "hidden", "toggle"] as const;
+
+export type SourceVisibility = (typeof SOURCE_VISIBILITIES)[number];
+
+/** OBS's id for the browser source input kind. */
+export const BROWSER_SOURCE_KIND = "browser_source";
+
+// Must match the limits in barkloader/lib_sandbox/src/extensions/obs.rs.
+export const BROWSER_SOURCE_MAX_WIDTH = 7_680;
+export const BROWSER_SOURCE_MAX_HEIGHT = 4_320;
+
+const nonEmptyName = z.string().min(1);
+
+/**
+ * An absolute http(s) URL. A browser source loads whatever it is given, and a
+ * `file:` URL would put the streamer's own files on stream.
+ */
+const webUrl = z.string().refine((value) => {
+  const parsed = URL.parse(value);
+  return parsed !== null && (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.host !== "";
+}, "must be an absolute http:// or https:// URL");
 
 /**
  * One change to OBS, carried as the `data` of an `engine.obs.command`
- * CloudEvent to the OBS connection the scene manager holds. Request/reply: the
- * scene manager answers every command with an `ObsControlReply`.
+ * CloudEvent to the OBS connection the connectors host's obs adapter holds.
+ * Request/reply: the host answers every command with an `ObsControlReply`.
  *
  * The only producer is barkloader's `ctx.obs` extension, on behalf of module
  * code holding the `obs.control` permission; a module never chooses the
  * subject. Names are OBS's own scene, source and input names, exactly as the
  * streamer sees them in OBS.
  *
+ * Strict objects, so a misspelled field is refused rather than silently
+ * ignored: `visibile: false` must not read as a command with no visibility.
+ *
  * Must match the commands built in barkloader/lib_sandbox/src/extensions/obs.rs.
  */
-export type ObsControlCommand =
-  | { command: "switch_scene"; sceneName: string }
-  | {
-      command: "set_source_visibility";
-      /** The current program scene when absent. */
-      sceneName?: string;
-      sourceName: string;
-      visibility: SourceVisibility;
-    }
-  | { command: "set_input_mute"; inputName: string; muted: boolean }
-  | {
-      /**
-       * Point the browser source `sourceName` at `url` and show it, creating
-       * it in the scene when OBS has no input by that name.
-       */
-      command: "show_browser_source";
-      /** The current program scene when absent. */
-      sceneName?: string;
-      sourceName: string;
-      /** An absolute http:// or https:// URL. */
-      url: string;
-      /** The size of a source this command creates; an existing one keeps its own. */
-      width: number;
-      height: number;
-    };
+export const OBS_CONTROL_COMMAND_SCHEMA = z.discriminatedUnion("command", [
+  z.strictObject({ command: z.literal("switch_scene"), sceneName: nonEmptyName }),
+  z.strictObject({
+    command: z.literal("set_source_visibility"),
+    /** The current program scene when absent. */
+    sceneName: z.string().optional(),
+    sourceName: nonEmptyName,
+    visibility: z.enum(SOURCE_VISIBILITIES),
+  }),
+  z.strictObject({ command: z.literal("set_input_mute"), inputName: nonEmptyName, muted: z.boolean() }),
+  /**
+   * Point the browser source `sourceName` at `url` and show it, creating it
+   * in the scene when OBS has no input by that name.
+   */
+  z.strictObject({
+    command: z.literal("show_browser_source"),
+    /** The current program scene when absent. */
+    sceneName: z.string().optional(),
+    sourceName: nonEmptyName,
+    url: webUrl,
+    /** The size of a source this command creates; an existing one keeps its own. */
+    width: z.number().int().min(1).max(BROWSER_SOURCE_MAX_WIDTH),
+    height: z.number().int().min(1).max(BROWSER_SOURCE_MAX_HEIGHT),
+  }),
+]);
+
+export type ObsControlCommand = z.infer<typeof OBS_CONTROL_COMMAND_SCHEMA>;
 
 export type ObsControlCommandName = ObsControlCommand["command"];
 
@@ -76,18 +105,18 @@ export type ObsControlReply =
     };
 
 /**
+ * Request/reply subject the api asks the OBS adapter's connection state on.
+ * The reply is the api's `ObsStatus` without `unanswered`, which only the api
+ * can observe.
+ */
+export const OBS_STATUS_SUBJECT = "engine.obs.status";
+
+/**
  * What to list, carried as the `data` of an `engine.obs.options` CloudEvent.
  * Sent by barkloader's `ctx.obs.listScenes`, `listSources` and `listInputs`.
  * A subject apart from `engine.obs.command`, so that reading OBS's names
  * never needs the permission that changing OBS does.
  */
-/**
- * Request/reply subject the api asks the scene manager's OBS connection state
- * on. The reply is the api's `ObsStatus` without `unanswered`, which only the
- * api can observe.
- */
-export const OBS_STATUS_SUBJECT = "engine.obs.status";
-
 export type ObsOptionsRequest = { list: ObsOptionsList };
 
 export const OBS_OPTIONS_LISTS = ["scenes", "sources", "inputs"] as const;
@@ -107,6 +136,79 @@ export interface ObsFieldOption {
 
 /** The options, or why OBS could not be asked; `{ error }` is the field-options failure reply. */
 export type ObsOptionsReply = ObsFieldOption[] | { error: string };
+
+/**
+ * Request/reply subject asking for the OBS browser sources that show this
+ * engine's overlays to be refreshed. sceneManager sends it once per start,
+ * after its HTTP server listens, and again until a reply accepts it; whoever
+ * holds the OBS connection answers.
+ */
+export const OBS_BROWSER_SOURCE_REFRESH_SUBJECT = "engine.obs.browser_source.refresh";
+
+/** Longest `bootId` accepted: a UUID is 36 characters. */
+export const OBS_REFRESH_BOOT_ID_MAX_LENGTH = 64;
+
+/**
+ * The refresh request. `overlayPort` is the port the overlays are served on,
+ * which identifies the browser sources to refresh; `bootId` names the
+ * sceneManager start the request is for. Answering is idempotent per `bootId`:
+ * a repeat for one already latched or consumed is accepted and changes nothing.
+ */
+export interface ObsBrowserSourceRefresh {
+  overlayPort: number;
+  bootId: string;
+}
+
+/**
+ * `invalid` refuses a malformed request, which retrying cannot fix;
+ * `unavailable` means the holder of the OBS connection could not take a valid
+ * request in time, so the sender retries.
+ */
+export type ObsBrowserSourceRefreshReply =
+  | { status: "accepted"; bootId: string }
+  | { status: "invalid"; error: string }
+  | { status: "unavailable"; error: string };
+
+function parseBootId(value: unknown): ParseResult<string> {
+  if (typeof value !== "string" || value.length < 1 || value.length > OBS_REFRESH_BOOT_ID_MAX_LENGTH) {
+    return { ok: false, error: `bootId must be a string of 1 to ${OBS_REFRESH_BOOT_ID_MAX_LENGTH} characters` };
+  }
+  return { ok: true, value };
+}
+
+export function parseObsBrowserSourceRefresh(value: unknown): ParseResult<ObsBrowserSourceRefresh> {
+  const body = asRecord(value);
+  if (!body) {
+    return { ok: false, error: "the request must be an object" };
+  }
+  const port = body.overlayPort;
+  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
+    return { ok: false, error: "overlayPort must be a whole number from 1 to 65535" };
+  }
+  const bootId = parseBootId(body.bootId);
+  if (!bootId.ok) {
+    return bootId;
+  }
+  return { ok: true, value: { overlayPort: port, bootId: bootId.value } };
+}
+
+export function parseObsBrowserSourceRefreshReply(value: unknown): ParseResult<ObsBrowserSourceRefreshReply> {
+  const body = asRecord(value);
+  if (!body) {
+    return { ok: false, error: "the reply must be an object" };
+  }
+  if (body.status === "accepted") {
+    const bootId = parseBootId(body.bootId);
+    return bootId.ok ? { ok: true, value: { status: "accepted", bootId: bootId.value } } : bootId;
+  }
+  if (body.status === "invalid" || body.status === "unavailable") {
+    if (typeof body.error !== "string") {
+      return { ok: false, error: `${body.status} reply must carry an error string` };
+    }
+    return { ok: true, value: { status: body.status, error: body.error } };
+  }
+  return { ok: false, error: 'status must be "accepted", "invalid" or "unavailable"' };
+}
 
 export enum EventType {
   ObsCommand = "engine.obs.command",

@@ -64,6 +64,7 @@ describe("simulateTwitchEvent guard", () => {
   test.each([
     "db.workflow.created",
     "action.execute",
+    "platform.gateway.send",
     "custom.thing",
     "channel.*",
     "channel.>",
@@ -89,6 +90,9 @@ describe("triggerEvent guard", () => {
   test.each([
     "action.execute",
     "workflow.command.execute",
+    "platform.gateway.send",
+    "platform.gateway.capabilities",
+    "platform.gateway.field_options",
     "db.workflow.created.x",
     "engine.obs.x",
     "command.created",
