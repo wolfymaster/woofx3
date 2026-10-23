@@ -600,8 +600,11 @@ values stop the process at startup with every bad key named.
 ## Health
 
 `GET http://127.0.0.1:<WOOFX3_CONNECTORS_PORT>/health` answers `200` while the
-bus is connected and the reconcile loop is running (its last pass is at most
-two backstop intervals old), and `503` otherwise. An adapter's state never
+bus is connected, the reconcile loop is running (its last pass is at most
+two backstop intervals old) and db-proxy answers its link reads (fewer than two
+passes in a row got no link back), and `503` otherwise. The runtime also pings
+db-proxy on its own health check, at most the db-proxy timeout each time, and
+restarts the host when the ping fails. An adapter's state never
 makes it fail: a parked adapter is reported, and restarting the host would not
 fix what parked it.
 
@@ -610,6 +613,7 @@ fix what parked it.
   "status": "ok",
   "bus": { "connected": true },
   "loop": { "alive": true, "lastPassAt": "2026-10-21T12:00:00.000Z" },
+  "dbProxy": { "reachable": true, "failedPasses": 0 },
   "adapters": [
     {
       "id": "twitch",

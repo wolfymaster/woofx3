@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { GetSetting } from "@woofx3/db/setting.pb";
-import { dbProxyClientConfig } from "./db-proxy";
+import DbProxyService, { dbProxyClientConfig } from "./db-proxy";
 
 const TOKEN = "connectors-db-proxy-token-0123456789abcdef";
 
@@ -49,4 +49,44 @@ describe("dbProxyClientConfig", () => {
       expect(() => dbProxyClientConfig("http://127.0.0.1:1", TOKEN, timeoutMs)).toThrow("db-proxy timeout");
     });
   }
+});
+
+describe("DbProxyService.healthcheck", () => {
+  async function withServer(fetch: () => Response | Promise<Response>, run: (url: string) => Promise<void>) {
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch });
+    try {
+      await run(`http://127.0.0.1:${server.port}`);
+    } finally {
+      server.stop(true);
+    }
+  }
+
+  test("is healthy while db-proxy answers the ping", async () => {
+    await withServer(
+      () => new Response(new Uint8Array(), { headers: { "content-type": "application/protobuf" } }),
+      async (url) => {
+        expect(await new DbProxyService(url, TOKEN, 1_000).healthcheck()).toBe(true);
+      }
+    );
+  });
+
+  test("is unhealthy when db-proxy answers the ping with an error", async () => {
+    await withServer(
+      () => Response.json({ code: "unavailable", msg: "db down" }, { status: 503 }),
+      async (url) => {
+        expect(await new DbProxyService(url, TOKEN, 1_000).healthcheck()).toBe(false);
+      }
+    );
+  });
+
+  test("is unhealthy once a ping db-proxy never answers times out", async () => {
+    await withServer(
+      () => new Promise<Response>(() => {}),
+      async (url) => {
+        const started = performance.now();
+        expect(await new DbProxyService(url, TOKEN, 50).healthcheck()).toBe(false);
+        expect(performance.now() - started).toBeLessThan(2_000);
+      }
+    );
+  });
 });

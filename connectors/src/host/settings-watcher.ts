@@ -77,6 +77,8 @@ export class SettingsWatcher {
   private backstop: TimerHandle | undefined;
   private stopped = false;
   private lastPassAt: number | undefined;
+  /** Passes in a row in which every link read failed or timed out; any read that succeeds resets it. */
+  private failedPasses = 0;
   /** The flag reading already logged per adapter, so a missing or bad flag is logged once, not every pass. */
   private readonly flagLogged = new Map<AdapterId, string>();
   /** The ignored records each adapter's last reading named, so each is logged once while it stays. */
@@ -119,6 +121,15 @@ export class SettingsWatcher {
   /** Clock time the last pass finished, for /health. */
   get lastPass(): number | undefined {
     return this.lastPassAt;
+  }
+
+  /**
+   * Passes in a row that read at least one link and got none back, for
+   * /health. Every read goes through db-proxy, so a run of them means db-proxy
+   * is not answering even when the loop itself is alive.
+   */
+  get consecutiveFailedPasses(): number {
+    return this.failedPasses;
   }
 
   /** Resolves once no pass is running or waiting. */
@@ -199,6 +210,10 @@ export class SettingsWatcher {
       })
     );
     this.lastPassAt = this.deps.clock.now();
+    // A pass that read nothing says nothing about db-proxy, so it leaves the count alone.
+    if (pass.read.size > 0) {
+      this.failedPasses = links.size === 0 ? this.failedPasses + 1 : 0;
+    }
     if (links.size === 0) {
       return;
     }

@@ -27,9 +27,12 @@ export function dbProxyClientConfig(baseURL: string, token: string, timeoutMs: n
   };
 }
 
-/** db-proxy over HTTP. Connecting pings it, so the runtime waits for it before the host starts. */
+/**
+ * db-proxy over HTTP. Connecting pings it, so the runtime waits for it before
+ * the host starts, and the runtime's health check pings it again so a db-proxy
+ * that goes away later restarts the host instead of leaving it running blind.
+ */
 export default class DbProxyService implements Service<DbProxyClientConfig> {
-  readonly healthcheck = true;
   readonly name = "dbProxy";
   readonly type = "db";
   readonly client: DbProxyClientConfig;
@@ -45,6 +48,20 @@ export default class DbProxyService implements Service<DbProxyClientConfig> {
     }
     await Ping({}, this.client);
     this.connected = true;
+  }
+
+  /**
+   * Pings db-proxy. The client aborts the ping after its timeout
+   * (HOST_DEFAULTS.dbProxyTimeoutMs unless configured), so the check is bounded.
+   */
+  async healthcheck(): Promise<boolean> {
+    try {
+      await Ping({}, this.client);
+      return true;
+    } catch {
+      // The runtime only needs the verdict: a failed check disconnects and reconnects, and connect's ping reports why.
+      return false;
+    }
   }
 
   async disconnect(): Promise<void> {

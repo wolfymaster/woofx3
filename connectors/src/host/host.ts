@@ -38,6 +38,12 @@ export const HOST_SCOPE = "host";
  */
 export const LOOP_STALE_INTERVALS = 2;
 
+/**
+ * db-proxy counts as unreachable once this many passes in a row got no link
+ * read back, for the same reason: one can be a slow read, two cannot.
+ */
+export const DB_PROXY_UNREACHABLE_PASSES = 2;
+
 /** What the companion gateway is built with. */
 export interface HostCompanionDeps {
   config: CompanionConfig;
@@ -277,6 +283,8 @@ export class Host {
       busConnected: this.deps.busConnected(),
       lastPassAt: this.watcher.lastPass,
       loopStaleAfterMs: LOOP_STALE_INTERVALS * this.deps.config.reconcileIntervalMs,
+      failedLinkPasses: this.watcher.consecutiveFailedPasses,
+      dbProxyUnreachableAfterPasses: DB_PROXY_UNREACHABLE_PASSES,
       adapters: this.supervisor.report(),
       hostRequests: this.requests.snapshot(),
       hostBus: this.hostCounters.snapshot(),

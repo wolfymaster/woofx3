@@ -16,6 +16,10 @@ export interface HealthSnapshot {
   lastPassAt: number | undefined;
   /** A pass this much older than `now` means the reconcile loop has stopped. */
   loopStaleAfterMs: number;
+  /** Settings passes in a row in which every link read failed. */
+  failedLinkPasses: number;
+  /** This many failed passes in a row means db-proxy is unreachable. */
+  dbProxyUnreachableAfterPasses: number;
   adapters: AdapterReport[];
   hostRequests: Record<string, HostRequestCounters>;
   hostBus: ReturnType<ScopeCounters["snapshot"]>;
@@ -28,6 +32,7 @@ export interface HealthBody {
   status: "ok" | "unhealthy";
   bus: { connected: boolean };
   loop: { alive: boolean; lastPassAt: string | null };
+  dbProxy: { reachable: boolean; failedPasses: number };
   adapters: AdapterHealth[];
   companion: CompanionHealth;
   counters: {
@@ -90,16 +95,18 @@ export function redactDetail(value: unknown): unknown {
 }
 
 /**
- * Healthy while the bus is connected and the reconcile loop keeps running.
- * An adapter's own state never makes the host unhealthy: a parked adapter
+ * Healthy while the bus is connected, the reconcile loop keeps running and its
+ * link reads reach db-proxy. An adapter's own state never makes the host unhealthy: a parked adapter
  * is reported, and restarting the host would not fix what parked it.
  */
 export function healthBody(snapshot: HealthSnapshot): HealthBody {
   const alive = snapshot.lastPassAt !== undefined && snapshot.now - snapshot.lastPassAt <= snapshot.loopStaleAfterMs;
+  const reachable = snapshot.failedLinkPasses < snapshot.dbProxyUnreachableAfterPasses;
   return {
-    status: snapshot.busConnected && alive ? "ok" : "unhealthy",
+    status: snapshot.busConnected && alive && reachable ? "ok" : "unhealthy",
     bus: { connected: snapshot.busConnected },
     loop: { alive, lastPassAt: iso(snapshot.lastPassAt) },
+    dbProxy: { reachable, failedPasses: snapshot.failedLinkPasses },
     adapters: snapshot.adapters.map(adapterHealth),
     companion: companionHealth(snapshot.companion),
     counters: {
