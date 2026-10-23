@@ -62,7 +62,6 @@ export async function bootSceneManager(busUrl: string, options: { port?: number 
     barkloaderUrl: barkloader.url,
     barkloaderKey: "smoke-media-secret-0123456789abcdef",
     requestGuard: OPEN_REQUEST_GUARD_POLICY,
-    obs: { host: "127.0.0.1", port: "1" },
     obsRefresh: OBS_REFRESH_DEFAULTS,
     nats: { url: busUrl, name: "scene-manager-smoke" },
   };
