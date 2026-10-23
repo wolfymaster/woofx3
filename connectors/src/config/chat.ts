@@ -1,3 +1,4 @@
+import { TWITCHAPI_SERVED_BUDGET_MS } from "@woofx3/common/cloudevents/Twitch/commands";
 import { z } from "zod";
 import { GATEWAY_CALLER_TIMEOUT_MS } from "./gateway";
 
@@ -15,7 +16,7 @@ export const CHAT_DEFAULTS = {
   reloadDebounceMs: 250,
   /** How often the command table reloads with no event, healing a missed or failed reload. */
   reloadBackstopMs: 300_000,
-  /** How long a built-in command waits on the twitchapi subject for Twitch's answer. */
+  /** How long a built-in command waits on the twitchapi subject for Twitch's answer; must exceed the adapter's served budget. */
   twitchApiTimeoutMs: 10_000,
 } as const;
 
@@ -31,7 +32,11 @@ export const ChatEnvSchema = z.object({
   woofx3ConnectorsDispatcherGroupCatalogTtlMs: z.number().int().positive().default(CHAT_DEFAULTS.groupCatalogTtlMs),
   woofx3ConnectorsDispatcherReloadDebounceMs: z.number().int().positive().default(CHAT_DEFAULTS.reloadDebounceMs),
   woofx3ConnectorsDispatcherReloadBackstopMs: z.number().int().positive().default(CHAT_DEFAULTS.reloadBackstopMs),
-  woofx3ConnectorsDispatcherTwitchApiTimeoutMs: z.number().int().positive().default(CHAT_DEFAULTS.twitchApiTimeoutMs),
+  woofx3ConnectorsDispatcherTwitchApiTimeoutMs: z
+    .number()
+    .int()
+    .min(TWITCHAPI_SERVED_BUDGET_MS + 1, `must exceed the twitchapi served budget of ${TWITCHAPI_SERVED_BUDGET_MS} ms`)
+    .default(CHAT_DEFAULTS.twitchApiTimeoutMs),
 });
 
 export type ChatEnv = z.infer<typeof ChatEnvSchema>;

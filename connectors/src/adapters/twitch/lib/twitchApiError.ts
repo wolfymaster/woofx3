@@ -20,15 +20,6 @@ export class TwitchApiError extends Error {
  */
 export type TwitchApiErrorCode = "missing_scope" | "unauthorized" | "rate_limited" | "invalid_arguments" | "failed";
 
-/**
- * Every `code` a `twitchapi.error` reply can carry: an actionable
- * TwitchApiError code, `not_linked` (no Twitch account is linked), or
- * `integration_unavailable` (linked, but the adapter is turned off or not
- * running). The connectors host sends the last two for any command while the
- * adapter is down; the adapter itself sends `not_linked` for `helix` only.
- */
-export type TwitchApiReplyCode = Exclude<TwitchApiErrorCode, "failed"> | "not_linked" | "integration_unavailable";
-
 /** The contract code a thrown error carries, if it is a TwitchApiError with an actionable code. */
 export function twitchApiErrorCodeOf(err: unknown): Exclude<TwitchApiErrorCode, "failed"> | undefined {
   if (err instanceof TwitchApiError && err.code !== "failed") {

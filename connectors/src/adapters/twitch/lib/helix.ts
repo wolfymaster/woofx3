@@ -439,7 +439,7 @@ function parseHelixArgs(args: unknown): { operation: HelixOperationName; params:
 /**
  * How long one operation may take in all: getting the token, the request, the
  * renewal and resend after a 401, and reading Twitch's answer. Must stay below
- * TWITCH_API_SERVED_BUDGET_MS (9s) in ../adapter.ts, the host's reply budget
+ * TWITCHAPI_SERVED_BUDGET_MS (9s) in @woofx3/common/cloudevents/Twitch/commands, the host's reply budget
  * for `twitchapi`, which in turn stays below `TWITCH_HELIX_TIMEOUT_MS` (10s)
  * in api/src/routes/twitch.ts, so the api hears why an operation failed
  * instead of timing out on it. A served call gets the smaller of this and the

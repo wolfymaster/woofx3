@@ -83,6 +83,11 @@ describe("connectorsConfig", () => {
     ["a placeholder db-proxy token", { ...required, woofx3DbProxyToken: "CHANGE_ME" }, "dbProxyToken"],
     ["a short db-proxy token", { ...required, woofx3DbProxyToken: "short-token" }, "dbProxyToken"],
     ["db-proxy url that is not a URL", { ...required, woofx3DatabaseProxyUrl: "db-proxy" }, "woofx3DatabaseProxyUrl"],
+    [
+      "a twitchapi timeout at the adapter's served budget",
+      { ...required, woofx3ConnectorsDispatcherTwitchApiTimeoutMs: 9_000 },
+      "woofx3ConnectorsDispatcherTwitchApiTimeoutMs",
+    ],
     ["port out of range", { ...required, woofx3ConnectorsPort: 70_000 }, "woofx3ConnectorsPort"],
     [
       "non-numeric interval",

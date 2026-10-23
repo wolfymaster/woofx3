@@ -1,25 +1,16 @@
 import type { CreateMarkerArgs, TimeoutArgs, UpdateStreamArgs } from "@woofx3/common/cloudevents/Twitch/commands";
-import TwitchApiEvents from "@woofx3/common/cloudevents/Twitch/commands";
+import TwitchApiEvents, {
+  TWITCHAPI_ERROR_TYPE,
+  TWITCHAPI_REPLY_CODES,
+  type TwitchApiReplyCode,
+  twitchApiResultType,
+} from "@woofx3/common/cloudevents/Twitch/commands";
 import { z } from "zod";
-import type { TwitchApiReplyCode } from "../adapters/twitch/lib/twitchApiError";
 import { errorMessage } from "../host/deps";
 import type { ScopedBus } from "../host/scoped-bus";
 
-/** The CloudEvent type of every `twitchapi` refusal. Must match TWITCHAPI_ERROR_TYPE in adapters/twitch/application.ts. */
-const TWITCHAPI_ERROR_TYPE = "twitchapi.error";
-
-/** Every code a `twitchapi.error` reply can carry; the record type keeps it in step with the adapter's codes. */
-const REPLY_CODES = {
-  missing_scope: true,
-  unauthorized: true,
-  rate_limited: true,
-  invalid_arguments: true,
-  not_linked: true,
-  integration_unavailable: true,
-} as const satisfies Record<TwitchApiReplyCode, true>;
-
 function isReplyCode(code: unknown): code is TwitchApiReplyCode {
-  return typeof code === "string" && Object.hasOwn(REPLY_CODES, code);
+  return TWITCHAPI_REPLY_CODES.some((known) => known === code);
 }
 
 /**
@@ -75,30 +66,35 @@ export class TwitchApiClient implements TwitchApiPort {
   timeout(args: TimeoutArgs): Promise<TwitchApiResult<null>> {
     return this.call(
       this.events.timeout(args),
+      twitchApiResultType("timeout"),
       z.unknown().transform(() => null)
     );
   }
 
   updateStream(args: UpdateStreamArgs): Promise<TwitchApiResult<UpdateStreamResult>> {
-    return this.call(this.events.updateStream(args), updateStreamResult);
+    return this.call(this.events.updateStream(args), twitchApiResultType("updateStream"), updateStreamResult);
   }
 
   createMarker(args: CreateMarkerArgs): Promise<TwitchApiResult<StreamMarkerResult>> {
-    return this.call(this.events.createMarker(args), markerResult);
+    return this.call(this.events.createMarker(args), twitchApiResultType("createMarker"), markerResult);
   }
 
-  private async call<T>([subject, data]: [string, Uint8Array], schema: z.ZodType<T>): Promise<TwitchApiResult<T>> {
+  private async call<T>(
+    [subject, data]: [string, Uint8Array],
+    resultType: string,
+    schema: z.ZodType<T>
+  ): Promise<TwitchApiResult<T>> {
     let reply: Uint8Array;
     try {
       reply = (await this.deps.bus.request(subject, data, { timeout: this.deps.timeoutMs })).data;
     } catch (error) {
       return { ok: false, failure: requestFailure(error) };
     }
-    return readReply(reply, schema);
+    return readReply(reply, resultType, schema);
   }
 }
 
-function readReply<T>(reply: Uint8Array, schema: z.ZodType<T>): TwitchApiResult<T> {
+function readReply<T>(reply: Uint8Array, resultType: string, schema: z.ZodType<T>): TwitchApiResult<T> {
   let body: unknown;
   try {
     body = JSON.parse(new TextDecoder().decode(reply));
@@ -116,6 +112,9 @@ function readReply<T>(reply: Uint8Array, schema: z.ZodType<T>): TwitchApiResult<
     }
     const { error, code } = refusal.data;
     return { ok: false, failure: { kind: "refused", message: error, code: isReplyCode(code) ? code : undefined } };
+  }
+  if (envelope.data.type !== resultType) {
+    return failed(`the Twitch service sent a reply of an unexpected type (${envelope.data.type})`);
   }
   const value = schema.safeParse(envelope.data.data);
   if (!value.success) {

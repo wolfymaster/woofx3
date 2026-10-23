@@ -1,6 +1,7 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
+import { TWITCHAPI_SERVED_BUDGET_MS } from "@woofx3/common/cloudevents/Twitch/commands";
 import { EventType as TwitchEventType } from "@woofx3/common/cloudevents/Twitch/events";
 import {
   INTEGRATION_ENABLED_UPDATED_SUBJECT,
@@ -107,9 +108,7 @@ mock.module("@woofx3/twitch", () => ({
   },
 }));
 
-const { TWITCH_API_SERVED_BUDGET_MS, TWITCH_EVENT_SUBJECTS, TwitchAdapter, twitchApiUnavailableReply } = await import(
-  "./adapter"
-);
+const { TWITCH_EVENT_SUBJECTS, TwitchAdapter, twitchApiUnavailableReply } = await import("./adapter");
 
 const CONFIG: TwitchConfig = {
   channel: undefined,
@@ -139,7 +138,7 @@ describe("TwitchAdapter manifest", () => {
     expect(manifest.subscribes).toEqual([INTEGRATION_TOKEN_UPDATED_SUBJECT]);
     expect(manifest.requests).toEqual(["engine.twitch.token", "engine.shoutout.enqueue"]);
     expect(manifest.serves.map((served) => [served.subject, served.budgetMs])).toEqual([
-      ["twitchapi", TWITCH_API_SERVED_BUDGET_MS],
+      ["twitchapi", TWITCHAPI_SERVED_BUDGET_MS],
     ]);
   });
 
@@ -148,7 +147,7 @@ describe("TwitchAdapter manifest", () => {
   });
 
   test("gives a Helix call room to report its own timeout inside the served budget", () => {
-    expect(HELIX_DEADLINE_MS).toBeLessThan(TWITCH_API_SERVED_BUDGET_MS);
+    expect(HELIX_DEADLINE_MS).toBeLessThan(TWITCHAPI_SERVED_BUDGET_MS);
   });
 });
 

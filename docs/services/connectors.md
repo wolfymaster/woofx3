@@ -241,7 +241,7 @@ it for the host:
   (`@woofx3/common/cloudevents/Twitch/events`), subscribes to
   `setting.integration.token.updated`, requests `engine.twitch.token` and
   `engine.shoutout.enqueue` from the api, and serves `twitchapi` with a
-  9_000 ms budget (`TWITCH_API_SERVED_BUDGET_MS`): below the 10_000 ms the
+  9_000 ms budget (`TWITCHAPI_SERVED_BUDGET_MS`): below the 10_000 ms the
   api, the sandbox's `ctx.twitch` and woofwoofwoof's built-in commands wait,
   and above a Helix call's own 8_000 ms deadline. A served `helix` call gets
   the smaller of that deadline and the time left in the budget.
@@ -473,7 +473,7 @@ The chat command dispatcher reads:
 | `WOOFX3_CONNECTORS_DISPATCHER_GROUP_CATALOG_TTL_MS` | `300000` | How long the built-in group catalog is used before it is read again. |
 | `WOOFX3_CONNECTORS_DISPATCHER_RELOAD_DEBOUNCE_MS` | `250` | How long a command event waits for more before the commands reload. |
 | `WOOFX3_CONNECTORS_DISPATCHER_RELOAD_BACKSTOP_MS` | `300000` | How often the commands reload with no event. |
-| `WOOFX3_CONNECTORS_DISPATCHER_TWITCH_API_TIMEOUT_MS` | `10000` | How long a built-in Twitch command waits for the Twitch adapter's answer. |
+| `WOOFX3_CONNECTORS_DISPATCHER_TWITCH_API_TIMEOUT_MS` | `10000` | How long a built-in Twitch command waits for the Twitch adapter's answer. Must exceed the adapter's 9000 ms served budget, or slow calls are reported as unknown. |
 
 The host also reads the bus settings (`WOOFX3_MESSAGEBUS_URL`, `_JWT`, `_NKEY`,
 `_TOKEN`), `WOOFX3_DATABASE_PROXY_URL` and `WOOFX3_DB_PROXY_TOKEN`, the
