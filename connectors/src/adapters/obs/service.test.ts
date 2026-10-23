@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import type { EndpointUnavailable } from "../../companion/types";
-import { ObsEnvSchema, obsConfig } from "../../config/obs";
-import { systemRandom, systemTimers } from "../../host/deps";
+import type { EndpointResolution, EndpointUnavailable, RouteChangeListener } from "../../companion/types";
+import { OBS_DEFAULTS, ObsEnvSchema, obsConfig } from "../../config/obs";
+import { systemRandom, systemTimers, type Timers } from "../../host/deps";
 import { type FakeObsOptions, type FakeObsServer, startFakeObs } from "./fake-obs-server";
+import { openObsSession } from "./manager";
 import { RefreshLatch } from "./refresh-latch";
 import { createObsService, type ObsService } from "./service";
 import type { ObsStatusReply } from "./status";
@@ -18,7 +19,7 @@ function service(
   const address = `${fallback.host}:${fallback.port}`;
   return createObsService({
     resolve: async () => ({ ok: true, route: "direct", url: `ws://${address}`, address }),
-    relayConfig: async () => null,
+    watchRoute: () => () => {},
     latch,
     connection: obsConfig(ObsEnvSchema.parse({})).connection,
     random: systemRandom,
@@ -72,7 +73,7 @@ describe("routes from the companion gateway", () => {
           attempts++;
           return resolution;
         },
-        relayConfig: async () => null,
+        watchRoute: () => () => {},
         latch: new RefreshLatch(),
         connection: obsConfig(ObsEnvSchema.parse({ woofx3ObsBackoffInitialMs: 10, woofx3ObsBackoffMaxMs: 20 }))
           .connection,
@@ -262,5 +263,145 @@ describe("overlay refresh requests", () => {
     latch.latch({ overlayPort: OVERLAY_PORT, bootId: "boot-1" });
     await settle();
     expect(refreshes(fake as FakeObsServer)).toBe(0);
+  });
+});
+
+describe("opening OBS on the route the gateway gave", () => {
+  let fake: FakeObsServer | null = null;
+  let obs: ObsService | null = null;
+  afterEach(async () => {
+    await obs?.stop();
+    fake?.stop();
+    obs = null;
+    fake = null;
+  });
+
+  const TICKET = "T".repeat(43);
+  const quickRetry = obsConfig(ObsEnvSchema.parse({ woofx3ObsBackoffInitialMs: 10, woofx3ObsBackoffMaxMs: 20 }));
+
+  function serviceOn(
+    resolution: EndpointResolution,
+    watchRoute: (l: RouteChangeListener) => () => void = () => () => {}
+  ) {
+    let attempts = 0;
+    obs = createObsService({
+      resolve: async () => {
+        attempts++;
+        return resolution;
+      },
+      watchRoute,
+      latch: new RefreshLatch(),
+      connection: quickRetry.connection,
+      random: systemRandom,
+      timers: systemTimers,
+      logger,
+    });
+    obs.start(forever);
+    return { obs, attempts: () => attempts };
+  }
+
+  it("signs in with the route's password on a direct route", async () => {
+    fake = startFakeObs({ password: "hunter2" });
+    const { obs } = serviceOn({ ok: true, route: "direct", url: fake.url, password: "hunter2", address: "127.0.0.1" });
+    await until(() => obs.status().state === "connected");
+    expect(fake.protocols).toEqual(["obswebsocket.msgpack"]);
+    expect(obs.status().route).toBe("direct");
+  });
+
+  it("reaches OBS at a bridge path whose ticket the server checks", async () => {
+    fake = startFakeObs({ acceptUrl: (url) => url.searchParams.get("ticket") === TICKET });
+    const { obs } = serviceOn({
+      ok: true,
+      route: "companion",
+      url: `${fake.url}/bridge/woofx3_obs/obs?ticket=${TICKET}`,
+      address: "c-x.woofx3.tv",
+    });
+    await until(() => obs.status().state === "connected");
+    expect(fake.upgrades.map((u) => u.pathname)).toEqual(["/bridge/woofx3_obs/obs"]);
+    expect(obs.status().route).toBe("companion");
+  });
+
+  it("reads a refused bridge upgrade as a relay failure, and a direct one as unreachable", async () => {
+    fake = startFakeObs({ acceptUrl: () => false });
+    const bridged = serviceOn({
+      ok: true,
+      route: "companion",
+      url: `${fake.url}/bridge/woofx3_obs/obs?ticket=spent`,
+      address: "c-x.woofx3.tv",
+    });
+    await until(() => bridged.attempts() >= 2);
+    expect(bridged.obs.status()).toMatchObject({ failure: "relay", route: "companion", address: "c-x.woofx3.tv" });
+    await bridged.obs.stop();
+
+    const direct = serviceOn({ ok: true, route: "direct", url: fake.url, address: "127.0.0.1" });
+    await until(() => direct.attempts() >= 2);
+    expect(direct.obs.status().failure).toBe("unreachable");
+  });
+
+  it("reads a wrong password as an authentication failure on either route", async () => {
+    fake = startFakeObs({ password: "hunter2" });
+    for (const route of ["direct", "companion"] as const) {
+      const run = serviceOn({ ok: true, route, url: fake.url, password: "wrong", address: "127.0.0.1" });
+      await until(() => run.attempts() >= 2);
+      expect(run.obs.status().failure).toBe("authentication");
+      await run.obs.stop();
+    }
+  });
+
+  it("reconnects when the gateway reports the route moved, and stops listening on stop", async () => {
+    fake = startFakeObs();
+    let moved: RouteChangeListener = () => {};
+    let listening = 0;
+    const { obs } = serviceOn({ ok: true, route: "direct", url: fake.url, address: "127.0.0.1" }, (listener) => {
+      moved = listener;
+      listening++;
+      return () => {
+        listening--;
+      };
+    });
+    await until(() => obs.status().state === "connected");
+    expect(fake.upgrades).toHaveLength(1);
+
+    moved("the route moved");
+    await until(() => (fake as FakeObsServer).upgrades.length === 2);
+
+    expect(listening).toBe(1);
+    await obs.stop();
+    expect(listening).toBe(0);
+  });
+});
+
+describe("openObsSession", () => {
+  it("ends a connect that never answers as soon as its signal aborts, leaving no timer behind", async () => {
+    const silent = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {}, open() {} } });
+    const pending = new Set<unknown>();
+    const timers: Timers = {
+      ...systemTimers,
+      setTimeout: (fn, ms) => {
+        const handle = systemTimers.setTimeout(fn, ms);
+        pending.add(handle);
+        return handle;
+      },
+      clearTimeout: (handle) => {
+        pending.delete(handle);
+        systemTimers.clearTimeout(handle);
+      },
+    };
+    const run = new AbortController();
+    try {
+      const opening = openObsSession({
+        url: `ws://127.0.0.1:${silent.port}`,
+        connectTimeoutMs: OBS_DEFAULTS.connectTimeoutMs,
+        timers,
+        signal: run.signal,
+      }).catch((e) => e);
+      await Bun.sleep(20);
+      expect(pending.size).toBe(1);
+      run.abort();
+      expect(await opening).toBeInstanceOf(Error);
+      expect(pending.size).toBe(0);
+    } finally {
+      silent.stop(true);
+    }
   });
 });

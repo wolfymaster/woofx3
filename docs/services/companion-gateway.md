@@ -182,6 +182,11 @@ afresh. The gateway subscribes on the host's scope for the life of the host:
 
 One listener throwing is logged and never stops the others.
 
+The `obs` adapter subscribes to nothing itself and requests no relay credential:
+it resolves through `ctx.companion.resolve`, reconnects from `onRouteChange`, and
+reads a bridge route's failure as `relay` (a refused password stays an
+authentication failure).
+
 ## Module requests
 
 Module code reaches its own declared `local[]` endpoints through one narrow

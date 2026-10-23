@@ -370,12 +370,12 @@ attempt.
   connection retries in the background with the shared capped, full-jitter
   backoff (`createBackoff` from `@woofx3/runtime`), from
   `WOOFX3_OBS_BACKOFF_INITIAL_MS` up to `WOOFX3_OBS_BACKOFF_MAX_MS`.
-- **Start.** Each start builds a fresh OBS service over `ctx.companion` and
-  the adapter's scoped bus, subscribes to
-  `db.module.setting.updated.*` (a change to the `woofx3_obs` module's
-  settings reconnects at once) and `engine.relay.config.updated` (a change
-  that moves OBS to another route reconnects), and starts connecting. It
-  resolves without waiting for OBS, so the adapter is `connected` while its
+- **Start.** Each start builds a fresh OBS service over `ctx.companion`,
+  registers it with `ctx.companion.onRouteChange(woofx3_obs/obs)`, and starts
+  connecting. A change to the `woofx3_obs` module's settings, or a relay
+  configuration change that moves OBS to another route, reaches the service
+  through the gateway's route watch (see [the companion gateway](./companion-gateway.md))
+  and reconnects at once. Start resolves without waiting for OBS, so the adapter is `connected` while its
   loop runs, and a request while OBS is closed reaches the handler and is
   answered `OBS is not connected (retrying)` at once. The host's start signal
   stays live for the whole run; when it aborts, the connection stops dialing
@@ -383,9 +383,8 @@ attempt.
 - **Stop.** Closes the OBS session, cancels any pending retry and ends the
   open deadline and OBS connect timer of an attempt in flight, abandoning a
   route resolution in flight, and a session that opens after the stop is
-  closed at once. The host then closes
-  the adapter's subscriptions.
-- **Manifest.** Publishes nothing, requests nothing (the companion gateway
+  closed at once. The service also removes its route-change listener.
+- **Manifest.** Publishes, subscribes to and requests nothing (the companion gateway
   asks the api for bridge credentials), claims `woofx3_obs/obs`, and serves:
 
 | Subject | Budget | While the adapter is not running |

@@ -7,9 +7,6 @@ import {
   type ObsOptionsReply,
   parseObsBrowserSourceRefresh,
 } from "@woofx3/common/cloudevents/Obs/commands";
-import { RELAY_CONFIG_UPDATED_SUBJECT } from "@woofx3/common/cloudevents/Relay/relay";
-import type { EndpointStore } from "../../companion/endpoint-store";
-import { MODULE_SETTING_UPDATED_SUBJECT } from "../../companion/route-watch";
 import { OBS_SERVED_BUDGETS_MS, type ObsConfig } from "../../config/obs";
 import type {
   Adapter,
@@ -20,15 +17,13 @@ import type {
   ServedSubject,
   Unavailable,
 } from "../../host/adapter";
-import { errorMessage, type Logger, type RandomSource, type Timers } from "../../host/deps";
+import type { Logger, RandomSource, Timers } from "../../host/deps";
 import type { LinkState } from "../../host/link-readers";
-import type { BusMessage } from "../../host/scoped-bus";
-import type { DbProxyClientConfig } from "../../services/db-proxy";
 import { handleObsControlRequest } from "./control";
 import { handleObsOptionsRequest } from "./options";
 import { RefreshLatch } from "./refresh-latch";
 import { createObsService, type ObsService } from "./service";
-import { OBS_ENDPOINT, OBS_MODULE_ID, obsAdapterFallback } from "./settings";
+import { OBS_ENDPOINT, obsAdapterFallback } from "./settings";
 import type { ObsStatusReply } from "./status";
 
 /** Why the host is answering for a stopped OBS adapter, in words a streamer can act on. */
@@ -78,8 +73,6 @@ export function answerRefreshRequest(request: Uint8Array, latch: RefreshLatch): 
 
 export interface ObsAdapterDeps {
   config: ObsConfig;
-  /** Builds the store the relay configuration is read from, over the host's db-proxy client. */
-  endpointStore(db: DbProxyClientConfig): EndpointStore;
   /** Jitter for the connection's retry backoff. */
   random: RandomSource;
   /** The connection's retry and open-deadline timers. */
@@ -114,7 +107,7 @@ export class ObsAdapter implements Adapter<RefreshLatch> {
     this.manifest = {
       id: "obs",
       publishes: [],
-      subscribes: [MODULE_SETTING_UPDATED_SUBJECT, RELAY_CONFIG_UPDATED_SUBJECT],
+      subscribes: [],
       requests: [],
       localEndpoints: [OBS_ENDPOINT],
       serves: [
@@ -168,11 +161,10 @@ export class ObsAdapter implements Adapter<RefreshLatch> {
       throw new Error("the obs adapter is already running; the host never starts it twice");
     }
     signal.throwIfAborted();
-    const store = this.deps.endpointStore(ctx.dbProxy);
     const fallback = obsAdapterFallback(this.deps.config.fallback);
     const service = createObsService({
       resolve: (attempt) => ctx.companion.resolve(OBS_ENDPOINT, { signal: attempt, fallback }),
-      relayConfig: () => store.relayConfig(),
+      watchRoute: (listener) => ctx.companion.onRouteChange(OBS_ENDPOINT, listener),
       latch: this.latch,
       connection: this.deps.config.connection,
       random: this.deps.random,
@@ -180,10 +172,6 @@ export class ObsAdapter implements Adapter<RefreshLatch> {
       logger: ctx.logger,
     });
     const run: ObsRun = { service, logger: ctx.logger, commandTimeoutMs: this.deps.config.commandTimeoutMs };
-    await ctx.bus.subscribe(MODULE_SETTING_UPDATED_SUBJECT, (msg) => {
-      onModuleSettingUpdated(run, msg);
-    });
-    await ctx.bus.subscribe(RELAY_CONFIG_UPDATED_SUBJECT, () => onRelayConfigUpdated(run));
     signal.throwIfAborted();
     this.run = run;
     service.start(signal);
@@ -239,40 +227,6 @@ async function answerOptions(run: ObsRun, request: Uint8Array): Promise<Uint8Arr
     onTimeout: () => connection.recycle("an OBS request timed out"),
   });
   return json(reply);
-}
-
-/**
- * A change to the OBS module's settings reconnects with the new details:
- * the connection reads them afresh on every attempt.
- */
-function onModuleSettingUpdated(run: ObsRun, msg: BusMessage): void {
-  let moduleId: unknown;
-  try {
-    moduleId = (JSON.parse(decoder.decode(msg.data)) as { data?: { moduleId?: unknown } } | null)?.data?.moduleId;
-  } catch (error) {
-    run.logger.warn(`${msg.subject}: malformed JSON body; dropped`, { error: errorMessage(error) });
-    return;
-  }
-  if (moduleId === OBS_MODULE_ID) {
-    run.service.connection.reconnectNow("OBS module settings changed");
-  }
-}
-
-/**
- * The api announces a change to which local endpoints go through the
- * companion. The open session is replaced only when the change moves OBS to
- * another route; a configuration that cannot be read is assumed to.
- */
-async function onRelayConfigUpdated(run: ObsRun): Promise<void> {
-  const moves = await run.service.relayConfigMovesObs().catch((error: unknown) => {
-    run.logger.warn("relay config change: could not read where OBS is reached; reconnecting to be sure", {
-      error: errorMessage(error),
-    });
-    return true;
-  });
-  if (moves) {
-    run.service.connection.reconnectNow("Relay configuration changed");
-  }
 }
 
 /** The registry entry's module: the refresh latch is its host state, one adapter for the life of the process. */
