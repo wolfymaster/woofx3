@@ -52,6 +52,8 @@ export const MODULE_SESSION_DEFAULTS = {
    * the next call finds it.
    */
   openTimeoutMs: 10_000,
+  /** One `.local` name lookup for a direct route, within openTimeoutMs. */
+  resolveTimeoutMs: 3_000,
   /** A session nobody has used for this long is closed. */
   idleMs: 120_000,
   /**
@@ -68,6 +70,7 @@ export const MODULE_SESSION_DEFAULTS = {
 export interface ModuleSessionLimits {
   requestBudgetMs: number;
   openTimeoutMs: number;
+  resolveTimeoutMs: number;
   idleMs: number;
   maxSessions: number;
   maxPendingPerSession: number;

@@ -6,9 +6,35 @@
 // `::ffff:10.0.0.1` cannot slip past as a host name or as the wrong family.
 
 import type { EngineHosting } from "@woofx3/api";
+import type { Timers } from "../host/deps";
 
 /** Resolves a host name to its IP addresses, as text. Rejects when the name does not resolve. */
 export type NameResolver = (name: string) => Promise<string[]>;
+
+/**
+ * `resolver`, rejecting any lookup that has not answered within `timeoutMs`.
+ * The system resolver (getaddrinfo, mDNS for `.local`) cannot be cancelled,
+ * so a stuck lookup carries on in the background; this only bounds how long
+ * an open waits for it.
+ */
+export function boundedResolver(resolver: NameResolver, timeoutMs: number, timers: Timers): NameResolver {
+  return (name) =>
+    new Promise<string[]>((resolve, reject) => {
+      const timer = timers.setTimeout(() => {
+        reject(new Error(`no answer within ${timeoutMs}ms`));
+      }, timeoutMs);
+      resolver(name).then(
+        (answers) => {
+          timers.clearTimeout(timer);
+          resolve(answers);
+        },
+        (error: unknown) => {
+          timers.clearTimeout(timer);
+          reject(error);
+        }
+      );
+    });
+}
 
 /**
  * `dialIp` is the IP literal to dial, never a name: a name resolved here and

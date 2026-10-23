@@ -234,7 +234,7 @@ network, or the answer is `address_refused`:
 - A `.local` name is resolved once. Every address it resolves to must be
   allowed, and the first one is dialed as an IP literal, so the name cannot
   resolve somewhere else between the check and the dial. A name that does not
-  resolve is refused.
+  resolve, or does not answer within 3 seconds, is refused.
 - Cloud metadata (169.254.169.254, fd00:ec2::254) is refused on every hosting
   but `local`. The unspecified address, broadcast, multicast, other host
   names and public addresses are always refused.
@@ -283,6 +283,7 @@ holds a socket itself.
 | Frame size, either way | 65,536 bytes | an outbound one is `invalid`; an inbound one is dropped and counted |
 | Idle time | 2 minutes | the session is closed |
 | One open | 10 seconds | `unavailable` |
+| One `.local` name lookup | 3 seconds | `address_refused` |
 
 How an endpoint failure reads in a module reply: the gateway's reasons pass
 through as codes of the same name, and `relay` (no credential, a refused or

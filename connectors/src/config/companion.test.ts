@@ -29,6 +29,7 @@ const SHIPPED: CompanionConfig = {
   moduleSessions: {
     requestBudgetMs: 4_500,
     openTimeoutMs: 10_000,
+    resolveTimeoutMs: 3_000,
     idleMs: 120_000,
     maxSessions: 32,
     maxPendingPerSession: 16,
@@ -106,5 +107,9 @@ describe("MODULE_SESSION_DEFAULTS", () => {
   test("the frame limit is the contract's message and reply bound", () => {
     expect(parseModuleEndpointReply(reply(MODULE_SESSION_DEFAULTS.maxMessageBytes)).ok).toBe(true);
     expect(parseModuleEndpointReply(reply(MODULE_SESSION_DEFAULTS.maxMessageBytes + 1)).ok).toBe(false);
+  });
+
+  test("a .local lookup fits inside one session open", () => {
+    expect(MODULE_SESSION_DEFAULTS.resolveTimeoutMs).toBeLessThan(MODULE_SESSION_DEFAULTS.openTimeoutMs);
   });
 });

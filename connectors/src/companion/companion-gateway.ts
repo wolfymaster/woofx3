@@ -15,7 +15,7 @@ import { type ClaimRegistry, endpointKey } from "./claims";
 import { EndpointDialer, type Fetch } from "./dialer";
 import type { EndpointStore } from "./endpoint-store";
 import { EndpointSessions, type OpenSocket } from "./endpoint-sessions";
-import type { NameResolver } from "./local-address";
+import { boundedResolver, type NameResolver } from "./local-address";
 import { modulePolicy } from "./module-route-policy";
 import { ModuleRequests } from "./module-requests";
 import { adapterPolicy, type RoutePolicy } from "./route-policy";
@@ -106,7 +106,7 @@ export class EngineCompanionGateway implements CompanionGateway {
       claims: deps.claims,
       hosting: deps.config.hosting,
       localDirect: deps.config.moduleLocalDirect,
-      resolver: deps.resolver,
+      resolver: boundedResolver(deps.resolver, deps.config.moduleSessions.resolveTimeoutMs, deps.timers),
     });
     this.sessions = new EndpointSessions({
       limits: deps.config.moduleSessions,

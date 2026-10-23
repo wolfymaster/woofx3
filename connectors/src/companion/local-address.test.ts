@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { EngineHosting } from "@woofx3/api";
-import { checkLocalAddress, type NameResolver } from "./local-address";
+import { FakeTime } from "../host/testing";
+import { boundedResolver, checkLocalAddress, type NameResolver } from "./local-address";
 
 const noResolver: NameResolver = async (name) => {
   throw new Error(`no resolution for ${name} in this test`);
@@ -145,5 +146,35 @@ describe("checkLocalAddress names", () => {
       ok: false,
       reason: '"-bad-.local" is not a local network address; use an IP address on your network or a .local name',
     });
+  });
+});
+
+describe("boundedResolver", () => {
+  test("refuses a .local name whose lookup never answers once the timeout passes", async () => {
+    const time = new FakeTime();
+    const silent: NameResolver = () => new Promise<string[]>(() => {});
+    const checking = checkLocalAddress("studio-pc.local", "self", boundedResolver(silent, 3_000, time));
+    await time.advance(3_000);
+    expect(await checking).toEqual({
+      ok: false,
+      reason: '"studio-pc.local" did not resolve: no answer within 3000ms',
+    });
+  });
+
+  test("passes an answer through and clears its timer", async () => {
+    const time = new FakeTime();
+    const resolver = boundedResolver(answers({ "studio-pc.local": ["192.168.1.20"] }), 3_000, time);
+    expect(await checkLocalAddress("studio-pc.local", "self", resolver)).toEqual({ ok: true, dialIp: "192.168.1.20" });
+    expect(time.pending).toBe(0);
+  });
+
+  test("passes a lookup failure through and clears its timer", async () => {
+    const time = new FakeTime();
+    const resolver = boundedResolver(answers({}), 3_000, time);
+    expect(await checkLocalAddress("studio-pc.local", "self", resolver)).toEqual({
+      ok: false,
+      reason: '"studio-pc.local" did not resolve: ENOTFOUND studio-pc.local',
+    });
+    expect(time.pending).toBe(0);
   });
 });
