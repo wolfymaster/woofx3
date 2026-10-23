@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { type AlertDelivery, parseAlertDelivery } from "../../contract/alert-delivery";
 import { externalMediaUrls, MEDIA_PROXY_PATH, replaceMediaUrls } from "../../contract/media-url";
 import type { PlacementDocument, PlacementMeta, SceneDocument, SceneSnapshot } from "@woofx3/api/scene-editor/document";
 import type { BarkloaderFrameInfo } from "./frame-assembler";
@@ -95,7 +96,7 @@ export interface OverlaySceneConfig<T> {
  *
  * Every path that hands settings to an overlay or a frame derives them with
  * `overlaySettings`: documents, snapshots and ops (`placement`), page scene
- * configs (`sceneConfig`), and a frame's boot settings.
+ * configs (`sceneConfig`), and alert deliveries as they are sent (`alertDelivery`).
  *
  * A token is `{base64url(url)}.{expiresAt}.{hex HMAC-SHA256}`, good until
  * `expiresAt` (unix seconds). An overlay stays open for a whole stream, and
@@ -224,5 +225,27 @@ export class MediaProxy {
       return view.settings === settings ? widget : { ...widget, settings: view.settings };
     });
     return { scene: { ...scene, widgets: viewed }, mediaUrls };
+  }
+
+  /**
+   * An alert delivery as a page is sent it: the settings of each widget whose
+   * frame has a `mediaProxyBase` signed under it. Signed as it is sent, never
+   * as it is stored, so a delivery sent again carries tokens minted then. A
+   * value that is not an alert delivery is passed through.
+   */
+  alertDelivery(value: unknown): unknown {
+    const delivery = parseAlertDelivery(value);
+    if (delivery === null) {
+      return value;
+    }
+    let widgets: AlertDelivery["layout"]["widgets"] | null = null;
+    for (const [id, placement] of Object.entries(delivery.layout.widgets)) {
+      const { settings } = this.overlaySettings(placement.settings, delivery.frames[id]?.mediaProxyBase);
+      if (settings !== placement.settings) {
+        widgets ??= { ...delivery.layout.widgets };
+        widgets[id] = { ...placement, settings };
+      }
+    }
+    return widgets === null ? delivery : { ...delivery, layout: { ...delivery.layout, widgets } };
   }
 }

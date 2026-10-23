@@ -9,13 +9,7 @@
 // plays one alert at a time.
 
 import { encodePlacementBoot, type WidgetBehaviorState, type WidgetEvent } from "@woofx3/module-sdk";
-import {
-  alertCompositionOf,
-  type CompositionDocument,
-  moduleIdOfCanonicalId,
-  type NodeId,
-  PROFILES,
-} from "@woofx3/scene/model";
+import { type CompositionDocument, moduleIdOfCanonicalId, type NodeId, PROFILES } from "@woofx3/scene/model";
 import {
   createDomRenderer,
   createScheduler,
@@ -34,14 +28,9 @@ import {
   type WidgetBridge,
   type WidgetStatusReportPayload,
 } from "@woofx3/widget-host/page";
+import { type AlertDelivery, parseAlertDelivery } from "../../contract/alert-delivery";
 import type { AlertTimings } from "./alert-timing";
 import { BehaviorRelay, entranceOf } from "./widget-behaviors";
-
-/** The slice of the server's `AlertDelivery` the page needs. */
-export interface AlertDelivery {
-  layout: CompositionDocument;
-  event: { type: string; data: unknown } | null;
-}
 
 /** What one widget's frame reports: the facts the alert's timeline is made of. */
 export interface AlertFrameFacts {
@@ -170,7 +159,6 @@ export interface AlertWidgetOptions {
   element: HTMLElement;
   /** The area's placement id, which names its marks (alert-timing.ts). */
   instanceId: string;
-  sceneBase: string;
   /** Every live bridge on the page; inbound messages are routed through it. */
   bridges: Set<WidgetBridge>;
   /** `moduleId` is the alert layout placement's, never the widget's claim. */
@@ -219,7 +207,7 @@ export class AlertWidget {
    * still has to finish, or the server redelivers it forever.
    */
   play(item: QueuedEvent): boolean {
-    const delivery = parseDelivery(item.value);
+    const delivery = parseAlertDelivery(item.value);
     if (!delivery) {
       this.opts.host.log.warn("[scene-manager] malformed alert delivery; skipping", { eventId: item.eventId });
       this.opts.host.timers.setTimeout(() => this.opts.onFinished(item.eventId), 0);
@@ -235,7 +223,7 @@ export class AlertWidget {
    */
   delivered(eventId: string, value: unknown): void {
     this.opts.timings.alert(eventId, this.opts.instanceId, "delivered");
-    const delivery = parseDelivery(value);
+    const delivery = parseAlertDelivery(value);
     if (delivery) {
       readAheadAlertAssets(this.opts.assets, delivery.layout);
     }
@@ -278,7 +266,7 @@ export class AlertWidget {
       clock: this.opts.clock,
       log: this.opts.host.log,
       mountFrame: (slot, widgetId, entrance, facts) =>
-        this.mountFrame(eventId, alertEvent, delivery.layout, slot, widgetId, entrance, facts),
+        this.mountFrame(eventId, alertEvent, delivery, slot, widgetId, entrance, facts),
       onFinished: () => {
         tearDown();
         this.opts.onFinished(eventId);
@@ -289,30 +277,42 @@ export class AlertWidget {
   private mountFrame(
     eventId: string,
     alertEvent: WidgetEvent,
-    layout: CompositionDocument,
+    delivery: AlertDelivery,
     slot: HTMLElement,
     widgetId: NodeId,
     entrance: WidgetBehaviorState | null,
     facts: AlertFrameFacts
   ): AlertFrame {
-    const { sceneBase, bridges, timings, instanceId: areaId } = this.opts;
+    const { bridges, timings, instanceId: areaId } = this.opts;
     const instanceId = `${eventId}.${widgetId}`;
-    const placement = layout.widgets[widgetId];
-    const moduleId = placement ? moduleIdOfCanonicalId(placement.widget) : null;
+    const placement = delivery.layout.widgets[widgetId];
+    const framing = delivery.frames[widgetId];
+    if (placement === undefined || framing === undefined) {
+      throw new Error(`alert ${eventId}: widget ${widgetId} has no placement or frame`);
+    }
+    const moduleId = moduleIdOfCanonicalId(placement.widget);
+    if (moduleId === null) {
+      throw new Error(`alert ${eventId}: widget ${widgetId} has no canonical module id`);
+    }
     const frame = mountWidgetFrame({
       slot,
       instanceId,
       bridges,
       document: this.opts.document,
       host: this.opts.host,
-      // The frame document inlines the placement, so the fragment carries only
-      // the entrance it is marked with from boot.
+      // The widget's own document, the one its scene placements load and the
+      // browser has cached; this alert's half of the boot rides in the fragment.
       src: (nonce) =>
-        `${sceneBase}/alert/${encodeURIComponent(eventId)}/widget/${encodeURIComponent(widgetId)}` +
-        `?nonce=${encodeURIComponent(nonce)}` +
-        (entrance === null ? "" : `#${encodePlacementBoot({ behavior: entrance })}`),
+        `${framing.frameUrl}#${encodePlacementBoot({
+          nonce,
+          instanceId,
+          surface: "alert",
+          settings: placement.settings,
+          linkedResources: framing.linkedResources,
+          ...(entrance === null ? {} : { behavior: entrance }),
+        })}`,
       callbacks: ({ bridge }) => ({
-        onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId ?? "", report),
+        onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId, report),
         onAssetLoad: this.opts.assets.loaderFor(moduleId),
         onReady: () => timings.frame(eventId, areaId, widgetId, "ready"),
         onEventsSubscribe: (subId, queue) => {
@@ -343,28 +343,7 @@ function readAheadAlertAssets(assets: AssetCache, layout: CompositionDocument): 
   }
 }
 
-/** An alert's canvas size; `parseDelivery` has checked both are positive. */
+/** An alert's canvas size; `parseAlertDelivery` has checked both are positive. */
 function canvasOf(doc: CompositionDocument): { width: number; height: number } {
   return { width: doc.layout.width as number, height: doc.layout.height as number };
-}
-
-/**
- * The alert in a delivery, or null for one the page cannot play. A delivery
- * recorded before alerts were compositions holds the list shape, and is
- * converted.
- */
-export function parseDelivery(value: unknown): AlertDelivery | null {
-  if (typeof value !== "object" || value === null) {
-    return null;
-  }
-  const { layout, event } = value as { layout?: unknown; event?: AlertDelivery["event"] };
-  const doc = alertCompositionOf(layout);
-  if (doc === null || !isPositive(doc.layout.width) || !isPositive(doc.layout.height)) {
-    return null;
-  }
-  return { layout: doc, event: event ?? null };
-}
-
-function isPositive(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }

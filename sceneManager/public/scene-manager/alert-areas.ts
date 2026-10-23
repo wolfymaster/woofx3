@@ -22,8 +22,6 @@ export type AlertArea = Pick<AlertWidget, "play" | "stop" | "dispose" | "deliver
 export interface AlertAreasDeps {
   /** Where an area's element, and its alerts' stages and frames, are made. */
   document: Document;
-  /** `/scene/{sceneId}`. */
-  sceneBase: string;
   bridges: Set<WidgetBridge>;
   queues: EventQueueManager;
   assets: AssetCache;
@@ -67,7 +65,6 @@ export class AlertAreas {
     const area = (deps.createArea ?? ((options) => new AlertWidget(options)))({
       element,
       instanceId,
-      sceneBase: deps.sceneBase,
       bridges: deps.bridges,
       postStatus: deps.postStatus,
       assets: deps.assets,

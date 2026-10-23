@@ -180,7 +180,6 @@ export function createOverlay(env: OverlayEnv): void {
 
   const alertAreas = new AlertAreas({
     document: env.document,
-    sceneBase,
     bridges,
     queues: queueManager,
     assets,

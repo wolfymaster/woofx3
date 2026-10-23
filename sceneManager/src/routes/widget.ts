@@ -1,5 +1,4 @@
 import type { HttpDeps } from "../http";
-import { requireSceneSession } from "./http-kit";
 
 /**
  * `GET /frames/{moduleId}/{manifestId}?theme=…&v=…` — a widget's frame
@@ -20,28 +19,4 @@ export async function handleFrameDocumentRoute(
     url.searchParams.get("theme"),
     url.searchParams.get("v")
   );
-}
-
-/**
- * `GET /scene/{sceneId}/alert/{eventId}/widget/{widgetId}` — one widget of
- * the alert layout delivered to this scene as scene event `eventId`.
- * Authorized by the scene's session cookie; a refusal gets the blank document.
- */
-export async function handleAlertWidgetFrameRoute(
-  req: Request,
-  sceneId: string,
-  eventId: string,
-  widgetId: string,
-  deps: HttpDeps
-): Promise<Response> {
-  if (!(await sessionAllows(req, sceneId, deps))) {
-    return deps.frameAssembler.blankResponse();
-  }
-
-  const url = new URL(req.url);
-  return deps.frameAssembler.assembleAlertWidget(sceneId, eventId, widgetId, url.searchParams.get("nonce"));
-}
-
-async function sessionAllows(req: Request, sceneId: string, deps: HttpDeps): Promise<boolean> {
-  return (await requireSceneSession(req, sceneId, deps.sessionTokens)) !== null;
 }

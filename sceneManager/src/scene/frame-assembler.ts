@@ -1,6 +1,5 @@
 import type { Logger } from "@woofx3/common/runtime";
-import { PROTOCOL_VERSION, WIDGET_CAPABILITIES, type WidgetBootPayload, type WidgetSurface } from "@woofx3/module-sdk";
-import { parseWidgetCanonicalId } from "@woofx3/scene/model";
+import { PROTOCOL_VERSION, WIDGET_CAPABILITIES, type WidgetBootPayload } from "@woofx3/module-sdk";
 import {
   FRAME_DOCUMENT_HEADERS,
   type FrameSource,
@@ -9,24 +8,17 @@ import {
   parseFrameTheme,
   type WidgetFrameBoot,
 } from "@woofx3/widget-host/frame";
-import { selectedThemeId } from "../../contract/scene-config";
 import { FONT_STYLESHEET_PATH } from "../fonts/google-font-cache";
-import { ALERT_EVENT_TYPE, parseAlertDelivery } from "./alert-layout";
 import { frameVersion } from "./frame-catalog";
-import { frameMediaProxyBase, type MediaProxy } from "./media-proxy";
-import type { OverlayHost } from "./scene-host";
 import { StageTimings } from "../stage-timings";
 
 /**
- * Uniform blank document: served byte-for-byte identically for an
- * invalid session AND for a valid session with an unknown instance id,
- * so the frame route leaks nothing about which failure occurred.
+ * Uniform blank document: served byte-for-byte identically for every
+ * refusal, so a refused request leaks nothing about which check failed.
  */
 export const BLANK_FRAME_DOC = "<!doctype html><html><head></head><body></body></html>";
 
 const FRAME_HEADERS: Record<string, string> = { ...FRAME_DOCUMENT_HEADERS, "Cache-Control": "no-store" };
-
-const NONCE_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
 
 export interface BarkloaderFrameInfo extends FrameSource {
   /** Ids of the widget's `font` settings. */
@@ -120,42 +112,15 @@ function frameFonts(frameInfo: BarkloaderFrameInfo): Pick<WidgetBootPayload, "fo
 
 export interface FrameAssemblerOptions {
   barkloader: BarkloaderFrameClient;
-  generateNonce?: () => string;
-  /** The instances a module links through its `resource_ref` settings (see
-   *  module-state.ts `linkedResources`). None when absent. */
-  linkedResources?: (moduleId: string) => Promise<Record<string, string>>;
-  /** Points external media in a themeable widget's boot settings at the
-   *  engine's media proxy. Settings pass through as they are when absent. */
-  mediaProxy?: MediaProxy;
   /** Milliseconds on a monotonic clock, for the `Server-Timing` header; `performance.now` when absent. */
   now?: () => number;
 }
 
-/**
- * The stages a frame document's `Server-Timing` names: reading back the alert
- * event it belongs to, asking barkloader for the widget's entry, and reading
- * the module's linked resources.
- */
-type FrameStage = "event" | "frame" | "links";
+/** The stage a frame document's `Server-Timing` names: asking barkloader for the widget's entry. */
+type FrameStage = "frame";
 
 /** A frame document whose URL carries its current version never changes. */
 const CACHED_FRAME_CACHE_CONTROL = "public, max-age=31536000, immutable";
-
-/** What a frame is assembled for: a scene placement, or one widget of an alert layout. */
-interface FrameTarget {
-  instanceId: string;
-  moduleId: string;
-  manifestId: string;
-  widgetCanonicalId: string;
-  settings: Record<string, unknown>;
-  surface: WidgetSurface;
-}
-
-function defaultNonce(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Buffer.from(bytes).toString("base64url");
-}
 
 /**
  * Assembles widget frame documents. A module widget's entry HTML and
@@ -163,21 +128,13 @@ function defaultNonce(): string {
  * the module's installed version.
  */
 export class FrameAssembler {
-  private readonly generateNonce: () => string;
   private readonly now: () => number;
 
   constructor(
-    private readonly host: OverlayHost,
     private readonly logger: Logger,
     private readonly opts: FrameAssemblerOptions
   ) {
-    this.generateNonce = opts.generateNonce ?? defaultNonce;
     this.now = opts.now ?? (() => performance.now());
-  }
-
-  /** Uniform blank response — identical bytes for every refusal path. */
-  blankResponse(): Response {
-    return new Response(BLANK_FRAME_DOC, { status: 200, headers: { ...FRAME_HEADERS } });
   }
 
   /**
@@ -229,130 +186,9 @@ export class FrameAssembler {
     return this.render(frameInfo, boot, cacheable ? CACHED_FRAME_CACHE_CONTROL : "no-cache", cacheable, timings);
   }
 
-  /**
-   * One widget of the alert delivered to `sceneId` as scene event `eventId`.
-   * The alert is read back from that event, so a frame can only ever show
-   * what the scene manager validated and delivered to this scene. Its
-   * external media is proxied like a placement's, whether a workflow step
-   * entered it or event data filled it: the proxy's own checks (public
-   * addresses only, media types, size and relay limits) bound what it fetches.
-   */
-  async assembleAlertWidget(
-    sceneId: string,
-    eventId: string,
-    widgetId: string,
-    nonceParam: string | null
-  ): Promise<Response> {
-    const timings = new StageTimings<FrameStage>(this.now);
-    const event = await timings.time("event", () => this.host.loadSceneEvent(sceneId, eventId));
-    const delivery = event?.type === ALERT_EVENT_TYPE ? parseAlertDelivery(event.value) : null;
-    const widget =
-      delivery && Object.hasOwn(delivery.layout.widgets, widgetId) ? delivery.layout.widgets[widgetId] : undefined;
-    const canonical = widget ? parseWidgetCanonicalId(widget.widget) : null;
-    if (!widget || !canonical) {
-      return this.blankResponse();
-    }
-    return this.assembleFrame(
-      sceneId,
-      {
-        instanceId: `${eventId}.${widgetId}`,
-        moduleId: canonical.moduleKey,
-        manifestId: canonical.manifestId,
-        widgetCanonicalId: widget.widget,
-        settings: widget.settings,
-        surface: "alert",
-      },
-      nonceParam,
-      timings
-    );
-  }
-
-  /** A widget still renders when its module's settings cannot be read; it
-   *  then sees no linked instances, as with an older host. */
-  private async loadLinkedResources(moduleId: string): Promise<Record<string, string>> {
-    if (!this.opts.linkedResources) {
-      return {};
-    }
-    try {
-      return await this.opts.linkedResources(moduleId);
-    } catch (err) {
-      this.logger.warn("module settings unavailable; the widget sees no linked resources", {
-        moduleId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return {};
-    }
-  }
-
-  private async assembleFrame(
-    sceneId: string,
-    target: FrameTarget,
-    nonceParam: string | null,
-    timings: StageTimings<FrameStage>
-  ): Promise<Response> {
-    const nonce = nonceParam && NONCE_PATTERN.test(nonceParam) ? nonceParam : this.generateNonce();
-
-    const frameInfo = await timings.time("frame", () =>
-      this.loadFrameInfo(target.moduleId, target.manifestId, target.widgetCanonicalId, selectedThemeId(target.settings))
-    );
-    if (frameInfo === null) {
-      this.logger.warn("widget entry document unavailable", {
-        sceneId,
-        instanceId: target.instanceId,
-        widgetCanonicalId: target.widgetCanonicalId,
-      });
-      return new Response("<!doctype html><!-- widget entry unavailable -->", {
-        status: 502,
-        headers: { ...FRAME_HEADERS },
-      });
-    }
-
-    const theme = frameInfo.theme;
-    if (theme?.fallback) {
-      this.logger.warn("widget theme unavailable; rendering the widget's defaults", {
-        sceneId,
-        instanceId: target.instanceId,
-        widgetCanonicalId: target.widgetCanonicalId,
-        selectedTheme: selectedThemeId(target.settings),
-        reason: theme.fallback,
-      });
-    }
-
-    const linkedResources = await timings.time("links", () => this.loadLinkedResources(target.moduleId));
-    const boot: WidgetBootPayload = {
-      v: PROTOCOL_VERSION,
-      nonce,
-      instanceId: target.instanceId,
-      moduleId: target.moduleId,
-      widgetCanonicalId: target.widgetCanonicalId,
-      surface: target.surface,
-      settings: this.bootSettings(target.settings, frameInfo),
-      // What the host may offer; `init` says what this frame gets.
-      capabilities: [...WIDGET_CAPABILITIES],
-      resourceBaseUrl: frameInfo.resourceBaseUrl,
-      theme: theme ? hostTheme(theme) : null,
-      linkedResources,
-      ...frameFonts(frameInfo),
-    };
-    return this.render(frameInfo, boot, "no-store", false, timings);
-  }
-
-  /**
-   * The settings a frame boots with. A widget with a theme contract runs
-   * under the theme policy (see `render`), which refuses external media, so
-   * its external media is pointed at the media proxy; any other widget loads
-   * it directly.
-   */
-  private bootSettings(settings: Record<string, unknown>, frameInfo: BarkloaderFrameInfo): Record<string, unknown> {
-    if (!this.opts.mediaProxy) {
-      return settings;
-    }
-    return this.opts.mediaProxy.overlaySettings(settings, frameMediaProxyBase(frameInfo)).settings;
-  }
-
   private render(
     frameInfo: BarkloaderFrameInfo,
-    boot: WidgetBootPayload | WidgetFrameBoot,
+    boot: WidgetFrameBoot,
     cacheControl: string,
     cacheable: boolean,
     timings: StageTimings<FrameStage>

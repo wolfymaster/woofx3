@@ -6,6 +6,7 @@
 import { describe, expect, it } from "bun:test";
 import type { RenderAnimation, RenderStyle } from "@woofx3/scene/runtime";
 import { generateNonce, type PageHost } from "@woofx3/widget-host/page";
+import { decodePlacementBoot } from "@woofx3/module-sdk";
 import { encodeStreamFrame, type StreamFrame } from "../../contract/overlay-stream";
 import type { SceneConfig } from "../../contract/scene-config";
 import type { PageMarks } from "../../public/scene-manager/alert-timing";
@@ -257,6 +258,17 @@ function setup(options: { refreshStatus?: number } = {}) {
   return { env, timers, warnings, streams, requests, reloads, peerReloads, connected, marked, body, frames, fromFrame };
 }
 
+/** The frame of alert widget `instanceId` (`{eventId}.{widgetId}`), read from its boot fragment. */
+function alertFrame(page: ReturnType<typeof setup>, instanceId: string): FakeElement {
+  const frame = page
+    .frames()
+    .find((element) => decodePlacementBoot(element.src.slice(element.src.indexOf("#")))?.instanceId === instanceId);
+  if (frame === undefined) {
+    throw new Error(`no frame for alert widget ${instanceId}`);
+  }
+  return frame;
+}
+
 describe("an overlay page", () => {
   it("fills each placement's slot: a sandboxed frame booted with its placement, or an alert area", async () => {
     const page = setup();
@@ -335,10 +347,21 @@ describe("an overlay page", () => {
 
     await page.streams[0]!.send({
       kind: "delivery",
-      frame: { eventId: "ev-9", instanceId: "a1", type: "alert", key: "alert-9", value: { layout, event: null } },
+      frame: {
+        eventId: "ev-9",
+        instanceId: "a1",
+        type: "alert",
+        key: "alert-9",
+        value: {
+          alertId: "alert-9",
+          layout,
+          frames: { t1: { frameUrl: "/frames/woofx3/text?v=1", linkedResources: {} } },
+          event: null,
+        },
+      },
     });
     await page.timers.advance(10);
-    const frame = page.frames().find((element) => element.src.includes("/alert/ev-9/"))!;
+    const frame = alertFrame(page, "ev-9.t1");
     page.fromFrame(frame, { type: "hello", instanceId: "ev-9.t1", sdkVersion: "test" });
     page.fromFrame(frame, { type: "events.subscribe", subId: "sub-1" });
     page.fromFrame(frame, { type: "rendered" });
@@ -352,6 +375,60 @@ describe("an overlay page", () => {
       "woofx3.alert/ev-9/a1/t1/rendered",
       "woofx3.alert/ev-9/a1/on-screen",
     ]);
+  });
+
+  it("loads an alert's widget from the widget's cached document, with the alert's half of the boot in the fragment", async () => {
+    const page = setup();
+    await settle();
+    await page.streams[0]!.send({ kind: "hello", bootId: "boot-1", seq: 0, draftSeq: 0 });
+
+    await page.streams[0]!.send({
+      kind: "delivery",
+      frame: {
+        eventId: "ev-3",
+        instanceId: "a1",
+        type: "alert",
+        key: "alert-3",
+        value: {
+          alertId: "alert-3",
+          layout: {
+            layout: { width: 800, height: 600 },
+            widgets: {
+              t1: {
+                widget: "woofx3:widget:text",
+                x: 0,
+                y: 0,
+                width: 100,
+                height: 100,
+                visible: true,
+                z: "a1",
+                settings: { text: "thanks" },
+                name: "",
+                rotation: 0,
+                opacity: 1,
+                locked: false,
+                extra: {},
+              },
+            },
+            behaviors: {},
+          },
+          frames: { t1: { frameUrl: "/frames/woofx3/text?v=7", linkedResources: { voice: "woofx3:voice:a" } } },
+          event: null,
+        },
+      },
+    });
+    await page.timers.advance(10);
+
+    const frame = alertFrame(page, "ev-3.t1");
+    expect(frame.src.startsWith("/frames/woofx3/text?v=7#")).toBe(true);
+    expect(frame.attributes.get("sandbox")).toBe("allow-scripts");
+    expect(decodePlacementBoot(frame.src.slice(frame.src.indexOf("#")))).toEqual({
+      nonce: NONCE,
+      instanceId: "ev-3.t1",
+      surface: "alert",
+      settings: { text: "thanks" },
+      linkedResources: { voice: "woofx3:voice:a" },
+    });
   });
 
   it("reloads, telling the other overlays first, when the server it reconnects to has restarted", async () => {

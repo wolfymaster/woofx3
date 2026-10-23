@@ -9,7 +9,7 @@ import {
   UNTIMED_ALERT_MS,
 } from "@woofx3/scene/model";
 import type { RenderAnimation, RenderElement, RenderStyle } from "@woofx3/scene/runtime";
-import { type AlertFrameFacts, parseDelivery, playAlert } from "../../public/scene-manager/alert-widget";
+import { type AlertFrameFacts, playAlert } from "../../public/scene-manager/alert-widget";
 
 class FakeElement implements RenderElement<FakeElement> {
   readonly style = {} as RenderStyle;
@@ -280,25 +280,5 @@ describe("playAlert", () => {
     frame("text").subscribed(false);
     clock.advanceTo(MAX_ALERT_MS);
     expect(finished()).toBeNull();
-  });
-});
-
-describe("parseDelivery", () => {
-  it("reads a composition, converts a list-shaped layout, and refuses one without a usable canvas", () => {
-    const doc = alertOf(["text"]);
-    expect(parseDelivery({ layout: doc, event: null })).toEqual({ layout: doc, event: null });
-    const legacy = parseDelivery({
-      layout: {
-        width: 10,
-        height: 10,
-        widgets: [{ id: "t1", widgetCanonicalId: "woofx3:widget:text", position: { x: 1, y: 2, width: 3, height: 4 } }],
-      },
-      event: { type: "channel.follow", data: {} },
-    });
-    expect(legacy?.layout.widgets.t1).toMatchObject({ x: 1, y: 2, width: 3, height: 4, visible: true });
-    expect(legacy?.event).toEqual({ type: "channel.follow", data: {} });
-    expect(parseDelivery({ layout: { ...doc, layout: { width: 0, height: 10 } } })).toBeNull();
-    expect(parseDelivery({ layout: { width: 10, height: 10 } })).toBeNull();
-    expect(parseDelivery(null)).toBeNull();
   });
 });
