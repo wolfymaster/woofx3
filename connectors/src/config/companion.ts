@@ -56,22 +56,12 @@ export interface CompanionConfig {
   relayCredentialTimeoutMs: number;
 }
 
-/**
- * Rules the per-key schema cannot express. An OBS attempt through the bridge
- * asks for the credential and exchanges a ticket before it upgrades, all
- * inside one open deadline.
- */
-export function companionConfigProblems(env: CompanionEnv & { woofx3ObsOpenTimeoutMs: number }): string[] {
+/** Rules the per-key schema cannot express. */
+export function companionConfigProblems(env: CompanionEnv): string[] {
   const problems: string[] = [];
   const hosting = env.woofx3Hosting?.trim();
   if (hosting !== undefined && parseEngineHosting(hosting) === null) {
     problems.push(`woofx3Hosting must be one of ${ENGINE_HOSTINGS.join(", ")}, got ${hosting}`);
-  }
-  const bridgeSetupMs = COMPANION_DEFAULTS.relayCredentialTimeoutMs + env.woofx3CompanionTicketTimeoutMs;
-  if (env.woofx3ObsOpenTimeoutMs <= bridgeSetupMs) {
-    problems.push(
-      `woofx3ObsOpenTimeoutMs (${env.woofx3ObsOpenTimeoutMs}) must exceed the relay credential request (${COMPANION_DEFAULTS.relayCredentialTimeoutMs}) plus woofx3CompanionTicketTimeoutMs (${env.woofx3CompanionTicketTimeoutMs}), which an open through the companion includes`
-    );
   }
   return problems;
 }

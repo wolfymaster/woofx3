@@ -8,7 +8,6 @@ import {
   companionConfigProblems,
   RELAY_MAX_TICKETS,
 } from "./companion";
-import { OBS_DEFAULTS } from "./obs";
 
 const required = {
   woofx3MessagebusUrl: "ws://127.0.0.1:4225",
@@ -63,13 +62,8 @@ describe("companionConfig", () => {
     });
   }
 
-  test("the shipped OBS open deadline fits the shipped bridge setup", () => {
-    expect(
-      companionConfigProblems({
-        ...CompanionEnvSchema.parse({}),
-        woofx3ObsOpenTimeoutMs: OBS_DEFAULTS.openTimeoutMs,
-      })
-    ).toEqual([]);
+  test("the shipped companion settings keep every rule", () => {
+    expect(companionConfigProblems(CompanionEnvSchema.parse({}))).toEqual([]);
     expect(COMPANION_DEFAULTS.maxBridgeOpens).toBeLessThanOrEqual(RELAY_MAX_TICKETS);
   });
 });

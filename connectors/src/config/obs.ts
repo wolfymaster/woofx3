@@ -1,6 +1,7 @@
 import type { BackoffConfig } from "@woofx3/common/runtime";
 import { z } from "zod";
 import type { ObsFallback } from "../adapters/obs/settings";
+import { COMPANION_DEFAULTS } from "./companion";
 
 /** Defaults for the OBS adapter's connection and tunables. */
 export const OBS_DEFAULTS = {
@@ -83,8 +84,12 @@ export interface ObsConfig {
   commandTimeoutMs: number;
 }
 
-/** Cross-field rules the per-key schema cannot express. Returns one message per broken rule. */
-export function obsConfigProblems(env: ObsEnv): string[] {
+/**
+ * Cross-field rules the per-key schema cannot express. Returns one message per broken rule.
+ * An open through the companion asks for the bridge credential and exchanges a
+ * ticket before it upgrades, all inside the open deadline.
+ */
+export function obsConfigProblems(env: ObsEnv & { woofx3CompanionTicketTimeoutMs: number }): string[] {
   const problems: string[] = [];
   if (env.woofx3ObsBackoffInitialMs > env.woofx3ObsBackoffMaxMs) {
     problems.push(
@@ -94,6 +99,12 @@ export function obsConfigProblems(env: ObsEnv): string[] {
   if (env.woofx3ObsConnectTimeoutMs >= env.woofx3ObsOpenTimeoutMs) {
     problems.push(
       `woofx3ObsConnectTimeoutMs (${env.woofx3ObsConnectTimeoutMs}) must be below woofx3ObsOpenTimeoutMs (${env.woofx3ObsOpenTimeoutMs}), which includes it`
+    );
+  }
+  const bridgeSetupMs = COMPANION_DEFAULTS.relayCredentialTimeoutMs + env.woofx3CompanionTicketTimeoutMs;
+  if (env.woofx3ObsOpenTimeoutMs <= bridgeSetupMs) {
+    problems.push(
+      `woofx3ObsOpenTimeoutMs (${env.woofx3ObsOpenTimeoutMs}) must exceed the relay credential request (${COMPANION_DEFAULTS.relayCredentialTimeoutMs}) plus woofx3CompanionTicketTimeoutMs (${env.woofx3CompanionTicketTimeoutMs}), which an open through the companion includes`
     );
   }
   // Options share the command budget; both are checked through the smaller.

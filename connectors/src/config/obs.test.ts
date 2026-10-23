@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { CompanionEnvSchema } from "./companion";
 import { OBS_DEFAULTS, OBS_SERVED_BUDGETS_MS, type ObsConfig, ObsEnvSchema, obsConfig, obsConfigProblems } from "./obs";
 
 function shaped(env: Record<string, unknown>): ObsConfig {
@@ -79,7 +80,8 @@ describe("obsConfig", () => {
 });
 
 describe("obsConfigProblems", () => {
-  const problems = (env: Record<string, unknown>) => obsConfigProblems(ObsEnvSchema.parse(env));
+  const problems = (env: Record<string, unknown>) =>
+    obsConfigProblems({ ...CompanionEnvSchema.parse({}), ...ObsEnvSchema.parse(env) });
 
   test("the shipped defaults keep every rule", () => {
     expect(problems({})).toEqual([]);
@@ -91,6 +93,11 @@ describe("obsConfigProblems", () => {
       "a connect timeout as long as the open timeout",
       { woofx3ObsConnectTimeoutMs: 15_000 },
       "woofx3ObsConnectTimeoutMs",
+    ],
+    [
+      "an open deadline the bridge setup does not fit in",
+      { woofx3ObsOpenTimeoutMs: 10_000, woofx3ObsConnectTimeoutMs: 1_000 },
+      "woofx3ObsOpenTimeoutMs",
     ],
     [
       "a command timeout that reaches the reply budget",
