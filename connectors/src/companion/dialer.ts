@@ -66,6 +66,7 @@ export class EndpointDialer {
   /** Endpoints a `local` engine has already warned about finding in the relay configuration. */
   private readonly warnedLocal = new Set<string>();
   private readonly held = new Set<HeldPermit>();
+  private stopped = false;
 
   constructor(private readonly deps: DialerDeps) {}
 
@@ -113,8 +114,13 @@ export class EndpointDialer {
     return this.bridge(ref, config, direct, signal);
   }
 
-  /** Releases every permit still held for an unspent ticket. */
+  /**
+   * Releases every permit still held for an unspent ticket. A ticket that
+   * arrives afterwards (a fetch that settled just before its abort) is
+   * released on arrival, so no timer outlives the dialer.
+   */
   stop(): void {
+    this.stopped = true;
     for (const hold of this.held) {
       this.deps.timers.clearTimeout(hold.timer);
       hold.permit.release();
@@ -222,9 +228,12 @@ export class EndpointDialer {
         return { kind: "failed", message: "the companion relay answered without a ticket" };
       }
       const expiresInMs = body?.expiresInMs;
+      // The relay's lifetime is only a hint: a missing, non-positive or
+      // fractional value gets the default, and none may hold a permit longer
+      // than the ticket lifetime the relay is configured with.
       const validFor =
         typeof expiresInMs === "number" && Number.isInteger(expiresInMs) && expiresInMs > 0
-          ? expiresInMs
+          ? Math.min(expiresInMs, RELAY_TICKET_TTL_MS)
           : RELAY_TICKET_TTL_MS;
       return { kind: "ticket", ticket, expiresInMs: validFor };
     } catch (error) {
@@ -241,6 +250,10 @@ export class EndpointDialer {
    * gateway cannot see it presented, so it counts it until it expires.
    */
   private holdUntilExpired(permit: BridgeOpenPermit, expiresInMs: number): void {
+    if (this.stopped) {
+      permit.release();
+      return;
+    }
     const hold: HeldPermit = {
       permit,
       timer: this.deps.timers.setTimeout(() => {
