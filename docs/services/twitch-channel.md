@@ -36,13 +36,15 @@ message:
 | `rate_limited` | `shoutout` refused by Twitch's shoutout limit (one every 2 minutes, one per channel every 60 minutes), or an ad command refused with HTTP 429. |
 | `missing_scope` | An ad command whose scope the link does not carry. Relinking Twitch fixes it. |
 | `unauthorized` | An ad command whose token Twitch refused. |
-| `invalid_arguments` | `helix` refused its arguments before calling Twitch: an unknown operation, or a parameter the operation does not declare, is missing, or has the wrong type. |
+| `invalid_arguments` | A command's args have the wrong shape (a field of the wrong type, or a required one missing), or `helix` refused its arguments: an unknown operation, or a parameter the operation does not declare, is missing, or has the wrong type. Nothing was sent to Twitch. Fields a command does not take are ignored. |
 | `not_linked` | No Twitch account is linked. While the adapter is stopped, the connectors host answers every command with this code; a running adapter that finds no account sends it for `helix` only. While a running adapter reconnects after a relink to another account, it answers every command `integration_unavailable`. |
 | `integration_unavailable` | Twitch is linked, but the adapter is turned off (`integration.twitch.enabled` is false), still connecting, or parked after failing repeatedly. The connectors host sends it for every command. See [Connectors host](./connectors.md). |
 
-Only the commands below are served (`TWITCH_API_COMMANDS` in
-`connectors/src/adapters/twitch/lib/twitch.ts`); anything else is answered with
-`Unknown command: <name>`.
+Only the commands below are served (`TWITCHAPI_COMMANDS` in
+`shared/common/typescript/cloudevents/Twitch/commands.ts`, each checked against
+its args schema in `connectors/src/adapters/twitch/lib/twitchApiCommands.ts`);
+anything else is answered with `Unknown command: <name>`. `args`, when present,
+must be an object.
 
 | Command | Args | Result | Scope |
 |---|---|---|---|

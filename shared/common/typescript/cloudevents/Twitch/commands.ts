@@ -34,8 +34,31 @@ export const TWITCHAPI_REPLY_CODES = [
 
 export type TwitchApiReplyCode = (typeof TWITCHAPI_REPLY_CODES)[number];
 
+/**
+ * The commands the twitch service serves on the `twitchapi` subject. Listed
+ * rather than read off its client class, so a request can never reach a
+ * private helper or `constructor`.
+ */
+export const TWITCHAPI_COMMANDS = [
+  "clip",
+  "listChannelPointRewards",
+  "shoutout",
+  "addChannelModerator",
+  "timeout",
+  "updateStream",
+  "createMarker",
+  "searchCategories",
+  "getStreamInfo",
+  "getUser",
+  "getAdSchedule",
+  "snoozeNextAd",
+  "helix",
+] as const;
+
+export type TwitchApiCommand = (typeof TWITCHAPI_COMMANDS)[number];
+
 /** The CloudEvent type of a successful reply to `twitchapi` command `command`. */
-export function twitchApiResultType(command: string): string {
+export function twitchApiResultType(command: TwitchApiCommand): string {
   return `twitchapi.${command}.result`;
 }
 

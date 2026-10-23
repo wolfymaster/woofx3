@@ -1,5 +1,6 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { ApiClient, HelixUser } from "@twurple/api";
+import { TWITCHAPI_COMMANDS } from "@woofx3/common/cloudevents/Twitch/commands";
 import { FakeTime } from "../../../host/testing";
 import type { HelixAuth } from "./helix";
 import { type SelfSentRecorder, SelfSentRegistry } from "./self-sent";
@@ -7,7 +8,6 @@ import type { EnqueueOutcome, ShoutoutTarget } from "./shoutoutQueue";
 import TwitchApi, {
   isTwitchApiCommand,
   normalizeHelixTime,
-  TWITCH_API_COMMANDS,
   TwitchApiError,
   type TwitchApiErrorCode,
   twitchApiErrorCodeOf,
@@ -378,7 +378,7 @@ describe("the twitchapi command list", () => {
   });
 
   test("names only methods that exist", () => {
-    for (const command of TWITCH_API_COMMANDS) {
+    for (const command of TWITCHAPI_COMMANDS) {
       expect(typeof (TwitchApi.prototype as unknown as Record<string, unknown>)[command]).toBe("function");
     }
   });

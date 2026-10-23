@@ -1,9 +1,11 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
-import type {
-  CreateMarkerArgs,
-  HelixCommandResult,
-  TimeoutArgs,
-  UpdateStreamArgs,
+import {
+  type CreateMarkerArgs,
+  type HelixCommandResult,
+  TWITCHAPI_COMMANDS,
+  type TimeoutArgs,
+  type TwitchApiCommand,
+  type UpdateStreamArgs,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import { HELIX_DEADLINE_MS, type HelixAuth, runHelixOperation } from "./helix";
 import type { SelfSentRecorder } from "./self-sent";
@@ -219,28 +221,6 @@ export function validateTags(tags: unknown): string[] {
 }
 
 /**
- * The methods served on the `twitchapi` subject. Listed rather than read off
- * the class so a request can never reach a private helper or `constructor`.
- */
-export const TWITCH_API_COMMANDS = [
-  "clip",
-  "listChannelPointRewards",
-  "shoutout",
-  "addChannelModerator",
-  "timeout",
-  "updateStream",
-  "createMarker",
-  "searchCategories",
-  "getStreamInfo",
-  "getUser",
-  "getAdSchedule",
-  "snoozeNextAd",
-  "helix",
-] as const satisfies readonly (keyof TwitchApi)[];
-
-export type TwitchApiCommand = (typeof TWITCH_API_COMMANDS)[number];
-
-/**
  * What the dispatcher passes every command besides its args. Only `helix`
  * reads it today: the other commands go through Twurple's client, which
  * takes no deadline.
@@ -257,7 +237,7 @@ export interface TwitchApiCall {
 }
 
 export function isTwitchApiCommand(command: string): command is TwitchApiCommand {
-  return (TWITCH_API_COMMANDS as readonly string[]).includes(command);
+  return (TWITCHAPI_COMMANDS as readonly string[]).includes(command);
 }
 
 const AD_SCOPE_MESSAGE = "reconnect Twitch to allow ad controls";

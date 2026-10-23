@@ -27,36 +27,49 @@ import type { SelfSentRegistry } from "./lib/self-sent";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
 import type TwitchApiClient from "./lib/twitch";
 import TwitchApiClientImpl, { isTwitchApiCommand, type TwitchApiCall, twitchApiErrorCodeOf } from "./lib/twitch";
+import { TWITCH_API_HANDLERS } from "./lib/twitchApiCommands";
 import TwitchEventBus from "./lib/twitchEventBus";
 import type { EventPublisher } from "./types";
 
-/**
- * Inbound request on the `twitchapi` subject: `{ command, args? }`.
- */
+/** Inbound request on the `twitchapi` subject: `{ command, args? }`. */
 interface TwitchApiRequest {
   command: string;
   args?: Record<string, unknown>;
 }
+
+export type ParsedTwitchApiRequest = { ok: true; request: TwitchApiRequest } | { ok: false; error: string };
 
 /**
  * The request carried by a `twitchapi` message. Two senders shape it
  * differently and both are served: the api wraps it in a CloudEvent
  * (`{ type, source, time, data: { command, args } }`), while the sandbox's
  * `ctx.twitch` and the chatbot's built-in commands send the bare
- * `{ command, args }`.
+ * `{ command, args }`. `args`, when present, has to be an object: each
+ * command reads its fields by name.
  */
-export function parseTwitchApiRequest(body: unknown): TwitchApiRequest | null {
-  if (!body || typeof body !== "object") {
-    return null;
+export function parseTwitchApiRequest(body: unknown): ParsedTwitchApiRequest {
+  const envelope = asRecord(body);
+  if (!envelope) {
+    return { ok: false, error: "Missing command" };
   }
-  const record = body as { command?: unknown; data?: unknown };
-  if (typeof record.command === "string") {
-    return record as TwitchApiRequest;
+  const record = typeof envelope.command === "string" ? envelope : asRecord(envelope.data);
+  if (!record || typeof record.command !== "string" || record.command === "") {
+    return { ok: false, error: "Missing command" };
   }
-  if (record.data && typeof record.data === "object") {
-    return record.data as TwitchApiRequest;
+  if (record.args === undefined) {
+    return { ok: true, request: { command: record.command } };
   }
-  return null;
+  const args = asRecord(record.args);
+  if (!args) {
+    return { ok: false, error: `${record.command}: args must be an object` };
+  }
+  return { ok: true, request: { command: record.command, args } };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 }
 
 /**
@@ -552,17 +565,18 @@ export default class TwitchApplication {
   }
 
   private async answer(ctx: TwitchAppContext, body: Uint8Array, deadline: number, span: Span): Promise<Uint8Array> {
-    let request: TwitchApiRequest | null;
+    let parsed: ParsedTwitchApiRequest;
     try {
-      request = parseTwitchApiRequest(JSON.parse(decoder.decode(body)));
+      parsed = parseTwitchApiRequest(JSON.parse(decoder.decode(body)));
     } catch (err) {
       ctx.logger.error("twitchapi: failed to parse request", { err: errorMessage(err) });
       return this.errorReply("Invalid request payload");
     }
 
-    if (!request?.command) {
-      return this.errorReply("Missing command");
+    if (!parsed.ok) {
+      return this.errorReply(parsed.error);
     }
+    const request = parsed.request;
 
     if (!ctx.twitchApi) {
       // A relink to another account reconnects in place; Twitch is linked, so
@@ -582,24 +596,25 @@ export default class TwitchApplication {
       ctx.logger.warn("twitchapi: unknown command", { command: request.command });
       return this.errorReply(`Unknown command: ${request.command}`);
     }
+    const command = request.command;
 
-    span.updateName(`twitchapi.${request.command}`);
-    span.setAttribute("rpc.method", request.command);
+    span.updateName(`twitchapi.${command}`);
+    span.setAttribute("rpc.method", command);
 
-    const twitchApi = ctx.twitchApi as unknown as Record<
-      string,
-      (input: unknown, call: TwitchApiCall) => Promise<unknown>
-    >;
     const call: TwitchApiCall = {
       helixDeadlineMs: Math.max(0, Math.min(HELIX_DEADLINE_MS, deadline - this.deps.clock.now())),
     };
 
     try {
-      const result = await twitchApi[request.command](request.args ?? {}, call);
-      return twitchApiReply(twitchApiResultType(request.command), result, this.deps);
+      const outcome = await TWITCH_API_HANDLERS[command](ctx.twitchApi, request.args ?? {}, call);
+      if (!outcome.ok) {
+        ctx.logger.warn("twitchapi: refused invalid args", { command, err: outcome.error });
+        return this.errorReply(`${command}: ${outcome.error}`, outcome.code);
+      }
+      return twitchApiReply(twitchApiResultType(command), outcome.value, this.deps);
     } catch (err) {
       const message = errorMessage(err);
-      ctx.logger.error("twitchapi: handler failed", { command: request.command, err: message });
+      ctx.logger.error("twitchapi: handler failed", { command, err: message });
       return this.errorReply(message, twitchApiErrorCodeOf(err));
     }
   }

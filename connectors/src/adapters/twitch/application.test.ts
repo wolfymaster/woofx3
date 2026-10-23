@@ -184,7 +184,8 @@ describe("TwitchApplication twitchapi requests", () => {
       args: { a: "b" },
     });
 
-    expect(getStreamInfo).toHaveBeenCalledWith({ a: "b" }, expect.anything());
+    // Fields a command does not take are dropped, not refused.
+    expect(getStreamInfo).toHaveBeenCalledWith({});
     expect(reply).toEqual({
       id: expect.any(String),
       type: "twitchapi.getStreamInfo.result",
@@ -199,6 +200,9 @@ describe("TwitchApplication twitchapi requests", () => {
     ["a private helper", { command: "resolveUser" }, "Unknown command: resolveUser"],
     ["no command", { args: {} }, "Missing command"],
     ["a body that is not an object", 42, "Missing command"],
+    ["an empty command", { command: "" }, "Missing command"],
+    ["args that are not an object", { command: "getUser", args: "pup" }, "getUser: args must be an object"],
+    ["args that are an array", { command: "getUser", args: ["pup"] }, "getUser: args must be an object"],
   ];
   for (const [name, body, error] of refusals) {
     test(`refuses ${name} with an uncoded twitchapi.error`, async () => {
@@ -207,6 +211,40 @@ describe("TwitchApplication twitchapi requests", () => {
       expect(reply.data).toEqual({ error });
     });
   }
+
+  const badArgs: Array<[command: string, args: unknown, error: string]> = [
+    ["getUser", { userId: 123 }, "getUser: userId: Invalid input: expected string, received number"],
+    ["shoutout", { userName: false }, "shoutout: userName: Invalid input: expected string, received boolean"],
+    ["timeout", { userId: "u1" }, "timeout: durationSeconds: Invalid input: expected number, received undefined"],
+    ["updateStream", { tags: "a,b" }, "updateStream: tags: Invalid input: expected array, received string"],
+    ["searchCategories", {}, "searchCategories: query: Invalid input: expected string, received undefined"],
+    [
+      "addChannelModerator",
+      { userId: null },
+      "addChannelModerator: userId: Invalid input: expected string, received null",
+    ],
+  ];
+  for (const [command, args, error] of badArgs) {
+    test(`refuses ${command} with args of the wrong shape as invalid_arguments, without running it`, async () => {
+      const run = mock(async () => ({ ok: true }));
+      const reply = await ask(app, context({ twitchApi: { [command]: run } as never }), { command, args });
+
+      expect(reply.type).toBe("twitchapi.error");
+      expect(reply.data).toEqual({ error, code: "invalid_arguments" });
+      expect(run).not.toHaveBeenCalled();
+    });
+  }
+
+  test("reads the request out of a CloudEvent's data", async () => {
+    const getUser = mock(async () => ({ userId: "u1" }));
+    const reply = await ask(app, context({ twitchApi: { getUser } as never }), {
+      type: "twitchapi",
+      data: { command: "getUser", args: { userName: "pup" } },
+    });
+
+    expect(getUser).toHaveBeenCalledWith({ userName: "pup" });
+    expect(reply.type).toBe("twitchapi.getUser.result");
+  });
 
   test("refuses a body that is not JSON", async () => {
     const ctx = context({ twitchApi: {} as never });
