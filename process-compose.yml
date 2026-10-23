@@ -53,8 +53,3 @@ processes:
     command: go run .
     description: Workflow Management
     working_dir: workflow
-
-  woofwoofwoof:
-    command: bun run src/woofwoofwoof.ts
-    description: Twitch Chatbot
-    working_dir: woofwoofwoof

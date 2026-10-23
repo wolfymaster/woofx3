@@ -14,6 +14,7 @@ const CONFIG: ChatConfig = {
   groups: { lastSeenCapacity: CHAT_DEFAULTS.groupLastSeenCapacity, catalogTtlMs: CHAT_DEFAULTS.groupCatalogTtlMs },
   store: { reloadDebounceMs: CHAT_DEFAULTS.reloadDebounceMs, reloadBackstopMs: CHAT_DEFAULTS.reloadBackstopMs },
   twitchApi: { timeoutMs: CHAT_DEFAULTS.twitchApiTimeoutMs },
+  drainMs: CHAT_DEFAULTS.drainMs,
   replyTimeoutMs: 12_000,
 };
 
@@ -146,6 +147,17 @@ describe("ChatDispatcher", () => {
         requestedBy: { kind: "dispatcher", ref: "chat-dispatcher" },
       },
     ]);
+  });
+
+  test("snapshot tallies how each line ended and how many commands are loaded", async () => {
+    db.commands = [storedCommand()];
+    await start();
+    await say({ message: "!title hi", membership: BROADCASTER });
+    await say({ message: "just chatting", membership: BROADCASTER });
+    await say({ message: "!title x", membership: BROADCASTER, fromEngine: true });
+    const snapshot = dispatcher.snapshot();
+    expect(snapshot.lines).toMatchObject({ ran: 1, no_command: 1, from_engine: 1, refused: 0 });
+    expect(snapshot.commands).toMatchObject({ builtins: 1, storedCommands: 1, reloadFailures: 0 });
   });
 
   test("a line the engine said itself runs nothing", async () => {

@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { RELAY_CONFIG_UPDATED_SUBJECT } from "@woofx3/common/cloudevents/Relay/relay";
+import { FakeDispatcherDb } from "../../chat/testing";
 import type { EndpointStore } from "../../companion/endpoint-store";
 import { MODULE_SETTING_UPDATED_SUBJECT } from "../../companion/route-watch";
+import { ChatEnvSchema, chatConfig } from "../../config/chat";
 import { GatewayEnvSchema, gatewayConfig } from "../../config/gateway";
 import { HostEnvSchema, hostConfig } from "../../config/host";
 import { OBS_SERVED_BUDGETS_MS, type ObsConfig, ObsEnvSchema, obsConfig } from "../../config/obs";
@@ -203,6 +205,8 @@ function hosted(config: ObsConfig = CLOSED_OBS, store = emptyStore, modules: Ins
     config: hostDefaults,
     gateway: gatewayConfig(GatewayEnvSchema.parse({})),
     companion: testCompanion(store),
+    chat: chatConfig(ChatEnvSchema.parse({})),
+    dispatcherDb: new FakeDispatcherDb(),
     dbProxy: { baseURL: "http://db.test" },
     bus,
     busConnected: () => true,

@@ -30,9 +30,23 @@ describe("CommandStore", () => {
       db,
       table,
       define: (stored) => storedCommandDefinition(stored, noRunner, logger),
+      clock: time,
       timers: time,
       logger,
     });
+  });
+
+  test("snapshot counts stored commands, the last good reload and failed reloads", async () => {
+    expect(store.snapshot()).toEqual({ storedCommands: 0, lastReloadAt: undefined, reloadFailures: 0 });
+    db.commands = [storedCommand()];
+    await store.start();
+    const loadedAt = time.now();
+    expect(store.snapshot()).toEqual({ storedCommands: 1, lastReloadAt: loadedAt, reloadFailures: 0 });
+    db.failListing = true;
+    store.requestReload();
+    await time.advance(CONFIG.reloadDebounceMs);
+    await store.idle();
+    expect(store.snapshot()).toEqual({ storedCommands: 1, lastReloadAt: loadedAt, reloadFailures: 1 });
   });
 
   test("start loads the table", async () => {
