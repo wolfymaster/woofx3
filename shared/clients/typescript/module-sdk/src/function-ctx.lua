@@ -219,6 +219,31 @@
 ---@field listSources fun(): { value: string, label: string, group?: string }[]
 ---@field listInputs fun(): { value: string, label: string, group?: string }[]
 
+---How `ctx.local.request` recognises the device's answer: the first JSON
+---object the device sends back whose top-level `field` holds `value`
+---exactly.
+---@class LocalEndpointMatch
+---@field field string          letters, digits and `_`, at most 40 characters
+---@field value string|integer  a non-empty string, or a whole number
+
+---`ctx.local.*`: talk to a device on the streamer's own network that your
+---manifest declares in `local[]`. Only your module's own websocket endpoints
+---are reachable, never another module's, and never one the engine manages
+---itself (OBS: use `ctx.obs`). `local` is a Lua keyword, so write
+---`ctx["local"].send(...)`.
+---
+---`message` is a string, or a table sent as JSON. Each call waits up to
+---`timeoutMs` (default and most 4500, at least 100), never past the end of
+---the function's run, and raises a `CtxHostError` with a `code` when
+---refused. At most 20 calls per run.
+---
+---`sessionEpoch` names the connection the engine used, and changes whenever
+---it opens a new one. A device that wants a sign-in per connection needs you
+---to sign in again when it changes.
+---@class CtxLocalExtension
+---@field send fun(args: { endpoint: string, message: string|table, timeoutMs?: integer }): { ok: boolean, sessionEpoch: string }
+---@field request fun(args: { endpoint: string, message: string|table, match: LocalEndpointMatch, timeoutMs?: integer }): { reply: table, sessionEpoch: string }
+
 ---The `ctx` object passed to every function invocation. Combines the
 ---built-in surface with extension namespaces the host registered. Each
 ---extension namespace is optional — check for presence before calling
@@ -241,3 +266,4 @@
 ---@field result fun(value: any, events?: CtxResultEvent[]): CtxResult
 ---@field twitch? CtxTwitchExtension
 ---@field obs? CtxObsExtension
+---@field local? CtxLocalExtension  absent on engines that predate it
