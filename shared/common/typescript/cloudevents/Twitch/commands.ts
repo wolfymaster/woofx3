@@ -7,9 +7,9 @@ export const TWITCHAPI_SUBJECT = "twitchapi";
  * How long the connectors host holds a `twitchapi` request before it answers
  * for the adapter, time spent held while the adapter starts included. A
  * caller waiting less than this reports "no answer" for calls the adapter
- * would still have answered. Above HELIX_DEADLINE_MS (8_000), so a Helix call
- * reports its own timeout first, and below the 10_000 the api and the sandbox
- * wait, so those callers always get a reply.
+ * would still have answered. Above HELIX_DEADLINE_MS, so a Helix call reports
+ * its own timeout first, and below the wait of the api and the sandbox, so
+ * those callers always get a reply.
  */
 export const TWITCHAPI_SERVED_BUDGET_MS = 9_000;
 

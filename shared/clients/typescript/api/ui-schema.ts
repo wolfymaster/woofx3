@@ -233,7 +233,7 @@ export interface ConfigField {
    * Stored field lists carry `null` for an absent condition.
    * Engines that predate this property refuse the manifest at install.
    */
-  visibleWhen?: VisibleWhen;
+  visibleWhen?: VisibleWhen | null;
 }
 
 /**

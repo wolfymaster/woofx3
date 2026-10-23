@@ -63,7 +63,7 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
       chat: this.deps.config.chat,
       companion: {
         config: this.deps.config.companion,
-        store: dbProxyEndpointStore(dbProxy.client),
+        store: dbProxyEndpointStore(dbProxy.client, this.deps.logger),
         fetch: (url, init) => fetch(url, init),
         resolver: async (name) => (await lookup(name, { all: true })).map((answer) => answer.address),
         openSocket: (url) => new WebSocket(url),
