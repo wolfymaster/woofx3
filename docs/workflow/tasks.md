@@ -61,9 +61,10 @@ Returns all parameters as-is.
 
 #### `chat.reply`
 
-Sends one message to chat by publishing `message.send`, consumed by
-woofwoofwoof, which holds the chat client. This is how module functions reply:
-they return `ctx.success(message)` and a `chat.reply` step posts it.
+"Send chat message". Sends one message through the
+[platform gateway](../services/platform-gateway.md) in connectors and waits for
+what happened on each platform. This is how module functions reply: they
+return `ctx.success(message)` and a `chat.reply` step posts it.
 
 ```json
 {
@@ -71,7 +72,8 @@ they return `ctx.success(message)` and a `chat.reply` step posts it.
   "type": "action",
   "action": "chat.reply",
   "parameters": {
-    "message": "thanks for the ${trigger.data.amount} bits, ${trigger.data.userName}!"
+    "message": "thanks for the ${trigger.data.amount} bits, ${trigger.data.userName}!",
+    "platform": "origin"
   }
 }
 ```
@@ -79,8 +81,54 @@ they return `ctx.success(message)` and a `chat.reply` step posts it.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `action` | `string` | Yes | Must be `"chat.reply"`. Set at the task top level. |
-| `parameters.message` | `string` | Yes | What to say. Supports expressions. |
-| `parameters.platform` | `string` | No | Where to say it. Defaults to `"twitch"`. |
+| `parameters.message` | `string` | Yes | What to say, up to 500 characters. Supports expressions. |
+| `parameters.platform` | `string` | No | Where to say it: `origin` (the default), `all`, or a platform id such as `twitch`. Supports expressions. |
+
+`platform` picks the gateway target:
+
+| Value | Target |
+|-------|--------|
+| empty or `origin` | The platform the trigger event came from (its `platform` attribute). When the event carries a `messageId`, as `user.message` does, the line is posted as a reply to it. A trigger from no platform, such as a timer or the dashboard, sends to `all`. A trigger from a platform the gateway does not know fails the step. |
+| `all` | Every platform that is linked and enabled. |
+| a platform id | That platform alone. An id the gateway does not know fails the step. |
+
+When a workflow is saved, `platform` must be empty, `origin`, `all`, an
+expression, or shaped like a platform id (`^[a-z][a-z0-9_]{0,31}$`). A
+platform this engine has no adapter for is not refused then, so a stored
+workflow still loads; its step fails with the reason when it runs. Steps saved
+before the parameter existed have none, and answer where they were triggered.
+
+The step succeeds only when the gateway's reply is ok (see
+[When a reply is ok](../services/platform-gateway.md#when-a-reply-is-ok)).
+Otherwise it fails with one reason per platform, for example
+`chat.send did not go through: twitch: unavailable (disabled)`, so
+a turned-off or unlinked platform shows in the run history rather than passing
+silently. It also fails when connectors is not running, and when the gateway
+does not answer within 12 seconds; that error says the platform may have acted,
+since the request was sent.
+
+Returns:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | `string` | The message sent. |
+| `ok` | `boolean` | The gateway's verdict; always `true` on a step that succeeded. |
+| `results` | `object` | One outcome per platform, keyed by platform id, in the gateway's wire shape (`status`, plus `messageId`, `reason`, `code` or `message` as the status has them). |
+
+Each request carries:
+
+- **Idempotency key** `<executionId>:<taskId>`. The engine never retries a
+  step, so the key is used once per step of a run; a duplicate of that request
+  gets the first reply instead of posting twice. A replay is a new run with a
+  new key, so it posts again.
+- **Requested by** `{ kind: "workflow", ref: <workflowId> }`.
+- **Workflow chain** the run's chain plus this workflow. The platform's echo
+  of the posted line carries it back on `user.message`, so a workflow
+  answering chat lines that answers its own is stopped by the
+  [loop guard](./execution.md#loops) after eight runs.
+
+A dry run checks the message and platform the same way, without asking the
+gateway, and records `would send "<message>" to <where>`.
 
 Native rather than a module function, so replying in chat needs no module
 installed. This is what a chat command's reply is made of — see
