@@ -159,6 +159,31 @@ never when it is stored. Each layout widget boots with `surface: "alert"` and re
 one `alert` event whose `data` is the triggering CloudEvent (`{ type, data }`, or
 `null` when nothing triggered the workflow).
 
+The page plays alerts on **prepared** stages, so a widget's frame has usually loaded
+before its alert is due. A prepared stage is built transparent and already fitted
+to the area, with its frames booting and painting and its time held at its first
+moment. (Transparent rather than `visibility: hidden`, and fitted rather than left at
+its canvas size, because Chromium stops rendering a cross-origin frame that is hidden
+or clipped out of view, so a widget could not paint before it is shown.) An alert area keeps up to four prepared stages,
+one per shape (the same layout, behaviors and frames, whatever the settings), and
+decides which from its queue each time the queue changes: first the shapes of the
+alerts waiting in it, in the order they will play, so an alert's frames boot while it
+waits its turn; then, only while no alert is on screen, the shapes it played most
+recently, each prepared from the last alert of that shape, so preparing for an alert
+nobody is waiting on never competes with one on screen. When more shapes are wanted
+than it keeps, the stages due soonest stay and a shape due later than all of them is
+not prepared. An alert delivered to an idle area with nothing of its shape prepared
+plays at once on frames made for it. An alert takes over the prepared stage of its
+shape. Its settings are handed to the running widgets as a settings change, and only
+then is the alert's event sent. If a widget read a setting the alert changes while it
+booted, or has not painted yet (so what it read is not known yet), its
+frame might not show the new value, so the alert gets fresh frames instead. Each stage plays one
+alert and is then removed. A widget in a prepared stage boots with an instance id of
+its stage's (`prepared-{n}.{widgetId}`), not the alert's; its status reports are
+recorded under `{eventId}.{widgetId}` once its alert is known. Widget code therefore
+runs well before its alert, sometimes for an alert that never comes; see
+[Playing in an alert](../barkloader/sdk.md#playing-in-an-alert).
+
 A layout widget that subscribes with `autoComplete: false` has a length of its own and
 holds the alert until it calls `complete()`; one that completes on handler return has
 none. Once every timed widget is done, or after 5 seconds when none is timed, the
@@ -183,12 +208,16 @@ without adding logging:
 - **The page.** One alert is delivered to every alert area on a scene, and each area
   plays it on its own, so the overlay's User Timing marks are named for the area
   (`areaId`, the alert area's placement id) as well as the alert:
-  `woofx3.alert/{eventId}/{areaId}/{stage}` for `delivered`, `started` and `finished`
-  (the alert is off the stage: played out, skipped, or torn down with its area), and
+  `woofx3.alert/{eventId}/{areaId}/{stage}` for `delivered`, `prepared` (it played on a
+  stage built before its turn came; an alert that played on frames made for it has no
+  such mark), `started` and `finished` (the alert is off the stage: played out, skipped,
+  or torn down with its area), and
   `woofx3.alert/{eventId}/{areaId}/{widgetId}/{stage}` for each frame's `mounted`,
   `ready` (the frame's shim is running: its response arrived and its head was parsed up
   to the shim script, while the body and the widget's own scripts are still to load),
-  `subscribed` (the widget's own script has run) and `rendered`. The measure
+  `subscribed` (the widget's own script has run) and `rendered`. On a prepared stage,
+  the steps its frames reached before the alert are marked, under the area the alert
+  plays in, as it starts. The measure
   `woofx3.alert/{eventId}/{areaId}/on-screen` spans from delivery to the area's first
   widget paint; its `detail.from` is `delivered`, or `started` for an alert delivered
   before the page loaded. They appear in the devtools Performance panel, and

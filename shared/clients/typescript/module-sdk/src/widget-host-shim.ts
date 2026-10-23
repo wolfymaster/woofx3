@@ -572,6 +572,12 @@ export function installWidgetHostShim(options: InstallWidgetHostShimOptions = {}
       }
       const subId = allocId("esub");
       eventSubs.set(subId, { handler, queue });
+      // A host that sees the subscription before the reads made ahead of it
+      // would take the widget for one that read nothing, and could patch a
+      // setting it has already drawn instead of reloading it.
+      if (reportScheduled) {
+        reportReads();
+      }
       send(envelope({ type: "events.subscribe" as const, subId, queue }));
       return () => {
         if (!eventSubs.delete(subId)) {

@@ -1,7 +1,7 @@
 // One alert as the scene manager records it on a scene event and pushes it to
 // an overlay page, which plays it. Both ends import it.
 
-import { alertCompositionOf, type CompositionDocument, type NodeId } from "@woofx3/scene/model";
+import { alertCompositionOf, type CompositionDocument, moduleIdOfCanonicalId, type NodeId } from "@woofx3/scene/model";
 
 /**
  * Where one widget of an alert loads from and what boots it, as a scene
@@ -42,8 +42,8 @@ export interface AlertDelivery {
 
 /**
  * The alert in a delivery's value, or null for one that cannot be played: no
- * layout, a canvas with no size, or a widget with no frame to load. A layout
- * in the older list shape is converted.
+ * layout, a canvas with no size, or a widget with no canonical id or no frame
+ * to load. A layout in the older list shape is converted.
  */
 export function parseAlertDelivery(raw: unknown): AlertDelivery | null {
   if (!isRecord(raw) || typeof raw.alertId !== "string") {
@@ -57,7 +57,11 @@ export function parseAlertDelivery(raw: unknown): AlertDelivery | null {
     return null;
   }
   const frames: Record<NodeId, AlertWidgetFrame> = {};
-  for (const widgetId of Object.keys(layout.widgets)) {
+  for (const [widgetId, placement] of Object.entries(layout.widgets)) {
+    // A widget's frame, status and files are all keyed by its module.
+    if (moduleIdOfCanonicalId(placement.widget) === null) {
+      return null;
+    }
     const frame = parseWidgetFrame(raw.frames[widgetId]);
     if (frame === null) {
       return null;

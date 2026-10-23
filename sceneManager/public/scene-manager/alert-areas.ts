@@ -78,6 +78,7 @@ export class AlertAreas {
         }
         deps.ackAlert("completed", eventId, instanceId);
       },
+      waiting: () => (registration === null ? [] : deps.queues.pending(registration)),
     });
     this.areas.set(instanceId, area);
     registration = deps.queues.register(

@@ -53,8 +53,11 @@ export const TRACKED_ALERT_TIMINGS = 200;
 /**
  * Steps of the alert as a whole in one area: it reached the page, its turn
  * came, it is off the stage (played out, skipped, or torn down with its area).
+ * `prepared` is marked as it starts when it plays on a stage built before its
+ * turn came (alert-widget.ts); one that plays on frames made for it as it
+ * starts, such as an alert reaching an idle area, has no such mark.
  */
-export type AlertStage = "delivered" | "started" | "finished";
+export type AlertStage = "delivered" | "prepared" | "started" | "finished";
 
 /**
  * Steps of one widget's frame: it was put on the stage, the frame's shim is

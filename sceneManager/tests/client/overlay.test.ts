@@ -7,6 +7,7 @@ import { describe, expect, it } from "bun:test";
 import type { RenderAnimation, RenderStyle } from "@woofx3/scene/runtime";
 import { generateNonce, type PageHost } from "@woofx3/widget-host/page";
 import { decodePlacementBoot } from "@woofx3/module-sdk";
+import { UNTIMED_ALERT_MS } from "@woofx3/scene/model";
 import { encodeStreamFrame, type StreamFrame } from "../../contract/overlay-stream";
 import type { SceneConfig } from "../../contract/scene-config";
 import type { PageMarks } from "../../public/scene-manager/alert-timing";
@@ -258,7 +259,7 @@ function setup(options: { refreshStatus?: number } = {}) {
   return { env, timers, warnings, streams, requests, reloads, peerReloads, connected, marked, body, frames, fromFrame };
 }
 
-/** The frame of alert widget `instanceId` (`{eventId}.{widgetId}`), read from its boot fragment. */
+/** The frame booted as `instanceId` (`{preparedAlertId}.{widgetId}`), read from its boot fragment. */
 function alertFrame(page: ReturnType<typeof setup>, instanceId: string): FakeElement {
   const frame = page
     .frames()
@@ -267,6 +268,79 @@ function alertFrame(page: ReturnType<typeof setup>, instanceId: string): FakeEle
     throw new Error(`no frame for alert widget ${instanceId}`);
   }
   return frame;
+}
+
+/** A one-widget alert delivery for alert area a1, its text widget showing `text`. */
+function alertFrameOf(eventId: string, text: string) {
+  return {
+    eventId,
+    instanceId: "a1",
+    type: "alert",
+    key: `alert-${eventId}`,
+    value: {
+      alertId: `alert-${eventId}`,
+      layout: {
+        layout: { width: 800, height: 600 },
+        widgets: {
+          t1: {
+            widget: "woofx3:widget:text",
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 100,
+            visible: true,
+            z: "a1",
+            settings: { text },
+            name: "",
+            rotation: 0,
+            opacity: 1,
+            locked: false,
+            extra: {},
+          },
+        },
+        behaviors: {},
+      },
+      frames: { t1: { frameUrl: "/frames/woofx3/text?v=1", linkedResources: {} } },
+      event: null,
+    },
+  };
+}
+
+/** A frame's widget boots: says hello, reports reading `reads`, subscribes and paints. */
+function bootWidget(page: ReturnType<typeof setup>, frame: FakeElement, reads: string[], subId: string): void {
+  page.fromFrame(frame, { type: "hello", instanceId: "", sdkVersion: "test" });
+  page.fromFrame(frame, { type: "settings.reads", keys: reads, all: false });
+  page.fromFrame(frame, { type: "events.subscribe", subId });
+  page.fromFrame(frame, { type: "rendered" });
+}
+
+/** The alert stage a frame is on. */
+function stageOf(frame: FakeElement): FakeElement {
+  let element: FakeElement | null = frame;
+  while (element !== null && element.className !== "alert-stage") {
+    element = element.parent;
+  }
+  if (element === null) {
+    throw new Error("frame is not on an alert stage");
+  }
+  return element;
+}
+
+/** Messages of `type` a frame was sent. */
+function sentTo(frame: FakeElement, type: string): Array<Record<string, unknown>> {
+  return (frame.posted as Array<Record<string, unknown>>).filter((message) => message.type === type);
+}
+
+/** Play alert ev-1 on a fresh page and let it finish, which prepares the next alert of its shape. */
+async function afterFirstAlert() {
+  const page = setup();
+  await settle();
+  await page.streams[0]!.send({ kind: "hello", bootId: "boot-1", seq: 0, draftSeq: 0 });
+  await page.streams[0]!.send({ kind: "delivery", frame: alertFrameOf("ev-1", "one") });
+  await page.timers.advance(10);
+  bootWidget(page, alertFrame(page, "prepared-1.t1"), [], "sub-1");
+  await page.timers.advance(UNTIMED_ALERT_MS + 1_000);
+  return page;
 }
 
 describe("an overlay page", () => {
@@ -361,7 +435,7 @@ describe("an overlay page", () => {
       },
     });
     await page.timers.advance(10);
-    const frame = alertFrame(page, "ev-9.t1");
+    const frame = alertFrame(page, "prepared-1.t1");
     page.fromFrame(frame, { type: "hello", instanceId: "ev-9.t1", sdkVersion: "test" });
     page.fromFrame(frame, { type: "events.subscribe", subId: "sub-1" });
     page.fromFrame(frame, { type: "rendered" });
@@ -419,16 +493,103 @@ describe("an overlay page", () => {
     });
     await page.timers.advance(10);
 
-    const frame = alertFrame(page, "ev-3.t1");
+    const frame = alertFrame(page, "prepared-1.t1");
     expect(frame.src.startsWith("/frames/woofx3/text?v=7#")).toBe(true);
     expect(frame.attributes.get("sandbox")).toBe("allow-scripts");
     expect(decodePlacementBoot(frame.src.slice(frame.src.indexOf("#")))).toEqual({
       nonce: NONCE,
-      instanceId: "ev-3.t1",
+      instanceId: "prepared-1.t1",
       surface: "alert",
       settings: { text: "thanks" },
       linkedResources: { voice: "woofx3:voice:a" },
     });
+  });
+
+  it("prepares the next alert of a shape, hidden, once an alert of it has played", async () => {
+    const page = await afterFirstAlert();
+
+    const prepared = alertFrame(page, "prepared-2.t1");
+    expect(stageOf(prepared).style.opacity).toBe("0");
+    expect(sentTo(prepared, "event.deliver")).toEqual([]);
+    expect(() => alertFrame(page, "prepared-1.t1")).toThrow();
+  });
+
+  it("plays an alert on prepared frames, handing them its settings and then its event", async () => {
+    const page = await afterFirstAlert();
+    const prepared = alertFrame(page, "prepared-2.t1");
+    bootWidget(page, prepared, [], "sub-2");
+
+    await page.streams[0]!.send({ kind: "delivery", frame: alertFrameOf("ev-2", "two") });
+    await page.timers.advance(10);
+
+    expect(sentTo(prepared, "settings.changed").map((message) => message.settings)).toEqual([{ text: "two" }]);
+    expect(sentTo(prepared, "event.deliver").map((message) => (message.event as { eventId: string }).eventId)).toEqual([
+      "ev-2",
+    ]);
+    expect(stageOf(prepared).style.opacity).toBe("");
+    expect(page.marked).toContain("woofx3.alert/ev-2/a1/prepared");
+    expect(page.marked).toContain("woofx3.alert/ev-2/a1/on-screen");
+    expect(() => alertFrame(page, "prepared-3.t1")).toThrow();
+  });
+
+  it("plays an alert on fresh frames when a prepared widget read a setting the alert changes", async () => {
+    const page = await afterFirstAlert();
+    const prepared = alertFrame(page, "prepared-2.t1");
+    bootWidget(page, prepared, ["text"], "sub-2");
+
+    await page.streams[0]!.send({ kind: "delivery", frame: alertFrameOf("ev-2", "two") });
+    await page.timers.advance(10);
+
+    expect(() => alertFrame(page, "prepared-2.t1")).toThrow();
+    const fresh = alertFrame(page, "prepared-3.t1");
+    expect(decodePlacementBoot(fresh.src.slice(fresh.src.indexOf("#")))?.settings).toEqual({ text: "two" });
+    expect(page.marked).not.toContain("woofx3.alert/ev-2/a1/prepared");
+  });
+
+  it("plays an alert on fresh frames when a prepared widget has not said yet what it read", async () => {
+    const page = await afterFirstAlert();
+    const prepared = alertFrame(page, "prepared-2.t1");
+    page.fromFrame(prepared, { type: "hello", instanceId: "", sdkVersion: "test" });
+
+    await page.streams[0]!.send({ kind: "delivery", frame: alertFrameOf("ev-2", "two") });
+    await page.timers.advance(10);
+    page.fromFrame(prepared, { type: "settings.reads", keys: ["text"], all: false });
+
+    expect(sentTo(prepared, "settings.changed")).toEqual([]);
+    expect(() => alertFrame(page, "prepared-2.t1")).toThrow();
+    const fresh = alertFrame(page, "prepared-3.t1");
+    expect(decodePlacementBoot(fresh.src.slice(fresh.src.indexOf("#")))?.settings).toEqual({ text: "two" });
+  });
+
+  it("plays an alert on fresh frames when a prepared widget has subscribed but not painted", async () => {
+    const page = await afterFirstAlert();
+    const prepared = alertFrame(page, "prepared-2.t1");
+    page.fromFrame(prepared, { type: "hello", instanceId: "", sdkVersion: "test" });
+    page.fromFrame(prepared, { type: "events.subscribe", subId: "sub-2" });
+
+    await page.streams[0]!.send({ kind: "delivery", frame: alertFrameOf("ev-2", "two") });
+    await page.timers.advance(10);
+
+    expect(sentTo(prepared, "settings.changed")).toEqual([]);
+    expect(() => alertFrame(page, "prepared-2.t1")).toThrow();
+    const fresh = alertFrame(page, "prepared-3.t1");
+    expect(decodePlacementBoot(fresh.src.slice(fresh.src.indexOf("#")))?.settings).toEqual({ text: "two" });
+  });
+
+  it("reports what a prepared widget said before its alert came under that alert", async () => {
+    const page = await afterFirstAlert();
+    const prepared = alertFrame(page, "prepared-2.t1");
+    bootWidget(page, prepared, [], "sub-2");
+    page.fromFrame(prepared, { type: "status.report", key: "state", value: "idle", ts: "" });
+    await settle();
+    expect(page.requests.filter((request) => request.url.includes("prepared-2"))).toEqual([]);
+
+    await page.streams[0]!.send({ kind: "delivery", frame: alertFrameOf("ev-2", "two") });
+    await page.timers.advance(10);
+
+    const posted = page.requests.filter((request) => request.url.endsWith("/widget/ev-2.t1/status"));
+    expect(posted).toHaveLength(1);
+    expect(JSON.parse(posted[0]!.body!)).toMatchObject({ moduleId: "woofx3", key: "state", value: "idle" });
   });
 
   it("reloads, telling the other overlays first, when the server it reconnects to has restarted", async () => {

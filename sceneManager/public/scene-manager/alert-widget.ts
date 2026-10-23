@@ -1,158 +1,40 @@
 // Plays alerts inside an alert widget's area on the scene. An alert widget
 // has no frame of its own: each alert is a composition, which the page plays
-// with the scene runtime on a stage scaled from the alert's canvas to fit the
-// area. The runtime places, stacks, shows and animates the alert's widgets
-// as the alert's timeline says, each widget's frame reporting what the
-// timeline is made of (it subscribed, painted, completed), and the alert is
-// over once every widget has played out, exit animations included. The event
-// queue holds the next alert until this one finishes, so an alert widget
-// plays one alert at a time.
+// on a stage in the area (alert-stage.ts). The event queue holds the next
+// alert until this one finishes, so an alert widget plays one alert at a time.
+//
+// Alerts are played on prepared alerts (prepared-alert.ts): an alert's stage
+// and frames are built hidden, and boot, before it is due. Which shapes are
+// kept prepared is worked out from the queue each time it may have changed:
+// first the shapes of the alerts waiting in it, in the order they will play,
+// so an alert's frames boot while it waits its turn; then, only while nothing
+// is on screen, the shapes played most recently, so the next alert of a shape
+// finds frames ready without preparing ever taking time from one on screen.
+// When the pool is full the stage needed latest makes room, and a shape due
+// later than every stage kept is not prepared. An alert whose prepared frames
+// cannot take its settings is prepared again and played at once, as if none
+// had been ready.
 
-import { encodePlacementBoot, type WidgetBehaviorState, type WidgetEvent } from "@woofx3/module-sdk";
-import { type CompositionDocument, moduleIdOfCanonicalId, type NodeId, PROFILES } from "@woofx3/scene/model";
-import {
-  createDomRenderer,
-  createScheduler,
-  fitCanvas,
-  type RenderDocument,
-  type RenderElement,
-  type Scheduler,
-  type SchedulerClock,
-} from "@woofx3/scene/runtime";
-import {
-  type AssetCache,
-  mountWidgetFrame,
-  type PageHost,
-  type PageLog,
-  type QueuedEvent,
-  type WidgetBridge,
-  type WidgetStatusReportPayload,
+import { moduleIdOfCanonicalId } from "@woofx3/scene/model";
+import type { SchedulerClock } from "@woofx3/scene/runtime";
+import type {
+  AssetCache,
+  PageHost,
+  QueuedEvent,
+  WidgetBridge,
+  WidgetStatusReportPayload,
 } from "@woofx3/widget-host/page";
 import { type AlertDelivery, parseAlertDelivery } from "../../contract/alert-delivery";
 import type { AlertTimings } from "./alert-timing";
-import { BehaviorRelay, entranceOf } from "./widget-behaviors";
+import { alertShape, PreparedAlert } from "./prepared-alert";
 
-/** What one widget's frame reports: the facts the alert's timeline is made of. */
-export interface AlertFrameFacts {
-  /** The widget subscribed to its event; `timed` when it will call `complete()` itself. */
-  subscribed(timed: boolean): void;
-  rendered(): void;
-  completed(): void;
-}
-
-/** One widget's frame in an alert, as the player drives it. */
-export interface AlertFrame {
-  sendBehavior(state: WidgetBehaviorState | null): void;
-  unmount(): void;
-}
-
-export interface AlertPlayerOptions<TElement extends RenderElement<TElement>, THandle> {
-  document: RenderDocument<TElement>;
-  /** Where the alert's canvas goes. */
-  stage: TElement;
-  doc: CompositionDocument;
-  clock: SchedulerClock<THandle>;
-  /** Where a behavior the widget protocol cannot carry is reported; the console when absent. */
-  log?: PageLog;
-  /**
-   * Put a widget's frame in its slot. `entrance` is the widget's own
-   * entrance, to mark the frame with from boot (see `entranceOf`).
-   */
-  mountFrame(
-    slot: TElement,
-    widgetId: NodeId,
-    entrance: WidgetBehaviorState | null,
-    facts: AlertFrameFacts
-  ): AlertFrame;
-  /** Every widget has played out, exits included. Called once, after the player has stopped. */
-  onFinished(): void;
-}
-
-export interface AlertPlayer {
-  /** Take the alert off the stage now, without reporting it finished. Idempotent. */
-  stop(): void;
-}
-
-/** Play one alert on `stage` until it finishes or is stopped. */
-export function playAlert<TElement extends RenderElement<TElement>, THandle>(
-  options: AlertPlayerOptions<TElement, THandle>
-): AlertPlayer {
-  const { doc } = options;
-  const frames = new Map<NodeId, AlertFrame>();
-  const subscribed = new Set<NodeId>();
-  const relay = new BehaviorRelay((widgetId, state) => frames.get(widgetId)?.sendBehavior(state), options.log);
-  let scheduler: Scheduler | null = null;
-  let stopped = false;
-
-  function record(fact: (playing: Scheduler) => void): void {
-    if (stopped) {
-      return;
-    }
-    if (scheduler === null) {
-      throw new Error("alert: a frame reported before the alert started playing");
-    }
-    fact(scheduler);
-  }
-
-  const renderer = createDomRenderer({
-    document: options.document,
-    root: options.stage,
-    // A widget enters once its frame has painted, which a frame under
-    // `visibility: hidden` cannot do until it is shown (see `HideWith`).
-    hideWith: "opacity",
-    mountContent: (slot, widgetId) => {
-      // The engine dispatched only the widget kinds each widget declares
-      // (see alert-layout.ts in the server), so every one left is played.
-      const frame = options.mountFrame(
-        slot,
-        widgetId,
-        entranceOf(doc, widgetId, () => true),
-        {
-          subscribed: (timed) => {
-            subscribed.add(widgetId);
-            record((playing) => playing.widgetSubscribed(widgetId, timed));
-          },
-          rendered: () => record((playing) => playing.widgetRendered(widgetId)),
-          completed: () => {
-            // Only a widget the alert is waiting on can finish; a completion
-            // without a subscription is not one.
-            if (subscribed.has(widgetId)) {
-              record((playing) => playing.widgetCompleted(widgetId));
-            }
-          },
-        }
-      );
-      frames.set(widgetId, frame);
-      return () => {
-        frames.delete(widgetId);
-        relay.forget(widgetId);
-        frame.unmount();
-      };
-    },
-    onDelegate: (widgetId, request) => relay.handle(widgetId, request),
-  });
-
-  function stop(): void {
-    if (stopped) {
-      return;
-    }
-    stopped = true;
-    scheduler?.dispose();
-    renderer.dispose();
-  }
-
-  scheduler = createScheduler({
-    doc,
-    profile: PROFILES.alert,
-    clock: options.clock,
-    renderer,
-    onFinished: () => {
-      stop();
-      options.onFinished();
-    },
-  });
-  return { stop };
-}
+/**
+ * How many prepared alerts an alert widget keeps, one per shape. Each holds a
+ * frame per widget of its alert, booted and idle; a stream's alerts usually
+ * come in a handful of shapes (follow, subscription, raid, ...), each kept
+ * ready at this size.
+ */
+export const DEFAULT_PREPARED_ALERTS = 4;
 
 export interface AlertWidgetOptions {
   /** The alert widget's area on the scene. */
@@ -167,6 +49,8 @@ export interface AlertWidgetOptions {
   assets: AssetCache;
   /** The alert delivered as `eventId` is over; the queue may start the next. */
   onFinished(eventId: string): void;
+  /** The alerts waiting in the area's queue, in the order they will play. */
+  waiting(): readonly QueuedEvent[];
   /** Where the alert's stage and frames are made: the page's document. */
   document: Document;
   /** What alerts play on (page-clock.ts). */
@@ -174,13 +58,31 @@ export interface AlertWidgetOptions {
   host: PageHost;
   /** Where each step of an alert is marked (alert-timing.ts). */
   timings: AlertTimings;
+  /** See `DEFAULT_PREPARED_ALERTS`; 0 prepares each alert only as it plays. */
+  preparedAlerts?: number;
 }
 
 export class AlertWidget {
   /** Tear-down for each alert on screen, by event id. */
   private readonly playing = new Map<string, () => void>();
+  /** Alerts prepared for what is due, by shape, oldest first. */
+  private readonly prepared = new Map<string, PreparedAlert>();
+  /**
+   * The latest delivery of each shape played, by shape, most recent last and
+   * at most `capacity` of them: what an idle area prepares its shapes from.
+   */
+  private readonly played = new Map<string, AlertDelivery>();
+  private readonly capacity: number;
+  private nextPreparedId = 1;
+  private preparing: unknown = null;
+  private disposed = false;
 
-  constructor(private readonly opts: AlertWidgetOptions) {}
+  constructor(private readonly opts: AlertWidgetOptions) {
+    this.capacity = opts.preparedAlerts ?? DEFAULT_PREPARED_ALERTS;
+    if (!Number.isInteger(this.capacity) || this.capacity < 0) {
+      throw new Error("AlertWidget: preparedAlerts must be a non-negative integer");
+    }
+  }
 
   /**
    * Take an alert off screen now. Does not report it finished: it was
@@ -188,14 +90,25 @@ export class AlertWidget {
    */
   stop(eventId: string): void {
     this.playing.get(eventId)?.();
+    this.schedulePreparing();
   }
 
   /**
    * Take every alert off screen and report each finished, for an area leaving
    * the page: nothing would ever finish them otherwise, and the server would
-   * hold them on screen until they time out.
+   * hold them on screen until they time out. Drops every prepared alert.
    */
   dispose(): void {
+    this.disposed = true;
+    if (this.preparing !== null) {
+      this.opts.host.timers.clearTimeout(this.preparing);
+      this.preparing = null;
+    }
+    for (const prepared of this.prepared.values()) {
+      prepared.stop();
+    }
+    this.prepared.clear();
+    this.played.clear();
     for (const [eventId, tearDown] of [...this.playing]) {
       tearDown();
       this.opts.onFinished(eventId);
@@ -218,132 +131,164 @@ export class AlertWidget {
   }
 
   /**
-   * Alert `eventId` reached the page: mark when, and start reading the files
-   * its widgets will ask for now rather than when its turn comes.
+   * Alert `eventId` reached the page: mark when and start reading the files
+   * its widgets will ask for. What to prepare is decided once the queue has
+   * taken it, or dropped it as a repeat.
    */
   delivered(eventId: string, value: unknown): void {
     this.opts.timings.alert(eventId, this.opts.instanceId, "delivered");
     const delivery = parseAlertDelivery(value);
-    if (delivery) {
-      readAheadAlertAssets(this.opts.assets, delivery.layout);
+    if (delivery && !this.playing.has(eventId)) {
+      readAheadAlertAssets(this.opts.assets, delivery);
+      this.schedulePreparing();
     }
   }
 
   private run(eventId: string, delivery: AlertDelivery): void {
-    const { element, timings, instanceId: areaId } = this.opts;
-    timings.alert(eventId, areaId, "started");
-    const canvas = canvasOf(delivery.layout);
-
-    const stage = this.opts.document.createElement("div");
-    stage.className = "alert-stage";
-    stage.style.width = `${canvas.width}px`;
-    stage.style.height = `${canvas.height}px`;
-    const fit = fitCanvas(canvas, { width: element.clientWidth, height: element.clientHeight });
-    stage.style.transform = `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`;
-    element.appendChild(stage);
-
-    const alertEvent: WidgetEvent = {
-      type: "alert",
-      source: "scene-manager",
-      time: new Date(this.opts.host.timers.now()).toISOString(),
-      data: delivery.event,
-      eventId,
-    };
-
-    readAheadAlertAssets(this.opts.assets, delivery.layout);
-    let player: AlertPlayer | null = null;
-    const tearDown = (): void => {
-      timings.alert(eventId, areaId, "finished");
+    const { timings, instanceId: areaId } = this.opts;
+    readAheadAlertAssets(this.opts.assets, delivery);
+    const shape = alertShape(delivery);
+    const ready = this.prepared.get(shape);
+    this.prepared.delete(shape);
+    let alert: PreparedAlert;
+    if (ready?.adopt(delivery) === true) {
+      timings.alert(eventId, areaId, "prepared");
+      alert = ready;
+    } else {
+      ready?.stop();
+      alert = this.build(delivery);
+    }
+    this.rememberPlayed(shape, delivery);
+    // Every way off the stage passes through here once: playing out, a
+    // stop (skip, cancel) and the area's dispose. A stopped alert never
+    // reports finishing, and a finished one is no longer in `playing`.
+    const leave = (): void => {
       this.playing.delete(eventId);
-      player?.stop();
-      stage.remove();
+      alert.stop();
+      timings.alert(eventId, areaId, "finished");
     };
-    this.playing.set(eventId, tearDown);
-    player = playAlert<HTMLElement, unknown>({
-      document: this.opts.document,
-      stage,
-      doc: delivery.layout,
-      clock: this.opts.clock,
-      log: this.opts.host.log,
-      mountFrame: (slot, widgetId, entrance, facts) =>
-        this.mountFrame(eventId, alertEvent, delivery, slot, widgetId, entrance, facts),
-      onFinished: () => {
-        tearDown();
-        this.opts.onFinished(eventId);
-      },
+    this.playing.set(eventId, leave);
+    alert.start(eventId, delivery, () => {
+      leave();
+      this.opts.onFinished(eventId);
+      this.schedulePreparing();
     });
+    this.schedulePreparing();
   }
 
-  private mountFrame(
-    eventId: string,
-    alertEvent: WidgetEvent,
-    delivery: AlertDelivery,
-    slot: HTMLElement,
-    widgetId: NodeId,
-    entrance: WidgetBehaviorState | null,
-    facts: AlertFrameFacts
-  ): AlertFrame {
-    const { bridges, timings, instanceId: areaId } = this.opts;
-    const instanceId = `${eventId}.${widgetId}`;
-    const placement = delivery.layout.widgets[widgetId];
-    const framing = delivery.frames[widgetId];
-    if (placement === undefined || framing === undefined) {
-      throw new Error(`alert ${eventId}: widget ${widgetId} has no placement or frame`);
+  private rememberPlayed(shape: string, delivery: AlertDelivery): void {
+    this.played.delete(shape);
+    this.played.set(shape, delivery);
+    for (const oldest of this.played.keys()) {
+      if (this.played.size <= this.capacity) {
+        break;
+      }
+      this.played.delete(oldest);
     }
-    const moduleId = moduleIdOfCanonicalId(placement.widget);
-    if (moduleId === null) {
-      throw new Error(`alert ${eventId}: widget ${widgetId} has no canonical module id`);
+  }
+
+  /**
+   * Prepare once the current task is done: the queue takes a delivery after
+   * `delivered`, and starts the next alert after an alert's `onFinished`, so
+   * only then does it say what is waiting and whether anything is on screen.
+   */
+  private schedulePreparing(): void {
+    if (this.disposed || this.capacity === 0 || this.preparing !== null) {
+      return;
     }
-    const frame = mountWidgetFrame({
-      slot,
-      instanceId,
-      bridges,
-      document: this.opts.document,
-      host: this.opts.host,
-      // The widget's own document, the one its scene placements load and the
-      // browser has cached; this alert's half of the boot rides in the fragment.
-      src: (nonce) =>
-        `${framing.frameUrl}#${encodePlacementBoot({
-          nonce,
-          instanceId,
-          surface: "alert",
-          settings: placement.settings,
-          linkedResources: framing.linkedResources,
-          ...(entrance === null ? {} : { behavior: entrance }),
-        })}`,
-      callbacks: ({ bridge }) => ({
-        onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId, report),
-        onAssetLoad: this.opts.assets.loaderFor(moduleId),
-        onReady: () => timings.frame(eventId, areaId, widgetId, "ready"),
-        onEventsSubscribe: (subId, queue) => {
-          timings.frame(eventId, areaId, widgetId, "subscribed");
-          facts.subscribed(queue?.autoComplete === false);
-          bridge().sendEvent(subId, alertEvent);
-        },
-        onEventsUnsubscribe: () => {},
-        onEventComplete: () => facts.completed(),
-        onDispose: () => {},
-        onRendered: () => {
-          timings.frame(eventId, areaId, widgetId, "rendered");
-          facts.rendered();
-        },
-      }),
-    });
-    timings.frame(eventId, areaId, widgetId, "mounted");
-    return {
-      sendBehavior: (state) => frame.bridge.sendBehavior(state),
-      unmount: () => frame.unmount(),
-    };
+    this.preparing = this.opts.host.timers.setTimeout(() => {
+      this.preparing = null;
+      this.prepareWanted();
+    }, 0);
+  }
+
+  /** Prepare the shapes wanted soonest, making room by dropping the stage wanted latest. */
+  private prepareWanted(): void {
+    if (this.disposed) {
+      return;
+    }
+    const wanted = this.wantedShapes();
+    const rank = new Map([...wanted.keys()].map((shape, index) => [shape, index]));
+    let index = 0;
+    for (const [shape, delivery] of wanted) {
+      if (!this.prepared.has(shape)) {
+        if (this.prepared.size >= this.capacity && !this.dropPreparedAfter(index, rank)) {
+          return;
+        }
+        this.prepared.set(shape, this.build(delivery));
+      }
+      index += 1;
+    }
+  }
+
+  /**
+   * The shapes to keep prepared, soonest wanted first, each with a delivery
+   * to prepare it from: the waiting alerts' shapes in the order they play,
+   * then, when nothing is on screen, the shapes played most recently. At most
+   * `capacity` of them, since a shape ranked after that many is never
+   * prepared, so a long queue (a burst of gifted subs) is read only as far as
+   * the pool reaches.
+   */
+  private wantedShapes(): Map<string, AlertDelivery> {
+    const wanted = new Map<string, AlertDelivery>();
+    for (const item of this.opts.waiting()) {
+      if (wanted.size >= this.capacity) {
+        return wanted;
+      }
+      const delivery = parseAlertDelivery(item.value);
+      if (delivery === null) {
+        continue;
+      }
+      const shape = alertShape(delivery);
+      if (!wanted.has(shape)) {
+        wanted.set(shape, delivery);
+      }
+    }
+    if (this.playing.size === 0) {
+      for (const [shape, delivery] of [...this.played].reverse()) {
+        if (wanted.size >= this.capacity) {
+          break;
+        }
+        if (!wanted.has(shape)) {
+          wanted.set(shape, delivery);
+        }
+      }
+    }
+    return wanted;
+  }
+
+  /**
+   * Drop the prepared alert wanted latest, an unwanted one first and the
+   * oldest of those, when it is wanted later than position `index`. False,
+   * and nothing dropped, when every prepared alert is wanted sooner.
+   */
+  private dropPreparedAfter(index: number, rank: ReadonlyMap<string, number>): boolean {
+    let latest: string | null = null;
+    let latestRank = -1;
+    for (const shape of this.prepared.keys()) {
+      const shapeRank = rank.get(shape) ?? Number.POSITIVE_INFINITY;
+      if (shapeRank > latestRank) {
+        latest = shape;
+        latestRank = shapeRank;
+      }
+    }
+    if (latest === null || latestRank <= index) {
+      return false;
+    }
+    this.prepared.get(latest)?.stop();
+    this.prepared.delete(latest);
+    return true;
+  }
+
+  private build(delivery: AlertDelivery): PreparedAlert {
+    const id = `prepared-${this.nextPreparedId}`;
+    this.nextPreparedId += 1;
+    return new PreparedAlert(this.opts, delivery, id);
   }
 }
 
-function readAheadAlertAssets(assets: AssetCache, layout: CompositionDocument): void {
-  for (const placement of Object.values(layout.widgets)) {
+function readAheadAlertAssets(assets: AssetCache, delivery: AlertDelivery): void {
+  for (const placement of Object.values(delivery.layout.widgets)) {
     assets.warm(moduleIdOfCanonicalId(placement.widget), placement.settings);
   }
-}
-
-/** An alert's canvas size; `parseAlertDelivery` has checked both are positive. */
-function canvasOf(doc: CompositionDocument): { width: number; height: number } {
-  return { width: doc.layout.width as number, height: doc.layout.height as number };
 }

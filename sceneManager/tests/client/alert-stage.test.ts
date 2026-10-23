@@ -9,7 +9,7 @@ import {
   UNTIMED_ALERT_MS,
 } from "@woofx3/scene/model";
 import type { RenderAnimation, RenderElement, RenderStyle } from "@woofx3/scene/runtime";
-import { type AlertFrameFacts, playAlert } from "../../public/scene-manager/alert-widget";
+import { type AlertFrameFacts, stageAlert } from "../../public/scene-manager/alert-stage";
 
 class FakeElement implements RenderElement<FakeElement> {
   readonly style = {} as RenderStyle;
@@ -113,7 +113,7 @@ function boxOf(root: FakeElement, id: string): FakeElement {
   return box;
 }
 
-function setup(doc: CompositionDocument) {
+function setup(doc: CompositionDocument, options: { start: boolean } = { start: true }) {
   const clock = new FakeClock();
   const stage = new FakeElement();
   const facts = new Map<string, AlertFrameFacts>();
@@ -121,7 +121,7 @@ function setup(doc: CompositionDocument) {
   const entrances = new Map<string, WidgetBehaviorState | null>();
   const unmounted: string[] = [];
   let finished: number | null = null;
-  const player = playAlert({
+  const player = stageAlert({
     document: {
       createElement: () => new FakeElement(),
       timeline: {
@@ -146,6 +146,9 @@ function setup(doc: CompositionDocument) {
       finished = clock.now();
     },
   });
+  if (options.start) {
+    player.start();
+  }
   const frame = (id: string): AlertFrameFacts => {
     const found = facts.get(id);
     if (found === undefined) {
@@ -156,7 +159,27 @@ function setup(doc: CompositionDocument) {
   return { clock, stage, frame, facts, sent, entrances, unmounted, player, finished: () => finished };
 }
 
-describe("playAlert", () => {
+describe("stageAlert", () => {
+  it("holds a staged alert at its first moment, then plays it from when it starts", () => {
+    const { clock, frame, finished, player } = setup(alertOf(["text"]), { start: false });
+    frame("text").subscribed(false);
+    frame("text").rendered();
+    clock.advanceTo(SUBSCRIBE_TIMEOUT_MS + UNTIMED_ALERT_MS + 1_000);
+    expect(finished()).toBeNull();
+
+    const startedAt = clock.now();
+    player.start();
+    clock.advanceTo(startedAt + UNTIMED_ALERT_MS - 1);
+    expect(finished()).toBeNull();
+    clock.advanceTo(startedAt + UNTIMED_ALERT_MS);
+    expect(finished()).toBe(startedAt + UNTIMED_ALERT_MS);
+  });
+
+  it("starts once", () => {
+    const { player } = setup(alertOf(["text"]));
+    expect(() => player.start()).toThrow();
+  });
+
   it("lasts as long as its longest timed widget, then removes every frame", () => {
     const { clock, frame, finished, unmounted, stage } = setup(alertOf(["audio", "video", "text"]));
     frame("audio").subscribed(true);
@@ -270,6 +293,26 @@ describe("playAlert", () => {
     clock.advanceTo(120);
     frame("text").rendered();
     expect(sent).toEqual([["text", state]]);
+  });
+
+  it("hands a staged widget its own entrance only once the alert starts", () => {
+    const typewriter: BehaviorDocument = {
+      type: "transition",
+      kind: "typewriter",
+      target: "text",
+      order: "a0",
+      timing: { anchor: "enter", offsetMs: 0, durationMs: 800, easing: "ease-out" },
+      params: { phase: "in" },
+    };
+    const { clock, frame, sent, player } = setup(alertOf(["text"], { typewriter }), { start: false });
+    frame("text").subscribed(false);
+    frame("text").rendered();
+    clock.advanceTo(5_000);
+    expect(sent).toEqual([]);
+
+    player.start();
+
+    expect(sent.map(([widgetId, state]) => [widgetId, state?.kind])).toEqual([["text", "typewriter"]]);
   });
 
   it("stops without reporting the alert finished", () => {
