@@ -34,7 +34,7 @@ async function setup(serves: ServedSubject[], hostState?: unknown, adapterUnderT
       stopDeadlineMs: 10_000,
       subscriptionLimits: { concurrency: 4, queueCap: 8 },
     },
-    { bus, dbProxyUrl: "http://db.test", clock: time, random: halfRandom, timers: time, logger }
+    { bus, dbProxy: { baseURL: "http://db.test" }, clock: time, random: halfRandom, timers: time, logger }
   );
   const requests = new HostRequests({ clock: time, ids: countingIds(), timers: time, logger });
   const scope = new ScopedBus({

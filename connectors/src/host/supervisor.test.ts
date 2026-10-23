@@ -30,7 +30,7 @@ function setup(adapter = new FakeAdapter()) {
   const logger = new RecordingLogger();
   const supervisor = new Supervisor(new Map([["twitch", adapter]]), config, {
     bus,
-    dbProxyUrl: "http://db.test",
+    dbProxy: { baseURL: "http://db.test" },
     clock,
     random: halfRandom,
     timers: time,

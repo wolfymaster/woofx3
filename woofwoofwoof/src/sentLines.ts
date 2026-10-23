@@ -29,8 +29,9 @@ export type Clock = () => number;
 
 /**
  * `text` made safe to say: a line that would run a command no longer starts
- * with the prefix. Must match guardChatLine in twitch/src/lib/helix.ts, which
- * guards lines the bot says through Helix.
+ * with the prefix. Must match guardChatLine in
+ * connectors/src/adapters/twitch/lib/helix.ts, which guards lines the bot
+ * says through Helix.
  */
 export function guardOutgoingLine(text: string): string {
   if (text.startsWith(COMMAND_PREFIX)) {

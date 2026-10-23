@@ -179,7 +179,7 @@ adapted at the edges and republished onto the bus as CloudEvents.
 
 | Service | Path | Language | Role |
 | ------- | ---- | -------- | ---- |
-| **twitch** | [`twitch/`](twitch) | TypeScript (Bun) | Twitch Helix API + EventSub WebSocket bridge. Republishes Twitch events as CloudEvents and dispatches API call results back onto the bus as new commands. |
+| **connectors** | [`connectors/`](connectors) | TypeScript (Bun) | Runs the engine's platform connections. Its Twitch adapter turns EventSub into CloudEvents on the bus and answers Twitch commands (`twitchapi`) through the Helix API, while Twitch is linked and enabled. Docs: [`docs/services/connectors.md`](docs/services/connectors.md). |
 | **woofwoofwoof** | [`woofwoofwoof/`](woofwoofwoof) | TypeScript (Bun) | Twitch chatbot. Listens to chat, processes commands, and integrates with external services and modules. Docs: [`docs/woofwoofwoof/`](docs/woofwoofwoof/index.md). |
 | **treats** | [`treats/`](treats) | _planned_ | Viewer-engagement currency / treats system. Not yet implemented. |
 | **irl/srt-live-server** | [`irl/srt-live-server/`](irl/srt-live-server) | C++ (vendored) | SRT relay used for IRL streaming setups. |

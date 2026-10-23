@@ -1,19 +1,21 @@
 import type { Service } from "@woofx3/common/runtime";
 import { Ping } from "@woofx3/db/common.pb";
+import { dbProxyClientConfig as serviceAuthConfig } from "@woofx3/db/service-auth";
 
 export type DbProxyClientConfig = NonNullable<Parameters<typeof Ping>[1]>;
 
 /**
- * Client config for every db-proxy call the host makes. Each call is aborted
- * after `timeoutMs`: twirpscript's default transport is a bare fetch, which
- * waits for as long as the server holds the connection.
+ * Client config for every db-proxy call connectors makes, the adapters' included.
+ * Each call carries the service token and is aborted after `timeoutMs`:
+ * twirpscript's default transport is a bare fetch, which waits for as long as
+ * the server holds the connection.
  */
-export function dbProxyClientConfig(baseURL: string, timeoutMs: number): DbProxyClientConfig {
+export function dbProxyClientConfig(baseURL: string, token: string, timeoutMs: number): DbProxyClientConfig {
   if (!(Number.isInteger(timeoutMs) && timeoutMs > 0)) {
     throw new Error(`the db-proxy timeout must be a whole number of milliseconds above 0, got ${timeoutMs}`);
   }
   return {
-    baseURL,
+    ...serviceAuthConfig(baseURL, token),
     rpcTransport: (url, { method, headers, body }) =>
       fetch(url, {
         method,
@@ -33,8 +35,8 @@ export default class DbProxyService implements Service<DbProxyClientConfig> {
   readonly client: DbProxyClientConfig;
   connected = false;
 
-  constructor(baseURL: string, timeoutMs: number) {
-    this.client = dbProxyClientConfig(baseURL, timeoutMs);
+  constructor(baseURL: string, token: string, timeoutMs: number) {
+    this.client = dbProxyClientConfig(baseURL, token, timeoutMs);
   }
 
   async connect(): Promise<void> {

@@ -405,11 +405,14 @@ export interface CtxHostError extends Error {
    *   not answer within 10s (the action may still have happened)
    * - `call_limit`: the run already made 10 `ctx.twitch` calls
    * - `busy`: too many twitch requests are waiting across the engine
-   * - `unavailable`: the twitch service is not running
+   * - `unavailable`: the connectors service, which runs Twitch, is not running
+   * - `not_linked`: no Twitch account is linked
+   * - `integration_unavailable`: Twitch is linked but turned off in this
+   *   engine, still connecting, or failing repeatedly
    * - `request_failed`: the request could not be sent or its reply read
    *
-   * Absent when the twitch service refused (invalid input, Twitch not linked,
-   * Twitch's own error): those carry only a message.
+   * Absent when the twitch service refused (invalid input, Twitch's own
+   * error): those carry only a message.
    *
    * `ctx.obs` uses `timeout`, `call_limit`, `busy` and `request_failed` the
    * same way, `unavailable` when no scene manager is running, and

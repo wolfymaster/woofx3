@@ -22,7 +22,7 @@ const SUBJECT: &str = "twitchapi";
 const NAMESPACE: &str = "twitch";
 
 /// The reply type the twitch service answers a refused request with; must
-/// match `respondError` in twitch/src/application.ts.
+/// match `TWITCHAPI_ERROR_TYPE` in connectors/src/adapters/twitch/application.ts.
 const ERROR_REPLY_TYPE: &str = "twitchapi.error";
 
 /// The longest one call waits for the twitch service. Twitch itself answers

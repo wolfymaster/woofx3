@@ -11,7 +11,7 @@ import type { DashboardRequester } from "./twitch-token-source";
 /**
  * NATS subject the twitch service asks on to queue a shoutout on the
  * dashboard. Must match `SHOUTOUT_ENQUEUE_SUBJECT` in
- * twitch/src/lib/shoutoutQueue.ts. The request is a `ShoutoutTarget`; the
+ * connectors/src/adapters/twitch/lib/shoutoutQueue.ts. The request is a `ShoutoutTarget`; the
  * reply is a `ShoutoutEnqueueReply`.
  */
 export const SHOUTOUT_ENQUEUE_SUBJECT = "engine.shoutout.enqueue";

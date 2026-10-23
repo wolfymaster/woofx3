@@ -1,0 +1,19 @@
+import type { EventSubChannelRedemptionAddEvent, EventSubSubscription } from "@twurple/eventsub-base";
+import type { EventSubWsListener } from "@twurple/eventsub-ws";
+import type { Context } from "../../types";
+
+export default function onChannelRedemptionAdd(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
+  return listener.onChannelRedemptionAdd(ctx.broadcaster.id, async (event: EventSubChannelRedemptionAddEvent) => {
+    const { id, userId, userDisplayName, input, rewardCost, rewardId, rewardTitle } = event;
+    const [topic, data] = ctx.events.Twitch().redeem({
+      redeemId: id,
+      rewardId,
+      rewardTitle,
+      rewardCost,
+      userId,
+      userName: userDisplayName,
+      message: input || undefined,
+    });
+    ctx.messageBus.publish(topic, data);
+  });
+}

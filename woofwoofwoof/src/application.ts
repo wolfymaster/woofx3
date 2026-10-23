@@ -37,12 +37,16 @@ const CHANNEL_EDITOR_ROLES: ChatRole[] = ["broadcaster", "moderator"];
 /** How long a built-in command waits on the twitch service before giving up. */
 const TWITCH_REQUEST_TIMEOUT_MS = 10_000;
 
-/** The reply type the twitch service answers a refused request with; see twitch/src/application.ts. */
+/**
+ * The reply type the twitch service answers a refused request with; see
+ * TWITCHAPI_ERROR_TYPE in connectors/src/adapters/twitch/application.ts.
+ */
 const TWITCH_ERROR_TYPE = "twitchapi.error";
 
 /**
  * The CloudEvent `source` of the chat messages the twitch service relays from
- * Twitch. Must match the EventFactory source in twitch/src/application.ts.
+ * Twitch. Must match the EventFactory source in
+ * connectors/src/adapters/twitch/application.ts.
  * Only membership on these messages is written to the derived groups: a
  * simulated message (the api publishes them with source "api") still runs
  * commands, but is not the platform's word on who is a moderator.

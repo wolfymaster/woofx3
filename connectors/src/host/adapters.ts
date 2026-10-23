@@ -1,16 +1,32 @@
+import type { ConnectorsConfig } from "../config";
 import type { Adapter, AdapterModule } from "./adapter";
 import { ADAPTER_IDS, type AdapterId } from "./adapter-ids";
+import type { Clock, IdSource } from "./deps";
 import { subjectCovered } from "./scoped-bus";
 
 export type AdapterLoader = () => Promise<AdapterModule>;
 
 export type AdapterRegistry = Partial<Record<AdapterId, AdapterLoader>>;
 
+/** What the registered adapters are built with. */
+export interface AdapterRegistryDeps {
+  config: ConnectorsConfig;
+  clock: Clock;
+  ids: IdSource;
+}
+
 /**
- * The adapters this build runs. Each entry is a literal `import("./...")` so
+ * The adapters this build runs. Each entry is a literal `import("...")` so
  * `bun build --compile` can see the module and bundles it with its SDK.
  */
-export const ADAPTERS: AdapterRegistry = {};
+export function adapterRegistry(deps: AdapterRegistryDeps): AdapterRegistry {
+  return {
+    twitch: async () => {
+      const { twitchAdapterModule } = await import("../adapters/twitch/adapter");
+      return twitchAdapterModule({ config: deps.config.twitch, clock: deps.clock, ids: deps.ids });
+    },
+  };
+}
 
 export interface LoadedAdapters {
   adapters: Map<AdapterId, Adapter>;

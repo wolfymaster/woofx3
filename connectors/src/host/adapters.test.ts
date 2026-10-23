@@ -1,10 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { ADAPTERS, type AdapterRegistry, loadAdapters } from "./adapters";
-import { FakeAdapter, servedSubject } from "./testing";
+import { connectorsConfig } from "../config";
+import { adapterRegistry, type AdapterRegistry, loadAdapters } from "./adapters";
+import { systemIds } from "./deps";
+import { FakeAdapter, FakeTime, servedSubject } from "./testing";
 
 describe("loadAdapters", () => {
-  test("ships with no adapter registered", async () => {
-    expect((await loadAdapters(ADAPTERS)).adapters.size).toBe(0);
+  test("ships with the twitch adapter registered, serving twitchapi", async () => {
+    const config = connectorsConfig({
+      woofx3MessagebusUrl: "ws://127.0.0.1:4225",
+      woofx3DatabaseProxyUrl: "http://127.0.0.1:5555",
+      woofx3DbProxyToken: "connectors-db-proxy-token-0123456789abcdef",
+    });
+    const { adapters } = await loadAdapters(adapterRegistry({ config, clock: new FakeTime(), ids: systemIds }));
+    expect([...adapters.keys()]).toEqual(["twitch"]);
+    expect(adapters.get("twitch")?.manifest.serves.map((served) => served.subject)).toEqual(["twitchapi"]);
   });
 
   test("builds each registered adapter once", async () => {

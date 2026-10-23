@@ -5,6 +5,7 @@ import type {
   PlatformOutcome,
   RequestedBy,
 } from "@woofx3/api/platform-gateway";
+import type { DbProxyClientConfig } from "../services/db-proxy";
 import type { AdapterId } from "./adapter-ids";
 import type { Logger } from "./deps";
 import type { ParseResult } from "./host-requests";
@@ -131,7 +132,8 @@ export function platformAdapterId(platform: PlatformId): AdapterId {
 export interface AdapterContext {
   logger: Logger;
   bus: ScopedBus;
-  dbProxyUrl: string;
+  /** db-proxy with the service token and the host's call timeout, for every generated RPC call. */
+  dbProxy: DbProxyClientConfig;
   /**
    * Tells the host a running adapter lost its connection. The host stops it and
    * restarts it with backoff, the same as a failed start. Ignored once the

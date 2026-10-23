@@ -6,9 +6,9 @@ third-party platforms and local apps. Each connection is an **adapter**. The
 linked and enabled, runs the adapter only while it should run, and answers the
 request subjects adapters serve even while they are down.
 
-The host currently ships with no adapter registered and is not listed in
-`build/config/services.json`, so a packaged engine does not start it. It can be
-run by hand (`cd connectors && bun run start`) and answers `/health`.
+It ships with one adapter, `twitch` (see [The Twitch adapter](#the-twitch-adapter)),
+and runs in every packaged engine (`build/config/services.json`), where the
+orchestrator checks its `/health` before reporting the engine ready.
 
 ```
            setting.integration.*.updated
@@ -190,6 +190,52 @@ throws is logged and counted and does not end the subscription. When an adapter
 stops, every subscription it made is closed and its running handlers are
 awaited.
 
+## The Twitch adapter
+
+`connectors/src/adapters/twitch/` holds the engine's Twitch integration:
+EventSub turned into bus events, and the `twitchapi` commands answered through
+Helix (see [Twitch channel controls](./twitch-channel.md)). `adapter.ts` wraps
+it for the host:
+
+- **When it runs.** While Twitch is linked and enabled (`desired` is
+  `connected && enabled`). Unlinking or disabling stops it, and linking or
+  enabling starts it, with no restart.
+- **Start.** Each start builds a fresh `TwitchApplication` from the adapter's
+  scoped bus, the host's db-proxy client and the Twitch settings. It listens
+  for `setting.integration.token.updated` (a relink while running swaps the
+  token in place), then connects. A start that finds no token stored after all
+  rejects, so the adapter goes `degraded` and is retried.
+- **Stop.** Stops the ad heads-up scheduler and disconnects EventSub; the host
+  closes the adapter's subscriptions.
+- **Manifest.** Publishes every Twitch event subject
+  (`@woofx3/common/cloudevents/Twitch/events`), subscribes to
+  `setting.integration.token.updated`, requests `engine.twitch.token` and
+  `engine.shoutout.enqueue` from the api, and serves `twitchapi` with a
+  9_000 ms budget (`TWITCH_API_SERVED_BUDGET_MS`): below the 10_000 ms the
+  api, the sandbox's `ctx.twitch` and woofwoofwoof's built-in commands wait,
+  and above a Helix call's own 8_000 ms deadline. A served `helix` call gets
+  the smaller of that deadline and the time left in the budget.
+- **While it is down**, the host answers every `twitchapi` command with a
+  `twitchapi.error` coded `not_linked` when no account is linked, else
+  `integration_unavailable` (turned off, still connecting, or parked). The api
+  reports the second as `unavailable`.
+- **`/health` detail.** `broadcasterId` and `eventSub`
+  `{established, expected, ready}`: how many EventSub subscriptions Twitch has
+  confirmed. A subscription Twitch refused delivers no events at all, so a
+  shortfall here is worth investigating even while the adapter is `connected`.
+
+connectors pins its `@twurple/*` packages to the release
+`shared/clients/typescript/twitch` resolves. TypeScript only treats the two
+copies' classes as one type when name and version match, so upgrade both
+lockfiles together.
+
+### The stream session
+
+Every event is stamped with the current stream session, which is held per
+process. The host, not each adapter run, subscribes to `session.started` for
+the life of the process, so an adapter that starts after a session change
+still stamps the current session.
+
 ## Configuration
 
 | Variable | Default | Meaning |
@@ -209,9 +255,22 @@ awaited.
 The platform gateway's own settings (`WOOFX3_CONNECTORS_GATEWAY_*`) are listed
 in [Platform gateway contract](./platform-gateway.md#configuration-and-health).
 
+The Twitch adapter reads:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WOOFX3_TWITCH_CHANNEL_NAME` | none | The channel to watch; without it, the account that linked Twitch. |
+| `WOOFX3_TWITCH_CLIENT_ID`, `WOOFX3_TWITCH_CLIENT_SECRET` | none | The engine's own Twitch app, which refreshes the token itself. Used only when both are set. |
+| `WOOFX3_TWITCH_REDIRECT_URL` | `http://localhost` | That app's redirect URL. |
+| `WOOFX3_TWITCH_MEMBERSHIP_ENRICHMENT_ENABLED` | `true` | Look up follower status and subscription tier for chatters. |
+| `WOOFX3_TWITCH_MEMBERSHIP_TTL_MS` | `600000` | How long a looked-up answer is kept. |
+| `WOOFX3_TWITCH_MEMBERSHIP_DEADLINE_MS` | `250` | How long a chat message waits on a lookup before it is published without it. |
+
 The host also reads the bus settings (`WOOFX3_MESSAGEBUS_URL`, `_JWT`, `_NKEY`,
-`_TOKEN`) and `WOOFX3_DATABASE_PROXY_URL`. Invalid values stop the process at
-startup with every bad key named.
+`_TOKEN`), `WOOFX3_DATABASE_PROXY_URL` and `WOOFX3_DB_PROXY_TOKEN`, the
+service token db-proxy requires (it must pass the shared secret rule). Every
+db-proxy call connectors makes carries it, the adapters' included. Invalid
+values stop the process at startup with every bad key named.
 
 ## Health
 
@@ -237,7 +296,7 @@ fix what parked it.
       "link": { "connected": true, "enabled": true },
       "counts": { "starts": 5, "failures": 5, "faults": 0, "servedErrors": 0, "stopTimeouts": 0 },
       "bus": { "refusals": 0, "subscriptions": {} },
-      "detail": null
+      "detail": { "broadcasterId": null, "eventSub": null }
     }
   ],
   "counters": {
