@@ -1,4 +1,5 @@
 import type { EngineHosting, UISetting } from "@woofx3/api";
+import { CALLER_TIMEOUT_MS } from "@woofx3/api/platform-gateway";
 import type {
   CallbackEvent,
   CommandCreatedEvent,
@@ -36,7 +37,7 @@ import type { EngineEventStream } from "../engine-event-stream";
 import type { EventLogSelectionSource } from "../event-log-selection";
 import { releaseStub } from "../held-stub";
 import type { MarketplaceClient } from "../marketplace-client";
-import { DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS, PlatformGatewayClient } from "../platform-gateway-client";
+import { PlatformGatewayClient } from "../platform-gateway-client";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchDeviceLogins } from "../twitch-device-login";
 import { TwitchProfiles } from "../twitch-profiles";
@@ -86,7 +87,7 @@ export interface ApiOptions {
   twitchClientId?: string | null;
   /** Twitch's OAuth endpoints; Twitch itself when absent. */
   twitchOAuth?: TwitchOAuthClient;
-  /** How long a send to the platform gateway waits for its reply; DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS when absent. */
+  /** How long a send to the platform gateway waits for its reply; the contract's CALLER_TIMEOUT_MS when absent. */
   platformGatewayTimeoutMs?: number;
   /** Epoch milliseconds now; `Date.now` when absent. */
   clock?: () => number;
@@ -473,7 +474,7 @@ export class ApiRouteHost extends RpcTarget {
     this.platformGateway = new PlatformGatewayClient({
       nats: opts.nats,
       logger: opts.logger,
-      timeoutMs: opts.platformGatewayTimeoutMs ?? DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS,
+      timeoutMs: opts.platformGatewayTimeoutMs ?? CALLER_TIMEOUT_MS,
     });
     this.nats = opts.nats;
     this.functions = opts.functions;
