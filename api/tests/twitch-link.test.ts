@@ -25,7 +25,7 @@ const HELIX_USER = {
   profile_image_url: "https://static-cdn.example/streamer.png",
 };
 
-/** The twitch service's reply to a `helix` request, or an Error the bus throws. */
+/** The Twitch adapter's reply to a `helix` request, or an Error the bus throws. */
 type HelixReply = { ok: true; body: unknown } | Error;
 
 function engine(opts: {
@@ -131,7 +131,7 @@ describe("getTwitchLink", () => {
     expect(helixAsked).toHaveLength(1);
   });
 
-  test("still describes the link without a profile when the twitch service cannot be asked, and asks again next time", async () => {
+  test("still describes the link without a profile when the Twitch adapter cannot be asked, and asks again next time", async () => {
     const { rpc, helixAsked, setHelix } = engine({ helix: new Error("timeout") });
     await rpc.setTwitchToken(TOKEN);
 

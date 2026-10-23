@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, PoisonError, RwLock, RwLockReadGuard};
 
 /// Why module code may not write a setting. Its `Display` completes a
 /// sentence that starts with the setting's key.
@@ -54,18 +54,25 @@ impl LiveProtectedSettings {
         Self(Arc::new(RwLock::new(settings)))
     }
 
+    /// A panic while the lock was held cannot leave the map half-updated
+    /// (it is only ever replaced whole), so a poisoned lock is read through
+    /// rather than turning every later setting write into a panic.
+    fn read(&self) -> RwLockReadGuard<'_, ProtectedSettings> {
+        self.0.read().unwrap_or_else(PoisonError::into_inner)
+    }
+
     /// Why module code may not write `key` now; `None` when it may.
     pub fn get(&self, key: &str) -> Option<ProtectedReason> {
-        self.0.read().unwrap().get(key).cloned()
+        self.read().get(key).cloned()
     }
 
     /// A copy of the protections in force now.
     pub fn snapshot(&self) -> ProtectedSettings {
-        self.0.read().unwrap().clone()
+        self.read().clone()
     }
 
     pub(crate) fn replace(&self, settings: ProtectedSettings) {
-        *self.0.write().unwrap() = settings;
+        *self.0.write().unwrap_or_else(PoisonError::into_inner) = settings;
     }
 }
 

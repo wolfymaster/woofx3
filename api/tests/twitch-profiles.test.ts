@@ -71,7 +71,11 @@ describe("TwitchProfiles", () => {
 
   test("does not keep a failed lookup", async () => {
     const profiles = new TwitchProfiles({ logger: LOGGER, now: () => 0 });
-    const refused: TwitchHelixResult = { ok: false, code: "unavailable", error: "The twitch service is not running" };
+    const refused: TwitchHelixResult = {
+      ok: false,
+      code: "unavailable",
+      error: "Twitch is not connected in this engine",
+    };
 
     expect(await profiles.lookup("42", async () => refused)).toBeNull();
     expect(await profiles.lookup("42", async () => ok({ data: [] }))).toBeNull();

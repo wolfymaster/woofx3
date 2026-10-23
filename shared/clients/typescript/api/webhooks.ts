@@ -1696,7 +1696,7 @@ export interface RelayCredentialRequestedEvent {
 }
 
 /**
- * Who to shout out, already looked up by the twitch service so the dashboard
+ * Who to shout out, already looked up by the engine's Twitch connection so the dashboard
  * can queue them without asking Twitch again.
  */
 export interface ShoutoutEnqueueRequestedEvent {

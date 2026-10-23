@@ -9,7 +9,7 @@ import type { Msg } from "@woofx3/nats/src/types";
 import type { DashboardRequester } from "./twitch-token-source";
 
 /**
- * NATS subject the twitch service asks on to queue a shoutout on the
+ * NATS subject the connectors host's Twitch adapter asks on to queue a shoutout on the
  * dashboard. Must match `SHOUTOUT_ENQUEUE_SUBJECT` in
  * connectors/src/adapters/twitch/lib/shoutoutQueue.ts. The request is a `ShoutoutTarget`; the
  * reply is a `ShoutoutEnqueueReply`.
@@ -62,7 +62,7 @@ export async function enqueueShoutout(target: unknown, deps: ShoutoutQueueDeps):
   }
 }
 
-/** Answer the twitch service's shoutout requests on `SHOUTOUT_ENQUEUE_SUBJECT`. */
+/** Answer shoutout requests from the connectors host's Twitch adapter on `SHOUTOUT_ENQUEUE_SUBJECT`. */
 export async function serveShoutoutQueue(
   nats: NATSClient,
   deps: ShoutoutQueueDeps,

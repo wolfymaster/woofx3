@@ -8,6 +8,7 @@
 import type { RelayConfig, RelayEndpoint } from "@woofx3/api";
 import type { RelayCredentialRequestedResponse } from "@woofx3/api/webhooks";
 import { ENDPOINT_ID_PATTERN, MODULE_ID_PATTERN } from "../Companion/module-request";
+import { asRecord, err, ok, type ParseResult } from "../utils";
 
 /** Engine setting holding a `StoredRelayConfig` as JSON. Absent when nothing goes through a companion. */
 export const RELAY_CONFIG_SETTING = "relay.config";
@@ -26,76 +27,95 @@ export interface StoredRelayConfig extends RelayConfig {
 /** More than any instance has local endpoints; a cap so a bad call cannot store an unbounded list. */
 export const MAX_RELAY_ENDPOINTS = 50;
 
-/**
- * A manifest id, as a bridge path segment. The pattern is the companion
- * gateway contract's (companion-gateway.json), which must match
- * `parseBridgePath` in woofx3-maintenance worker/src/relay/paths.ts; the
- * relay also refuses `.` and `..` (see `isModuleId`).
- */
-const MODULE_ID = MODULE_ID_PATTERN;
-/** A `local[]` endpoint id (barkloader lib_module `validate_local`), the companion gateway contract's pattern. */
-const ENDPOINT_ID = ENDPOINT_ID_PATTERN;
 const CREDENTIAL = /^wfxr1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
 /**
- * A relay configuration from outside the engine, checked. Throws naming the
+ * A relay configuration from outside the engine, checked. The error names the
  * first problem. `bridgeOrigin` must be an `https:` origin with no path,
  * query, fragment or credentials, because the dialer appends the bridge path
  * to it and the credential travels to it.
  */
-export function parseRelayConfig(value: unknown): RelayConfig {
-  if (typeof value !== "object" || value === null) {
-    throw new Error("relay config must be an object");
+export function parseRelayConfig(value: unknown): ParseResult<RelayConfig> {
+  const body = asRecord(value);
+  if (!body) {
+    return err("relay config must be an object");
   }
-  const { bridgeOrigin, endpoints } = value as { bridgeOrigin?: unknown; endpoints?: unknown };
-  return { bridgeOrigin: parseBridgeOrigin(bridgeOrigin), endpoints: parseEndpoints(endpoints) };
+  const bridgeOrigin = parseBridgeOrigin(body.bridgeOrigin);
+  if (!bridgeOrigin.ok) {
+    return bridgeOrigin;
+  }
+  const endpoints = parseEndpoints(body.endpoints);
+  if (!endpoints.ok) {
+    return endpoints;
+  }
+  return ok({ bridgeOrigin: bridgeOrigin.value, endpoints: endpoints.value });
 }
 
-/** A configuration with the client id of the dashboard that set it, checked. Throws naming the first problem. */
-export function parseStoredRelayConfig(value: unknown): StoredRelayConfig {
+/** A configuration with the client id of the dashboard that set it, checked. */
+export function parseStoredRelayConfig(value: unknown): ParseResult<StoredRelayConfig> {
   const config = parseRelayConfig(value);
+  if (!config.ok) {
+    return config;
+  }
   const clientId = (value as { clientId?: unknown }).clientId;
   if (typeof clientId !== "string" || clientId === "") {
-    throw new Error("relay config clientId must be a non-empty string");
+    return err("relay config clientId must be a non-empty string");
   }
-  return { ...config, clientId };
+  return ok({ ...config.value, clientId });
 }
 
-/** A stored configuration, or null when the value is absent or not one. */
-export function readStoredRelayConfig(raw: string | null): StoredRelayConfig | null {
+/**
+ * What `relay.config` holds: nothing, a usable configuration, or a value that
+ * is not one. `invalid` is not `absent`: a corrupt setting must not read as
+ * "nothing is routed", so callers log it.
+ */
+export type StoredRelayConfigRead =
+  | { kind: "absent" }
+  | { kind: "set"; config: StoredRelayConfig }
+  | { kind: "invalid"; error: string };
+
+/** The stored `relay.config` value, read strictly. */
+export function readStoredRelayConfig(raw: string | null): StoredRelayConfigRead {
   if (!raw || raw.trim() === "") {
-    return null;
+    return { kind: "absent" };
   }
+  let json: unknown;
   try {
-    return parseStoredRelayConfig(JSON.parse(raw));
+    json = JSON.parse(raw);
   } catch {
-    return null;
+    return { kind: "invalid", error: "relay config is not JSON" };
   }
+  const parsed = parseStoredRelayConfig(json);
+  return parsed.ok ? { kind: "set", config: parsed.value } : { kind: "invalid", error: parsed.error };
 }
 
-/** A grant from the dashboard, checked like a configuration plus its credential. Throws naming the first problem. */
-export function parseRelayGrant(value: unknown): RelayGrant {
+/** A grant from the dashboard, checked like a configuration plus its credential. */
+export function parseRelayGrant(value: unknown): ParseResult<RelayGrant> {
   const config = parseRelayConfig(value);
+  if (!config.ok) {
+    return config;
+  }
   const { credential, expiresAt } = value as { credential?: unknown; expiresAt?: unknown };
   if (typeof credential !== "string" || !CREDENTIAL.test(credential)) {
-    throw new Error("relay credential is malformed");
+    return err("relay credential is malformed");
   }
   if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) {
-    throw new Error("relay credential has no expiry");
+    return err("relay credential has no expiry");
   }
-  return { ...config, credential, expiresAt };
+  return ok({ ...config.value, credential, expiresAt });
 }
 
-/** The dashboard's answer to `relay.credential.requested`. Throws on anything that is not one. */
-export function parseRelayCredentialResponse(body: unknown): RelayCredentialRequestedResponse {
+/** The dashboard's answer to `relay.credential.requested`. */
+export function parseRelayCredentialResponse(body: unknown): ParseResult<RelayCredentialRequestedResponse> {
   if (typeof body !== "object" || body === null || !("relay" in body)) {
-    throw new Error("the dashboard's answer has no relay field");
+    return err("the dashboard's answer has no relay field");
   }
   const { relay } = body as { relay: unknown };
   if (relay === null) {
-    return { relay: null };
+    return ok({ relay: null });
   }
-  return { relay: parseRelayGrant(relay) };
+  const grant = parseRelayGrant(relay);
+  return grant.ok ? ok({ relay: grant.value }) : grant;
 }
 
 /**
@@ -154,84 +174,67 @@ export interface RelayConfigSetRequest {
 
 export type RelayConfigSetReply = { status: "stored" } | { status: "failed"; error: string };
 
-export type RelayParse<T> = { ok: true; value: T } | { ok: false; error: string };
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-/** Runs a throwing parser and returns its outcome as a result. */
-function attempt<T>(parse: () => T): RelayParse<T> {
-  try {
-    return { ok: true, value: parse() };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-function failedReply(body: Record<string, unknown>): RelayParse<{ status: "failed"; error: string }> {
+function failedReply(body: Record<string, unknown>): ParseResult<{ status: "failed"; error: string }> {
   if (typeof body.error !== "string") {
-    return { ok: false, error: "a failed reply must carry an error string" };
+    return err("a failed reply must carry an error string");
   }
-  return { ok: true, value: { status: "failed", error: body.error } };
+  return ok({ status: "failed", error: body.error });
 }
 
-export function parseDashboardCredentialRequest(value: unknown): RelayParse<DashboardCredentialRequest> {
+export function parseDashboardCredentialRequest(value: unknown): ParseResult<DashboardCredentialRequest> {
   const body = asRecord(value);
   if (!body) {
-    return { ok: false, error: "the request must be an object" };
+    return err("the request must be an object");
   }
   if (typeof body.clientId !== "string" || body.clientId === "") {
-    return { ok: false, error: "clientId must be a non-empty string" };
+    return err("clientId must be a non-empty string");
   }
-  return { ok: true, value: { clientId: body.clientId } };
+  return ok({ clientId: body.clientId });
 }
 
-export function parseDashboardCredentialReply(value: unknown): RelayParse<DashboardCredentialReply> {
+export function parseDashboardCredentialReply(value: unknown): ParseResult<DashboardCredentialReply> {
   const body = asRecord(value);
   if (!body) {
-    return { ok: false, error: "the reply must be an object" };
+    return err("the reply must be an object");
   }
   if (body.status === "answered") {
     if (typeof body.clientId !== "string" || body.clientId === "") {
-      return { ok: false, error: "an answered reply must name the dashboard's clientId" };
+      return err("an answered reply must name the dashboard's clientId");
     }
     const clientId = body.clientId;
-    const answer = attempt(() => parseRelayCredentialResponse(body.answer));
-    return answer.ok ? { ok: true, value: { status: "answered", clientId, answer: answer.value } } : answer;
+    const answer = parseRelayCredentialResponse(body.answer);
+    return answer.ok ? ok({ status: "answered", clientId, answer: answer.value }) : answer;
   }
   if (body.status === "failed") {
     return failedReply(body);
   }
-  return { ok: false, error: 'status must be "answered" or "failed"' };
+  return err('status must be "answered" or "failed"');
 }
 
-export function parseRelayConfigSetRequest(value: unknown): RelayParse<RelayConfigSetRequest> {
+export function parseRelayConfigSetRequest(value: unknown): ParseResult<RelayConfigSetRequest> {
   const body = asRecord(value);
   if (!body || !("config" in body)) {
-    return { ok: false, error: "the request must be an object with a config field" };
+    return err("the request must be an object with a config field");
   }
   if (body.config === null) {
-    return { ok: true, value: { config: null } };
+    return ok({ config: null });
   }
-  const config = attempt(() => parseStoredRelayConfig(body.config));
-  return config.ok ? { ok: true, value: { config: config.value } } : config;
+  const config = parseStoredRelayConfig(body.config);
+  return config.ok ? ok({ config: config.value }) : config;
 }
 
-export function parseRelayConfigSetReply(value: unknown): RelayParse<RelayConfigSetReply> {
+export function parseRelayConfigSetReply(value: unknown): ParseResult<RelayConfigSetReply> {
   const body = asRecord(value);
   if (!body) {
-    return { ok: false, error: "the reply must be an object" };
+    return err("the reply must be an object");
   }
   if (body.status === "stored") {
-    return { ok: true, value: { status: "stored" } };
+    return ok({ status: "stored" });
   }
   if (body.status === "failed") {
     return failedReply(body);
   }
-  return { ok: false, error: 'status must be "stored" or "failed"' };
+  return err('status must be "stored" or "failed"');
 }
 
 /** True when the configuration routes this endpoint through the bridge. */
@@ -247,57 +250,63 @@ export function sameRelayConfig(a: RelayConfig, b: RelayConfig): boolean {
   return a.endpoints.every((e) => routesEndpoint(b, e.moduleId, e.endpointId));
 }
 
-function parseBridgeOrigin(value: unknown): string {
+function parseBridgeOrigin(value: unknown): ParseResult<string> {
   if (typeof value !== "string") {
-    throw new Error("relay config bridgeOrigin must be a string");
+    return err("relay config bridgeOrigin must be a string");
   }
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    throw new Error("relay config bridgeOrigin is not a URL");
+    return err("relay config bridgeOrigin is not a URL");
   }
   if (url.protocol !== "https:") {
-    throw new Error("relay config bridgeOrigin must be https");
+    return err("relay config bridgeOrigin must be https");
   }
   if (url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
-    throw new Error("relay config bridgeOrigin must be an origin, with no path, query or credentials");
+    return err("relay config bridgeOrigin must be an origin, with no path, query or credentials");
   }
-  return url.origin;
+  return ok(url.origin);
 }
 
-function parseEndpoints(value: unknown): RelayEndpoint[] {
+function parseEndpoints(value: unknown): ParseResult<RelayEndpoint[]> {
   if (!Array.isArray(value)) {
-    throw new Error("relay config endpoints must be an array");
+    return err("relay config endpoints must be an array");
   }
   if (value.length > MAX_RELAY_ENDPOINTS) {
-    throw new Error(`relay config may route at most ${MAX_RELAY_ENDPOINTS} endpoints`);
+    return err(`relay config may route at most ${MAX_RELAY_ENDPOINTS} endpoints`);
   }
   const endpoints: RelayEndpoint[] = [];
   for (const entry of value) {
     const { moduleId, endpointId } = (entry ?? {}) as { moduleId?: unknown; endpointId?: unknown };
     if (typeof moduleId !== "string" || !isModuleId(moduleId)) {
-      throw new Error("relay config endpoint has an invalid moduleId");
+      return err("relay config endpoint has an invalid moduleId");
     }
     if (typeof endpointId !== "string" || !isEndpointId(endpointId)) {
-      throw new Error(`relay config endpoint of ${moduleId} has an invalid endpointId`);
+      return err(`relay config endpoint of ${moduleId} has an invalid endpointId`);
     }
     if (!routesEndpoint({ bridgeOrigin: "", endpoints }, moduleId, endpointId)) {
       endpoints.push({ moduleId, endpointId });
     }
   }
-  return endpoints;
+  return ok(endpoints);
 }
 
 /**
- * True for a manifest id the relay accepts as a bridge path segment. A path
- * segment URL parsing would resolve away is never a module id.
+ * True for a manifest id the relay accepts as a bridge path segment. The
+ * pattern is the companion gateway contract's (companion-gateway.json), which
+ * must match `parseBridgePath` in woofx3-maintenance worker/src/relay/paths.ts.
+ * A path segment URL parsing would resolve away is never a module id.
  */
 export function isModuleId(value: string): boolean {
-  return MODULE_ID.test(value) && value !== "." && value !== "..";
+  return MODULE_ID_PATTERN.test(value) && value !== "." && value !== "..";
 }
 
-/** True for a `local[]` endpoint id the relay accepts as a bridge path segment. */
+/**
+ * True for a `local[]` endpoint id the relay accepts as a bridge path segment:
+ * barkloader's lib_module `validate_local` pattern, the companion gateway
+ * contract's.
+ */
 export function isEndpointId(value: string): boolean {
-  return ENDPOINT_ID.test(value);
+  return ENDPOINT_ID_PATTERN.test(value);
 }

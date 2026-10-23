@@ -376,7 +376,7 @@ export interface TwitchLinkedAccount {
   userId: string;
   /**
    * The account's login, display name and avatar (an `https:` URL), from
-   * Helix. Null when the engine could not ask Twitch (the twitch service is
+   * Helix. Null when the engine could not ask Twitch (the engine's Twitch connection is
    * not running, or Twitch refused); the link itself is still there.
    */
   login: string | null;

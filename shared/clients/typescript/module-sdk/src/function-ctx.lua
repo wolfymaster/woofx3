@@ -191,7 +191,7 @@
 ---@field message string
 ---@field code? string
 
----`ctx.twitch.*`: each call asks the twitch service to act, waits up to 10
+---`ctx.twitch.*`: each call asks the engine's Twitch connection to act, waits up to 10
 ---seconds (never past the end of the function's run) and returns its result,
 ---or raises a `CtxHostError`. At most 10 calls per run. `timeout`
 ---needs the manifest permission `twitch.moderation`, `updateStream` needs
@@ -204,7 +204,7 @@
 ---@field timeout fun(args: { userId?: string, userName?: string, durationSeconds: number, reason?: string }): { ok: boolean, userId: string, durationSeconds: number }
 ---@field updateStream fun(args: { title?: string, category?: string, categoryId?: string, tags?: string[] }): { ok: boolean, title?: string, categoryId?: string, categoryName?: string, tags?: string[] }
 
----`ctx.obs.*`: each call asks the scene manager to change OBS or list its
+---`ctx.obs.*`: each call asks the engine's OBS connection to change OBS or list its
 ---names, waits up to 5 seconds (never past the end of the function's run) and
 ---returns its answer, or raises a `CtxHostError` carrying OBS's reason. At most
 ---10 calls per run. `switchScene`, `setSourceVisibility`, `setInputMute` and
