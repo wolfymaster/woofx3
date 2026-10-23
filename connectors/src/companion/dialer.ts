@@ -97,6 +97,9 @@ export class EndpointDialer {
         });
         return direct;
       }
+      // Deliberately fail closed, even on a `local` engine where the
+      // configuration would only be read for a warning: a policy without
+      // directWithoutRelayConfig never proceeds on a store it could not read.
       return unavailable("store_unreadable", `the relay configuration could not be read: ${errorMessage(error)}`);
     }
     if (!config || !routesEndpoint(config, ref.moduleId, ref.endpointId)) {
