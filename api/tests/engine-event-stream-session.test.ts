@@ -64,7 +64,8 @@ async function startEngine() {
     db as never,
     logger,
     resolveRegistrationPolicy({}),
-    new ClientSessions(logger)
+    new ClientSessions(logger),
+    null
   );
   server = createHttpServer({
     port: 0,

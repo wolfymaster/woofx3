@@ -49,7 +49,8 @@ function gateway() {
     db as never,
     logger,
     resolveRegistrationPolicy({}),
-    new ClientSessions(logger)
+    new ClientSessions(logger),
+    null
   );
 }
 

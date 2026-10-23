@@ -6,6 +6,7 @@ export * from "./engine-events";
 export * from "./marketplace-catalog";
 export * from "./module-manifest";
 export * from "./overlay-events";
+export * from "./pairing";
 export * from "./resource-values";
 export * from "./rpc";
 export * from "./stream-events";

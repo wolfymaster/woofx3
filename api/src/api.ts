@@ -1,6 +1,7 @@
 import type { ClientRevocation } from "./client-sessions";
 import type { EngineEventStream } from "./engine-event-stream";
 import type { EventLogSelectionSource } from "./event-log-selection";
+import type { PairingRegistry } from "./pairing";
 import { type RegisteredApiRoutes, registerAllRoutes } from "./routes";
 import { type ApiOptions, ApiRouteHost } from "./routes/context";
 import type { StreamEventBroadcaster } from "./stream-event-broadcaster";
@@ -44,6 +45,10 @@ export class Api extends ApiRouteHost {
 
   setWebhookClient(client: WebhookClient): void {
     this.webhookClient = client;
+  }
+
+  setPairingRegistry(registry: PairingRegistry): void {
+    this.pairingRegistry = registry;
   }
 
   setClientRevocation(revocation: ClientRevocation): void {

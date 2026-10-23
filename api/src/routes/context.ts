@@ -31,6 +31,7 @@ import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
 import { RpcTarget } from "capnweb";
 import type { ClientRevocation } from "../client-sessions";
 import type { DbClient } from "../db-client";
+import type { PairingRegistry } from "../pairing";
 import type { EngineEventStream } from "../engine-event-stream";
 import type { EventLogSelectionSource } from "../event-log-selection";
 import { releaseStub } from "../held-stub";
@@ -112,6 +113,8 @@ export class ApiRouteHost extends RpcTarget {
   protected engineEventStream: EngineEventStream | null = null;
   protected eventLogSelection: EventLogSelectionSource | null = null;
   protected clientRevocation: ClientRevocation | null = null;
+  /** The engine's browser pairings; null on an engine that does not pair (see `hostingOffersPairing`). */
+  protected pairingRegistry: PairingRegistry | null = null;
   /**
    * The linked Twitch account's token. An instance property, not a method,
    * so capnweb never offers it to a client.

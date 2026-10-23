@@ -1,5 +1,14 @@
+import type {
+  CancelPairingRequest,
+  CancelPairingResponse,
+  ClaimPairingRequest,
+  ClaimPairingResponse,
+  StartPairingRequest,
+  StartPairingResponse,
+} from "@woofx3/api/pairing";
 import {
   AUTHENTICATION_REFUSED,
+  type GatewayPingResponse,
   authenticationRefusedMessage,
   REGISTRATION_REFUSED,
   type RegisterClientOptions,
@@ -14,6 +23,7 @@ import type { ClientAuth } from "./auth";
 import type { ClientSessions } from "./client-sessions";
 import type { DbClient } from "./db-client";
 import type { ConnectionInfo } from "./gateway-connection";
+import type { PairingRegistry } from "./pairing";
 import type { RegistrationPolicy } from "./registration";
 import type { WebhookClient } from "./webhook-client";
 
@@ -64,6 +74,8 @@ export class ApiGateway {
    * @param registration Who may register (see registration.ts). A managed
    *   engine is publicly reachable before anyone has registered, so without
    *   a token the first caller to find it would own it.
+   * @param pairing The engine's browser pairings, or null on an engine that
+   *   does not pair (see `hostingOffersPairing`).
    */
   constructor(
     private api: Api,
@@ -71,7 +83,8 @@ export class ApiGateway {
     private db: DbClient,
     private logger: SharedLogger,
     private registration: RegistrationPolicy,
-    private sessions: ClientSessions
+    private sessions: ClientSessions,
+    private pairing: PairingRegistry | null
   ) {
     if (registration.mode === "open") {
       logger.warn(
@@ -202,8 +215,31 @@ export class ApiGateway {
     }
   }
 
-  async ping(): Promise<{ status: string }> {
+  async ping(): Promise<GatewayPingResponse> {
     this.logger.info("ping called");
-    return { status: "ok" };
+    return this.pairing ? { status: "ok", pairing: "available" } : { status: "ok" };
+  }
+
+  /** Start pairing the browser `connection` came from; see pairing.ts. */
+  async startPairing(request: StartPairingRequest, connection: ConnectionInfo): Promise<StartPairingResponse> {
+    if (!this.pairing) {
+      return { ok: false, code: "not_available", error: "this engine does not offer browser pairing" };
+    }
+    return this.pairing.start(request, connection.origin, connection.remoteAddress);
+  }
+
+  /** On an engine that does not pair no pairing exists, so every claim answers `not_found`. */
+  async claimPairing(request: ClaimPairingRequest, connection: ConnectionInfo): Promise<ClaimPairingResponse> {
+    if (!this.pairing) {
+      return { status: "not_found" };
+    }
+    return this.pairing.claim(request, connection.origin);
+  }
+
+  async cancelPairing(request: CancelPairingRequest, connection: ConnectionInfo): Promise<CancelPairingResponse> {
+    if (!this.pairing) {
+      return { ok: false, code: "not_available" };
+    }
+    return this.pairing.cancel(request, connection.origin);
   }
 }

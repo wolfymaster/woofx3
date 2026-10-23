@@ -63,6 +63,15 @@ export const ENGINE_CAPABILITIES = {
    */
   engineLocalMode: "engine.localMode",
   /**
+   * Browser pairing (./pairing.ts): the gateway's `startPairing`,
+   * `claimPairing` and `cancelPairing`, `ping().pairing`, an approver's
+   * `lookupPairing`, `decidePairing` and `listPendingPairings`, the
+   * `client.pairing.started` event, and paired clients bound to their origin.
+   * Advertised only by a local or self-hosted engine; see
+   * HOSTING_ENGINE_CAPABILITIES.
+   */
+  clientsPairing: "clients.pairing",
+  /**
    * The engine event stream over the capnweb session: `subscribeEngineEvents`
    * pushes the webhook envelopes and engine requests, and `answerEngineRequest`
    * answers a request. A client with no callback URL is asked over it.
@@ -262,13 +271,21 @@ export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = n
 
 /**
  * Ids that describe how an engine is run rather than what its build can do,
- * each advertised only by an engine whose deployment declares that hosting
- * (`EngineInfo.hosting`).
+ * each advertised only by an engine whose deployment declares one of the
+ * listed hostings (`EngineInfo.hosting`).
  */
-export const HOSTING_ENGINE_CAPABILITIES: ReadonlyMap<EngineCapability, EngineHosting> = new Map<
+export const HOSTING_ENGINE_CAPABILITIES: ReadonlyMap<EngineCapability, readonly EngineHosting[]> = new Map<
   EngineCapability,
-  EngineHosting
->([[ENGINE_CAPABILITIES.engineLocalMode, "local"]]);
+  readonly EngineHosting[]
+>([
+  [ENGINE_CAPABILITIES.engineLocalMode, ["local"]],
+  [ENGINE_CAPABILITIES.clientsPairing, ["local", "self"]],
+]);
+
+/** Whether an engine with `hosting` offers browser pairing: whether it advertises `clients.pairing`. */
+export function hostingOffersPairing(hosting: EngineHosting | null): boolean {
+  return supportedEngineCapabilities(hosting).includes(ENGINE_CAPABILITIES.clientsPairing);
+}
 
 /**
  * The capability ids this engine advertises, sorted and unique: every id its
@@ -279,7 +296,7 @@ export function supportedEngineCapabilities(hosting: EngineHosting | null = null
     .filter((id) => !UNADVERTISED_ENGINE_CAPABILITIES.has(id))
     .filter((id) => {
       const required = HOSTING_ENGINE_CAPABILITIES.get(id);
-      return required === undefined || required === hosting;
+      return required === undefined || (hosting !== null && required.includes(hosting));
     })
     .sort();
 }

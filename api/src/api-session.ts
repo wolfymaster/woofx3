@@ -10,6 +10,7 @@ import type {
   TwitchAccessToken,
   Woofx3EngineApi,
 } from "@woofx3/api";
+import type { DecidePairingRequest } from "@woofx3/api/pairing";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 import type { SessionLease } from "./client-sessions";
@@ -91,6 +92,11 @@ export class ApiSession extends RpcTarget {
   /** The session is the registration's key, so a second call replaces the first. */
   async subscribeStreamEvents(callback: StreamEventSubscriber, types?: string[]) {
     return this.api.subscribeStreamEvents(callback, types, { session: this, clientId: this.clientId });
+  }
+
+  /** The session supplies the deciding client, for the log. */
+  async decidePairing(request: DecidePairingRequest) {
+    return this.api.decidePairing(request, { clientId: this.clientId });
   }
 
   /** Keyed on the session, so revoking its client ends it. */
@@ -255,6 +261,9 @@ export const RPC_METHODS = [
   "startTwitchDeviceLogin",
   "getTwitchDeviceLogin",
   "cancelTwitchDeviceLogin",
+  "lookupPairing",
+  "decidePairing",
+  "listPendingPairings",
   "twitchGetChannelInformation",
   "twitchGetGames",
   "twitchSearchCategories",

@@ -265,3 +265,22 @@ describe("comparableOriginOf", () => {
     expect(comparableOriginOf(origin)).toBeNull();
   });
 });
+
+describe("RequestGuard.listsOrigin", () => {
+  test("is true only for an origin the list names", () => {
+    const guard = guardFor(undefined, "https://app.example.com,http://localhost:*");
+
+    expect(guard.listsOrigin("https://app.example.com")).toBe(true);
+    expect(guard.listsOrigin("HTTPS://APP.EXAMPLE.COM:443")).toBe(true);
+    expect(guard.listsOrigin("http://localhost:5173")).toBe(true);
+    expect(guard.listsOrigin("https://hosted.example")).toBe(false);
+    expect(guard.listsOrigin("null")).toBe(false);
+  });
+
+  test("is false for every origin when there is no list, though reject lets them all through", () => {
+    const guard = guardFor();
+
+    expect(guard.listsOrigin("https://app.example.com")).toBe(false);
+    expect(guard.reject(request({ origin: "https://app.example.com" }))).toBeNull();
+  });
+});

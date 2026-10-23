@@ -61,7 +61,8 @@ function startEngine(logger: SharedLogger) {
     db as never,
     logger,
     resolveRegistrationPolicy({ token: REGISTRATION_TOKEN }),
-    new ClientSessions(logger)
+    new ClientSessions(logger),
+    null
   );
   server = createHttpServer({
     port: 0,

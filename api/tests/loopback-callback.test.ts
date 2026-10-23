@@ -85,7 +85,8 @@ async function registerShell(callbackUrl: string) {
     db as never,
     logger,
     resolveRegistrationPolicy({}),
-    new ClientSessions(logger)
+    new ClientSessions(logger),
+    null
   );
   const webhooks = new WebhookClient(db as never, logger, new EngineEventStream(logger));
   gateway.setWebhookClient(webhooks);

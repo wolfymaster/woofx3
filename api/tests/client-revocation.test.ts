@@ -109,7 +109,7 @@ function engine() {
   const webhooks = new WebhookClient(db as never, logger, stream);
   api.setWebhookClient(webhooks);
   api.setClientRevocation(new ClientRevoker(auth, sessions, stream, webhooks, api));
-  const gateway = new ApiGateway(api, auth, db as never, logger, resolveRegistrationPolicy({}), sessions);
+  const gateway = new ApiGateway(api, auth, db as never, logger, resolveRegistrationPolicy({}), sessions, null);
   return {
     api,
     gateway,

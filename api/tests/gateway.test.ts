@@ -52,7 +52,7 @@ describe("ApiGateway.registerClient", () => {
     const auth = {
       validate: mock(async () => ({ kind: "accepted", description: "test-ui", boundOrigin: null })),
     } as any;
-    const gateway = new ApiGateway(api, auth, db, logger, OPEN, new ClientSessions(logger));
+    const gateway = new ApiGateway(api, auth, db, logger, OPEN, new ClientSessions(logger), null);
     gateway.setWebhookClient(webhook);
 
     const res = await gateway.registerClient("test-ui", {
@@ -88,7 +88,8 @@ describe("ApiGateway.registerClient", () => {
       db,
       logger,
       OPEN,
-      new ClientSessions(logger)
+      new ClientSessions(logger),
+      null
     );
     gateway.setWebhookClient(webhook);
 
@@ -107,7 +108,8 @@ describe("ApiGateway.registerClient", () => {
       db,
       logger,
       OPEN,
-      new ClientSessions(logger)
+      new ClientSessions(logger),
+      null
     );
 
     await expect(gateway.registerClient("test", {})).rejects.toThrow("Failed to create client");
@@ -127,7 +129,15 @@ describe("ApiGateway.authenticate", () => {
   function gatewayOver(answer: () => Promise<unknown>) {
     const db = { validateClient: mock(answer) } as any;
     const logger = fakeLogger();
-    return new ApiGateway(newApi(db, logger), new ClientAuth(db, logger), db, logger, OPEN, new ClientSessions(logger));
+    return new ApiGateway(
+      newApi(db, logger),
+      new ClientAuth(db, logger),
+      db,
+      logger,
+      OPEN,
+      new ClientSessions(logger),
+      null
+    );
   }
   const ACCEPTED = async () => ({
     status: { code: "OK" },

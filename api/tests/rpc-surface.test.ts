@@ -109,6 +109,7 @@ describe("the RPC surface a client sees", () => {
     const INTERNAL = [
       "setWebhookClient",
       "setClientRevocation",
+      "setPairingRegistry",
       "setStreamEventBroadcaster",
       "setEventLogSelectionSource",
       "setEngineEventStream",

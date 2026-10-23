@@ -283,6 +283,17 @@ export class RequestGuard {
   }
 
   /**
+   * Whether `origin` is on the origin list itself. Unlike `reject`, which
+   * lets every origin through when there is no list, this is false for every
+   * origin then: it answers "did the operator name this origin", for a
+   * feature that must be granted origin by origin. `null` is never listed.
+   */
+  listsOrigin(origin: string): boolean {
+    const { allowedOrigins } = this.policy;
+    return allowedOrigins !== null && origin !== OPAQUE_ORIGIN && originAllowed(allowedOrigins, origin);
+  }
+
+  /**
    * The CORS origin headers for a request that `reject` let through: `*`
    * when origins are not checked, otherwise the request's own Origin, with
    * `Vary: Origin` so a cache never serves one origin's answer to another.
