@@ -465,10 +465,24 @@ async fn upload_handler(
                 .reset_relocated_endpoint_settings(db_proxy_url, &outcome)
                 .await
             {
-                error!(
-                    "Module {} installed but its local endpoint settings could not be reset after the registry refresh: {}",
-                    module_name, err
+                // The reset clears host/port values a module may have planted
+                // before a key became an endpoint address setting, so an
+                // install that skips it must not be reported as completed.
+                let err_msg = format!(
+                    "Module installed but its local endpoint settings could not be reset: {}",
+                    err
                 );
+                error!("Module {}: {}", module_name, err_msg);
+                notify_install(
+                    db_proxy_ref,
+                    module_name,
+                    module_version,
+                    "failed",
+                    &err_msg,
+                    request_context.as_ref(),
+                )
+                .await;
+                return;
             }
         }
 
