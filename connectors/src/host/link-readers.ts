@@ -6,7 +6,7 @@ import {
   resolveEnabled,
 } from "@woofx3/common/integrations/integration-settings";
 import { obsLinkReader } from "../adapters/obs/link";
-import { ADAPTER_IDS, type AdapterId } from "./adapter-ids";
+import type { AdapterId } from "./adapter-ids";
 
 /** What an adapter's `desired` decides from. */
 export interface LinkState {
@@ -89,16 +89,4 @@ export function linkReaders(deps: LinkReadersDeps): LinkReaderRegistry {
     twitch: twitchLinkReader,
     obs: obsLinkReader({ hostExplicit: deps.obsHostExplicit }),
   };
-}
-
-/**
- * Checks at startup that every adapter id has a reader. The registry type
- * already demands one; this catches a registry assembled at runtime.
- */
-export function assertLinkReaders(registry: Partial<Record<string, LinkReader>>): LinkReaderRegistry {
-  const missing = ADAPTER_IDS.filter((id) => registry[id] === undefined);
-  if (missing.length > 0) {
-    throw new Error(`no link reader for adapter(s): ${missing.join(", ")}`);
-  }
-  return registry as LinkReaderRegistry;
 }
