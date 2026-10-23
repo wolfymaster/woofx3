@@ -381,7 +381,7 @@ and these tunables:
 | `WOOFX3_OBS_BACKOFF_INITIAL_MS` | `1000` | First retry ceiling after OBS could not be reached. |
 | `WOOFX3_OBS_BACKOFF_MAX_MS` | `30000` | Retry ceiling cap; at least the initial value. |
 | `WOOFX3_OBS_CONNECT_TIMEOUT_MS` | `3000` | One WebSocket connect and sign-in. Below the open timeout. |
-| `WOOFX3_OBS_OPEN_TIMEOUT_MS` | `15000` | One attempt, from dialing to a session ready for requests. Through the companion it must exceed the relay credential request (5000) plus `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` plus the upgrade; startup refuses one that does not exceed the first two. |
+| `WOOFX3_OBS_OPEN_TIMEOUT_MS` | `15000` | One attempt, from dialing to a session ready for requests. Through the companion it must exceed the bridge credential request (6000) plus `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` plus the upgrade; startup refuses one that does not exceed the first two. |
 | `WOOFX3_OBS_COMMAND_TIMEOUT_MS` | `3500` | One command or listing in OBS before the session is recycled. Below the 4500 ms reply budget of `engine.obs.command` and `engine.obs.options`. |
 
 The host also reads the bus settings (`WOOFX3_MESSAGEBUS_URL`, `_JWT`, `_NKEY`,

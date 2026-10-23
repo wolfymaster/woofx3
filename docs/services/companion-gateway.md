@@ -241,5 +241,8 @@ inside its open deadline, so startup refuses a `WOOFX3_OBS_OPEN_TIMEOUT_MS`
 that does not exceed their sum.
 
 The api waits `WOOFX3_COMPANION_REQUEST_TIMEOUT_MS` (5000 ms by default) for
-the gateway to store a relay configuration; see
+the gateway to store a relay configuration. The gateway answers within its
+4500 ms budget, a failure included, so the api refuses to start with a value
+at or below that. When the budget runs out on a write still queued, the
+gateway answers that the write may still land; see
 [Local endpoints](./local-endpoints.md#the-relay-configuration-relay-config).

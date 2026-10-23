@@ -74,8 +74,8 @@ setting the same way.
 
 `setRelayConfig` fails when the gateway does not store the configuration: it
 refused it, the write failed, or nothing answered within
-`WOOFX3_COMPANION_REQUEST_TIMEOUT_MS` (5 seconds by default; the gateway
-answers within 4.5). That is the case while connectors is down. The
+`WOOFX3_COMPANION_REQUEST_TIMEOUT_MS` (5 seconds by default, and above the
+4.5 seconds the gateway answers within). That is the case while connectors is down. The
 dashboard's syncEngine retries, and the gateway's next credential renewal
 applies the dashboard's configuration anyway (see below), so a missed call
 heals.
