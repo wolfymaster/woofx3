@@ -28,7 +28,7 @@ const SHIPPED: CompanionConfig = {
   moduleLocalDirect: false,
   moduleSessions: {
     requestBudgetMs: 4_500,
-    openTimeoutMs: 10_000,
+    openTimeoutMs: 15_000,
     resolveTimeoutMs: 3_000,
     idleMs: 120_000,
     maxSessions: 32,
@@ -75,6 +75,11 @@ describe("companionConfig", () => {
       "an OBS open deadline the bridge setup does not fit in",
       { woofx3CompanionTicketTimeoutMs: 10_000, woofx3ObsOpenTimeoutMs: 15_000 },
       "woofx3ObsOpenTimeoutMs (15000) must exceed the bridge credential request (6000) plus woofx3CompanionTicketTimeoutMs (10000)",
+    ],
+    [
+      "a ticket exchange a module session open does not fit around",
+      { woofx3CompanionTicketTimeoutMs: 9_000, woofx3ObsOpenTimeoutMs: 20_000 },
+      "a module session open (15000) must exceed the bridge credential request (6000) plus woofx3CompanionTicketTimeoutMs (9000)",
     ],
   ];
   for (const [name, env, message] of refused) {

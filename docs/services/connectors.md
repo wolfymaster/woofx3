@@ -545,7 +545,7 @@ The companion gateway reads:
 |---|---|---|
 | `WOOFX3_HOSTING` | unset | How the engine is run: `local`, `self` or `managed`. On `local` every endpoint is dialed directly. Any other value stops connectors at startup. |
 | `WOOFX3_COMPANION_MAX_BRIDGE_OPENS` | `8` | Bridge opens in flight at once, 1 to 16 (the relay's own limit). |
-| `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` | `5000` | One ticket exchange with the relay. |
+| `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` | `5000` | One ticket exchange with the relay. Added to the bridge credential request (6000), it must stay below the 15000 ms module session open; startup refuses one that does not. |
 | `WOOFX3_MODULE_LOCAL_DIRECT` | `false` | `true` lets module requests on a `self` engine dial their endpoint's address directly. |
 
 The Twitch adapter reads:

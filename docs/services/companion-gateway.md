@@ -286,7 +286,7 @@ holds a socket itself.
   request opens a new one silently. A device that wants one sign-in per
   connection (VTube Studio, Streamlabs Desktop, Streamer.bot) needs the module
   to sign in again whenever the epoch changes.
-- **Opening.** An open has its own 10 second limit, independent of any
+- **Opening.** An open has its own 15 second limit, independent of any
   request: resolving the route, with the bridge's credential and ticket
   exchange, and the upgrade. A request whose budget ends first is answered
   `unavailable` ("still connecting") and the open carries on, so the next
@@ -311,7 +311,7 @@ holds a socket itself.
 | Requests pending on one session | 16 | `busy` |
 | Frame size, either way | 65,536 bytes | an outbound one is `invalid`; an inbound one is dropped and counted |
 | Idle time | 2 minutes | the session is closed |
-| One open | 10 seconds | `unavailable` |
+| One open | 15 seconds | `unavailable` |
 | One `.local` name lookup | 3 seconds | `address_refused` |
 
 How an endpoint failure reads in a module reply: the gateway's reasons pass
@@ -378,7 +378,7 @@ password, and is redacted like adapter detail all the same.
 | --- | --- | --- |
 | `WOOFX3_HOSTING` | unset | `local`, `self` or `managed`; see [Deploying the engine](./deployment.md#readiness-and-version). Any other value stops connectors at startup. |
 | `WOOFX3_COMPANION_MAX_BRIDGE_OPENS` | `8` | Bridge opens in flight at once, 1 to 16. |
-| `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` | `5000` | One ticket exchange with the relay. |
+| `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` | `5000` | One ticket exchange with the relay. Added to the bridge credential request (6000), it must stay below the 15000 ms module session open; startup refuses one that does not. |
 | `WOOFX3_MODULE_LOCAL_DIRECT` | `false` | `true` lets module requests on a `self` engine dial their endpoint directly. Any value but `true` or `false` stops connectors at startup. |
 
 The bridge credential request waits 6000 ms, longer than the api's own
