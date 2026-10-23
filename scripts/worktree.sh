@@ -51,7 +51,6 @@ readonly ENGINE_BUN_DIRS=(
   shared/clients/typescript/module-sdk
   api
   connectors
-  woofwoofwoof
   sceneManager
 )
 
