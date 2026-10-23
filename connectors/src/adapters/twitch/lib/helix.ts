@@ -5,6 +5,8 @@ import type {
   HelixCommandResult,
   HelixOperationName,
 } from "@woofx3/common/cloudevents/Twitch/commands";
+import { COMMAND_PREFIX } from "../../../chat/command-prefix";
+import type { SelfSentLine, SelfSentRecorder } from "./self-sent";
 import { TwitchApiError } from "./twitchApiError";
 
 // Twurple passes these straight to fetch and leaves declaring the ones a
@@ -47,13 +49,14 @@ interface HelixOperation {
    * `guardChatLine` before it is sent.
    */
   chatLine?: string;
+  /**
+   * The line comes back on EventSub's `channel.chat.message` as the
+   * broadcaster's, so it is recorded with HelixRunOptions.selfSent to be told
+   * apart from the streamer typing. An announcement comes back as a chat
+   * notification instead, and is not recorded.
+   */
+  echoesAsChatMessage?: true;
 }
-
-/**
- * The character a chat line starts with to run a command. Must match
- * COMMAND_PREFIX in woofwoofwoof/src/sentLines.ts, the commander's prefix.
- */
-const COMMAND_PREFIX = "!";
 
 /** U+200B ZERO WIDTH SPACE. */
 const ZERO_WIDTH_SPACE = "\u200b";
@@ -216,11 +219,16 @@ export const HELIX_OPERATIONS: Readonly<Record<HelixOperationName, HelixOperatio
   sendChatMessage: {
     method: "POST",
     path: "chat/messages",
-    params: { message: { type: "string", required: true }, pin: { type: "boolean" } },
+    params: {
+      message: { type: "string", required: true },
+      pin: { type: "boolean" },
+      reply_parent_message_id: { type: "string" },
+    },
     paramsIn: "body",
     broadcasterQuery: [],
     broadcasterBody: ["broadcaster_id", "sender_id"],
     chatLine: "message",
+    echoesAsChatMessage: true,
   },
   sendChatAnnouncement: {
     method: "POST",
@@ -259,7 +267,8 @@ export const HELIX_OPERATIONS: Readonly<Record<HelixOperationName, HelixOperatio
   pinChatMessage: {
     method: "PUT",
     path: "chat/pins",
-    params: { message_id: { type: "string", required: true } },
+    // `duration` is in seconds; without it the pin stays until replaced or removed.
+    params: { message_id: { type: "string", required: true }, duration: { type: "integer" } },
     paramsIn: "query",
     broadcasterQuery: ["broadcaster_id", "moderator_id"],
     broadcasterBody: [],
@@ -456,12 +465,50 @@ function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+/** How one `runHelixOperation` call is bounded and observed. */
+export interface HelixRunOptions {
+  /** How long the whole operation may take. Defaults to HELIX_DEADLINE_MS. */
+  deadlineMs?: number;
+  /** The caller's own cancellation, such as a request's deadline. Ends the operation like `deadlineMs` does. */
+  signal?: AbortSignal;
+  /**
+   * Called once, just before the first request leaves for Twitch. A caller
+   * that has to tell "never sent" from "sent, no answer" uses it, along with
+   * `HelixNoAnswer.sent`.
+   */
+  onSent?(): void;
+  /**
+   * Remembers a chat line just before it leaves, for an operation whose line
+   * echoes as a chat message, so the echo is marked as the engine's own.
+   */
+  selfSent?: SelfSentRecorder;
+  /** The chain of workflow runs saying the line, carried onto its echo. */
+  workflowChain?: string;
+}
+
+/**
+ * An operation that got no answer: its deadline passed or its caller's
+ * signal aborted. `sent` says whether a request had left for Twitch, in which
+ * case Twitch may have acted.
+ */
+export class HelixNoAnswer extends Error {
+  constructor(
+    message: string,
+    readonly sent: boolean,
+    options: ErrorOptions
+  ) {
+    super(message, options);
+    this.name = "HelixNoAnswer";
+  }
+}
+
 /**
  * Perform one declared Helix operation with the broadcaster's token and
  * answer with Twitch's own result. Twitch answering with an error status is
  * a result (`ok: false`), so its status and reason reach the caller intact;
  * only a request refused before it is sent, or one that never got an answer,
- * throws. The whole operation gives up after `deadlineMs`.
+ * throws. The whole operation gives up after `deadlineMs`, or when the
+ * caller's `signal` aborts first, with a HelixNoAnswer.
  *
  * Sent with Twurple's `callTwitchApiRaw`, which makes exactly one request,
  * rather than its API client, because that client retries a 5xx or a network
@@ -475,10 +522,13 @@ export async function runHelixOperation(
   auth: HelixAuth,
   broadcasterId: string,
   args: unknown,
-  deadlineMs: number = HELIX_DEADLINE_MS
+  options: HelixRunOptions = {}
 ): Promise<HelixCommandResult> {
+  const { deadlineMs = HELIX_DEADLINE_MS, signal: callerSignal, onSent, selfSent, workflowChain } = options;
   const { operation, params } = parseHelixArgs(args);
-  const request = buildHelixRequest(operation, broadcasterId, validateHelixParams(operation, params));
+  const validated = validateHelixParams(operation, params);
+  const request = buildHelixRequest(operation, broadcasterId, validated);
+  const echoedLine = echoedChatLine(operation, validated);
   // Not `AbortSignal.timeout`: in Bun 1.3 its timer stops for good once its
   // last abort listener is removed, which every wait here does as it settles.
   const deadline = new AbortController();
@@ -486,10 +536,25 @@ export async function runHelixOperation(
     () => deadline.abort(new DOMException(`helix ${operation} timed out`, "TimeoutError")),
     deadlineMs
   );
+  const cancelled = () => deadline.abort(callerSignal?.reason);
+  if (callerSignal?.aborted) {
+    cancelled();
+  } else {
+    callerSignal?.addEventListener("abort", cancelled, { once: true });
+  }
   const signal = deadline.signal;
   let sent = false;
+  let ownLine: SelfSentLine | undefined;
   const send = (accessToken: string) => {
-    sent = true;
+    signal.throwIfAborted();
+    if (!sent) {
+      sent = true;
+      // Before the request leaves: the echo can arrive before Twitch's answer.
+      if (echoedLine !== undefined) {
+        ownLine = selfSent?.begin(echoedLine, workflowChain);
+      }
+      onSent?.();
+    }
     return untilAborted(
       callTwitchApiRaw({ type: "helix", ...request }, auth.clientId, accessToken, undefined, { signal }),
       signal
@@ -513,24 +578,93 @@ export async function runHelixOperation(
   } catch (err) {
     if (signal.aborted) {
       const outcome = sent ? "; Twitch may still have acted" : ", before a request was sent";
-      throw new Error(`helix ${operation}: no answer within ${deadlineMs / 1000}s${outcome}`, { cause: err });
+      const why = callerSignal?.aborted ? "the caller stopped waiting" : `no answer within ${deadlineMs / 1000}s`;
+      throw new HelixNoAnswer(`helix ${operation}: ${why}${outcome}`, sent, { cause: err });
     }
     throw err;
   } finally {
     clearTimeout(timer);
+    callerSignal?.removeEventListener("abort", cancelled);
   }
 
   if (!response.ok) {
+    ownLine?.failed();
     return { ok: false, status: response.status, body: text };
   }
   if (text === "") {
     return { ok: true, body: null };
   }
+  let body: unknown;
   try {
-    return { ok: true, body: JSON.parse(text) };
+    body = JSON.parse(text);
   } catch (err) {
     throw new Error(`helix ${operation}: Twitch answered ${response.status} with something that is not JSON`, {
       cause: err,
     });
   }
+  if (ownLine !== undefined) {
+    settleOwnLine(ownLine, body);
+  }
+  return { ok: true, body };
+}
+
+/** The chat line `operation` says, when its echo comes back as a chat message. */
+function echoedChatLine(
+  operation: HelixOperationName,
+  params: Record<string, string | number | boolean | string[]>
+): string | undefined {
+  const declared = HELIX_OPERATIONS[operation];
+  if (!declared.echoesAsChatMessage || declared.chatLine === undefined) {
+    return undefined;
+  }
+  const line = params[declared.chatLine];
+  return typeof line === "string" ? line : undefined;
+}
+
+/**
+ * Settles a recorded line by Twitch's answer. An answer that cannot be read
+ * leaves the line recorded, to be claimed by its text or to expire: Twitch
+ * may have posted it.
+ */
+function settleOwnLine(line: SelfSentLine, body: unknown): void {
+  const outcome = readSentChatMessage(body);
+  if (outcome === null) {
+    return;
+  }
+  if (outcome.sent) {
+    line.sent(outcome.messageId);
+  } else {
+    line.failed();
+  }
+}
+
+/**
+ * What Send Chat Message reports for one line: posted with its id, or
+ * dropped by Twitch (AutoMod, a blocked term, a chat mode), which Twitch
+ * answers with 200 and `is_sent: false`.
+ */
+export type SentChatMessage = { sent: true; messageId: string } | { sent: false; dropReason: string };
+
+/**
+ * The outcome in a successful `sendChatMessage` body
+ * (`{ data: [{ message_id, is_sent, drop_reason? }] }`), or null when the
+ * body is not shaped like one, so a caller never mistakes it for a post.
+ */
+export function readSentChatMessage(body: unknown): SentChatMessage | null {
+  const entry = isRecord(body) && Array.isArray(body.data) ? body.data[0] : undefined;
+  if (!isRecord(entry) || typeof entry.is_sent !== "boolean") {
+    return null;
+  }
+  if (entry.is_sent) {
+    return typeof entry.message_id === "string" && entry.message_id !== ""
+      ? { sent: true, messageId: entry.message_id }
+      : null;
+  }
+  const drop = isRecord(entry.drop_reason) ? entry.drop_reason : {};
+  const reason = [drop.message, drop.code].find((value) => typeof value === "string" && value !== "");
+  return { sent: false, dropReason: typeof reason === "string" ? reason : "Twitch did not post the message" };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

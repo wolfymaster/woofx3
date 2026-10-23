@@ -15,6 +15,10 @@ const (
 	// emitter that was not regenerated.
 	goOutputPath = "../../golang/platformgateway/catalog_gen.go"
 	tsOutputPath = "../../../clients/typescript/api/platform-gateway.gen.ts"
+
+	companionContractPath   = "../companion-gateway.json"
+	companionTSOutputPath   = "../../typescript/cloudevents/Companion/module-request.gen.ts"
+	companionRustOutputPath = "../../../../barkloader/lib_sandbox/src/contracts/companion_gateway.gen.rs"
 )
 
 func readContract(t *testing.T) platformGateway {
@@ -57,6 +61,40 @@ func TestGoldenOutputs(t *testing.T) {
 	}
 }
 
+func TestCompanionGoldenOutputs(t *testing.T) {
+	raw, err := os.ReadFile(companionContractPath)
+	if err != nil {
+		t.Fatalf("reading contract: %v", err)
+	}
+	contract, err := parseCompanionGateway(raw)
+	if err != nil {
+		t.Fatalf("parsing contract: %v", err)
+	}
+	emitters := []struct {
+		name string
+		path string
+		emit func(companionGateway) ([]byte, error)
+	}{
+		{"ts", companionTSOutputPath, emitCompanionTS},
+		{"rust", companionRustOutputPath, emitRust},
+	}
+	for _, e := range emitters {
+		t.Run(e.name, func(t *testing.T) {
+			want, err := os.ReadFile(e.path)
+			if err != nil {
+				t.Fatalf("reading committed output: %v", err)
+			}
+			got, err := e.emit(contract)
+			if err != nil {
+				t.Fatalf("emitting: %v", err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Fatalf("%s is stale; run scripts/gen-contracts.sh", e.path)
+			}
+		})
+	}
+}
+
 func TestRunWritesBothOutputs(t *testing.T) {
 	dir := t.TempDir()
 	goPath, tsPath := filepath.Join(dir, "out.go"), filepath.Join(dir, "out.ts")
@@ -77,9 +115,10 @@ func TestRunWritesBothOutputs(t *testing.T) {
 
 func TestDispatchRefusesBadArguments(t *testing.T) {
 	cases := map[string][]string{
-		"no contract":       nil,
-		"unknown contract":  {"companion", contractPath},
-		"missing arguments": {"platform-gateway", contractPath},
+		"no contract":                 nil,
+		"unknown contract":            {"companion", contractPath},
+		"missing arguments":           {"platform-gateway", contractPath},
+		"missing companion arguments": {"companion-gateway", companionContractPath},
 	}
 	for name, args := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -94,11 +133,13 @@ func TestDispatchRefusesBadArguments(t *testing.T) {
 // below breaks one rule of it.
 const validContract = `{
   "subjects": {"send": "platform.gateway.send", "capabilities": "platform.gateway.capabilities", "fieldOptions": "platform.gateway.field_options"},
+  "replyTypes": {"send": "platform.gateway.send.result", "capabilities": "platform.gateway.capabilities.result", "fieldOptions": "platform.gateway.field_options.result"},
   "platforms": [{"id": "twitch", "displayName": "Twitch"}],
   "requesters": ["workflow"],
   "failureCodes": ["invalid"],
   "outcomeStatuses": ["delivered"],
   "unavailableReasons": ["stopped"],
+  "platformStates": ["connected"],
   "actions": [{"id": "chat.send", "fields": [{"name": "message", "type": "string", "required": true, "maxLength": 500}]}]
 }`
 
@@ -139,7 +180,13 @@ func TestParseRefusesBadContracts(t *testing.T) {
 		{"duplicate action", `"actions": [`, `"actions": [{"id": "chat.send", "fields": [{"name": "message", "type": "string", "required": true, "maxLength": 1}]}, `, "duplicate action"},
 		{"duplicate field", `"maxLength": 500}]`, `"maxLength": 500}, {"name": "message", "type": "string", "required": false, "maxLength": 5}]`, "duplicate field"},
 		{"shared subject", `"platform.gateway.capabilities"`, `"platform.gateway.send"`, "is also"},
-		{"bad subject", `"platform.gateway.field_options"`, `"Field Options"`, "not a dotted lowercase subject"},
+		{"bad subject", `"platform.gateway.field_options"`, `"Field Options"`, "not a dotted lowercase name"},
+		{"missing reply types", `"replyTypes": {"send": "platform.gateway.send.result", "capabilities": "platform.gateway.capabilities.result", "fieldOptions": "platform.gateway.field_options.result"},`, ``, "replyTypes.send"},
+		{"bad reply type", `"platform.gateway.send.result"`, `"send result"`, "replyTypes.send"},
+		{"shared reply type", `"platform.gateway.field_options.result"`, `"platform.gateway.capabilities.result"`, "is also replyTypes.capabilities"},
+		{"reply type equal to a subject", `"platform.gateway.capabilities.result"`, `"platform.gateway.send"`, "is also subjects.send"},
+		{"no platform states", `["connected"]`, `[]`, "platformStates: is required"},
+		{"duplicate platform state", `["connected"]`, `["connected", "connected"]`, "duplicate value"},
 		{"no platforms", `[{"id": "twitch", "displayName": "Twitch"}]`, `[]`, "platforms: is required"},
 		{"missing display name", `"displayName": "Twitch"`, `"displayName": " "`, "displayName"},
 		{"unknown outcome status", `["delivered"]`, `["delivered", "exploded"]`, "no outcome shape"},
@@ -168,6 +215,144 @@ func TestParseRefusesBadContracts(t *testing.T) {
 				t.Fatalf("error %q does not mention %q", err, tc.wantErr)
 			}
 		})
+	}
+}
+
+func TestRunWritesCompanionOutputs(t *testing.T) {
+	dir := t.TempDir()
+	tsPath, rustPath := filepath.Join(dir, "out.ts"), filepath.Join(dir, "out.rs")
+	if err := dispatch([]string{"companion-gateway", companionContractPath, tsPath, rustPath}); err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	header := "// Code generated by shared/common/contracts/gen from shared/common/contracts/companion-gateway.json; DO NOT EDIT.\n"
+	for _, path := range []string{tsPath, rustPath} {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading %s: %v", path, err)
+		}
+		if !strings.HasPrefix(string(raw), header) {
+			t.Fatalf("%s does not start with the generated-code header", path)
+		}
+	}
+}
+
+// validCompanionContract is a small companion contract the generator
+// accepts; each case below breaks one rule of it.
+const validCompanionContract = `{
+  "subjects": [{"name": "moduleRequest", "subject": "engine.companion.module.request", "request": "req", "reply": "rep"}],
+  "formats": [{"name": "id", "pattern": "^[a-z0-9_-]{1,40}$"}],
+  "enums": [{"name": "code", "values": ["busy"]}],
+  "objects": [{"name": "pair", "fields": [{"name": "value", "type": "stringOrInteger", "required": true, "maxLength": 5, "min": 0, "max": 9}]}],
+  "messages": [
+    {"name": "req", "discriminant": "op", "variants": [
+      {"tag": "send", "name": "sendReq", "fields": [{"name": "id", "type": "string", "required": true, "format": "id"}]},
+      {"tag": "ask", "name": "askReq", "fields": [{"name": "pair", "type": "object", "required": true, "object": "pair"}, {"name": "budget", "type": "integer", "required": true, "min": 1, "max": 2}]}
+    ]},
+    {"name": "rep", "discriminant": "status", "variants": [
+      {"tag": "ok", "name": "okRep", "fields": [{"name": "text", "type": "string", "required": false, "maxBytes": 10}]},
+      {"tag": "failed", "name": "failedRep", "fields": [{"name": "code", "type": "enum", "required": true, "enum": "code"}, {"name": "note", "type": "string", "required": true, "maxLength": 3}]}
+    ]}
+  ]
+}`
+
+func TestParseCompanionAcceptsTheValidContract(t *testing.T) {
+	contract, err := parseCompanionGateway([]byte(validCompanionContract))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if _, err := emitCompanionTS(contract); err != nil {
+		t.Fatalf("emitCompanionTS: %v", err)
+	}
+	if _, err := emitRust(contract); err != nil {
+		t.Fatalf("emitRust: %v", err)
+	}
+}
+
+func TestParseCompanionRefusesBadContracts(t *testing.T) {
+	cases := []struct {
+		name    string
+		from    string
+		to      string
+		wantErr string
+	}{
+		{"unknown top-level key", `"formats"`, `"patterns": [], "formats"`, "unknown field"},
+		{"unknown field key", `"format": "id"}`, `"format": "id", "pattern": "x"}`, "unknown field"},
+		{"no subjects", `"subjects": [{"name": "moduleRequest", "subject": "engine.companion.module.request", "request": "req", "reply": "rep"}]`, `"subjects": []`, "subjects: is required"},
+		{"bad subject", `"engine.companion.module.request"`, `"Module Request"`, "not a dotted lowercase name"},
+		{"undeclared request", `"request": "req"`, `"request": "nope"`, "not a declared message"},
+		{"message carried twice", `"reply": "rep"`, `"reply": "req"`, "is also"},
+		{"message carried by no subject", `"messages": [`, `"messages": [{"name": "spare", "discriminant": "kind", "variants": [{"tag": "a", "name": "spareA", "fields": [{"name": "x", "type": "integer", "required": true, "min": 0, "max": 1}]}, {"tag": "b", "name": "spareB", "fields": [{"name": "y", "type": "integer", "required": true, "min": 0, "max": 1}]}]},`, "carried by no subject"},
+		{"format beyond one class", `"^[a-z0-9_-]{1,40}$"`, `"^[a-z]+$"`, "not of the form"},
+		{"format with a regex metacharacter", `"^[a-z0-9_-]{1,40}$"`, `"^[a-z0-9\\s]{1,40}$"`, "may not appear"},
+		{"format with a mid-class dash", `"^[a-z0-9_-]{1,40}$"`, `"^[a-z-0_]{1,40}$"`, "last character"},
+		{"format with a mixed range", `"^[a-z0-9_-]{1,40}$"`, `"^[a-Z]{1,40}$"`, "not a range"},
+		{"format allowing empty", `"^[a-z0-9_-]{1,40}$"`, `"^[a-z0-9_-]{0,40}$"`, "1 <= min <= max"},
+		{"unused format", `"formats": [{"name": "id", "pattern": "^[a-z0-9_-]{1,40}$"}]`, `"formats": [{"name": "id", "pattern": "^[a-z0-9_-]{1,40}$"}, {"name": "spare", "pattern": "^[a-z]{1,2}$"}]`, "used by no field"},
+		{"unused enum", `"enums": [{"name": "code", "values": ["busy"]}]`, `"enums": [{"name": "code", "values": ["busy"]}, {"name": "spare", "values": ["x"]}]`, "used by no field"},
+		{"duplicate enum value", `["busy"]`, `["busy", "busy"]`, "duplicate value"},
+		{"type name clash", `"name": "okRep"`, `"name": "pair"`, "is also"},
+		{"one variant", `{"tag": "ok", "name": "okRep", "fields": [{"name": "text", "type": "string", "required": false, "maxBytes": 10}]},`, ``, "at least two variants"},
+		{"duplicate tag", `"tag": "ask"`, `"tag": "send"`, "duplicate tag"},
+		{"field named like the discriminant", `{"name": "budget"`, `{"name": "op"`, "discriminant"},
+		{"unbounded string", `"required": true, "maxLength": 3}`, `"required": true}`, "exactly one of maxLength, maxBytes or format"},
+		{"string with two bounds", `"maxBytes": 10}`, `"maxBytes": 10, "maxLength": 3}`, "exactly one of maxLength, maxBytes or format"},
+		{"undeclared format", `"format": "id"}`, `"format": "nope"}`, "not a declared format"},
+		{"integer without bounds", `"min": 1, "max": 2}`, `"min": 1}`, "both min and max"},
+		{"inverted bounds", `"min": 1, "max": 2}`, `"min": 3, "max": 2}`, "above max"},
+		{"unsafe integer bound", `"min": 1, "max": 2}`, `"min": 1, "max": 9007199254740992}`, "TypeScript reads them exactly"},
+		{"bound on the wrong type", `"maxBytes": 10}`, `"maxBytes": 10, "min": 0, "max": 1}`, "does not apply"},
+		{"stringOrInteger without a length", `"maxLength": 5, "min": 0`, `"min": 0`, "needs maxLength, min and max"},
+		{"undeclared enum", `"enum": "code"}`, `"enum": "nope"}`, "not a declared enum"},
+		{"undeclared object", `"object": "pair"}`, `"object": "nope"}`, "not a declared object"},
+		{"nested object", `{"name": "value", "type": "stringOrInteger", "required": true, "maxLength": 5, "min": 0, "max": 9}`, `{"name": "value", "type": "object", "required": true, "object": "pair"}`, "objects do not nest"},
+		{"unknown field type", `"type": "integer"`, `"type": "boolean"`, "is not one of"},
+		{"trailing data", "]}\n  ]\n}", "]}\n  ]\n} {}", "trailing data"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !strings.Contains(validCompanionContract, tc.from) {
+				t.Fatalf("the case's anchor %q is not in the valid contract", tc.from)
+			}
+			broken := strings.Replace(validCompanionContract, tc.from, tc.to, 1)
+			_, err := parseCompanionGateway([]byte(broken))
+			if err == nil {
+				t.Fatal("want an error")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error %q does not mention %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestRustCallLayout(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"short call on one line", []string{"a", "b"}, "f(a, b)?;"},
+		{
+			"arguments over the call width go one per line",
+			[]string{strings.Repeat("a", 30), strings.Repeat("b", 30)},
+			"f(\n            " + strings.Repeat("a", 30) + ",\n            " + strings.Repeat("b", 30) + ",\n        )?;",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := rustCall(rustCheckIndent, "f", tc.args); got != tc.want {
+				t.Fatalf("rustCall = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRustFieldName(t *testing.T) {
+	cases := map[string]string{"moduleId": "module_id", "match": "r#match", "budgetMs": "budget_ms"}
+	for in, want := range cases {
+		if got := rustFieldName(in); got != want {
+			t.Errorf("rustFieldName(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

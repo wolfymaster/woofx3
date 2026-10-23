@@ -6,6 +6,7 @@ import type {
   UpdateStreamArgs,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import { HELIX_DEADLINE_MS, type HelixAuth, runHelixOperation } from "./helix";
+import type { SelfSentRecorder } from "./self-sent";
 import type { EnqueueShoutout } from "./shoutoutQueue";
 import { httpStatusOf, TwitchApiError } from "./twitchApiError";
 
@@ -248,6 +249,12 @@ export type TwitchApiCommand = (typeof TWITCH_API_COMMANDS)[number];
 export interface TwitchApiCall {
   /** How long a `helix` operation may take in all, at most HELIX_DEADLINE_MS. */
   helixDeadlineMs: number;
+  /** Ends a `helix` operation early, when its caller stops waiting (see HelixRunOptions). */
+  signal?: AbortSignal;
+  /** Called once just before a `helix` request leaves for Twitch (see HelixRunOptions). */
+  onSent?(): void;
+  /** The chain of workflow runs saying a `helix` chat line, carried onto its echo (see HelixRunOptions). */
+  workflowChain?: string;
 }
 
 export function isTwitchApiCommand(command: string): command is TwitchApiCommand {
@@ -338,13 +345,15 @@ function wholeSeconds(raw: number | string | undefined): number {
 export default class TwitchApi {
   /**
    * `helixAuth` is the auth provider behind `apiClient`, which `helix` sends
-   * with directly. `enqueueShoutout` hands shoutouts to the dashboard's
-   * queue; without it, every shoutout is sent directly.
+   * with directly. `selfSent` records every chat line `helix` says, so its
+   * echo is marked as the engine's own. `enqueueShoutout` hands shoutouts to
+   * the dashboard's queue; without it, every shoutout is sent directly.
    */
   constructor(
     private apiClient: ApiClient,
     private broadcaster: HelixUser,
     private helixAuth: HelixAuth,
+    private selfSent: SelfSentRecorder,
     private enqueueShoutout?: EnqueueShoutout
   ) {}
 
@@ -660,7 +669,13 @@ export default class TwitchApi {
     args: unknown,
     call: TwitchApiCall = { helixDeadlineMs: HELIX_DEADLINE_MS }
   ): Promise<HelixCommandResult> {
-    return runHelixOperation(this.helixAuth, this.broadcaster.id, args, call.helixDeadlineMs);
+    return runHelixOperation(this.helixAuth, this.broadcaster.id, args, {
+      deadlineMs: call.helixDeadlineMs,
+      signal: call.signal,
+      onSent: call.onSent,
+      selfSent: this.selfSent,
+      workflowChain: call.workflowChain,
+    });
   }
 
   /**

@@ -9,5 +9,11 @@
     "skipLibCheck": true,
     "types": ["node", "bun"]
   },
-  "include": ["logging/**/*.ts", "http/**/*.ts", "runtime/**/*.ts", "integrations/**/*.ts"]
+  "include": [
+    "logging/**/*.ts",
+    "http/**/*.ts",
+    "runtime/**/*.ts",
+    "integrations/**/*.ts",
+    "cloudevents/Companion/**/*.ts"
+  ]
 }

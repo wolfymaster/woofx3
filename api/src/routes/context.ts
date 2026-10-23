@@ -41,6 +41,7 @@ import type { EngineEventStream } from "../engine-event-stream";
 import type { EventLogSelectionSource } from "../event-log-selection";
 import { releaseStub } from "../held-stub";
 import type { MarketplaceClient } from "../marketplace-client";
+import { DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS, PlatformGatewayClient } from "../platform-gateway-client";
 import { RelayCredentialSource } from "../relay-credential-source";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchDeviceLogins } from "../twitch-device-login";
@@ -91,6 +92,8 @@ export interface ApiOptions {
   twitchClientId?: string | null;
   /** Twitch's OAuth endpoints; Twitch itself when absent. */
   twitchOAuth?: TwitchOAuthClient;
+  /** How long a send to the platform gateway waits for its reply; DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS when absent. */
+  platformGatewayTimeoutMs?: number;
   /** Epoch milliseconds now; `Date.now` when absent. */
   clock?: () => number;
 }
@@ -123,6 +126,8 @@ export class ApiRouteHost extends RpcTarget {
   readonly twitchDeviceLogins: TwitchDeviceLogins;
   /** The linked account's Helix profile. An instance property for the same reason as `twitchToken`. */
   readonly twitchProfiles: TwitchProfiles;
+  /** The platform gateway in connectors. An instance property for the same reason as `twitchToken`. */
+  readonly platformGateway: PlatformGatewayClient;
 
   protected db: DbClient;
   protected nats: NATSClient | null;
@@ -497,6 +502,11 @@ export class ApiRouteHost extends RpcTarget {
       writeConfig: (config) => this.writeRelayConfig(config),
       clearConfig: () => this.deleteRelayConfig(),
       now: () => Date.now(),
+    });
+    this.platformGateway = new PlatformGatewayClient({
+      nats: opts.nats,
+      logger: opts.logger,
+      timeoutMs: opts.platformGatewayTimeoutMs ?? DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS,
     });
     this.nats = opts.nats;
     this.functions = opts.functions;
