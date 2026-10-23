@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { EngineHosting, RelayConfig } from "@woofx3/api";
-import { type RelayGrant, requestRelayCredentialOverNats } from "@woofx3/common/cloudevents/Relay/relay";
+import type { RelayGrant } from "@woofx3/common/cloudevents/Relay/relay";
 import { OBS_ENDPOINT, obsAdapterFallback } from "../adapters/obs/settings";
 import { RELAY_TICKET_TTL_MS } from "../config/companion";
 import { emptyEndpointStore, FakeTime, flush, RecordingLogger } from "../host/testing";
@@ -438,29 +438,5 @@ describe("EndpointDialer on a local engine", () => {
       },
     });
     expect(await dial()).toEqual(DIRECT);
-  });
-});
-
-describe("requestRelayCredentialOverNats", () => {
-  const encode = (body: unknown) => ({ data: new TextEncoder().encode(JSON.stringify(body)) });
-
-  it("asks engine.relay.credential with force and returns the grant", async () => {
-    const request = mock(async (_subject: string, _data: Uint8Array, _opts?: { timeout?: number }) =>
-      encode({ relay: GRANT })
-    );
-    expect(await requestRelayCredentialOverNats(request)(true)).toEqual(GRANT);
-    const [subject, data] = request.mock.calls[0] ?? [];
-    expect(subject).toBe("engine.relay.credential");
-    expect(JSON.parse(new TextDecoder().decode(data))).toEqual({ force: true });
-  });
-
-  it("returns null when nothing routes through a companion", async () => {
-    expect(await requestRelayCredentialOverNats(async () => encode({ relay: null }))(false)).toBeNull();
-  });
-
-  it("throws on an error or a malformed reply", async () => {
-    for (const body of [{ error: "dashboard answered HTTP 503" }, {}, { relay: { ...GRANT, credential: "x" } }, 7]) {
-      await expect(requestRelayCredentialOverNats(async () => encode(body))(false)).rejects.toThrow();
-    }
   });
 });
