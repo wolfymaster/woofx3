@@ -12,7 +12,7 @@ import {
   type WidgetBridge,
   type WidgetStatusReportPayload,
 } from "@woofx3/widget-host/page";
-import { AlertTimings, BROWSER_MARKS } from "./alert-timing";
+import type { AlertTimings } from "./alert-timing";
 import { AlertWidget, type AlertWidgetOptions } from "./alert-widget";
 import { PAGE_CLOCK } from "./page-clock";
 
@@ -42,17 +42,14 @@ export interface AlertAreasDeps {
   /** What alerts play on; the page clock (page-clock.ts) when absent. */
   clock?: SchedulerClock<unknown>;
   host?: PageHost;
-  /** Where alerts' steps are marked; the browser's User Timing when absent. */
-  timings?: AlertTimings;
+  /** Where alerts' steps are marked. */
+  timings: AlertTimings;
 }
 
 export class AlertAreas {
   private readonly areas = new Map<string, AlertArea>();
-  private readonly timings: AlertTimings;
 
-  constructor(private readonly deps: AlertAreasDeps) {
-    this.timings = deps.timings ?? new AlertTimings(BROWSER_MARKS);
-  }
+  constructor(private readonly deps: AlertAreasDeps) {}
 
   /** Draw the alert area for placement `instanceId` in `slot`; the result removes it. */
   mount(instanceId: string, slot: HTMLElement): () => void {
@@ -69,6 +66,7 @@ export class AlertAreas {
     let disposing = false;
     const area = (deps.createArea ?? ((options) => new AlertWidget(options)))({
       element,
+      instanceId,
       sceneBase: deps.sceneBase,
       bridges: deps.bridges,
       postStatus: deps.postStatus,
@@ -76,7 +74,7 @@ export class AlertAreas {
       document: deps.document,
       clock: deps.clock ?? PAGE_CLOCK,
       host: deps.host ?? BROWSER_HOST,
-      timings: this.timings,
+      timings: deps.timings,
       onFinished: (eventId) => {
         if (registration !== null) {
           deps.queues.complete(registration, eventId);

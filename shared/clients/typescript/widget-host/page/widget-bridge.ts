@@ -66,7 +66,11 @@ export interface WidgetBridgeCallbacks {
   /** Widget acked completion of a delivered event. */
   onEventComplete(subId: string, eventId: string): void;
   onDispose(): void;
-  /** The frame's shim has said hello and been answered: its document has loaded, the widget's own scripts are next. */
+  /**
+   * The frame's shim has said hello and been answered. The shim runs while the
+   * head is still being parsed, so the body and the widget's own scripts and
+   * subresources are still to load.
+   */
   onReady?(): void;
   /** The frame has painted (the shim's `rendered`). */
   onRendered?(): void;
