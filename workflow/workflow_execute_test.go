@@ -262,7 +262,7 @@ func TestHandleCommandExecuteEvent(t *testing.T) {
 		app.handleCommandExecuteEvent(fakeMsg{
 			subject: "workflow.command.execute",
 			data: []byte(`{"id":"r1","data":{"workflowId":"wf-raid","event":` +
-				`{"id":"e1","type":"chat.command.hug","source":"woofwoofwoof","data":{"chatter":"wolfy"}}}}`),
+				`{"id":"e1","type":"chat.command.hug","source":"connectors","data":{"chatter":"wolfy"}}}}`),
 		})
 
 		if len(logger.errors) != 1 {

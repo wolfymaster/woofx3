@@ -2,7 +2,7 @@
 // `argumentPattern` (e.g. "{songTitle}" or "{userA} {userB}") and extracts
 // their values from the remainder of a chat message. Shared by the api
 // service (validates variable names at command create/update time) and
-// woofwoofwoof (extracts values at match time), so the two never drift.
+// the connectors chat dispatcher (extracts values at match time), so the two never drift.
 //
 // `command` itself never contains "{...}" - it's always the bare trigger
 // word ("sr", "hug"). The pattern is a separate field precisely so the

@@ -352,7 +352,7 @@ bus scope of its own that holds `CHAT_DISPATCHER_GRANTS` and nothing more. It
 starts once the platform gateway answers, because its replies go through the
 gateway, and before the first link settings are read. If the first command
 listing fails, the host does not start. No other
-service runs chat commands: the standalone woofwoofwoof service is gone, and the
+service runs chat commands: the standalone chat service is gone, and the
 dispatcher announces `chat.command.<slug>` with the event `source`
 `connectors`.
 

@@ -167,7 +167,7 @@ export const commandsRoutes = routeModule({
    * chat message is, so the command's actions and any workflow triggered by it
    * cannot tell the two apart.
    *
-   * Mirrors woofwoofwoof's dispatch on a chat match: the `chat.command.<slug>`
+   * Mirrors the connectors chat dispatcher's dispatch on a chat match: the `chat.command.<slug>`
    * event always, and the command's workflow, run by id, or the actions of a
    * command that has none, both reading that same event. Cooldown is not
    * applied -- it throttles chat, and a caller of this API is already
@@ -192,7 +192,7 @@ export const commandsRoutes = routeModule({
     // the command's group/user grants through Casbin inside GetCommand and
     // rejects the call outright when `username` is not permitted, so a denial
     // can never reach the publish below. Enforcement deliberately lives there
-    // rather than here - woofwoofwoof's chat path checks the same policy rows,
+    // rather than here - the connectors chat dispatcher's path checks the same policy rows,
     // and duplicating the decision in this service would let the two drift.
     const cmdReq: command.GetCommandRequest = {
       command: commandName,
@@ -259,7 +259,7 @@ export const commandsRoutes = routeModule({
 
   /**
    * Create a chat command. Persists via dbproxy, publishes an internal
-   * `command.created` bus event so consumers (e.g. woofwoofwoof) refresh
+   * `command.created` bus event so consumers (e.g. the connectors chat dispatcher) refresh
    * their in-memory command list without restarting, and fires the
    * external `command.created` webhook so a registered UI callback can
    * observe the change without polling `listCommands()`.

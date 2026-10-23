@@ -10,7 +10,7 @@ import (
 // AddCommandArgumentPatternColumn adds commands.argument_pattern, which
 // declares "{variable}" placeholders a command accepts as named arguments
 // (e.g. "{songTitle}" or "{userA} {userB}"). `command` itself stays the bare
-// trigger word - this column is parsed separately by woofwoofwoof at match
+// trigger word - this column is parsed separately by the connectors chat dispatcher at match
 // time so the Casbin resource key ("command/"+commands.command) and the
 // in-memory chat trigger word never contain braces.
 func AddCommandArgumentPatternColumn() *gormigrate.Migration {

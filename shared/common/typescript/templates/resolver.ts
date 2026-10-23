@@ -5,7 +5,7 @@
 // through unchanged. The expression evaluator is a hand-written safe AST
 // walker — no `eval`, no `new Function()`, no access to globals.
 //
-// woofwoofwoof uses it for chat command response text. Its
+// the connectors chat dispatcher uses it for chat command response text. Its
 // `{...}` bracket syntax is deliberately disjoint from the Go workflow
 // engine's `${...}` path-only syntax (see docs/workflow/expressions.md) so
 // a string can flow through both without collision.
