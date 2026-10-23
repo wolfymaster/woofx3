@@ -1015,20 +1015,28 @@ mod tests {
         first.join().unwrap().unwrap();
     }
 
+    /// Every `ModuleEndpointFailureCode` the contract lists, read from the
+    /// contract itself so a code added there is covered here too.
+    fn contract_failure_codes() -> Vec<ModuleEndpointFailureCode> {
+        let contract: Value = serde_json::from_str(include_str!(
+            "../../../../shared/common/contracts/companion-gateway.json"
+        ))
+        .unwrap();
+        let values = contract["enums"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["name"] == "moduleEndpointFailureCode")
+            .expect("the contract lists moduleEndpointFailureCode")["values"]
+            .clone();
+        let codes: Vec<ModuleEndpointFailureCode> = serde_json::from_value(values).unwrap();
+        assert!(!codes.is_empty());
+        codes
+    }
+
     #[test]
     fn test_local_gateway_failures_are_thrown_with_their_code() {
-        let codes = [
-            ModuleEndpointFailureCode::NotDeclared,
-            ModuleEndpointFailureCode::AdapterOwned,
-            ModuleEndpointFailureCode::ProtocolUnsupported,
-            ModuleEndpointFailureCode::NotRouted,
-            ModuleEndpointFailureCode::AddressRefused,
-            ModuleEndpointFailureCode::StoreUnreadable,
-            ModuleEndpointFailureCode::Unavailable,
-            ModuleEndpointFailureCode::Timeout,
-            ModuleEndpointFailureCode::Busy,
-            ModuleEndpointFailureCode::Invalid,
-        ];
+        let codes = contract_failure_codes();
         for code in codes {
             let ext = LocalExtension::new(FakeConnectorsHost::answering(Ok(json!({
                 "status": "failed",
@@ -1117,6 +1125,117 @@ mod tests {
             assert!(err.message.contains(words), "{name}: {err}");
             if name == "request" {
                 assert!(!err.message.contains("sent"), "{err}");
+            }
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Fixture {
+        name: String,
+        invalid_field: Option<String>,
+        #[serde(default)]
+        request: Value,
+        #[serde(default)]
+        reply: Value,
+    }
+
+    fn fixtures(raw: &str) -> Vec<Fixture> {
+        #[derive(serde::Deserialize)]
+        struct File {
+            cases: Vec<Fixture>,
+        }
+        let file: File = serde_json::from_str(raw).unwrap();
+        assert!(!file.cases.is_empty());
+        file.cases
+    }
+
+    /// The shared request fixtures are what connectors' parser
+    /// (parseModuleEndpointRequest) is tested against. Every valid one is
+    /// rebuilt as a call from module code and must come out of barkloader
+    /// byte for byte, so what barkloader sends is what connectors accepts.
+    #[test]
+    fn test_local_requests_match_the_shared_contract_fixtures() {
+        let cases = fixtures(include_str!(
+            "../../../../shared/common/contracts/testdata/companion-gateway/requests.json"
+        ));
+        let valid: Vec<&Fixture> = cases.iter().filter(|c| c.invalid_field.is_none()).collect();
+        assert!(valid.iter().any(|c| c.request["op"] == "send"));
+        assert!(valid.iter().any(|c| c.request["op"] == "request"));
+        for case in valid {
+            let want = &case.request;
+            let module_id = want["moduleId"].as_str().unwrap();
+            let endpoint_id = want["endpointId"].as_str().unwrap();
+            let scope = CallScope::new(HashSet::new(), Instant::now() + Duration::from_secs(30))
+                .with_module_id(module_id.to_string())
+                .with_local_endpoints(vec![endpoint(
+                    endpoint_id,
+                    LocalEndpointProtocol::Websocket,
+                )]);
+            let mut args = json!({
+                "endpoint": endpoint_id,
+                "message": want["message"],
+                "timeoutMs": want["budgetMs"],
+            });
+            if want["op"] == "request" {
+                args["match"] = want["match"].clone();
+            }
+            let nats = FakeConnectorsHost::answering(Ok(json!({
+                "status": "ok", "reply": "{}", "sessionEpoch": "e1"
+            })));
+            let ext = LocalExtension::new(nats.clone());
+
+            call(&ext, want["op"].as_str().unwrap(), &scope, args)
+                .unwrap_or_else(|err| panic!("{}: {err}", case.name));
+
+            let sent = nats.sent();
+            assert_eq!(sent.len(), 1, "{}", case.name);
+            assert_eq!(sent[0].0, SUBJECT_MODULE_REQUEST, "{}", case.name);
+            assert_eq!(sent[0].1, *want, "{}", case.name);
+        }
+    }
+
+    /// The shared reply fixtures are what connectors' replies are tested
+    /// against: a valid `ok` reply answers a send, a valid `failed` reply is
+    /// thrown with its code, and an invalid one is `request_failed`.
+    #[test]
+    fn test_local_replies_are_read_as_the_shared_contract_fixtures() {
+        let cases = fixtures(include_str!(
+            "../../../../shared/common/contracts/testdata/companion-gateway/replies.json"
+        ));
+        for case in cases {
+            let ext = LocalExtension::new(FakeConnectorsHost::answering(Ok(case.reply.clone())));
+            let outcome = call(
+                &ext,
+                "send",
+                &scope(),
+                json!({ "endpoint": "vts", "message": "x" }),
+            );
+            match (&case.invalid_field, case.reply["status"].as_str(), outcome) {
+                (None, Some("ok"), Ok(result)) => {
+                    assert_eq!(
+                        result["sessionEpoch"], case.reply["sessionEpoch"],
+                        "{}",
+                        case.name
+                    );
+                }
+                (None, Some("failed"), Err(err)) => {
+                    assert_eq!(
+                        err.code.as_deref(),
+                        case.reply["code"].as_str(),
+                        "{}",
+                        case.name
+                    );
+                }
+                (Some(_), _, Err(err)) => {
+                    assert_eq!(
+                        err.code.as_deref(),
+                        Some(REQUEST_FAILED),
+                        "{}: {err}",
+                        case.name
+                    );
+                }
+                (_, _, outcome) => panic!("{}: unexpected {outcome:?}", case.name),
             }
         }
     }
