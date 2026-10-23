@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Delete stale Twitch EventSub WebSocket subscriptions that are holding the
-# 3-transports-per-client cap, blocking the twitch service from subscribing.
+# 3-transports-per-client cap, blocking the connectors Twitch adapter from subscribing.
 # Safe to re-run: the service recreates its own subscriptions on boot.
 set -euo pipefail
 

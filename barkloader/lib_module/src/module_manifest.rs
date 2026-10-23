@@ -1471,7 +1471,7 @@ impl ManifestTrigger {
     /// Build the Twirp TriggerInput JSON for bulk registration.
     ///
     /// The trigger row's `event` field is the actual NATS subject the
-    /// trigger fires on — that's what publishers (twitch service, etc.)
+    /// trigger fires on — that's what publishers (Twitch adapter, etc.)
     /// emit on the bus and what workflows subscribe to. By today's
     /// manifest convention the `id` field also serves as that event
     /// subject; if we ever split the two we'll thread the separate event

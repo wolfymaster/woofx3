@@ -531,7 +531,7 @@ async fn validate_theme_dependencies(
 /// in barkloader/app/src/services/field_options.rs.
 const FIELD_OPTIONS_SUBJECT: &str = "barkloader.module.field_options";
 
-/// The Twitch service's request subject. It answers any method of its Twitch
+/// The connectors Twitch adapter's request subject. It answers any method of its Twitch
 /// client, writes included (a shoutout, adding a moderator), so a form may
 /// request only the reads listed in `TWITCHAPI_FORM_READS`.
 const TWITCHAPI_SUBJECT: &str = "twitchapi";

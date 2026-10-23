@@ -110,7 +110,7 @@ export interface TwitchTokenSourceOptions {
  * here, and only here: Twitch makes its refresh tokens single-use, so a second
  * process refreshing it would spend a token this one had already spent. The
  * engine's other services ask for it on `TWITCH_TOKEN_SUBJECT`, as for a
- * dashboard's. Any other token is one the twitch service refreshes with the
+ * dashboard's. Any other token is one the connectors host's Twitch adapter refreshes with the
  * engine's own confidential Twitch app; this only reads it.
  *
  * Every write of `twitch_token` from this service goes through here, one at
@@ -418,7 +418,7 @@ export class TwitchTokenSource implements TwitchCredentials {
       }
       return withoutDashboardClientId(asDashboard);
     }
-    throw new Error("Twitch was relinked to a token the twitch service refreshes itself; ask it again");
+    throw new Error("Twitch was relinked to a token the engine refreshes itself; ask again");
   }
 
   private async dashboardHelix(): Promise<HelixCredentials | string> {
@@ -430,7 +430,7 @@ export class TwitchTokenSource implements TwitchCredentials {
     }
   }
 
-  /** The engine's own token, which the twitch service refreshes; this only reads it. */
+  /** The engine's own token, which the connectors host's Twitch adapter refreshes; this only reads it. */
   private engineRefreshHelix(stored: Record<string, unknown>): HelixCredentials | string {
     const clientId = this.ownClientId;
     if (!clientId) {
