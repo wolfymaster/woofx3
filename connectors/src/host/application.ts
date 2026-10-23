@@ -9,7 +9,7 @@ import { dbProxyLinkStore } from "./db-link-store";
 import type { Clock, IdSource, Logger, RandomSource, Timers } from "./deps";
 import { type HealthServer, startHealthServer } from "./health";
 import { Host } from "./host";
-import { assertLinkReaders, type LinkReader } from "./link-readers";
+import type { LinkReaderRegistry } from "./link-readers";
 
 export type ConnectorsServices = {
   messageBus: MessageBusService;
@@ -24,7 +24,7 @@ export interface ConnectorsApplicationDeps {
   config: ConnectorsConfig;
   logger: Logger;
   adapters: AdapterRegistry;
-  readers: Partial<Record<string, LinkReader>>;
+  readers: LinkReaderRegistry;
   clock: Clock;
   random: RandomSource;
   ids: IdSource;
@@ -46,9 +46,8 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
     this.context = { services: {} } as ConnectorsContext;
   }
 
-  /** Loads the adapter modules once per process and checks every adapter id has a link reader. */
+  /** Loads the adapter modules once per process. */
   async init(): Promise<void> {
-    assertLinkReaders(this.deps.readers);
     this.loaded ??= await loadAdapters(this.deps.adapters);
   }
 
@@ -74,7 +73,7 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
       linkStore: dbProxyLinkStore(dbProxy.client),
       adapters: this.loaded.adapters,
       hostStates: this.loaded.hostStates,
-      readers: assertLinkReaders(this.deps.readers),
+      readers: this.deps.readers,
       clock: this.deps.clock,
       random: this.deps.random,
       ids: this.deps.ids,
@@ -106,7 +105,7 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
     await host?.stop();
   }
 
-  /** For the bus heartbeat: true while a host is running. */
+  /** For the bus heartbeat: true from when a host finishes starting until it begins to stop. */
   isReady(): boolean {
     return this.host?.isRunning ?? false;
   }

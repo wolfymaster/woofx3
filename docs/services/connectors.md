@@ -529,7 +529,8 @@ includes `twitchapi` among its requests.
 | `WOOFX3_CONNECTORS_PARK_AFTER_FAILURES` | `5` | Failures that park an adapter... |
 | `WOOFX3_CONNECTORS_PARK_WINDOW_MS` | `600000` | ...within this window. |
 | `WOOFX3_CONNECTORS_STOP_DEADLINE_MS` | `10000` | How long one adapter's stop may take, abort and bus close included. |
-| `WOOFX3_CONNECTORS_DB_PROXY_TIMEOUT_MS` | `2000` | Every db-proxy call (the startup ping, each link read) is aborted after this. |
+| `WOOFX3_CONNECTORS_DB_PROXY_TIMEOUT_MS` | `2000` | Every db-proxy call (the startup ping, each health ping, each link read) is aborted after this. Must be below the runtime's 5 s health check interval. |
+| `WOOFX3_CONNECTORS_DB_PROXY_HEALTH_FAILURES` | `3` | Failed db-proxy pings in a row before the runtime's health check fails and reconnects every service. |
 | `WOOFX3_CONNECTORS_ADAPTER_CONCURRENCY` | `16` | Handlers one subscription runs at once. |
 | `WOOFX3_CONNECTORS_ADAPTER_QUEUE_CAP` | `256` | Messages one subscription queues behind them. |
 | `WOOFX3_CONNECTORS_SHUTDOWN_DEADLINE_MS` | `15000` | Whole-process shutdown before exit code 1. Must exceed the db-proxy timeout plus the chat drain plus the larger of the stop deadline and the longest served budget, the platform gateway's included. |
@@ -600,8 +601,12 @@ values stop the process at startup with every bad key named.
 ## Health
 
 `GET http://127.0.0.1:<WOOFX3_CONNECTORS_PORT>/health` answers `200` while the
-bus is connected and the reconcile loop is running (its last pass is at most
-two backstop intervals old), and `503` otherwise. An adapter's state never
+bus is connected, the reconcile loop is running (its last pass is at most
+two backstop intervals old) and db-proxy answers its link reads (fewer than two
+passes in a row got no link back), and `503` otherwise. The runtime also pings
+db-proxy on its own health check, at most the db-proxy timeout each time, and
+restarts the host once `WOOFX3_CONNECTORS_DB_PROXY_HEALTH_FAILURES` pings in a
+row have failed. An adapter's state never
 makes it fail: a parked adapter is reported, and restarting the host would not
 fix what parked it.
 
@@ -610,6 +615,7 @@ fix what parked it.
   "status": "ok",
   "bus": { "connected": true },
   "loop": { "alive": true, "lastPassAt": "2026-10-21T12:00:00.000Z" },
+  "dbProxy": { "reachable": true, "failedPasses": 0 },
   "adapters": [
     {
       "id": "twitch",

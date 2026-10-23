@@ -12,6 +12,8 @@ export default class MessageBusService implements Service<NATSClient> {
   readonly type = "nats";
   connected = false;
   private reachable = false;
+  /** The status loop, which ends when the connection closes; disconnect waits for it. */
+  private statusWatch: Promise<void> | undefined;
 
   constructor(
     readonly client: NATSClient,
@@ -26,7 +28,7 @@ export default class MessageBusService implements Service<NATSClient> {
     this.connected = true;
     this.reachable = true;
     // A status stream that fails leaves nothing to tell us the bus came back, so report it down.
-    void this.watchStatus().catch((error: unknown) => {
+    this.statusWatch = this.watchStatus().catch((error: unknown) => {
       this.logger.error("bus status stream failed; reporting the bus down from now on", {
         error: errorMessage(error),
       });
@@ -41,6 +43,10 @@ export default class MessageBusService implements Service<NATSClient> {
     this.connected = false;
     this.reachable = false;
     await this.client.close();
+    // Closing the connection ends its status stream, so this settles; the loop's own catch logs any failure.
+    const statusWatch = this.statusWatch;
+    this.statusWatch = undefined;
+    await statusWatch;
   }
 
   /** Connected and not between a drop and its reconnect. */

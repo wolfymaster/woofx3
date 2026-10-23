@@ -25,7 +25,7 @@ Both runtimes implement the `Service` interface:
 interface Service<T> {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
-  healthcheck: boolean;
+  healthcheck: boolean | (() => Promise<boolean>);
   name: string;
   type: string;
   readonly client: T;
@@ -46,6 +46,8 @@ type Service interface {
 ```
 
 :::
+
+In TypeScript, the NATS health monitor calls a function-valued `healthcheck` on every health check; the function must settle within its own bound, and a `false` result fails the check like any other, so the runtime reconnects its services. `createNATSHealthCheck` instead waits for a ready heartbeat from each service whose `healthcheck` is `true`. A service set to `false` is not checked.
 
 ### Application Interface
 
@@ -199,7 +201,7 @@ The runtime includes a health monitoring system that:
 
 1. Checks liveness every 3 seconds
 2. Sends heartbeat every 5 seconds  
-3. Performs health checks on all registered services every 5 seconds
+3. Performs health checks on all registered services every 5 seconds (`HEALTH_CHECK_INTERVAL_MS`)
 4. Automatically retries failed services with exponential backoff
 
 ::: code-group

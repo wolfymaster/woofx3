@@ -153,6 +153,32 @@ describe("SettingsWatcher", () => {
     expect(logger.at("warn").some((entry) => entry.message.includes("keeping the last one"))).toBe(true);
   });
 
+  test("counts passes in a row in which every read failed, and resets on a read that succeeds", async () => {
+    const { time, settings, watcher } = await setup();
+    await watcher.start();
+    expect(watcher.consecutiveFailedPasses).toBe(0);
+
+    settings.failing = true;
+    await time.advance(60_000);
+    await time.advance(60_000);
+    expect(watcher.consecutiveFailedPasses).toBe(2);
+    expect(watcher.lastPass).toBe(time.now());
+
+    settings.failing = false;
+    await time.advance(60_000);
+    expect(watcher.consecutiveFailedPasses).toBe(0);
+  });
+
+  test("a timed-out read counts as a failed pass", async () => {
+    const { time, settings, watcher } = await setup();
+    await watcher.start();
+    settings.gate = new Promise<void>(() => {});
+    await time.advance(60_000);
+    await time.advance(READ_TIMEOUT_MS);
+    expect(watcher.consecutiveFailedPasses).toBe(1);
+    settings.gate = undefined;
+  });
+
   test("a read that never answers times out, keeps the last state, and does not stall later passes or stop", async () => {
     const { time, settings, logger, applied, watcher } = await setup();
     await watcher.start();

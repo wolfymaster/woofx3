@@ -11,6 +11,12 @@ import {
 /**
  * Health monitor: runtime calls Liveness periodically, starts via Start(), and drives Heartbeat and HealthCheck on an interval.
  */
+/**
+ * How often the runtime runs the health monitor's healthCheck. A service's own
+ * health check must settle well inside it, or checks pile up.
+ */
+export const HEALTH_CHECK_INTERVAL_MS = 5_000;
+
 export interface HealthMonitor {
   liveness(): Promise<void>;
   start(): Promise<void>;
@@ -310,7 +316,7 @@ export function createRuntimeMachine<
                 if (!ok) sendBack({ type: "HEALTH_CHECK_FAILED" });
               })
               .catch(() => sendBack({ type: "HEALTH_CHECK_FAILED" }));
-          }, 5000);
+          }, HEALTH_CHECK_INTERVAL_MS);
           return () => {
             clearInterval(livenessId);
             clearInterval(heartbeatId);

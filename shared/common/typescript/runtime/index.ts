@@ -29,7 +29,7 @@ export type {
   RuntimeContext,
   RuntimeEvent,
 } from "./runtime";
-export { createRuntime, Runtime } from "./runtime";
+export { createRuntime, HEALTH_CHECK_INTERVAL_MS, Runtime } from "./runtime";
 export type { SecretProblem, SecretProblemKind, SecretResult } from "./secret";
 export { MIN_SECRET_BYTES, validateSecret } from "./secret";
 export type { Service } from "./service";

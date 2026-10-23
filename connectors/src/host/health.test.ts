@@ -4,7 +4,8 @@ import { ChatEnvSchema, chatConfig } from "../config/chat";
 import { type GatewayConfig, GatewayEnvSchema, gatewayConfig } from "../config/gateway";
 import { HOST_DEFAULTS, type HostConfig, HostEnvSchema, hostConfig } from "../config/host";
 import { type HealthBody, handleHealthRequest, healthBody, startHealthServer } from "./health";
-import { Host } from "./host";
+import { DB_PROXY_UNREACHABLE_PASSES, Host } from "./host";
+import type { LinkStore } from "./link-readers";
 import {
   countingIds,
   FakeAdapter,
@@ -22,7 +23,7 @@ const gateway: GatewayConfig = gatewayConfig(GatewayEnvSchema.parse({}));
 
 const linkedSettings = fixedLinkStore({ twitch_token: "tok", "integration.twitch.enabled": "true" });
 
-async function runningHost(adapter: FakeAdapter, busUp = { value: true }) {
+async function runningHost(adapter: FakeAdapter, busUp = { value: true }, linkStore: LinkStore = linkedSettings) {
   const time = new FakeTime();
   const host = new Host({
     config,
@@ -33,7 +34,7 @@ async function runningHost(adapter: FakeAdapter, busUp = { value: true }) {
     dbProxy: { baseURL: "http://db.test" },
     bus: new FakeBus(),
     busConnected: () => busUp.value,
-    linkStore: linkedSettings,
+    linkStore,
     adapters: new Map([["twitch", adapter]]),
     hostStates: new Map([["twitch", undefined]]),
     readers: shippedLinkReaders(),
@@ -145,6 +146,36 @@ describe("health", () => {
     const { status, body } = await getHealth(host);
     expect(status).toBe(503);
     expect(body.loop.alive).toBe(false);
+  });
+
+  test("answers 503 once db-proxy fails every link read for enough passes in a row, and 200 once it answers", async () => {
+    const dbProxyUp = { value: true };
+    const store: LinkStore = {
+      getSetting: async (key) => {
+        if (!dbProxyUp.value) {
+          throw new Error("db-proxy is down");
+        }
+        return linkedSettings.getSetting(key);
+      },
+      installedModules: async () => [],
+    };
+    const { host, time } = await runningHost(new FakeAdapter(), { value: true }, store);
+    expect((await getHealth(host)).body.dbProxy).toEqual({ reachable: true, failedPasses: 0 });
+
+    dbProxyUp.value = false;
+    for (let pass = 1; pass < DB_PROXY_UNREACHABLE_PASSES; pass++) {
+      await time.advance(HOST_DEFAULTS.reconcileIntervalMs);
+    }
+    expect((await getHealth(host)).status).toBe(200);
+    await time.advance(HOST_DEFAULTS.reconcileIntervalMs);
+    const { status, body } = await getHealth(host);
+    expect(status).toBe(503);
+    expect(body.loop.alive).toBe(true);
+    expect(body.dbProxy).toEqual({ reachable: false, failedPasses: DB_PROXY_UNREACHABLE_PASSES });
+
+    dbProxyUp.value = true;
+    await time.advance(HOST_DEFAULTS.reconcileIntervalMs);
+    expect((await getHealth(host)).body.dbProxy).toEqual({ reachable: true, failedPasses: 0 });
   });
 
   test("any other path is a 404 in the error envelope", async () => {

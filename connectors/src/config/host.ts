@@ -1,3 +1,4 @@
+import { HEALTH_CHECK_INTERVAL_MS } from "@woofx3/common/runtime";
 import { z } from "zod";
 
 /**
@@ -19,9 +20,16 @@ export const HOST_DEFAULTS = {
   /**
    * Every db-proxy call (the startup ping and each link read) is aborted after
    * this long. Below the backstop interval, so a hung db-proxy costs one pass
-   * a warning instead of stalling every pass after it.
+   * a warning instead of stalling every pass after it, and below the
+   * runtime's health check interval, so one health ping ends before the next.
    */
   dbProxyTimeoutMs: 2_000,
+  /**
+   * The runtime's health check counts db-proxy unhealthy only after this many
+   * failed pings in a row. A failed check reconnects every service, so one
+   * dropped ping must not restart the host.
+   */
+  dbProxyHealthFailures: 3,
   /** Handlers one subscription runs at once, and messages it queues behind them before dropping. */
   adapterConcurrency: 16,
   adapterQueueCap: 256,
@@ -56,6 +64,7 @@ export const HostEnvSchema = z.object({
   woofx3ConnectorsParkWindowMs: positiveMs.default(HOST_DEFAULTS.parkWindowMs),
   woofx3ConnectorsStopDeadlineMs: positiveMs.default(HOST_DEFAULTS.stopDeadlineMs),
   woofx3ConnectorsDbProxyTimeoutMs: positiveMs.default(HOST_DEFAULTS.dbProxyTimeoutMs),
+  woofx3ConnectorsDbProxyHealthFailures: z.number().int().positive().default(HOST_DEFAULTS.dbProxyHealthFailures),
   woofx3ConnectorsAdapterConcurrency: z.number().int().positive().default(HOST_DEFAULTS.adapterConcurrency),
   woofx3ConnectorsAdapterQueueCap: z.number().int().nonnegative().default(HOST_DEFAULTS.adapterQueueCap),
   woofx3ConnectorsShutdownDeadlineMs: positiveMs.default(HOST_DEFAULTS.shutdownDeadlineMs),
@@ -70,6 +79,7 @@ export interface HostConfig {
   park: { afterFailures: number; windowMs: number };
   stopDeadlineMs: number;
   dbProxyTimeoutMs: number;
+  dbProxyHealthFailures: number;
   subscriptionLimits: { concurrency: number; queueCap: number };
   shutdownDeadlineMs: number;
 }
@@ -80,6 +90,13 @@ export function hostConfigProblems(env: HostEnv): string[] {
   if (env.woofx3ConnectorsBackoffBaseMs > env.woofx3ConnectorsBackoffMaxMs) {
     problems.push(
       `woofx3ConnectorsBackoffBaseMs (${env.woofx3ConnectorsBackoffBaseMs}) must not exceed woofx3ConnectorsBackoffMaxMs (${env.woofx3ConnectorsBackoffMaxMs})`
+    );
+  }
+  // The runtime pings db-proxy on every health check without waiting for the
+  // last one, so a ping that may outlast the interval lets pings pile up.
+  if (env.woofx3ConnectorsDbProxyTimeoutMs >= HEALTH_CHECK_INTERVAL_MS) {
+    problems.push(
+      `woofx3ConnectorsDbProxyTimeoutMs (${env.woofx3ConnectorsDbProxyTimeoutMs}) must be below the runtime health check interval (${HEALTH_CHECK_INTERVAL_MS}ms)`
     );
   }
   // Shutdown first waits out a link read in flight, then stops every adapter
@@ -102,6 +119,7 @@ export function hostConfig(env: HostEnv): HostConfig {
     park: { afterFailures: env.woofx3ConnectorsParkAfterFailures, windowMs: env.woofx3ConnectorsParkWindowMs },
     stopDeadlineMs: env.woofx3ConnectorsStopDeadlineMs,
     dbProxyTimeoutMs: env.woofx3ConnectorsDbProxyTimeoutMs,
+    dbProxyHealthFailures: env.woofx3ConnectorsDbProxyHealthFailures,
     subscriptionLimits: {
       concurrency: env.woofx3ConnectorsAdapterConcurrency,
       queueCap: env.woofx3ConnectorsAdapterQueueCap,
