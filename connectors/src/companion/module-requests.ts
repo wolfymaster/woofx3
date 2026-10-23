@@ -25,7 +25,7 @@ import { type EndpointSessions, failureCodeFor, type SessionFailure } from "./en
 import type { ModuleRoutePolicy } from "./module-route-policy";
 
 /** The contract's bound on a failed reply's message, in characters. */
-const FAILED_MESSAGE_MAX_CHARS = 1_000;
+export const FAILED_MESSAGE_MAX_CHARS = 1_000;
 
 /** How the host's own refusals read to barkloader. */
 const HOST_ERROR_CODES: Record<HostRequestErrorCode, ModuleEndpointFailureCode> = {

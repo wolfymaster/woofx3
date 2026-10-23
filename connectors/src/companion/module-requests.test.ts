@@ -15,6 +15,7 @@ import { COMPANION_GATEWAY_GRANTS, EngineCompanionGateway } from "./companion-ga
 import type { Fetch } from "./dialer";
 import type { EndpointStore, StoredModuleSetting } from "./endpoint-store";
 import { type DeviceScript, echo, eventually, FakeDevice } from "./fake-device";
+import { FAILED_MESSAGE_MAX_CHARS } from "./module-requests";
 import { MODULE_SETTING_UPDATED_SUBJECT } from "./route-watch";
 
 const SUBJECT = COMPANION_GATEWAY_SUBJECTS.moduleRequest;
@@ -350,5 +351,13 @@ describe("module requests on other hostings", () => {
       },
     });
     expect(await ask(send("{}"))).toMatchObject({ status: "failed", code: "store_unreadable" });
+  });
+});
+
+describe("FAILED_MESSAGE_MAX_CHARS", () => {
+  it("is the contract's failed.message bound", () => {
+    const failed = (chars: number) => ({ status: "failed", code: "unavailable", message: "x".repeat(chars) });
+    expect(parseModuleEndpointReply(failed(FAILED_MESSAGE_MAX_CHARS)).ok).toBe(true);
+    expect(parseModuleEndpointReply(failed(FAILED_MESSAGE_MAX_CHARS + 1)).ok).toBe(false);
   });
 });
