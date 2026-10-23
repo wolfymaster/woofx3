@@ -1,13 +1,11 @@
 import { ApiClient, type HelixUser } from "@twurple/api";
 import type { AccessTokenWithUserId, AuthProvider } from "@twurple/auth";
 import { RefreshingAuthProvider } from "@twurple/auth";
-import { ChatClient } from "@twurple/chat";
 import { EventSubWsListener } from "@twurple/eventsub-ws";
 import { DashboardAuthProvider, type DashboardToken, type RequestDashboardToken } from "./dashboard-auth-provider";
 import { publicClientIdOf, selectStrategy } from "./token-strategy";
 
 export type { ApiClient } from "@twurple/api";
-export type { ChatClient, ChatMessage } from "@twurple/chat";
 export type { EventSubWsListener } from "@twurple/eventsub-ws";
 export type { DashboardToken, RequestDashboardToken } from "./dashboard-auth-provider";
 export { requestTokenOverNats, TWITCH_TOKEN_SUBJECT } from "./dashboard-auth-provider";
@@ -138,25 +136,6 @@ export default class TwitchClient {
     return this.apiClient;
   }
 
-  /**
-   * A chat client joined to `channel`, or to the configured channel when none
-   * is given. Callers without a configured channel pass the broadcaster's
-   * login (see `broadcaster`).
-   */
-  ChatClient(channel: string | undefined = this.args.channel): ChatClient {
-    if (!this.authProvider) {
-      throw new Error("Must initialize TwitchClient before use");
-    }
-    if (!channel) {
-      throw new Error("ChatClient needs a channel: none was configured or given");
-    }
-
-    return new ChatClient({
-      authProvider: this.authProvider,
-      channels: [channel],
-    });
-  }
-
   EventBusListener(): EventSubWsListener {
     if (!this.authProvider) {
       throw new Error("Must initialize TwitchClient before use");
@@ -172,9 +151,8 @@ export default class TwitchClient {
   }
 
   /**
-   * Release what this client owns. Only the EventSub listener is held here -
-   * ChatClient() hands out a fresh instance per call, so its lifetime belongs
-   * to the caller. Safe to call when nothing was started.
+   * Release what this client owns. Only the EventSub listener is held here.
+   * Safe to call when nothing was started.
    */
   async close(): Promise<void> {
     if (this.eventListener) {
