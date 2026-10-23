@@ -13,6 +13,7 @@ import { closeDeliveriesToRemovedPlacements } from "./events/removed-placements"
 import { GoogleFontCache } from "./fonts/google-font-cache";
 import { createHttpServer } from "./http";
 import { initSubscriptions } from "./nats-subscriptions";
+import { type RefreshRequester, startRefreshRequests, systemRefreshTimers } from "./obs/refresh-request";
 import { createObsService, type ObsService } from "./obs/service";
 import { FrameAssembler, HttpBarkloaderFrameClient } from "./scene/frame-assembler";
 import { FrameCatalog } from "./scene/frame-catalog";
@@ -52,6 +53,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
   private obs: ObsService | null = null;
   private sceneDocuments: SceneDocuments | null = null;
   private nats: NATSClient | null = null;
+  private refreshRequester: RefreshRequester | null = null;
 
   constructor(runtimeConfig: SceneManagerRuntimeConfig) {
     this.context = { runtimeConfig };
@@ -115,9 +117,9 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     // health-monitor-gated startup, which would hold scene serving back.
     const nats = await connectBus(runtimeConfig, logger);
     this.nats = nats;
-    // Started only once the server is listening (below), so the first
-    // session's overlay refresh can never land before /scene is served.
-    const obs = createObsService({ db, nats, obs: runtimeConfig.obs, overlayPort: runtimeConfig.port, logger });
+    // Started only once the server is listening (below); the overlay refresh
+    // is requested after that, so it can never land before /scene is served.
+    const obs = createObsService({ db, nats, obs: runtimeConfig.obs, logger });
     this.obs = obs;
     const tokens = sceneTokenIssuer(sessionTokens, async (sceneId) => (await host.loadSceneById(sceneId)) !== null);
 
@@ -132,6 +134,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       moduleState,
       resolver,
       sceneDocuments,
+      requestOverlayRefresh: (request) => obs.requestOverlayRefresh(request),
       editorToken: tokens.editorToken,
       previewToken: tokens.previewToken,
       logger,
@@ -158,6 +161,25 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     });
 
     obs.start();
+    const overlayPort = this.listeningPort();
+    if (overlayPort === null) {
+      throw new Error("sceneManager: the HTTP server reports no listening port");
+    }
+    if (nats === null) {
+      // No bus to ask over, and this process holds the OBS connection itself.
+      obs.requestOverlayRefresh({ overlayPort, bootId });
+    } else {
+      this.refreshRequester = startRefreshRequests(
+        { overlayPort, bootId },
+        {
+          bus: nats,
+          config: runtimeConfig.obsRefresh,
+          random: { next: Math.random },
+          timers: systemRefreshTimers,
+          logger,
+        }
+      );
+    }
 
     // Placements removed while this process was down left deliveries no page
     // will queue; checked once the server is up, so it never holds serving back.
@@ -187,6 +209,8 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     // heartbeats, past shutdown.
     await this.server?.stop(true);
     this.server = null;
+    await this.refreshRequester?.stop();
+    this.refreshRequester = null;
     await this.obs?.stop();
     this.obs = null;
     // Last, so nothing above is left publishing onto a closed connection.

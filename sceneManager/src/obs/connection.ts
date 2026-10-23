@@ -47,11 +47,10 @@ export interface ObsConnectionOptions<TClient> {
   /** Open a session or throw. Must not retry on its own. */
   open: () => Promise<ObsSession<TClient>>;
   /**
-   * Runs after every successful connect. `first` is true only for the first
-   * session this process opens. A failure is logged and does not drop the
-   * session.
+   * Runs after every successful connect. A failure is logged and does not
+   * drop the session.
    */
-  onConnected?: (client: TClient, info: { first: boolean }) => Promise<void> | void;
+  onConnected?: (client: TClient) => Promise<void> | void;
   logger: Logger;
   backoff?: ObsBackoff;
   /** Defaults to `DEFAULT_OBS_OPEN_TIMEOUT_MS`. */
@@ -303,7 +302,7 @@ export class ObsConnection<TClient> {
     const hook = this.options.onConnected;
     if (hook) {
       Promise.resolve()
-        .then(() => hook(session.client, { first }))
+        .then(() => hook(session.client))
         .catch((err) => {
           logger.warn("OBS post-connect work failed", {
             error: err instanceof Error ? err.message : String(err),

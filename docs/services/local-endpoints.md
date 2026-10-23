@@ -158,6 +158,47 @@ whatever sceneManager offered, and the relay answers the upgrade with OBS's
 choice. Under Bun, sceneManager imports obs-websocket-js's msgpack build, so it
 offers `obswebsocket.msgpack` and the bridge carries binary messages.
 
+## Overlay recovery
+
+After sceneManager restarts, the browser sources in OBS that show its overlays
+hold connections to a process that is gone. sceneManager recovers them by
+pressing "refresh cache of current page" on those browser sources, found by
+their URL (the overlay port and a `/scene/` path), once per start. A refresh
+cuts off whatever an overlay is playing, so it is tied to the start and never
+to a reconnect.
+
+The refresh is a request on the bus, not a call made when OBS connects:
+
+```
+sceneManager ──engine.obs.browser_source.refresh {overlayPort, bootId}──▶ holder of the OBS connection
+             ◀──{status: "accepted", bootId} | {status: "invalid", error}──┘
+```
+
+- After its HTTP server listens, sceneManager sends the request with the port
+  it listens on and a `bootId` that names this start. It repeats the request
+  until a reply accepts it, so it is not lost when the holder starts later,
+  restarts, or has OBS switched off. Only shutdown ends the retrying. A missing
+  responder, a timeout or an invalid reply each wait and retry, with a doubling,
+  jittered delay capped at a maximum.
+- The holder latches the latest `bootId`. It refreshes at once when an OBS
+  session is open and otherwise on the next session. Each `bootId` refreshes at
+  most once: a repeated request for one already latched or consumed is accepted
+  and changes nothing, and a reconnect with no new request refreshes nothing. A
+  request that arrives during a refresh runs once more after it.
+- Today the holder is sceneManager itself, answering its own request. The
+  request is a separate step so that moving the OBS connection to another
+  process changes only who answers.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `WOOFX3_SCENE_MANAGER_OBS_REFRESH_REQUEST_TIMEOUT_MS` | `2000` | How long one request waits for a reply. |
+| `WOOFX3_SCENE_MANAGER_OBS_REFRESH_RETRY_BASE_MS` | `1000` | The first retry's delay ceiling; it doubles. |
+| `WOOFX3_SCENE_MANAGER_OBS_REFRESH_RETRY_MAX_MS` | `30000` | The ceiling the delay stops growing at. |
+
+The client-side reconnect loop in the overlay page remains the fallback for
+everything this cannot cover: OBS not running, OBS started after sceneManager,
+or a scene open in a plain browser tab.
+
 ## Why the companion decides the address
 
 A bridge request names only `(moduleId, endpointId)`. The engine never tells

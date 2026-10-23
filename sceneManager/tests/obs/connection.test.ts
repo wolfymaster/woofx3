@@ -79,12 +79,12 @@ function fakeObs(failures: number) {
   return { open, client, opened: () => opened, closed, dropLatest: () => closers.at(-1)?.() };
 }
 
-function connection(obs: ReturnType<typeof fakeObs>, extra: { onConnected?: (first: boolean) => void } = {}) {
+function connection(obs: ReturnType<typeof fakeObs>, extra: { onConnected?: () => void } = {}) {
   const timers = manualTimers();
   const log = recordingLogger();
   const conn = new ObsConnection<ObsControlClient>({
     open: obs.open,
-    onConnected: (_client, { first }) => extra.onConnected?.(first),
+    onConnected: () => extra.onConnected?.(),
     logger: log.logger,
     random: () => 1,
     setTimer: timers.setTimer,
@@ -108,8 +108,12 @@ describe("obsRetryDelay", () => {
 describe("ObsConnection", () => {
   it("connects straight away when OBS is up", async () => {
     const obs = fakeObs(0);
-    const firsts: boolean[] = [];
-    const { conn, timers, log } = connection(obs, { onConnected: (first) => firsts.push(first) });
+    let connects = 0;
+    const { conn, timers, log } = connection(obs, {
+      onConnected: () => {
+        connects += 1;
+      },
+    });
 
     expect(conn.status()).toBe("connecting");
     conn.start();
@@ -117,7 +121,7 @@ describe("ObsConnection", () => {
 
     expect(conn.status()).toBe("connected");
     expect(conn.current()).toBe(obs.client);
-    expect(firsts).toEqual([true]);
+    expect(connects).toBe(1);
     expect(timers.count()).toBe(0);
     expect(log.loud().map((l) => l.message)).toEqual(["Connected to OBS"]);
   });
@@ -145,10 +149,14 @@ describe("ObsConnection", () => {
     ]);
   });
 
-  it("reconnects when the socket closes, and tells onConnected it is not the first session", async () => {
+  it("reconnects when the socket closes, running onConnected for each session", async () => {
     const obs = fakeObs(0);
-    const firsts: boolean[] = [];
-    const { conn, timers, log } = connection(obs, { onConnected: (first) => firsts.push(first) });
+    let connects = 0;
+    const { conn, timers, log } = connection(obs, {
+      onConnected: () => {
+        connects += 1;
+      },
+    });
     conn.start();
     await settle();
 
@@ -160,7 +168,7 @@ describe("ObsConnection", () => {
     await timers.fire();
     expect(conn.status()).toBe("connected");
     expect(obs.opened()).toBe(2);
-    expect(firsts).toEqual([true, false]);
+    expect(connects).toBe(2);
     expect(log.loud().map((l) => l.message)).toEqual([
       "Connected to OBS",
       "OBS connection lost; reconnecting in the background",
@@ -283,8 +291,12 @@ describe("ObsConnection", () => {
 
   it("reconnects at once when told, closing the open session", async () => {
     const obs = fakeObs(0);
-    const firsts: boolean[] = [];
-    const { conn, timers, log } = connection(obs, { onConnected: (first) => firsts.push(first) });
+    let connects = 0;
+    const { conn, timers, log } = connection(obs, {
+      onConnected: () => {
+        connects += 1;
+      },
+    });
     conn.start();
     await settle();
 
@@ -294,7 +306,7 @@ describe("ObsConnection", () => {
     expect(obs.closed).toEqual([1]);
     expect(obs.opened()).toBe(2);
     expect(conn.status()).toBe("connected");
-    expect(firsts).toEqual([true, false]);
+    expect(connects).toBe(2);
     expect(timers.count()).toBe(0);
     expect(log.loud().map((l) => l.message)).toContain("OBS module settings changed; reconnecting to OBS");
   });
