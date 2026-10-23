@@ -37,6 +37,8 @@ owner_ref="${GITHUB_REPOSITORY}#${pr_number}"
 slug="pr-${pr_number}-woofx3"
 
 # api <method> <path> [body] [idempotency-key]
+# Prints the response body. On an HTTP error the body goes to stderr instead, so
+# the API's error code reaches the log even when the caller discards stdout.
 api() {
   local method="$1" path="$2" body="${3:-}" idempotency_key="${4:-}"
   local args=(--silent --show-error --fail-with-body
@@ -49,7 +51,13 @@ api() {
   if [ -n "$body" ]; then
     args+=(--data "$body")
   fi
-  curl "${args[@]}" "${MAINTENANCE_API_URL}${path}"
+  local response status=0
+  response="$(curl "${args[@]}" "${MAINTENANCE_API_URL}${path}")" || status=$?
+  if [ "$status" != 0 ]; then
+    echo "preview-engine: ${method} ${path} failed: ${response}" >&2
+    return "$status"
+  fi
+  printf '%s' "$response"
 }
 
 # The engine for this pull request, or "" when it has none. The list endpoint
@@ -134,7 +142,7 @@ Running \`${version}\`. It is removed when this pull request closes, and expires
   # A run that failed names the step it failed on; a run still going has
   # simply outlived the wait.
   step="$(echo "$engine" | jq --raw-output '.run.currentStep // "unknown"')"
-  error="$(echo "$engine" | jq --raw-output '.run.error // "no error reported"')"
+  error="$(echo "$engine" | jq --raw-output '.run.error.message // "no error reported"')"
   if [ "$status" = "failed" ]; then
     comment "Preview engine failed at step \`${step}\`: ${error}"
     echo "preview-engine: provisioning failed at ${step}: ${error}" >&2
