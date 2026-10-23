@@ -247,6 +247,14 @@ credentials from any other origin, or from a request with no `Origin`, with
 the same refusal as wrong credentials. A registered client has no such
 binding.
 
+The binding stops the secret being used from another web page, because a
+browser always sends the page's real `Origin`. It is not a defence against a
+stolen secret: any client outside a browser, on any machine that can reach
+the engine, can send the paired origin. Treat a paired secret like any other
+client secret, and delete the client if it is exposed. A reverse proxy in
+front of the engine must pass `Origin` through; one that drops it locks every
+paired client out.
+
 Who may register is set by `WOOFX3_REGISTRATION_MODE`:
 
 | Mode | Who may register |

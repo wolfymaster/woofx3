@@ -1,11 +1,14 @@
-import { describe, expect, test } from "bun:test";
-import { isAuthenticationRefused } from "@woofx3/api/rpc";
+import { afterEach, describe, expect, test } from "bun:test";
+import type { Woofx3EngineApi } from "@woofx3/api";
+import { type ApiGatewayContract, isAuthenticationRefused } from "@woofx3/api/rpc";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { Api } from "../src/api";
 import { ClientAuth } from "../src/auth";
 import { ClientSessions } from "../src/client-sessions";
 import { ApiGateway } from "../src/gateway";
+import { newWebSocketRpcSession } from "capnweb";
 import type { ConnectionInfo } from "../src/gateway-connection";
+import { createHttpServer } from "../src/http";
 import { resolveRegistrationPolicy } from "../src/registration";
 
 const logger = { debug() {}, info() {}, warn() {}, error() {} } as unknown as SharedLogger;
@@ -20,6 +23,12 @@ function gateway() {
         return {
           status: { code: "OK" },
           client: { description: "Chrome", kind: "CLIENT_KIND_PAIRED", origin: PAIRED_FROM },
+        };
+      }
+      if (clientId === "paired-elsewhere") {
+        return {
+          status: { code: "OK" },
+          client: { description: "Firefox", kind: "CLIENT_KIND_PAIRED", origin: "http://localhost:3000" },
         };
       }
       return { status: { code: "OK" }, client: { description: "desktop", kind: "CLIENT_KIND_REGISTERED", origin: "" } };
@@ -84,5 +93,38 @@ describe("authenticating a registered client", () => {
     [null],
   ])("is accepted from any origin (%s)", async (origin) => {
     expect(await rejectionOf(gateway().authenticate("registered", "s", from(origin)))).toBeNull();
+  });
+});
+
+describe("over a WebSocket", () => {
+  let server: ReturnType<typeof createHttpServer> | null = null;
+  afterEach(() => {
+    server?.stop(true);
+    server = null;
+  });
+
+  test("a session sees the Origin of the socket's upgrade request", async () => {
+    server = createHttpServer({
+      port: 0,
+      hostname: "127.0.0.1",
+      readiness: async () => ({}) as never,
+      health: () => ({}) as never,
+      logger,
+      gateway: gateway(),
+      requestGuard: { allowedHosts: null, allowedOrigins: null },
+      onProcessingCallback: async () => {},
+      barkloaderWebhookSecret: null,
+    });
+    const socket = new WebSocket(`ws://127.0.0.1:${server.port}/api`, { headers: { Origin: PAIRED_FROM } } as never);
+    const stub = newWebSocketRpcSession<ApiGatewayContract>(socket);
+    try {
+      const own = stub.authenticate("paired", "s") as unknown as Woofx3EngineApi;
+      const other = stub.authenticate("paired-elsewhere", "s") as unknown as Woofx3EngineApi;
+
+      expect(await own.ping()).toEqual({ status: "ok" });
+      expect(isAuthenticationRefused(await rejectionOf(other.ping()))).toBe(true);
+    } finally {
+      stub[Symbol.dispose]();
+    }
   });
 });
