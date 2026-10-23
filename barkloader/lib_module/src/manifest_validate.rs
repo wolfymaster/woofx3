@@ -984,6 +984,7 @@ fn validate_local(manifest: &ModuleManifest) -> Result<()> {
             "text",
             &mut named,
         )?;
+        require_loopback_host_default(manifest, &context, &endpoint.host_setting)?;
         require_local_setting(
             manifest,
             &context,
@@ -1032,6 +1033,37 @@ fn validate_local(manifest: &ModuleManifest) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Whether a host setting default can only ever aim at the engine's own
+/// machine: `localhost` or an IP literal in 127/8 or `::1`.
+fn is_loopback_host(value: &str) -> bool {
+    value.eq_ignore_ascii_case("localhost")
+        || value
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
+/// A local endpoint's host setting may ship a default only if it is empty or
+/// loopback. On a local or opted-in self engine the module path dials whatever
+/// the setting holds, so a default must never point at another device.
+fn require_loopback_host_default(
+    manifest: &ModuleManifest,
+    context: &str,
+    host_setting: &str,
+) -> Result<()> {
+    let default = manifest
+        .settings
+        .iter()
+        .find(|s| s.id == host_setting)
+        .and_then(|s| s.default_value.as_deref())
+        .unwrap_or("");
+    if default.is_empty() || is_loopback_host(default) {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "{context}: the default for hostSetting must be empty or a loopback address, not {default}"
+    ))
 }
 
 /// A setting a local endpoint field names: declared, of the wanted type, and
@@ -2023,6 +2055,52 @@ fn validate_select_options(field: &ManifestConfigField, context: &str) -> Result
     }
 }
 
+/// Field types whose value is never a string; a `visibleWhen` on one of them
+/// can never match.
+const NON_TEXT_FIELD_TYPES: [&str; 6] = ["number", "range", "toggle", "button", "layout", "list"];
+
+/// `visibleWhen` names another field of the same top-level list, one that is
+/// itself always shown, and the values that reveal this one.
+fn validate_visible_when(
+    field: &ManifestConfigField,
+    siblings: &[ManifestConfigField],
+    context: &str,
+) -> Result<()> {
+    let Some(condition) = &field.visible_when else {
+        return Ok(());
+    };
+    if condition.field == field.id {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` cannot name the field itself"
+        ));
+    }
+    let Some(target) = siblings.iter().find(|s| s.id == condition.field) else {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` {:?} is not a field of this list",
+            condition.field
+        ));
+    };
+    if target.visible_when.is_some() {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` {:?} has a `visibleWhen` of its own; conditions go one level only",
+            condition.field
+        ));
+    }
+    if NON_TEXT_FIELD_TYPES.contains(&target.field_type.as_str()) {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` {:?} is a `{}` field, which never holds text, so the condition could not match",
+            condition.field,
+            target.field_type
+        ));
+    }
+    if condition.one_of.is_empty() || condition.one_of.iter().any(|v| v.trim().is_empty()) {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.oneOf` must list at least one non-empty value"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<()> {
     let mut seen: HashSet<&str> = HashSet::with_capacity(fields.len());
     for (i, field) in fields.iter().enumerate() {
@@ -2076,6 +2154,7 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
             )?;
         }
         validate_item_fields(field, &format!("{context} field #{i} ({id})"))?;
+        validate_visible_when(field, fields, &format!("{context} field #{i} ({id})"))?;
         validate_operators(field, &format!("{context} field #{i} ({id})"))?;
         // An empty `anyText` is meaningful - it drops the part of the sentence -
         // but whitespace alone is neither that nor words, so it is a slip.
@@ -2168,6 +2247,12 @@ fn validate_list_rows(
         ));
     }
     for (i, item) in item_fields.iter().enumerate() {
+        if item.visible_when.is_some() {
+            return Err(anyhow!(
+                "{context}: item field #{i} ({}) has `visibleWhen`, which a list row does not take",
+                item.id
+            ));
+        }
         if !LIST_ITEM_FIELD_TYPES.contains(&item.field_type.as_str()) {
             return Err(anyhow!(
                 "{context}: item field #{i} ({}) has type {:?}; a list row takes only: {}",
@@ -4238,9 +4323,13 @@ mod tests {
     }
 
     fn resource_with_field(field: &str) -> ModuleManifest {
+        resource_with_fields(&format!("[{field}]"))
+    }
+
+    fn resource_with_fields(fields: &str) -> ModuleManifest {
         minimal(&format!(
             r#",
-            "resources": [{{ "kind": "counter", "name": "Counter", "schema": [{field}] }}]"#
+            "resources": [{{ "kind": "counter", "name": "Counter", "schema": {fields} }}]"#
         ))
     }
 
@@ -4269,6 +4358,77 @@ mod tests {
         );
         let err = validate(&empty).expect_err("list with an empty row");
         assert!(err.to_string().contains("at least one field"), "{err}");
+    }
+
+    #[test]
+    fn accepts_visible_when_naming_a_sibling() {
+        let both = resource_with_fields(
+            r#"[{ "id": "mode", "label": "Mode", "type": "text" },
+                { "id": "color", "label": "Colour", "type": "text",
+                  "visibleWhen": { "field": "mode", "oneOf": ["a", "b"] } }]"#,
+        );
+        validate(&both).expect("visibleWhen on a sibling validates");
+    }
+
+    #[test]
+    fn rejects_visible_when_misuse() {
+        let cases = [
+            (
+                r#"[{ "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "x", "oneOf": ["a"] } }]"#,
+                "cannot name the field itself",
+            ),
+            (
+                r#"[{ "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "ghost", "oneOf": ["a"] } }]"#,
+                "is not a field of this list",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": [] } }]"#,
+                "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": [""] } }]"#,
+                "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": [" "] } }]"#,
+                "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "toggle" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": ["a"] } }]"#,
+                "never holds text",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "n", "label": "N", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": ["a"] } },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "n", "oneOf": ["a"] } }]"#,
+                "one level only",
+            ),
+            (
+                r#"[{ "id": "goals", "label": "Goals", "type": "list", "itemFields": [
+                    { "id": "a", "label": "A", "type": "text" },
+                    { "id": "b", "label": "B", "type": "text",
+                      "visibleWhen": { "field": "a", "oneOf": ["x"] } }] }]"#,
+                "a list row does not take",
+            ),
+        ];
+        for (fields, expected) in cases {
+            let err = validate(&resource_with_fields(fields))
+                .expect_err("invalid visibleWhen")
+                .to_string();
+            assert!(err.contains(expected), "{expected}: {err}");
+        }
     }
 
     #[test]
@@ -6056,6 +6216,50 @@ mod tests {
         validate(&with_local(&none)).expect("no discovery installs");
         let no_password = OBS_LOCAL.replace(r#", "passwordSetting": "password""#, "");
         validate(&with_local(&no_password)).expect("no password installs");
+    }
+
+    #[test]
+    fn test_validate_local_host_default_cases() {
+        let with_default = |default: Option<&str>| {
+            let settings = match default {
+                Some(v) => OBS_SETTINGS.replace(
+                    r#""id": "host", "label": "Host", "type": "text""#,
+                    &format!(
+                        r#""id": "host", "label": "Host", "type": "text", "defaultValue": "{v}""#
+                    ),
+                ),
+                None => OBS_SETTINGS.to_string(),
+            };
+            validate(&minimal(&format!("{settings}, {OBS_LOCAL}")))
+        };
+        for accepted in [
+            None,
+            Some(""),
+            Some("localhost"),
+            Some("LocalHost"),
+            Some("127.0.0.1"),
+            Some("127.1.2.3"),
+            Some("::1"),
+        ] {
+            with_default(accepted).unwrap_or_else(|e| panic!("{accepted:?} should install: {e}"));
+        }
+        for refused in [
+            "192.168.1.1",
+            "10.0.0.2",
+            "obs-pc.lan",
+            "0.0.0.0",
+            "example.com",
+            "::ffff:127.0.0.1",
+            "[::1]",
+            "localhost.",
+        ] {
+            let err = with_default(Some(refused)).unwrap_err().to_string();
+            assert!(
+                err.contains("local[0] (obs): the default for hostSetting must be empty or a loopback address")
+                    && err.contains(refused),
+                "{refused}: {err}"
+            );
+        }
     }
 
     #[test]

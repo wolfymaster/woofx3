@@ -10,7 +10,7 @@ const OBS_FAILURES = new Set(["authentication", "unreachable", "relay"]);
 const OBS_ROUTES = new Set(["direct", "companion"]);
 
 /**
- * The scene manager's reply as an ObsStatus. Anything malformed reads as
+ * The connectors host's reply as an ObsStatus. Anything malformed reads as
  * unanswered: a status that cannot be trusted must not look like a real one.
  */
 export function parseObsStatusReply(raw: unknown): ObsStatus {
@@ -44,7 +44,7 @@ export const obsRoutes = routeModule({
       });
       return parseObsStatusReply(JSON.parse(new TextDecoder().decode(reply.data)));
     } catch (err) {
-      this.logger.warn("getObsStatus: the scene manager did not answer", {
+      this.logger.warn("getObsStatus: the connectors host did not answer", {
         error: err instanceof Error ? err.message : String(err),
       });
       return { state: "unanswered", failure: null, address: null };

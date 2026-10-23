@@ -1,15 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import {
-  assertLinkReaders,
-  LINK_READERS,
-  type SettingsReader,
-  TWITCH_TOKEN_SETTING,
-  twitchLinkReader,
-} from "./link-readers";
+import { assertLinkReaders, type LinkStore, linkReaders, TWITCH_TOKEN_SETTING, twitchLinkReader } from "./link-readers";
+import { fixedLinkStore } from "./testing";
 
-function settings(values: Record<string, string | null>): SettingsReader {
-  return { getSetting: async (key) => values[key] ?? null };
-}
+const settings = (values: Record<string, string | null>) => fixedLinkStore(values);
 
 describe("twitchLinkReader", () => {
   const cases: Array<{
@@ -48,7 +41,7 @@ describe("twitchLinkReader", () => {
       const reading = await twitchLinkReader.read(
         settings({ [TWITCH_TOKEN_SETTING]: c.token, "integration.twitch.enabled": c.flag })
       );
-      expect({ connected: reading.connected, enabled: reading.enabled, kind: reading.flag.kind }).toEqual({
+      expect({ connected: reading.connected, enabled: reading.enabled, kind: reading.flag?.kind }).toEqual({
         connected: c.connected,
         enabled: c.enabled,
         kind: c.kind,
@@ -57,10 +50,11 @@ describe("twitchLinkReader", () => {
   }
 
   test("a failed settings read rejects rather than reading as unlinked", async () => {
-    const failing: SettingsReader = {
+    const failing: LinkStore = {
       getSetting: async () => {
         throw new Error("db-proxy is down");
       },
+      installedModules: async () => [],
     };
     await expect(twitchLinkReader.read(failing)).rejects.toThrow("db-proxy is down");
   });
@@ -68,10 +62,11 @@ describe("twitchLinkReader", () => {
 
 describe("assertLinkReaders", () => {
   test("accepts the shipped registry", () => {
-    expect(assertLinkReaders(LINK_READERS)).toBe(LINK_READERS);
+    const shipped = linkReaders({ obsHostExplicit: false });
+    expect(assertLinkReaders(shipped)).toBe(shipped);
   });
 
   test("names every adapter without a reader", () => {
-    expect(() => assertLinkReaders({})).toThrow("no link reader for adapter(s): twitch");
+    expect(() => assertLinkReaders({})).toThrow("no link reader for adapter(s): twitch, obs");
   });
 });

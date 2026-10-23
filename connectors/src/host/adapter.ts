@@ -5,6 +5,7 @@ import type {
   PlatformOutcome,
   RequestedBy,
 } from "@woofx3/api/platform-gateway";
+import type { CompanionHandle, LocalEndpointRef } from "../companion/types";
 import type { DbProxyClientConfig } from "../services/db-proxy";
 import type { AdapterId } from "./adapter-ids";
 import type { Logger } from "./deps";
@@ -118,6 +119,12 @@ export interface AdapterManifest<S = unknown> {
   serves: readonly ServedSubject<S>[];
   /** Only a platform adapter (its id is a PlatformId) may declare egress; the platform is its id. */
   egress?: EgressHandlers;
+  /**
+   * The local endpoints this adapter owns. Only it may resolve them through
+   * the companion gateway, and module code never can. An endpoint is claimed
+   * by at most one adapter; a second claim stops startup.
+   */
+  localEndpoints?: readonly LocalEndpointRef[];
 }
 
 /**
@@ -134,6 +141,8 @@ export interface AdapterContext {
   bus: ScopedBus;
   /** db-proxy with the service token and the host's call timeout, for every generated RPC call. */
   dbProxy: DbProxyClientConfig;
+  /** The companion gateway, scoped to the local endpoints this adapter's manifest claims. */
+  companion: CompanionHandle;
   /**
    * Tells the host a running adapter lost its connection. The host stops it and
    * restarts it with backoff, the same as a failed start. Ignored once the
