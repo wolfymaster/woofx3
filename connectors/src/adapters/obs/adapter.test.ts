@@ -46,8 +46,8 @@ function obsAt(port: number, env: Record<string, unknown> = {}): ObsConfig {
 /** A port nothing listens on, as on an engine whose OBS is closed. */
 const CLOSED_OBS = obsAt(1);
 
-function newAdapter(config: ObsConfig = CLOSED_OBS, latch = new RefreshLatch(), store = emptyStore): ObsAdapter {
-  return new ObsAdapter({ config, endpointStore: () => store, random: halfRandom, timers: systemTimers }, latch);
+function newAdapter(config: ObsConfig = CLOSED_OBS, latch = new RefreshLatch()): ObsAdapter {
+  return new ObsAdapter({ config, random: halfRandom, timers: systemTimers }, latch);
 }
 
 /** The OBS module as barkloader stores it, trimmed to what the link reader reads. */
@@ -92,8 +92,8 @@ describe("ObsAdapter manifest", () => {
     ]);
   });
 
-  test("hears setting and relay changes, leaves relay credentials to the companion gateway, publishes nothing", () => {
-    expect(manifest.subscribes).toEqual([MODULE_SETTING_UPDATED_SUBJECT, RELAY_CONFIG_UPDATED_SUBJECT]);
+  test("holds no relay subjects or credentials of its own: the companion gateway owns them", () => {
+    expect(manifest.subscribes).toEqual([]);
     expect(manifest.requests).toEqual([]);
     expect(manifest.publishes).toEqual([]);
   });
@@ -166,7 +166,6 @@ describe("obsAdapterModule", () => {
   test("builds the refresh latch as host state and hands it to the adapter", () => {
     const module = obsAdapterModule({
       config: CLOSED_OBS,
-      endpointStore: () => emptyStore,
       random: halfRandom,
       timers: systemTimers,
     });
@@ -200,7 +199,7 @@ function hosted(config: ObsConfig = CLOSED_OBS, store = emptyStore, modules: Ins
   const time = new FakeTime();
   const bus = new FakeBus();
   const latch = new RefreshLatch();
-  const adapter = newAdapter(config, latch, store);
+  const adapter = newAdapter(config, latch);
   const hostDefaults = hostConfig(HostEnvSchema.parse({}));
   const host = new Host({
     config: hostDefaults,
@@ -291,14 +290,14 @@ describe("ObsAdapter in the host", () => {
     await host.start();
     await host.settled();
 
-    // The companion gateway's route watch holds one of each for the life of the host.
+    // Only the companion gateway's route watch subscribes to them, once for the life of the host.
     await setEnabled(false);
     expect(bus.active(MODULE_SETTING_UPDATED_SUBJECT)).toBe(1);
     expect(bus.active(RELAY_CONFIG_UPDATED_SUBJECT)).toBe(1);
     await setEnabled(true);
 
-    expect(bus.active(MODULE_SETTING_UPDATED_SUBJECT)).toBe(2);
-    expect(bus.active(RELAY_CONFIG_UPDATED_SUBJECT)).toBe(2);
+    expect(bus.active(MODULE_SETTING_UPDATED_SUBJECT)).toBe(1);
+    expect(bus.active(RELAY_CONFIG_UPDATED_SUBJECT)).toBe(1);
     expect(bus.active("engine.obs.command")).toBe(1);
   });
 
