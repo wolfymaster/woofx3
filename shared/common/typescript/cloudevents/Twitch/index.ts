@@ -1,4 +1,4 @@
-import Event, { type BaseEvent } from "../BaseEvent";
+import Event from "../BaseEvent";
 import { encode } from "../utils";
 import * as TwitchEvent from "./events";
 
@@ -227,7 +227,7 @@ export default class TwitchEvents {
   private encodeEvent<T extends TwitchEvent.EventType>(
     type: T,
     event: TwitchEventPayloads[T],
-    attributes: Pick<BaseEvent<unknown>, "workflowChain"> = {}
+    attributes: TwitchEvent.ChatMessageAttributes = {}
   ): EventTuple {
     assertPlainPayload(event);
     return [type, encode(Event({ ...attributes, type, source: this.source, platform: PLATFORM }, event))];
