@@ -1,0 +1,595 @@
+{
+  "cases": [
+    {
+      "name": "a send",
+      "invalidField": null,
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "a request matching a string",
+      "invalidField": null,
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "requestID",
+          "value": "r1"
+        }
+      }
+    },
+    {
+      "name": "a request matching an integer",
+      "invalidField": null,
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "id",
+          "value": 42
+        }
+      }
+    },
+    {
+      "name": "a request matching a negative integer",
+      "invalidField": null,
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "seq",
+          "value": -7
+        }
+      }
+    },
+    {
+      "name": "the smallest budget",
+      "invalidField": null,
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 100
+      }
+    },
+    {
+      "name": "a module id with dots, dashes and capitals",
+      "invalidField": null,
+      "request": {
+        "op": "send",
+        "moduleId": "Acme.Lights-2_x",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "the longest module id",
+      "invalidField": null,
+      "request": {
+        "op": "send",
+        "moduleId": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "the longest endpoint id",
+      "invalidField": null,
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "the longest match value",
+      "invalidField": null,
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "id",
+          "value": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+        }
+      }
+    },
+    {
+      "name": "a match value of 200 characters outside the BMP",
+      "invalidField": null,
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "id",
+          "value": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+        }
+      }
+    },
+    {
+      "name": "not an object",
+      "invalidField": "request",
+      "request": ["send"]
+    },
+    {
+      "name": "null",
+      "invalidField": "request",
+      "request": null
+    },
+    {
+      "name": "no op",
+      "invalidField": "op",
+      "request": {
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "an unknown op",
+      "invalidField": "op",
+      "request": {
+        "op": "call",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "a send carrying match",
+      "invalidField": "match",
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "id",
+          "value": 1
+        }
+      }
+    },
+    {
+      "name": "a send carrying a null match",
+      "invalidField": "match",
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500,
+        "match": null
+      }
+    },
+    {
+      "name": "a request without match",
+      "invalidField": "match",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "a request with a null match",
+      "invalidField": "match",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": null
+      }
+    },
+    {
+      "name": "an unknown field",
+      "invalidField": "timeoutMs",
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500,
+        "timeoutMs": 1000
+      }
+    },
+    {
+      "name": "no module id",
+      "invalidField": "moduleId",
+      "request": {
+        "op": "send",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "an empty module id",
+      "invalidField": "moduleId",
+      "request": {
+        "op": "send",
+        "moduleId": "",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "a module id with a space",
+      "invalidField": "moduleId",
+      "request": {
+        "op": "send",
+        "moduleId": "my module",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "a module id with a slash",
+      "invalidField": "moduleId",
+      "request": {
+        "op": "send",
+        "moduleId": "a/b",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "a module id over 100 characters",
+      "invalidField": "moduleId",
+      "request": {
+        "op": "send",
+        "moduleId": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "a numeric module id",
+      "invalidField": "moduleId",
+      "request": {
+        "op": "send",
+        "moduleId": 7,
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "an endpoint id with capitals",
+      "invalidField": "endpointId",
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "OBS",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "an endpoint id with a dot",
+      "invalidField": "endpointId",
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "o.bs",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "an endpoint id over 40 characters",
+      "invalidField": "endpointId",
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "no message",
+      "invalidField": "message",
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "an empty message",
+      "invalidField": "message",
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "",
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "a non-string message",
+      "invalidField": "message",
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": {
+          "apiName": "x"
+        },
+        "budgetMs": 4500
+      }
+    },
+    {
+      "name": "a budget below 100",
+      "invalidField": "budgetMs",
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 99
+      }
+    },
+    {
+      "name": "a budget above 4500",
+      "invalidField": "budgetMs",
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 4501
+      }
+    },
+    {
+      "name": "a fractional budget",
+      "invalidField": "budgetMs",
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": 150.5
+      }
+    },
+    {
+      "name": "a string budget",
+      "invalidField": "budgetMs",
+      "request": {
+        "op": "send",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"apiName\":\"VTubeStudioPublicAPI\"}",
+        "budgetMs": "4500"
+      }
+    },
+    {
+      "name": "no budget",
+      "invalidField": "budgetMs",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "match": {
+          "field": "requestID",
+          "value": "r1"
+        }
+      }
+    },
+    {
+      "name": "match not an object",
+      "invalidField": "match",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": "requestID"
+      }
+    },
+    {
+      "name": "an unknown match field",
+      "invalidField": "match.path",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "id",
+          "value": 1,
+          "path": "$.id"
+        }
+      }
+    },
+    {
+      "name": "no match field",
+      "invalidField": "match.field",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "value": 1
+        }
+      }
+    },
+    {
+      "name": "a match field with a dash",
+      "invalidField": "match.field",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "request-id",
+          "value": 1
+        }
+      }
+    },
+    {
+      "name": "a match field over 40 characters",
+      "invalidField": "match.field",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "fffffffffffffffffffffffffffffffffffffffff",
+          "value": 1
+        }
+      }
+    },
+    {
+      "name": "no match value",
+      "invalidField": "match.value",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "id"
+        }
+      }
+    },
+    {
+      "name": "an empty match value",
+      "invalidField": "match.value",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "id",
+          "value": ""
+        }
+      }
+    },
+    {
+      "name": "a match value over 200 characters",
+      "invalidField": "match.value",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "id",
+          "value": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+        }
+      }
+    },
+    {
+      "name": "a fractional match value",
+      "invalidField": "match.value",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "id",
+          "value": 1.5
+        }
+      }
+    },
+    {
+      "name": "a boolean match value",
+      "invalidField": "match.value",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "id",
+          "value": true
+        }
+      }
+    },
+    {
+      "name": "an object match value",
+      "invalidField": "match.value",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "id",
+          "value": {
+            "a": 1
+          }
+        }
+      }
+    },
+    {
+      "name": "a match value beyond the safe integers",
+      "invalidField": "match.value",
+      "request": {
+        "op": "request",
+        "moduleId": "vtube_studio",
+        "endpointId": "vts",
+        "message": "{\"requestID\":\"r1\"}",
+        "budgetMs": 4500,
+        "match": {
+          "field": "id",
+          "value": 9007199254740992
+        }
+      }
+    }
+  ]
+}
