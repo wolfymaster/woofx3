@@ -93,7 +93,7 @@ func ActionsFor(commandType, typeValue string) (string, error) {
 var templatePattern = regexp.MustCompile(`\{([A-Za-z0-9_.]+)\}`)
 
 // fixedNames are what a text response could refer to besides its own declared
-// arguments -- the resolver context the connectors chat dispatcher built for it. Everything else
+// arguments -- the fixed names a legacy `{...}` text response could use. Everything else
 // in braces was an argument_pattern capture, which now arrives under
 // `variables` on the trigger event.
 var fixedNames = map[string]string{
