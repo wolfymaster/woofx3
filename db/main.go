@@ -13,10 +13,12 @@ import (
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/common/runtime/monitor"
 	"github.com/wolfymaster/woofx3/common/runtime/service"
+	"github.com/wolfymaster/woofx3/db/app/middleware"
 	"github.com/wolfymaster/woofx3/db/app/routes"
 	"github.com/wolfymaster/woofx3/db/app/services"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/config"
+	"github.com/wolfymaster/woofx3/db/database"
 )
 
 func main() {
@@ -42,7 +44,9 @@ func main() {
 		sharedLogger.Close()
 		os.Exit(1)
 	}
-	app := NewDatabaseApp(&DatabaseAppConfig{Logger: logger, Workers: workersConfig})
+	ids := database.RandomIDs{}
+	now := func() time.Time { return time.Now().UTC() }
+	app := NewDatabaseApp(&DatabaseAppConfig{Logger: logger, IDs: ids, Now: now, Workers: workersConfig})
 	natsSvc := service.NewNATS(logger, "nats", "messagebus")
 	natsMonitor := monitor.NewNATS("nats", natsSvc, "db", "HEARTBEAT", 15*time.Second, logger)
 	dbEnvConfig := &config.DatabaseEnvConfig{}
@@ -58,6 +62,15 @@ func main() {
 			databaseURL := cfg.DatabaseURL
 			httpHost := cfg.DatabaseProxyHost
 			httpPort := cfg.DatabaseProxyPort
+			// Checked before anything connects: a bad token or limit stops the start.
+			serverConfig, err := cfg.HTTPServer()
+			if err != nil {
+				return err
+			}
+			serviceAuth, err := middleware.NewServiceAuth(cfg.DbProxyToken, cfg.AllowedHosts(), logger)
+			if err != nil {
+				return err
+			}
 
 			if cfg.LogLevel != "" {
 				var parsedLevel slog.Level
@@ -70,7 +83,7 @@ func main() {
 				}
 			}
 
-			databaseSvc := services.NewDatabaseService(databaseURL, logger)
+			databaseSvc := services.NewDatabaseService(databaseURL, logger, ids)
 			if err := application.Register("database", databaseSvc); err != nil {
 				return err
 			}
@@ -89,12 +102,15 @@ func main() {
 				return err
 			}
 
-			workerSvc := services.NewWorkerService(logger, databaseSvc, natsSvc, workersConfig)
+			workerSvc := services.NewWorkerService(logger, databaseSvc, natsSvc, ids, workersConfig)
 			if err := application.Register("workers", workerSvc); err != nil {
 				return err
 			}
 
-			httpSvc := services.NewHTTPServerService(app, httpHost, httpPort, logger, routes.SetupAllRoutes)
+			httpSvc, err := services.NewHTTPServerService(app, httpHost, httpPort, serverConfig, serviceAuth, logger, routes.SetupAllRoutes)
+			if err != nil {
+				return err
+			}
 			if err := application.Register("http", httpSvc); err != nil {
 				return err
 			}

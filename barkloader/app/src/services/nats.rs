@@ -25,9 +25,10 @@ impl NatsService {
     }
 }
 
-/// The token the message bus requires, from `MESSAGEBUS_TOKEN`,
-/// `WOOFX3_MESSAGEBUS_TOKEN` or `messagebusToken` in `.woofx3.json`. None when
-/// the bus takes anyone.
+/// The token the message bus requires, from `WOOFX3_MESSAGEBUS_TOKEN` or
+/// `messagebusToken` in `.woofx3.json`: the same setting the bus server and
+/// the Go and TypeScript clients read, so all of them agree on one value.
+/// None when the bus takes anyone.
 pub fn configured_token() -> Option<String> {
     token_from(|env_var, config_key| get_env_or_default_with_key(env_var, Some(config_key), ""))
 }
@@ -35,7 +36,7 @@ pub fn configured_token() -> Option<String> {
 /// `configured_token` over an injected `lookup(env_var, config_key)`, so the
 /// resolution is testable without touching the process environment.
 fn token_from(lookup: impl FnOnce(&str, &str) -> String) -> Option<String> {
-    let token = lookup("MESSAGEBUS_TOKEN", "messagebusToken");
+    let token = lookup("WOOFX3_MESSAGEBUS_TOKEN", "messagebusToken");
     Some(token.trim().to_string()).filter(|token| !token.is_empty())
 }
 
@@ -166,7 +167,7 @@ mod tests {
         let token = token_from(|env_var, config_key| {
             assert_eq!(
                 (env_var, config_key),
-                ("MESSAGEBUS_TOKEN", "messagebusToken")
+                ("WOOFX3_MESSAGEBUS_TOKEN", "messagebusToken")
             );
             " s3cret ".to_string()
         });

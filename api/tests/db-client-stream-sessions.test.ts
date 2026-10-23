@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { dbProxyClientConfig } from "@woofx3/db/service-auth";
 import { StreamSessionResponse } from "@woofx3/db/stream_session.pb";
 import { DbClient, DbError } from "../src/db-client";
 
@@ -54,7 +55,9 @@ describe("DbClient.findStreamSession", () => {
         })
     );
 
-    const found = await new DbClient("http://db.test").findStreamSession({ id: "s-1" });
+    const found = await new DbClient(dbProxyClientConfig("http://db.test", "test-token")).findStreamSession({
+      id: "s-1",
+    });
 
     expect(found?.session.id).toBe("s-1");
     expect(found?.segments.map((s) => s.id)).toEqual(["g-1"]);
@@ -64,19 +67,25 @@ describe("DbClient.findStreamSession", () => {
     respondWith(() => twirpError(404, "not_found"));
 
     expect(
-      await new DbClient("http://db.test").findStreamSession({ id: "7f0c5a1e-0000-4000-8000-000000000001" })
+      await new DbClient(dbProxyClientConfig("http://db.test", "test-token")).findStreamSession({
+        id: "7f0c5a1e-0000-4000-8000-000000000001",
+      })
     ).toBeNull();
   });
 
   test("returns null for an id db-proxy cannot parse, since ids are opaque to callers", async () => {
     respondWith(() => twirpError(400, "invalid_argument"));
 
-    expect(await new DbClient("http://db.test").findStreamSession({ id: "not-a-uuid" })).toBeNull();
+    expect(
+      await new DbClient(dbProxyClientConfig("http://db.test", "test-token")).findStreamSession({ id: "not-a-uuid" })
+    ).toBeNull();
   });
 
   test("still fails on any other error", async () => {
     respondWith(() => twirpError(500, "internal"));
 
-    await expect(new DbClient("http://db.test").findStreamSession({ id: "s-1" })).rejects.toBeInstanceOf(DbError);
+    await expect(
+      new DbClient(dbProxyClientConfig("http://db.test", "test-token")).findStreamSession({ id: "s-1" })
+    ).rejects.toBeInstanceOf(DbError);
   });
 });

@@ -28,6 +28,7 @@ function session(options: { writeFails?: boolean } = {}) {
     } as unknown as ApiOptions["nats"],
     functions: null,
     barkloaderUrl: "http://barkloader.local",
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger: { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never,

@@ -16,17 +16,20 @@ import (
 // AlertRepository wraps gorm.DB with Alert-specific helpers — same
 // thin pattern as `WorkflowRepository` and `SceneRepository`.
 type AlertRepository struct {
-	db *gorm.DB
+	db  *gorm.DB
+	ids database.IDSource
 }
 
-func NewAlertRepository(db *gorm.DB) *AlertRepository {
-	return &AlertRepository{db: db}
+func NewAlertRepository(db *gorm.DB, ids database.IDSource) *AlertRepository {
+	if ids == nil {
+		panic("alert repository: id source is required")
+	}
+	return &AlertRepository{db: db, ids: ids}
 }
 
 // NewAlert is what a caller decides about a row it records. The database
 // supplies the row's timestamps and version (see Create).
 type NewAlert struct {
-	ID            uuid.UUID
 	Payload       string
 	WorkflowID    *uuid.UUID
 	SourceEventID string
@@ -47,6 +50,7 @@ type RecordAlertChange func(tx *gorm.DB, row *models.Alert) error
 // snapshot built from the result matches the row exactly.
 func (r *AlertRepository) Create(a NewAlert, record RecordAlertChange) (*models.Alert, error) {
 	var stored models.Alert
+	id := r.ids.NewUUID()
 	err := r.db.Transaction(func(tx *gorm.DB) error {
 		now, at := r.writeClock()
 		res := tx.Raw(
@@ -55,7 +59,7 @@ func (r *AlertRepository) Create(a NewAlert, record RecordAlertChange) (*models.
 			VALUES (@id, @payload, @workflow_id, @source_event_id, @envelope_id, 'sent', '', 1, `+now+`, `+now+`, `+now+`)
 			RETURNING *`,
 			map[string]interface{}{
-				"id":              a.ID,
+				"id":              id,
 				"payload":         a.Payload,
 				"workflow_id":     a.WorkflowID,
 				"source_event_id": a.SourceEventID,
@@ -67,7 +71,7 @@ func (r *AlertRepository) Create(a NewAlert, record RecordAlertChange) (*models.
 			return res.Error
 		}
 		if res.RowsAffected != 1 {
-			return fmt.Errorf("insert alert %s returned %d rows", a.ID, res.RowsAffected)
+			return fmt.Errorf("insert alert %s returned %d rows", id, res.RowsAffected)
 		}
 		return record(tx, &stored)
 	})

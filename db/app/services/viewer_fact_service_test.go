@@ -13,6 +13,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/workers"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -37,21 +38,11 @@ const chatEmits = `{"fields": [
 
 func newFactSvc(t *testing.T, db *gorm.DB) *viewerFactService {
 	t.Helper()
-	// The outbox row's id comes from a Postgres column default that the
-	// SQLite schema lacks, so the test supplies one.
-	err := db.Callback().Create().Before("gorm:create").Register("test:worker_event_id", func(tx *gorm.DB) {
-		if event, ok := tx.Statement.Dest.(*models.WorkerEvent); ok && event.ID == "" {
-			event.ID = uuid.NewString()
-		}
-	})
-	if err != nil {
-		t.Fatalf("register outbox id callback: %v", err)
-	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	svc := NewViewerFactService(
 		repo.NewViewerFactRepository(db),
 		repo.NewViewerSegmentRepository(db),
-		repo.NewModuleRepository(db),
+		repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }),
 		workers.NewEventPublisher(repo.NewDbEventRepository(db), logger),
 	).(*viewerFactService)
 	svc.now = func() time.Time { return factNow.Add(time.Hour) }

@@ -86,9 +86,6 @@ func (s *alertService) CreateAlert(ctx context.Context, req *client.CreateAlertR
 	}
 
 	alert, err := s.repo.Create(repo.NewAlert{
-		// Generated here rather than by the column default: SQLite has no
-		// uuid_generate_v4().
-		ID:            uuid.New(),
 		Payload:       req.Payload,
 		WorkflowID:    workflowID,
 		SourceEventID: req.SourceEventId,

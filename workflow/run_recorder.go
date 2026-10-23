@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
@@ -32,47 +33,114 @@ type runStore interface {
 	RecordWorkflowRunStep(context.Context, *dbv1.RecordWorkflowRunStepRequest) (*dbv1.ResponseStatus, error)
 }
 
-// dbRunRecorder persists runs and their steps through the db proxy.
+// dbRunRecorder turns what the engine reports about a run into db proxy
+// requests, and writes them.
 //
-// Every method is best-effort: a failure is logged at warn and the run carries
+// The two halves are separate on purpose. A request is captured while the
+// engine reports the change, because the execution it reads from keeps
+// changing as the run goes on; it is written later, by asyncRunRecorder's
+// writer, so that the run never waits on the db proxy.
+//
+// Every write is best-effort: a failure is logged at warn and the run carries
 // on. The engine holds no transaction here and the work has already happened,
 // so a failed write costs history, not correctness -- the same trade
 // recordAlertDispatch makes for the alert log.
 type dbRunRecorder struct {
 	client runStore
 	logger tasks.Logger
+	// callTimeout bounds each write, so one request the db proxy never answers
+	// cannot hold up every write queued behind it.
+	callTimeout time.Duration
 }
 
-func newDBRunRecorder(client runStore, logger tasks.Logger) *dbRunRecorder {
-	return &dbRunRecorder{client: client, logger: logger}
+func newDBRunRecorder(client runStore, logger tasks.Logger, callTimeout time.Duration) *dbRunRecorder {
+	return &dbRunRecorder{client: client, logger: logger, callTimeout: callTimeout}
 }
 
-func (r *dbRunRecorder) RunStarted(execution *types.WorkflowExecution) {
-	if r.skip(execution) {
-		return
+// runWrite is one captured request to the db proxy's run history.
+type runWrite interface {
+	apply(ctx context.Context, store runStore) error
+	logFailure(logger tasks.Logger, err error)
+}
+
+type runStartedWrite struct {
+	req *dbv1.RecordWorkflowRunRequest
+}
+
+func (w runStartedWrite) apply(ctx context.Context, store runStore) error {
+	_, err := store.RecordWorkflowRun(ctx, w.req)
+	return err
+}
+
+func (w runStartedWrite) logFailure(logger tasks.Logger, err error) {
+	logger.Warn("workflow run not recorded",
+		"execution", w.req.Id,
+		"workflow", w.req.WorkflowId,
+		"error", err)
+}
+
+type runSettledWrite struct {
+	req *dbv1.UpdateWorkflowRunStatusRequest
+}
+
+func (w runSettledWrite) apply(ctx context.Context, store runStore) error {
+	_, err := store.UpdateWorkflowRunStatus(ctx, w.req)
+	return err
+}
+
+func (w runSettledWrite) logFailure(logger tasks.Logger, err error) {
+	logger.Warn("workflow run outcome not recorded",
+		"execution", w.req.Id,
+		"status", w.req.Status,
+		"error", err)
+}
+
+type stepSettledWrite struct {
+	req *dbv1.RecordWorkflowRunStepRequest
+}
+
+func (w stepSettledWrite) apply(ctx context.Context, store runStore) error {
+	_, err := store.RecordWorkflowRunStep(ctx, w.req)
+	return err
+}
+
+func (w stepSettledWrite) logFailure(logger tasks.Logger, err error) {
+	logger.Warn("workflow run step not recorded",
+		"execution", w.req.ExecutionId,
+		"task", w.req.TaskId,
+		"error", err)
+}
+
+// write sends one captured request, giving up after callTimeout or when ctx
+// ends.
+func (r *dbRunRecorder) write(ctx context.Context, w runWrite) {
+	callCtx, cancel := context.WithTimeout(ctx, r.callTimeout)
+	defer cancel()
+	if err := w.apply(callCtx, r.client); err != nil {
+		w.logFailure(r.logger, err)
 	}
+}
 
-	_, err := r.client.RecordWorkflowRun(context.Background(), &dbv1.RecordWorkflowRunRequest{
+// runStarted captures the run row, or nil for a run that is not kept.
+func (r *dbRunRecorder) runStarted(execution *types.WorkflowExecution) runWrite {
+	if r.skip(execution) {
+		return nil
+	}
+	return runStartedWrite{req: &dbv1.RecordWorkflowRunRequest{
 		Id:               execution.ID,
 		WorkflowId:       execution.WorkflowID,
 		TriggeredBy:      triggeredBy(execution),
 		TriggerEventJson: r.triggerEventJSON(execution),
 		StartedAt:        timestamppb.New(execution.StartedAt),
 		DryRun:           execution.DryRun,
-	})
-	if err != nil {
-		r.logger.Warn("workflow run not recorded",
-			"execution", execution.ID,
-			"workflow", execution.WorkflowID,
-			"error", err)
-	}
+	}}
 }
 
-func (r *dbRunRecorder) RunSettled(execution *types.WorkflowExecution) {
+// runSettled captures the run's outcome, or nil for a run that is not kept.
+func (r *dbRunRecorder) runSettled(execution *types.WorkflowExecution) runWrite {
 	if r.skip(execution) {
-		return
+		return nil
 	}
-
 	req := &dbv1.UpdateWorkflowRunStatusRequest{
 		Id:     execution.ID,
 		Status: string(execution.Status),
@@ -81,20 +149,14 @@ func (r *dbRunRecorder) RunSettled(execution *types.WorkflowExecution) {
 	if execution.CompletedAt != nil {
 		req.CompletedAt = timestamppb.New(*execution.CompletedAt)
 	}
-
-	if _, err := r.client.UpdateWorkflowRunStatus(context.Background(), req); err != nil {
-		r.logger.Warn("workflow run outcome not recorded",
-			"execution", execution.ID,
-			"status", execution.Status,
-			"error", err)
-	}
+	return runSettledWrite{req: req}
 }
 
-func (r *dbRunRecorder) StepSettled(execution *types.WorkflowExecution, step engine.RunStep) {
+// stepSettled captures one step row, or nil for a run that is not kept.
+func (r *dbRunRecorder) stepSettled(execution *types.WorkflowExecution, step engine.RunStep) runWrite {
 	if r.skip(execution) {
-		return
+		return nil
 	}
-
 	req := &dbv1.RecordWorkflowRunStepRequest{
 		ExecutionId: execution.ID,
 		TaskId:      step.TaskID,
@@ -111,13 +173,7 @@ func (r *dbRunRecorder) StepSettled(execution *types.WorkflowExecution, step eng
 		req.CompletedAt = timestamppb.New(*step.CompletedAt)
 		req.DurationMs = step.CompletedAt.Sub(step.StartedAt).Milliseconds()
 	}
-
-	if _, err := r.client.RecordWorkflowRunStep(context.Background(), req); err != nil {
-		r.logger.Warn("workflow run step not recorded",
-			"execution", execution.ID,
-			"task", step.TaskID,
-			"error", err)
-	}
+	return stepSettledWrite{req: req}
 }
 
 // skip decides whether this run is one we keep.

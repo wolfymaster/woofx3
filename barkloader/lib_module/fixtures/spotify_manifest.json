@@ -72,16 +72,6 @@
       }
     }
   ],
-  "triggers": [
-    {
-      "id": "sr_command",
-      "name": "Song request command",
-      "description": "Fires when a viewer uses !sr in chat.",
-      "type": "eventbus",
-      "event": "chat.command.sr",
-      "category": "chat"
-    }
-  ],
   "commands": [
     {
       "id": "sr",

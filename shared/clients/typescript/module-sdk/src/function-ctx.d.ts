@@ -202,6 +202,14 @@ export interface CtxResponse {
   message: string;
 }
 
+/** Extra fields for `ctx.success`/`ctx.failure`; the envelope's own keys are refused at compile time and at run time. */
+export type CtxResponseFields = Record<string, unknown> & {
+  proto?: never;
+  v?: never;
+  success?: never;
+  message?: never;
+};
+
 /** One event a function asks the engine to publish. */
 export interface CtxResultEvent {
   /** The `event` of an eventbus trigger this module declares. */
@@ -379,7 +387,7 @@ export interface CtxCompareAndSetSettingResult {
 // know they're available get autocomplete; authors writing portable
 // modules check `if (ctx.twitch) …` first.
 //
-// Source: `barkloader/lib_sandbox/src/extensions/{twitch,obs,chat}.rs`.
+// Source: `barkloader/lib_sandbox/src/extensions/{twitch,obs}.rs`.
 // To add a new extension, declare
 // the namespace + its function names below.
 
@@ -574,12 +582,6 @@ export interface CtxObsExtension {
   listInputs(): ObsNameOption[];
 }
 
-/** `ctx.chat.*` — registered when `ChatExtension` is bound. */
-export interface CtxChatExtension {
-  /** Send a message via the engine-bound chat sender. */
-  sendMessage(text: string): null;
-}
-
 /**
  * `ctx.oauth.*` — requests to a provider the manifest declares under
  * `oauth[]`, with the streamer's token, which module code never sees. The
@@ -603,7 +605,6 @@ export interface CtxOAuthExtension {
 export interface CtxExtensions {
   twitch?: CtxTwitchExtension;
   obs?: CtxObsExtension;
-  chat?: CtxChatExtension;
   oauth?: CtxOAuthExtension;
 }
 
@@ -637,6 +638,16 @@ export interface Ctx extends CtxExtensions {
    * outcome; it does not stop the steps that follow.
    */
   response(success: boolean, message: string): CtxResponse;
+  /**
+   * Builds a successful `CtxResponse`, plus optional extra `fields` that later
+   * steps read as `${<stepId>.<field>}`. `fields` may not set `proto`, `v`,
+   * `success` or `message`; the call throws if it does. A chat command returns
+   * `ctx.success("text")` and follows the step with a "Send chat message" step
+   * posting `${<stepId>.message}`.
+   */
+  success<F extends CtxResponseFields = Record<never, never>>(message: string, fields?: F): CtxResponse & F;
+  /** Like `success`, but `success` is `false`. */
+  failure<F extends CtxResponseFields = Record<never, never>>(message: string, fields?: F): CtxResponse & F;
   /**
    * Builds the shape to `return` when the function's work is something
    * workflows should be able to act on — a counter changed, a timer ended.

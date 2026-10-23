@@ -152,7 +152,10 @@ rustup target add x86_64-pc-windows-gnu
 ## Deployment
 
 1. Extract the appropriate archive on your target system
-2. Edit `.woofx3.json` (packaged template — replace `CHANGE_ME` secrets)
+2. Edit `.woofx3.json` if needed. The engine's secrets are not in it: the
+   orchestrator generates them on first run and keeps them under the data
+   directory (see [Engine secrets](../docs/services/deployment.md#engine-secrets)
+   for where, and how to supply your own)
 3. Run `./start.sh` (Linux) or `start.bat` (Windows) from the package directory
 4. The orchestrator will start and manage all enabled services
 

@@ -1,0 +1,57 @@
+{
+  "commandSubjectPrefixes": [
+    "webhook.",
+    "db.",
+    "engine.",
+    "twitchapi",
+    "message.send",
+    "ui.notify.",
+    "ui.alert.",
+    "widget.queue.",
+    "workflow.execute",
+    "workflow.replay",
+    "workflow.cancel",
+    "workflow.command.execute",
+    "action.execute"
+  ],
+  "engineAssertedPrefixes": [
+    "HEARTBEAT",
+    "MESSAGEBUS_INIT",
+    "barkloader.",
+    "channel.",
+    "channelpoints.",
+    "chat.command.",
+    "command.",
+    "module.",
+    "session.",
+    "setting.",
+    "stream.offline",
+    "stream.online",
+    "user.message",
+    "viewer.",
+    "widget.event",
+    "workflow.health.",
+    "workflow.run."
+  ],
+  "platformEventEntries": [
+    "channel.",
+    "channelpoints.",
+    "chat.command.",
+    "stream.offline",
+    "stream.online",
+    "user.message"
+  ],
+  "uploadReservedPrefixes": [
+    "HEARTBEAT",
+    "MESSAGEBUS_INIT",
+    "barkloader.",
+    "chat.command.",
+    "command.",
+    "module.",
+    "session.",
+    "setting.",
+    "viewer.",
+    "workflow."
+  ],
+  "engineModuleSegments": ["action", "asset", "change", "function", "resource", "storage", "trigger", "widget"]
+}

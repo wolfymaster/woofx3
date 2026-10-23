@@ -1,5 +1,4 @@
 pub mod bundled_reconciler;
-pub mod chat;
 pub mod field_options;
 pub mod file_service;
 pub mod frame_cache;
@@ -19,4 +18,5 @@ pub mod session;
 pub mod signing;
 pub mod storage_settings;
 pub mod thumbnail;
+pub mod upload_limits;
 pub mod upload_token;

@@ -1,6 +1,7 @@
 use crate::error::Error;
 use crate::host::{HostError, InvocationContext};
 use crate::runtime::RuntimeAdapter;
+use crate::runtime::limits::{Budget, ConversionLimits, SandboxLimits, Trip};
 use rquickjs::{
     Array, Context, Ctx, Function as JsFunction, Object, Runtime, Value as JsValue, function::Opt,
     object::Accessor,
@@ -11,10 +12,9 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
-const DEFAULT_MEMORY_LIMIT: usize = 16 * 1024 * 1024;
 const DEFAULT_MAX_STACK_SIZE: usize = 1024 * 1024;
-const DEFAULT_MAX_INSTRUCTIONS: u64 = 100_000;
 
 fn host_err(msg: impl Into<String>) -> rquickjs::Error {
     rquickjs::Error::new_from_js_message("host", "value", msg.into())
@@ -36,27 +36,76 @@ fn throw_host_error(ctx: &Ctx<'_>, err: &HostError) -> rquickjs::Error {
     ctx.throw(exception.into_value())
 }
 
+/// What one invocation has spent of its interrupt budget, and when it must
+/// end. The interrupt handler outlives any one invocation, so `execute`
+/// resets this before each run.
+struct InterruptBudget {
+    /// Fixed reference point: the deadline is stored as an offset from it so
+    /// it fits an atomic.
+    epoch: Instant,
+    max_interrupts: u64,
+    interrupts: AtomicU64,
+    deadline_nanos: AtomicU64,
+}
+
+impl InterruptBudget {
+    fn new(max_interrupts: u64) -> Self {
+        Self {
+            epoch: Instant::now(),
+            max_interrupts,
+            interrupts: AtomicU64::new(0),
+            deadline_nanos: AtomicU64::new(0),
+        }
+    }
+
+    fn reset(&self, deadline: Instant) {
+        let offset = deadline.saturating_duration_since(self.epoch).as_nanos();
+        self.deadline_nanos
+            .store(u64::try_from(offset).unwrap_or(u64::MAX), Ordering::Relaxed);
+        self.interrupts.store(0, Ordering::Relaxed);
+    }
+
+    /// Called by QuickJS; `true` stops the script with an uncatchable error.
+    fn interrupt(&self) -> bool {
+        self.interrupts.fetch_add(1, Ordering::Relaxed);
+        self.trip().is_some()
+    }
+
+    /// Which budget, if any, the current invocation has run out of. Both only
+    /// ever grow, so once tripped it stays tripped until the next `reset`.
+    fn trip(&self) -> Option<Trip> {
+        if self.interrupts.load(Ordering::Relaxed) > self.max_interrupts {
+            return Some(Trip::Instructions);
+        }
+        let elapsed = u64::try_from(self.epoch.elapsed().as_nanos()).unwrap_or(u64::MAX);
+        if elapsed >= self.deadline_nanos.load(Ordering::Relaxed) {
+            return Some(Trip::Deadline);
+        }
+        None
+    }
+}
+
 pub struct QuickJSAdapter {
     runtime: Runtime,
-    instruction_counter: Arc<AtomicU64>,
+    budget: Arc<InterruptBudget>,
+    limits: SandboxLimits,
 }
 
 impl QuickJSAdapter {
-    pub fn new() -> Result<Self, Error> {
+    pub fn new(limits: SandboxLimits) -> Result<Self, Error> {
         let runtime = Runtime::new()
             .map_err(|e| Error::RuntimeError(format!("QuickJS runtime init: {e}")))?;
-        runtime.set_memory_limit(DEFAULT_MEMORY_LIMIT);
+        runtime.set_memory_limit(limits.memory_bytes);
         runtime.set_max_stack_size(DEFAULT_MAX_STACK_SIZE);
 
-        let counter = Arc::new(AtomicU64::new(0));
-        let counter_clone = counter.clone();
-        runtime.set_interrupt_handler(Some(Box::new(move || {
-            counter_clone.fetch_add(1, Ordering::Relaxed) >= DEFAULT_MAX_INSTRUCTIONS
-        })));
+        let budget = Arc::new(InterruptBudget::new(limits.quickjs_max_interrupts));
+        let handler_budget = budget.clone();
+        runtime.set_interrupt_handler(Some(Box::new(move || handler_budget.interrupt())));
 
         Ok(Self {
             runtime,
-            instruction_counter: counter,
+            budget,
+            limits,
         })
     }
 }
@@ -68,61 +117,68 @@ impl RuntimeAdapter for QuickJSAdapter {
         entry_point: &str,
         invocation: &InvocationContext,
     ) -> Result<Value, Error> {
-        self.instruction_counter.store(0, Ordering::Relaxed);
+        self.budget.reset(invocation.deadline);
 
         let context = Context::full(&self.runtime)
             .map_err(|e| Error::RuntimeError(format!("context creation: {e}")))?;
 
-        let max_instructions = DEFAULT_MAX_INSTRUCTIONS;
-        let counter = self.instruction_counter.clone();
+        let budget = &self.budget;
+        let limits = self.limits.conversion;
 
         context.with(|ctx| {
             ctx.eval::<(), _>(code)
-                .map_err(|e| to_sandbox_error(&ctx, &counter, max_instructions, e))?;
+                .map_err(|e| to_sandbox_error(&ctx, budget, limits, e))?;
 
             let globals = ctx.globals();
             let func: JsFunction = globals.get(entry_point).map_err(|e| {
                 Error::RuntimeError(format!("entry point '{entry_point}' not found: {e}"))
             })?;
 
-            let ctx_obj = build_ctx_object(&ctx, invocation)?;
+            let ctx_obj = build_ctx_object(&ctx, invocation, limits)?;
 
             let result: JsValue = func
                 .call((ctx_obj,))
-                .map_err(|e| to_sandbox_error(&ctx, &counter, max_instructions, e))?;
+                .map_err(|e| to_sandbox_error(&ctx, budget, limits, e))?;
 
+            // The job queue is never run, so a Promise would never settle;
+            // read as an object it has no own properties and would pass for
+            // an empty result.
+            if result.is_promise() {
+                return Err(Error::AsyncEntryUnsupported);
+            }
             if result.is_null() || result.is_undefined() {
                 return Err(Error::RuntimeError(format!(
                     "entry point '{entry_point}' returned no value (expected an object)"
                 )));
             }
 
-            js_to_json(&result)
+            js_to_json(&result, &mut Budget::new(limits))
         })
     }
 }
 
 fn to_sandbox_error(
     ctx: &Ctx<'_>,
-    counter: &AtomicU64,
-    max_instructions: u64,
+    budget: &InterruptBudget,
+    limits: ConversionLimits,
     e: rquickjs::Error,
 ) -> Error {
-    if counter.load(Ordering::Relaxed) >= max_instructions {
-        return Error::InstructionLimitExceeded;
+    if let Some(trip) = budget.trip() {
+        return trip.into();
     }
     // rquickjs reports a thrown value only as "Exception generated by QuickJS";
     // the value itself waits in the context. Without it, a module that throws a
     // clear message -- "counter: woofx3:counter:x does not exist" -- reaches the
     // workflow log as nothing anyone can act on.
     if matches!(e, rquickjs::Error::Exception) {
-        return Error::RuntimeError(describe_thrown(&ctx.catch()));
+        return Error::RuntimeError(describe_thrown(&ctx.catch(), limits));
     }
     Error::RuntimeError(e.to_string())
 }
 
 /// What a module threw, as text: an Error's message, or the value itself.
-fn describe_thrown(thrown: &JsValue<'_>) -> String {
+/// A value too large to convert is described by the reason it was refused.
+fn describe_thrown(thrown: &JsValue<'_>, limits: ConversionLimits) -> String {
     if let Some(exception) = thrown.as_exception()
         && let Some(message) = exception.message()
     {
@@ -131,13 +187,33 @@ fn describe_thrown(thrown: &JsValue<'_>) -> String {
     if let Some(text) = thrown.as_string().and_then(|s| s.to_string().ok()) {
         return text;
     }
-    js_to_json(thrown)
-        .ok()
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| "a module function threw a value that could not be read".to_string())
+    match js_to_json(thrown, &mut Budget::new(limits)) {
+        Ok(value) => value.to_string(),
+        Err(err) => format!("a module function threw a value that could not be read: {err}"),
+    }
 }
 
-fn json_to_js<'js>(ctx: &Ctx<'js>, value: &Value) -> Result<JsValue<'js>, Error> {
+/// Converts a value a module passed to a host binding. A refusal is thrown
+/// back into the script, where module code can catch it.
+fn binding_arg(value: &JsValue<'_>, limits: ConversionLimits) -> rquickjs::Result<Value> {
+    js_to_json(value, &mut Budget::new(limits)).map_err(|e| host_err(e.to_string()))
+}
+
+/// Converts a host binding's answer into a value for the script.
+fn binding_return<'js>(
+    ctx: &Ctx<'js>,
+    value: &Value,
+    limits: ConversionLimits,
+) -> rquickjs::Result<JsValue<'js>> {
+    json_to_js(ctx, value, &mut Budget::new(limits)).map_err(|e| host_err(e.to_string()))
+}
+
+fn json_to_js<'js>(
+    ctx: &Ctx<'js>,
+    value: &Value,
+    budget: &mut Budget,
+) -> Result<JsValue<'js>, Error> {
+    budget.charge_node()?;
     match value {
         Value::Null => Ok(JsValue::new_undefined(ctx.clone())),
         Value::Bool(b) => Ok(JsValue::new_bool(ctx.clone(), *b)),
@@ -153,33 +229,39 @@ fn json_to_js<'js>(ctx: &Ctx<'js>, value: &Value) -> Result<JsValue<'js>, Error>
             }
         }
         Value::String(s) => {
+            budget.charge_text(s.len())?;
             let js_str = rquickjs::String::from_str(ctx.clone(), s)
                 .map_err(|e| Error::RuntimeError(e.to_string()))?;
             Ok(js_str.into())
         }
-        Value::Array(arr) => {
+        Value::Array(arr) => budget.nested(|budget| {
             let js_arr = Array::new(ctx.clone()).map_err(|e| Error::RuntimeError(e.to_string()))?;
             for (i, v) in arr.iter().enumerate() {
-                let js_v = json_to_js(ctx, v)?;
+                let js_v = json_to_js(ctx, v, budget)?;
                 js_arr
                     .set(i, js_v)
                     .map_err(|e| Error::RuntimeError(e.to_string()))?;
             }
             Ok(js_arr.into())
-        }
-        Value::Object(map) => {
+        }),
+        Value::Object(map) => budget.nested(|budget| {
             let obj = Object::new(ctx.clone()).map_err(|e| Error::RuntimeError(e.to_string()))?;
             for (k, v) in map {
-                let js_v = json_to_js(ctx, v)?;
+                budget.charge_text(k.len())?;
+                let js_v = json_to_js(ctx, v, budget)?;
                 obj.set(k.as_str(), js_v)
                     .map_err(|e| Error::RuntimeError(e.to_string()))?;
             }
             Ok(obj.into())
-        }
+        }),
     }
 }
 
-fn js_to_json(value: &JsValue<'_>) -> Result<Value, Error> {
+/// Converts a script value to JSON within `budget`. Recursion happens only
+/// inside [`Budget::nested`], so depth is bounded and a cyclic value is
+/// refused as too deep.
+fn js_to_json(value: &JsValue<'_>, budget: &mut Budget) -> Result<Value, Error> {
+    budget.charge_node()?;
     if value.is_null() || value.is_undefined() {
         Ok(Value::Null)
     } else if let Some(b) = value.as_bool() {
@@ -196,61 +278,71 @@ fn js_to_json(value: &JsValue<'_>) -> Result<Value, Error> {
         let rs = s
             .to_string()
             .map_err(|e| Error::RuntimeError(e.to_string()))?;
+        budget.charge_text(rs.len())?;
         Ok(Value::String(rs))
+    } else if value.is_function() || value.is_promise() {
+        Err(Error::UnsupportedValue {
+            type_name: format!("{:?}", value.type_of()),
+        })
     } else if value.is_array() {
         let arr = value
             .clone()
             .into_array()
             .ok_or_else(|| Error::RuntimeError("array conversion failed".into()))?;
-        let mut result = Vec::new();
-        for i in 0..arr.len() {
-            let v: JsValue = arr.get(i).map_err(|e| Error::RuntimeError(e.to_string()))?;
-            result.push(js_to_json(&v)?);
-        }
-        Ok(Value::Array(result))
+        budget.nested(|budget| {
+            let mut result = Vec::new();
+            for i in 0..arr.len() {
+                let v: JsValue = arr.get(i).map_err(|e| Error::RuntimeError(e.to_string()))?;
+                result.push(js_to_json(&v, budget)?);
+            }
+            Ok(Value::Array(result))
+        })
     } else if value.is_object() {
         let obj = value
             .clone()
             .into_object()
             .ok_or_else(|| Error::RuntimeError("object conversion failed".into()))?;
-        let mut map = serde_json::Map::new();
-        for entry in obj.props::<String, JsValue>() {
-            let (k, v) = entry.map_err(|e| Error::RuntimeError(e.to_string()))?;
-            map.insert(k, js_to_json(&v)?);
-        }
-        Ok(Value::Object(map))
+        budget.nested(|budget| {
+            let mut map = serde_json::Map::new();
+            for entry in obj.props::<String, JsValue>() {
+                let (k, v) = entry.map_err(|e| Error::RuntimeError(e.to_string()))?;
+                budget.charge_text(k.len())?;
+                map.insert(k, js_to_json(&v, budget)?);
+            }
+            Ok(Value::Object(map))
+        })
     } else {
-        Err(Error::RuntimeError(format!(
-            "unsupported JS type: {:?}",
-            value.type_of()
-        )))
+        Err(Error::UnsupportedValue {
+            type_name: format!("{:?}", value.type_of()),
+        })
     }
 }
 
 fn build_ctx_object<'js>(
     ctx: &Ctx<'js>,
     invocation: &InvocationContext,
+    limits: ConversionLimits,
 ) -> Result<Object<'js>, Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
 
     let ctx_obj = Object::new(ctx.clone()).map_err(map)?;
 
-    let event_js = json_to_js(ctx, &invocation.event)?;
+    let event_js = json_to_js(ctx, &invocation.event, &mut Budget::new(limits))?;
     ctx_obj.set("event", event_js).map_err(map)?;
 
-    let user_js = json_to_js(ctx, &invocation.user)?;
+    let user_js = json_to_js(ctx, &invocation.user, &mut Budget::new(limits))?;
     ctx_obj.set("user", user_js).map_err(map)?;
 
     build_crypto_namespace(ctx, &ctx_obj)?;
-    build_storage_namespace(ctx, &ctx_obj, invocation)?;
-    build_http_namespace(ctx, &ctx_obj, invocation)?;
-    build_resources_namespace(ctx, &ctx_obj, invocation)?;
-    build_schedule_namespace(ctx, &ctx_obj, invocation)?;
-    build_module_namespace(ctx, &ctx_obj, invocation)?;
-    build_log_namespace(ctx, &ctx_obj, invocation)?;
-    build_response_fn(ctx, &ctx_obj)?;
-    build_result_fn(ctx, &ctx_obj)?;
-    bind_extensions(ctx, &ctx_obj, invocation)?;
+    build_storage_namespace(ctx, &ctx_obj, invocation, limits)?;
+    build_http_namespace(ctx, &ctx_obj, invocation, limits)?;
+    build_resources_namespace(ctx, &ctx_obj, invocation, limits)?;
+    build_schedule_namespace(ctx, &ctx_obj, invocation, limits)?;
+    build_module_namespace(ctx, &ctx_obj, invocation, limits)?;
+    build_log_namespace(ctx, &ctx_obj, invocation, limits)?;
+    build_response_fn(ctx, &ctx_obj, limits)?;
+    build_result_fn(ctx, &ctx_obj, limits)?;
+    bind_extensions(ctx, &ctx_obj, invocation, limits)?;
 
     Ok(ctx_obj)
 }
@@ -281,6 +373,7 @@ fn bind_extensions<'js>(
     ctx: &Ctx<'js>,
     ctx_obj: &Object<'js>,
     invocation: &InvocationContext,
+    limits: ConversionLimits,
 ) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
     let scope = Arc::new(invocation.call_scope());
@@ -293,11 +386,11 @@ fn bind_extensions<'js>(
             let scope = scope.clone();
             let js_func = JsFunction::new(ctx.clone(), move |ctx, arg: Opt<JsValue<'_>>| {
                 let value = match arg.0 {
-                    Some(v) => js_to_json(&v).map_err(|e| host_err(e.to_string()))?,
+                    Some(v) => binding_arg(&v, limits)?,
                     None => Value::Null,
                 };
                 match func.call(&namespace, &scope, value) {
-                    Ok(result) => json_to_js(&ctx, &result).map_err(|e| host_err(e.to_string())),
+                    Ok(result) => binding_return(&ctx, &result, limits),
                     Err(err) => Err(throw_host_error(&ctx, &err)),
                 }
             })
@@ -360,6 +453,7 @@ fn build_storage_namespace<'js>(
     ctx: &Ctx<'js>,
     ctx_obj: &Object<'js>,
     invocation: &InvocationContext,
+    limits: ConversionLimits,
 ) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
     let storage = Object::new(ctx.clone()).map_err(map)?;
@@ -368,7 +462,7 @@ fn build_storage_namespace<'js>(
     let namespace = invocation.module_id.clone();
     let get_fn = JsFunction::new(ctx.clone(), move |ctx, key: String| {
         match store.get(&namespace, &key) {
-            Ok(Some(v)) => json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string())),
+            Ok(Some(v)) => binding_return(&ctx, &v, limits),
             Ok(None) => Ok(rquickjs::Value::new_null(ctx)),
             Err(e) => Err(host_err(e)),
         }
@@ -385,13 +479,12 @@ fn build_storage_namespace<'js>(
               value: JsValue<'_>,
               options: Opt<JsValue<'_>>|
               -> rquickjs::Result<()> {
-            let json_val = js_to_json(&value).map_err(|e| host_err(e.to_string()))?;
+            let json_val = binding_arg(&value, limits)?;
             let json_options = options
                 .0
                 .as_ref()
-                .map(js_to_json)
-                .transpose()
-                .map_err(|e| host_err(e.to_string()))?;
+                .map(|v| binding_arg(v, limits))
+                .transpose()?;
             super::host_bindings::storage_set(
                 &host,
                 &module_id,
@@ -411,14 +504,13 @@ fn build_storage_namespace<'js>(
     let compare_and_set_fn = JsFunction::new(
         ctx.clone(),
         move |ctx, key: String, expected: JsValue, value: JsValue, options: Opt<JsValue>| {
-            let json_expected = js_to_json(&expected).map_err(|e| host_err(e.to_string()))?;
-            let json_val = js_to_json(&value).map_err(|e| host_err(e.to_string()))?;
+            let json_expected = binding_arg(&expected, limits)?;
+            let json_val = binding_arg(&value, limits)?;
             let json_options = options
                 .0
                 .as_ref()
-                .map(js_to_json)
-                .transpose()
-                .map_err(|e| host_err(e.to_string()))?;
+                .map(|v| binding_arg(v, limits))
+                .transpose()?;
             let outcome = super::host_bindings::storage_compare_and_set(
                 &host,
                 &module_id,
@@ -428,7 +520,7 @@ fn build_storage_namespace<'js>(
                 super::host_bindings::parse_storage_set_options(json_options.as_ref()),
             )
             .map_err(host_err)?;
-            json_to_js(&ctx, &outcome).map_err(|e| host_err(e.to_string()))
+            binding_return(&ctx, &outcome, limits)
         },
     )
     .map_err(map)?;
@@ -444,6 +536,7 @@ fn build_http_namespace<'js>(
     ctx: &Ctx<'js>,
     ctx_obj: &Object<'js>,
     invocation: &InvocationContext,
+    limits: ConversionLimits,
 ) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
     let http = Object::new(ctx.clone()).map_err(map)?;
@@ -451,10 +544,11 @@ fn build_http_namespace<'js>(
     let client = invocation.host.http.clone();
     let module_id = invocation.module_id.clone();
     let grants = invocation.permissions.clone();
+    let deadline = invocation.deadline;
     let request_fn = JsFunction::new(
         ctx.clone(),
         move |ctx, url: String, method: String, opts: rquickjs::Value<'_>| {
-            let json_opts = js_to_json(&opts).map_err(|e| host_err(e.to_string()))?;
+            let json_opts = binding_arg(&opts, limits)?;
             let response = client
                 .request(crate::host::HttpRequest {
                     module_id: &module_id,
@@ -462,9 +556,11 @@ fn build_http_namespace<'js>(
                     url: &url,
                     method: &method,
                     opts: json_opts,
+                    enforcement: crate::host::Enforcement::Policy,
+                    deadline: Some(deadline),
                 })
                 .map_err(host_err)?;
-            json_to_js(&ctx, &response).map_err(|e| host_err(e.to_string()))
+            binding_return(&ctx, &response, limits)
         },
     )
     .map_err(map)?;
@@ -479,8 +575,11 @@ fn build_http_namespace<'js>(
 ///
 ///   - `ctx.resources.create(kind, instanceId, displayName?)` →
 ///     `{ canonicalId, moduleName, kind, instanceId, displayName }`
-///   - `ctx.resources.delete(canonicalId)` → no return
-///   - `ctx.resources.list(kind)` → array of the same instance objects
+///   - `ctx.resources.delete(canonicalId)` → no return; owning module only
+///   - `ctx.resources.get(canonicalId)` → the instance or null; owning module,
+///     or one the streamer linked it to
+///   - `ctx.resources.list(kind)` → array of the same instance objects; a
+///     bare kind lists the calling module's own (`crate::resource_access`)
 ///   - `ctx.resources.compareAndSetSetting(canonicalId, key, expected, value)`
 ///     → `{ swapped, current }`; owning module only
 ///
@@ -491,6 +590,7 @@ fn build_resources_namespace<'js>(
     ctx: &Ctx<'js>,
     ctx_obj: &Object<'js>,
     invocation: &InvocationContext,
+    limits: ConversionLimits,
 ) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
     let resources = Object::new(ctx.clone()).map_err(map)?;
@@ -508,9 +608,8 @@ fn build_resources_namespace<'js>(
             let json_settings = settings
                 .0
                 .as_ref()
-                .map(js_to_json)
-                .transpose()
-                .map_err(|e| host_err(e.to_string()))?;
+                .map(|v| binding_arg(v, limits))
+                .transpose()?;
             match super::host_bindings::resources_create(
                 &host,
                 &module_name,
@@ -519,7 +618,7 @@ fn build_resources_namespace<'js>(
                 &display,
                 json_settings,
             ) {
-                Ok(v) => json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string())),
+                Ok(v) => binding_return(&ctx, &v, limits),
                 Err(e) => Err(host_err(e)),
             }
         },
@@ -528,10 +627,12 @@ fn build_resources_namespace<'js>(
     resources.set("create", create_fn).map_err(map)?;
 
     let host = invocation.host.clone();
+    let module_id = invocation.module_id.clone();
     let delete_fn = JsFunction::new(
         ctx.clone(),
         move |_ctx: Ctx<'_>, canonical_id: String| -> rquickjs::Result<()> {
-            super::host_bindings::resources_delete(&host, &canonical_id).map_err(host_err)?;
+            super::host_bindings::resources_delete(&host, &module_id, &canonical_id)
+                .map_err(host_err)?;
             Ok(())
         },
     )
@@ -539,9 +640,12 @@ fn build_resources_namespace<'js>(
     resources.set("delete", delete_fn).map_err(map)?;
 
     let host = invocation.host.clone();
+    let module_id = invocation.module_id.clone();
+    let link_settings = invocation.resource_link_settings.clone();
     let get_fn = JsFunction::new(ctx.clone(), move |ctx, canonical_id: String| {
-        match super::host_bindings::resources_get(&host, &canonical_id) {
-            Ok(v) => json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string())),
+        match super::host_bindings::resources_get(&host, &module_id, &link_settings, &canonical_id)
+        {
+            Ok(v) => binding_return(&ctx, &v, limits),
             Err(e) => Err(host_err(e)),
         }
     })
@@ -549,9 +653,11 @@ fn build_resources_namespace<'js>(
     resources.set("get", get_fn).map_err(map)?;
 
     let host = invocation.host.clone();
+    let module_id = invocation.module_id.clone();
+    let link_settings = invocation.resource_link_settings.clone();
     let list_fn = JsFunction::new(ctx.clone(), move |ctx, kind: String| {
-        match super::host_bindings::resources_list(&host, &kind) {
-            Ok(v) => json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string())),
+        match super::host_bindings::resources_list(&host, &module_id, &link_settings, &kind) {
+            Ok(v) => binding_return(&ctx, &v, limits),
             Err(e) => Err(host_err(e)),
         }
     })
@@ -561,6 +667,7 @@ fn build_resources_namespace<'js>(
     let host = invocation.host.clone();
     let module_id = invocation.module_id.clone();
     let permissions = invocation.permissions.clone();
+    let link_settings = invocation.resource_link_settings.clone();
     let deadline = invocation.deadline;
     let run_fn = JsFunction::new(
         ctx.clone(),
@@ -568,19 +675,21 @@ fn build_resources_namespace<'js>(
             let json_params = params
                 .0
                 .as_ref()
-                .map(js_to_json)
-                .transpose()
-                .map_err(|e| host_err(e.to_string()))?;
+                .map(|v| binding_arg(v, limits))
+                .transpose()?;
             match super::host_bindings::resources_run(
                 &host,
-                &module_id,
-                &permissions,
-                deadline,
+                &crate::host::RunCaller {
+                    module_id: &module_id,
+                    permissions: &permissions,
+                    resource_link_settings: &link_settings,
+                    deadline,
+                },
                 &canonical_id,
                 &verb,
                 json_params,
             ) {
-                Ok(v) => json_to_js(&ctx, &v).map_err(|e| host_err(e.to_string())),
+                Ok(v) => binding_return(&ctx, &v, limits),
                 Err(e) => Err(host_err(e)),
             }
         },
@@ -603,8 +712,8 @@ fn build_resources_namespace<'js>(
                     "ctx.resources.compareAndSetSetting: value must be JSON, not a function",
                 ));
             }
-            let json_expected = js_to_json(&expected).map_err(|e| host_err(e.to_string()))?;
-            let json_val = js_to_json(&value).map_err(|e| host_err(e.to_string()))?;
+            let json_expected = binding_arg(&expected, limits)?;
+            let json_val = binding_arg(&value, limits)?;
             let outcome = super::host_bindings::resources_compare_and_set_setting(
                 &host,
                 &module_id,
@@ -614,7 +723,7 @@ fn build_resources_namespace<'js>(
                 &json_val,
             )
             .map_err(host_err)?;
-            json_to_js(&ctx, &outcome).map_err(|e| host_err(e.to_string()))
+            binding_return(&ctx, &outcome, limits)
         },
     )
     .map_err(map)?;
@@ -637,6 +746,7 @@ fn build_schedule_namespace<'js>(
     ctx: &Ctx<'js>,
     ctx_obj: &Object<'js>,
     invocation: &InvocationContext,
+    limits: ConversionLimits,
 ) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
     let schedule = Object::new(ctx.clone()).map_err(map)?;
@@ -654,9 +764,8 @@ fn build_schedule_namespace<'js>(
             let json_params = params
                 .0
                 .as_ref()
-                .map(js_to_json)
-                .transpose()
-                .map_err(|e| host_err(e.to_string()))?;
+                .map(|v| binding_arg(v, limits))
+                .transpose()?;
             super::host_bindings::schedule_at(
                 &host,
                 &module_id,
@@ -691,6 +800,7 @@ fn build_module_namespace<'js>(
     ctx: &Ctx<'js>,
     ctx_obj: &Object<'js>,
     invocation: &InvocationContext,
+    limits: ConversionLimits,
 ) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
     let module = Object::new(ctx.clone()).map_err(map)?;
@@ -729,7 +839,7 @@ fn build_module_namespace<'js>(
                 let settings_obj =
                     Object::new(Ctx::clone(&ctx)).map_err(|e| host_err(e.to_string()))?;
                 for (k, v) in settings_map {
-                    let js_val = json_to_js(&ctx, v).map_err(|e| host_err(e.to_string()))?;
+                    let js_val = binding_return(&ctx, v, limits)?;
                     settings_obj
                         .set(k.as_str(), js_val)
                         .map_err(|e| host_err(e.to_string()))?;
@@ -748,6 +858,7 @@ fn build_module_namespace<'js>(
     let host_for_set = invocation.host.clone();
     let module_id_for_set = invocation.module_id.clone();
     let url_settings = invocation.url_settings.clone();
+    let link_settings = invocation.resource_link_settings.clone();
     let set_setting_fn = JsFunction::new(
         ctx.clone(),
         move |_ctx: Ctx<'_>, key: String, value: String| -> rquickjs::Result<()> {
@@ -755,6 +866,7 @@ fn build_module_namespace<'js>(
                 &host_for_set,
                 &module_id_for_set,
                 &url_settings,
+                &link_settings,
                 &key,
                 &value,
             )
@@ -770,21 +882,23 @@ fn build_module_namespace<'js>(
     let host_for_cas = invocation.host.clone();
     let module_id_for_cas = invocation.module_id.clone();
     let url_settings_for_cas = invocation.url_settings.clone();
+    let link_settings_for_cas = invocation.resource_link_settings.clone();
     let compare_and_set_setting_fn = JsFunction::new(
         ctx.clone(),
         move |ctx, key: String, expected: JsValue, value: JsValue| {
-            let json_expected = js_to_json(&expected).map_err(|e| host_err(e.to_string()))?;
-            let json_val = js_to_json(&value).map_err(|e| host_err(e.to_string()))?;
+            let json_expected = binding_arg(&expected, limits)?;
+            let json_val = binding_arg(&value, limits)?;
             let outcome = super::host_bindings::compare_and_set_module_setting(
                 &host_for_cas,
                 &module_id_for_cas,
                 &url_settings_for_cas,
+                &link_settings_for_cas,
                 &key,
                 &json_expected,
                 &json_val,
             )
             .map_err(host_err)?;
-            json_to_js(&ctx, &outcome).map_err(|e| host_err(e.to_string()))
+            binding_return(&ctx, &outcome, limits)
         },
     )
     .map_err(map)?;
@@ -800,7 +914,7 @@ fn build_module_namespace<'js>(
 /// verbatim, everything else is JSON-encoded — the encoding rule lives in
 /// `host_bindings::format_log_value`, shared with the Lua adapter; only
 /// the JS-native string fast path stays here.
-fn format_log_value(value: &JsValue<'_>) -> String {
+fn format_log_value(value: &JsValue<'_>, limits: ConversionLimits) -> String {
     if value.is_string() {
         return value
             .clone()
@@ -808,9 +922,9 @@ fn format_log_value(value: &JsValue<'_>) -> String {
             .and_then(|s| s.to_string().ok())
             .unwrap_or_else(|| "<unprintable string>".to_string());
     }
-    match js_to_json(value) {
+    match js_to_json(value, &mut Budget::new(limits)) {
         Ok(json) => super::host_bindings::format_log_value(&json),
-        Err(_) => format!("<unloggable value: {:?}>", value.type_of()),
+        Err(err) => format!("<unloggable value: {:?}: {err}>", value.type_of()),
     }
 }
 
@@ -823,6 +937,7 @@ fn build_log_namespace<'js>(
     ctx: &Ctx<'js>,
     ctx_obj: &Object<'js>,
     invocation: &InvocationContext,
+    limits: ConversionLimits,
 ) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
     let log = Object::new(ctx.clone()).map_err(map)?;
@@ -831,7 +946,11 @@ fn build_log_namespace<'js>(
     let info_fn = JsFunction::new(
         ctx.clone(),
         move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
-            tracing::info!("[module:{}] {}", module_id, format_log_value(&value));
+            tracing::info!(
+                "[module:{}] {}",
+                module_id,
+                format_log_value(&value, limits)
+            );
             Ok(())
         },
     )
@@ -842,7 +961,11 @@ fn build_log_namespace<'js>(
     let warn_fn = JsFunction::new(
         ctx.clone(),
         move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
-            tracing::warn!("[module:{}] {}", module_id, format_log_value(&value));
+            tracing::warn!(
+                "[module:{}] {}",
+                module_id,
+                format_log_value(&value, limits)
+            );
             Ok(())
         },
     )
@@ -853,7 +976,11 @@ fn build_log_namespace<'js>(
     let error_fn = JsFunction::new(
         ctx.clone(),
         move |_ctx: Ctx<'_>, value: JsValue<'_>| -> rquickjs::Result<()> {
-            tracing::error!("[module:{}] {}", module_id, format_log_value(&value));
+            tracing::error!(
+                "[module:{}] {}",
+                module_id,
+                format_log_value(&value, limits)
+            );
             Ok(())
         },
     )
@@ -864,24 +991,45 @@ fn build_log_namespace<'js>(
     Ok(())
 }
 
-/// `ctx.response(success, message)` — the standard shape a module function
-/// returns to report an outcome and a message, which becomes the calling
-/// step's output. A pure data constructor (no host state, unlike the other
-/// `build_*` functions): it only builds and returns `{ proto:
-/// "woofx3.response", v: 1, success, message }`; the sandboxed function
-/// still has to actually `return` the result for it to reach the step.
-/// Tagged with `proto`/`v` (mirroring
-/// the `woofx3.widget`/`woofx3.overlay-events` envelope convention) so a
-/// caller can reliably distinguish "this is a deliberate response" from any
-/// other object a function might return for its own purposes.
-fn build_response_fn<'js>(ctx: &Ctx<'js>, ctx_obj: &Object<'js>) -> Result<(), Error> {
+/// `ctx.response`, `ctx.success` and `ctx.failure` — the standard shape a
+/// module function returns to report an outcome and a message, which becomes
+/// the calling step's output. Pure data constructors (no host state, unlike
+/// the other `build_*` functions): each only builds and returns `{ proto:
+/// "woofx3.response", v: 1, success, message, ...fields }`; the sandboxed
+/// function still has to actually `return` the result for it to reach the
+/// step. `ctx.success`/`ctx.failure` accept extra fields, validated by
+/// `build_outcome_value`. Tagged with `proto`/`v` (mirroring the
+/// `woofx3.widget`/`woofx3.overlay-events` envelope convention) so a caller
+/// can reliably distinguish "this is a deliberate response" from any other
+/// object a function might return for its own purposes.
+fn build_response_fn<'js>(
+    ctx: &Ctx<'js>,
+    ctx_obj: &Object<'js>,
+    limits: ConversionLimits,
+) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
     let response_fn = JsFunction::new(ctx.clone(), move |ctx, success: bool, message: String| {
         let value = super::host_bindings::build_response_value(success, message);
-        json_to_js(&ctx, &value).map_err(|e| host_err(e.to_string()))
+        binding_return(&ctx, &value, limits)
     })
     .map_err(map)?;
     ctx_obj.set("response", response_fn).map_err(map)?;
+
+    // success/failure share one constructor: `fields` is converted to JSON
+    // and validated host-side, so the sandbox cannot bypass the reserved names.
+    for (name, success) in [("success", true), ("failure", false)] {
+        let outcome_fn = JsFunction::new(
+            ctx.clone(),
+            move |ctx, message: String, fields: Opt<JsValue<'_>>| {
+                let fields = fields.0.map(|v| binding_arg(&v, limits)).transpose()?;
+                let value = super::host_bindings::build_outcome_value(success, message, fields)
+                    .map_err(host_err)?;
+                binding_return(&ctx, &value, limits)
+            },
+        )
+        .map_err(map)?;
+        ctx_obj.set(name, outcome_fn).map_err(map)?;
+    }
     Ok(())
 }
 
@@ -889,18 +1037,22 @@ fn build_response_fn<'js>(ctx: &Ctx<'js>, ctx_obj: &Object<'js>) -> Result<(), E
 /// it asks the engine to publish. A pure data constructor like
 /// `ctx.response`: the engine checks and publishes the events once the
 /// function returns the envelope (see `function_result.rs`).
-fn build_result_fn<'js>(ctx: &Ctx<'js>, ctx_obj: &Object<'js>) -> Result<(), Error> {
+fn build_result_fn<'js>(
+    ctx: &Ctx<'js>,
+    ctx_obj: &Object<'js>,
+    limits: ConversionLimits,
+) -> Result<(), Error> {
     let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
     let result_fn = JsFunction::new(
         ctx.clone(),
         move |ctx, value: Opt<JsValue<'_>>, events: Opt<JsValue<'_>>| {
             let to_json = |arg: Opt<JsValue<'_>>| match arg.0 {
-                Some(v) => js_to_json(&v).map_err(|e| host_err(e.to_string())),
+                Some(v) => binding_arg(&v, limits),
                 None => Ok(Value::Null),
             };
             let envelope =
                 crate::function_result::build_result_value(to_json(value)?, to_json(events)?);
-            json_to_js(&ctx, &envelope).map_err(|e| host_err(e.to_string()))
+            binding_return(&ctx, &envelope, limits)
         },
     )
     .map_err(map)?;
@@ -928,9 +1080,10 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let code = r#"
             function run(ctx) {
                 return { env: typeof ctx.env };
@@ -954,9 +1107,10 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let code = r#"
             function run(ctx) {
                 ctx.schedule.at("timer_end", "t1", 2000, { target: "t1" });
@@ -988,7 +1142,7 @@ mod tests {
 
     #[test]
     fn a_thrown_error_reports_its_message() {
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -998,6 +1152,7 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         for (code, expected) in [
@@ -1020,7 +1175,7 @@ mod tests {
 
     #[test]
     fn quickjs_ctx_module_exposed() {
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1030,6 +1185,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = "function run(ctx) { return { id: ctx.module.id, name: ctx.module.name, version: ctx.module.version }; }";
@@ -1041,7 +1197,7 @@ mod tests {
 
     #[test]
     fn quickjs_ctx_log_accepts_strings_and_objects() {
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1051,6 +1207,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Exercises all three levels and both a string and an object
@@ -1074,7 +1231,7 @@ mod tests {
         // declares rather than erroring. Guards the documented "one value
         // per call" contract — if rquickjs's calling convention ever
         // changes to error instead, this is the test that should catch it.
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1084,6 +1241,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = "function run(ctx) { ctx.log.info('data', { foo: 1 }); return { ok: true }; }";
@@ -1093,7 +1251,7 @@ mod tests {
 
     #[test]
     fn quickjs_ctx_response_builds_the_standard_shape() {
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1103,6 +1261,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         let code = "function run(ctx) { return ctx.response(false, 'nope'); }";
@@ -1111,6 +1270,97 @@ mod tests {
         assert_eq!(result["v"], 1);
         assert_eq!(result["success"], false);
         assert_eq!(result["message"], "nope");
+    }
+
+    fn outcome_test_invocation() -> InvocationContext {
+        InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings: Default::default(),
+            resource_link_settings: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        }
+    }
+
+    #[test]
+    fn quickjs_ctx_success_and_failure_build_the_response_with_fields() {
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
+        let invocation = InvocationContext {
+            event: serde_json::Value::Null,
+            user: serde_json::Value::Null,
+            host: noop_host_context(),
+            module_id: "mymod".to_string(),
+            module_name: "My Module".to_string(),
+            module_version: "2.0.0".to_string(),
+            permissions: Default::default(),
+            url_settings: Default::default(),
+            resource_link_settings: Default::default(),
+            deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
+        };
+        // (call, success, message, extra field name, extra field value)
+        let cases = [
+            ("ctx.success('ok')", true, "ok", "", serde_json::Value::Null),
+            (
+                "ctx.success('ok', {})",
+                true,
+                "ok",
+                "",
+                serde_json::Value::Null,
+            ),
+            (
+                "ctx.failure('bad', { code: 7 })",
+                false,
+                "bad",
+                "code",
+                serde_json::json!(7),
+            ),
+            (
+                "ctx.success('hi', { who: 'ann' })",
+                true,
+                "hi",
+                "who",
+                serde_json::json!("ann"),
+            ),
+        ];
+        for (call, success, message, extra, extra_value) in cases {
+            let code = format!("function run(ctx) {{ return {call}; }}");
+            let result = adapter.execute(&code, "run", &invocation).unwrap();
+            assert_eq!(result["proto"], "woofx3.response", "{call}");
+            assert_eq!(result["v"], 1, "{call}");
+            assert_eq!(result["success"], success, "{call}");
+            assert_eq!(result["message"], message, "{call}");
+            if !extra.is_empty() {
+                assert_eq!(result[extra], extra_value, "{call}");
+            }
+        }
+    }
+
+    #[test]
+    fn quickjs_ctx_success_and_failure_refuse_bad_fields() {
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
+        let invocation = outcome_test_invocation();
+        // (fields argument source, expected error substring)
+        let cases = [
+            ("{ proto: 1 }", "reserved name 'proto'"),
+            ("{ v: 1 }", "reserved name 'v'"),
+            ("{ success: 1 }", "reserved name 'success'"),
+            ("{ message: 1 }", "reserved name 'message'"),
+            ("5", "fields must be an object"),
+            ("'text'", "fields must be an object"),
+            ("[1, 2]", "fields must be an object"),
+        ];
+        for (fields, want) in cases {
+            for func in ["success", "failure"] {
+                let code = format!("function run(ctx) {{ return ctx.{func}('x', {fields}); }}");
+                let err = adapter.execute(&code, "run", &invocation).unwrap_err();
+                assert!(err.to_string().contains(want), "{func} {fields}: {err}");
+            }
+        }
     }
 
     struct CountingSettingsClient {
@@ -1139,7 +1389,7 @@ mod tests {
             calls: calls.clone(),
             data: std::collections::HashMap::new(),
         });
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1149,6 +1399,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Never touches ctx.module.settings.
@@ -1167,7 +1418,7 @@ mod tests {
             calls: calls.clone(),
             data,
         });
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let invocation = InvocationContext {
             event: serde_json::Value::Null,
             user: serde_json::Value::Null,
@@ -1177,6 +1428,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         // Reads ctx.module.settings twice — should still be one host fetch.
@@ -1254,6 +1506,7 @@ mod tests {
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
             url_settings,
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         (invocation, settings)
@@ -1265,7 +1518,7 @@ mod tests {
             serde_json::json!([{ "label": "first" }]),
             Default::default(),
         );
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let code = "function run(ctx) { \
             const items = ctx.module.settings.items; \
             const next = items.concat([{ label: 'second' }]); \
@@ -1287,7 +1540,7 @@ mod tests {
             serde_json::json!([]),
             std::collections::HashSet::from(["items".to_string()]),
         );
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let code = "function run(ctx) { return ctx.module.compareAndSetSetting('items', [], []); }";
         let err = adapter.execute(code, "run", &invocation).unwrap_err();
         assert!(err.to_string().contains("url setting"), "{err}");
@@ -1315,6 +1568,7 @@ mod tests {
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
             url_settings: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
         (invocation, instance)
@@ -1326,7 +1580,7 @@ mod tests {
     fn quickjs_ctx_resources_compare_and_set_setting_writes_from_what_was_read() {
         let (invocation, instance) =
             instance_settings_invocation("mymod", serde_json::json!({ "limit": 5 }));
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let code = "function run(ctx) { \
             const id = 'mymod:list:main'; \
             const items = ctx.resources.get(id).settings.items; \
@@ -1350,7 +1604,7 @@ mod tests {
     fn quickjs_ctx_resources_compare_and_set_setting_refuses_another_modules_instance() {
         let (invocation, instance) =
             instance_settings_invocation("intruder", serde_json::json!({}));
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let code = "function run(ctx) { \
             return ctx.resources.compareAndSetSetting('mymod:list:main', 'items', undefined, []); \
         }";
@@ -1365,7 +1619,7 @@ mod tests {
     #[test]
     fn quickjs_ctx_resources_compare_and_set_setting_refuses_a_value_json_cannot_hold() {
         let (invocation, instance) = instance_settings_invocation("mymod", serde_json::json!({}));
-        let adapter = QuickJSAdapter::new().unwrap();
+        let adapter = QuickJSAdapter::new(SandboxLimits::default()).unwrap();
         let code = "function run(ctx) { \
             return ctx.resources.compareAndSetSetting('mymod:list:main', 'items', undefined, function () {}); \
         }";
