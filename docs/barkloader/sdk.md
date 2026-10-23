@@ -322,6 +322,16 @@ host.onEvent((event) => {
 Don't hide yourself when you are done: completing is what takes a widget off
 screen, after its exit transition.
 
+Starting up does not mean your alert is about to show. To have an alert on screen
+the moment it is due, the overlay starts its widgets ahead of time, hidden: minutes
+or even hours before the alert they end up playing, and sometimes for an alert that
+never comes. The settings a widget starts with can also be replaced by the alert's
+own, as a [live settings](#live-settings) change, before its event arrives. So get
+ready when you start (read your settings, load what you need), but do anything a
+viewer would notice, such as playing a sound or video, starting an animation or a
+timer, or calling out to another service, only in your `onEvent` handler, when the
+alert's event arrives.
+
 ### Transitions and effects
 
 How a placed widget enters, leaves and moves while shown is the composition's:
