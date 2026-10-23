@@ -39,7 +39,7 @@ const (
 	SubjectPlatformGatewayFieldOptions Subject = "platform.gateway.field_options"
 
 	// Chat command events — subject pattern `chat.command.<slug>` emitted by
-	// woofwoofwoof when a chat command matches. The wildcard is documentation;
+	// the connectors chat dispatcher when a chat command matches. The wildcard is documentation;
 	// the workflow engine subscribes to concrete subjects via the reactive
 	// registrar at workflow-creation time.
 	SubjectChatCommandPattern Subject = "chat.command.*"
@@ -55,7 +55,7 @@ const (
 
 	// Run the workflow a chat command is linked to, from the
 	// `chat.command.<slug>` event of one invocation. Published by whoever
-	// matched the command and checked who may run it (woofwoofwoof, or the api
+	// matched the command and checked who may run it (the connectors chat dispatcher, or the api
 	// running a command for the dashboard); the workflow engine runs that one
 	// workflow (Engine.RunCommand). Its trigger has type "command", so the
 	// event the same invocation announces cannot start it a second time.

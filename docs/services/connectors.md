@@ -412,8 +412,11 @@ every adapter manifest makes (`localEndpoints`), checked at startup, and hands
 each adapter a handle scoped to its own claims as `ctx.companion`. On the
 host's bus scope it subscribes to `db.module.setting.updated.*` for route
 changes, answers `engine.companion.relay_config.set` as the one writer of
-`relay.config`, and requests `engine.companion.dashboard_credential` from the
-api, which asks the dashboard for the bridge credential the gateway caches.
+`relay.config`, requests `engine.companion.dashboard_credential` from the api,
+which asks the dashboard for the bridge credential the gateway caches, and
+answers module code's requests to its own endpoints on
+`engine.companion.module.request` (see
+[Companion gateway → Module requests](./companion-gateway.md#module-requests)).
 
 ### The stream session
 
@@ -432,7 +435,7 @@ bus scope of its own that holds `CHAT_DISPATCHER_GRANTS` and nothing more. It
 starts once the platform gateway answers, because its replies go through the
 gateway, and before the first link settings are read. If the first command
 listing fails, the host does not start. No other
-service runs chat commands: the standalone woofwoofwoof service is gone, and the
+service runs chat commands: the standalone chat service is gone, and the
 dispatcher announces `chat.command.<slug>` with the event `source`
 `connectors`.
 
@@ -543,6 +546,7 @@ The companion gateway reads:
 | `WOOFX3_HOSTING` | unset | How the engine is run: `local`, `self` or `managed`. On `local` every endpoint is dialed directly. Any other value stops connectors at startup. |
 | `WOOFX3_COMPANION_MAX_BRIDGE_OPENS` | `8` | Bridge opens in flight at once, 1 to 16 (the relay's own limit). |
 | `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` | `5000` | One ticket exchange with the relay. |
+| `WOOFX3_MODULE_LOCAL_DIRECT` | `false` | `true` lets module requests on a `self` engine dial their endpoint's address directly. |
 
 The Twitch adapter reads:
 
@@ -627,7 +631,19 @@ fix what parked it.
     "endpoints": [
       { "moduleId": "woofx3_obs", "endpointId": "obs", "owner": "obs", "route": "direct", "address": "127.0.0.1:4455", "lastFailure": null }
     ],
-    "bridgeOpens": { "inUse": 0, "limit": 8, "refused": 0 }
+    "bridgeOpens": { "inUse": 0, "limit": 8, "refused": 0 },
+    "modules": {
+      "sessions": {
+        "sessions": [],
+        "opening": 0,
+        "limit": 32,
+        "opens": 0,
+        "openFailures": {},
+        "closes": { "idle": 0, "route_change": 0, "remote": 0, "stopped": 0 },
+        "frames": { "oversized": 0, "binary": 0, "unmatched": 0 }
+      },
+      "requests": { "send": {}, "request": {} }
+    }
   },
   "counters": {
     "chat": {
@@ -660,7 +676,8 @@ once). The host replaces the value of any key whose name contains `password`,
 Adapters must still keep secrets out of `detail()`.
 
 `companion` lists every endpoint an adapter claims, from startup, with where
-its latest route resolution went and its latest failure; see
+its latest route resolution went and its latest failure, and under `modules`
+the sessions held for module requests and the requests answered; see
 [Companion gateway → Health](./companion-gateway.md#health). It is redacted
 the same way.
 

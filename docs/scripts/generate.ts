@@ -54,7 +54,7 @@ async function main(): Promise<void> {
 
   if (!serviceName) {
     console.log("Usage: bun run generate.ts <service-name> | all");
-    console.log("Example: bun run generate.ts woofwoofwoof");
+    console.log("Example: bun run generate.ts all");
     process.exit(1);
   }
 

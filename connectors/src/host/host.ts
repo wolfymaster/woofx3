@@ -5,7 +5,9 @@ import type { DispatcherDb } from "../chat/db-client";
 import { ClaimRegistry } from "../companion/claims";
 import { COMPANION_GATEWAY_GRANTS, EngineCompanionGateway } from "../companion/companion-gateway";
 import type { Fetch } from "../companion/dialer";
+import type { OpenSocket } from "../companion/endpoint-sessions";
 import type { EndpointStore } from "../companion/endpoint-store";
+import type { NameResolver } from "../companion/local-address";
 import type { ChatConfig } from "../config/chat";
 import type { CompanionConfig } from "../config/companion";
 import type { GatewayConfig } from "../config/gateway";
@@ -43,6 +45,10 @@ export interface HostCompanionDeps {
   store: EndpointStore;
   /** The relay's ticket exchange. */
   fetch: Fetch;
+  /** Resolves a `.local` name in a module endpoint's address. */
+  resolver: NameResolver;
+  /** Opens the websockets module requests are written to. */
+  openSocket: OpenSocket;
 }
 
 export interface HostDeps {
@@ -114,9 +120,12 @@ export class Host {
       claims: ClaimRegistry.fromManifests([...deps.adapters.values()].map((adapter) => adapter.manifest)),
       store: deps.companion.store,
       fetch: deps.companion.fetch,
+      resolver: deps.companion.resolver,
+      openSocket: deps.companion.openSocket,
       requests: this.requests,
       clock: deps.clock,
       timers: deps.timers,
+      ids: deps.ids,
       logger: deps.logger.child({ component: "companion-gateway" }),
     });
     assertNoSecondResponder(deps.adapters, [...this.gateway.served, ...this.companion.served]);

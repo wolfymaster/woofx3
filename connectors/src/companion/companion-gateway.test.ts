@@ -87,9 +87,14 @@ function gateway(options: { store?: Partial<EndpointStore>; fetch?: Fetch; env?:
     claims: ClaimRegistry.fromManifests([{ id: "twitch" }, { id: "obs", localEndpoints: [OBS_ENDPOINT] }]),
     store: { ...emptyEndpointStore, ...options.store },
     fetch: options.fetch ?? (async () => Response.json({ ticket: TICKET, expiresInMs: 30_000 })),
+    resolver: async (name) => {
+      throw new Error(`no name resolution in this test (${name})`);
+    },
+    openSocket: (url) => new WebSocket(url),
     requests: new HostRequests({ clock: time, ids: countingIds(), timers: time, logger }),
     clock: time,
     timers: time,
+    ids: countingIds(),
     logger,
   });
   return { companion, time, logger };
@@ -106,6 +111,18 @@ describe("EngineCompanionGateway claims", () => {
         { moduleId: "woofx3_obs", endpointId: "obs", owner: "obs", route: null, address: null, lastFailure: null },
       ],
       bridgeOpens: { inUse: 0, limit: 8, refused: 0 },
+      modules: {
+        sessions: {
+          sessions: [],
+          opening: 0,
+          limit: 32,
+          opens: 0,
+          openFailures: {},
+          closes: { idle: 0, route_change: 0, remote: 0, stopped: 0 },
+          frames: { oversized: 0, binary: 0, unmatched: 0 },
+        },
+        requests: { send: {}, request: {} },
+      },
     });
   });
 
@@ -129,12 +146,19 @@ describe("EngineCompanionGateway claims", () => {
     await expect(companion.start(scope)).rejects.toThrow("already started");
   });
 
-  it("serves the relay configuration writes and subscribes to nothing else of the relay", async () => {
+  it("serves the relay configuration writes and module requests, and subscribes to nothing else of the relay", async () => {
     const { companion } = gateway();
     const scope = new FakeScope();
     await companion.start(scope);
-    expect(companion.served).toEqual([{ subject: "engine.companion.relay_config.set", budgetMs: 4_500 }]);
-    expect([...scope.handlers.keys()]).toEqual(["db.module.setting.updated.*", "engine.companion.relay_config.set"]);
+    expect(companion.served).toEqual([
+      { subject: "engine.companion.relay_config.set", budgetMs: 4_500 },
+      { subject: "engine.companion.module.request", budgetMs: 4_500 },
+    ]);
+    expect([...scope.handlers.keys()]).toEqual([
+      "db.module.setting.updated.*",
+      "engine.companion.relay_config.set",
+      "engine.companion.module.request",
+    ]);
   });
 });
 

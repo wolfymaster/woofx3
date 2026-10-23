@@ -2,7 +2,7 @@
 // `argumentPattern` (e.g. "{songTitle}" or "{userA} {userB}") and extracts
 // their values from the remainder of a chat message. Shared by the api
 // service (validates variable names at command create/update time) and
-// woofwoofwoof (extracts values at match time), so the two never drift.
+// the connectors chat dispatcher (extracts values at match time), so the two never drift.
 //
 // `command` itself never contains "{...}" - it's always the bare trigger
 // word ("sr", "hug"). The pattern is a separate field precisely so the
@@ -43,8 +43,8 @@ export function invalidCommandVariableNames(pattern: string): string[] {
 
 /** Assigns `value` into `target` at a possibly dotted path (e.g.
  * "user.name" -> target.user.name = value), creating intermediate objects
- * as needed. Lets a dotted variable name build a nested object that the
- * `{template}` resolver's existing dotted-path traversal can address. */
+ * as needed. Lets a dotted variable name build a nested object that
+ * dotted-path traversal of `{template}` strings can address. */
 function setNestedValue(target: Record<string, unknown>, dottedKey: string, value: unknown): void {
   const segments = dottedKey.split(".");
   let cur = target;
