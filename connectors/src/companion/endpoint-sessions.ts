@@ -274,6 +274,9 @@ export class EndpointSessions {
         },
       });
       slot.session = session;
+      // Started here, not only on use: an open that outlives every waiting
+      // caller still has to close once idle and give up its slot.
+      this.touch(slot);
       this.opens++;
       this.deps.logger.info("local endpoint session opened", {
         moduleId: slot.ref.moduleId,
@@ -303,9 +306,15 @@ export class EndpointSessions {
     return failure(code, message);
   }
 
-  /** Restarts the idle clock. A session with requests still pending is never idle. */
+  /**
+   * Restarts the idle clock. A session with requests still pending is never
+   * idle. A slot already dropped gets no timer, since nothing would clear it.
+   */
   private touch(slot: Slot): void {
     const { timers, limits } = this.deps;
+    if (this.slots.get(slot.key) !== slot) {
+      return;
+    }
     if (slot.idleTimer !== null) {
       timers.clearTimeout(slot.idleTimer);
     }

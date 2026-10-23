@@ -175,6 +175,31 @@ describe("EndpointSessions opening", () => {
     expect(await sessions.acquire(VTS, live())).toMatchObject({ ok: true, session: { epoch: "id-1" } });
   });
 
+  it("closes an open that finished after its caller gave up once it has been idle", async () => {
+    const target = device();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { sessions, time } = setup(target, {
+      limits: { idleMs: 120_000 },
+      resolve: async () => {
+        await gate;
+        return directTo(target);
+      },
+    });
+    const budget = new AbortController();
+    const first = sessions.acquire(VTS, budget.signal);
+    budget.abort(new Error("budget"));
+    expect(await first).toMatchObject({ ok: false, code: "unavailable" });
+    release();
+    await eventually(() => sessions.status().sessions.length === 1, "the open to finish");
+    await time.advance(120_000);
+    await eventually(() => target.open === 0, "the idle session to close");
+    expect(sessions.status().closes.idle).toBe(1);
+    expect(sessions.status().sessions).toEqual([]);
+  });
+
   it("refuses a new endpoint past the session cap, counting opens in flight", async () => {
     const target = device();
     const { sessions } = setup(target, { limits: { maxSessions: 1 } });
