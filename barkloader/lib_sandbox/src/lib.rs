@@ -1,3 +1,4 @@
+pub mod contracts;
 mod error;
 pub mod extensions;
 mod function_executor;

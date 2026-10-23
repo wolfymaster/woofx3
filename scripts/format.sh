@@ -7,8 +7,9 @@
 # rewriting a generator's output is reverted on the next regeneration, so the
 # only thing it produces is churn. How each language keeps it out:
 #
-#   Rust       Generated protobuf code is pulled in with `include!`, which
-#              rustfmt does not follow, so it is excluded by construction.
+#   Rust       Generated protobuf and contract code is pulled in with
+#              `include!`, which rustfmt does not follow, so it is excluded
+#              by construction.
 #   Go         Files carrying the standard `// Code generated ... DO NOT EDIT.`
 #              marker are skipped.
 #   TS / JSON  `files.includes` in biome.json.
