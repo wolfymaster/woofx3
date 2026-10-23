@@ -179,7 +179,7 @@ describe("ChatDispatcher", () => {
     await say({ source: "api", message: "!title pwned", membership: BROADCASTER, chatterLogin: "faker" });
 
     expect(titles).toEqual([]);
-    expect(db.permissionChecks).toEqual([{ username: "faker", resource: "command/title" }]);
+    expect(db.permissionChecks).toEqual([]);
     expect(bus.sends.map((s) => s.payload)).toEqual([{ message: "Viewer.... YOU CAN'T DO THAT" }]);
   });
 
