@@ -150,6 +150,7 @@ export class EngineCompanionGateway implements CompanionGateway {
   async stop(): Promise<void> {
     this.lifetime.abort(new Error("the companion gateway stopped"));
     this.dialer.stop();
+    await this.relayCredentials.stop();
   }
 
   private async resolveClaimed(ref: LocalEndpointRef, opts: ResolveOptions): Promise<EndpointResolution> {

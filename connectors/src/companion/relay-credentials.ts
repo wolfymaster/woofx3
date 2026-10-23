@@ -35,6 +35,8 @@ export interface RelayCredentialSourceDeps {
 /** The configuration changed while a renewal was under way; its answer is for the old one. */
 class StaleRenewal extends Error {}
 
+const STOPPED_MESSAGE = "the relay credential source stopped";
+
 /**
  * The bridge credential for the companion's relay, renewed through the
  * dashboard that set the relay configuration, and the one writer of that
@@ -51,13 +53,15 @@ class StaleRenewal extends Error {}
  * Both `setConfig` and a renewal's answer write the configuration, so every
  * write runs behind one lock, and `setConfig` bumps a generation a renewal
  * checks after each await. A renewal that started before a `setConfig`
- * neither writes nor caches what it got back.
+ * neither writes nor caches what it got back. `stop` bumps it too, so a
+ * renewal still waiting on the dashboard then writes nothing.
  */
 export class RelayCredentialSource {
   private cached: RelayGrant | null = null;
   private pending: Promise<RelayGrant | null> | null = null;
   private generation = 0;
   private writes: Promise<void> = Promise.resolve();
+  private stopped = false;
 
   constructor(private readonly deps: RelayCredentialSourceDeps) {}
 
@@ -68,6 +72,7 @@ export class RelayCredentialSource {
    */
   async current(force = false): Promise<RelayGrant | null> {
     for (let attempt = 1; ; attempt += 1) {
+      this.assertRunning();
       if (!force && this.cached && this.cached.expiresAt - EXPIRY_MARGIN_MS > this.deps.clock.now()) {
         return this.cached;
       }
@@ -83,12 +88,27 @@ export class RelayCredentialSource {
 
   /** Store the dashboard's configuration, or clear it (null). */
   async setConfig(config: StoredRelayConfig | null): Promise<void> {
+    this.assertRunning();
     await this.exclusive(async () => {
+      this.assertRunning();
       this.generation += 1;
       this.cached = null;
       this.pending = null;
       await this.store(config);
     });
+  }
+
+  /**
+   * Refuses every later `current` and `setConfig`, abandons the renewal in
+   * flight before it writes, and resolves once the write already under way,
+   * if any, has finished: nothing writes the configuration after that.
+   */
+  async stop(): Promise<void> {
+    this.stopped = true;
+    this.generation += 1;
+    this.cached = null;
+    this.pending = null;
+    await this.writes;
   }
 
   private renewal(): Promise<RelayGrant | null> {
@@ -136,6 +156,12 @@ export class RelayCredentialSource {
       await this.deps.store.clearRelayConfig();
     }
     this.deps.configChanged(config);
+  }
+
+  private assertRunning(): void {
+    if (this.stopped) {
+      throw new Error(STOPPED_MESSAGE);
+    }
   }
 
   private assertCurrent(generation: number): void {
