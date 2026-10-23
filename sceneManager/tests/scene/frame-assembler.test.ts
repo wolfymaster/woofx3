@@ -173,6 +173,9 @@ describe("FrameAssembler.assembleDocument", () => {
     expect(stale.headers.get("Cache-Control")).toBe("no-cache");
     const unversioned = await assembler.assembleDocument("mymod", "mywid", null, null);
     expect(unversioned.headers.get("Cache-Control")).toBe("no-cache");
+    expect(current.headers.has("Server-Timing")).toBe(false);
+    expect(stale.headers.has("Server-Timing")).toBe(true);
+    expect(unversioned.headers.has("Server-Timing")).toBe(true);
   });
 
   it("returns 502, uncached, when barkloader has no frame for the widget", async () => {
