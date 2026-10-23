@@ -1,8 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+  type CapabilitiesReply,
   type EgressActionId,
+  type FieldOption,
+  type FieldOptionsReply,
   PLATFORM_DISPLAY_NAMES,
+  PLATFORM_GATEWAY_REPLY_TYPES,
   PLATFORM_GATEWAY_SUBJECTS,
+  type PlatformCapability,
   type PlatformId,
 } from "@woofx3/api/platform-gateway";
 import type { AdapterManifest, AdapterStatus, EgressHandlers } from "../host/adapter";
@@ -22,16 +27,7 @@ import {
   text,
   unlinked,
 } from "../host/testing";
-import {
-  type CapabilitiesReply,
-  type DiscoveryAdapters,
-  type FieldOption,
-  type FieldOptionsReply,
-  GATEWAY_CAPABILITIES_RESULT_TYPE,
-  GATEWAY_FIELD_OPTIONS_RESULT_TYPE,
-  GatewayDiscovery,
-  type PlatformCapability,
-} from "./discovery";
+import { type DiscoveryAdapters, GatewayDiscovery } from "./discovery";
 import { EgressRegistry } from "./egress-registry";
 
 const CAPABILITIES = PLATFORM_GATEWAY_SUBJECTS.capabilities;
@@ -103,12 +99,12 @@ async function setup() {
   };
   return {
     platforms,
-    capabilities: () => ask<CapabilitiesReply>(CAPABILITIES, "{}", GATEWAY_CAPABILITIES_RESULT_TYPE),
+    capabilities: () => ask<CapabilitiesReply>(CAPABILITIES, "{}", PLATFORM_GATEWAY_REPLY_TYPES.capabilities),
     options: (body: unknown) =>
       ask<FieldOptionsReply>(
         FIELD_OPTIONS,
         typeof body === "string" ? body : JSON.stringify(body),
-        GATEWAY_FIELD_OPTIONS_RESULT_TYPE
+        PLATFORM_GATEWAY_REPLY_TYPES.fieldOptions
       ),
   };
 }
@@ -190,7 +186,7 @@ describe("platform.gateway.field_options", () => {
 
   test("an unknown action is an error, not an empty list", async () => {
     const { options } = await setup();
-    expect(await options({ action: "chat.shout" })).toEqual({ error: 'unknown action "chat.shout"' });
+    expect(await options({ action: "chat.shout" })).toEqual({ error: 'action: unknown action "chat.shout"' });
   });
 
   test.each([

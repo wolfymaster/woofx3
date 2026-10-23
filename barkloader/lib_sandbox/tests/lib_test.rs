@@ -5,6 +5,9 @@ use lib_sandbox::host::{
 };
 use lib_sandbox::models::function::Function;
 use lib_sandbox::models::request::InvokeRequest;
+use lib_sandbox::protected_settings::{
+    LocalEndpointProtocol, ProtectedReason, RegisteredLocalEndpoint,
+};
 use lib_sandbox::{
     ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule, Sandbox, SandboxLimits,
 };
@@ -66,7 +69,8 @@ fn build_registry() -> Arc<ModuleRegistry> {
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: Default::default(),
-        url_settings: Default::default(),
+        protected_settings: Default::default(),
+        local_endpoints: Default::default(),
         resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
@@ -186,7 +190,8 @@ fn test_js_instruction_limit() {
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: Default::default(),
-        url_settings: Default::default(),
+        protected_settings: Default::default(),
+        local_endpoints: Default::default(),
         resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
@@ -252,7 +257,8 @@ function isolation(ctx) {
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: Default::default(),
-        url_settings: Default::default(),
+        protected_settings: Default::default(),
+        local_endpoints: Default::default(),
         resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
@@ -329,7 +335,8 @@ fn test_ctx_event_data() {
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: Default::default(),
-        url_settings: Default::default(),
+        protected_settings: Default::default(),
+        local_endpoints: Default::default(),
         resource_link_settings: Default::default(),
         oauth: Default::default(),
     };
@@ -378,6 +385,12 @@ fn extension_test_module(
     ext: &str,
 ) -> Arc<ModuleRegistry> {
     let registry = Arc::new(ModuleRegistry::new());
+    let module = single_function_module(name, func_name, code, ext);
+    registry.register_module(name.to_string(), module).unwrap();
+    registry
+}
+
+fn single_function_module(name: &str, func_name: &str, code: &str, ext: &str) -> RegisteredModule {
     let mut functions = HashMap::new();
     functions.insert(
         func_name.to_string(),
@@ -388,7 +401,7 @@ fn extension_test_module(
             false,
         ),
     );
-    let module = RegisteredModule {
+    RegisteredModule {
         actions: Default::default(),
         metadata: ModuleMetadata {
             name: name.to_string(),
@@ -400,12 +413,11 @@ fn extension_test_module(
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: Default::default(),
-        url_settings: Default::default(),
+        protected_settings: Default::default(),
+        local_endpoints: Default::default(),
         resource_link_settings: Default::default(),
         oauth: Default::default(),
-    };
-    registry.register_module(name.to_string(), module).unwrap();
-    registry
+    }
 }
 
 /// Stands in for the twitch service: answers every `twitchapi` request with
@@ -1003,7 +1015,8 @@ fn a_url_settings_origin_is_granted_to_the_invocation() {
                 state: ModuleState::Active,
                 event_types: Default::default(),
                 permissions: ["net:api.example.com".to_string()].into(),
-                url_settings: ["server".to_string()].into(),
+                protected_settings: [("server".to_string(), ProtectedReason::Url)].into(),
+                local_endpoints: Default::default(),
                 resource_link_settings: Default::default(),
                 oauth: Default::default(),
             },
@@ -1040,6 +1053,126 @@ fn a_url_settings_origin_is_granted_to_the_invocation() {
     ]
     .into();
     assert_eq!(grants.as_slice(), &[expected]);
+}
+
+/// Records every `ctx.module.setSetting` write as `(key, value)`.
+#[derive(Default)]
+struct RecordingSettings {
+    writes: Mutex<Vec<(String, String)>>,
+}
+
+impl lib_sandbox::host::SettingsClient for RecordingSettings {
+    fn list_by_module(
+        &self,
+        _module_id: &str,
+    ) -> Result<HashMap<String, serde_json::Value>, String> {
+        Ok(HashMap::new())
+    }
+    fn set(&self, _module_id: &str, key: &str, value: &str) -> Result<(), String> {
+        self.writes
+            .lock()
+            .unwrap()
+            .push((key.to_string(), value.to_string()));
+        Ok(())
+    }
+}
+
+fn obs_module_registry(code: &str, ext: &str) -> Arc<ModuleRegistry> {
+    let mut module = single_function_module("obs", "run", code, ext);
+    let address = || ProtectedReason::LocalEndpointAddress {
+        endpoint_id: "obs".into(),
+    };
+    module.protected_settings = [
+        ("obs_host".to_string(), address()),
+        ("obs_port".to_string(), address()),
+        (
+            "obs_password".to_string(),
+            ProtectedReason::LocalEndpointSecret {
+                endpoint_id: "obs".into(),
+            },
+        ),
+    ]
+    .into();
+    module.local_endpoints = vec![RegisteredLocalEndpoint {
+        id: "obs".into(),
+        protocol: LocalEndpointProtocol::Websocket,
+    }];
+    let registry = Arc::new(ModuleRegistry::new());
+    registry.register_module("obs".to_string(), module).unwrap();
+    registry
+}
+
+#[test]
+fn test_set_setting_refuses_local_endpoint_settings_in_both_runtimes() {
+    let keys = ["obs_host", "obs_port", "obs_password"];
+    for key in keys {
+        let cases = [
+            (
+                "js",
+                format!(
+                    r#"function run(ctx) {{ ctx.module.setSetting("{key}", "10.0.0.66"); return {{}}; }}"#
+                ),
+            ),
+            (
+                "lua",
+                format!(
+                    r#"function run(ctx) ctx.module.setSetting("{key}", "10.0.0.66") return {{}} end"#
+                ),
+            ),
+        ];
+        for (ext, code) in cases {
+            let settings = Arc::new(RecordingSettings::default());
+            let mut host = noop_host_context();
+            host.settings = settings.clone();
+            let err = Sandbox::new(
+                obs_module_registry(&code, ext),
+                host,
+                SandboxLimits::default(),
+            )
+            .unwrap()
+            .invoke(InvokeRequest {
+                function: "obs:function:run".to_string(),
+                event: serde_json::Value::Null,
+                user: None,
+                params: serde_json::Value::Null,
+                workflow_chain: None,
+                timeout_ms: None,
+            })
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("for endpoint obs"),
+                "{ext} {key}: {err}"
+            );
+            assert!(settings.writes.lock().unwrap().is_empty(), "{ext} {key}");
+        }
+    }
+}
+
+#[test]
+fn test_set_setting_writes_an_unprotected_setting_of_a_module_with_endpoints() {
+    let settings = Arc::new(RecordingSettings::default());
+    let mut host = noop_host_context();
+    host.settings = settings.clone();
+    let code = r#"function run(ctx) { ctx.module.setSetting("scene", "Main"); return {}; }"#;
+    Sandbox::new(
+        obs_module_registry(code, "js"),
+        host,
+        SandboxLimits::default(),
+    )
+    .unwrap()
+    .invoke(InvokeRequest {
+        function: "obs:function:run".to_string(),
+        event: serde_json::Value::Null,
+        user: None,
+        params: serde_json::Value::Null,
+        workflow_chain: None,
+        timeout_ms: None,
+    })
+    .unwrap();
+    assert_eq!(
+        settings.writes.lock().unwrap().as_slice(),
+        &[("scene".to_string(), "Main".to_string())]
+    );
 }
 
 #[test]
