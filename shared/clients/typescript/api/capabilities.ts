@@ -242,6 +242,22 @@ export const ENGINE_CAPABILITIES = {
    * `between` bound) is resolved, so it may be a `${...}` reference.
    */
   workflowConditionListReferences: "workflow.conditionListReferences",
+  /**
+   * A `wait` task of type `delay` pausing the run for `durationMs`, and a
+   * wait's `timeout` fired by a timer rather than only by the next event.
+   */
+  workflowDelayWait: "workflow.delayWait",
+  /**
+   * `triggerWorkflowByName` options: sample `triggerData`, `platform` and
+   * `skipConditions`, answered with the started run or the unmet conditions.
+   */
+  workflowTestRunOptions: "workflow.testRunOptions",
+  /** `triggerWorkflowByName` with `dryRun`: steps with side effects record what they would do instead. */
+  workflowDryRun: "workflow.dryRun",
+  /** `cancelWorkflow` stops a running run and answers with an `outcome`, not only a history mark. */
+  workflowRealCancel: "workflow.realCancel",
+  /** `getWorkflowHealth`, and the `workflow.health.changed` and `workflow.health.snapshot` webhooks. */
+  workflowHealth: "workflow.health",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];
