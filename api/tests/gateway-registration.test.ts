@@ -50,7 +50,8 @@ function gateway(registrationToken: string | null, mode?: RegistrationMode) {
       db,
       logger,
       resolveRegistrationPolicy({ token: registrationToken ?? undefined, mode }),
-      new ClientSessions(logger)
+      new ClientSessions(logger),
+      null
     ),
     createClient,
     logger,

@@ -56,6 +56,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { Api },
       { ClientAuth },
       { ClientRevoker, ClientSessions },
+      { PairingRegistry, pairedClientCreator },
+      { DEFAULT_PAIRING_CONFIG },
       { ConvexWebhookClient },
       { EngineEventStream },
       { EventCatalog },
@@ -87,7 +89,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
       { connectMessageBus },
       { describeHealth },
-      { ENGINE_CAPABILITIES_SCHEMA, supportedEngineCapabilities },
+      { ENGINE_CAPABILITIES_SCHEMA, hostingOffersPairing, supportedEngineCapabilities },
     ] = await Promise.all([
       import("@woofx3/nats"),
       import("./alert-log-handlers"),
@@ -95,6 +97,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./api"),
       import("./auth"),
       import("./client-sessions"),
+      import("./pairing"),
+      import("./pairing-config"),
       import("./convex-webhook-client"),
       import("./engine-event-stream"),
       import("./event-catalog"),
@@ -293,7 +297,27 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     const auth = new ClientAuth(db, logger);
     const sessions = new ClientSessions(logger);
     api.setClientRevocation(new ClientRevoker(auth, sessions, engineEventStream, webhookClient, api));
-    const gateway = new ApiGateway(api, auth, db, logger, config.registration, sessions);
+    // Browser pairing only where the operator's own browser talks to the
+    // engine: a local or self-hosted engine, never a managed one.
+    const pairing = hostingOffersPairing(config.hosting)
+      ? new PairingRegistry({
+          config: DEFAULT_PAIRING_CONFIG,
+          logger,
+          createPairedClient: pairedClientCreator(db),
+          emit: (event) => {
+            webhookClient.send(event).catch((err) => {
+              logger.error("Failed to announce a started pairing", {
+                pairingId: event.pairingId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
+          },
+        })
+      : null;
+    if (pairing) {
+      api.setPairingRegistry(pairing);
+    }
+    const gateway = new ApiGateway(api, auth, db, logger, config.registration, sessions, pairing);
     gateway.setWebhookClient(webhookClient);
 
     this.server = createHttpServer({

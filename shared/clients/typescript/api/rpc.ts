@@ -8,6 +8,15 @@
 // Consumers (engine + external clients like woofx3-ui) import from
 // "@woofx3/api/rpc" to describe typed capnweb stubs.
 
+import type {
+  CancelPairingRequest,
+  CancelPairingResponse,
+  ClaimPairingRequest,
+  ClaimPairingResponse,
+  StartPairingRequest,
+  StartPairingResponse,
+} from "./pairing";
+
 /**
  * Marker for authenticated RPC surfaces returned by `ApiGateway.authenticate()`.
  * Filled in as the shared package catches up to the engine's concrete Api
@@ -15,6 +24,16 @@
  * trivially assignable to.
  */
 export interface ApiContract {}
+
+/**
+ * The gateway's `ping` answer. `pairing` is present when the engine offers
+ * browser pairing (`startPairing`); an older engine, or one that does not
+ * pair, leaves it out.
+ */
+export interface GatewayPingResponse {
+  status: string;
+  pairing?: "available";
+}
 
 /**
  * Payload passed to `ApiGatewayContract.registerClient`.
@@ -138,7 +157,7 @@ export const CLIENT_REVOKED_CLOSE_CODE = 4401;
  */
 export interface ApiGatewayContract {
   /** Liveness probe; used by the UI to confirm the engine is reachable. */
-  ping(): Promise<{ status: string }>;
+  ping(): Promise<GatewayPingResponse>;
 
   /**
    * Register a new client (one per UI instance / caller). The engine stores
@@ -162,4 +181,16 @@ export interface ApiGatewayContract {
    * engine does not accept the credentials.
    */
   authenticate(clientId: string, clientSecret: string): Promise<ApiContract>;
+
+  /**
+   * Start pairing this browser (see ./pairing.ts). The engine binds the
+   * pairing to the request's `Origin` header, never to a parameter.
+   */
+  startPairing(request: StartPairingRequest): Promise<StartPairingResponse>;
+
+  /** Poll a pairing this browser started; the credentials come back once, on approval. */
+  claimPairing(request: ClaimPairingRequest): Promise<ClaimPairingResponse>;
+
+  /** Give up a pairing this browser started. */
+  cancelPairing(request: CancelPairingRequest): Promise<CancelPairingResponse>;
 }

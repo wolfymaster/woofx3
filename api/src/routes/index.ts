@@ -21,6 +21,7 @@ import { moduleOAuthRoutes } from "./module-oauth";
 import { modulesRoutes } from "./modules";
 import { obsRoutes } from "./obs";
 import { overlayTokenRoutes } from "./overlay-tokens";
+import { pairingRoutes } from "./pairing";
 import { relayRoutes } from "./relay";
 import { resourcesRoutes } from "./resources";
 import { scenesRoutes } from "./scenes";
@@ -74,7 +75,8 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof twitchRoutes &
   typeof uiSettingsRoutes &
   typeof twitchDeviceLoginRoutes &
-  typeof twitchLinkRoutes;
+  typeof twitchLinkRoutes &
+  typeof pairingRoutes;
 
 type RouteMethod = (this: ApiRouteHost, ...args: unknown[]) => unknown;
 
@@ -106,6 +108,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
   Object.assign(
     host,
     instrumentRoutes(engineRoutes),
+    instrumentRoutes(pairingRoutes),
     instrumentRoutes(subscriptionsRoutes),
     instrumentRoutes(triggerSubscriptionRoutes),
     instrumentRoutes(streamEventsRoutes),

@@ -1,4 +1,12 @@
-import type { ApiGatewayContract, RegisterClientOptions } from "@woofx3/api/rpc";
+import type {
+  CancelPairingRequest,
+  CancelPairingResponse,
+  ClaimPairingRequest,
+  ClaimPairingResponse,
+  StartPairingRequest,
+  StartPairingResponse,
+} from "@woofx3/api/pairing";
+import type { ApiGatewayContract, GatewayPingResponse, RegisterClientOptions } from "@woofx3/api/rpc";
 import { RpcTarget } from "capnweb";
 import type { ApiSession } from "./api-session";
 import type { ApiGateway } from "./gateway";
@@ -68,7 +76,7 @@ export class GatewayConnection extends RpcTarget implements ApiGatewayContract {
     super();
   }
 
-  ping(): Promise<{ status: string }> {
+  ping(): Promise<GatewayPingResponse> {
     return this.gateway.ping();
   }
 
@@ -81,5 +89,17 @@ export class GatewayConnection extends RpcTarget implements ApiGatewayContract {
 
   authenticate(clientId: string, clientSecret: string): Promise<ApiSession> {
     return this.gateway.authenticate(clientId, clientSecret, this.connection);
+  }
+
+  startPairing(request: StartPairingRequest): Promise<StartPairingResponse> {
+    return this.gateway.startPairing(request, this.connection);
+  }
+
+  claimPairing(request: ClaimPairingRequest): Promise<ClaimPairingResponse> {
+    return this.gateway.claimPairing(request, this.connection);
+  }
+
+  cancelPairing(request: CancelPairingRequest): Promise<CancelPairingResponse> {
+    return this.gateway.cancelPairing(request, this.connection);
   }
 }

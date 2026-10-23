@@ -85,6 +85,7 @@ export const EngineEventType = {
   GROUP_MEMBER_REMOVED: "group.member_removed",
   UI_SETTING_CHANGED: "ui.setting.changed",
   TWITCH_LINK_CHANGED: "twitch.link.changed",
+  CLIENT_PAIRING_STARTED: "client.pairing.started",
 } as const;
 
 export type EngineEventType = (typeof EngineEventType)[keyof typeof EngineEventType];
@@ -1486,6 +1487,22 @@ export type TwitchLinkChangedEvent = {
  * Consumers should narrow on `event.type` — TypeScript will pick the right
  * branch without casts.
  */
+/**
+ * A browser started pairing with this engine (see ./pairing.ts), so an
+ * approver can tell the operator one is waiting. A notification, not a
+ * record: `listPendingPairings` is the record, and an api restart forgets
+ * pending pairings. It never carries the user code, which the operator must
+ * read off the browser itself.
+ */
+export interface ClientPairingStartedEvent {
+  type: typeof EngineEventType.CLIENT_PAIRING_STARTED;
+  pairingId: string;
+  origin: string;
+  description: string;
+  /** ISO 8601. */
+  expiresAt: string;
+}
+
 export type CallbackEvent =
   | ModuleTriggerRegisteredEvent
   | ModuleActionRegisteredEvent
@@ -1544,7 +1561,8 @@ export type CallbackEvent =
   | GroupMemberAddedEvent
   | GroupMemberRemovedEvent
   | UISettingChangedEvent
-  | TwitchLinkChangedEvent;
+  | TwitchLinkChangedEvent
+  | ClientPairingStartedEvent;
 
 /**
  * Lookup from event-type string → payload type. Useful for emitter code
@@ -1609,6 +1627,7 @@ export type CallbackEventByType = {
   [EngineEventType.GROUP_MEMBER_REMOVED]: GroupMemberRemovedEvent;
   [EngineEventType.UI_SETTING_CHANGED]: UISettingChangedEvent;
   [EngineEventType.TWITCH_LINK_CHANGED]: TwitchLinkChangedEvent;
+  [EngineEventType.CLIENT_PAIRING_STARTED]: ClientPairingStartedEvent;
 };
 
 // ---------------------------------------------------------------------------

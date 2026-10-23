@@ -56,7 +56,14 @@ describe("GatewayConnection", () => {
       .filter((key) => key !== "constructor")
       .sort();
 
-    expect(served).toEqual(["authenticate", "ping", "registerClient"] satisfies (keyof ApiGatewayContract)[]);
+    expect(served).toEqual([
+      "authenticate",
+      "cancelPairing",
+      "claimPairing",
+      "ping",
+      "registerClient",
+      "startPairing",
+    ] satisfies (keyof ApiGatewayContract)[]);
   });
 
   test("a WebSocket's calls carry its origin, peer and a way to close it", async () => {

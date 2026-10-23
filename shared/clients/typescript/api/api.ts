@@ -30,6 +30,13 @@ import type {
   TwitchUnbanUserParams,
   TwitchUpdateChatSettingsParams,
 } from "./twitch-helix";
+import type {
+  DecidePairingRequest,
+  DecidePairingResponse,
+  ListPendingPairingsResponse,
+  LookupPairingRequest,
+  LookupPairingResponse,
+} from "./pairing";
 import type { TwitchDeviceLoginStartResult, TwitchDeviceLoginStateResult } from "./twitch-device-login";
 import type {
   EventLogPage,
@@ -2197,6 +2204,17 @@ export interface Woofx3EngineApi {
   getTwitchDeviceLogin(loginId: string): Promise<TwitchDeviceLoginStateResult>;
   /** Stop polling for a device login and forget it. `cancelled` is false when there was none in progress. */
   cancelTwitchDeviceLogin(loginId: string): Promise<{ cancelled: boolean }>;
+
+  // Browser pairing, for an approver: any client of this engine. See
+  // ./pairing.ts and the `clients.pairing` capability; on an engine that does
+  // not pair each answers `not_available`.
+
+  /** The pairing a browser shows `userCode` for, with the origin to show the operator. */
+  lookupPairing(request: LookupPairingRequest): Promise<LookupPairingResponse>;
+  /** Approve or deny a pairing. An approved browser collects its credentials on its next poll. */
+  decidePairing(request: DecidePairingRequest): Promise<DecidePairingResponse>;
+  /** Every pairing not yet claimed or expired. */
+  listPendingPairings(): Promise<ListPendingPairingsResponse>;
 
   // Twitch: each method performs one Helix call as the linked broadcaster
   // and answers with Twitch's own result (see ./twitch-helix.ts). They never
