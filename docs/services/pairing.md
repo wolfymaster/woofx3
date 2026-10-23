@@ -31,8 +31,8 @@ The user code is a correlation id, not a credential. Approving needs a client of
 
 - The request must carry an `Origin`. A call without one is not from a browser.
 - `null` is refused: opaque origins cannot be told apart.
-- A page on the engine's own computer (`localhost`, `127.0.0.1` or `[::1]`, over http or https) may pair.
-- A page anywhere else may pair only over https, and only once the operator has listed its origin in `WOOFX3_ALLOWED_ORIGINS`. With no list set, the engine refuses every such origin, and the refusal names the setting. A hosted web app therefore cannot pair with an engine unless that engine's operator chose to let it.
+- A page served from `localhost`, `127.0.0.1` or `[::1]` (over http or https) names the browser's own machine, not the engine's. On the desktop engine (`WOOFX3_HOSTING=local`), which listens on loopback alone, the two are the same machine, so such a page may pair unlisted. On any other engine it must be listed like any other origin.
+- Any other page may pair only over https, and only once the operator has listed its origin in `WOOFX3_ALLOWED_ORIGINS`. With no list set, the engine refuses every such origin, and the refusal names the setting. A hosted web app therefore cannot pair with an engine unless that engine's operator chose to let it.
 - Plain http from another computer is refused even when listed: it would carry the secret across the network in clear.
 - The desktop app's own window (`tauri://localhost`, `tauri.localhost`) is refused: the desktop shell registers with the registration token instead.
 
@@ -40,7 +40,7 @@ The request guard runs first. With `WOOFX3_ALLOWED_ORIGINS` set, only listed ori
 
 A paired client stays bound to its origin. `authenticate` refuses its credentials from any other origin, or from a request with no `Origin`, with the same refusal as wrong credentials. That stops the secret being used from another web page, because a browser always sends the page's real `Origin`. It is not a defence against a stolen secret: any client outside a browser, on any machine that can reach the engine, can send the paired origin. Treat a paired secret like any other client secret, and delete the client if it is exposed.
 
-The claim must come from the origin that started the pairing. Calls naming a pairing from any other origin answer `not_found` and change nothing, so a pairing id seen in the log or the event cannot be used to end someone else's pairing.
+The claim must come from the origin that started the pairing. Calls naming a pairing from any other origin answer `not_found` and change nothing, so another web page that learns a pairing id cannot end that pairing. A client outside a browser can send the pairing's origin, so one that reads a pairing id from the log or the event can end the pairing with three wrong verifiers; the browser then starts a new one.
 
 ## Limits
 
@@ -54,6 +54,7 @@ Each limit bounds what an unauthenticated caller can make the engine hold or do.
 | Pairings waiting from one origin | 2 | So one origin cannot fill every slot. |
 | Starts per origin | 6 a minute | A sliding window. |
 | Starts from every origin together | 20 a minute | A non-browser caller can forge `Origin`. |
+| Starts from one peer address | 10 a minute | Whatever `Origin` the caller sends. The address is the one the engine's server sees, never `X-Forwarded-For`: behind a reverse proxy, the engine's own edge included, every browser shares the proxy's address, and the limit then applies to all of them together. |
 | Wrong claims before a pairing ends | 3 | A wrong verifier on `claimPairing` or `cancelPairing` from the pairing's own origin. |
 | Denials remembered | 20 | So a denied browser learns it was denied; the oldest is forgotten first, and its browser then sees `not_found`. |
 
@@ -68,7 +69,7 @@ The client row is created at claim time, not at approval. The pairing is marked 
 ## Running a self-hosted engine with pairing
 
 - Set `WOOFX3_HOSTING=self`.
-- Set `WOOFX3_ALLOWED_ORIGINS` to the origins of the web app that will pair, and `WOOFX3_ALLOWED_HOSTS` to the engine's own host names. Without the origin list, only a browser on the engine's own computer can pair.
+- Set `WOOFX3_ALLOWED_ORIGINS` to the origins of the web app that will pair, and `WOOFX3_ALLOWED_HOSTS` to the engine's own host names. Without the origin list, no browser can pair with a self-hosted engine: a `localhost` page names the browser's machine, so it has to be listed too.
 - Serve the engine and the web app over https, unless both are on the same machine.
 - Every paired browser can approve the next one; there are no roles.
 
