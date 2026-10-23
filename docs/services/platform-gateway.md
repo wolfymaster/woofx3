@@ -310,7 +310,8 @@ egress: {
 `ctx` carries the abort `signal` and `deadline`, `requestedBy`, and the
 request's `workflowChain` for the adapter to attach to the platform's echo of
 the line. An adapter that is not a platform declaring egress, an unknown
-action, or an action registered twice stops connectors at startup.
+action, or an action registered twice stops connectors at startup. The Twitch adapter's handlers are described under
+[Chat egress](./connectors.md#chat-egress).
 
 ### Configuration and health
 
