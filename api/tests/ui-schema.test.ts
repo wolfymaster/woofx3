@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { type DataShape, type DataShapeField, parseDataShape } from "@woofx3/api/ui-schema";
+import {
+  type ConfigFieldOption,
+  type DataShape,
+  type DataShapeField,
+  mergePinnedOptions,
+  parseDataShape,
+} from "@woofx3/api/ui-schema";
 
 // parseDataShape is the one place that decides whether a trigger's `emits` /
 // an action's `returns` names anything at all. Every "no" answer means the
@@ -139,5 +145,37 @@ describe("parseDataShape", () => {
 
     expect(parseDataShape(JSON.stringify({ summary: 7, details: ["", 1], fields }))).toEqual({ fields });
     expect(parseDataShape(JSON.stringify({ details: "{tier}", fields }))).toEqual({ fields });
+  });
+});
+
+describe("mergePinnedOptions", () => {
+  const origin = { value: "origin", label: "Where it came from" };
+  const all = { value: "all", label: "Everywhere" };
+  const twitch = { value: "twitch", label: "Twitch" };
+
+  const cases: [string, ConfigFieldOption[], ConfigFieldOption[], ConfigFieldOption[]][] = [
+    ["pinned first, fetched after", [origin, all], [twitch], [origin, all, twitch]],
+    ["no fetched options", [origin, all], [], [origin, all]],
+    ["no pinned options", [], [twitch], [twitch]],
+    ["both empty", [], [], []],
+    [
+      "a fetched repeat of a pinned value is dropped, pinned label wins",
+      [origin],
+      [{ value: "origin", label: "Origin" }, twitch],
+      [origin, twitch],
+    ],
+    ["a repeat within fetched keeps the first", [], [twitch, { value: "twitch", label: "Again" }], [twitch]],
+  ];
+
+  test.each(cases)("%s", (_name, pinned, fetched, expected) => {
+    expect(mergePinnedOptions(pinned, fetched)).toEqual(expected);
+  });
+
+  test("does not mutate its inputs", () => {
+    const pinned = [origin];
+    const fetched = [twitch];
+    mergePinnedOptions(pinned, fetched);
+    expect(pinned).toEqual([origin]);
+    expect(fetched).toEqual([twitch]);
   });
 });

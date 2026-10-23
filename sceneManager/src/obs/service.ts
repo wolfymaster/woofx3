@@ -4,12 +4,13 @@
 // creates it, starts it once the HTTP server listens, and stops it on
 // shutdown; the bus subscriptions read its status and relay answers.
 
-import type { Logger } from "@woofx3/common/runtime";
+import type { ObsBrowserSourceRefresh } from "@woofx3/common/cloudevents/Obs/commands";
 import {
   RELAY_CONFIG_SETTING,
   readStoredRelayConfig,
   requestRelayCredentialOverNats,
 } from "@woofx3/common/cloudevents/Relay/relay";
+import type { Logger } from "@woofx3/common/runtime";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { SceneManagerRuntimeConfig } from "../config";
 import type { DbClient } from "../db";
@@ -31,8 +32,6 @@ export interface ObsServiceDeps {
   /** The bus the api is asked for a relay credential on; null when there is none. */
   nats: Pick<NATSClient, "request"> | null;
   obs: SceneManagerRuntimeConfig["obs"];
-  /** The HTTP port overlays are served on, for refreshing OBS browser sources showing them. */
-  overlayPort: number;
   logger: Logger;
 }
 
@@ -41,6 +40,13 @@ export interface ObsService {
   readonly connection: ObsConnection<Manager>;
   /** The connection's state for `engine.obs.status`, without touching OBS. */
   status(): ObsStatusReply;
+  /**
+   * Latches a request to refresh the OBS browser sources showing the overlays.
+   * It runs now when a session is open and otherwise on the next one, once:
+   * a boot id already latched or consumed changes nothing, and a plain
+   * reconnect without a new request refreshes nothing.
+   */
+  requestOverlayRefresh(request: ObsBrowserSourceRefresh): void;
   /** Whether the stored relay configuration moves OBS off the route its latest attempt took. */
   relayConfigMovesObs(): Promise<boolean>;
   start(): void;
@@ -76,7 +82,8 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
   // The password and any bridge ticket stay inside the attempt.
   let last: ObsLastRoute | null = null;
 
-  const connection = new ObsConnection<Manager>({
+  const refresh = new OverlayRefreshLatch(() => connection.current(), logger);
+  const connection: ObsConnection<Manager> = new ObsConnection<Manager>({
     open: async () => {
       try {
         const route = await dialWebSocketEndpoint(dialer, target);
@@ -89,22 +96,74 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
         throw err;
       }
     },
-    // Refresh overlays on the first session only. It exists to recover
-    // overlays after *this process* restarted; after a mere reconnect their
-    // streams are intact, and a refresh would cut off whatever is playing.
-    onConnected: async (client, { first }) => {
-      if (first) {
-        await refreshOverlayBrowserSources(client, deps.overlayPort, logger);
-      }
-    },
+    onConnected: () => refresh.drain(),
     logger,
   });
 
   return {
     connection,
     status: () => obsStatusReply(connection, last),
+    requestOverlayRefresh: (request) => {
+      refresh.latch(request);
+      void refresh.drain();
+    },
     relayConfigMovesObs: async () => relayChangeMovesEndpoint(await readRelayConfig(), target, last),
     start: () => connection.start(),
     stop: () => connection.stop(),
   };
+}
+
+/**
+ * Holds the latest overlay refresh request until a session can act on it.
+ *
+ * A refresh exists to recover overlays after the requesting process
+ * restarted; after a mere reconnect their streams are intact, and a refresh
+ * would cut off whatever is playing. So each boot id refreshes at most once
+ * once OBS has been asked, and only a request, never a connection, causes one.
+ */
+class OverlayRefreshLatch {
+  private pending: ObsBrowserSourceRefresh | null = null;
+  private readonly consumed = new Set<string>();
+  private draining = false;
+
+  constructor(
+    private readonly session: () => Manager | null,
+    private readonly logger: Logger
+  ) {}
+
+  latch(request: ObsBrowserSourceRefresh): void {
+    if (this.consumed.has(request.bootId) || this.pending?.bootId === request.bootId) {
+      return;
+    }
+    this.pending = request;
+  }
+
+  /**
+   * Refreshes for the latched request, and for any latched while it runs,
+   * on whichever session is open at each step; with none, the request stays
+   * latched. One drain at a time, so a request during a refresh runs once
+   * more after it.
+   */
+  async drain(): Promise<void> {
+    if (this.draining) {
+      return;
+    }
+    this.draining = true;
+    try {
+      for (let client = this.session(); client && this.pending; client = this.session()) {
+        const request = this.pending;
+        this.pending = null;
+        const refreshed = await refreshOverlayBrowserSources(client, request.overlayPort, this.logger);
+        if (refreshed === null) {
+          // OBS was never asked, so the request still stands for the next
+          // session, unless a newer one arrived meanwhile.
+          this.pending ??= request;
+          return;
+        }
+        this.consumed.add(request.bootId);
+      }
+    } finally {
+      this.draining = false;
+    }
+  }
 }
