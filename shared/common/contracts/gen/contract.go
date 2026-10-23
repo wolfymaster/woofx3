@@ -35,7 +35,37 @@ type platformGateway struct {
 	OutcomeStatuses    []string        `json:"outcomeStatuses"`
 	UnavailableReasons []string        `json:"unavailableReasons"`
 	PlatformStates     []string        `json:"platformStates"`
+	Limits             limits          `json:"limits"`
+	PlatformOptions    platformOptions `json:"platformOptions"`
 	Actions            []action        `json:"actions"`
+}
+
+// limits are the numbers every side of the gateway must agree on. Each is
+// required and positive; a zero would mean the key was left out.
+type limits struct {
+	// MaxRefLength bounds idempotency keys, requester refs and origin ids, in
+	// characters (Unicode code points).
+	MaxRefLength int `json:"maxRefLength"`
+	// MaxWorkflowChainRuns is the most workflow ids a request's chain names.
+	// The workflow loop guard refuses a run behind a chain this long, so the
+	// gateway never sees a longer one from a well-behaved engine.
+	MaxWorkflowChainRuns int `json:"maxWorkflowChainRuns"`
+	// CallerTimeoutMs is how long a caller waits for a send's reply. The
+	// gateway's own per-request deadline must stay below it.
+	CallerTimeoutMs int `json:"callerTimeoutMs"`
+}
+
+// platformOptions holds the closed value sets of each platform's options,
+// for the callers that offer them and the adapter that checks them. Keyed by
+// platform rather than generic so each set gets a named, typed enum.
+type platformOptions struct {
+	Twitch twitchOptions `json:"twitch"`
+}
+
+type twitchOptions struct {
+	// AnnouncementColors are the colours Twitch's Send Chat Announcement
+	// takes, as options.twitch.color on chat.announce.
+	AnnouncementColors []string `json:"announcementColors"`
 }
 
 // gatewaySubjects holds one dotted name per gateway subject.
@@ -209,6 +239,16 @@ func (c platformGateway) validate() error {
 			return err
 		}
 	}
+	if err := c.Limits.validate(); err != nil {
+		return err
+	}
+	if !seenPlatforms["twitch"] {
+		return errors.New("platformOptions.twitch: twitch is not one of the contract's platforms")
+	}
+	if err := validateEnum("platformOptions.twitch.announcementColors", c.PlatformOptions.Twitch.AnnouncementColors); err != nil {
+		return err
+	}
+
 	shapes := outcomeShapes()
 	for i, status := range c.OutcomeStatuses {
 		if _, ok := shapes[status]; !ok {
@@ -232,6 +272,29 @@ func (c platformGateway) validate() error {
 		if err := a.validate(key); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (l limits) validate() error {
+	for _, limit := range []struct {
+		key   string
+		value int
+	}{
+		{"limits.maxRefLength", l.MaxRefLength},
+		{"limits.maxWorkflowChainRuns", l.MaxWorkflowChainRuns},
+		{"limits.callerTimeoutMs", l.CallerTimeoutMs},
+	} {
+		if limit.value < 1 || limit.value > maxSafeInteger {
+			return fmt.Errorf("%s: %d must be a positive integer of at most %d", limit.key, limit.value, maxSafeInteger)
+		}
+	}
+	// The generated code derives the longest workflowChain, runs refs of
+	// MaxRefLength joined by commas, so that must be exact in TypeScript too.
+	// Compared by division so the check itself cannot overflow.
+	runs := l.MaxWorkflowChainRuns
+	if l.MaxRefLength > (maxSafeInteger-(runs-1))/runs {
+		return fmt.Errorf("limits: %d refs of %d characters make a workflowChain too long for TypeScript to hold exactly", runs, l.MaxRefLength)
 	}
 	return nil
 }

@@ -74,6 +74,7 @@ type tsData struct {
 	Source     string
 	Subjects   gatewaySubjects
 	ReplyTypes gatewaySubjects
+	Limits     limits
 	Enums      []tsEnum
 	Platforms  []tsPlatform
 	Actions    []tsAction
@@ -81,7 +82,7 @@ type tsData struct {
 }
 
 func emitTS(c platformGateway) ([]byte, error) {
-	data := tsData{Source: platformGatewaySource, Subjects: c.Subjects, ReplyTypes: c.ReplyTypes}
+	data := tsData{Source: platformGatewaySource, Subjects: c.Subjects, ReplyTypes: c.ReplyTypes, Limits: c.Limits}
 
 	platformIDs := make([]string, 0, len(c.Platforms))
 	for _, p := range c.Platforms {
@@ -96,6 +97,7 @@ func emitTS(c platformGateway) ([]byte, error) {
 		tsEnumOf("FAILURE_CODES", "FailureCode", "isFailureCode", "Classifies a failed outcome or a refused request.", c.FailureCodes),
 		tsEnumOf("UNAVAILABLE_REASONS", "UnavailableReason", "isUnavailableReason", "Why a platform could not take a request.", c.UnavailableReasons),
 		tsEnumOf("PLATFORM_STATES", "PlatformState", "isPlatformState", "A platform adapter's lifecycle state, as a capabilities reply reports it.", c.PlatformStates),
+		tsEnumOf("TWITCH_ANNOUNCEMENT_COLORS", "TwitchAnnouncementColor", "isTwitchAnnouncementColor", "A colour of a Twitch announcement, `options.twitch.color` on `chat.announce`.", c.PlatformOptions.Twitch.AnnouncementColors),
 	}
 
 	for _, a := range c.Actions {
