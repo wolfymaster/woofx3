@@ -66,7 +66,14 @@ export class EndpointDialer {
       config = await abortable(this.deps.relayConfig(), signal);
     } catch (error) {
       signal.throwIfAborted();
-      if (this.deps.hosting === "local") {
+      if (this.deps.hosting === "local" || direct.ok) {
+        // Only the bridge needs the relay configuration; an engine that cannot
+        // read it still reaches an endpoint it can address directly.
+        this.deps.logger.warn("relay configuration unreadable; resolving the endpoint directly", {
+          moduleId: ref.moduleId,
+          endpointId: ref.endpointId,
+          error: errorMessage(error),
+        });
         return direct;
       }
       return unavailable("store_unreadable", `the relay configuration could not be read: ${errorMessage(error)}`);

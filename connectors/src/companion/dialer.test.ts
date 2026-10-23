@@ -284,13 +284,34 @@ describe("EndpointDialer bridge", () => {
     expect(await resolving).toMatchObject({ ok: false, reason: "relay", message: expect.stringContaining("5000ms") });
   });
 
-  it("answers store_unreadable when the relay configuration cannot be read", async () => {
-    const { dial } = setup({
-      relayConfig: async () => {
-        throw new Error("db-proxy GetSetting: unavailable");
-      },
+  describe("when the relay configuration cannot be read", () => {
+    const unreadable = async (): Promise<RelayConfig | null> => {
+      throw new Error("db-proxy GetSetting: unavailable");
+    };
+
+    it("goes direct when the endpoint has a direct route", async () => {
+      const { dial, fetchMock } = setup({ relayConfig: unreadable, hosting: "self" });
+      expect(await dial()).toEqual(DIRECT);
+      expect(fetchMock).not.toHaveBeenCalled();
     });
-    expect(await dial()).toMatchObject({ ok: false, reason: "store_unreadable" });
+
+    it("answers store_unreadable when there is no direct route either", async () => {
+      const { dialer, logger } = setup({ relayConfig: unreadable, hosting: "self" });
+      const broken = adapterPolicy({
+        store: {
+          ...store,
+          moduleSettings: async () => {
+            throw new Error("db-proxy: unavailable");
+          },
+        },
+        logger,
+      });
+      const signal = new AbortController().signal;
+      expect(await dialer.dial(broken, OBS_ENDPOINT, { signal })).toMatchObject({
+        ok: false,
+        reason: "store_unreadable",
+      });
+    });
   });
 });
 

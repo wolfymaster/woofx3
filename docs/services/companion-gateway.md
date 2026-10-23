@@ -127,7 +127,9 @@ all:
 On a `local` engine the bridge would loop through the cloud back to the same
 machine, so an endpoint listed in `relay.config` is dialed directly and the
 listing is logged once at warn per endpoint. A `relay.config` that cannot be
-read is `store_unreadable`, except on a `local` engine, which does not need it.
+read is logged at warn and the endpoint is dialed directly when the policy
+produced a direct route; only the bridge needs it. With no direct route either,
+the answer is `store_unreadable`.
 
 The companion route is the two-step ticket exchange described in
 [Local endpoints → The ticket exchange](./local-endpoints.md#the-ticket-exchange):
