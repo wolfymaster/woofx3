@@ -384,6 +384,23 @@ describe("EndpointDialer bridge opens", () => {
     expect(time.pending).toBe(0);
   });
 
+  it("releases a permit at once when a ticket arrives after stop", async () => {
+    const reply = Promise.withResolvers<Response>();
+    const { dial, dialer, opens, time } = setup({
+      relayConfig: routed,
+      opens: new BridgeOpens(1),
+      fetch: () => reply.promise,
+    });
+    const resolving = dial();
+    await flush();
+    expect(opens.status().inUse).toBe(1);
+    dialer.stop();
+    reply.resolve(ticketReply());
+    expect(await resolving).toMatchObject({ ok: true, route: "companion" });
+    expect(opens.status().inUse).toBe(0);
+    expect(time.pending).toBe(0);
+  });
+
   it("never asks for a credential when the cap is reached", async () => {
     const { dial, relayCredential } = setup({ relayConfig: routed, opens: new BridgeOpens(1) });
     await dial();
