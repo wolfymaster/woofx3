@@ -18,11 +18,11 @@ SandboxFactory
 
 ## SandboxFactory
 
-Created once at server startup. Takes an `Arc<ModuleRegistry>` and a `HostContext`, and produces `Sandbox` instances that share them.
+Created once at server startup. Takes an `Arc<ModuleRegistry>`, a `HostContext` and the `SandboxLimits`, and produces `Sandbox` instances that share them. Async callers go through `invoke_blocking`, which caps how many invocations run at once (see [Time, instruction and concurrency limits](#time-instruction-and-concurrency-limits)).
 
 ```rust
 let registry = Arc::new(ModuleRegistry::new());
-let factory = SandboxFactory::new(registry.clone(), noop_host_context());
+let factory = SandboxFactory::new(registry.clone(), noop_host_context(), SandboxLimits::default());
 
 let sandbox = factory.create();
 let result = sandbox.invoke(InvokeRequest {
@@ -90,10 +90,25 @@ In-process Lua execution via the `mlua` crate (vendored Lua 5.4).
 |----------|-------|
 | Extension | `.lua` |
 | Entry point | `main(args)` |
-| Sandboxing | `StdLib::NONE` -- no io, os, require, dofile |
+| Sandboxing | Allow-listed globals only; text chunks only |
 | Type mapping | JSON <-> LuaValue (nil, bool, number, string, table) |
 
-The adapter creates a `Lua` instance with an empty standard library, loads the source code, extracts the global `main` function, converts args from JSON to Lua tables, calls `main`, and converts the result back to JSON.
+The adapter creates a `Lua` instance with `StdLib::NONE`, strips the global environment down to an allow-list, loads the source code, extracts the global `main` function, converts args from JSON to Lua tables, calls `main`, and converts the result back to JSON.
+
+#### Globals and isolation
+
+`StdLib::NONE` leaves out `io`, `os`, `string`, `table`, `math`, `coroutine`, `debug` and `package`, but mlua always opens the base library. Before any host binding is installed, the adapter removes every global except these (`LUA_ALLOWED_GLOBALS` in `barkloader/lib_sandbox/src/runtime/lua.rs`):
+
+`assert`, `error`, `ipairs`, `next`, `pairs`, `pcall`, `rawequal`, `rawget`, `rawlen`, `rawset`, `select`, `setmetatable`, `getmetatable`, `tonumber`, `tostring`, `type`, `xpcall`, `_G`, `_VERSION`
+
+`ctx` is the only other value a module function receives. In particular `dofile`, `loadfile`, `load`, `loadstring`, `print`, `collectgarbage` and `require` are absent; the adapter checks that after the strip and fails the invocation if any survived.
+
+Module source is loaded in text mode: a source starting with the Lua bytecode signature (`\27Lua`) is refused with a syntax error, because the VM does not verify precompiled chunks.
+
+Two allowed globals are replaced, because their stock versions run module code with Lua's debug hooks switched off, where the instruction and deadline checks cannot stop it (`LUA_HOOK_SAFE_GLOBALS` in `lua.rs`):
+
+- `xpcall` calls its message handler after the failed call has unwound, not at the point of the error. If the handler itself fails, `xpcall` returns `false` and the handler's error.
+- `setmetatable` refuses a metatable with a `__gc` field, since Lua runs finalizers with hooks off.
 
 ### Echo (fallback)
 
@@ -106,6 +121,37 @@ Debug adapter for unrecognized file extensions.
 | Output | `{ "code": "<source>", "args": <args> }` |
 
 Returns the raw source code and arguments as JSON without executing anything.
+
+### Value conversion
+
+Every value that crosses between a runtime and the engine is converted to or from JSON: a function's return value, the arguments a module passes to a `ctx` function, a thrown value, and the event and host answers handed to the script. Each conversion is bounded (`SandboxLimits` in `barkloader/lib_sandbox/src/runtime/limits.rs`):
+
+| Limit | Default | Error |
+|-------|---------|-------|
+| Nesting depth (arrays and objects) | 64 | `ValueTooDeep` |
+| Values in one conversion | 100,000 | `ValueTooLarge` |
+| Text in one conversion (strings and keys) | 4 MiB | `ValueTooLarge` |
+
+A value that refers to itself exceeds the depth limit, so a cyclic return value fails the invocation with a clear error. A refused `ctx` argument is raised inside the script, where a `try`/`catch` or `pcall` can handle it; a value `ctx.log.*` cannot convert is logged as unloggable instead.
+
+A Lua table whose keys are exactly `1..n` becomes an array; any other table becomes an object keyed by its string and integer keys. An empty table is an object, except an empty array from the event, which round-trips as `[]`. A table holding both `[1]` and `['1']` is refused rather than silently keeping one. Functions, coroutines and userdata (in JavaScript: functions, promises, symbols and BigInts) have no JSON form and are refused with `UnsupportedValue`.
+
+A JavaScript entry point must return its result directly. The adapter does not run the promise job queue, so an `async` function (or any function returning a Promise) is refused with `AsyncEntryUnsupported`.
+
+### Time, instruction and concurrency limits
+
+Every invocation has a deadline: the caller's `timeoutMs`, capped at and defaulting to 30 seconds. Module code also has a CPU budget. Both runtimes check the two as the code runs (the rest of `SandboxLimits`):
+
+| Limit | Default | Error |
+|-------|---------|-------|
+| Invocation deadline | `timeoutMs`, at most 30 s | `DeadlineExceeded` |
+| Lua VM instructions, checked every 10,000 | 10,000,000 | `InstructionLimitExceeded` |
+| QuickJS interrupt-handler calls (about 1e7 bytecode ops) | 200 | `InstructionLimitExceeded` |
+| Heap per runtime | 16 MiB | runtime error |
+
+Neither stop can be caught by module code. QuickJS raises an uncatchable error, and it checks both limits inside regular expression matching too, so a pattern that backtracks without end stops at the deadline like a loop does. In Lua, the first trip switches the hook to fail every instruction, so a `pcall` handler cannot run a single instruction and the error unwinds to the entry point. The error reported is the limit that tripped, whatever error module code turned it into on the way out.
+
+`SandboxFactory::invoke_blocking` runs at most `max_concurrent_invocations` invocations at once (32, set with `WOOFX3_SANDBOX_MAX_CONCURRENT_INVOCATIONS`, 1 to 512). Each running invocation holds one of Tokio's blocking threads, so the cap keeps a burst of calls or a few runaway modules from starving everything else. A call waits for a free slot for up to 5 seconds, or until its deadline if that is sooner, and the wait counts against the deadline. When no slot frees up in time it fails with `InvokeBlockingError::Busy`, which the WebSocket invoke, the scheduler and the field-options responder report like any other failed invocation. A slot is held until the invocation ends, even when its caller has stopped waiting. A nested `ctx.resources.run` runs on its caller's thread and takes no slot of its own. Every limit is checked when the sandbox is built: a zero budget or a slot count outside 1 to 512 stops barkloader at startup.
 
 ## Modules request, the engine acts
 
@@ -152,6 +198,11 @@ segment. `settings` comes from the host's `SettingsClient` trait — in producti
 declared type; a `NoopSettingsClient` (used in tests and builtin invocations without a
 live db-proxy) returns an empty map.
 
+`setSetting(key, value)` refuses the keys only the streamer sets: the tokens
+`ctx.oauth` keeps (`oauth.<id>`), a `url` setting, whose origin `ctx.http` may reach,
+and a `resource_ref` setting, whose instance the module may then read and run
+(`resource_access.rs`).
+
 `compareAndSetSetting(key, expected, value)` writes only while the setting still
 holds `expected` and answers `{ swapped, current }`. `HttpSettingsClient` compares
 `expected` with the stored value as the module reads it, then has db-proxy
@@ -167,9 +218,9 @@ how a manifest declares these values and how they get registered at install time
 
 Neither runtime provides a host-visible logging facility on its own — QuickJS has no
 `console` (rquickjs doesn't even offer a `console` cargo feature in the version this
-project pins), and the Lua sandbox's `StdLib` is `NONE` (no `io`, no `print` byte
-sink). `ctx.log` is the only way a module function can emit a log line; both adapters
-build it as a namespace on `ctx` (`build_log_namespace` in
+project pins), and the Lua sandbox strips `print` and has no `io`
+([Globals and isolation](#globals-and-isolation)). `ctx.log` is the only way a module
+function can emit a log line; both adapters build it as a namespace on `ctx` (`build_log_namespace` in
 `barkloader/lib_sandbox/src/runtime/quickjs.rs`, and the equivalent inline block in
 `barkloader/lib_sandbox/src/runtime/lua.rs`), forwarding to the host's `log` crate:
 
@@ -254,6 +305,46 @@ step refers to it; inserting a step otherwise changes what the reference points 
   this codebase, so a reader of the step output can tell a deliberate response from
   any other object a function might return.
 
+## `ctx.success` and `ctx.failure`
+
+Shorthand for `ctx.response` that also takes extra fields. Same bare-callable, pure
+data constructor shape; the builder is `build_outcome_value` in
+`barkloader/lib_sandbox/src/runtime/host_bindings.rs`, shared by both adapters.
+
+```js
+ctx.success(message, fields?)  // => { proto: "woofx3.response", v: 1, success: true,  message, ...fields }
+ctx.failure(message, fields?)  // => { proto: "woofx3.response", v: 1, success: false, message, ...fields }
+```
+
+```js
+function song_request(ctx) {
+  var song = findSong(ctx.event.data.query);
+  if (!song) {
+    return ctx.failure("Couldn't find that song.");
+  }
+  return ctx.success("Queued " + song.title, { song: song });
+}
+```
+
+The function returns a message; it never posts to chat. A "Send chat message" step
+(`chat.reply`) posts `${<stepId>.message}`, so the streamer decides whether, where and
+how the reply is worded. Extra fields are part of the step output: if the function
+step's id is `queue_song`, the example's song is `${queue_song.song}`.
+
+To keep a failure out of chat, put a condition on the chat step so it runs only when
+`${queue_song.success}` is true. A failed step
+output still carries its `message`, so a second chat step conditioned on
+`${queue_song.success}` being false can answer the failure on purpose.
+
+Engines older than the release that added these functions have no `ctx.success` or
+`ctx.failure`; calling them throws `not a function`. A module that must run on both
+can use `ctx.success ? ctx.success(m, f) : Object.assign(ctx.response(true, m), f)`.
+
+- `fields` must be an object (or omitted). It may not set `proto`, `v`, `success` or
+  `message`: the call throws a sandbox error naming the reserved field, so a module
+  cannot forge the tag or the outcome.
+- `ctx.response(success, message)` stays available and behaves as before.
+
 ## `ctx.result`
 
 The shape a function returns when what it did is something workflows should be able
@@ -313,5 +404,12 @@ Sandbox errors are categorized:
 | `QuickJSExecutionError` | QuickJS function call error |
 | `IoError` | File read/write failure |
 | `JsonError` | JSON serialization/deserialization failure |
+| `ValueTooDeep` | A converted value nests deeper than the depth limit, or refers to itself |
+| `ValueTooLarge` | A converted value has too many values or too much text |
+| `UnsupportedValue` | A value with no JSON form, such as a Lua function |
+| `AsyncEntryUnsupported` | A JavaScript entry point returned a Promise |
+| `InstructionLimitExceeded` | Module code used up its instruction budget |
+| `DeadlineExceeded` | Module code was still running at the invocation's deadline |
+| `InvokeBlockingError::Busy` | Every invocation slot stayed taken for the whole wait |
 
 All errors implement `std::error::Error` via `thiserror` and are converted to WebSocket error messages.

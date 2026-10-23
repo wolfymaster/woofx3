@@ -10,13 +10,12 @@ import (
 
 type integrationTestService struct {
 	*BaseService[any]
-	name          string
-	deps          []string
-	connectOrder  *[]string
-	orderMutex    *sync.Mutex
-	connectCalled bool
-	shouldFail    bool
-	callCount     int
+	name         string
+	deps         []string
+	connectOrder *[]string
+	orderMutex   *sync.Mutex
+	shouldFail   bool
+	callCount    int
 }
 
 func newIntegrationTestService(name string, deps []string, connectOrder *[]string, orderMutex *sync.Mutex) *integrationTestService {
@@ -27,7 +26,6 @@ func newIntegrationTestService(name string, deps []string, connectOrder *[]strin
 		connectOrder: connectOrder,
 		orderMutex:   orderMutex,
 		shouldFail:   false,
-		callCount:    0,
 	}
 }
 
@@ -39,23 +37,35 @@ func newFailingIntegrationTestService(name string, deps []string, connectOrder *
 		connectOrder: connectOrder,
 		orderMutex:   orderMutex,
 		shouldFail:   true,
-		callCount:    0,
 	}
 }
 
 func (s *integrationTestService) Connect(ctx context.Context, appCtx *ApplicationContext) error {
 	s.orderMutex.Lock()
 	*s.connectOrder = append(*s.connectOrder, s.name)
-	s.orderMutex.Unlock()
-
-	s.connectCalled = true
 	s.callCount++
+	s.orderMutex.Unlock()
 
 	if s.shouldFail {
 		return fmt.Errorf("simulated connection failure for %s", s.name)
 	}
 
 	return s.BaseService.Connect(ctx, appCtx)
+}
+
+// connectCalls reads callCount under the lock Connect writes it with: the
+// runtime connects services on its own goroutines.
+func (s *integrationTestService) connectCalls() int {
+	s.orderMutex.Lock()
+	defer s.orderMutex.Unlock()
+	return s.callCount
+}
+
+// connectOrderSnapshot copies the recorded order under the lock for the same reason.
+func connectOrderSnapshot(order *[]string, mu *sync.Mutex) []string {
+	mu.Lock()
+	defer mu.Unlock()
+	return append([]string(nil), *order...)
 }
 
 func TestIntegration_ServiceStartupOrder(t *testing.T) {
@@ -90,19 +100,20 @@ func TestIntegration_ServiceStartupOrder(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	if !postgres.connectCalled || !nats.connectCalled || !workers.connectCalled {
+	if postgres.connectCalls() == 0 || nats.connectCalls() == 0 || workers.connectCalls() == 0 {
 		t.Error("Not all services were connected")
 	}
 
-	if len(connectOrder) != 3 {
-		t.Fatalf("Expected 3 services to connect, got %d", len(connectOrder))
+	order := connectOrderSnapshot(&connectOrder, orderMutex)
+	if len(order) != 3 {
+		t.Fatalf("Expected 3 services to connect, got %d", len(order))
 	}
 
 	workersIndex := -1
 	postgresIndex := -1
 	natsIndex := -1
 
-	for i, name := range connectOrder {
+	for i, name := range order {
 		switch name {
 		case "workers":
 			workersIndex = i
@@ -114,7 +125,7 @@ func TestIntegration_ServiceStartupOrder(t *testing.T) {
 	}
 
 	if workersIndex < postgresIndex || workersIndex < natsIndex {
-		t.Errorf("Workers connected before its dependencies. Order: %v", connectOrder)
+		t.Errorf("Workers connected before its dependencies. Order: %v", order)
 	}
 
 	rt.Stop()
@@ -228,13 +239,13 @@ func TestIntegration_ServiceRetryOnlyFailedServices(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Badger should only be called once (succeeds immediately)
-	if badger.callCount != 1 {
-		t.Errorf("Expected badger to be called exactly 1 time, got %d", badger.callCount)
+	if badger.connectCalls() != 1 {
+		t.Errorf("Expected badger to be called exactly 1 time, got %d", badger.connectCalls())
 	}
 
 	// Nats should be called multiple times due to retries (failing each time)
-	if failingNats.callCount < 2 {
-		t.Errorf("Expected failing nats to be called at least 2 times due to retries, got %d", failingNats.callCount)
+	if failingNats.connectCalls() < 2 {
+		t.Errorf("Expected failing nats to be called at least 2 times due to retries, got %d", failingNats.connectCalls())
 	}
 
 	rt.Stop()

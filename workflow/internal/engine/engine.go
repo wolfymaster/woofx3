@@ -69,13 +69,15 @@ type Engine[TServices any] struct {
 	workflowRegistry *WorkflowRegistry
 	taskRegistry     *tasks.TaskRegistry
 	actionRegistry   *tasks.ActionRegistry[TServices]
-	executions       map[string]*types.WorkflowExecution
-	// controls holds each run's cancellation state, keyed like executions and
-	// guarded by executionsMu. An entry must live exactly as long as the
-	// run's entry in executions; neither map is pruned today, so a pruning
-	// pass added later has to delete from both.
-	controls             map[string]*runControl
-	executionsMu         sync.RWMutex
+	runs             *runTable
+	// retentionMu guards retention and started: SetRetention is refused once
+	// Start has read the retention, so the sweep never sees it change.
+	retentionMu sync.Mutex
+	retention   RetentionConfig
+	started     bool
+	// now is the engine's clock for run retention, injected so tests can age
+	// settled runs without waiting.
+	now                  func() time.Time
 	waitingExecutions    map[string][]*WaitingExecution // eventType -> waiting executions
 	armedWaits           map[*WaitingExecution]struct{} // unsettled waits; see armWaitLocked
 	waitingMu            sync.RWMutex
@@ -107,6 +109,10 @@ type Engine[TServices any] struct {
 // one still executing when Stop ran out of patience, or one paused at a wait,
 // which nothing in a stopped engine would ever resume.
 var errEngineStopped = errors.New("engine stopped")
+
+// ErrRetentionAfterStart is returned by SetRetention once Start has begun,
+// because Start reads the retention once and would never apply the new value.
+var ErrRetentionAfterStart = errors.New("run retention must be set before the engine starts")
 
 const (
 	// DefaultStopDrainTimeout is how long Stop lets executing runs finish on
@@ -159,8 +165,9 @@ func New[TServices any](logger tasks.Logger) *Engine[TServices] {
 		workflowRegistry:   NewWorkflowRegistry(),
 		taskRegistry:       tasks.NewTaskRegistry(),
 		actionRegistry:     tasks.NewActionRegistry[TServices](),
-		executions:         make(map[string]*types.WorkflowExecution),
-		controls:           make(map[string]*runControl),
+		runs:               newRunTable(),
+		retention:          DefaultRetentionConfig(),
+		now:                time.Now,
 		waitingExecutions:  make(map[string][]*WaitingExecution),
 		armedWaits:         make(map[*WaitingExecution]struct{}),
 		subWorkflowWaiters: make(map[string][]*SubWorkflowWaiter),
@@ -265,8 +272,14 @@ func (e *Engine[TServices]) RegisterValidatedAction(name string, action tasks.Ac
 // The step graph is checked whole, disabled steps included, because every run
 // builds it from all of them: a duplicate id, a dependency or branch naming a
 // missing step, or a cycle would otherwise register fine and fail every run.
+//
+// A `${env.*}` reference anywhere in the definition is refused: workflows
+// never read the engine's environment.
 func (e *Engine[TServices]) validateDefinition(def *types.WorkflowDefinition) error {
 	if _, err := NewDependencyGraph(def.Tasks); err != nil {
+		return err
+	}
+	if err := refuseEnvReferences(def); err != nil {
 		return err
 	}
 	for i := range def.Tasks {
@@ -509,10 +522,13 @@ func (e *Engine[TServices]) HandleEventWith(event *types.Event, opts HandleOptio
 			continue
 		}
 		e.logDispatch(wf, event)
-		go e.executeWorkflow(wf, event, viewer)
+		e.startRun(wf, event, viewer)
 	}
 	if len(ordered) > 0 {
-		go e.executeInOrder(e.queueInOrder(ordered, event), event)
+		runs := e.queueInOrder(ordered, event)
+		e.safeGo("ordered queue", runRef{}, func() {
+			e.executeInOrder(runs, event)
+		})
 	}
 
 	return nil
@@ -587,11 +603,9 @@ func (e *Engine[TServices]) executeInOrder(runs []queuedRun, event *types.Event)
 			continue
 		}
 		e.logDispatch(run.wf, event)
-		finished := make(chan struct{})
-		go func() {
-			defer close(finished)
+		finished := e.safeGoThenSignal("run", refTo(run.execution), func() {
 			e.runExecution(run.wf, run.execution, event)
-		}()
+		})
 		if !e.awaitTurn(run, event, finished) {
 			e.abandonQueued(runs[i+1:])
 			return
@@ -653,7 +667,7 @@ func (e *Engine[TServices]) SetOrderedTurnTimeout(timeout time.Duration) {
 // FireByWorkflowID runs the named workflow with a synthesized trigger event.
 // Used by non-bus trigger types (schedule, manual) that already know the target
 // and so bypass GetByEvent / evaluateTrigger. Dispatch mirrors HandleEvent:
-// launch executeWorkflow in a goroutine so callers never block on task execution.
+// the run executes on its own goroutine so callers never block on task execution.
 func (e *Engine[TServices]) FireByWorkflowID(workflowID string, event *types.Event) error {
 	if e.ctx.Err() != nil {
 		return errEngineStopped
@@ -662,7 +676,7 @@ func (e *Engine[TServices]) FireByWorkflowID(workflowID string, event *types.Eve
 	if err != nil {
 		return fmt.Errorf("FireByWorkflowID: %w", err)
 	}
-	go e.executeWorkflow(def, event, e.newViewerLoader(viewerTrigger(def), event))
+	e.startRun(def, event, e.newViewerLoader(viewerTrigger(def), event))
 	return nil
 }
 
@@ -682,9 +696,7 @@ func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 			continue
 		}
 
-		e.executionsMu.RLock()
-		execution := e.executions[w.ExecutionID]
-		e.executionsMu.RUnlock()
+		execution, _, _ := e.runs.get(w.ExecutionID)
 
 		if execution == nil {
 			continue
@@ -731,7 +743,9 @@ func (e *Engine[TServices]) processWaitingExecutions(event *types.Event) {
 	e.waitingMu.Unlock()
 
 	for _, w := range toResume {
-		go e.resumeWait(w)
+		e.safeGo("wait resume", runRef{workflowID: w.WorkflowID, executionID: w.ExecutionID}, func() {
+			e.resumeWait(w)
+		})
 	}
 }
 
@@ -767,7 +781,9 @@ func (e *Engine[TServices]) armWaitLocked(w *WaitingExecution, deadline time.Tim
 	}
 	if !deadline.IsZero() {
 		w.timer = time.AfterFunc(time.Until(deadline), func() {
-			e.expireWait(w)
+			e.guard("wait timer", runRef{workflowID: w.WorkflowID, executionID: w.ExecutionID}, func() {
+				e.expireWait(w)
+			})
 		})
 	}
 	return ""
@@ -802,9 +818,7 @@ func (e *Engine[TServices]) expireWait(w *WaitingExecution) {
 		}
 	}
 
-	e.executionsMu.RLock()
-	execution := e.executions[w.ExecutionID]
-	e.executionsMu.RUnlock()
+	execution, _, _ := e.runs.get(w.ExecutionID)
 	if execution == nil {
 		e.waitingMu.Unlock()
 		return
@@ -973,13 +987,11 @@ func (e *Engine[TServices]) beginRun(wf *types.WorkflowDefinition, event *types.
 		Ephemeral:    wf.Ephemeral,
 	}
 
-	e.executionsMu.Lock()
-	e.executions[execution.ID] = execution
-	ctl := e.registerRunLocked(execution.ID, newRunViewer(viewerTrigger(wf), event, viewer))
-	// Marked under the lock Cancel and Stop find runs through, so neither can
-	// see a queued run before it reads as queued.
+	ctl := newRunControl(execution.ID, newRunViewer(viewerTrigger(wf), event, viewer))
+	// Marked before the run is in the table Cancel and Stop find runs through,
+	// so neither can see a queued run before it reads as queued.
 	ctl.queued = start == runQueued
-	e.executionsMu.Unlock()
+	e.runs.put(execution, ctl)
 
 	if start == runQueued {
 		e.logger.Info("Queued workflow execution for its turn", "workflow", wf.ID, "execution", execution.ID)
@@ -998,13 +1010,19 @@ func (e *Engine[TServices]) beginRun(wf *types.WorkflowDefinition, event *types.
 	return execution
 }
 
-func (e *Engine[TServices]) executeWorkflow(wf *types.WorkflowDefinition, event *types.Event, viewer expression.LazyLoader) {
-	e.runExecution(wf, e.beginExecutionAs(wf, event, event.DryRun, viewer), event)
+// startRun begins a run of wf for event and executes it on its own goroutine.
+// The run is begun before the goroutine starts so the goroutine's guard knows
+// which run a panic on it belongs to.
+func (e *Engine[TServices]) startRun(wf *types.WorkflowDefinition, event *types.Event, viewer expression.LazyLoader) {
+	execution := e.beginExecutionAs(wf, event, event.DryRun, viewer)
+	e.safeGo("run", refTo(execution), func() {
+		e.runExecution(wf, execution, event)
+	})
 }
 
 // runExecution runs a begun execution from its first task. Separate from
-// executeWorkflow so a caller that needs the execution id before any task
-// runs can begin the execution itself.
+// startRun so a caller that needs the execution id before any task runs can
+// begin the execution itself.
 func (e *Engine[TServices]) runExecution(wf *types.WorkflowDefinition, execution *types.WorkflowExecution, event *types.Event) {
 	executionID := execution.ID
 	if e.refuseLoop(wf, execution, event) {
@@ -1233,47 +1251,18 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 		}
 
 		if taskDef.Type == types.TaskTypeWorkflow {
-			// Note: Condition checking is now handled by the general guard above
-			// Handle workflow task - can use Workflow config or Parameters
-			workflowConfig := taskDef.Workflow
-			if workflowConfig == nil {
-				// Try to build workflow config from parameters
-				resolver := e.buildResolver(execution, triggerEvent, taskExports)
-				resolvedParams, err := resolver.Resolve(taskDef.Parameters)
-				if err == nil {
-					if params, ok := resolvedParams.(map[string]any); ok {
-						workflowConfig = &types.WorkflowConfig{}
-						if workflowID, ok := params["workflowId"].(string); ok {
-							workflowConfig.WorkflowID = workflowID
-						}
-						if waitUntilCompletion, ok := params["waitUntilCompletion"].(bool); ok {
-							workflowConfig.WaitUntilCompletion = waitUntilCompletion
-						}
-						if event, ok := params["event"].(string); ok {
-							workflowConfig.Event = event
-						}
-						if eventData, ok := params["eventData"].(map[string]any); ok {
-							workflowConfig.EventData = eventData
-						}
-					}
+			// A task that already started is only checked on, which reads no
+			// config, so a resolve error there would fail it for nothing.
+			var workflowConfig *types.WorkflowConfig
+			if taskExec.WorkflowState == nil {
+				var err error
+				workflowConfig, err = resolveWorkflowConfig(taskDef, e.buildResolver(execution, triggerEvent, taskExports))
+				if err != nil {
+					e.failRecordedTask(execution, taskExec, taskDef.ID, i, err, "Workflow task failed")
+					return
 				}
 			}
-
-			if workflowConfig == nil || workflowConfig.WorkflowID == "" {
-				taskExec.Status = types.TaskStatusFailed
-				taskExec.Error = "workflow task missing workflowId"
-				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
-				e.setExecutionStatus(execution, types.ExecutionStatusFailed, errors.New("workflow task missing workflowId"))
-				e.logger.Error("Workflow task missing workflowId", "workflow", execution.WorkflowID, "task", taskDef.ID)
-				e.checkSubWorkflowCompletion(execution.ID)
-				return
-			}
-
-			// Temporarily set Workflow config for handleWorkflowTask
-			originalWorkflow := taskDef.Workflow
-			taskDef.Workflow = workflowConfig
-			workflowResult := e.handleWorkflowTask(execution, taskDef, taskExec, executionOrder, i, taskExports, triggerEvent)
-			taskDef.Workflow = originalWorkflow // Restore original
+			workflowResult, err := e.handleWorkflowTask(execution, taskDef, workflowConfig, taskExec, executionOrder, i, taskExports, triggerEvent)
 			switch workflowResult {
 			case "waiting":
 				return
@@ -1282,13 +1271,7 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 				e.settleCancelled(execution)
 				return
 			case "failed":
-				taskExec.Status = types.TaskStatusFailed
-				e.recordStep(execution, taskDef.ID, i, nil, taskExec)
-				// nil: the sub-workflow's own reason was already recorded and
-				// logged on its execution; this path never had one of its own.
-				e.setExecutionStatus(execution, types.ExecutionStatusFailed, nil)
-				e.logger.Error("Workflow task failed", "workflow", execution.WorkflowID, "task", taskDef.ID)
-				e.checkSubWorkflowCompletion(execution.ID)
+				e.failRecordedTask(execution, taskExec, taskDef.ID, i, err, "Workflow task failed")
 				return
 			}
 
@@ -1563,7 +1546,7 @@ func (e *Engine[TServices]) executeConcurrentRun(
 			// completed before this run began -- no member of the run is
 			// referenced by another (planConcurrentRun rejects the run
 			// otherwise), so there is nothing to synchronise on the read side.
-			result, params, err := e.executeTask(taskDef, execution, triggerEvent, taskExports)
+			result, params, err := e.executeTaskGuarded(taskDef, execution, triggerEvent, taskExports)
 			done <- indexedOutcome{idx: idx, out: outcome{taskDef: taskDef, result: result, params: params, err: err}}
 		}(idx, taskDef)
 	}
@@ -1634,13 +1617,30 @@ collect:
 	return true
 }
 
+// failRecordedTask fails a task, records the failed step, and then fails the
+// run, so the step that failed the run is stored before the run is.
+func (e *Engine[TServices]) failRecordedTask(execution *types.WorkflowExecution, taskExec *types.TaskExecution, taskID string, index int, err error, msg string) {
+	markTaskFailed(taskExec, err)
+	e.recordStep(execution, taskID, index, nil, taskExec)
+	e.failRun(execution, err, msg, taskID)
+}
+
 // failExecution records a task-level error as an execution failure. Extracted
 // so the concurrent path fails identically to the sequential one.
 func (e *Engine[TServices]) failExecution(execution *types.WorkflowExecution, taskExec *types.TaskExecution, err error, msg, taskID string) {
+	markTaskFailed(taskExec, err)
+	e.failRun(execution, err, msg, taskID)
+}
+
+func markTaskFailed(taskExec *types.TaskExecution, err error) {
 	now := time.Now()
 	taskExec.Status = types.TaskStatusFailed
 	taskExec.Error = err.Error()
 	taskExec.CompletedAt = &now
+}
+
+// failRun settles the run as failed by a task and releases a parent waiting on it.
+func (e *Engine[TServices]) failRun(execution *types.WorkflowExecution, err error, msg, taskID string) {
 	e.setExecutionStatus(execution, types.ExecutionStatusFailed, err)
 	e.logger.Error(msg, "workflow", execution.WorkflowID, "task", taskID, "error", err)
 	e.checkSubWorkflowCompletion(execution.ID)
@@ -1658,7 +1658,7 @@ func (e *Engine[TServices]) failExecution(execution *types.WorkflowExecution, ta
 // never knew.
 //
 // It deliberately does not call checkSubWorkflowCompletion. Most callers do and
-// the dependency-graph and execution-order failures in executeWorkflow never
+// the dependency-graph and execution-order failures in runExecution never
 // have; folding it in here would change sub-workflow behaviour rather than just
 // reporting on it.
 //
@@ -1694,8 +1694,11 @@ func (e *Engine[TServices]) setExecutionStatus(
 	// reach here today, but stamping CompletedAt on a paused run would make it
 	// look finished to everything that reads these rows.
 	if isTerminalStatus(status) {
-		now := time.Now()
+		now := e.now()
 		execution.CompletedAt = &now
+		// Stamped before the outcome is announced, so whoever hears it can
+		// rely on the run's retention having started.
+		e.runs.settle(execution.ID, now)
 	}
 	e.emitRunLifecycle(execution)
 	e.recordRunSettled(execution)
@@ -1843,58 +1846,27 @@ func (e *Engine[TServices]) handleWaitTask(execution *types.WorkflowExecution, t
 	return "timeout"
 }
 
-func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) string {
+// handleWorkflowTask starts, or checks on, the sub-workflow a workflow task
+// runs. config is the task's sub-workflow as resolveWorkflowConfig resolved
+// it; the task definition itself is never written to. The error is set
+// exactly when the result is "failed", and says why.
+func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecution, taskDef *types.TaskDefinition, config *types.WorkflowConfig, taskExec *types.TaskExecution, executionOrder []*types.TaskDefinition, currentIndex int, taskExports map[string]map[string]any, triggerEvent *types.Event) (string, error) {
 	if taskExec.WorkflowState == nil {
-		// Resolve workflow config parameters
-		resolver := e.buildResolver(execution, triggerEvent, taskExports)
-
-		// Resolve workflowID if it contains expressions
-		workflowIDRaw := taskDef.Workflow.WorkflowID
-		if workflowIDRaw == "" {
-			e.logger.Error("Workflow task missing workflowId", "workflow", execution.WorkflowID, "task", taskDef.ID)
-			return "failed"
-		}
-
-		workflowIDResolved, err := resolver.ResolveString(workflowIDRaw)
-		if err != nil {
-			e.logger.Error("Failed to resolve workflowId", "workflow", execution.WorkflowID, "task", taskDef.ID, "error", err)
-			return "failed"
-		}
-
-		workflowID, ok := workflowIDResolved.(string)
-		if !ok {
-			e.logger.Error("WorkflowId must resolve to a string", "workflow", execution.WorkflowID, "task", taskDef.ID)
-			return "failed"
-		}
-
-		if workflowID == "" {
-			e.logger.Error("Resolved workflowId is empty", "workflow", execution.WorkflowID, "task", taskDef.ID)
-			return "failed"
-		}
-
-		// Get the workflow definition
+		workflowID := config.WorkflowID
 		wf, err := e.workflowRegistry.Get(workflowID)
 		if err != nil {
-			e.logger.Error("Workflow not found", "workflow", execution.WorkflowID, "task", taskDef.ID, "subWorkflow", workflowID, "error", err)
-			return "failed"
+			return "failed", fmt.Errorf("sub-workflow %s: %w", workflowID, err)
 		}
 
-		// Create event data for the sub-workflow
-		eventData := make(map[string]any)
-		if taskDef.Workflow.EventData != nil {
-			// Resolve event data using resolver
-			resolvedData, err := resolver.Resolve(taskDef.Workflow.EventData)
-			if err == nil {
-				if dataMap, ok := resolvedData.(map[string]any); ok {
-					eventData = dataMap
-				}
-			}
+		eventData := config.EventData
+		if eventData == nil {
+			eventData = make(map[string]any)
 		}
 
 		// Determine the NATS subject — use the sub-workflow task's
 		// explicit `event` if set, then fall back to the target
 		// workflow's trigger event, then a generic default.
-		eventSubject := taskDef.Workflow.Event
+		eventSubject := config.Event
 		if eventSubject == "" && wf.Trigger != nil {
 			eventSubject = wf.Trigger.Event
 		}
@@ -1915,28 +1887,27 @@ func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecutio
 		// Execute the sub-workflow
 		subExecutionID := e.executeWorkflowSync(wf, subEvent, execution.DryRun)
 		if subExecutionID == "" {
-			e.logger.Error("Failed to execute sub-workflow", "workflow", execution.WorkflowID, "task", taskDef.ID, "subWorkflow", workflowID)
-			return "failed"
+			return "failed", fmt.Errorf("sub-workflow %s did not start", workflowID)
 		}
 
 		// Initialize workflow state
 		timeout := time.Now().Add(5 * time.Minute) // Default timeout
-		if taskDef.Workflow.Timeout != nil {
-			timeout = time.Now().Add(taskDef.Workflow.Timeout.Duration)
+		if config.Timeout != nil {
+			timeout = time.Now().Add(config.Timeout.Duration)
 		}
 
 		taskExec.WorkflowState = &types.WorkflowState{
 			SubWorkflowID:       workflowID,
 			ExecutionID:         subExecutionID,
-			WaitUntilCompletion: taskDef.Workflow.WaitUntilCompletion,
+			WaitUntilCompletion: config.WaitUntilCompletion,
 			Timeout:             timeout,
 			Completed:           false,
 		}
 
 		// If not waiting for completion, we're done
-		if !taskDef.Workflow.WaitUntilCompletion {
+		if !config.WaitUntilCompletion {
 			taskExec.WorkflowState.Completed = true
-			return "completed"
+			return "completed", nil
 		}
 
 		// If waiting for completion, mark as waiting and register the waiter
@@ -1951,7 +1922,7 @@ func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecutio
 			if _, err := e.Cancel(subExecutionID, "parent run cancelled"); err != nil {
 				e.logger.Warn("Sub-workflow run not cancelled", "execution", subExecutionID, "error", err)
 			}
-			return "cancelled"
+			return "cancelled", nil
 		}
 		waiter := &SubWorkflowWaiter{
 			ParentExecutionID: execution.ID,
@@ -1967,39 +1938,33 @@ func (e *Engine[TServices]) handleWorkflowTask(execution *types.WorkflowExecutio
 		e.subWorkflowWaitersMu.Unlock()
 
 		e.logger.Info("Workflow task waiting for sub-workflow completion", "workflow", execution.WorkflowID, "task", taskDef.ID, "subWorkflow", workflowID, "subExecution", subExecutionID)
-		return "waiting"
+		return "waiting", nil
 	}
 
 	// Check if the sub-workflow has completed
-	e.executionsMu.RLock()
-	subExecution, exists := e.executions[taskExec.WorkflowState.ExecutionID]
-	e.executionsMu.RUnlock()
+	subExecutionID := taskExec.WorkflowState.ExecutionID
+	subExecution, _, exists := e.runs.get(subExecutionID)
 
 	if !exists {
-		e.logger.Error("Sub-workflow execution not found", "workflow", execution.WorkflowID, "task", taskDef.ID, "subExecution", taskExec.WorkflowState.ExecutionID)
-		return "failed"
+		return "failed", fmt.Errorf("sub-workflow run %s not found", subExecutionID)
 	}
 
-	// Check timeout
 	if time.Now().After(taskExec.WorkflowState.Timeout) {
-		e.logger.Error("Workflow task timed out waiting for sub-workflow", "workflow", execution.WorkflowID, "task", taskDef.ID, "subExecution", taskExec.WorkflowState.ExecutionID)
-		return "failed"
+		return "failed", fmt.Errorf("timed out waiting for sub-workflow run %s", subExecutionID)
 	}
 
-	// Check if completed
 	if subExecution.Status == types.ExecutionStatusCompleted {
 		taskExec.WorkflowState.Completed = true
 		taskExec.WorkflowState.Result = subExecution.Variables
-		return "completed"
+		return "completed", nil
 	}
 
 	if subExecution.Status == types.ExecutionStatusFailed {
-		e.logger.Error("Sub-workflow execution failed", "workflow", execution.WorkflowID, "task", taskDef.ID, "subExecution", taskExec.WorkflowState.ExecutionID, "error", subExecution.Error)
-		return "failed"
+		return "failed", fmt.Errorf("sub-workflow execution failed: %s", subExecution.Error)
 	}
 
 	// Still running or waiting
-	return "waiting"
+	return "waiting", nil
 }
 
 func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, event *types.Event, dryRun bool) string {
@@ -2016,10 +1981,7 @@ func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, ev
 		Variables:    make(map[string]any),
 	}
 
-	e.executionsMu.Lock()
-	e.executions[executionID] = execution
-	e.registerRunLocked(executionID, newRunViewer(viewerTrigger(wf), event, e.newViewerLoader(viewerTrigger(wf), event)))
-	e.executionsMu.Unlock()
+	e.runs.put(execution, newRunControl(executionID, newRunViewer(viewerTrigger(wf), event, e.newViewerLoader(viewerTrigger(wf), event))))
 
 	e.logger.Info("Starting sub-workflow execution", "workflow", wf.ID, "execution", executionID)
 
@@ -2029,8 +1991,9 @@ func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, ev
 	e.emitRunLifecycle(execution)
 	e.recordRunStarted(execution)
 
-	// Execute in a goroutine (async)
-	go e.executeWorkflowInternal(wf, execution, event)
+	e.safeGo("sub-workflow", refTo(execution), func() {
+		e.executeWorkflowInternal(wf, execution, event)
+	})
 
 	return executionID
 }
@@ -2069,14 +2032,11 @@ func (e *Engine[TServices]) checkSubWorkflowCompletion(subExecutionID string) {
 		return
 	}
 
-	// Remove from waiters map
+	// The child is read before its waiters are dropped, while the waiters
+	// lock still pins it against the sweep.
+	subExecution, _, exists := e.runs.get(subExecutionID)
 	delete(e.subWorkflowWaiters, subExecutionID)
 	e.subWorkflowWaitersMu.Unlock()
-
-	// Get the sub-execution status
-	e.executionsMu.RLock()
-	subExecution, exists := e.executions[subExecutionID]
-	e.executionsMu.RUnlock()
 
 	if !exists {
 		return
@@ -2084,14 +2044,15 @@ func (e *Engine[TServices]) checkSubWorkflowCompletion(subExecutionID string) {
 
 	// Resume all parent executions waiting for this sub-workflow
 	for _, waiter := range waiters {
-		go e.resumeSubWorkflowExecution(waiter, subExecution)
+		parent := runRef{workflowID: waiter.ParentWorkflowID, executionID: waiter.ParentExecutionID}
+		e.safeGo("sub-workflow resume", parent, func() {
+			e.resumeSubWorkflowExecution(waiter, subExecution)
+		})
 	}
 }
 
 func (e *Engine[TServices]) resumeSubWorkflowExecution(waiter *SubWorkflowWaiter, subExecution *types.WorkflowExecution) {
-	e.executionsMu.RLock()
-	execution := e.executions[waiter.ParentExecutionID]
-	e.executionsMu.RUnlock()
+	execution, _, _ := e.runs.get(waiter.ParentExecutionID)
 
 	if execution == nil {
 		return
@@ -2144,10 +2105,7 @@ func (e *Engine[TServices]) resumeSubWorkflowExecution(waiter *SubWorkflowWaiter
 // resumeWait continues a run whose wait has been settled, by re-entering the
 // wait task so runTasksFrom applies the outcome the wait state records.
 func (e *Engine[TServices]) resumeWait(w *WaitingExecution) {
-	e.executionsMu.RLock()
-	execution := e.executions[w.ExecutionID]
-	ctl := e.controls[w.ExecutionID]
-	e.executionsMu.RUnlock()
+	execution, ctl, _ := e.runs.get(w.ExecutionID)
 
 	if execution == nil {
 		return
@@ -2283,21 +2241,75 @@ func publishTaskResultExports(taskExports map[string]map[string]any, taskID stri
 }
 
 func (e *Engine[TServices]) GetExecution(id string) (*types.WorkflowExecution, error) {
-	e.executionsMu.RLock()
-	defer e.executionsMu.RUnlock()
-
-	exec, ok := e.executions[id]
+	exec, _, ok := e.runs.get(id)
 	if !ok {
 		return nil, fmt.Errorf("execution not found: %s", id)
 	}
 	return exec, nil
 }
 
-func (e *Engine[TServices]) Start(ctx context.Context) error {
-	e.logger.Info("Workflow engine started")
-	<-ctx.Done()
-	e.logger.Info("Workflow engine stopping")
+// SetRetention sets how long settled runs are kept in memory. It returns
+// ErrRetentionAfterStart once Start has begun.
+func (e *Engine[TServices]) SetRetention(retention RetentionConfig) error {
+	if err := retention.Validate(); err != nil {
+		return err
+	}
+	e.retentionMu.Lock()
+	defer e.retentionMu.Unlock()
+	if e.started {
+		return ErrRetentionAfterStart
+	}
+	e.retention = retention
 	return nil
+}
+
+// Start runs the engine until ctx is done or Stop is called. Runs execute on
+// goroutines of their own; what Start owns is the sweep that evicts settled
+// runs, so the sweep ends with the engine.
+func (e *Engine[TServices]) Start(ctx context.Context) error {
+	e.retentionMu.Lock()
+	e.started = true
+	sweepInterval := e.retention.SweepInterval
+	e.retentionMu.Unlock()
+
+	e.logger.Info("Workflow engine started")
+	ticker := time.NewTicker(sweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			e.logger.Info("Workflow engine stopping")
+			return nil
+		case <-e.ctx.Done():
+			e.logger.Info("Workflow engine stopping")
+			return nil
+		case <-ticker.C:
+			e.guard("run sweep", runRef{}, e.sweepSettledRuns)
+		}
+	}
+}
+
+// sweepSettledRuns evicts settled runs past their retention, or over the cap.
+//
+// A sub-workflow a parent is registered as waiting on is kept, and so is that
+// parent: checkSubWorkflowCompletion reads the settled child to resume the
+// parent. The waiters lock is held across the sweep so no waiter can be
+// registered for a run between deciding to evict it and evicting it.
+func (e *Engine[TServices]) sweepSettledRuns() {
+	e.subWorkflowWaitersMu.RLock()
+	defer e.subWorkflowWaitersMu.RUnlock()
+
+	pinned := make(map[string]bool, len(e.subWorkflowWaiters))
+	for childID, waiters := range e.subWorkflowWaiters {
+		pinned[childID] = true
+		for _, waiter := range waiters {
+			pinned[waiter.ParentExecutionID] = true
+		}
+	}
+	evicted := e.runs.sweep(e.now(), e.retention, func(executionID string) bool { return pinned[executionID] })
+	if evicted > 0 {
+		e.logger.Debug("Evicted settled workflow runs", "count", evicted)
+	}
 }
 
 // Stop ends the engine, leaving no run without a recorded outcome.
@@ -2344,16 +2356,7 @@ type abandonedRun struct {
 
 // unsettledRuns lists the runs that have no outcome yet.
 func (e *Engine[TServices]) unsettledRuns() []*abandonedRun {
-	e.executionsMu.RLock()
-	defer e.executionsMu.RUnlock()
-
-	var unsettled []*abandonedRun
-	for id, ctl := range e.controls {
-		if execution := e.executions[id]; execution != nil && !ctl.isSettled() {
-			unsettled = append(unsettled, &abandonedRun{execution: execution, control: ctl})
-		}
-	}
-	return unsettled
+	return e.runs.snapshotUnsettled()
 }
 
 // pausedAtWait lists the unsettled runs that have a wait armed.
@@ -2403,3 +2406,93 @@ func (e *Engine[TServices]) waitForRuns(timeout time.Duration, done func(unsettl
 }
 
 const stopPollInterval = 20 * time.Millisecond
+
+// resolveWorkflowConfig is the sub-workflow a workflow task starts, resolved
+// for this run: its `workflow` block, or one built from its `parameters`. It
+// is a new value; the task definition is never written to.
+//
+// Everything is resolved here, once. Resolving a value a second time would
+// evaluate any `${...}` text the first pass produced, such as a chat message
+// carried in from the trigger. A parameter that does not resolve, or resolves
+// to the wrong type, fails the task rather than being skipped: skipping it
+// would start the wrong run, or none, without saying why.
+func resolveWorkflowConfig(taskDef *types.TaskDefinition, resolver *expression.Resolver) (*types.WorkflowConfig, error) {
+	var config *types.WorkflowConfig
+	var err error
+	if taskDef.Workflow != nil {
+		config, err = resolveWorkflowBlock(taskDef.Workflow, resolver)
+	} else {
+		config, err = resolveWorkflowParameters(taskDef.Parameters, resolver)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if config.WorkflowID == "" {
+		return nil, errors.New("workflow task missing workflowId")
+	}
+	return config, nil
+}
+
+func resolveWorkflowBlock(block *types.WorkflowConfig, resolver *expression.Resolver) (*types.WorkflowConfig, error) {
+	config := *block
+	if block.WorkflowID != "" {
+		resolved, err := resolver.ResolveString(block.WorkflowID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve sub-workflow workflowId: %w", err)
+		}
+		workflowID, ok := resolved.(string)
+		if !ok {
+			return nil, fmt.Errorf("sub-workflow workflowId must resolve to a string, got %T", resolved)
+		}
+		config.WorkflowID = workflowID
+	}
+	if block.EventData != nil {
+		resolved, err := resolver.Resolve(block.EventData)
+		if err != nil {
+			return nil, fmt.Errorf("resolve sub-workflow eventData: %w", err)
+		}
+		eventData, ok := resolved.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("sub-workflow eventData must resolve to an object, got %T", resolved)
+		}
+		config.EventData = eventData
+	}
+	return &config, nil
+}
+
+func resolveWorkflowParameters(parameters map[string]any, resolver *expression.Resolver) (*types.WorkflowConfig, error) {
+	resolved, err := resolver.Resolve(parameters)
+	if err != nil {
+		return nil, fmt.Errorf("resolve sub-workflow parameters: %w", err)
+	}
+	params, ok := resolved.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("sub-workflow parameters must resolve to an object, got %T", resolved)
+	}
+	config := &types.WorkflowConfig{}
+	if err := errors.Join(
+		workflowParam(params, "workflowId", "a string", &config.WorkflowID),
+		workflowParam(params, "waitUntilCompletion", "a boolean", &config.WaitUntilCompletion),
+		workflowParam(params, "event", "a string", &config.Event),
+		workflowParam(params, "eventData", "an object", &config.EventData),
+	); err != nil {
+		return nil, err
+	}
+	return config, nil
+}
+
+// workflowParam copies the resolved parameter key into dst. An absent or null
+// parameter leaves dst at its zero value; one of another type is an error
+// naming the parameter and the type it needs to be.
+func workflowParam[T any](params map[string]any, key, want string, dst *T) error {
+	raw, present := params[key]
+	if !present || raw == nil {
+		return nil
+	}
+	value, ok := raw.(T)
+	if !ok {
+		return fmt.Errorf("sub-workflow parameter %q must be %s, got %T", key, want, raw)
+	}
+	*dst = value
+	return nil
+}

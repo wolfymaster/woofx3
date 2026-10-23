@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 	gsqlite "github.com/libtnb/sqlite"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/dbtest"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
@@ -15,6 +16,9 @@ func newSettingsDb(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(gsqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := database.RegisterIDAssignment(db, database.RandomIDs{}); err != nil {
+		t.Fatalf("register id assignment: %v", err)
 	}
 	err = db.Exec(`CREATE TABLE module_settings (
 		id         TEXT NOT NULL PRIMARY KEY,

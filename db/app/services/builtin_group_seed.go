@@ -1,7 +1,6 @@
 package services
 
 import (
-	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 )
@@ -38,7 +37,6 @@ func SeedBuiltInGroups(groupRepo *repo.GroupRepository) error {
 		}
 
 		group := models.Group{
-			ID:          uuid.New(),
 			Name:        builtIn.Name,
 			Description: builtIn.Description,
 			IsBuiltIn:   true,

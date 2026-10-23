@@ -1,3 +1,4 @@
+use crate::runtime::limits::{SandboxLimitsError, SizeLimit};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -44,14 +45,29 @@ pub enum Error {
     #[error("Runtime execution error: {0}")]
     RuntimeError(String),
 
-    #[error("Execution timeout")]
-    ExecutionTimeout,
-
     #[error("Memory limit exceeded")]
     MemoryLimitExceeded,
 
     #[error("Instruction limit exceeded")]
     InstructionLimitExceeded,
+
+    #[error("invocation ran past its deadline")]
+    DeadlineExceeded,
+
+    #[error("value nests deeper than {max_depth} levels")]
+    ValueTooDeep { max_depth: usize },
+
+    #[error("value is too large: {limit}")]
+    ValueTooLarge { limit: SizeLimit },
+
+    #[error("a {type_name} value cannot be converted to JSON")]
+    UnsupportedValue { type_name: String },
+
+    #[error("entry point returned a Promise; async functions are not supported")]
+    AsyncEntryUnsupported,
+
+    #[error("invalid sandbox limits: {0}")]
+    InvalidLimits(#[from] SandboxLimitsError),
 }
 
 /// Thread-safe error returned by [`crate::SandboxFactory::invoke_blocking`].
@@ -70,4 +86,13 @@ pub enum InvokeBlockingError {
 
     #[error("sandbox invocation task panicked or was cancelled: {0}")]
     TaskJoin(String),
+
+    /// Every invocation slot stayed taken for the whole wait.
+    #[error(
+        "sandbox is busy: all {max_concurrent} invocation slots stayed taken for {waited_ms} ms"
+    )]
+    Busy {
+        max_concurrent: usize,
+        waited_ms: u64,
+    },
 }

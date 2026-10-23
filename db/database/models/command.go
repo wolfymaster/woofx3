@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,17 +15,14 @@ type Command struct {
 	// shape as workflow_definitions.steps, because it is the same thing -- see
 	// command.proto's actions_json comment. "[]" is a command that only
 	// announces itself on chat.command.<slug>.
-	Actions       string    `gorm:"column:actions;type:jsonb;not null;default:'[]'"`
-	Cooldown      int       `gorm:"column:cooldown;default:0"`
-	Priority      int       `gorm:"column:priority;default:0"`
-	Enabled       bool      `gorm:"column:enabled;default:true"`
-	CreatedByType string    `gorm:"column:created_by_type;type:text;not null;default:'USER'"`
-	CreatedByRef  string    `gorm:"column:created_by_ref;type:text;not null;default:''"`
-	CreatedAt     time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP;not null"`
-	// Visibility is "public" (always allowed, Casbin is never consulted) or
-	// "restricted" (the invoking user must belong to one of this command's
-	// groups or be listed as one of its users).
-	Visibility string `gorm:"column:visibility;type:varchar(20);not null;default:'restricted'"`
+	Actions       string            `gorm:"column:actions;type:jsonb;not null;default:'[]'"`
+	Cooldown      int               `gorm:"column:cooldown;default:0"`
+	Priority      int               `gorm:"column:priority;default:0"`
+	Enabled       bool              `gorm:"column:enabled;default:true"`
+	CreatedByType string            `gorm:"column:created_by_type;type:text;not null;default:'USER'"`
+	CreatedByRef  string            `gorm:"column:created_by_ref;type:text;not null;default:''"`
+	CreatedAt     time.Time         `gorm:"column:created_at;default:CURRENT_TIMESTAMP;not null"`
+	Visibility    CommandVisibility `gorm:"column:visibility;type:varchar(20);not null;default:'restricted'"`
 	// ArgumentPattern declares "{variable}" placeholders (e.g. "{songTitle}"
 	// or "{userA} {userB}") the command accepts as named arguments. Never
 	// contains the bare command word itself - see command.proto's field
@@ -38,6 +36,30 @@ type Command struct {
 	// when db-proxy converted it, and "" otherwise; see command.proto's
 	// workflow_error comment.
 	WorkflowError string `gorm:"column:workflow_error;type:text;not null;default:''"`
+}
+
+// CommandVisibility says who may invoke a command.
+type CommandVisibility string
+
+const (
+	// CommandVisibilityPublic is always allowed; Casbin is never consulted.
+	CommandVisibilityPublic CommandVisibility = "public"
+	// CommandVisibilityRestricted allows only users in one of the command's
+	// groups or listed as one of its users. With neither, nobody may invoke
+	// it until the streamer grants access.
+	CommandVisibilityRestricted CommandVisibility = "restricted"
+)
+
+// ParseCommandVisibility reads a visibility off the wire. Anything other
+// than the two known values is an error, never a silent restricted.
+func ParseCommandVisibility(value string) (CommandVisibility, error) {
+	switch CommandVisibility(value) {
+	case CommandVisibilityPublic, CommandVisibilityRestricted:
+		return CommandVisibility(value), nil
+	default:
+		return "", fmt.Errorf("unknown visibility %q: want %q or %q",
+			value, CommandVisibilityPublic, CommandVisibilityRestricted)
+	}
 }
 
 func (Command) TableName() string {

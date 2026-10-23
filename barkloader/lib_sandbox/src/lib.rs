@@ -8,9 +8,11 @@ pub mod module_registry;
 pub mod net;
 pub mod oauth;
 pub mod permissions;
+pub mod resource_access;
 mod runtime;
 mod sandbox;
 
 pub use error::{Error, InvokeBlockingError};
 pub use module_registry::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule};
+pub use runtime::limits::{ConversionLimits, SandboxLimits, SandboxLimitsError, SizeLimit};
 pub use sandbox::{Sandbox, SandboxActionRunner, SandboxFactory};

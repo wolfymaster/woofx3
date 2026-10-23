@@ -4,8 +4,10 @@
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "node",
+    "resolveJsonModule": true,
     "paths": {
       "@woofx3/common/*": ["../shared/common/typescript/*"],
+      "@woofx3/contracts/*": ["../shared/common/contracts/*"],
       "@woofx3/*": ["../shared/clients/typescript/*"]
     },
     // Third-party .d.ts files are not ours to fix; capnweb's ships a rest
