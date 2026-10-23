@@ -1,7 +1,11 @@
+import { z } from "zod";
+
 // Logical OBS command intent in the Convex webhook contract, for a Convex-side
 // OBS Controller. It names logical targets; the mapping to OBS scene and source
 // names lives in Convex's PlatformActionMap. See woofx3/browser-source-spec.md.
 // Not the payload of `engine.obs.command`, which is ObsControlCommand below.
+
+import { asRecord, type ParseResult } from "../utils";
 
 export type OBSCommandType =
   | "scene_transition"
@@ -25,7 +29,27 @@ export interface OBSCommand {
 }
 
 /** Show a source, hide it, or flip whichever it is when the command runs. */
-export type SourceVisibility = "visible" | "hidden" | "toggle";
+export const SOURCE_VISIBILITIES = ["visible", "hidden", "toggle"] as const;
+
+export type SourceVisibility = (typeof SOURCE_VISIBILITIES)[number];
+
+/** OBS's id for the browser source input kind. */
+export const BROWSER_SOURCE_KIND = "browser_source";
+
+// Must match the limits in barkloader/lib_sandbox/src/extensions/obs.rs.
+export const BROWSER_SOURCE_MAX_WIDTH = 7_680;
+export const BROWSER_SOURCE_MAX_HEIGHT = 4_320;
+
+const nonEmptyName = z.string().min(1);
+
+/**
+ * An absolute http(s) URL. A browser source loads whatever it is given, and a
+ * `file:` URL would put the streamer's own files on stream.
+ */
+const webUrl = z.string().refine((value) => {
+  const parsed = URL.parse(value);
+  return parsed !== null && (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.host !== "";
+}, "must be an absolute http:// or https:// URL");
 
 /**
  * One change to OBS, carried as the `data` of an `engine.obs.command`
@@ -37,33 +61,38 @@ export type SourceVisibility = "visible" | "hidden" | "toggle";
  * subject. Names are OBS's own scene, source and input names, exactly as the
  * streamer sees them in OBS.
  *
+ * Strict objects, so a misspelled field is refused rather than silently
+ * ignored: `visibile: false` must not read as a command with no visibility.
+ *
  * Must match the commands built in barkloader/lib_sandbox/src/extensions/obs.rs.
  */
-export type ObsControlCommand =
-  | { command: "switch_scene"; sceneName: string }
-  | {
-      command: "set_source_visibility";
-      /** The current program scene when absent. */
-      sceneName?: string;
-      sourceName: string;
-      visibility: SourceVisibility;
-    }
-  | { command: "set_input_mute"; inputName: string; muted: boolean }
-  | {
-      /**
-       * Point the browser source `sourceName` at `url` and show it, creating
-       * it in the scene when OBS has no input by that name.
-       */
-      command: "show_browser_source";
-      /** The current program scene when absent. */
-      sceneName?: string;
-      sourceName: string;
-      /** An absolute http:// or https:// URL. */
-      url: string;
-      /** The size of a source this command creates; an existing one keeps its own. */
-      width: number;
-      height: number;
-    };
+export const OBS_CONTROL_COMMAND_SCHEMA = z.discriminatedUnion("command", [
+  z.strictObject({ command: z.literal("switch_scene"), sceneName: nonEmptyName }),
+  z.strictObject({
+    command: z.literal("set_source_visibility"),
+    /** The current program scene when absent. */
+    sceneName: z.string().optional(),
+    sourceName: nonEmptyName,
+    visibility: z.enum(SOURCE_VISIBILITIES),
+  }),
+  z.strictObject({ command: z.literal("set_input_mute"), inputName: nonEmptyName, muted: z.boolean() }),
+  /**
+   * Point the browser source `sourceName` at `url` and show it, creating it
+   * in the scene when OBS has no input by that name.
+   */
+  z.strictObject({
+    command: z.literal("show_browser_source"),
+    /** The current program scene when absent. */
+    sceneName: z.string().optional(),
+    sourceName: nonEmptyName,
+    url: webUrl,
+    /** The size of a source this command creates; an existing one keeps its own. */
+    width: z.number().int().min(1).max(BROWSER_SOURCE_MAX_WIDTH),
+    height: z.number().int().min(1).max(BROWSER_SOURCE_MAX_HEIGHT),
+  }),
+]);
+
+export type ObsControlCommand = z.infer<typeof OBS_CONTROL_COMMAND_SCHEMA>;
 
 export type ObsControlCommandName = ObsControlCommand["command"];
 
@@ -140,22 +169,14 @@ export type ObsBrowserSourceRefreshReply =
   | { status: "invalid"; error: string }
   | { status: "unavailable"; error: string };
 
-export type ObsRefreshParse<T> = { ok: true; value: T } | { ok: false; error: string };
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function parseBootId(value: unknown): ObsRefreshParse<string> {
+function parseBootId(value: unknown): ParseResult<string> {
   if (typeof value !== "string" || value.length < 1 || value.length > OBS_REFRESH_BOOT_ID_MAX_LENGTH) {
     return { ok: false, error: `bootId must be a string of 1 to ${OBS_REFRESH_BOOT_ID_MAX_LENGTH} characters` };
   }
   return { ok: true, value };
 }
 
-export function parseObsBrowserSourceRefresh(value: unknown): ObsRefreshParse<ObsBrowserSourceRefresh> {
+export function parseObsBrowserSourceRefresh(value: unknown): ParseResult<ObsBrowserSourceRefresh> {
   const body = asRecord(value);
   if (!body) {
     return { ok: false, error: "the request must be an object" };
@@ -171,7 +192,7 @@ export function parseObsBrowserSourceRefresh(value: unknown): ObsRefreshParse<Ob
   return { ok: true, value: { overlayPort: port, bootId: bootId.value } };
 }
 
-export function parseObsBrowserSourceRefreshReply(value: unknown): ObsRefreshParse<ObsBrowserSourceRefreshReply> {
+export function parseObsBrowserSourceRefreshReply(value: unknown): ParseResult<ObsBrowserSourceRefreshReply> {
   const body = asRecord(value);
   if (!body) {
     return { ok: false, error: "the reply must be an object" };

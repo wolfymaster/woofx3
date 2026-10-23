@@ -82,7 +82,7 @@ export interface ApiConfig {
   twitchPublicClientId: string | null;
   /**
    * The engine's confidential Twitch app (`WOOFX3_TWITCH_CLIENT_ID`), or null
-   * when it has none. The twitch service refreshes a token issued to it; the
+   * when it has none. The connectors host's Twitch adapter refreshes a token issued to it; the
    * api only names it on Helix calls.
    */
   twitchClientId: string | null;

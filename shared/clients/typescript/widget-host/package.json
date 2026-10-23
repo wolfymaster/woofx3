@@ -15,7 +15,7 @@
     "./page": "./page/index.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "1.4.3",
     "typescript": "^5.0.0"
   }
 }

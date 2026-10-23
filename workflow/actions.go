@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -403,7 +404,7 @@ func sendThroughGateway(ctx tasks.ActionContext[AppServices], action platformgat
 		return platformgateway.GatewayReply{}, err
 	}
 	if !reply.OK {
-		return reply, fmt.Errorf("%s", summarizeGatewayReply(action, reply))
+		return reply, errors.New(summarizeGatewayReply(action, reply))
 	}
 	return reply, nil
 }

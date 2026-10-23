@@ -17,6 +17,7 @@ import {
 import type { GatewayConfig } from "../config/gateway";
 import { platformAdapterId } from "../host/adapter";
 import type { Clock, Logger } from "../host/deps";
+import { boundedBySignal } from "../host/bounded";
 import { errorMessage } from "../host/deps";
 import {
   type HostRequestErrorCode,
@@ -79,9 +80,6 @@ function reachedAPlatform(reply: GatewayReply): boolean {
     (outcome) => outcome.status === "delivered" || outcome.status === "dropped" || outcome.status === "unconfirmed"
   );
 }
-
-/** How one platform's handler call ended, as seen from the deadline. */
-type HandlerRun = { kind: "done"; value: unknown } | { kind: "failed"; error: unknown } | { kind: "deadline" };
 
 /**
  * Serves platform.gateway.send: validates the request, resolves its target
@@ -259,9 +257,9 @@ export class PlatformGateway {
           sent = true;
         },
       }))();
-    const run = await untilAborted(call, ctx.signal);
-    if (run.kind === "deadline" || (run.kind === "failed" && ctx.signal.aborted)) {
-      if (run.kind === "deadline") {
+    const run = await boundedBySignal(() => call, ctx.signal);
+    if (run.kind === "timeout" || (run.kind === "failed" && ctx.signal.aborted)) {
+      if (run.kind === "timeout") {
         this.logLateAnswer(platform, request.action, call);
       }
       if (sent) {
@@ -364,26 +362,4 @@ function statuses(results: PlatformResults): Record<string, OutcomeStatus> {
     }
   }
   return out;
-}
-
-/** Settles with how `call` ended, or with `deadline` as soon as `signal` aborts, whichever is first. */
-function untilAborted(call: Promise<unknown>, signal: AbortSignal): Promise<HandlerRun> {
-  return new Promise<HandlerRun>((resolve) => {
-    const onAbort = () => resolve({ kind: "deadline" });
-    if (signal.aborted) {
-      onAbort();
-      return;
-    }
-    signal.addEventListener("abort", onAbort, { once: true });
-    call.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve({ kind: "done", value });
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve({ kind: "failed", error });
-      }
-    );
-  });
 }

@@ -12,9 +12,9 @@ import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/i
 import { type Span, SpanKind, withSpan } from "@woofx3/common/logging";
 import { ListModuleSettings } from "@woofx3/db/module_setting.pb";
 import { GetSetting, SetSetting } from "@woofx3/db/setting.pb";
-import TwitchClient, { requestTokenOverNats, type TwitchAuthProviderKind } from "@woofx3/twitch";
-import type { TwitchConfig } from "../../config/twitch";
-import { type Clock, errorMessage, type IdSource, type Logger } from "../../host/deps";
+import TwitchClient, { requestTokenOverNats, TWITCH_NOT_LINKED, type TwitchAuthProviderKind } from "@woofx3/twitch";
+import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
+import { type Clock, errorMessage, type IdSource, type Logger, type RandomSource, type Timers } from "../../host/deps";
 import type { BusMessage, ScopedBus } from "../../host/scoped-bus";
 import type { DbProxyClientConfig } from "../../services/db-proxy";
 import { TWITCH_EVENT_SOURCE } from "./event-source";
@@ -25,46 +25,52 @@ import { HELIX_DEADLINE_MS } from "./lib/helix";
 import { type PublishTarget, publishEvent } from "./lib/publishEvent";
 import type { SelfSentRegistry } from "./lib/self-sent";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
-import type TwitchApiClient from "./lib/twitch";
-import TwitchApiClientImpl, { isTwitchApiCommand, type TwitchApiCall, twitchApiErrorCodeOf } from "./lib/twitch";
+import TwitchApi, { isTwitchApiCommand, type TwitchApiCall, twitchApiErrorCodeOf } from "./lib/twitch";
+import { TWITCH_API_HANDLERS } from "./lib/twitchApiCommands";
 import TwitchEventBus from "./lib/twitchEventBus";
+import { untilAborted } from "./lib/untilAborted";
 import type { EventPublisher } from "./types";
 
-/**
- * Inbound request on the `twitchapi` subject: `{ command, args? }`.
- */
+/** Inbound request on the `twitchapi` subject: `{ command, args? }`. */
 interface TwitchApiRequest {
   command: string;
   args?: Record<string, unknown>;
 }
+
+export type ParsedTwitchApiRequest = { ok: true; request: TwitchApiRequest } | { ok: false; error: string };
 
 /**
  * The request carried by a `twitchapi` message. Two senders shape it
  * differently and both are served: the api wraps it in a CloudEvent
  * (`{ type, source, time, data: { command, args } }`), while the sandbox's
  * `ctx.twitch` and the chatbot's built-in commands send the bare
- * `{ command, args }`.
+ * `{ command, args }`. `args`, when present, has to be an object: each
+ * command reads its fields by name.
  */
-export function parseTwitchApiRequest(body: unknown): TwitchApiRequest | null {
-  if (!body || typeof body !== "object") {
-    return null;
+export function parseTwitchApiRequest(body: unknown): ParsedTwitchApiRequest {
+  const envelope = asRecord(body);
+  if (!envelope) {
+    return { ok: false, error: "Missing command" };
   }
-  const record = body as { command?: unknown; data?: unknown };
-  if (typeof record.command === "string") {
-    return record as TwitchApiRequest;
+  const record = typeof envelope.command === "string" ? envelope : asRecord(envelope.data);
+  if (!record || typeof record.command !== "string" || record.command === "") {
+    return { ok: false, error: "Missing command" };
   }
-  if (record.data && typeof record.data === "object") {
-    return record.data as TwitchApiRequest;
+  if (record.args === undefined) {
+    return { ok: true, request: { command: record.command } };
   }
-  return null;
+  const args = asRecord(record.args);
+  if (!args) {
+    return { ok: false, error: `${record.command}: args must be an object` };
+  }
+  return { ok: true, request: { command: record.command, args } };
 }
 
-/**
- * The error name TwitchClient.init rejects with while no Twitch account is
- * linked. Must match TWITCH_NOT_LINKED in shared/clients/typescript/twitch;
- * not imported, because tests replace that module with a default-only mock.
- */
-const TWITCH_NOT_LINKED = "TwitchNotLinked";
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
 
 /** Whether `err` is TwitchClient's refusal for a missing or blank stored token. */
 function isNotLinked(err: unknown): boolean {
@@ -84,9 +90,8 @@ export type TwitchAppContext = {
   reportFault(reason: string): void;
   /** Absent until connected. */
   broadcaster?: HelixUser;
-  twitchEventBus?: TwitchEventBus;
   /** Absent until connected. */
-  twitchApi?: TwitchApiClient;
+  twitchApi?: TwitchApi;
 };
 
 /** Stamps `twitchapi` replies. */
@@ -96,6 +101,10 @@ export interface TwitchReplyDeps {
 }
 
 export interface TwitchApplicationDeps extends TwitchReplyDeps {
+  /** Every timer the run sets: ad break timing, EventSub settling, lookup deadlines. */
+  timers: Timers;
+  /** Jitter for the ad schedule's rate-limit backoff. */
+  random: RandomSource;
   /**
    * The engine's own chat lines awaiting their echo. Outlives the run, so a
    * line said just before a restart is still known when it comes back.
@@ -127,7 +136,7 @@ interface Connection {
 interface Connected {
   apiClient: ApiClient;
   broadcaster: HelixUser;
-  twitchApi: TwitchApiClient;
+  twitchApi: TwitchApi;
   adBreakScheduler: AdBreakScheduler;
 }
 
@@ -238,7 +247,7 @@ export default class TwitchApplication {
       await this.connect(ctx);
       return;
     }
-    await eventBus.resubscribe(signal);
+    await eventBus.resubscribe(signal, TWITCH_DEFAULTS.subscriptionSettleTimeoutMs);
     signal.throwIfAborted();
     ctx.logger.info("twitch: relinked token applied", {
       established: eventBus.establishedCount(),
@@ -345,7 +354,6 @@ export default class TwitchApplication {
     this.connection = connection;
     ctx.broadcaster = connected.broadcaster;
     ctx.twitchApi = connected.twitchApi;
-    ctx.twitchEventBus = connection.eventBus;
     this.link = "connected";
     void this.track(this.seedLiveState(ctx, connected, signal));
     ctx.logger.info("twitch: connected", { broadcasterId: connected.broadcaster.id });
@@ -372,12 +380,13 @@ export default class TwitchApplication {
     const broadcaster = await untilAborted(connection.client.broadcaster(), signal);
     signal.throwIfAborted();
 
-    const twitchApi = new TwitchApiClientImpl(
+    const twitchApi = new TwitchApi(
       apiClient,
       broadcaster,
       authProvider,
       this.deps.selfSent,
-      enqueueShoutoutOverNats(busRequest(ctx.bus))
+      this.deps.clock,
+      enqueueShoutoutOverNats(busRequest(ctx.bus), TWITCH_DEFAULTS.shoutoutEnqueueTimeoutMs)
     );
     const events = new EventFactory({ source: TWITCH_EVENT_SOURCE });
     const messageBus: EventPublisher = {
@@ -393,16 +402,27 @@ export default class TwitchApplication {
     const adBreakScheduler = new AdBreakScheduler({
       fetchSchedule: () => twitchApi.getAdSchedule({}),
       publishUpcoming: (event) => {
-        void publishEvent(eventTarget, events.Twitch().adBreakUpcoming(event));
+        void publishEvent(eventTarget, () => events.Twitch().adBreakUpcoming(event));
       },
       logger: ctx.logger,
       readLeadSeconds: () => adBreakLeadSetting.read(),
+      clock: this.deps.clock,
+      timers: this.deps.timers,
+      random: this.deps.random,
+      options: {
+        pollIntervalMs: TWITCH_DEFAULTS.adSchedulePollIntervalMs,
+        missingScopeBackoffMs: TWITCH_DEFAULTS.adScheduleMissingScopeBackoffMs,
+        unauthorizedBackoffMs: TWITCH_DEFAULTS.adScheduleUnauthorizedBackoffMs,
+        rateLimitBackoff: TWITCH_DEFAULTS.adScheduleRateLimitBackoff,
+      },
     });
     connection.adBreakScheduler = adBreakScheduler;
 
     const eventBusCtx = {
       broadcaster,
       logger: ctx.logger,
+      clock: this.deps.clock,
+      timers: this.deps.timers,
       messageBus,
       events,
       membershipEnricher: this.buildMembershipEnricher(ctx, apiClient),
@@ -411,7 +431,7 @@ export default class TwitchApplication {
     };
     const eventBus = new TwitchEventBus(eventBusCtx, listener);
     connection.eventBus = eventBus;
-    await eventBus.start(signal);
+    await eventBus.start(signal, TWITCH_DEFAULTS.subscriptionSettleTimeoutMs);
     signal.throwIfAborted();
     if (!eventBus.isReady()) {
       // Deliberately not fatal: the `twitchapi` request/reply surface is
@@ -484,7 +504,6 @@ export default class TwitchApplication {
   private async dropConnection(ctx: TwitchAppContext): Promise<void> {
     const connection = this.connection;
     this.connection = null;
-    ctx.twitchEventBus = undefined;
     ctx.twitchApi = undefined;
     ctx.broadcaster = undefined;
     if (connection) {
@@ -504,7 +523,8 @@ export default class TwitchApplication {
       ctx.logger.info("twitch: chatter membership enrichment disabled by config");
       return undefined;
     }
-    return new ChatterMembershipEnricher(new TwurpleMembershipLookup(apiClient), ctx.logger, {
+    const time = { clock: this.deps.clock, timers: this.deps.timers };
+    return new ChatterMembershipEnricher(new TwurpleMembershipLookup(apiClient), ctx.logger, time, {
       ...DEFAULT_ENRICHER_OPTIONS,
       ttlMs: membership.ttlMs,
       deadlineMs: membership.deadlineMs,
@@ -552,17 +572,18 @@ export default class TwitchApplication {
   }
 
   private async answer(ctx: TwitchAppContext, body: Uint8Array, deadline: number, span: Span): Promise<Uint8Array> {
-    let request: TwitchApiRequest | null;
+    let parsed: ParsedTwitchApiRequest;
     try {
-      request = parseTwitchApiRequest(JSON.parse(decoder.decode(body)));
+      parsed = parseTwitchApiRequest(JSON.parse(decoder.decode(body)));
     } catch (err) {
       ctx.logger.error("twitchapi: failed to parse request", { err: errorMessage(err) });
       return this.errorReply("Invalid request payload");
     }
 
-    if (!request?.command) {
-      return this.errorReply("Missing command");
+    if (!parsed.ok) {
+      return this.errorReply(parsed.error);
     }
+    const request = parsed.request;
 
     if (!ctx.twitchApi) {
       // A relink to another account reconnects in place; Twitch is linked, so
@@ -582,24 +603,25 @@ export default class TwitchApplication {
       ctx.logger.warn("twitchapi: unknown command", { command: request.command });
       return this.errorReply(`Unknown command: ${request.command}`);
     }
+    const command = request.command;
 
-    span.updateName(`twitchapi.${request.command}`);
-    span.setAttribute("rpc.method", request.command);
+    span.updateName(`twitchapi.${command}`);
+    span.setAttribute("rpc.method", command);
 
-    const twitchApi = ctx.twitchApi as unknown as Record<
-      string,
-      (input: unknown, call: TwitchApiCall) => Promise<unknown>
-    >;
     const call: TwitchApiCall = {
       helixDeadlineMs: Math.max(0, Math.min(HELIX_DEADLINE_MS, deadline - this.deps.clock.now())),
     };
 
     try {
-      const result = await twitchApi[request.command](request.args ?? {}, call);
-      return twitchApiReply(twitchApiResultType(request.command), result, this.deps);
+      const outcome = await TWITCH_API_HANDLERS[command](ctx.twitchApi, request.args ?? {}, call);
+      if (!outcome.ok) {
+        ctx.logger.warn("twitchapi: refused invalid args", { command, err: outcome.error });
+        return this.errorReply(`${command}: ${outcome.error}`, outcome.code);
+      }
+      return twitchApiReply(twitchApiResultType(command), outcome.value, this.deps);
     } catch (err) {
       const message = errorMessage(err);
-      ctx.logger.error("twitchapi: handler failed", { command: request.command, err: message });
+      ctx.logger.error("twitchapi: handler failed", { command, err: message });
       return this.errorReply(message, twitchApiErrorCodeOf(err));
     }
   }
@@ -633,31 +655,6 @@ function twitchApiReply(type: string, data: unknown, deps: TwitchReplyDeps): Uin
       data,
     })
   );
-}
-
-/**
- * Settles as `work` does, or rejects with `signal`'s reason once it aborts,
- * whichever comes first. For calls that take no signal of their own: `work`
- * still runs to completion, but nobody waits for it.
- */
-function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) {
-    return Promise.reject(signal.reason);
-  }
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason);
-    signal.addEventListener("abort", onAbort, { once: true });
-    work.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (err: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(err);
-      }
-    );
-  });
 }
 
 /**

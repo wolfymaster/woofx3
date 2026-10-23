@@ -3,6 +3,7 @@ import { ResponseStatus } from "@woofx3/db/common.pb";
 import { ModuleResponse } from "@woofx3/db/module.pb";
 import { GetModuleSecretValuesResponse, ListModuleSettingsResponse } from "@woofx3/db/module_setting.pb";
 import { DeleteSettingRequest, SetSettingRequest, SettingResponse } from "@woofx3/db/setting.pb";
+import { RecordingLogger } from "../host/testing";
 import { dbProxyClientConfig } from "../services/db-proxy";
 import { dbProxyEndpointStore, type EndpointStore } from "./endpoint-store";
 
@@ -11,7 +12,11 @@ const TOKEN = "connectors-db-proxy-token-0123456789abcdef";
 type Answer = Uint8Array | { status: number; code: string; msg: string };
 
 /** A db-proxy that answers each Twirp method from a table, as protobuf, and keeps each request body. */
-function fakeDbProxy(answers: Record<string, Answer>, received: Array<{ method: string; body: Uint8Array }>) {
+function fakeDbProxy(
+  answers: Record<string, Answer>,
+  received: Array<{ method: string; body: Uint8Array }>,
+  logger: RecordingLogger
+) {
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -28,7 +33,7 @@ function fakeDbProxy(answers: Record<string, Answer>, received: Array<{ method: 
       return Response.json({ code: answer.code, msg: answer.msg }, { status: answer.status });
     },
   });
-  const store = dbProxyEndpointStore(dbProxyClientConfig(`http://127.0.0.1:${server.port}`, TOKEN, 1_000));
+  const store = dbProxyEndpointStore(dbProxyClientConfig(`http://127.0.0.1:${server.port}`, TOKEN, 1_000), logger);
   return { server, store };
 }
 
@@ -41,9 +46,10 @@ afterEach(() => {
 
 function serve(
   answers: Record<string, Answer>,
-  received: Array<{ method: string; body: Uint8Array }> = []
+  received: Array<{ method: string; body: Uint8Array }> = [],
+  logger: RecordingLogger = new RecordingLogger()
 ): EndpointStore {
-  const { server, store } = fakeDbProxy(answers, received);
+  const { server, store } = fakeDbProxy(answers, received, logger);
   running = server;
   return store;
 }
@@ -82,7 +88,8 @@ describe("dbProxyEndpointStore", () => {
 
   const relayConfigs: Array<[name: string, stored: string, expected: unknown]> = [
     ["nothing stored", "", null],
-    ["a value that is not a configuration", "not json", null],
+    ["a value that is not JSON", "not json", null],
+    ["a value that is not a configuration", JSON.stringify({ bridgeOrigin: "http://x" }), null],
     [
       "a stored configuration",
       JSON.stringify({
@@ -103,6 +110,17 @@ describe("dbProxyEndpointStore", () => {
       expect(await store.relayConfig()).toEqual(expected as never);
     });
   }
+
+  test("logs a stored relay configuration that is not usable, but not an absent one", async () => {
+    const logger = new RecordingLogger();
+    expect(await serve({ GetSetting: settingAnswer("not json") }, [], logger).relayConfig()).toBeNull();
+    expect(logger.at("warn")).toHaveLength(1);
+    expect(logger.at("warn")[0]?.metadata).toEqual({ error: "relay config is not JSON" });
+
+    const quiet = new RecordingLogger();
+    expect(await serve({ GetSetting: settingAnswer("") }, [], quiet).relayConfig()).toBeNull();
+    expect(quiet.at("warn")).toHaveLength(0);
+  });
 
   const STORED = {
     bridgeOrigin: "https://c-abc.woofx3.tv",

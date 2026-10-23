@@ -54,6 +54,8 @@ function subscribed() {
     },
     events: new EventFactory({ source: "twitch" }),
     selfSent,
+    clock: new FakeTime(),
+    timers: new FakeTime(),
   };
   let deliver: ChatCallback | undefined;
   const listener = {

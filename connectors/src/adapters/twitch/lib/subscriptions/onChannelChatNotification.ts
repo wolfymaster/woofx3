@@ -1,7 +1,12 @@
-import type { EventSubChannelChatNotificationEvent, EventSubSubscription } from "@twurple/eventsub-base";
+import type {
+  EventSubChannelChatNotificationEvent,
+  EventSubChannelChatRaidNotificationEvent,
+  EventSubSubscription,
+} from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
+import type EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import type { Context } from "../../types";
-import { publishEvent } from "../publishEvent";
+import { type EventTuple, publishEvent } from "../publishEvent";
 
 function baseFields(event: EventSubChannelChatNotificationEvent) {
   return {
@@ -22,233 +27,199 @@ export default function onChannelChatNotification(ctx: Context, listener: EventS
     ctx.broadcaster.id,
     ctx.broadcaster.id,
     async (event: EventSubChannelChatNotificationEvent) => {
-      const base = baseFields(event);
-      const twitch = ctx.events.Twitch();
-
-      switch (event.type) {
-        case "sub": {
-          const [topic, data] = twitch.subscribe({
-            isGift: false,
-            tier: event.tier,
-            userId: event.chatterId,
-            userName: event.chatterDisplayName,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "resub": {
-          const [topic, data] = twitch.resub({
-            ...base,
-            tier: event.tier,
-            isPrime: event.isPrime,
-            durationMonths: event.durationMonths,
-            cumulativeMonths: event.cumulativeMonths,
-            streakMonths: event.streakMonths,
-            isGift: event.isGift,
-            gifterIsAnonymous: event.isGifterAnonymous,
-            gifterId: event.gifterId,
-            gifterName: event.gifterDisplayName,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "sub_gift": {
-          const [topic, data] = twitch.subscribe({
-            isGift: true,
-            tier: event.tier,
-            userId: event.recipientId,
-            userName: event.recipientDisplayName,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "community_sub_gift": {
-          const [topic, data] = twitch.subscriptionGift({
-            amount: event.amount,
-            gifterId: event.chatterId,
-            gifterName: event.chatterDisplayName,
-            isAnonymous: event.chatterIsAnonymous,
-            tier: event.tier,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "gift_paid_upgrade": {
-          const [topic, data] = twitch.giftPaidUpgrade({
-            ...base,
-            isGifterAnonymous: event.isGifterAnonymous,
-            gifterId: event.gifterId,
-            gifterName: event.gifterDisplayName,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "prime_paid_upgrade": {
-          const [topic, data] = twitch.primePaidUpgrade({
-            ...base,
-            tier: event.tier,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "raid": {
-          // The channel.raid subscription (onChannelRaid) publishes every raid on this
-          // channel; publishing its chat notice too would announce each raid twice.
-          break;
-        }
-        case "unraid": {
-          const [topic, data] = twitch.unraid({ ...base });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "pay_it_forward": {
-          const [topic, data] = twitch.payItForward({
-            ...base,
-            isGifterAnonymous: event.isGifterAnonymous,
-            gifterId: event.gifterId,
-            gifterName: event.gifterDisplayName,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "announcement": {
-          const [topic, data] = twitch.announcement({
-            ...base,
-            color: event.announcementColor,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "charity_donation": {
-          const [topic, data] = twitch.charityDonation({
-            ...base,
-            charityName: event.charityName,
-            amount: event.amount.localizedValue,
-            currency: event.amount.currency,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "bits_badge_tier": {
-          const [topic, data] = twitch.bitsBadgeTier({
-            ...base,
-            newTier: event.newTier,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "watch_streak": {
-          const [topic, data] = twitch.watchStreak({
-            ...base,
-            streakCount: event.streakCount,
-            channelPointsAwarded: event.channelPointsAwarded,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "shared_chat_sub": {
-          const [topic, data] = twitch.sharedSubscribe({
-            ...base,
-            isGift: false,
-            tier: event.tier,
-            userId: event.chatterId,
-            userName: event.chatterDisplayName,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "shared_chat_resub": {
-          const [topic, data] = twitch.sharedResub({
-            ...base,
-            tier: event.tier,
-            isPrime: event.isPrime,
-            durationMonths: event.durationMonths,
-            cumulativeMonths: event.cumulativeMonths,
-            streakMonths: event.streakMonths,
-            isGift: event.isGift,
-            gifterIsAnonymous: event.isGifterAnonymous,
-            gifterId: event.gifterId,
-            gifterName: event.gifterDisplayName,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "shared_chat_sub_gift": {
-          const [topic, data] = twitch.sharedSubscribe({
-            ...base,
-            isGift: true,
-            tier: event.tier,
-            userId: event.recipientId,
-            userName: event.recipientDisplayName,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "shared_chat_community_sub_gift": {
-          const [topic, data] = twitch.sharedSubscriptionGift({
-            ...base,
-            amount: event.amount,
-            gifterId: event.chatterId,
-            gifterName: event.chatterDisplayName,
-            isAnonymous: event.chatterIsAnonymous,
-            tier: event.tier,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "shared_chat_gift_paid_upgrade": {
-          const [topic, data] = twitch.sharedGiftPaidUpgrade({
-            ...base,
-            isGifterAnonymous: event.isGifterAnonymous,
-            gifterId: event.gifterId,
-            gifterName: event.gifterDisplayName,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "shared_chat_prime_paid_upgrade": {
-          const [topic, data] = twitch.sharedPrimePaidUpgrade({
-            ...base,
-            tier: event.tier,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "shared_chat_raid": {
-          const [topic, data] = twitch.sharedRaid({
-            ...base,
-            fromBroadcasterUserId: event.raiderId,
-            fromBroadcasterUserName: event.raiderDisplayName,
-            viewers: event.viewerCount,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "shared_chat_pay_it_forward": {
-          const [topic, data] = twitch.sharedPayItForward({
-            ...base,
-            isGifterAnonymous: event.isGifterAnonymous,
-            gifterId: event.gifterId,
-            gifterName: event.gifterDisplayName,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        case "shared_chat_announcement": {
-          const [topic, data] = twitch.sharedAnnouncement({
-            ...base,
-            color: event.color,
-          });
-          await publishEvent(ctx, [topic, data]);
-          break;
-        }
-        default: {
-          // Exhaustiveness check: if Twurple adds a new notice_type, this
-          // assignment fails to compile until a case above handles it.
-          const unexpected: never = event;
-          ctx.logger.warn("received unknown chat notification type", { event: unexpected });
-        }
+      // The channel.raid subscription (onChannelRaid) publishes every raid on this
+      // channel; publishing its chat notice too would announce each raid twice.
+      if (event.type === "raid") {
+        return;
       }
+      await publishEvent(ctx, () => notificationEvent(ctx.events, event));
     }
   );
+}
+
+/** The bus event for one chat notification other than a raid in this channel. */
+function notificationEvent(
+  events: EventFactory,
+  event: Exclude<EventSubChannelChatNotificationEvent, EventSubChannelChatRaidNotificationEvent>
+): EventTuple {
+  const base = baseFields(event);
+  const twitch = events.Twitch();
+
+  switch (event.type) {
+    case "sub": {
+      return twitch.subscribe({
+        isGift: false,
+        tier: event.tier,
+        userId: event.chatterId,
+        userName: event.chatterDisplayName,
+      });
+    }
+    case "resub": {
+      return twitch.resub({
+        ...base,
+        tier: event.tier,
+        isPrime: event.isPrime,
+        durationMonths: event.durationMonths,
+        cumulativeMonths: event.cumulativeMonths,
+        streakMonths: event.streakMonths,
+        isGift: event.isGift,
+        gifterIsAnonymous: event.isGifterAnonymous,
+        gifterId: event.gifterId,
+        gifterName: event.gifterDisplayName,
+      });
+    }
+    case "sub_gift": {
+      return twitch.subscribe({
+        isGift: true,
+        tier: event.tier,
+        userId: event.recipientId,
+        userName: event.recipientDisplayName,
+      });
+    }
+    case "community_sub_gift": {
+      return twitch.subscriptionGift({
+        amount: event.amount,
+        gifterId: event.chatterId,
+        gifterName: event.chatterDisplayName,
+        isAnonymous: event.chatterIsAnonymous,
+        tier: event.tier,
+      });
+    }
+    case "gift_paid_upgrade": {
+      return twitch.giftPaidUpgrade({
+        ...base,
+        isGifterAnonymous: event.isGifterAnonymous,
+        gifterId: event.gifterId,
+        gifterName: event.gifterDisplayName,
+      });
+    }
+    case "prime_paid_upgrade": {
+      return twitch.primePaidUpgrade({
+        ...base,
+        tier: event.tier,
+      });
+    }
+    case "unraid": {
+      return twitch.unraid({ ...base });
+    }
+    case "pay_it_forward": {
+      return twitch.payItForward({
+        ...base,
+        isGifterAnonymous: event.isGifterAnonymous,
+        gifterId: event.gifterId,
+        gifterName: event.gifterDisplayName,
+      });
+    }
+    case "announcement": {
+      return twitch.announcement({
+        ...base,
+        color: event.announcementColor,
+      });
+    }
+    case "charity_donation": {
+      return twitch.charityDonation({
+        ...base,
+        charityName: event.charityName,
+        amount: event.amount.localizedValue,
+        currency: event.amount.currency,
+      });
+    }
+    case "bits_badge_tier": {
+      return twitch.bitsBadgeTier({
+        ...base,
+        newTier: event.newTier,
+      });
+    }
+    case "watch_streak": {
+      return twitch.watchStreak({
+        ...base,
+        streakCount: event.streakCount,
+        channelPointsAwarded: event.channelPointsAwarded,
+      });
+    }
+    case "shared_chat_sub": {
+      return twitch.sharedSubscribe({
+        ...base,
+        isGift: false,
+        tier: event.tier,
+        userId: event.chatterId,
+        userName: event.chatterDisplayName,
+      });
+    }
+    case "shared_chat_resub": {
+      return twitch.sharedResub({
+        ...base,
+        tier: event.tier,
+        isPrime: event.isPrime,
+        durationMonths: event.durationMonths,
+        cumulativeMonths: event.cumulativeMonths,
+        streakMonths: event.streakMonths,
+        isGift: event.isGift,
+        gifterIsAnonymous: event.isGifterAnonymous,
+        gifterId: event.gifterId,
+        gifterName: event.gifterDisplayName,
+      });
+    }
+    case "shared_chat_sub_gift": {
+      return twitch.sharedSubscribe({
+        ...base,
+        isGift: true,
+        tier: event.tier,
+        userId: event.recipientId,
+        userName: event.recipientDisplayName,
+      });
+    }
+    case "shared_chat_community_sub_gift": {
+      return twitch.sharedSubscriptionGift({
+        ...base,
+        amount: event.amount,
+        gifterId: event.chatterId,
+        gifterName: event.chatterDisplayName,
+        isAnonymous: event.chatterIsAnonymous,
+        tier: event.tier,
+      });
+    }
+    case "shared_chat_gift_paid_upgrade": {
+      return twitch.sharedGiftPaidUpgrade({
+        ...base,
+        isGifterAnonymous: event.isGifterAnonymous,
+        gifterId: event.gifterId,
+        gifterName: event.gifterDisplayName,
+      });
+    }
+    case "shared_chat_prime_paid_upgrade": {
+      return twitch.sharedPrimePaidUpgrade({
+        ...base,
+        tier: event.tier,
+      });
+    }
+    case "shared_chat_raid": {
+      return twitch.sharedRaid({
+        ...base,
+        fromBroadcasterUserId: event.raiderId,
+        fromBroadcasterUserName: event.raiderDisplayName,
+        viewers: event.viewerCount,
+      });
+    }
+    case "shared_chat_pay_it_forward": {
+      return twitch.sharedPayItForward({
+        ...base,
+        isGifterAnonymous: event.isGifterAnonymous,
+        gifterId: event.gifterId,
+        gifterName: event.gifterDisplayName,
+      });
+    }
+    case "shared_chat_announcement": {
+      return twitch.sharedAnnouncement({
+        ...base,
+        color: event.color,
+      });
+    }
+    default: {
+      // Exhaustiveness check: if Twurple adds a new notice_type, this
+      // assignment fails to compile until a case above handles it.
+      const unexpected: never = event;
+      throw new Error(`unknown chat notification type ${JSON.stringify((unexpected as { type: unknown }).type)}`);
+    }
+  }
 }

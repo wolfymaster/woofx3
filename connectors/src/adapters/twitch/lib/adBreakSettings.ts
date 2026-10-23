@@ -2,7 +2,7 @@
 // module declares it as a setting, so a streamer changes it on the module's
 // page rather than in the engine's deployment configuration.
 
-import type { Logger } from "../../../host/deps";
+import { errorMessage, type Logger } from "../../../host/deps";
 
 /** The Twitch module's manifest id. Must match `id` in woofx3-modules' modules/platform/twitch/manifest.json. */
 export const TWITCH_MODULE_ID = "woofx3_twitch";
@@ -29,11 +29,13 @@ export function parseAdBreakLeadSeconds(value: string): number | null {
  * Reads the lead time from the Twitch module's settings. The default applies
  * when the module is not installed, the setting is empty or not positive
  * whole seconds, or db-proxy cannot be read: a heads-up at the default beats
- * none. It is read on every poll, so a rejected value is logged when it first
- * appears rather than once a minute.
+ * none. It is read on every poll, so a rejected value or a read failure is
+ * logged when it first appears rather than on every poll.
  */
 export class AdBreakLeadSetting {
   private lastRejected: string | null = null;
+  /** Set while the settings cannot be read, so the failure is warned once per outage, not every poll. */
+  private unreadable = false;
 
   constructor(
     private readonly db: ModuleSettingsReader,
@@ -45,11 +47,19 @@ export class AdBreakLeadSetting {
     try {
       settings = await this.db.listModuleSettings(TWITCH_MODULE_ID);
     } catch (err) {
-      this.logger.debug("Twitch module settings unreadable; using the default ad-break lead time", {
-        error: err instanceof Error ? err.message : String(err),
-      });
+      if (!this.unreadable) {
+        this.logger.warn("Twitch module settings unreadable; using the default ad-break lead time", {
+          error: errorMessage(err),
+          defaultSeconds: DEFAULT_AD_BREAK_LEAD_SECONDS,
+        });
+      }
+      this.unreadable = true;
       return DEFAULT_AD_BREAK_LEAD_SECONDS;
     }
+    if (this.unreadable) {
+      this.logger.info("Twitch module settings readable again");
+    }
+    this.unreadable = false;
 
     const raw = settings.find((setting) => setting.key === AD_BREAK_LEAD_SETTING)?.value.trim() ?? "";
     if (raw === "") {

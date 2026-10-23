@@ -1,5 +1,6 @@
 import type { ApiClient } from "@twurple/api";
 import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
+import { type Clock, errorMessage, type Logger, type Timers } from "../../../host/deps";
 
 /**
  * The two membership facts Twitch does not stamp on a chat message.
@@ -75,8 +76,10 @@ export const DEFAULT_ENRICHER_OPTIONS: EnricherOptions = {
   maxEntries: 5000,
 };
 
-interface Logger {
-  warn(message: string, meta?: unknown): void;
+/** What expires cached answers and bounds the wait on a miss. */
+export interface EnricherTime {
+  clock: Clock;
+  timers: Timers;
 }
 
 interface CacheEntry<T> {
@@ -101,6 +104,7 @@ class LookupCache<T> {
   constructor(
     private readonly load: (broadcasterId: string, userId: string) => Promise<T>,
     private readonly options: EnricherOptions,
+    private readonly time: EnricherTime,
     private readonly onFailure: (err: unknown) => void
   ) {}
 
@@ -111,12 +115,12 @@ class LookupCache<T> {
   async resolve(broadcasterId: string, userId: string): Promise<T | undefined> {
     const key = `${broadcasterId}:${userId}`;
     const cached = this.entries.get(key);
-    if (cached && cached.expiresAt > Date.now()) {
+    if (cached && cached.expiresAt > this.time.clock.now()) {
       return cached.value;
     }
 
     const pending = this.inFlight.get(key) ?? this.start(key, broadcasterId, userId);
-    return await withDeadline(pending, this.options.deadlineMs);
+    return await withDeadline(pending, this.options.deadlineMs, this.time.timers);
   }
 
   private start(key: string, broadcasterId: string, userId: string): Promise<T | undefined> {
@@ -138,7 +142,7 @@ class LookupCache<T> {
   }
 
   private store(key: string, value: T | undefined, ttlMs: number): void {
-    const now = Date.now();
+    const now = this.time.clock.now();
     // Re-inserting refreshes the key's position, so eviction below drops
     // the least recently written rather than the least recently seen.
     this.entries.delete(key);
@@ -168,19 +172,16 @@ class LookupCache<T> {
 }
 
 /** Resolve with undefined if `promise` has not settled within `ms`. */
-function withDeadline<T>(promise: Promise<T | undefined>, ms: number): Promise<T | undefined> {
+function withDeadline<T>(promise: Promise<T | undefined>, ms: number, timers: Timers): Promise<T | undefined> {
   return new Promise((resolve) => {
-    // Unreferenced so a pending deadline never holds the process open
-    // during shutdown.
-    const timer = setTimeout(() => resolve(undefined), ms);
-    timer.unref?.();
+    const timer = timers.setTimeout(() => resolve(undefined), ms);
     promise.then(
       (value) => {
-        clearTimeout(timer);
+        timers.clearTimeout(timer);
         resolve(value);
       },
       () => {
-        clearTimeout(timer);
+        timers.clearTimeout(timer);
         resolve(undefined);
       }
     );
@@ -202,16 +203,23 @@ export class ChatterMembershipEnricher {
   private readonly followers: LookupCache<boolean>;
   private readonly tiers: LookupCache<string | null>;
 
-  constructor(lookup: MembershipLookup, logger: Logger, options: EnricherOptions = DEFAULT_ENRICHER_OPTIONS) {
+  constructor(
+    lookup: MembershipLookup,
+    logger: Pick<Logger, "warn">,
+    time: EnricherTime,
+    options: EnricherOptions = DEFAULT_ENRICHER_OPTIONS
+  ) {
     this.followers = new LookupCache(
       (broadcasterId, userId) => lookup.isFollower(broadcasterId, userId),
       options,
-      (err) => logger.warn("twitch: follower lookup failed", { err })
+      time,
+      (err) => logger.warn("twitch: follower lookup failed", { err: errorMessage(err) })
     );
     this.tiers = new LookupCache(
       (broadcasterId, userId) => lookup.subscriberTier(broadcasterId, userId),
       options,
-      (err) => logger.warn("twitch: subscription lookup failed", { err })
+      time,
+      (err) => logger.warn("twitch: subscription lookup failed", { err: errorMessage(err) })
     );
   }
 

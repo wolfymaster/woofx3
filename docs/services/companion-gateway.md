@@ -1,8 +1,8 @@
 # Companion gateway
 
 The companion gateway is the part of the connectors host that reaches
-endpoints on the streamer's own network: OBS today, and later anything else a
-module declares in its manifest's `local[]` (see
+endpoints on the streamer's own network: OBS, through its host adapter, and any
+endpoint a module declares in `local[]`, through module requests (see
 [Local endpoints](./local-endpoints.md)). It runs for the whole life of the
 host, whether or not any adapter is running, and is the engine's one runtime
 path to those endpoints.

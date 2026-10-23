@@ -531,7 +531,7 @@ async fn validate_theme_dependencies(
 /// in barkloader/app/src/services/field_options.rs.
 const FIELD_OPTIONS_SUBJECT: &str = "barkloader.module.field_options";
 
-/// The Twitch service's request subject. It answers any method of its Twitch
+/// The connectors Twitch adapter's request subject. It answers any method of its Twitch
 /// client, writes included (a shoutout, adding a moderator), so a form may
 /// request only the reads listed in `TWITCHAPI_FORM_READS`.
 const TWITCHAPI_SUBJECT: &str = "twitchapi";
@@ -4386,7 +4386,7 @@ mod tests {
     }
 
     #[test]
-    fn accepts_visible_when_naming_a_sibling() {
+    fn test_visible_when_accepts_a_sibling() {
         let both = resource_with_fields(
             r#"[{ "id": "mode", "label": "Mode", "type": "text" },
                 { "id": "color", "label": "Colour", "type": "text",
@@ -4396,7 +4396,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_visible_when_misuse() {
+    fn test_visible_when_rejects_misuse() {
         let cases = [
             (
                 r#"[{ "id": "x", "label": "X", "type": "text",

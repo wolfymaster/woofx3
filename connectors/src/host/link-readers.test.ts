@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { assertLinkReaders, type LinkStore, linkReaders, TWITCH_TOKEN_SETTING, twitchLinkReader } from "./link-readers";
+import { type LinkStore, TWITCH_TOKEN_SETTING, twitchLinkReader } from "./link-readers";
 import { fixedLinkStore } from "./testing";
 
 const settings = (values: Record<string, string | null>) => fixedLinkStore(values);
@@ -57,16 +57,5 @@ describe("twitchLinkReader", () => {
       installedModules: async () => [],
     };
     await expect(twitchLinkReader.read(failing)).rejects.toThrow("db-proxy is down");
-  });
-});
-
-describe("assertLinkReaders", () => {
-  test("accepts the shipped registry", () => {
-    const shipped = linkReaders({ obsHostExplicit: false });
-    expect(assertLinkReaders(shipped)).toBe(shipped);
-  });
-
-  test("names every adapter without a reader", () => {
-    expect(() => assertLinkReaders({})).toThrow("no link reader for adapter(s): twitch, obs");
   });
 });

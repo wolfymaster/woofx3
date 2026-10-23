@@ -1,11 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import type { AdBreakUpcoming } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
-import { AdBreakScheduler, type SchedulerClock } from "./adBreakScheduler";
+import { TWITCH_DEFAULTS } from "../../../config/twitch";
+import type { Clock, TimerHandle, Timers } from "../../../host/deps";
+import { halfRandom } from "../../../host/testing";
+import { AdBreakScheduler, type AdBreakSchedulerOptions } from "./adBreakScheduler";
 import { type AdSchedule, TwitchApiError } from "./twitch";
 
+const OPTIONS: AdBreakSchedulerOptions = {
+  pollIntervalMs: TWITCH_DEFAULTS.adSchedulePollIntervalMs,
+  missingScopeBackoffMs: TWITCH_DEFAULTS.adScheduleMissingScopeBackoffMs,
+  unauthorizedBackoffMs: TWITCH_DEFAULTS.adScheduleUnauthorizedBackoffMs,
+  rateLimitBackoff: TWITCH_DEFAULTS.adScheduleRateLimitBackoff,
+};
+
 /** Timers fire only when a test advances time past them. */
-class FakeClock implements SchedulerClock {
+class FakeClock implements Clock, Timers {
   private timers: { at: number; fn: () => void; cleared: boolean }[] = [];
 
   constructor(private nowMs: number) {}
@@ -14,7 +24,7 @@ class FakeClock implements SchedulerClock {
     return this.nowMs;
   }
 
-  setTimeout(fn: () => void, ms: number): unknown {
+  setTimeout(fn: () => void, ms: number): TimerHandle {
     const timer = { at: this.nowMs + ms, fn, cleared: false };
     this.timers.push(timer);
     return timer;
@@ -27,8 +37,16 @@ class FakeClock implements SchedulerClock {
     }
   }
 
-  clearTimeout(handle: unknown): void {
+  clearTimeout(handle: TimerHandle): void {
     (handle as { cleared: boolean }).cleared = true;
+  }
+
+  setInterval(): TimerHandle {
+    throw new Error("the scheduler chains timeouts; it never sets an interval");
+  }
+
+  clearInterval(): void {
+    throw new Error("the scheduler chains timeouts; it never sets an interval");
   }
 
   /** Like advance, but lets each fired async callback settle before the next. */
@@ -108,6 +126,9 @@ function harness(opts: { leadSeconds?: number; live?: boolean } = {}) {
     logger: { ...silentLogger, warn: (_msg: string, meta: Record<string, unknown>) => warnings.push(meta) } as never,
     readLeadSeconds: async () => state.leadSeconds,
     clock,
+    timers: clock,
+    random: halfRandom,
+    options: OPTIONS,
   });
   // Live, with its own poll loop cancelled: the tests drive polls through
   // pollOnce.
@@ -220,27 +241,32 @@ describe("AdBreakScheduler", () => {
     expect(warnings[0]?.code).toBe("missing_scope");
   });
 
-  test("rate limits back off exponentially and reset on success", async () => {
+  test("rate limits back off with jitter, doubling, and reset on success", async () => {
+    // halfRandom draws half of each ceiling: 1 minute of the first 2, then 2 of 4.
     const { clock, state, scheduler } = harness();
     state.next = new TwitchApiError("rate_limited", "429");
 
     await scheduler.pollOnce();
-    clock.advance(2 * 60_000);
+    clock.advance(60_000);
     await scheduler.pollOnce();
     expect(state.fetches).toBe(2);
 
-    // Second refusal in a row: four minutes, not two.
-    clock.advance(2 * 60_000);
+    // Second refusal in a row: two minutes, not one.
+    clock.advance(60_000);
     await scheduler.pollOnce();
     expect(state.fetches).toBe(2);
-    clock.advance(2 * 60_000);
+    clock.advance(60_000);
     state.next = schedule(T0 + 60 * 60_000);
     await scheduler.pollOnce();
     expect(state.fetches).toBe(3);
 
-    clock.advance(60_000);
+    // A success resets the ceiling: the next refusal waits one minute again.
+    state.next = new TwitchApiError("rate_limited", "429");
     await scheduler.pollOnce();
     expect(state.fetches).toBe(4);
+    clock.advance(60_000);
+    await scheduler.pollOnce();
+    expect(state.fetches).toBe(5);
   });
 
   test("a stopped scheduler announces nothing, even from a poll already in flight", async () => {
@@ -267,6 +293,9 @@ describe("AdBreakScheduler", () => {
       logger: silentLogger,
       readLeadSeconds: async () => 60,
       clock,
+      timers: clock,
+      random: halfRandom,
+      options: OPTIONS,
     });
 
     clock.advance(5 * 60_000);

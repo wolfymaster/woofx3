@@ -2,6 +2,7 @@ import type { BackoffConfig } from "@woofx3/common/runtime";
 import { z } from "zod";
 import type { ObsFallback } from "../adapters/obs/settings";
 import { COMPANION_DEFAULTS } from "./companion";
+import { unsetWhenBlank } from "./env";
 
 /** Defaults for the OBS adapter's connection and tunables. */
 export const OBS_DEFAULTS = {
@@ -42,13 +43,11 @@ export const OBS_SERVED_BUDGETS_MS = {
   refresh: 1_500,
 } as const;
 
+const positiveMs = z.number().int().positive();
+
 // loadRuntimeEnv coerces all-digit values to numbers before the schema sees
 // them, so a numeric password arrives as a number and is turned back into text.
 // A blank value means "unset" for the host, port and password: the default applies.
-const unsetWhenBlank = (value: unknown) => (typeof value === "string" && value.trim() === "" ? undefined : value);
-
-const positiveMs = z.number().int().positive();
-
 export const ObsEnvSchema = z.object({
   // No default here: whether the host was set at all decides if OBS runs
   // without an OBS module (obsConfig's hostExplicit).

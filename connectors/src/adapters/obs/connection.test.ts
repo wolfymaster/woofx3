@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { ObsControlCommand } from "@woofx3/common/cloudevents/Obs/commands";
 import { OBS_DEFAULTS, type ObsConnectionConfig } from "../../config/obs";
-import type { RandomSource, Timers } from "../../host/deps";
+import { type RandomSource, systemTimers, type Timers } from "../../host/deps";
 import { ObsConnection, type ObsSession } from "./connection";
 import { executeObsControlCommand, type ObsControlClient, type ObsControlOptions } from "./control";
 
@@ -9,7 +9,12 @@ const runCommand = (
   obs: ObsControlClient | null,
   command: ObsControlCommand,
   options: Partial<ObsControlOptions> = {}
-) => executeObsControlCommand(obs, command, { timeoutMs: OBS_DEFAULTS.commandTimeoutMs, ...options });
+) =>
+  executeObsControlCommand(obs, command, {
+    timeoutMs: OBS_DEFAULTS.commandTimeoutMs,
+    timers: systemTimers,
+    ...options,
+  });
 
 /** The shipped backoff and open deadline. */
 const CONFIG: Pick<ObsConnectionConfig, "backoff" | "openTimeoutMs"> = {

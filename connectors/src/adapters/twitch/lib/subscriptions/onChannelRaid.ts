@@ -5,12 +5,12 @@ import { publishEvent } from "../publishEvent";
 
 export default function onChannelRaid(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onChannelRaidTo(ctx.broadcaster.id, async (event: EventSubChannelRaidEvent) => {
-    const { raidingBroadcasterId, raidingBroadcasterDisplayName, viewers } = event;
-    const [topic, data] = ctx.events.Twitch().raid({
-      fromBroadcasterUserId: raidingBroadcasterId,
-      fromBroadcasterUserName: raidingBroadcasterDisplayName,
-      viewers,
-    });
-    await publishEvent(ctx, [topic, data]);
+    await publishEvent(ctx, () =>
+      ctx.events.Twitch().raid({
+        fromBroadcasterUserId: event.raidingBroadcasterId,
+        fromBroadcasterUserName: event.raidingBroadcasterDisplayName,
+        viewers: event.viewers,
+      })
+    );
   });
 }

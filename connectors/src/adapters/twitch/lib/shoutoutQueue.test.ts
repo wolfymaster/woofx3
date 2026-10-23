@@ -1,6 +1,9 @@
 import { describe, expect, mock, test } from "bun:test";
-import { enqueueShoutoutOverNats, SHOUTOUT_ENQUEUE_SUBJECT } from "./shoutoutQueue";
+import { SHOUTOUT_ENQUEUE_SUBJECT } from "@woofx3/common/cloudevents/Twitch/commands";
+import { NoRespondersError, RequestError, TimeoutError } from "@woofx3/nats/src/errors";
+import { enqueueShoutoutOverNats } from "./shoutoutQueue";
 
+const TIMEOUT_MS = 8_000;
 const TARGET = { twitchUserId: "7", login: "raider", displayName: "Raider" };
 
 function replying(body: unknown) {
@@ -19,7 +22,7 @@ describe("enqueueShoutoutOverNats", () => {
   test("asks the api service and reads the place in line", async () => {
     const request = replying({ queued: { position: 4, alreadyQueued: false } });
 
-    expect(await enqueueShoutoutOverNats(request)(TARGET)).toEqual({
+    expect(await enqueueShoutoutOverNats(request, TIMEOUT_MS)(TARGET)).toEqual({
       kind: "queued",
       position: 4,
       alreadyQueued: false,
@@ -30,20 +33,24 @@ describe("enqueueShoutoutOverNats", () => {
   });
 
   test("has no queue when the engine's Twitch link is its own, or the api service is not running", async () => {
-    expect(await enqueueShoutoutOverNats(replying({ unavailable: "not via a dashboard" }))(TARGET)).toEqual({
+    expect(await enqueueShoutoutOverNats(replying({ unavailable: "not via a dashboard" }), TIMEOUT_MS)(TARGET)).toEqual(
+      {
+        kind: "no_queue",
+        reason: "not via a dashboard",
+      }
+    );
+    const noResponders = new RequestError("no responders", { cause: new NoRespondersError(SHOUTOUT_ENQUEUE_SUBJECT) });
+    expect(await enqueueShoutoutOverNats(failing(noResponders), TIMEOUT_MS)(TARGET)).toMatchObject({
       kind: "no_queue",
-      reason: "not via a dashboard",
     });
-    const noResponders = new Error("503", { cause: Object.assign(new Error("x"), { name: "NoResponders" }) });
-    expect(await enqueueShoutoutOverNats(failing(noResponders))(TARGET)).toMatchObject({ kind: "no_queue" });
   });
 
   test("throws on a queue error or a timeout, so nothing is sent twice", async () => {
-    await expect(enqueueShoutoutOverNats(replying({ error: "HTTP 500" }))(TARGET)).rejects.toThrow(
+    await expect(enqueueShoutoutOverNats(replying({ error: "HTTP 500" }), TIMEOUT_MS)(TARGET)).rejects.toThrow(
       "could not queue the shoutout: HTTP 500"
     );
-    const timeout = Object.assign(new Error("timeout"), { name: "TimeoutError" });
-    await expect(enqueueShoutoutOverNats(failing(timeout))(TARGET)).rejects.toThrow("did not confirm");
-    await expect(enqueueShoutoutOverNats(replying({ nope: 1 }))(TARGET)).rejects.toThrow("malformed");
+    const timeout = new TimeoutError();
+    await expect(enqueueShoutoutOverNats(failing(timeout), TIMEOUT_MS)(TARGET)).rejects.toThrow("did not confirm");
+    await expect(enqueueShoutoutOverNats(replying({ nope: 1 }), TIMEOUT_MS)(TARGET)).rejects.toThrow("malformed");
   });
 });

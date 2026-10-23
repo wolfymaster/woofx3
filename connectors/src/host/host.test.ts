@@ -515,9 +515,51 @@ describe("Host", () => {
     );
   });
 
+  test("is not running until start finishes, and stopped once stop does", async () => {
+    const { host } = await setup();
+    expect(host.state).toBe("idle");
+
+    const starting = host.start();
+    expect(host.state).toBe("starting");
+    expect(host.isRunning).toBe(false);
+    await starting;
+    expect(host.state).toBe("running");
+    expect(host.isRunning).toBe(true);
+
+    const stopping = host.stop();
+    expect(host.state).toBe("stopping");
+    expect(host.isRunning).toBe(false);
+    await stopping;
+    expect(host.state).toBe("stopped");
+  });
+
   test("refuses a second start", async () => {
     const { host } = await setup();
     await host.start();
-    await expect(host.start()).rejects.toThrow("already running");
+    await expect(host.start()).rejects.toThrow("the host can start only once, from idle; it is running");
+  });
+
+  test("refuses a start after stop", async () => {
+    const { host } = await setup();
+    await host.start();
+    await host.stop();
+    await expect(host.start()).rejects.toThrow("the host can start only once, from idle; it is stopped");
+  });
+
+  test("a host stopped before it started is retired and refuses to start", async () => {
+    const { host } = await setup();
+    await host.stop();
+    expect(host.state).toBe("stopped");
+    await expect(host.start()).rejects.toThrow("it is stopped");
+  });
+
+  test("a stop during start leaves the host stopped, never running", async () => {
+    const { host } = await setup();
+    // The start may fail on the scope the stop closed under it; either way it must not end running.
+    const starting = host.start().catch(() => undefined);
+    await host.stop();
+    await starting;
+    expect(host.state).toBe("stopped");
+    expect(host.isRunning).toBe(false);
   });
 });

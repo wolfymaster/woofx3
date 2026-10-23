@@ -2,7 +2,7 @@ import { COMMAND_PREFIX } from "../../../chat/command-prefix";
 import type { Clock } from "../../../host/deps";
 
 /** U+200B ZERO WIDTH SPACE, which guardChatLine in ./helix.ts may put in front of a line. */
-const ZERO_WIDTH_SPACE = "​";
+export const ZERO_WIDTH_SPACE = "\u200b";
 
 export interface SelfSentConfig {
   /** How many lines are remembered at most; the oldest is forgotten first. */

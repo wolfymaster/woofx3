@@ -12,3 +12,21 @@ export function encode(event: any): Uint8Array {
 export function encodeCommand<TArgs extends object>(payload: { command: string; args: TArgs }): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(payload));
 }
+
+/** The outcome of checking a value from outside the engine: the checked value, or the first problem found. */
+export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+export function ok<T>(value: T): ParseResult<T> {
+  return { ok: true, value };
+}
+
+export function err(error: string): ParseResult<never> {
+  return { ok: false, error };
+}
+
+/** The value as a plain object, or null for anything else, arrays included. */
+export function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}

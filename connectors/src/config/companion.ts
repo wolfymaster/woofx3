@@ -1,6 +1,7 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
 import { RELAY_DASHBOARD_REQUEST_TIMEOUT_MS } from "@woofx3/common/cloudevents/Relay/relay";
 import { z } from "zod";
+import { unsetWhenBlank } from "./env";
 
 /**
  * Outstanding bridge tickets the relay allows per companion instance before it
@@ -84,8 +85,6 @@ export interface ModuleSessionLimits {
 
 // loadRuntimeEnv coerces all-digit values to numbers before the schema sees them.
 // A blank WOOFX3_HOSTING means the deployment does not say, the same as unset.
-const unsetWhenBlank = (value: unknown) => (typeof value === "string" && value.trim() === "" ? undefined : value);
-
 export const CompanionEnvSchema = z.object({
   woofx3Hosting: z.preprocess(unsetWhenBlank, z.string().optional()),
   woofx3CompanionMaxBridgeOpens: z

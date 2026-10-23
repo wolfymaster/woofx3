@@ -25,7 +25,13 @@ export function adapterRegistry(deps: AdapterRegistryDeps): AdapterRegistry {
   return {
     twitch: async () => {
       const { twitchAdapterModule } = await import("../adapters/twitch/adapter");
-      return twitchAdapterModule({ config: deps.config.twitch, clock: deps.clock, ids: deps.ids });
+      return twitchAdapterModule({
+        config: deps.config.twitch,
+        clock: deps.clock,
+        ids: deps.ids,
+        timers: deps.timers,
+        random: deps.random,
+      });
     },
     obs: async () => {
       const { obsAdapterModule } = await import("../adapters/obs/adapter");

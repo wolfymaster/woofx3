@@ -420,7 +420,7 @@ fn single_function_module(name: &str, func_name: &str, code: &str, ext: &str) ->
     }
 }
 
-/// Stands in for the twitch service: answers every `twitchapi` request with
+/// Stands in for the connectors Twitch adapter: answers every `twitchapi` request with
 /// `reply` and records what it was asked.
 struct FakeTwitchService {
     reply: Result<serde_json::Value, RequestError>,

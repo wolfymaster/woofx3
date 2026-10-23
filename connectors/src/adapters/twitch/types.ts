@@ -1,6 +1,6 @@
 import type { HelixUser } from "@twurple/api";
 import type EventFactory from "@woofx3/common/cloudevents/EventFactory";
-import type { Logger } from "../../host/deps";
+import type { Clock, Logger, Timers } from "../../host/deps";
 import type { ChatterMembershipEnricher } from "./lib/chatterMembership";
 import type { SelfSentRegistry } from "./lib/self-sent";
 
@@ -25,6 +25,10 @@ export interface Context {
   membershipEnricher?: ChatterMembershipEnricher;
   /** The engine's own chat lines, claimed as their echoes arrive on the chat feed. */
   selfSent: SelfSentRegistry;
+  /** Read where an event has to be stamped with the time it arrived. */
+  clock: Clock;
+  /** Timers that outlive one callback, such as the synthesized ad break end. */
+  timers: Timers;
   /** Told when stream.online / stream.offline arrives, after it is published. */
   onStreamLiveChange?: (live: boolean) => void;
 }

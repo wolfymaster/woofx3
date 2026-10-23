@@ -5,6 +5,7 @@ import TwitchApiEvents, {
   type TwitchApiReplyCode,
   twitchApiResultType,
 } from "@woofx3/common/cloudevents/Twitch/commands";
+import { requestFailureKind } from "@woofx3/nats/src/errors";
 import { z } from "zod";
 import { errorMessage } from "../host/deps";
 import type { ScopedBus } from "../host/scoped-bus";
@@ -99,26 +100,26 @@ function readReply<T>(reply: Uint8Array, resultType: string, schema: z.ZodType<T
   try {
     body = JSON.parse(new TextDecoder().decode(reply));
   } catch {
-    return failed("the Twitch service sent a reply that is not JSON");
+    return failed("the Twitch adapter sent a reply that is not JSON");
   }
   const envelope = replyEnvelope.safeParse(body);
   if (!envelope.success) {
-    return failed("the Twitch service sent a reply that is not an event");
+    return failed("the Twitch adapter sent a reply that is not an event");
   }
   if (envelope.data.type === TWITCHAPI_ERROR_TYPE) {
     const refusal = refusalData.safeParse(envelope.data.data);
     if (!refusal.success) {
-      return failed("the Twitch service refused the request");
+      return failed("the Twitch adapter refused the request");
     }
     const { error, code } = refusal.data;
     return { ok: false, failure: { kind: "refused", message: error, code: isReplyCode(code) ? code : undefined } };
   }
   if (envelope.data.type !== resultType) {
-    return failed(`the Twitch service sent a reply of an unexpected type (${envelope.data.type})`);
+    return failed(`the Twitch adapter sent a reply of an unexpected type (${envelope.data.type})`);
   }
   const value = schema.safeParse(envelope.data.data);
   if (!value.success) {
-    return failed("the Twitch service sent a reply of an unexpected shape");
+    return failed("the Twitch adapter sent a reply of an unexpected shape");
   }
   return { ok: true, value: value.data };
 }
@@ -127,18 +128,18 @@ function failed(message: string): TwitchApiResult<never> {
   return { ok: false, failure: { kind: "failed", message } };
 }
 
-/** The NATS client's request failures, told apart by name and message. */
 function requestFailure(error: unknown): TwitchApiFailure {
-  const name = error instanceof Error ? error.name : "";
-  const message = errorMessage(error);
-  const cause = error instanceof Error && error.cause instanceof Error ? error.cause.name : "";
-  if (name === "TimeoutError" || message.toLowerCase() === "timeout") {
-    return { kind: "no_answer" };
+  switch (requestFailureKind(error)) {
+    case "timeout": {
+      return { kind: "no_answer" };
+    }
+    case "no_responders": {
+      return { kind: "unreachable" };
+    }
+    case "other": {
+      return { kind: "failed", message: errorMessage(error) };
+    }
   }
-  if (cause === "NoResponders" || message.includes("no responders") || message.includes("503")) {
-    return { kind: "unreachable" };
-  }
-  return { kind: "failed", message };
 }
 
 /**

@@ -12,7 +12,7 @@
 import { type Backoff, createBackoff } from "@woofx3/common/runtime";
 import type { EndpointUnavailableReason } from "../../companion/types";
 import type { ObsConnectionConfig } from "../../config/obs";
-import type { Logger, RandomSource, TimerHandle, Timers } from "../../host/deps";
+import { errorMessage, type Logger, type RandomSource, type TimerHandle, type Timers } from "../../host/deps";
 
 /** One open OBS session: the client to issue requests on, and its lifecycle. */
 export interface ObsSession<TClient> {
@@ -172,7 +172,7 @@ export class ObsConnection<TClient> {
     this.session = null;
     this.generation += 1;
     if (session) {
-      await session.close().catch(() => undefined);
+      await this.closeDropped(session);
     }
   }
 
@@ -187,7 +187,7 @@ export class ObsConnection<TClient> {
     }
     const session = this.session;
     this.dropSession(`OBS session abandoned (${reason}); reconnecting in the background`);
-    void session.close().catch(() => undefined);
+    void this.closeDropped(session);
   }
 
   /**
@@ -207,7 +207,7 @@ export class ObsConnection<TClient> {
     if (session) {
       this.generation += 1;
       this.session = null;
-      void session.close().catch(() => undefined);
+      void this.closeDropped(session);
     }
     this.state = this.hasConnected ? "retrying" : "connecting";
     this.failures = 0;
@@ -238,6 +238,19 @@ export class ObsConnection<TClient> {
 
   // A method rather than an inline comparison: `stop()` can change the state
   // across an await, which the compiler's narrowing does not account for.
+  /**
+   * Closes a session this connection no longer uses. A failure is only
+   * logged: the session is already dropped, so nothing reads it again, and
+   * the next attempt opens a fresh socket either way. Never rejects.
+   */
+  private async closeDropped(session: ObsSession<TClient>): Promise<void> {
+    try {
+      await session.close();
+    } catch (err) {
+      this.options.logger.debug("closing a dropped OBS session failed", { error: errorMessage(err) });
+    }
+  }
+
   private isStopped(): boolean {
     return this.state === "stopped";
   }
@@ -259,7 +272,7 @@ export class ObsConnection<TClient> {
       return;
     }
     if (this.isStopped() || seq !== this.attemptSeq) {
-      await session.close().catch(() => undefined);
+      await this.closeDropped(session);
       return;
     }
     this.onSessionOpened(session);
@@ -297,7 +310,7 @@ export class ObsConnection<TClient> {
       opening.then(
         (session) => {
           if (settled) {
-            void session.close().catch(() => undefined);
+            void this.closeDropped(session);
             return;
           }
           settle();

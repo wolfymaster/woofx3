@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { nonBlank } from "./env";
 
 /** Defaults for the Twitch adapter's tunables. */
 export const TWITCH_DEFAULTS = {
@@ -24,6 +25,31 @@ export const TWITCH_DEFAULTS = {
   selfSentCapacity: 256,
   /** How long an own line waits for its echo; EventSub delivers one within a few seconds. */
   selfSentTtlMs: 30_000,
+  /**
+   * How often the ad schedule is read while the stream is live. The
+   * announcement is armed as a timer from each read, so this bounds how late
+   * a moved ad is noticed, not how late its announcement lands.
+   */
+  adSchedulePollIntervalMs: 60_000,
+  /** How long the ad schedule is left alone after a missing scope, which only a relink fixes. */
+  adScheduleMissingScopeBackoffMs: 15 * 60_000,
+  /** How long the ad schedule is left alone after Twitch refuses the token. */
+  adScheduleUnauthorizedBackoffMs: 5 * 60_000,
+  /** The ad schedule's backoff after consecutive rate limits: jittered, doubling from base to max. */
+  adScheduleRateLimitBackoff: { baseMs: 2 * 60_000, maxMs: 30 * 60_000 },
+  /**
+   * How long a connect waits for Twitch to confirm the EventSub
+   * subscriptions before reporting what it has. Confirmations only start
+   * after `session_welcome`, so this must comfortably exceed connect time.
+   */
+  subscriptionSettleTimeoutMs: 20_000,
+  /**
+   * How long a shoutout waits for the api service to queue it, which waits up
+   * to 5s for the dashboard. Under the 10s a module's `ctx.twitch` call waits
+   * for the twitch adapter, so a slow dashboard surfaces as this error rather
+   * than as the sandbox's own timeout.
+   */
+  shoutoutEnqueueTimeoutMs: 8_000,
 } as const;
 
 // loadRuntimeEnv coerces env strings to boolean/number before the schema sees
@@ -86,9 +112,4 @@ export function twitchConfig(env: TwitchEnv): TwitchConfig {
     sendQueueCap: env.woofx3TwitchSendQueueCap,
     selfSent: { capacity: env.woofx3TwitchSelfSentCapacity, ttlMs: env.woofx3TwitchSelfSentTtlMs },
   };
-}
-
-function nonBlank(value: string | undefined): string | undefined {
-  const text = value?.trim() ?? "";
-  return text === "" ? undefined : text;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
+import { systemClock, systemTimers } from "../../../host/deps";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, type MembershipLookup } from "./chatterMembership";
 
 const BROADCASTER = "b1";
@@ -39,7 +40,12 @@ function fakeLookup(overrides: Partial<MembershipLookup> = {}) {
 }
 
 function newEnricher(lookup: MembershipLookup, options: Partial<typeof DEFAULT_ENRICHER_OPTIONS> = {}) {
-  return new ChatterMembershipEnricher(lookup, fakeLogger(), { ...DEFAULT_ENRICHER_OPTIONS, ...options });
+  return new ChatterMembershipEnricher(
+    lookup,
+    fakeLogger(),
+    { clock: systemClock, timers: systemTimers },
+    { ...DEFAULT_ENRICHER_OPTIONS, ...options }
+  );
 }
 
 describe("ChatterMembershipEnricher", () => {

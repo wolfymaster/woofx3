@@ -16,6 +16,10 @@ export interface HealthSnapshot {
   lastPassAt: number | undefined;
   /** A pass this much older than `now` means the reconcile loop has stopped. */
   loopStaleAfterMs: number;
+  /** Settings passes in a row in which every link read failed. */
+  failedLinkPasses: number;
+  /** This many failed passes in a row means db-proxy is unreachable. */
+  dbProxyUnreachableAfterPasses: number;
   adapters: AdapterReport[];
   hostRequests: Record<string, HostRequestCounters>;
   hostBus: ReturnType<ScopeCounters["snapshot"]>;
@@ -28,6 +32,7 @@ export interface HealthBody {
   status: "ok" | "unhealthy";
   bus: { connected: boolean };
   loop: { alive: boolean; lastPassAt: string | null };
+  dbProxy: { reachable: boolean; failedPasses: number };
   adapters: AdapterHealth[];
   companion: CompanionHealth;
   counters: {
@@ -76,30 +81,40 @@ const REDACTED = "[redacted]";
 /** A key containing any of these words is treated as holding a secret. */
 const SECRET_KEY = /password|token|ticket|credential/i;
 
-/** Copies `value` with every secret-named key's value replaced, at any depth. */
-export function redactDetail(value: unknown): unknown {
+/**
+ * Copies `value` with every secret-named key's value replaced, at any depth.
+ * The copy keeps the shape of `T` except that a replaced value is the string
+ * "[redacted]" whatever type `T` gives it; callers only serialize the result.
+ */
+export function redactDetail<T>(value: T): T {
+  return redactValue(value) as T;
+}
+
+function redactValue(value: unknown): unknown {
   if (Array.isArray(value)) {
-    return value.map(redactDetail);
+    return value.map(redactValue);
   }
   if (typeof value === "object" && value !== null) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, inner]) => [key, SECRET_KEY.test(key) ? REDACTED : redactDetail(inner)])
+      Object.entries(value).map(([key, inner]) => [key, SECRET_KEY.test(key) ? REDACTED : redactValue(inner)])
     );
   }
   return value;
 }
 
 /**
- * Healthy while the bus is connected and the reconcile loop keeps running.
- * An adapter's own state never makes the host unhealthy: a parked adapter
+ * Healthy while the bus is connected, the reconcile loop keeps running and its
+ * link reads reach db-proxy. An adapter's own state never makes the host unhealthy: a parked adapter
  * is reported, and restarting the host would not fix what parked it.
  */
 export function healthBody(snapshot: HealthSnapshot): HealthBody {
   const alive = snapshot.lastPassAt !== undefined && snapshot.now - snapshot.lastPassAt <= snapshot.loopStaleAfterMs;
+  const reachable = snapshot.failedLinkPasses < snapshot.dbProxyUnreachableAfterPasses;
   return {
-    status: snapshot.busConnected && alive ? "ok" : "unhealthy",
+    status: snapshot.busConnected && alive && reachable ? "ok" : "unhealthy",
     bus: { connected: snapshot.busConnected },
     loop: { alive, lastPassAt: iso(snapshot.lastPassAt) },
+    dbProxy: { reachable, failedPasses: snapshot.failedLinkPasses },
     adapters: snapshot.adapters.map(adapterHealth),
     companion: companionHealth(snapshot.companion),
     counters: {
@@ -123,7 +138,7 @@ function adapterHealth(report: AdapterReport): AdapterHealth {
     link: report.link,
     counts: report.counts,
     bus: report.bus,
-    detail: report.detail === null ? null : (redactDetail(report.detail) as Record<string, unknown>),
+    detail: redactDetail(report.detail),
   };
 }
 
@@ -154,7 +169,7 @@ function companionHealth(status: CompanionGatewayStatus): CompanionHealth {
       requests: status.modules.requests,
     },
   };
-  return redactDetail(body) as CompanionHealth;
+  return redactDetail(body);
 }
 
 function iso(ms: number | undefined): string | null {

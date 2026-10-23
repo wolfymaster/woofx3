@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { CALLER_TIMEOUT_MS } from "@woofx3/api/platform-gateway";
+import { HEALTH_CHECK_INTERVAL_MS } from "@woofx3/common/runtime";
 import { connectorsConfig } from "../config";
 import { CHAT_DEFAULTS } from "./chat";
 import { GATEWAY_DEFAULTS } from "./gateway";
@@ -21,6 +22,7 @@ describe("connectorsConfig", () => {
       park: { afterFailures: HOST_DEFAULTS.parkAfterFailures, windowMs: HOST_DEFAULTS.parkWindowMs },
       stopDeadlineMs: HOST_DEFAULTS.stopDeadlineMs,
       dbProxyTimeoutMs: HOST_DEFAULTS.dbProxyTimeoutMs,
+      dbProxyHealthFailures: HOST_DEFAULTS.dbProxyHealthFailures,
       subscriptionLimits: { concurrency: HOST_DEFAULTS.adapterConcurrency, queueCap: HOST_DEFAULTS.adapterQueueCap },
       shutdownDeadlineMs: HOST_DEFAULTS.shutdownDeadlineMs,
     });
@@ -42,6 +44,11 @@ describe("connectorsConfig", () => {
       nkeySeed: undefined,
       token: "12345",
     });
+  });
+
+  test("leaves the bus token unset when it is blank", () => {
+    const config = connectorsConfig({ ...required, woofx3MessagebusToken: "  " });
+    expect(config.bus.token).toBeUndefined();
   });
 
   test("reads the Twitch adapter's settings under their existing names", () => {
@@ -138,6 +145,16 @@ describe("connectorsConfig", () => {
       "a fractional dispatcher reload debounce",
       { ...required, woofx3ConnectorsDispatcherReloadDebounceMs: 2.5 },
       "woofx3ConnectorsDispatcherReloadDebounceMs",
+    ],
+    [
+      "a db-proxy timeout at the runtime health check interval",
+      { ...required, woofx3ConnectorsDbProxyTimeoutMs: HEALTH_CHECK_INTERVAL_MS },
+      `woofx3ConnectorsDbProxyTimeoutMs (${HEALTH_CHECK_INTERVAL_MS}) must be below the runtime health check interval`,
+    ],
+    [
+      "a zero db-proxy health failure count",
+      { ...required, woofx3ConnectorsDbProxyHealthFailures: 0 },
+      "woofx3ConnectorsDbProxyHealthFailures",
     ],
     [
       "an OBS command timeout past its reply budget",

@@ -1,4 +1,8 @@
-import { TWITCHAPI_SERVED_BUDGET_MS, TWITCHAPI_SUBJECT } from "@woofx3/common/cloudevents/Twitch/commands";
+import {
+  SHOUTOUT_ENQUEUE_SUBJECT,
+  TWITCHAPI_SERVED_BUDGET_MS,
+  TWITCHAPI_SUBJECT,
+} from "@woofx3/common/cloudevents/Twitch/commands";
 import { EventType as TwitchEventType } from "@woofx3/common/cloudevents/Twitch/events";
 import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/integration-settings";
 import { TWITCH_TOKEN_SUBJECT } from "@woofx3/twitch/dashboard-auth-provider";
@@ -11,12 +15,12 @@ import type {
   ServedRequestContext,
   Unavailable,
 } from "../../host/adapter";
+import type { RandomSource, Timers } from "../../host/deps";
 import type { LinkState } from "../../host/link-readers";
 import TwitchApplication, { type TwitchAppContext, type TwitchReplyDeps, twitchApiErrorReply } from "./application";
 import { type TwitchEgressSession, twitchEgress } from "./egress";
 import { SelfSentRegistry } from "./lib/self-sent";
 import { SendQueue } from "./lib/send-queue";
-import { SHOUTOUT_ENQUEUE_SUBJECT } from "./lib/shoutoutQueue";
 
 /** Every subject the adapter publishes: one per Twitch event type. */
 export const TWITCH_EVENT_SUBJECTS: readonly string[] = Object.values(TwitchEventType);
@@ -46,6 +50,8 @@ export function twitchApiUnavailableReply(unavailable: Unavailable, deps: Twitch
 
 export interface TwitchAdapterDeps extends TwitchReplyDeps {
   config: TwitchConfig;
+  timers: Timers;
+  random: RandomSource;
 }
 
 /**
@@ -95,7 +101,13 @@ export class TwitchAdapter implements Adapter {
     if (this.run !== undefined) {
       throw new Error("the twitch adapter is already running; the host never starts it twice");
     }
-    const app = new TwitchApplication({ clock: this.deps.clock, ids: this.deps.ids, selfSent: this.selfSent });
+    const app = new TwitchApplication({
+      clock: this.deps.clock,
+      ids: this.deps.ids,
+      timers: this.deps.timers,
+      random: this.deps.random,
+      selfSent: this.selfSent,
+    });
     const appCtx: TwitchAppContext = {
       logger: ctx.logger,
       bus: ctx.bus,
