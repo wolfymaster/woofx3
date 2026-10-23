@@ -43,7 +43,7 @@ function startEngine(logger: SharedLogger) {
     listClients: async () => ({ clients: [] }),
     validateClient: async (_clientId: string, clientSecret: string) =>
       clientSecret === CLIENT_SECRET
-        ? { status: { code: "OK" }, client: { description: "desktop" } }
+        ? { status: { code: "OK" }, client: { description: "desktop", kind: "CLIENT_KIND_REGISTERED", origin: "" } }
         : { status: { code: "NOT_FOUND" } },
   };
   const api = new Api({

@@ -105,6 +105,22 @@ function comparableOrigin(url: URL): string | null {
   return `${url.protocol}//${url.host}`.toLowerCase();
 }
 
+/**
+ * `origin` (an `Origin` header value) in the form origins are compared by, or
+ * null when it is not a URL or has no comparable origin, as `null` does not.
+ * Scheme and host are lowercased and a default port dropped, so
+ * `HTTP://LocalHost:80` and `http://localhost` compare equal.
+ */
+export function comparableOriginOf(origin: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return null;
+  }
+  return comparableOrigin(url);
+}
+
 /** Allows every Host and Origin, with CORS `*`. */
 export const OPEN_REQUEST_GUARD_POLICY: RequestGuardPolicy = { allowedHosts: null, allowedOrigins: null };
 

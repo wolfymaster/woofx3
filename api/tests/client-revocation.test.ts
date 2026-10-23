@@ -62,7 +62,7 @@ function engine() {
         await held;
       }
       return known
-        ? { status: { code: "OK" }, client: { description: clientId } }
+        ? { status: { code: "OK" }, client: { description: clientId, kind: "CLIENT_KIND_REGISTERED", origin: "" } }
         : { status: { code: "NOT_FOUND", message: "Invalid credentials" } };
     },
     async listClients() {

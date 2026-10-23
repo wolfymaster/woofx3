@@ -241,6 +241,12 @@ On Postgres the old row versions stay on disk until the server's (auto)vacuum
 reclaims them. On either, a backup taken before the upgrade still holds the
 plain text; replace or destroy it as you would any copy of a credential.
 
+A client a browser obtained by pairing (see `docs/services/pairing.md`) is
+bound to the web origin it paired from. `authenticate` refuses its
+credentials from any other origin, or from a request with no `Origin`, with
+the same refusal as wrong credentials. A registered client has no such
+binding.
+
 Who may register is set by `WOOFX3_REGISTRATION_MODE`:
 
 | Mode | Who may register |

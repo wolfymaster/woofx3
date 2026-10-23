@@ -57,7 +57,7 @@ async function startEngine() {
   const webhooks = new WebhookClient(db as never, logger, stream);
   api.setWebhookClient(webhooks);
   await webhooks.refreshCallbackUrls();
-  const auth = { validate: async () => ({ kind: "accepted", description: "desktop" }) };
+  const auth = { validate: async () => ({ kind: "accepted", description: "desktop", boundOrigin: null }) };
   const gateway = new ApiGateway(
     api,
     auth as never,

@@ -49,7 +49,9 @@ describe("ApiGateway.registerClient", () => {
     const api = newApi(db, logger);
     const webhook = new WebhookClient(db, logger, new EngineEventStream(logger));
     api.setWebhookClient(webhook);
-    const auth = { validate: mock(async () => ({ kind: "accepted", description: "test-ui" })) } as any;
+    const auth = {
+      validate: mock(async () => ({ kind: "accepted", description: "test-ui", boundOrigin: null })),
+    } as any;
     const gateway = new ApiGateway(api, auth, db, logger, OPEN, new ClientSessions(logger));
     gateway.setWebhookClient(webhook);
 
@@ -82,7 +84,7 @@ describe("ApiGateway.registerClient", () => {
     api.setWebhookClient(webhook);
     const gateway = new ApiGateway(
       api,
-      { validate: mock(async () => ({ kind: "accepted", description: "test-ui" })) } as any,
+      { validate: mock(async () => ({ kind: "accepted", description: "test-ui", boundOrigin: null })) } as any,
       db,
       logger,
       OPEN,
@@ -101,7 +103,7 @@ describe("ApiGateway.registerClient", () => {
     const logger = fakeLogger();
     const gateway = new ApiGateway(
       newApi(db, logger),
-      { validate: mock(async () => ({ kind: "accepted", description: "test-ui" })) } as any,
+      { validate: mock(async () => ({ kind: "accepted", description: "test-ui", boundOrigin: null })) } as any,
       db,
       logger,
       OPEN,
@@ -127,7 +129,10 @@ describe("ApiGateway.authenticate", () => {
     const logger = fakeLogger();
     return new ApiGateway(newApi(db, logger), new ClientAuth(db, logger), db, logger, OPEN, new ClientSessions(logger));
   }
-  const ACCEPTED = async () => ({ status: { code: "OK" }, client: { description: "test-ui" } });
+  const ACCEPTED = async () => ({
+    status: { code: "OK" },
+    client: { description: "test-ui", kind: "CLIENT_KIND_REGISTERED", origin: "" },
+  });
   const NOT_FOUND = async () => ({ status: { code: "NOT_FOUND", message: "Invalid credentials" } });
 
   it("returns a session for accepted credentials", async () => {
