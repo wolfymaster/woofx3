@@ -264,9 +264,10 @@ lockfiles together.
 ## The OBS adapter
 
 `connectors/src/adapters/obs/` holds the engine's one obs-websocket
-connection (see [OBS control](./obs.md)). The local endpoint dialer and the
-store it reads routes from live in `connectors/src/companion/` (see
-[Local endpoints](./local-endpoints.md)).
+connection (see [OBS control](./obs.md)). It claims the OBS module's
+endpoint, `woofx3_obs/obs`, and asks the host's
+[companion gateway](#the-companion-gateway) for a route on every connect
+attempt.
 
 - **When it runs.** While a module that controls OBS is installed and active,
   or `WOOFX3_OBS_HOST` is set (see [Linked and enabled](#linked-and-enabled)).
@@ -275,8 +276,8 @@ store it reads routes from live in `connectors/src/companion/` (see
   connection retries in the background with the shared capped, full-jitter
   backoff (`createBackoff` from `@woofx3/runtime`), from
   `WOOFX3_OBS_BACKOFF_INITIAL_MS` up to `WOOFX3_OBS_BACKOFF_MAX_MS`.
-- **Start.** Each start builds a fresh OBS service over the host's db-proxy
-  client and the adapter's scoped bus, subscribes to
+- **Start.** Each start builds a fresh OBS service over `ctx.companion` and
+  the adapter's scoped bus, subscribes to
   `db.module.setting.updated.*` (a change to the `woofx3_obs` module's
   settings reconnects at once) and `engine.relay.config.updated` (a change
   that moves OBS to another route reconnects), and starts connecting. It
@@ -286,12 +287,12 @@ store it reads routes from live in `connectors/src/companion/` (see
   stays live for the whole run; when it aborts, the connection stops dialing
   as a stop does.
 - **Stop.** Closes the OBS session, cancels any pending retry and ends the
-  open deadline and OBS connect timer of an attempt in flight; a relay
-  credential request already sent finishes on its own (bounded by its own
-  timeout), and a session that opens after the stop is closed at once. The host then closes
+  open deadline and OBS connect timer of an attempt in flight, abandoning a
+  route resolution in flight, and a session that opens after the stop is
+  closed at once. The host then closes
   the adapter's subscriptions.
-- **Manifest.** Publishes nothing, requests `engine.relay.credential` from the
-  api, and serves:
+- **Manifest.** Publishes nothing, requests nothing (the companion gateway
+  asks the api for bridge credentials), claims `woofx3_obs/obs`, and serves:
 
 | Subject | Budget | While the adapter is not running |
 |---|---|---|
@@ -309,6 +310,16 @@ store it reads routes from live in `connectors/src/companion/` (see
   [Local endpoints → Overlay recovery](./local-endpoints.md#overlay-recovery).
 - **`/health` detail.** `state`, `failure`, `route` and `address`, as in
   `engine.obs.status`; never the password or a bridge ticket.
+
+## The companion gateway
+
+The host builds one [companion gateway](./companion-gateway.md) before the
+supervisor and stops it after every adapter has stopped. It holds the claims
+every adapter manifest makes (`localEndpoints`), checked at startup, and hands
+each adapter a handle scoped to its own claims as `ctx.companion`. On the
+host's bus scope it subscribes to `engine.relay.config.updated` and
+`db.module.setting.updated.*` for route changes, and requests
+`engine.relay.credential` from the api.
 
 ### The stream session
 
@@ -336,6 +347,14 @@ still stamps the current session.
 The platform gateway's own settings (`WOOFX3_CONNECTORS_GATEWAY_*`) are listed
 in [Platform gateway contract](./platform-gateway.md#configuration-and-health).
 
+The companion gateway reads:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WOOFX3_HOSTING` | unset | How the engine is run: `local`, `self` or `managed`. On `local` every endpoint is dialed directly. Any other value stops connectors at startup. |
+| `WOOFX3_COMPANION_MAX_BRIDGE_OPENS` | `8` | Bridge opens in flight at once, 1 to 16 (the relay's own limit). |
+| `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` | `5000` | One ticket exchange with the relay. |
+
 The Twitch adapter reads:
 
 | Variable | Default | Meaning |
@@ -362,7 +381,7 @@ and these tunables:
 | `WOOFX3_OBS_BACKOFF_INITIAL_MS` | `1000` | First retry ceiling after OBS could not be reached. |
 | `WOOFX3_OBS_BACKOFF_MAX_MS` | `30000` | Retry ceiling cap; at least the initial value. |
 | `WOOFX3_OBS_CONNECT_TIMEOUT_MS` | `3000` | One WebSocket connect and sign-in. Below the open timeout. |
-| `WOOFX3_OBS_OPEN_TIMEOUT_MS` | `15000` | One attempt, from dialing to a session ready for requests. Through the companion it must exceed the relay credential request (5000, 6000 once the companion gateway owns credentials) plus the ticket exchange (5000) plus the upgrade. |
+| `WOOFX3_OBS_OPEN_TIMEOUT_MS` | `15000` | One attempt, from dialing to a session ready for requests. Through the companion it must exceed the relay credential request (5000) plus `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` plus the upgrade; startup refuses one that does not exceed the first two. |
 | `WOOFX3_OBS_COMMAND_TIMEOUT_MS` | `3500` | One command or listing in OBS before the session is recycled. Below the 4500 ms reply budget of `engine.obs.command` and `engine.obs.options`. |
 
 The host also reads the bus settings (`WOOFX3_MESSAGEBUS_URL`, `_JWT`, `_NKEY`,
@@ -398,6 +417,13 @@ fix what parked it.
       "detail": { "broadcasterId": null, "eventSub": null }
     }
   ],
+  "companion": {
+    "hosting": null,
+    "endpoints": [
+      { "moduleId": "woofx3_obs", "endpointId": "obs", "owner": "obs", "route": "direct", "address": "127.0.0.1:4455", "lastFailure": null }
+    ],
+    "bridgeOpens": { "inUse": 0, "limit": 8, "refused": 0 }
+  },
   "counters": {
     "hostRequests": { "twitchapi": { "received": 3, "replied": 3, "invalid": 0, "internal": 0, "expired": 0, "no_inbox": 0 } },
     "hostBus": { "refusals": 0, "subscriptions": {} },
@@ -414,6 +440,11 @@ seeing at a glance, and `null` when it has none or it throws (the throw is logge
 once). The host replaces the value of any key whose name contains `password`,
 `token`, `ticket` or `credential` (any case, at any depth) with `"[redacted]"`.
 Adapters must still keep secrets out of `detail()`.
+
+`companion` lists every endpoint an adapter claims, from startup, with where
+its latest route resolution went and its latest failure; see
+[Companion gateway → Health](./companion-gateway.md#health). It is redacted
+the same way.
 
 Any other path or method answers `404` with
 `{"error": {"code": "not_found", "message": "..."}}`.

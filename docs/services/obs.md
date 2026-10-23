@@ -91,11 +91,13 @@ Installing the module registers its defaults (`127.0.0.1` and `4455`), so from
 then on the module's host and port are used; the variables still supply a
 password the module leaves empty.
 
-A connect attempt goes through the engine's endpoint dialer, which picks the
-route: straight to that address, or, when the dashboard routed OBS through the
-woofx3 companion on the streamer's PC, through the companion's bridge. A cloud
+A connect attempt asks the engine's
+[companion gateway](./companion-gateway.md), which picks the route: straight
+to that address, or, when the dashboard routed OBS through the woofx3
+companion on the streamer's PC, through the companion's bridge. A cloud
 engine needs the bridge, because it cannot reach `127.0.0.1` on the
-streamer's PC. Through the bridge the companion supplies the address, and the
+streamer's PC. An engine running on that PC (`WOOFX3_HOSTING=local`) always
+dials OBS directly. Through the bridge the companion supplies the address, and the
 module's `password` still signs in to OBS end to end. See
 [Local endpoints and the companion bridge](./local-endpoints.md). A change to
 the relay configuration (`engine.relay.config.updated`) that moves OBS to

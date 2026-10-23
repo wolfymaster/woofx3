@@ -689,9 +689,23 @@ holds only descriptive facts that are safe for anyone to read:
   It includes the hosting ids for `WOOFX3_HOSTING`, as below.
 
 `WOOFX3_HOSTING` declares how the engine is run: `managed`, `self` or `local`.
-`getEngineInfo()` reports it as `hosting`, and `local` adds the
+Both the api and connectors read it, so set it where both read their
+configuration. `getEngineInfo()` reports it as `hosting`, and `local` adds the
 `engine.localMode` capability. Unset, `getEngineInfo()` has no `hosting` field
-and no hosting capability is listed; any other value stops the api at startup.
+and no hosting capability is listed; any other value stops the api and
+connectors at startup.
+
+For connectors it decides how local endpoints such as OBS are reached (see
+[Companion gateway → Routes](./companion-gateway.md#routes)):
+
+| Value | Who runs the engine | Local endpoints |
+|---|---|---|
+| `local` | the desktop app, on the streamer's own PC | always dialed directly; a relay configuration that routes an endpoint through the companion is ignored and logged once |
+| `self` | its owner, on infrastructure they operate | through the companion's bridge when the dashboard routes the endpoint there, otherwise directly |
+| `managed` | the woofx3 cloud | the same as `self` |
+| unset | not declared | the same as `self` |
+
+Development worktrees (`scripts/worktree.sh`) write `local`.
 
 Readiness is deliberately strict about the message bus. barkloader reports
 ready once its bundled modules are installed, and it can only report anything
