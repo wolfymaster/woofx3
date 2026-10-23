@@ -28,8 +28,8 @@ export interface BusConfig {
   url: string;
   jwt?: string;
   nkeySeed?: string;
-  /** Blank when the bus takes no token. */
-  token: string;
+  /** Unset when the bus takes no token. */
+  token?: string;
 }
 
 export function busConfig(env: BusEnv): BusConfig {
@@ -37,7 +37,7 @@ export function busConfig(env: BusEnv): BusConfig {
     url: env.woofx3MessagebusUrl,
     jwt: nonBlank(env.woofx3MessagebusJwt),
     nkeySeed: nonBlank(env.woofx3MessagebusNKey),
-    token: nonBlank(env.woofx3MessagebusToken) ?? "",
+    token: nonBlank(env.woofx3MessagebusToken),
   };
 }
 

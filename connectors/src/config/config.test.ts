@@ -43,6 +43,11 @@ describe("connectorsConfig", () => {
     });
   });
 
+  test("leaves the bus token unset when it is blank", () => {
+    const config = connectorsConfig({ ...required, woofx3MessagebusToken: "  " });
+    expect(config.bus.token).toBeUndefined();
+  });
+
   test("reads the Twitch adapter's settings under their existing names", () => {
     const config = connectorsConfig({ ...required, woofx3TwitchChannelName: "mychannel" });
     expect(config.twitch.channel).toBe("mychannel");
