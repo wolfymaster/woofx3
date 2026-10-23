@@ -49,6 +49,16 @@ export interface BaseEvent<T> {
    * publishes on behalf of several different origins, and only this says which.
    */
   triggeredBy?: string;
+  /**
+   * CloudEvents extension attribute naming the workflow runs that led to this
+   * event, oldest first, as comma-separated workflow ids. The workflow engine
+   * refuses a run whose chain is too long, which is what stops a workflow
+   * that keeps triggering itself. Must match WorkflowChain in
+   * workflow/internal/types/types.go.
+   *
+   * Absent on an event nothing in a workflow caused.
+   */
+  workflowChain?: string;
   data: T;
 }
 

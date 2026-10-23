@@ -44,6 +44,7 @@ type AppServices struct {
 	barkloader *barkloader.Client
 	messageBus *natsclient.Client
 	alertLog   dbv1.AlertService
+	gateway    PlatformGateway
 }
 
 func (s AppServices) Barkloader() *barkloader.Client {
@@ -61,11 +62,18 @@ func (s AppServices) AlertLog() dbv1.AlertService {
 	return s.alertLog
 }
 
+// PlatformGateway is the one way an action produces an effect on a streaming
+// platform, such as posting a chat line.
+func (s AppServices) PlatformGateway() PlatformGateway {
+	return s.gateway
+}
+
 func buildAppServices() AppServices {
 	return AppServices{
 		barkloader: resolveService[*barkloader.Client]("barkloader"),
 		messageBus: resolveService[*natsclient.Client]("messageBus"),
 		alertLog:   resolveService[dbv1.AlertService]("alertLog"),
+		gateway:    resolveService[PlatformGateway]("platformGateway"),
 	}
 }
 

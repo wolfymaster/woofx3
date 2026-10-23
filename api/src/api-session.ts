@@ -10,6 +10,7 @@ import type {
   TwitchAccessToken,
   Woofx3EngineApi,
 } from "@woofx3/api";
+import type { SendToPlatformsParams } from "@woofx3/api/platform-gateway";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 
@@ -81,6 +82,11 @@ export class ApiSession extends RpcTarget {
 
   async setRelayConfig(config: RelayConfig | null) {
     return this.api.setRelayConfig(config, { clientId: this.clientId });
+  }
+
+  /** Who is asking comes from the session, not the caller. */
+  async sendToPlatforms(params: SendToPlatformsParams) {
+    return this.api.sendToPlatforms(params, { clientId: this.clientId });
   }
 
   async uninstallModule(moduleKey: string) {
@@ -219,6 +225,7 @@ export const RPC_METHODS = [
   "requestProcessing",
   "setTwitchToken",
   "setRelayConfig",
+  "sendToPlatforms",
   "deleteTwitchToken",
   "getTwitchLink",
   "startTwitchDeviceLogin",

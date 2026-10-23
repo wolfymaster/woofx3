@@ -24,7 +24,7 @@ function token(overrides: Partial<DashboardToken> = {}): DashboardToken {
 describe("DashboardAuthProvider", () => {
   test("serves the current token without asking the dashboard while it is valid", async () => {
     const request = mock(async () => token({ accessToken: "access-2" }));
-    const provider = new DashboardAuthProvider(token(), request, () => NOW + 1_000);
+    const provider = new DashboardAuthProvider(token(), request, { now: () => NOW + 1_000 });
     expect((await provider.getAccessTokenForUser("42"))?.accessToken).toBe("access-1");
     expect((await provider.getAccessTokenForIntent())?.accessToken).toBe("access-1");
     expect(provider.clientId).toBe("woofx3-app");
@@ -33,7 +33,7 @@ describe("DashboardAuthProvider", () => {
 
   test("asks the dashboard for a new token once the current one is about to expire", async () => {
     const request = mock(async () => token({ accessToken: "access-2", obtainmentTimestamp: NOW + 3_600_000 }));
-    const provider = new DashboardAuthProvider(token(), request, () => NOW + 3_590_000);
+    const provider = new DashboardAuthProvider(token(), request, { now: () => NOW + 3_590_000 });
     expect((await provider.getAccessTokenForUser("42"))?.accessToken).toBe("access-2");
     expect(request).toHaveBeenCalledWith(false);
   });
@@ -41,7 +41,7 @@ describe("DashboardAuthProvider", () => {
   test("concurrent callers share one request", async () => {
     let resolve: (value: DashboardToken) => void = () => {};
     const request = mock(() => new Promise<DashboardToken>((r) => (resolve = r)));
-    const provider = new DashboardAuthProvider(token(), request, () => NOW + 4_000_000);
+    const provider = new DashboardAuthProvider(token(), request, { now: () => NOW + 4_000_000 });
     const calls = [
       provider.getAnyAccessToken(),
       provider.getAccessTokenForUser({ id: "42" }),
@@ -55,14 +55,14 @@ describe("DashboardAuthProvider", () => {
 
   test("a refresh Twitch asked for forces a new token even before expiry", async () => {
     const request = mock(async () => token({ accessToken: "access-2" }));
-    const provider = new DashboardAuthProvider(token(), request, () => NOW);
+    const provider = new DashboardAuthProvider(token(), request, { now: () => NOW });
     expect((await provider.refreshAccessTokenForUser(42)).accessToken).toBe("access-2");
     expect(request).toHaveBeenCalledWith(true);
   });
 
   test("has no token for any account but the linked one", async () => {
     const request = mock(async () => token());
-    const provider = new DashboardAuthProvider(token(), request, () => NOW);
+    const provider = new DashboardAuthProvider(token(), request, { now: () => NOW });
     expect(await provider.getAccessTokenForUser("7")).toBeNull();
     expect(provider.getCurrentScopesForUser("7")).toEqual([]);
     await expect(provider.refreshAccessTokenForUser("7")).rejects.toThrow("only the linked account");
@@ -72,17 +72,63 @@ describe("DashboardAuthProvider", () => {
     const request = mock(async () => {
       throw new Error("dashboard unreachable");
     });
-    const provider = new DashboardAuthProvider(token(), request, () => NOW + 4_000_000);
+    const provider = new DashboardAuthProvider(token(), request, { now: () => NOW + 4_000_000 });
     await expect(provider.getAnyAccessToken()).rejects.toThrow("dashboard unreachable");
     await expect(provider.getAnyAccessToken()).rejects.toThrow("dashboard unreachable");
     expect(request).toHaveBeenCalledTimes(2);
+  });
+
+  test("reports each failed or refused request once, however many callers shared it", async () => {
+    const cases: Array<[name: string, request: () => Promise<DashboardToken>, message: string]> = [
+      [
+        "unreachable",
+        async () => {
+          throw new Error("dashboard unreachable");
+        },
+        "dashboard unreachable",
+      ],
+      [
+        "refused",
+        async () => {
+          throw new Error("the api service could not get a Twitch token: relink_required");
+        },
+        "relink_required",
+      ],
+      ["non-error rejection", () => Promise.reject("timeout"), "timeout"],
+    ];
+    for (const [name, request, message] of cases) {
+      const failures: Error[] = [];
+      const provider = new DashboardAuthProvider(token(), request, {
+        now: () => NOW + 4_000_000,
+        onRequestFailure: (error) => failures.push(error),
+      });
+      const settled = await Promise.allSettled([provider.getAnyAccessToken(), provider.refreshAccessTokenForIntent()]);
+      for (const outcome of settled) {
+        expect(outcome.status === "rejected" ? String(outcome.reason) : "fulfilled", name).toContain(message);
+      }
+      expect(
+        failures.map((error) => error.message),
+        name
+      ).toEqual([expect.stringContaining(message)]);
+    }
+  });
+
+  test("a successful request reports no failure", async () => {
+    const onRequestFailure = mock((_error: Error) => {});
+    const provider = new DashboardAuthProvider(
+      token(),
+      mock(async () => token({ accessToken: "access-2" })),
+      { now: () => NOW, onRequestFailure }
+    );
+    expect((await provider.refreshAccessTokenForIntent()).accessToken).toBe("access-2");
+    expect(onRequestFailure).not.toHaveBeenCalled();
   });
 
   test("replace swaps in a token the dashboard pushed", async () => {
     const provider = new DashboardAuthProvider(
       token(),
       mock(async () => token()),
-      () => NOW
+      { now: () => NOW }
     );
     provider.replace(token({ accessToken: "relinked", scope: ["chat:read", "channel:manage:broadcast"] }));
     expect((await provider.getAnyAccessToken()).accessToken).toBe("relinked");

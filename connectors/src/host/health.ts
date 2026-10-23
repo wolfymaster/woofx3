@@ -3,6 +3,7 @@ import type { ModuleRequestCounters } from "../companion/module-requests";
 import type { BridgeOpensStatus, CompanionGatewayStatus, EndpointStatus } from "../companion/types";
 import type { GatewayCounters } from "../gateway/platform-gateway";
 import type { AdapterStatus } from "./adapter";
+import type { ChatSnapshot } from "./chat-service";
 import type { HostRequestCounters } from "./host-requests";
 import type { ScopeCounters } from "./scoped-bus";
 import type { AdapterReport } from "./supervisor";
@@ -19,6 +20,7 @@ export interface HealthSnapshot {
   hostRequests: Record<string, HostRequestCounters>;
   hostBus: ReturnType<ScopeCounters["snapshot"]>;
   gateway: GatewayCounters;
+  chat: ChatSnapshot;
   companion: CompanionGatewayStatus;
 }
 
@@ -32,6 +34,7 @@ export interface HealthBody {
     hostRequests: Record<string, HostRequestCounters>;
     hostBus: ReturnType<ScopeCounters["snapshot"]>;
     gateway: GatewayCounters;
+    chat: ChatSnapshot;
   };
 }
 
@@ -99,7 +102,12 @@ export function healthBody(snapshot: HealthSnapshot): HealthBody {
     loop: { alive, lastPassAt: iso(snapshot.lastPassAt) },
     adapters: snapshot.adapters.map(adapterHealth),
     companion: companionHealth(snapshot.companion),
-    counters: { hostRequests: snapshot.hostRequests, hostBus: snapshot.hostBus, gateway: snapshot.gateway },
+    counters: {
+      hostRequests: snapshot.hostRequests,
+      hostBus: snapshot.hostBus,
+      gateway: snapshot.gateway,
+      chat: snapshot.chat,
+    },
   };
 }
 

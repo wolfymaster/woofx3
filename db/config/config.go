@@ -145,7 +145,7 @@ func (c *DatabaseEnvConfig) AllowedHosts() []string {
 // go stale constantly), and a restricted command with no group or user grant
 // configured, which means "no restriction" rather than "deny all". Putting it
 // in the matcher keeps both enforcement paths - db-proxy's GetCommand hook and
-// woofwoofwoof's canUse -> HasPermission - agreeing without either of them
+// the connectors chat dispatcher's HasPermission check - agreeing without either of them
 // special-casing it in application code.
 func GetCasbinModelString() (string, error) {
 	return `

@@ -1,7 +1,7 @@
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
-import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { Context } from "../types";
 import TwitchEventBus from "./twitchEventBus";
 
@@ -81,6 +81,7 @@ function minimalContext(): Context {
     } as unknown as Context["logger"],
     messageBus: { publish: mock(() => {}) } as unknown as Context["messageBus"],
     events: {} as Context["events"],
+    selfSent: {} as Context["selfSent"],
   };
 }
 

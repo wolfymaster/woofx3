@@ -194,30 +194,6 @@ services:
     networks:
       - woofx3
 
-  woofwoofwoof:
-    image: woofx3-dev
-    restart: unless-stopped
-    working_dir: /app/woofwoofwoof
-    command: sh -c "bun install && bun run src/woofwoofwoof.ts"
-    environment:
-      FORCE_COLOR: "1"
-      WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
-      WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
-      WOOFX3_BARKLOADER_KEY: *dev-barkloader-key
-      WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token
-    volumes:
-      - ./.woofx3.json:/app/.woofx3.json:ro
-      - ./woofwoofwoof:/app/woofwoofwoof
-      - woofwoofwoof-node-modules:/app/woofwoofwoof/node_modules
-      - ./shared:/app/shared
-    env_file:
-      - path: ./.env
-        required: false
-    depends_on:
-      - messagebus
-    networks:
-      - woofx3
-
 volumes:
   go-mod-cache:
   go-build-cache:
@@ -226,7 +202,6 @@ volumes:
   barkloader-target:
   api-node-modules:
   connectors-node-modules:
-  woofwoofwoof-node-modules:
 
 networks:
   woofx3:

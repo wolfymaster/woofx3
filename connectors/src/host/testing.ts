@@ -6,6 +6,7 @@ import { CompanionEnvSchema, companionConfig } from "../config/companion";
 import type { Adapter, AdapterContext, AdapterManifest, EgressHandlers, ServedSubject, Unavailable } from "./adapter";
 import type { AdapterId } from "./adapter-ids";
 import type { Clock, IdSource, Logger, LogMetadata, RandomSource, TimerHandle, Timers } from "./deps";
+import type { HostCompanionDeps } from "./host";
 import {
   type InstalledModule,
   type LinkReaderRegistry,
@@ -13,7 +14,6 @@ import {
   type LinkStore,
   linkReaders,
 } from "./link-readers";
-import type { HostCompanionDeps } from "./host";
 import { type BusClient, type BusHandler, type BusMessage, type BusSubscription, subjectCovered } from "./scoped-bus";
 
 /** An endpoint store with nothing installed and nothing routed through a companion. */
@@ -225,7 +225,11 @@ export class FakeBus implements BusClient {
     };
   }
 
-  async request(subject: string): Promise<{ subject: string; data: Uint8Array }> {
+  async request(
+    subject: string,
+    _data: Uint8Array,
+    _opts: { timeout: number }
+  ): Promise<{ subject: string; data: Uint8Array }> {
     throw new Error(`no responder on ${subject}`);
   }
 
