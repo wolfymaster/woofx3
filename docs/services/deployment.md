@@ -752,3 +752,10 @@ module's page shows the status as unanswered. Overlays still recover after a
 sceneManager restart when connectors starts later, because sceneManager keeps
 asking for the refresh until connectors accepts it (see
 [Local endpoints → Overlay recovery](./local-endpoints.md#overlay-recovery)).
+
+connectors also holds the companion relay configuration and the bridge
+credential, which the api asks the dashboard for on its behalf. While
+connectors is stopped, the dashboard's `setRelayConfig` fails and the
+dashboard retries it; the api waits `WOOFX3_COMPANION_REQUEST_TIMEOUT_MS`
+(default `5000`) for connectors to store it. See
+[Local endpoints → The relay configuration](./local-endpoints.md#the-relay-configuration-relay-config).

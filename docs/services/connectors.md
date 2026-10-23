@@ -316,9 +316,10 @@ The host builds one [companion gateway](./companion-gateway.md) before the
 supervisor and stops it after every adapter has stopped. It holds the claims
 every adapter manifest makes (`localEndpoints`), checked at startup, and hands
 each adapter a handle scoped to its own claims as `ctx.companion`. On the
-host's bus scope it subscribes to `engine.relay.config.updated` and
-`db.module.setting.updated.*` for route changes, and requests
-`engine.relay.credential` from the api.
+host's bus scope it subscribes to `db.module.setting.updated.*` for route
+changes, answers `engine.companion.relay_config.set` as the one writer of
+`relay.config`, and requests `engine.companion.dashboard_credential` from the
+api, which asks the dashboard for the bridge credential the gateway caches.
 
 ### The stream session
 

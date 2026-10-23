@@ -100,9 +100,9 @@ streamer's PC. An engine running on that PC (`WOOFX3_HOSTING=local`) always
 dials OBS directly. Through the bridge the companion supplies the address, and the
 module's `password` still signs in to OBS end to end. See
 [Local endpoints and the companion bridge](./local-endpoints.md). A change to
-the relay configuration (`engine.relay.config.updated`) that moves OBS to
-another route makes the adapter reconnect at once, like a settings change.
-The companion gateway watches these changes and tells the adapter. An engine
+the relay configuration that moves OBS to another route makes the adapter
+reconnect at once, like a settings change. The companion gateway stores the
+relay configuration itself and tells the adapter. An engine
 running on the streamer's PC always dials directly, so it ignores relay changes.
 
 Saving a module setting publishes `db.module.setting.updated.system` with the
