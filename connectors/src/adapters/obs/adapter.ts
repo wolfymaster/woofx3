@@ -212,7 +212,6 @@ export class ObsAdapter implements Adapter<RefreshLatch> {
       unavailableReply: ({ reason }) => unavailable(UNAVAILABLE_MESSAGES[reason]),
     };
   }
-
 }
 
 async function answerCommand(run: ObsRun, request: Uint8Array): Promise<Uint8Array> {
