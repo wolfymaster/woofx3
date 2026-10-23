@@ -442,7 +442,6 @@ describe("an overlay page", () => {
 
     expect(page.marked).toEqual([
       "woofx3.alert/ev-9/delivered",
-      "woofx3.alert/ev-9/prepared",
       "woofx3.alert/ev-9/started",
       "woofx3.alert/ev-9/t1/mounted",
       "woofx3.alert/ev-9/t1/ready",

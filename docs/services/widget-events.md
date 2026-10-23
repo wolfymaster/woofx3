@@ -160,21 +160,27 @@ one `alert` event whose `data` is the triggering CloudEvent (`{ type, data }`, o
 `null` when nothing triggered the workflow).
 
 The page plays alerts on **prepared** stages, so a widget's frame has usually loaded
-before its alert is due. An alert's stage is built transparent, with its frames
-booting and painting and its time held at its first moment, as soon as the alert is
-delivered. (Transparent rather than `visibility: hidden`, which stops Chromium
-rendering a cross-origin frame, so a widget could not paint before it is shown.) Once an alert
-of a shape has played, another stage of that shape (the same layout, behaviors and
-frames, whatever the settings) is prepared for the next one: at once when one is
-already waiting, otherwise after the alert finishes, so preparing never competes with
-an alert on screen. The next alert takes over the prepared stage. Its settings are
-handed to the running widgets as a settings change, and only then is the alert's event
-sent. If a widget read a setting the alert changes while it booted, its frame could
-not show the new value, so the alert gets fresh frames instead. Each stage plays one
-alert and is then removed; an area keeps up to four prepared shapes. A widget in a
-prepared stage boots with an instance id of its stage's (`prepared-{n}.{widgetId}`),
-not the alert's; its status reports are recorded under `{eventId}.{widgetId}` once its
-alert is known.
+before its alert is due. A prepared stage is built transparent, with its frames
+booting and painting and its time held at its first moment. (Transparent rather than
+`visibility: hidden`, which stops Chromium rendering a cross-origin frame, so a widget
+could not paint before it is shown.) An alert area keeps up to four prepared stages,
+one per shape (the same layout, behaviors and frames, whatever the settings), and
+decides which from its queue each time the queue changes: first the shapes of the
+alerts waiting in it, in the order they will play, so an alert's frames boot while it
+waits its turn; then, only while no alert is on screen, the shapes it played most
+recently, each prepared from the last alert of that shape, so preparing for an alert
+nobody is waiting on never competes with one on screen. When more shapes are wanted
+than it keeps, the stages due soonest stay and a shape due later than all of them is
+not prepared. An alert delivered to an idle area with nothing of its shape prepared
+plays at once on frames made for it. An alert takes over the prepared stage of its
+shape. Its settings are handed to the running widgets as a settings change, and only
+then is the alert's event sent. If a widget read a setting the alert changes while it
+booted, its frame could not show the new value, so the alert gets fresh frames instead. Each stage plays one
+alert and is then removed. A widget in a prepared stage boots with an instance id of
+its stage's (`prepared-{n}.{widgetId}`), not the alert's; its status reports are
+recorded under `{eventId}.{widgetId}` once its alert is known. Widget code therefore
+runs well before its alert, sometimes for an alert that never comes; see
+[Playing in an alert](../barkloader/sdk.md#playing-in-an-alert).
 
 A layout widget that subscribes with `autoComplete: false` has a length of its own and
 holds the alert until it calls `complete()`; one that completes on handler return has
@@ -196,8 +202,9 @@ without adding logging:
   `frame` (barkloader's widget entry) and `total`. Browser devtools show it on the
   frame's request; a frame the browser had cached made no request at all.
 - **The page.** The overlay writes User Timing marks named
-  `woofx3.alert/{eventId}/{stage}` for `delivered`, `prepared` (it played on a prepared
-  stage), `started` and `finished`, and
+  `woofx3.alert/{eventId}/{stage}` for `delivered`, `prepared` (it played on a stage
+  built before its turn came; an alert that played on frames made for it has no such
+  mark), `started` and `finished`, and
   `woofx3.alert/{eventId}/{widgetId}/{stage}` for each frame's `mounted`, `ready` (the
   shim's hello was answered: the document has loaded), `subscribed` (the widget's own
   script has run) and `rendered`; on a prepared stage, the steps its frames reached

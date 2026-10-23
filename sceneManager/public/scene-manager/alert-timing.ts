@@ -38,8 +38,9 @@ export const RETAINED_ALERT_TIMINGS = 20;
 
 /**
  * Steps of the alert as a whole: it reached the page, its turn came, it played
- * out. `prepared` is marked as it starts when it plays on frames prepared
- * before its turn (alert-widget.ts) rather than on frames made for it then.
+ * out. `prepared` is marked as it starts when it plays on a stage built
+ * before its turn came (alert-widget.ts); one that plays on frames made for
+ * it as it starts, such as an alert reaching an idle area, has no such mark.
  */
 export type AlertStage = "delivered" | "prepared" | "started" | "finished";
 

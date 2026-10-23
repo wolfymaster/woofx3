@@ -1,6 +1,13 @@
 import { describe, expect, it } from "bun:test";
+import { RENDER_WAIT_MS, SUBSCRIBE_TIMEOUT_MS, UNTIMED_ALERT_MS } from "@woofx3/scene/model";
 import type { RenderAnimation, RenderStyle } from "@woofx3/scene/runtime";
-import type { AssetCache, PageHost, WidgetBridge } from "@woofx3/widget-host/page";
+import {
+  type AssetCache,
+  EventQueueManager,
+  type PageHost,
+  type QueueRegistration,
+  type WidgetBridge,
+} from "@woofx3/widget-host/page";
 import { AlertTimings } from "../../public/scene-manager/alert-timing";
 import { AlertWidget } from "../../public/scene-manager/alert-widget";
 
@@ -97,6 +104,10 @@ function alertOf(frame: string) {
   };
 }
 
+/** Long enough for an alert of `alertOf` to play out: its widget never subscribes or paints. */
+const ALERT_PLAYS_OUT_MS = RENDER_WAIT_MS + SUBSCRIBE_TIMEOUT_MS + UNTIMED_ALERT_MS + 1_000;
+
+/** An alert widget wired to a real queue, as AlertAreas wires one. */
 function setup(preparedAlerts?: number) {
   const timers = new FakeTimers();
   const element = new FakeElement();
@@ -106,12 +117,22 @@ function setup(preparedAlerts?: number) {
     randomBytes: (length) => new Uint8Array(length).fill(1),
   };
   const finished: string[] = [];
+  const marked: string[] = [];
+  const queues = new EventQueueManager(timers);
+  let registration: QueueRegistration | null = null;
+  let disposing = false;
   const widget = new AlertWidget({
     element: element as unknown as HTMLElement,
     bridges: new Set<WidgetBridge>(),
     postStatus: () => {},
     assets: { warm: () => {}, loaderFor: () => () => Promise.reject(new Error("no assets")) } as unknown as AssetCache,
-    onFinished: (eventId) => finished.push(eventId),
+    onFinished: (eventId) => {
+      finished.push(eventId);
+      if (registration !== null) {
+        queues.complete(registration, eventId);
+      }
+    },
+    waiting: () => (registration === null ? [] : queues.pending(registration)),
     document: {
       createElement: () => new FakeElement(),
       timeline: { currentTime: 0 },
@@ -122,87 +143,159 @@ function setup(preparedAlerts?: number) {
       clearTimer: (handle) => timers.clearTimeout(handle),
     },
     host,
-    timings: new AlertTimings({ mark: () => {}, measure: () => {}, clear: () => {} }),
+    timings: new AlertTimings({ mark: (name) => marked.push(name), measure: () => {}, clear: () => {} }),
     ...(preparedAlerts === undefined ? {} : { preparedAlerts }),
   });
+  registration = queues.register(
+    "area",
+    { maxInFlight: 1 },
+    (item) => !disposing && widget.play(item),
+    () => {},
+    (eventId) => widget.stop(eventId)
+  );
+  /** An alert reaches the page as the overlay hands it over: marked, then queued. */
+  const deliver = (eventId: string, frame: string) => {
+    const value = alertOf(frame);
+    widget.delivered(eventId, value);
+    queues.enqueue("area", { eventId, type: "alert", key: eventId, value });
+  };
+  const cancel = (eventId: string) => queues.cancel("area", [eventId]);
   /** Frame URLs of the alert stages in the area, prepared or playing. */
   const stages = () =>
     element.children.map((stage) => {
       const frame = descendants(stage).find((child) => child.src !== "");
       return { frame: frame?.src.split("#")[0] ?? "", hidden: stage.style.opacity === "0" };
     });
-  return { widget, timers, finished, stages };
+  const dispose = () => {
+    disposing = true;
+    widget.dispose();
+  };
+  return { timers, finished, marked, stages, deliver, cancel, dispose };
 }
 
 function descendants(element: FakeElement): FakeElement[] {
   return element.children.flatMap((child) => [child, ...descendants(child)]);
 }
 
+const A = { frame: "/frames/woofx3/a?v=1", hidden: true };
+const B = { frame: "/frames/woofx3/b?v=1", hidden: true };
+const C = { frame: "/frames/woofx3/c?v=1", hidden: true };
+const onScreen = (stage: { frame: string }) => ({ frame: stage.frame, hidden: false });
+
 describe("AlertWidget", () => {
-  it("prepares each shape it is delivered, hidden, and keeps the most recently wanted", () => {
-    const { widget, stages } = setup(2);
+  it("prepares the shapes waiting in the queue, hidden, in the order they play", () => {
+    const { timers, stages, deliver } = setup();
+    deliver("ev-1", "a");
+    deliver("ev-2", "b");
+    deliver("ev-3", "c");
+    deliver("ev-4", "b");
 
-    widget.delivered("ev-1", alertOf("a"));
-    widget.delivered("ev-2", alertOf("b"));
-    widget.delivered("ev-3", alertOf("a"));
-    widget.delivered("ev-4", alertOf("c"));
+    timers.advance(0);
 
-    expect(stages()).toEqual([
-      { frame: "/frames/woofx3/a?v=1", hidden: true },
-      { frame: "/frames/woofx3/c?v=1", hidden: true },
-    ]);
+    expect(stages()).toEqual([onScreen(A), B, C]);
   });
 
-  it("plays an alert on the stage prepared for its shape", () => {
-    const { widget, stages } = setup();
-    widget.delivered("ev-1", alertOf("a"));
+  it("plays an alert on the stage prepared for its shape, marked as prepared", () => {
+    const { timers, marked, stages, deliver } = setup();
+    deliver("ev-1", "a");
+    deliver("ev-2", "b");
+    timers.advance(0);
 
-    widget.play({ eventId: "ev-1", type: "alert", key: "a", value: alertOf("a") });
+    timers.advance(ALERT_PLAYS_OUT_MS);
 
-    expect(stages()).toEqual([{ frame: "/frames/woofx3/a?v=1", hidden: false }]);
+    expect(stages()).toEqual([onScreen(B)]);
+    expect(marked).toContain("woofx3.alert/ev-2/prepared");
+  });
+
+  it("does not mark an alert that arrives while the area is idle as prepared", () => {
+    const { timers, marked, stages, deliver } = setup();
+    deliver("ev-1", "a");
+    timers.advance(0);
+
+    expect(stages()).toEqual([onScreen(A)]);
+    expect(marked).not.toContain("woofx3.alert/ev-1/prepared");
   });
 
   it("prepares nothing ahead when it keeps no prepared alerts", () => {
-    const { widget, timers, stages } = setup(0);
-    widget.delivered("ev-1", alertOf("a"));
-    expect(stages()).toEqual([]);
-
-    widget.play({ eventId: "ev-1", type: "alert", key: "a", value: alertOf("a") });
+    const { timers, stages, deliver } = setup(0);
+    deliver("ev-1", "a");
+    deliver("ev-2", "b");
     timers.advance(10);
 
-    expect(stages()).toEqual([{ frame: "/frames/woofx3/a?v=1", hidden: false }]);
+    expect(stages()).toEqual([onScreen(A)]);
   });
 
   it("prepares the next alert of a shape as one starts when another of it is waiting", () => {
-    const { widget, timers, stages } = setup();
-    widget.delivered("ev-1", alertOf("a"));
-    widget.delivered("ev-2", alertOf("a"));
-
-    widget.play({ eventId: "ev-1", type: "alert", key: "a", value: alertOf("a") });
+    const { timers, stages, deliver } = setup();
+    deliver("ev-1", "a");
+    deliver("ev-2", "a");
     expect(stages()).toHaveLength(1);
+
     timers.advance(0);
 
-    expect(stages()).toEqual([
-      { frame: "/frames/woofx3/a?v=1", hidden: false },
-      { frame: "/frames/woofx3/a?v=1", hidden: true },
-    ]);
+    expect(stages()).toEqual([onScreen(A), A]);
   });
 
-  it("waits for an alert to finish before preparing the next of its shape when none is waiting", () => {
-    const { widget, timers, stages } = setup();
-    widget.delivered("ev-1", alertOf("a"));
-    widget.play({ eventId: "ev-1", type: "alert", key: "a", value: alertOf("a") });
+  it("prepares a shape nobody is waiting on only once nothing is on screen", () => {
+    const { timers, stages, deliver } = setup();
+    deliver("ev-1", "a");
+    deliver("ev-2", "b");
     timers.advance(0);
-    expect(stages()).toHaveLength(1);
+
+    timers.advance(ALERT_PLAYS_OUT_MS);
+    expect(stages()).toEqual([onScreen(B)]);
+
+    timers.advance(ALERT_PLAYS_OUT_MS);
+    expect(stages()).toEqual([B, A]);
+  });
+
+  it("forgets a waiting alert cancelled before it played", () => {
+    const { timers, stages, deliver, cancel } = setup();
+    deliver("ev-1", "a");
+    deliver("ev-2", "a");
+    timers.advance(0);
+    cancel("ev-2");
+    timers.advance(ALERT_PLAYS_OUT_MS);
+    expect(stages()).toEqual([A]);
+
+    deliver("ev-3", "a");
+    timers.advance(0);
+
+    expect(stages()).toEqual([onScreen(A)]);
+  });
+
+  it("keeps the stages due soonest when more shapes wait than it keeps", () => {
+    const { timers, stages, deliver } = setup(2);
+    deliver("ev-1", "a");
+    deliver("ev-2", "b");
+    deliver("ev-3", "a");
+    deliver("ev-4", "c");
+
+    timers.advance(0);
+
+    expect(stages()).toEqual([onScreen(A), B, A]);
+  });
+
+  it("makes room for a waiting shape by dropping one nobody is waiting on", () => {
+    const { timers, stages, deliver } = setup(1);
+    deliver("ev-1", "a");
+    timers.advance(ALERT_PLAYS_OUT_MS);
+    expect(stages()).toEqual([A]);
+
+    deliver("ev-2", "b");
+    deliver("ev-3", "c");
+    timers.advance(0);
+
+    expect(stages()).toEqual([onScreen(B), C]);
   });
 
   it("drops what it prepared, and finishes what it plays, when it is disposed", () => {
-    const { widget, finished, stages } = setup();
-    widget.delivered("ev-1", alertOf("a"));
-    widget.delivered("ev-2", alertOf("b"));
-    widget.play({ eventId: "ev-1", type: "alert", key: "a", value: alertOf("a") });
+    const { timers, finished, stages, deliver, dispose } = setup();
+    deliver("ev-1", "a");
+    deliver("ev-2", "b");
+    timers.advance(0);
 
-    widget.dispose();
+    dispose();
 
     expect(stages()).toEqual([]);
     expect(finished).toEqual(["ev-1"]);

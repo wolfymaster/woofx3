@@ -4,13 +4,16 @@
 // alert until this one finishes, so an alert widget plays one alert at a time.
 //
 // Alerts are played on prepared alerts (prepared-alert.ts): an alert's stage
-// and frames are built hidden, and boot, before it is due. The first alert of
-// a shape is prepared as it is delivered, so its frames boot while it waits
-// its turn; once an alert of a shape has played, another of that shape is
-// prepared for the next one: at once when one is already waiting, else after
-// it finishes, so preparing for an alert nobody is waiting on never takes time
-// from one on screen. An alert whose prepared frames cannot take its settings
-// is prepared again and played at once, as if none had been ready.
+// and frames are built hidden, and boot, before it is due. Which shapes are
+// kept prepared is worked out from the queue each time it may have changed:
+// first the shapes of the alerts waiting in it, in the order they will play,
+// so an alert's frames boot while it waits its turn; then, only while nothing
+// is on screen, the shapes played most recently, so the next alert of a shape
+// finds frames ready without preparing ever taking time from one on screen.
+// When the pool is full the stage needed latest makes room, and a shape due
+// later than every stage kept is not prepared. An alert whose prepared frames
+// cannot take its settings is prepared again and played at once, as if none
+// had been ready.
 
 import { moduleIdOfCanonicalId } from "@woofx3/scene/model";
 import type { SchedulerClock } from "@woofx3/scene/runtime";
@@ -26,10 +29,10 @@ import type { AlertTimings } from "./alert-timing";
 import { alertShape, PreparedAlert } from "./prepared-alert";
 
 /**
- * How many prepared alerts an alert widget keeps, one per shape, the least
- * recently wanted dropped first. Each holds a frame per widget of its alert,
- * booted and idle; a stream's alerts usually come in a handful of shapes
- * (follow, subscription, raid, ...), each kept ready at this size.
+ * How many prepared alerts an alert widget keeps, one per shape. Each holds a
+ * frame per widget of its alert, booted and idle; a stream's alerts usually
+ * come in a handful of shapes (follow, subscription, raid, ...), each kept
+ * ready at this size.
  */
 export const DEFAULT_PREPARED_ALERTS = 4;
 
@@ -44,6 +47,8 @@ export interface AlertWidgetOptions {
   assets: AssetCache;
   /** The alert delivered as `eventId` is over; the queue may start the next. */
   onFinished(eventId: string): void;
+  /** The alerts waiting in the area's queue, in the order they will play. */
+  waiting(): readonly QueuedEvent[];
   /** Where the alert's stage and frames are made: the page's document. */
   document: Document;
   /** What alerts play on (page-clock.ts). */
@@ -58,12 +63,16 @@ export interface AlertWidgetOptions {
 export class AlertWidget {
   /** Tear-down for each alert on screen, by event id. */
   private readonly playing = new Map<string, () => void>();
-  /** Alerts prepared for what is due next, by shape, least recently wanted first. */
+  /** Alerts prepared for what is due, by shape, oldest first. */
   private readonly prepared = new Map<string, PreparedAlert>();
-  /** The shape of each alert delivered and not yet played or cancelled, by event id. */
-  private readonly waiting = new Map<string, string>();
+  /**
+   * The latest delivery of each shape played, by shape, most recent last and
+   * at most `capacity` of them: what an idle area prepares its shapes from.
+   */
+  private readonly played = new Map<string, AlertDelivery>();
   private readonly capacity: number;
   private nextPreparedId = 1;
+  private preparing: unknown = null;
   private disposed = false;
 
   constructor(private readonly opts: AlertWidgetOptions) {
@@ -78,8 +87,8 @@ export class AlertWidget {
    * cancelled on the server, which has already closed its delivery.
    */
   stop(eventId: string): void {
-    this.waiting.delete(eventId);
     this.playing.get(eventId)?.();
+    this.schedulePreparing();
   }
 
   /**
@@ -89,11 +98,15 @@ export class AlertWidget {
    */
   dispose(): void {
     this.disposed = true;
+    if (this.preparing !== null) {
+      this.opts.host.timers.clearTimeout(this.preparing);
+      this.preparing = null;
+    }
     for (const prepared of this.prepared.values()) {
       prepared.stop();
     }
     this.prepared.clear();
-    this.waiting.clear();
+    this.played.clear();
     for (const [eventId, tearDown] of [...this.playing]) {
       tearDown();
       this.opts.onFinished(eventId);
@@ -116,24 +129,22 @@ export class AlertWidget {
   }
 
   /**
-   * Alert `eventId` reached the page: mark when, start reading the files its
-   * widgets will ask for, and prepare it if nothing of its shape is ready, so
-   * its frames boot while it waits for its turn.
+   * Alert `eventId` reached the page: mark when and start reading the files
+   * its widgets will ask for. What to prepare is decided once the queue has
+   * taken it, or dropped it as a repeat.
    */
   delivered(eventId: string, value: unknown): void {
     this.opts.timings.alert(eventId, "delivered");
     const delivery = parseAlertDelivery(value);
     if (delivery && !this.playing.has(eventId)) {
       readAheadAlertAssets(this.opts.assets, delivery);
-      this.waiting.set(eventId, alertShape(delivery));
-      this.prepareShapeOf(delivery);
+      this.schedulePreparing();
     }
   }
 
   private run(eventId: string, delivery: AlertDelivery): void {
     readAheadAlertAssets(this.opts.assets, delivery);
     const shape = alertShape(delivery);
-    this.waiting.delete(eventId);
     const ready = this.prepared.get(shape);
     this.prepared.delete(shape);
     let alert: PreparedAlert;
@@ -142,8 +153,9 @@ export class AlertWidget {
       alert = ready;
     } else {
       ready?.stop();
-      alert = this.prepare(delivery);
+      alert = this.build(delivery);
     }
+    this.rememberPlayed(shape, delivery);
     this.playing.set(eventId, () => {
       this.playing.delete(eventId);
       alert.stop();
@@ -152,37 +164,107 @@ export class AlertWidget {
       this.opts.timings.alert(eventId, "finished");
       this.playing.delete(eventId);
       this.opts.onFinished(eventId);
-      // Ready the next alert of this shape now that nothing of this one is on
-      // screen for the preparing to take time from.
-      this.opts.host.timers.setTimeout(() => this.prepareShapeOf(delivery), 0);
+      this.schedulePreparing();
     });
-    if ([...this.waiting.values()].includes(shape)) {
-      this.opts.host.timers.setTimeout(() => this.prepareShapeOf(delivery), 0);
+    this.schedulePreparing();
+  }
+
+  private rememberPlayed(shape: string, delivery: AlertDelivery): void {
+    this.played.delete(shape);
+    this.played.set(shape, delivery);
+    for (const oldest of this.played.keys()) {
+      if (this.played.size <= this.capacity) {
+        break;
+      }
+      this.played.delete(oldest);
     }
   }
 
-  /** Prepare an alert of `delivery`'s shape unless one is ready, making room for it. */
-  private prepareShapeOf(delivery: AlertDelivery): void {
-    if (this.disposed || this.capacity === 0) {
+  /**
+   * Prepare once the current task is done: the queue takes a delivery after
+   * `delivered`, and starts the next alert after an alert's `onFinished`, so
+   * only then does it say what is waiting and whether anything is on screen.
+   */
+  private schedulePreparing(): void {
+    if (this.disposed || this.capacity === 0 || this.preparing !== null) {
       return;
     }
-    const shape = alertShape(delivery);
-    const ready = this.prepared.get(shape);
-    if (ready !== undefined) {
-      // Wanted again: to the back, the last to be dropped.
-      this.prepared.delete(shape);
-      this.prepared.set(shape, ready);
-      return;
-    }
-    while (this.prepared.size >= this.capacity) {
-      const [oldestShape, oldest] = this.prepared.entries().next().value as [string, PreparedAlert];
-      this.prepared.delete(oldestShape);
-      oldest.stop();
-    }
-    this.prepared.set(shape, this.prepare(delivery));
+    this.preparing = this.opts.host.timers.setTimeout(() => {
+      this.preparing = null;
+      this.prepareWanted();
+    }, 0);
   }
 
-  private prepare(delivery: AlertDelivery): PreparedAlert {
+  /** Prepare the shapes wanted soonest, making room by dropping the stage wanted latest. */
+  private prepareWanted(): void {
+    if (this.disposed) {
+      return;
+    }
+    const wanted = this.wantedShapes();
+    const rank = new Map([...wanted.keys()].map((shape, index) => [shape, index]));
+    let index = 0;
+    for (const [shape, delivery] of wanted) {
+      if (!this.prepared.has(shape)) {
+        if (this.prepared.size >= this.capacity && !this.dropPreparedAfter(index, rank)) {
+          return;
+        }
+        this.prepared.set(shape, this.build(delivery));
+      }
+      index += 1;
+    }
+  }
+
+  /**
+   * The shapes to keep prepared, soonest wanted first, each with a delivery
+   * to prepare it from: the waiting alerts' shapes in the order they play,
+   * then, when nothing is on screen, the shapes played most recently.
+   */
+  private wantedShapes(): Map<string, AlertDelivery> {
+    const wanted = new Map<string, AlertDelivery>();
+    for (const item of this.opts.waiting()) {
+      const delivery = parseAlertDelivery(item.value);
+      if (delivery === null) {
+        continue;
+      }
+      const shape = alertShape(delivery);
+      if (!wanted.has(shape)) {
+        wanted.set(shape, delivery);
+      }
+    }
+    if (this.playing.size === 0) {
+      for (const [shape, delivery] of [...this.played].reverse()) {
+        if (!wanted.has(shape)) {
+          wanted.set(shape, delivery);
+        }
+      }
+    }
+    return wanted;
+  }
+
+  /**
+   * Drop the prepared alert wanted latest, an unwanted one first and the
+   * oldest of those, when it is wanted later than position `index`. False,
+   * and nothing dropped, when every prepared alert is wanted sooner.
+   */
+  private dropPreparedAfter(index: number, rank: ReadonlyMap<string, number>): boolean {
+    let latest: string | null = null;
+    let latestRank = -1;
+    for (const shape of this.prepared.keys()) {
+      const shapeRank = rank.get(shape) ?? Number.POSITIVE_INFINITY;
+      if (shapeRank > latestRank) {
+        latest = shape;
+        latestRank = shapeRank;
+      }
+    }
+    if (latest === null || latestRank <= index) {
+      return false;
+    }
+    this.prepared.get(latest)?.stop();
+    this.prepared.delete(latest);
+    return true;
+  }
+
+  private build(delivery: AlertDelivery): PreparedAlert {
     const id = `prepared-${this.nextPreparedId}`;
     this.nextPreparedId += 1;
     return new PreparedAlert(this.opts, delivery, id);
