@@ -36,12 +36,14 @@ describe("companion relay subjects", () => {
 
 describe("parseStoredRelayConfig", () => {
   test("accepts a configuration with its client id", () => {
-    expect(parseStoredRelayConfig(STORED)).toEqual(STORED);
+    expect(parseStoredRelayConfig(STORED)).toEqual({ ok: true, value: STORED });
   });
 
   for (const clientId of [undefined, "", 7]) {
     test(`refuses clientId ${JSON.stringify(clientId)}`, () => {
-      expect(() => parseStoredRelayConfig({ ...STORED, clientId })).toThrow("clientId");
+      const parsed = parseStoredRelayConfig({ ...STORED, clientId });
+      expect(parsed.ok).toBe(false);
+      expect(parsed.ok ? "" : parsed.error).toContain("clientId");
     });
   }
 
@@ -55,8 +57,8 @@ describe("parseStoredRelayConfig", () => {
 
 describe("parseRelayCredentialResponse", () => {
   test("accepts a grant and relay: null", () => {
-    expect(parseRelayCredentialResponse({ relay: GRANT })).toEqual({ relay: GRANT });
-    expect(parseRelayCredentialResponse({ relay: null })).toEqual({ relay: null });
+    expect(parseRelayCredentialResponse({ relay: GRANT })).toEqual({ ok: true, value: { relay: GRANT } });
+    expect(parseRelayCredentialResponse({ relay: null })).toEqual({ ok: true, value: { relay: null } });
   });
 
   const bad: unknown[] = [
@@ -72,7 +74,7 @@ describe("parseRelayCredentialResponse", () => {
   ];
   for (const body of bad) {
     test(`refuses ${JSON.stringify(body)}`, () => {
-      expect(() => parseRelayCredentialResponse(body)).toThrow();
+      expect(parseRelayCredentialResponse(body).ok).toBe(false);
     });
   }
 });

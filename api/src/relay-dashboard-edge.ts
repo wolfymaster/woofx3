@@ -53,7 +53,10 @@ export async function askDashboardForRelayCredential(
     const answer = parseRelayCredentialResponse(
       await dashboard.request({ type: EngineRequestType.RELAY_CREDENTIAL_REQUESTED }, clientId)
     );
-    return { status: "answered", clientId, answer };
+    if (!answer.ok) {
+      return { status: "failed", error: answer.error };
+    }
+    return { status: "answered", clientId, answer: answer.value };
   } catch (err) {
     return { status: "failed", error: err instanceof Error ? err.message : String(err) };
   }
