@@ -7,13 +7,9 @@ import {
   type ObsOptionsReply,
   parseObsBrowserSourceRefresh,
 } from "@woofx3/common/cloudevents/Obs/commands";
-import {
-  RELAY_CONFIG_UPDATED_SUBJECT,
-  RELAY_CREDENTIAL_SUBJECT,
-  type RelayGrant,
-  requestRelayCredentialOverNats,
-} from "@woofx3/common/cloudevents/Relay/relay";
+import { RELAY_CONFIG_UPDATED_SUBJECT } from "@woofx3/common/cloudevents/Relay/relay";
 import type { EndpointStore } from "../../companion/endpoint-store";
+import { MODULE_SETTING_UPDATED_SUBJECT } from "../../companion/route-watch";
 import { OBS_SERVED_BUDGETS_MS, type ObsConfig } from "../../config/obs";
 import type {
   Adapter,
@@ -26,17 +22,14 @@ import type {
 } from "../../host/adapter";
 import { errorMessage, type Logger, type RandomSource, type Timers } from "../../host/deps";
 import type { LinkState } from "../../host/link-readers";
-import type { BusMessage, ScopedBus } from "../../host/scoped-bus";
+import type { BusMessage } from "../../host/scoped-bus";
 import type { DbProxyClientConfig } from "../../services/db-proxy";
 import { handleObsControlRequest } from "./control";
 import { handleObsOptionsRequest } from "./options";
 import { RefreshLatch } from "./refresh-latch";
 import { createObsService, type ObsService } from "./service";
-import { OBS_MODULE_ID } from "./settings";
+import { OBS_ENDPOINT, OBS_MODULE_ID, obsAdapterFallback } from "./settings";
 import type { ObsStatusReply } from "./status";
-
-/** db-proxy announces every module setting write here, naming the module and key but never the value. */
-export const MODULE_SETTING_UPDATED_SUBJECT = "db.module.setting.updated.*";
 
 /** Why the host is answering for a stopped OBS adapter, in words a streamer can act on. */
 const UNAVAILABLE_MESSAGES: Record<Unavailable["reason"], string> = {
@@ -85,7 +78,7 @@ export function answerRefreshRequest(request: Uint8Array, latch: RefreshLatch): 
 
 export interface ObsAdapterDeps {
   config: ObsConfig;
-  /** Builds the store OBS's route is read from, over the host's db-proxy client. */
+  /** Builds the store the relay configuration is read from, over the host's db-proxy client. */
   endpointStore(db: DbProxyClientConfig): EndpointStore;
   /** Jitter for the connection's retry backoff. */
   random: RandomSource;
@@ -122,7 +115,8 @@ export class ObsAdapter implements Adapter<RefreshLatch> {
       id: "obs",
       publishes: [],
       subscribes: [MODULE_SETTING_UPDATED_SUBJECT, RELAY_CONFIG_UPDATED_SUBJECT],
-      requests: [RELAY_CREDENTIAL_SUBJECT],
+      requests: [],
+      localEndpoints: [OBS_ENDPOINT],
       serves: [
         this.served(
           ObsCommandType.ObsCommand,
@@ -174,10 +168,11 @@ export class ObsAdapter implements Adapter<RefreshLatch> {
       throw new Error("the obs adapter is already running; the host never starts it twice");
     }
     signal.throwIfAborted();
+    const store = this.deps.endpointStore(ctx.dbProxy);
+    const fallback = obsAdapterFallback(this.deps.config.fallback);
     const service = createObsService({
-      store: this.deps.endpointStore(ctx.dbProxy),
-      relayCredential: relayCredentialOver(ctx.bus),
-      fallback: this.deps.config.fallback,
+      resolve: (attempt) => ctx.companion.resolve(OBS_ENDPOINT, { signal: attempt, fallback }),
+      relayConfig: () => store.relayConfig(),
       latch: this.latch,
       connection: this.deps.config.connection,
       random: this.deps.random,
@@ -278,16 +273,6 @@ async function onRelayConfigUpdated(run: ObsRun): Promise<void> {
   if (moves) {
     run.service.connection.reconnectNow("Relay configuration changed");
   }
-}
-
-/** Asks the api for the bridge credential over the adapter's scoped bus. */
-function relayCredentialOver(bus: Pick<ScopedBus, "request">): (force: boolean) => Promise<RelayGrant | null> {
-  return requestRelayCredentialOverNats((subject, data, opts) => {
-    if (opts?.timeout === undefined) {
-      throw new Error(`${subject}: a request needs a timeout`);
-    }
-    return bus.request(subject, data, { timeout: opts.timeout });
-  });
 }
 
 /** The registry entry's module: the refresh latch is its host state, one adapter for the life of the process. */

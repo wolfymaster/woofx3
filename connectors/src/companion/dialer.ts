@@ -1,238 +1,269 @@
-// Picks how connectors reaches a module's local endpoint: straight to the
-// address in the module's settings, or through the companion's bridge when the
-// dashboard routed that endpoint there. The companion owns the actual address
-// on the streamer's network, so the bridge path names the endpoint, never a
-// host. See docs/services/local-endpoints.md.
+// Picks how connectors reaches a local endpoint for one connect attempt:
+// straight to the address the route policy allows, or through the
+// companion's bridge when the dashboard routed that endpoint there. The
+// companion owns the actual address on the streamer's network, so the bridge
+// path names the endpoint, never a host. See docs/services/companion-gateway.md.
 
-import type { RelayConfig } from "@woofx3/api";
+import type { EngineHosting, RelayConfig } from "@woofx3/api";
 import { type RelayGrant, routesEndpoint } from "@woofx3/common/cloudevents/Relay/relay";
-import type { Logger } from "../host/deps";
+import { RELAY_TICKET_TTL_MS } from "../config/companion";
+import { errorMessage, type Logger, type TimerHandle, type Timers } from "../host/deps";
+import type { BridgeOpenPermit, BridgeOpens } from "./bridge-opens";
+import { endpointKey } from "./claims";
+import type { DirectDecision, RoutePolicy } from "./route-policy";
+import type { EndpointResolution, EndpointUnavailable, LocalEndpointRef, ResolveOptions } from "./types";
 
-/** The settings a `local[]` entry names for an endpoint's address and password. */
-export interface EndpointKeys {
-  hostSetting: string;
-  portSetting: string;
-  passwordSetting?: string;
-}
-
-export interface WebSocketRoute {
-  route: "direct" | "companion";
-  url: string;
-  /** The endpoint's own password (OBS's), carried end to end; the relay only ever carries the protocol's challenge response. */
-  password?: string;
-  /** `host:port` for status reporting; through the bridge it is the bridge's host, never a ticket. */
-  address: string;
-}
-
-/**
- * The bridge could not be opened: no credential, the relay refused or did not
- * answer, or the upgrade through it failed.
- */
-export class EndpointRelayError extends Error {
-  /** The bridge's host, for status reporting. */
-  constructor(
-    message: string,
-    readonly address: string
-  ) {
-    super(message);
-    this.name = "EndpointRelayError";
-  }
-}
+export type Fetch = (url: URL, init: RequestInit) => Promise<Response>;
 
 export interface DialerDeps {
-  /** The stored manifest's `local[]` keys for the endpoint, or null when it has none or cannot be read. */
-  endpointKeys(moduleId: string, endpointId: string): Promise<EndpointKeys | null>;
-  settings(moduleId: string): Promise<{ key: string; value: string }[]>;
-  secrets(moduleId: string): Promise<Record<string, string>>;
   relayConfig(): Promise<RelayConfig | null>;
   /**
    * The bridge credential, or null when nothing routes through a companion.
    * `force` asks for a fresh one in place of a cached one. Throws when none can be had.
    */
   relayCredential(force: boolean): Promise<RelayGrant | null>;
-  fetch: (url: string | URL, init: RequestInit) => Promise<Response>;
+  fetch: Fetch;
+  opens: BridgeOpens;
+  hosting: EngineHosting | null;
+  ticketTimeoutMs: number;
+  timers: Timers;
   logger: Logger;
 }
 
-export interface DialTarget {
-  moduleId: string;
-  endpointId: string;
-  /** Used when the installed module's manifest has no `local[]` entry for the endpoint. */
-  fallbackKeys: EndpointKeys;
-  /** connectors' own configuration, for each value the settings leave empty. */
-  fallback: { host: string; port: string; password?: string };
-}
-
-const TICKET_TIMEOUT_MS = 5_000;
 const TICKET = /^[A-Za-z0-9_-]{43}$/;
 
-/**
- * The route for one connect attempt. Everything is read afresh each time, so
- * a retry picks up a change whose announcement was missed, and every bridge
- * attempt gets a fresh ticket: a ticket is single-use, spent even when the
- * upgrade it was presented on is refused.
- */
-export async function dialWebSocketEndpoint(deps: DialerDeps, target: DialTarget): Promise<WebSocketRoute> {
-  const direct = await directRoute(deps, target);
-  const config = await deps.relayConfig();
-  if (!config || !routesEndpoint(config, target.moduleId, target.endpointId)) {
-    return direct;
-  }
-  let address = new URL(config.bridgeOrigin).host;
-  try {
-    let grant = await deps.relayCredential(false);
-    for (let renewed = false; ; renewed = true) {
-      // The dashboard's answer is authoritative: it may have stopped routing
-      // the endpoint since the stored configuration was read.
-      if (!grant || !routesEndpoint(grant, target.moduleId, target.endpointId)) {
+type TicketOutcome =
+  | { kind: "ticket"; ticket: string; expiresInMs: number }
+  | { kind: "refused"; status: number }
+  | { kind: "failed"; message: string };
+
+/** A permit held until its ticket expires, so stop can release it early. */
+interface HeldPermit {
+  permit: BridgeOpenPermit;
+  timer: TimerHandle;
+}
+
+export class EndpointDialer {
+  /** Endpoints a `local` engine has already warned about finding in the relay configuration. */
+  private readonly warnedLocal = new Set<string>();
+  private readonly held = new Set<HeldPermit>();
+
+  constructor(private readonly deps: DialerDeps) {}
+
+  /**
+   * The route for one connect attempt. Everything is read afresh each time,
+   * so a retry picks up a change whose announcement was missed, and every
+   * bridge attempt gets a fresh ticket: a ticket is single-use, spent even
+   * when the upgrade it was presented on is refused. Rejects only when
+   * `opts.signal` aborts.
+   */
+  async dial(policy: RoutePolicy, ref: LocalEndpointRef, opts: ResolveOptions): Promise<EndpointResolution> {
+    const { signal } = opts;
+    signal.throwIfAborted();
+    const direct = await abortable(policy.direct(ref, opts.fallback), signal);
+    let config: RelayConfig | null;
+    try {
+      config = await abortable(this.deps.relayConfig(), signal);
+    } catch (error) {
+      signal.throwIfAborted();
+      if (this.deps.hosting === "local" || direct.ok) {
+        // Only the bridge needs the relay configuration; an engine that cannot
+        // read it still reaches an endpoint it can address directly.
+        this.deps.logger.warn("relay configuration unreadable; resolving the endpoint directly", {
+          moduleId: ref.moduleId,
+          endpointId: ref.endpointId,
+          error: errorMessage(error),
+        });
         return direct;
       }
-      address = new URL(grant.bridgeOrigin).host;
-      const path = `/bridge/${encodeURIComponent(target.moduleId)}/${encodeURIComponent(target.endpointId)}`;
-      const ticket = await requestTicket(deps, new URL(path, grant.bridgeOrigin), grant.credential);
-      if (typeof ticket === "string") {
-        const url = new URL(path, grant.bridgeOrigin);
-        url.protocol = "wss:";
-        url.searchParams.set("ticket", ticket);
-        return { route: "companion", url: url.toString(), password: direct.password, address };
-      }
-      // A cached credential the relay no longer accepts (a rotated key, a
-      // new companion host) is renewed once; a second refusal is the answer.
-      if (ticket !== 401 || renewed) {
-        throw new Error(`the companion relay refused the bridge (${ticket})`);
-      }
-      grant = await deps.relayCredential(true);
+      return unavailable("store_unreadable", `the relay configuration could not be read: ${errorMessage(error)}`);
     }
-  } catch (err) {
-    throw new EndpointRelayError(err instanceof Error ? err.message : String(err), address);
+    if (!config || !routesEndpoint(config, ref.moduleId, ref.endpointId)) {
+      return direct;
+    }
+    if (this.deps.hosting === "local") {
+      this.warnLocalListing(ref);
+      return direct;
+    }
+    return this.bridge(ref, config, direct, signal);
+  }
+
+  /** Releases every permit still held for an unspent ticket. */
+  stop(): void {
+    for (const hold of this.held) {
+      this.deps.timers.clearTimeout(hold.timer);
+      hold.permit.release();
+    }
+    this.held.clear();
+  }
+
+  private async bridge(
+    ref: LocalEndpointRef,
+    config: RelayConfig,
+    direct: DirectDecision,
+    signal: AbortSignal
+  ): Promise<EndpointResolution> {
+    let address = new URL(config.bridgeOrigin).host;
+    const permit = this.deps.opens.tryAcquire();
+    if (permit === null) {
+      return unavailable(
+        "busy",
+        `too many companion bridge opens in flight (${this.deps.opens.limit}); retrying later`,
+        address
+      );
+    }
+    let kept = false;
+    try {
+      let grant = await this.credential(false, signal);
+      for (let renewed = false; ; renewed = true) {
+        if (typeof grant === "string") {
+          return unavailable("relay", grant, address);
+        }
+        // The dashboard's answer is authoritative: it may have stopped routing
+        // the endpoint since the stored configuration was read.
+        if (!grant || !routesEndpoint(grant, ref.moduleId, ref.endpointId)) {
+          return direct;
+        }
+        address = new URL(grant.bridgeOrigin).host;
+        const path = `/bridge/${encodeURIComponent(ref.moduleId)}/${encodeURIComponent(ref.endpointId)}`;
+        const outcome = await this.requestTicket(new URL(path, grant.bridgeOrigin), grant.credential, signal);
+        if (outcome.kind === "ticket") {
+          kept = true;
+          this.holdUntilExpired(permit, outcome.expiresInMs);
+          const url = new URL(path, grant.bridgeOrigin);
+          url.protocol = "wss:";
+          url.searchParams.set("ticket", outcome.ticket);
+          const found: EndpointResolution = { ok: true, route: "companion", url: url.toString(), address };
+          if (direct.ok && direct.password !== undefined) {
+            found.password = direct.password;
+          }
+          return found;
+        }
+        if (outcome.kind === "failed") {
+          return unavailable("relay", outcome.message, address);
+        }
+        if (outcome.status === 429) {
+          return unavailable(
+            "busy",
+            "the companion relay has too many bridge opens in flight; retrying later",
+            address
+          );
+        }
+        // A cached credential the relay no longer accepts (a rotated key, a
+        // new companion host) is renewed once; a second refusal is the answer.
+        if (outcome.status !== 401 || renewed) {
+          return unavailable("relay", `the companion relay refused the bridge (${outcome.status})`, address);
+        }
+        grant = await this.credential(true, signal);
+      }
+    } finally {
+      if (!kept) {
+        permit.release();
+      }
+    }
+  }
+
+  /** The grant, null when nothing is routed, or why none could be had. */
+  private async credential(force: boolean, signal: AbortSignal): Promise<RelayGrant | null | string> {
+    try {
+      return await abortable(this.deps.relayCredential(force), signal);
+    } catch (error) {
+      signal.throwIfAborted();
+      return `no companion bridge credential: ${errorMessage(error)}`;
+    }
+  }
+
+  private async requestTicket(url: URL, credential: string, signal: AbortSignal): Promise<TicketOutcome> {
+    const { timers, ticketTimeoutMs } = this.deps;
+    const controller = new AbortController();
+    const timer = timers.setTimeout(
+      () => controller.abort(new Error(`no answer within ${ticketTimeoutMs}ms`)),
+      ticketTimeoutMs
+    );
+    const onAbort = () => controller.abort(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    try {
+      const response = await this.deps.fetch(url, {
+        method: "POST",
+        headers: { authorization: `Bearer ${credential}` },
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        return { kind: "refused", status: response.status };
+      }
+      const body = (await response.json().catch(() => null)) as { ticket?: unknown; expiresInMs?: unknown } | null;
+      const ticket = body?.ticket;
+      if (typeof ticket !== "string" || !TICKET.test(ticket)) {
+        return { kind: "failed", message: "the companion relay answered without a ticket" };
+      }
+      const expiresInMs = body?.expiresInMs;
+      const validFor =
+        typeof expiresInMs === "number" && Number.isInteger(expiresInMs) && expiresInMs > 0
+          ? expiresInMs
+          : RELAY_TICKET_TTL_MS;
+      return { kind: "ticket", ticket, expiresInMs: validFor };
+    } catch (error) {
+      signal.throwIfAborted();
+      return { kind: "failed", message: `the companion relay did not answer: ${errorMessage(error)}` };
+    } finally {
+      timers.clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+    }
+  }
+
+  /**
+   * The relay counts a ticket until it is presented or expires. The
+   * gateway cannot see it presented, so it counts it until it expires.
+   */
+  private holdUntilExpired(permit: BridgeOpenPermit, expiresInMs: number): void {
+    const hold: HeldPermit = {
+      permit,
+      timer: this.deps.timers.setTimeout(() => {
+        this.held.delete(hold);
+        permit.release();
+      }, expiresInMs),
+    };
+    this.held.add(hold);
+  }
+
+  private warnLocalListing(ref: LocalEndpointRef): void {
+    const key = endpointKey(ref);
+    if (this.warnedLocal.has(key)) {
+      return;
+    }
+    this.warnedLocal.add(key);
+    // The bridge would loop through the cloud back to this same machine.
+    this.deps.logger.warn(
+      `the relay configuration routes ${key} through the companion, but this engine runs locally (WOOFX3_HOSTING=local); dialing it directly`
+    );
   }
 }
 
-/**
- * True when a relay configuration change moves the endpoint off the route
- * the latest attempt took, so the open session should be replaced. With no
- * attempt yet, the one in flight may have read the old configuration.
- */
-export function relayChangeMovesEndpoint(
-  config: RelayConfig | null,
-  target: Pick<DialTarget, "moduleId" | "endpointId">,
-  last: { route: "direct" | "companion"; address: string } | null
-): boolean {
-  if (last === null) {
-    return true;
+function unavailable(reason: EndpointUnavailable["reason"], message: string, address?: string): EndpointUnavailable {
+  const result: EndpointUnavailable = { ok: false, reason, message };
+  if (address !== undefined) {
+    result.address = address;
   }
-  if (!config || !routesEndpoint(config, target.moduleId, target.endpointId)) {
-    return last.route === "companion";
-  }
-  return last.route !== "companion" || new URL(config.bridgeOrigin).host !== last.address;
+  return result;
 }
 
-/** The ticket, or the status the relay refused the exchange with. */
-async function requestTicket(deps: DialerDeps, url: URL, credential: string): Promise<string | number> {
-  let response: Response;
-  try {
-    response = await deps.fetch(url, {
-      method: "POST",
-      headers: { authorization: `Bearer ${credential}` },
-      signal: AbortSignal.timeout(TICKET_TIMEOUT_MS),
-    });
-  } catch (err) {
-    throw new Error(`the companion relay did not answer: ${err instanceof Error ? err.message : String(err)}`);
+/** `work`, or a rejection with the signal's reason as soon as it aborts. */
+function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(signal.reason);
   }
-  if (!response.ok) {
-    return response.status;
-  }
-  const body = (await response.json().catch(() => null)) as { ticket?: unknown } | null;
-  const ticket = body?.ticket;
-  if (typeof ticket !== "string" || !TICKET.test(ticket)) {
-    throw new Error("the companion relay answered without a ticket");
-  }
-  return ticket;
-}
-
-/**
- * The address in the module's settings, each value falling back to
- * connectors' configuration when empty. A port that is not a port falls
- * back too, rather than producing a URL that can never connect. When db-proxy
- * cannot be read, the configuration is used: a local endpoint is best-effort
- * and must not stop on a db outage.
- */
-export async function directRoute(deps: DialerDeps, target: DialTarget): Promise<WebSocketRoute> {
-  let keys = target.fallbackKeys;
-  let settings: { key: string; value: string }[] = [];
-  let secrets: Record<string, string> = {};
-  try {
-    keys = (await deps.endpointKeys(target.moduleId, target.endpointId)) ?? target.fallbackKeys;
-    [settings, secrets] = await Promise.all([deps.settings(target.moduleId), deps.secrets(target.moduleId)]);
-  } catch (err) {
-    deps.logger.debug(`${target.moduleId} settings unreadable; using connectors' configuration`, {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    settings = [];
-    secrets = {};
-  }
-  return directRouteFrom(settings, secrets, keys, target.fallback);
-}
-
-export function directRouteFrom(
-  settings: readonly { key: string; value: string }[],
-  secrets: Readonly<Record<string, string>>,
-  keys: EndpointKeys,
-  fallback: DialTarget["fallback"]
-): WebSocketRoute {
-  const settingValue = (key: string) => settings.find((setting) => setting.key === key)?.value.trim() ?? "";
-  const host = urlHost(settingValue(keys.hostSetting) || fallback.host);
-  const port = validPort(settingValue(keys.portSetting)) ?? fallback.port;
-  const password = (keys.passwordSetting ? secrets[keys.passwordSetting] : undefined) || fallback.password;
-  const route: WebSocketRoute = { route: "direct", url: `ws://${host}:${port}`, address: `${host}:${port}` };
-  if (password) {
-    route.password = password;
-  }
-  return route;
-}
-
-/**
- * The `local[]` entry for an endpoint in a stored manifest (`modules.manifest`,
- * as barkloader re-serialized it at install). Anything it cannot read counts
- * as absent, so a module installed before `local[]` existed uses the caller's
- * fallback keys.
- */
-export function endpointKeysFromManifest(manifest: string | null | undefined, endpointId: string): EndpointKeys | null {
-  if (!manifest) {
-    return null;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(manifest);
-  } catch {
-    return null;
-  }
-  const local = (parsed as { local?: unknown } | null)?.local;
-  if (!Array.isArray(local)) {
-    return null;
-  }
-  const entry = local.find((e) => (e as { id?: unknown } | null)?.id === endpointId) as
-    | { hostSetting?: unknown; portSetting?: unknown; passwordSetting?: unknown }
-    | undefined;
-  if (!entry || typeof entry.hostSetting !== "string" || typeof entry.portSetting !== "string") {
-    return null;
-  }
-  const keys: EndpointKeys = { hostSetting: entry.hostSetting, portSetting: entry.portSetting };
-  if (typeof entry.passwordSetting === "string") {
-    keys.passwordSetting = entry.passwordSetting;
-  }
-  return keys;
-}
-
-function validPort(value: string): string | null {
-  if (!/^\d+$/.test(value)) {
-    return null;
-  }
-  const port = Number(value);
-  return port >= 1 && port <= 65535 ? String(port) : null;
-}
-
-/** An IPv6 address goes in brackets in a URL; anything else is used as typed. */
-function urlHost(host: string): string {
-  return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      }
+    );
+  });
 }

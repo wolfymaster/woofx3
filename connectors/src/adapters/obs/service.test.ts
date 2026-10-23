@@ -1,32 +1,24 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import type { EndpointStore } from "../../companion/endpoint-store";
+import type { EndpointUnavailable } from "../../companion/types";
 import { ObsEnvSchema, obsConfig } from "../../config/obs";
 import { systemRandom, systemTimers } from "../../host/deps";
 import { type FakeObsOptions, type FakeObsServer, startFakeObs } from "./fake-obs-server";
 import { RefreshLatch } from "./refresh-latch";
 import { createObsService, type ObsService } from "./service";
+import type { ObsStatusReply } from "./status";
 
 const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as never;
 
 const OVERLAY_PORT = 9101;
 
-const emptyStore: EndpointStore = {
-  moduleManifest: async () => null,
-  moduleSettings: async () => [],
-  moduleSecrets: async () => ({}),
-  relayConfig: async () => null,
-};
-
 function service(
   fallback: { host: string; port: string } = { host: "127.0.0.1", port: "4455" },
   latch = new RefreshLatch()
 ): ObsService {
+  const address = `${fallback.host}:${fallback.port}`;
   return createObsService({
-    store: emptyStore,
-    relayCredential: async () => {
-      throw new Error("nothing is routed through a companion in these tests");
-    },
-    fallback,
+    resolve: async () => ({ ok: true, route: "direct", url: `ws://${address}`, address }),
+    relayConfig: async () => null,
     latch,
     connection: obsConfig(ObsEnvSchema.parse({})).connection,
     random: systemRandom,
@@ -64,6 +56,42 @@ describe("createObsService", () => {
     await obs.stop();
     expect(obs.status().state).toBe("stopped");
   });
+});
+
+describe("routes from the companion gateway", () => {
+  const unavailable: Array<[EndpointUnavailable, ObsStatusReply["failure"], ObsStatusReply["route"]]> = [
+    [{ ok: false, reason: "relay", message: "refused", address: "c-x.woofx3.tv" }, "relay", "companion"],
+    [{ ok: false, reason: "busy", message: "too many", address: "c-x.woofx3.tv" }, "relay", "companion"],
+    [{ ok: false, reason: "store_unreadable", message: "db down" }, "unreachable", undefined],
+  ];
+  for (const [resolution, failure, route] of unavailable) {
+    it(`reports ${resolution.reason} as ${failure} and keeps retrying`, async () => {
+      let attempts = 0;
+      const obs = createObsService({
+        resolve: async () => {
+          attempts++;
+          return resolution;
+        },
+        relayConfig: async () => null,
+        latch: new RefreshLatch(),
+        connection: obsConfig(ObsEnvSchema.parse({ woofx3ObsBackoffInitialMs: 10, woofx3ObsBackoffMaxMs: 20 }))
+          .connection,
+        random: systemRandom,
+        timers: systemTimers,
+        logger,
+      });
+      try {
+        obs.start(forever);
+        await until(() => attempts >= 2);
+        const status = obs.status();
+        expect(status.failure).toBe(failure);
+        expect(status.route).toBe(route);
+        expect(status.address).toBe(resolution.address ?? null);
+      } finally {
+        await obs.stop();
+      }
+    });
+  }
 });
 
 describe("overlay refresh requests", () => {

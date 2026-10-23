@@ -1,5 +1,8 @@
 // Fakes shared by the host's tests: a hand-driven clock and timers, a bus,
 // a recording logger and a scriptable adapter. Not imported by the host.
+import type { EndpointStore } from "../companion/endpoint-store";
+import type { CompanionGateway, CompanionHandle } from "../companion/types";
+import { CompanionEnvSchema, companionConfig } from "../config/companion";
 import type { Adapter, AdapterContext, AdapterManifest, EgressHandlers, ServedSubject, Unavailable } from "./adapter";
 import type { AdapterId } from "./adapter-ids";
 import type { Clock, IdSource, Logger, LogMetadata, RandomSource, TimerHandle, Timers } from "./deps";
@@ -10,7 +13,40 @@ import {
   type LinkStore,
   linkReaders,
 } from "./link-readers";
+import type { HostCompanionDeps } from "./host";
 import { type BusClient, type BusHandler, type BusMessage, type BusSubscription, subjectCovered } from "./scoped-bus";
+
+/** An endpoint store with nothing installed and nothing routed through a companion. */
+export const emptyEndpointStore: EndpointStore = {
+  moduleManifest: async () => null,
+  moduleSettings: async () => [],
+  moduleSecrets: async () => ({}),
+  relayConfig: async () => null,
+};
+
+/** The companion gateway's deps for a host under test: shipped defaults, `store`, and a relay nobody can reach. */
+export function testCompanion(
+  store: EndpointStore = emptyEndpointStore,
+  env: Record<string, unknown> = {}
+): HostCompanionDeps {
+  return {
+    config: companionConfig(CompanionEnvSchema.parse(env)),
+    store,
+    fetch: async (url) => {
+      throw new Error(`no relay in this test (${url.host})`);
+    },
+  };
+}
+
+/** For a supervisor under test whose adapters never reach a local endpoint. */
+export const noCompanion: Pick<CompanionGateway, "forAdapter"> = {
+  forAdapter: (id): CompanionHandle => ({
+    resolve: () => Promise.reject(new Error(`the ${id} adapter has no companion gateway in this test`)),
+    onRouteChange: () => {
+      throw new Error(`the ${id} adapter has no companion gateway in this test`);
+    },
+  }),
+};
 
 /** The shipped link readers on an engine with WOOFX3_OBS_HOST unset. */
 export function shippedLinkReaders(): LinkReaderRegistry {

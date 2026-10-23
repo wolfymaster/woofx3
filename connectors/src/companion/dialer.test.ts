@@ -1,72 +1,177 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
-import type { RelayConfig } from "@woofx3/api";
+import { describe, expect, it, mock } from "bun:test";
+import type { EngineHosting, RelayConfig } from "@woofx3/api";
 import { type RelayGrant, requestRelayCredentialOverNats } from "@woofx3/common/cloudevents/Relay/relay";
-import { obsFailureKind } from "../adapters/obs/connection";
-import { type FakeObsServer, startFakeObs } from "../adapters/obs/fake-obs-server";
-import { obsDialTarget, openObsOverRoute } from "../adapters/obs/settings";
-import { OBS_DEFAULTS } from "../config/obs";
-import { systemTimers, type Timers } from "../host/deps";
-import {
-  type DialerDeps,
-  dialWebSocketEndpoint,
-  directRouteFrom,
-  EndpointRelayError,
-  endpointKeysFromManifest,
-  relayChangeMovesEndpoint,
-} from "./dialer";
+import { OBS_ENDPOINT, obsAdapterFallback } from "../adapters/obs/settings";
+import { RELAY_TICKET_TTL_MS } from "../config/companion";
+import { FakeTime, flush, RecordingLogger } from "../host/testing";
+import { BridgeOpens } from "./bridge-opens";
+import { type DialerDeps, EndpointDialer, type Fetch } from "./dialer";
+import type { EndpointStore } from "./endpoint-store";
+import { adapterPolicy } from "./route-policy";
+import type { EndpointResolution } from "./types";
 
-const quietLogger = { info() {}, warn() {}, error() {}, debug() {} } as never;
-const TARGET = obsDialTarget({ host: "127.0.0.1", port: "4455", token: "from-config" });
 const ORIGIN = "https://c-x.woofx3.tv";
 const TICKET = "T".repeat(43);
 const CONFIG: RelayConfig = { bridgeOrigin: ORIGIN, endpoints: [{ moduleId: "woofx3_obs", endpointId: "obs" }] };
-const GRANT: RelayGrant = { ...CONFIG, credential: "wfxr1.k1.cGF5bG9hZA.c2ln", expiresAt: Date.now() + 300_000 };
+const GRANT: RelayGrant = { ...CONFIG, credential: "wfxr1.k1.cGF5bG9hZA.c2ln", expiresAt: 2_000_000_000_000 };
+const FALLBACK = obsAdapterFallback({ host: "127.0.0.1", port: "4455", token: "from-config" });
+const DIRECT: EndpointResolution = {
+  ok: true,
+  route: "direct",
+  url: "ws://192.168.1.20:4460",
+  password: "hunter2",
+  address: "192.168.1.20:4460",
+};
 
-const OBS_MANIFEST = JSON.stringify({
-  id: "woofx3_obs",
-  local: [{ id: "obs", hostSetting: "obsHost", portSetting: "obsPort", passwordSetting: "obsPassword" }],
-});
+const store: EndpointStore = {
+  moduleManifest: async () => null,
+  moduleSettings: async () => [
+    { key: "host", value: "192.168.1.20" },
+    { key: "port", value: "4460" },
+  ],
+  moduleSecrets: async () => ({ password: "hunter2" }),
+  relayConfig: async () => null,
+};
 
-function deps(overrides: Partial<DialerDeps> = {}) {
-  const fetchMock = mock(async (_url: URL | RequestInfo, _init?: RequestInit) => Response.json({ ticket: TICKET }));
-  const base: DialerDeps = {
-    endpointKeys: async () => null,
-    settings: async () => [
-      { key: "host", value: "192.168.1.20" },
-      { key: "port", value: "4460" },
-    ],
-    secrets: async () => ({ password: "hunter2" }),
+const ticketReply = () => Response.json({ ticket: TICKET, expiresInMs: RELAY_TICKET_TTL_MS });
+
+function setup(overrides: Partial<DialerDeps> = {}) {
+  const time = new FakeTime();
+  const logger = new RecordingLogger();
+  const fetchMock = mock<Fetch>(async () => ticketReply());
+  const relayCredential = mock(async (_force: boolean): Promise<RelayGrant | null> => GRANT);
+  const deps: DialerDeps = {
     relayConfig: async () => null,
-    relayCredential: async (_force: boolean) => GRANT,
-    fetch: fetchMock as unknown as typeof fetch,
-    logger: quietLogger,
+    relayCredential,
+    fetch: fetchMock,
+    opens: new BridgeOpens(8),
+    hosting: null,
+    ticketTimeoutMs: 5_000,
+    timers: time,
+    logger,
+    ...overrides,
   };
-  return { deps: { ...base, ...overrides }, fetchMock };
+  const dialer = new EndpointDialer(deps);
+  // An override replaces the default mock and cap; hand back whichever is in use.
+  const inUse = { relayCredential: deps.relayCredential as typeof relayCredential, opens: deps.opens };
+  const policy = adapterPolicy({ store, logger });
+  const dial = (signal: AbortSignal = new AbortController().signal) =>
+    dialer.dial(policy, OBS_ENDPOINT, { signal, fallback: FALLBACK });
+  return { dialer, dial, deps, fetchMock, ...inUse, time, logger };
 }
 
-describe("dialWebSocketEndpoint", () => {
-  it("dials the settings' address with no relay configuration", async () => {
-    const { deps: d, fetchMock } = deps();
-    expect(await dialWebSocketEndpoint(d, TARGET)).toEqual({
+const routed = async () => CONFIG;
+
+describe("EndpointDialer route table", () => {
+  type Row = {
+    name: string;
+    hosting: EngineHosting | null;
+    listed: boolean;
+    credential: "grant" | "null" | "leaves it out" | "none";
+    route: "direct" | "companion" | "relay";
+    asksCredential: boolean;
+  };
+  const rows: Row[] = [
+    {
+      name: "local, listed",
+      hosting: "local",
+      listed: true,
+      credential: "grant",
       route: "direct",
-      url: "ws://192.168.1.20:4460",
-      password: "hunter2",
-      address: "192.168.1.20:4460",
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
+      asksCredential: false,
+    },
+    {
+      name: "local, unlisted",
+      hosting: "local",
+      listed: false,
+      credential: "grant",
+      route: "direct",
+      asksCredential: false,
+    },
+  ];
+  for (const hosting of ["self", "managed", null] as const) {
+    rows.push(
+      {
+        name: `${hosting}, unlisted`,
+        hosting,
+        listed: false,
+        credential: "grant",
+        route: "direct",
+        asksCredential: false,
+      },
+      {
+        name: `${hosting}, listed, null answer`,
+        hosting,
+        listed: true,
+        credential: "null",
+        route: "direct",
+        asksCredential: true,
+      },
+      {
+        name: `${hosting}, listed, a grant that leaves it out`,
+        hosting,
+        listed: true,
+        credential: "leaves it out",
+        route: "direct",
+        asksCredential: true,
+      },
+      {
+        name: `${hosting}, listed, a grant listing it`,
+        hosting,
+        listed: true,
+        credential: "grant",
+        route: "companion",
+        asksCredential: true,
+      },
+      {
+        name: `${hosting}, listed, no credential to be had`,
+        hosting,
+        listed: true,
+        credential: "none",
+        route: "relay",
+        asksCredential: true,
+      }
+    );
+  }
 
-  it("dials directly when the configuration does not list the endpoint", async () => {
-    const { deps: d, fetchMock } = deps({
-      relayConfig: async () => ({ ...CONFIG, endpoints: [{ moduleId: "woofx3_lights", endpointId: "obs" }] }),
+  for (const row of rows) {
+    it(`${row.name} -> ${row.route}`, async () => {
+      const { dial, relayCredential, fetchMock } = setup({
+        hosting: row.hosting,
+        relayConfig: async () => (row.listed ? CONFIG : { ...CONFIG, endpoints: [] }),
+        relayCredential: mock(async (_force: boolean): Promise<RelayGrant | null> => {
+          switch (row.credential) {
+            case "grant":
+              return GRANT;
+            case "null":
+              return null;
+            case "leaves it out":
+              return { ...GRANT, endpoints: [] };
+            case "none":
+              throw new Error("the api service could not get a relay credential: dashboard answered HTTP 503");
+          }
+        }),
+      });
+      const resolution = await dial();
+      if (row.route === "relay") {
+        expect(resolution).toMatchObject({ ok: false, reason: "relay", address: "c-x.woofx3.tv" });
+      } else {
+        expect(resolution).toMatchObject({ ok: true, route: row.route });
+      }
+      if (row.route === "direct") {
+        expect(resolution).toEqual(DIRECT);
+      }
+      expect(fetchMock).toHaveBeenCalledTimes(row.route === "companion" ? 1 : 0);
+      expect(relayCredential).toHaveBeenCalledTimes(row.asksCredential ? 1 : 0);
     });
-    expect((await dialWebSocketEndpoint(d, TARGET)).route).toBe("direct");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
+  }
+});
 
-  it("exchanges the credential for a ticket and dials the bridge when the endpoint is listed", async () => {
-    const { deps: d, fetchMock } = deps({ relayConfig: async () => CONFIG });
-    expect(await dialWebSocketEndpoint(d, TARGET)).toEqual({
+describe("EndpointDialer bridge", () => {
+  it("exchanges the credential for a ticket and dials the bridge with the endpoint's own password", async () => {
+    const { dial, fetchMock } = setup({ relayConfig: routed });
+    expect(await dial()).toEqual({
+      ok: true,
       route: "companion",
       url: `wss://c-x.woofx3.tv/bridge/woofx3_obs/obs?ticket=${TICKET}`,
       password: "hunter2",
@@ -79,328 +184,220 @@ describe("dialWebSocketEndpoint", () => {
   });
 
   it("asks for a fresh ticket on every attempt", async () => {
-    const { deps: d, fetchMock } = deps({ relayConfig: async () => CONFIG });
-    await dialWebSocketEndpoint(d, TARGET);
-    await dialWebSocketEndpoint(d, TARGET);
+    const { dial, fetchMock } = setup({ relayConfig: routed });
+    await dial();
+    await dial();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("dials the bridge the credential is for, and reports its host when it refuses", async () => {
     const moved = { ...GRANT, bridgeOrigin: "https://c-y.woofx3.tv" };
-    const { deps: d } = deps({ relayConfig: async () => CONFIG, relayCredential: async () => moved });
-    expect((await dialWebSocketEndpoint(d, TARGET)).url).toStartWith("wss://c-y.woofx3.tv/bridge/");
-    d.fetch = (async () => new Response("no", { status: 503 })) as unknown as typeof fetch;
-    const err = await dialWebSocketEndpoint(d, TARGET).catch((e) => e);
-    expect(err.address).toBe("c-y.woofx3.tv");
+    const first = setup({ relayConfig: routed, relayCredential: async () => moved });
+    expect(await first.dial()).toMatchObject({
+      ok: true,
+      url: expect.stringMatching(/^wss:\/\/c-y\.woofx3\.tv\/bridge\//),
+    });
+    const refused = setup({
+      relayConfig: routed,
+      relayCredential: async () => moved,
+      fetch: async () => new Response("no", { status: 503 }),
+    });
+    expect(await refused.dial()).toMatchObject({ ok: false, reason: "relay", address: "c-y.woofx3.tv" });
   });
 
   it("renews the credential once when the relay refuses it with 401", async () => {
     const fresh = { ...GRANT, credential: "wfxr1.k1.ZnJlc2g.c2ln" };
     const relayCredential = mock(async (force: boolean) => (force ? fresh : GRANT));
-    const fetchMock = mock(async (_url: URL | RequestInfo, init?: RequestInit) =>
-      new Headers(init?.headers).get("authorization") === `Bearer ${fresh.credential}`
-        ? Response.json({ ticket: TICKET })
+    const fetchMock = mock<Fetch>(async (_url, init) =>
+      new Headers(init.headers).get("authorization") === `Bearer ${fresh.credential}`
+        ? ticketReply()
         : new Response("no", { status: 401 })
     );
-    const { deps: d } = deps({
-      relayConfig: async () => CONFIG,
-      relayCredential,
-      fetch: fetchMock as unknown as typeof fetch,
-    });
-    expect((await dialWebSocketEndpoint(d, TARGET)).route).toBe("companion");
+    const { dial } = setup({ relayConfig: routed, relayCredential, fetch: fetchMock });
+    expect(await dial()).toMatchObject({ ok: true, route: "companion" });
     expect(relayCredential.mock.calls).toEqual([[false], [true]]);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("gives up after a second 401", async () => {
-    const relayCredential = mock(async (_force: boolean) => GRANT);
-    const { deps: d } = deps({
-      relayConfig: async () => CONFIG,
-      relayCredential,
-      fetch: (async () => new Response("no", { status: 401 })) as unknown as typeof fetch,
+    const { dial, relayCredential } = setup({
+      relayConfig: routed,
+      fetch: async () => new Response("no", { status: 401 }),
     });
-    const err = await dialWebSocketEndpoint(d, TARGET).catch((e) => e);
-    expect(err).toBeInstanceOf(EndpointRelayError);
+    expect(await dial()).toMatchObject({ ok: false, reason: "relay", message: expect.stringContaining("401") });
     expect(relayCredential).toHaveBeenCalledTimes(2);
   });
 
-  for (const status of [401, 404, 429, 502, 503]) {
-    it(`throws a relay error when the ticket exchange answers ${status}`, async () => {
-      const { deps: d } = deps({
-        relayConfig: async () => CONFIG,
-        fetch: (async () => new Response("no", { status })) as unknown as typeof fetch,
+  for (const status of [403, 404, 502, 503]) {
+    it(`answers relay, with no renewal, when the ticket exchange answers ${status}`, async () => {
+      const { dial, relayCredential } = setup({
+        relayConfig: routed,
+        fetch: async () => new Response("no", { status }),
       });
-      const err = await dialWebSocketEndpoint(d, TARGET).catch((e) => e);
-      expect(err).toBeInstanceOf(EndpointRelayError);
-      expect(obsFailureKind(err)).toBe("relay");
-      expect(err.address).toBe("c-x.woofx3.tv");
-      expect(err.message).toContain(String(status));
+      expect(await dial()).toEqual({
+        ok: false,
+        reason: "relay",
+        message: `the companion relay refused the bridge (${status})`,
+        address: "c-x.woofx3.tv",
+      });
+      expect(relayCredential).toHaveBeenCalledTimes(1);
     });
   }
 
-  it("throws a relay error when the relay does not answer or answers without a ticket", async () => {
-    for (const fetchImpl of [
+  it("answers busy when the relay has too many tickets out (429)", async () => {
+    const { dial, opens } = setup({
+      relayConfig: routed,
+      fetch: async () => Response.json({ error: "too_many_tickets" }, { status: 429 }),
+    });
+    expect(await dial()).toMatchObject({ ok: false, reason: "busy", address: "c-x.woofx3.tv" });
+    expect(opens.status().inUse).toBe(0);
+  });
+
+  const malformed: Array<[string, Fetch]> = [
+    [
+      "no answer",
       async () => {
         throw new TypeError("fetch failed");
       },
-      async () => Response.json({ ticket: "short" }),
-      async () => new Response("not json"),
-    ]) {
-      const { deps: d } = deps({ relayConfig: async () => CONFIG, fetch: fetchImpl as unknown as typeof fetch });
-      await expect(dialWebSocketEndpoint(d, TARGET)).rejects.toBeInstanceOf(EndpointRelayError);
-    }
-  });
-
-  it("throws a relay error when no credential can be had", async () => {
-    const { deps: d } = deps({
-      relayConfig: async () => CONFIG,
-      relayCredential: async () => {
-        throw new Error("the api service could not get a relay credential: dashboard answered HTTP 503");
-      },
+    ],
+    ["a short ticket", async () => Response.json({ ticket: "short" })],
+    ["no ticket", async () => Response.json({ expiresInMs: 30_000 })],
+    ["a body that is not JSON", async () => new Response("not json")],
+  ];
+  for (const [name, fetchImpl] of malformed) {
+    it(`answers relay for ${name}`, async () => {
+      const { dial, opens } = setup({ relayConfig: routed, fetch: fetchImpl });
+      expect(await dial()).toMatchObject({ ok: false, reason: "relay", address: "c-x.woofx3.tv" });
+      expect(opens.status().inUse).toBe(0);
     });
-    const err = await dialWebSocketEndpoint(d, TARGET).catch((e) => e);
-    expect(err).toBeInstanceOf(EndpointRelayError);
-    expect(err.address).toBe("c-x.woofx3.tv");
+  }
+
+  it("answers relay when the ticket exchange outlives its timeout", async () => {
+    const hanging: Fetch = (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+      });
+    const { dial, time } = setup({ relayConfig: routed, fetch: hanging });
+    const resolving = dial();
+    await flush();
+    await time.advance(5_000);
+    expect(await resolving).toMatchObject({ ok: false, reason: "relay", message: expect.stringContaining("5000ms") });
   });
 
-  it("dials directly when the credential source answers null", async () => {
-    const { deps: d, fetchMock } = deps({ relayConfig: async () => CONFIG, relayCredential: async () => null });
-    expect((await dialWebSocketEndpoint(d, TARGET)).route).toBe("direct");
+  describe("when the relay configuration cannot be read", () => {
+    const unreadable = async (): Promise<RelayConfig | null> => {
+      throw new Error("db-proxy GetSetting: unavailable");
+    };
+
+    it("goes direct when the endpoint has a direct route", async () => {
+      const { dial, fetchMock } = setup({ relayConfig: unreadable, hosting: "self" });
+      expect(await dial()).toEqual(DIRECT);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("answers store_unreadable when there is no direct route either", async () => {
+      const { dialer, logger } = setup({ relayConfig: unreadable, hosting: "self" });
+      const broken = adapterPolicy({
+        store: {
+          ...store,
+          moduleSettings: async () => {
+            throw new Error("db-proxy: unavailable");
+          },
+        },
+        logger,
+      });
+      const signal = new AbortController().signal;
+      expect(await dialer.dial(broken, OBS_ENDPOINT, { signal })).toMatchObject({
+        ok: false,
+        reason: "store_unreadable",
+      });
+    });
+  });
+});
+
+describe("EndpointDialer bridge opens", () => {
+  it("holds a permit until the ticket expires, and answers busy past the cap", async () => {
+    const { dial, time } = setup({ relayConfig: routed, opens: new BridgeOpens(1) });
+    expect(await dial()).toMatchObject({ ok: true, route: "companion" });
+    expect(await dial()).toMatchObject({ ok: false, reason: "busy", address: "c-x.woofx3.tv" });
+    await time.advance(RELAY_TICKET_TTL_MS);
+    expect(await dial()).toMatchObject({ ok: true, route: "companion" });
+  });
+
+  it("releases the permit at once when the open fails", async () => {
+    const { dial, opens } = setup({
+      relayConfig: routed,
+      opens: new BridgeOpens(1),
+      fetch: async () => new Response("no", { status: 503 }),
+    });
+    await dial();
+    expect(opens.status()).toEqual({ inUse: 0, limit: 1, refused: 0 });
+  });
+
+  it("counts refusals, and releases every held permit on stop", async () => {
+    const { dial, dialer, opens, time } = setup({ relayConfig: routed, opens: new BridgeOpens(1) });
+    await dial();
+    await dial();
+    expect(opens.status()).toEqual({ inUse: 1, limit: 1, refused: 1 });
+    dialer.stop();
+    expect(opens.status().inUse).toBe(0);
+    expect(time.pending).toBe(0);
+  });
+
+  it("never asks for a credential when the cap is reached", async () => {
+    const { dial, relayCredential } = setup({ relayConfig: routed, opens: new BridgeOpens(1) });
+    await dial();
+    await dial();
+    expect(relayCredential).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("EndpointDialer abort", () => {
+  it("rejects with the signal's reason when it is already aborted", async () => {
+    const { dial, fetchMock } = setup({ relayConfig: routed });
+    const controller = new AbortController();
+    controller.abort(new Error("the attempt is over"));
+    await expect(dial(controller.signal)).rejects.toThrow("the attempt is over");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("dials directly when the dashboard's answer no longer routes the endpoint", async () => {
-    const { deps: d } = deps({
-      relayConfig: async () => CONFIG,
-      relayCredential: async () => ({ ...GRANT, endpoints: [] }),
-    });
-    expect((await dialWebSocketEndpoint(d, TARGET)).route).toBe("direct");
+  it("abandons a ticket exchange in flight and releases its permit", async () => {
+    const hanging: Fetch = (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+      });
+    const { dial, opens, time } = setup({ relayConfig: routed, fetch: hanging });
+    const controller = new AbortController();
+    const resolving = dial(controller.signal);
+    await flush();
+    expect(opens.status().inUse).toBe(1);
+    controller.abort(new Error("stopped"));
+    await expect(resolving).rejects.toThrow("stopped");
+    expect(opens.status().inUse).toBe(0);
+    expect(time.pending).toBe(0);
+  });
+});
+
+describe("EndpointDialer on a local engine", () => {
+  it("dials a listed endpoint directly, never asks the relay, and warns once", async () => {
+    const { dial, logger, relayCredential, fetchMock } = setup({ hosting: "local", relayConfig: routed });
+    expect(await dial()).toEqual(DIRECT);
+    expect(await dial()).toEqual(DIRECT);
+    expect(relayCredential).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    const warnings = logger.at("warn");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toContain("woofx3_obs/obs");
   });
 
-  it("reads the settings the stored manifest's local[] entry names", async () => {
-    const { deps: d } = deps({
-      endpointKeys: async (moduleId, endpointId) =>
-        moduleId === "woofx3_obs" ? endpointKeysFromManifest(OBS_MANIFEST, endpointId) : null,
-      settings: async () => [
-        { key: "obsHost", value: "obs.lan" },
-        { key: "obsPort", value: "4470" },
-        { key: "host", value: "ignored" },
-      ],
-      secrets: async () => ({ obsPassword: "s3cret", password: "ignored" }),
-    });
-    expect(await dialWebSocketEndpoint(d, TARGET)).toMatchObject({ url: "ws://obs.lan:4470", password: "s3cret" });
-  });
-
-  it("uses the configuration when the settings are unreadable", async () => {
-    const { deps: d } = deps({
-      settings: async () => {
+  it("dials directly when the relay configuration cannot be read", async () => {
+    const { dial } = setup({
+      hosting: "local",
+      relayConfig: async () => {
         throw new Error("db down");
       },
     });
-    expect(await dialWebSocketEndpoint(d, TARGET)).toEqual({
-      route: "direct",
-      url: "ws://127.0.0.1:4455",
-      password: "from-config",
-      address: "127.0.0.1:4455",
-    });
-  });
-});
-
-describe("relayChangeMovesEndpoint", () => {
-  const direct = { route: "direct" as const, address: "127.0.0.1:4455" };
-  const bridged = { route: "companion" as const, address: "c-x.woofx3.tv" };
-
-  it("moves a direct session onto a bridge that now lists the endpoint", () => {
-    expect(relayChangeMovesEndpoint(CONFIG, TARGET, direct)).toBe(true);
-  });
-
-  it("moves a bridged session off when the endpoint is no longer listed", () => {
-    expect(relayChangeMovesEndpoint(null, TARGET, bridged)).toBe(true);
-    expect(relayChangeMovesEndpoint({ ...CONFIG, endpoints: [] }, TARGET, bridged)).toBe(true);
-  });
-
-  it("moves a bridged session to another bridge", () => {
-    expect(relayChangeMovesEndpoint({ ...CONFIG, bridgeOrigin: "https://c-y.woofx3.tv" }, TARGET, bridged)).toBe(true);
-  });
-
-  it("leaves a session whose route is unchanged", () => {
-    expect(relayChangeMovesEndpoint(CONFIG, TARGET, bridged)).toBe(false);
-    expect(relayChangeMovesEndpoint(null, TARGET, direct)).toBe(false);
-    expect(
-      relayChangeMovesEndpoint(
-        { ...CONFIG, endpoints: [{ moduleId: "woofx3_lights", endpointId: "obs" }] },
-        TARGET,
-        direct
-      )
-    ).toBe(false);
-  });
-
-  it("reconnects when no attempt has reported a route yet", () => {
-    expect(relayChangeMovesEndpoint(CONFIG, TARGET, null)).toBe(true);
-  });
-});
-
-const CONNECT_LIMITS = {
-  connectTimeoutMs: OBS_DEFAULTS.connectTimeoutMs,
-  timers: systemTimers,
-  signal: new AbortController().signal,
-};
-
-describe("opening OBS on a route", () => {
-  let fake: FakeObsServer | null = null;
-  afterEach(() => {
-    fake?.stop();
-    fake = null;
-  });
-
-  it("negotiates the subprotocol, signs in, and asks OBS through the session", async () => {
-    fake = startFakeObs({ password: "hunter2" });
-    const session = await openObsOverRoute(
-      {
-        route: "direct",
-        url: fake.url,
-        password: "hunter2",
-        address: "127.0.0.1",
-      },
-      CONNECT_LIMITS
-    );
-    expect(fake.protocols).toEqual(["obswebsocket.msgpack"]);
-    expect(fake.requests).toEqual([]);
-    await session.client.request("GetSceneList");
-    expect(fake.requests).toEqual(["GetSceneList"]);
-    await session.close();
-  });
-
-  it("reaches OBS at a bridge path whose ticket the server checks", async () => {
-    fake = startFakeObs({ acceptUrl: (url) => url.searchParams.get("ticket") === TICKET });
-    const route = {
-      route: "companion" as const,
-      url: `${fake.url}/bridge/woofx3_obs/obs?ticket=${TICKET}`,
-      address: "127.0.0.1",
-    };
-    const session = await openObsOverRoute(route, CONNECT_LIMITS);
-    expect(fake.upgrades.map((u) => u.pathname)).toEqual(["/bridge/woofx3_obs/obs"]);
-    await session.close();
-  });
-
-  it("reads a refused bridge upgrade as a relay failure, and a direct one as unreachable", async () => {
-    fake = startFakeObs({ acceptUrl: () => false });
-    const bridged = await openObsOverRoute(
-      {
-        route: "companion",
-        url: `${fake.url}/bridge/woofx3_obs/obs?ticket=spent`,
-        address: "c-x.woofx3.tv",
-      },
-      CONNECT_LIMITS
-    ).catch((e) => e);
-    expect(bridged).toBeInstanceOf(EndpointRelayError);
-    expect(bridged.address).toBe("c-x.woofx3.tv");
-    expect(obsFailureKind(bridged)).toBe("relay");
-    const direct = await openObsOverRoute(
-      { route: "direct", url: fake.url, address: "127.0.0.1" },
-      CONNECT_LIMITS
-    ).catch((e) => e);
-    expect(obsFailureKind(direct)).toBe("unreachable");
-  });
-
-  it("ends a connect that never answers as soon as its signal aborts, leaving no timer behind", async () => {
-    const silent = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {}, open() {} } });
-    const pending = new Set<unknown>();
-    const timers: Timers = {
-      ...systemTimers,
-      setTimeout: (fn, ms) => {
-        const handle = systemTimers.setTimeout(fn, ms);
-        pending.add(handle);
-        return handle;
-      },
-      clearTimeout: (handle) => {
-        pending.delete(handle);
-        systemTimers.clearTimeout(handle);
-      },
-    };
-    const run = new AbortController();
-    try {
-      const opening = openObsOverRoute(
-        { route: "direct", url: `ws://127.0.0.1:${silent.port}`, address: "127.0.0.1" },
-        { ...CONNECT_LIMITS, timers, signal: run.signal }
-      ).catch((e) => e);
-      await Bun.sleep(20);
-      expect(pending.size).toBe(1);
-      run.abort();
-      const err = await opening;
-      expect(err).toBeInstanceOf(Error);
-      expect(pending.size).toBe(0);
-    } finally {
-      silent.stop(true);
-    }
-  });
-
-  it("reads a wrong password as an authentication failure on either route", async () => {
-    fake = startFakeObs({ password: "hunter2" });
-    for (const route of ["direct", "companion"] as const) {
-      const err = await openObsOverRoute(
-        { route, url: fake.url, password: "wrong", address: "127.0.0.1" },
-        CONNECT_LIMITS
-      ).catch((e) => e);
-      expect(err.code).toBe(4009);
-      expect(obsFailureKind(err)).toBe("authentication");
-    }
-  });
-});
-
-describe("endpointKeysFromManifest", () => {
-  it("finds the endpoint's keys", () => {
-    expect(endpointKeysFromManifest(OBS_MANIFEST, "obs")).toEqual({
-      hostSetting: "obsHost",
-      portSetting: "obsPort",
-      passwordSetting: "obsPassword",
-    });
-  });
-
-  it("counts anything it cannot read as absent", () => {
-    for (const manifest of [
-      null,
-      "",
-      "{",
-      JSON.stringify({ id: "woofx3_obs" }),
-      JSON.stringify({ local: {} }),
-      JSON.stringify({ local: [{ id: "other", hostSetting: "h", portSetting: "p" }] }),
-      JSON.stringify({ local: [{ id: "obs", hostSetting: 1, portSetting: "p" }] }),
-    ]) {
-      expect(endpointKeysFromManifest(manifest, "obs")).toBeNull();
-    }
-  });
-});
-
-describe("directRouteFrom", () => {
-  const keys = { hostSetting: "host", portSetting: "port", passwordSetting: "password" };
-  const fallback = { host: "127.0.0.1", port: "4455", password: "from-config" };
-
-  it("falls back to the configuration for each empty setting", () => {
-    expect(directRouteFrom([{ key: "host", value: "  " }], {}, keys, fallback)).toEqual({
-      route: "direct",
-      url: "ws://127.0.0.1:4455",
-      password: "from-config",
-      address: "127.0.0.1:4455",
-    });
-  });
-
-  it("falls back for a port that is not a port", () => {
-    for (const value of ["0", "65536", "44.55", "abc"]) {
-      expect(directRouteFrom([{ key: "port", value }], {}, keys, fallback).url).toBe("ws://127.0.0.1:4455");
-    }
-  });
-
-  it("leaves the password out when neither the module nor the configuration has one", () => {
-    expect(directRouteFrom([], {}, keys, { host: "obs.lan", port: "4455" })).toEqual({
-      route: "direct",
-      url: "ws://obs.lan:4455",
-      address: "obs.lan:4455",
-    });
-  });
-
-  it("brackets an IPv6 host", () => {
-    expect(directRouteFrom([{ key: "host", value: "::1" }], {}, keys, fallback).url).toBe("ws://[::1]:4455");
+    expect(await dial()).toEqual(DIRECT);
   });
 });
 

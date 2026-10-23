@@ -12,7 +12,7 @@ a tray app on that PC, dials out to a relay, and the engine reaches the
 endpoint through it: the **bridge**.
 
 ```
-OBS ◀─ws 127.0.0.1:4455─ companion ══(outbound wss)══ relay ◀══wss /bridge/…══ endpoint dialer ◀─ connectors (obs adapter)
+OBS ◀─ws 127.0.0.1:4455─ companion ══(outbound wss)══ relay ◀══wss /bridge/…══ companion gateway ◀─ connectors (obs adapter)
 ```
 
 Everything here needs the `modules.localEndpoints` capability
@@ -20,44 +20,25 @@ Everything here needs the `modules.localEndpoints` capability
 never sent a relay configuration behaves exactly as without it: every endpoint
 is dialed directly.
 
-## The endpoint dialer
+## The companion gateway
 
-The connectors host's `obs` adapter is the only part of the engine that holds
-a connection to a local endpoint, OBS's (`woofx3_obs/obs`), so the dialer lives
-in `connectors/src/companion/dialer.ts`, and reads the stored records through
-`connectors/src/companion/endpoint-store.ts`. It runs on every connect attempt, and
-reads everything afresh each time, so a retry picks up a change whose
-announcement was missed.
+The connectors host's [companion gateway](./companion-gateway.md) is the only
+part of the engine that finds a route to a local endpoint, and its `obs`
+adapter the only part that holds a connection to one, OBS's
+(`woofx3_obs/obs`). On every connect attempt the gateway reads the module's
+stored manifest, settings and secrets and the relay configuration afresh,
+builds the direct address (each empty setting falling back to connectors' own
+`WOOFX3_OBS_*` configuration), and picks the route; see
+[Companion gateway → Routes](./companion-gateway.md#routes) for the table.
 
-1. It finds the endpoint's settings from the module's stored manifest
-   (`modules.manifest`, the `local[]` entry with that `id`). A module installed
-   before `local[]` existed uses the caller's fallback keys; for OBS those are
-   `host`, `port` and `password`.
-2. It builds the direct address from those settings, each falling back to
-   connectors' own configuration (`WOOFX3_OBS_HOST`, `WOOFX3_OBS_PORT`,
-   `WOOFX3_OBS_RPC_TOKEN`) when empty or unreadable.
-3. It picks the route:
-
-| Relay configuration (`relay.config`) | Credential from the api | Route |
-|---|---|---|
-| None | not asked | Direct: `ws://<host>:<port>` |
-| Does not list the endpoint | not asked | Direct |
-| Lists the endpoint | `null` (the dashboard no longer routes anything) | Direct |
-| Lists the endpoint | A grant whose endpoints leave it out | Direct |
-| Lists the endpoint | A grant that lists it | Bridge: ticket exchange, then `wss://<bridge host>/bridge/<moduleId>/<endpointId>?ticket=<t>` |
-| Lists the endpoint | None to be had (the api or dashboard did not answer) | Fails as `relay` |
-
-A relay that refuses the ticket exchange (any non-2xx: 401, 404, 429, 502,
-503), does not answer within 5 seconds, or answers without a ticket also fails
-as `relay`. A 401 first gets one more try with a fresh credential
-(`force`), for a cached credential the relay stopped accepting. Once the
-ticket is in hand, any failure to open OBS through the bridge other than OBS
-refusing the password is also `relay`: the relay refusing the upgrade (502,
-503), the companion refusing the endpoint (4403), or the companion not
-reaching OBS. The attempt then waits out the OBS connection's usual backoff, and
-`getObsStatus` reports `failure: "relay"` with `route: "companion"` and the
-bridge's host, so the dashboard can tell "your companion is offline" from "OBS
-is closed".
+Once the ticket is in hand, any failure to open OBS through the bridge other
+than OBS refusing the password is also `relay`: the relay refusing the upgrade
+(502, 503), the companion refusing the endpoint (4403), or the companion not
+reaching OBS. The attempt then waits out the OBS connection's usual backoff,
+and `getObsStatus` reports `failure: "relay"` with `route: "companion"` and
+the bridge's host, so the dashboard can tell "your companion is offline" from
+"OBS is closed". A relay answering 429, or the gateway's own cap on bridge
+opens, reads the same way to the streamer and is retried on the same backoff.
 
 The relay closes a bridge with 4401 a minute after the engine credential it
 was opened with expires. That is an ordinary disconnect: OBS's connection
@@ -103,7 +84,7 @@ own, which is why the api publishes one.
 ## The bridge credential
 
 The credential that opens the bridge lasts five minutes and is never pushed or
-stored. When the dialer needs one, the obs adapter asks the api on NATS
+stored. When the companion gateway needs one, it asks the api on NATS
 `engine.relay.credential` (request `{ "force"?: boolean }`, reply
 `{ "relay": <grant> | null }` or `{ "error": "…" }`, 5 second timeout). The api
 caches the grant until a minute before it expires, and otherwise asks the
@@ -139,8 +120,8 @@ address or credentials, as for the Twitch token (`engine.twitch.token`).
 ## The ticket exchange
 
 obs-websocket-js opens its own WebSocket from a URL and sets the subprotocol
-itself, so it cannot send an `Authorization` header. The dialer therefore
-opens the bridge in two steps:
+itself, so it cannot send an `Authorization` header. The bridge is therefore
+opened in two steps:
 
 1. `POST https://<bridge host>/bridge/<moduleId>/<endpointId>` with
    `Authorization: Bearer <credential>` returns
@@ -150,7 +131,8 @@ opens the bridge in two steps:
 A ticket is single-use (spent on first presentation, even when that upgrade is
 refused), bound to the host, module and endpoint, and lives 30 seconds, so a
 ticket in a log is harmless where a five-minute credential would not be. The
-dialer fetches a fresh one on every connect attempt and never reuses one.
+companion gateway fetches a fresh one on every connect attempt and never
+reuses one.
 `getObsStatus` reports the bridge's host as the address, never the path or
 the ticket.
 

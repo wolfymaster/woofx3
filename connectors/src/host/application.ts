@@ -1,4 +1,5 @@
 import type { IApplication } from "@woofx3/common/runtime";
+import { dbProxyEndpointStore } from "../companion/endpoint-store";
 import type { ConnectorsConfig } from "../config";
 import type DbProxyService from "../services/db-proxy";
 import type MessageBusService from "../services/message-bus";
@@ -58,6 +59,11 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
     const host = new Host({
       config: this.deps.config.host,
       gateway: this.deps.config.gateway,
+      companion: {
+        config: this.deps.config.companion,
+        store: dbProxyEndpointStore(dbProxy.client),
+        fetch: (url, init) => fetch(url, init),
+      },
       dbProxy: dbProxy.client,
       bus: messageBus.client,
       busConnected: () => messageBus.isUp(),

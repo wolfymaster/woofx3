@@ -10,7 +10,7 @@
 // is one line, not one line per retry.
 
 import { type Backoff, createBackoff } from "@woofx3/common/runtime";
-import { EndpointRelayError } from "../../companion/dialer";
+import type { EndpointUnavailableReason } from "../../companion/types";
 import type { ObsConnectionConfig } from "../../config/obs";
 import type { Logger, RandomSource, TimerHandle, Timers } from "../../host/deps";
 
@@ -57,15 +57,30 @@ const OBS_AUTHENTICATION_FAILED = 4009;
 export type ObsFailureKind = "authentication" | "unreachable" | "relay";
 
 /**
- * The endpoint dialer throws `EndpointRelayError` when OBS is routed through
- * the companion and the bridge could not be opened. A wrong or missing
- * password closes the socket with 4009, which obs-websocket-js surfaces as the
- * connect error's `code`. Everything else a streamer can act on is "OBS is not
- * running or not listening there".
+ * The companion gateway gave no route to OBS, or the bridge it gave could not
+ * be opened. Carries the gateway's reason, and the bridge's host when the
+ * attempt got that far.
+ */
+export class ObsRouteUnavailable extends Error {
+  constructor(
+    readonly reason: EndpointUnavailableReason,
+    message: string,
+    readonly address?: string
+  ) {
+    super(message);
+    this.name = "ObsRouteUnavailable";
+  }
+}
+
+/**
+ * A bridge that could not be opened, or was too busy to try, reads as
+ * `relay`. A wrong or missing password closes the socket with 4009, which
+ * obs-websocket-js surfaces as the connect error's `code`. Everything else a
+ * streamer can act on is "OBS is not running or not listening there".
  */
 export function obsFailureKind(err: unknown): ObsFailureKind {
-  if (err instanceof EndpointRelayError) {
-    return "relay";
+  if (err instanceof ObsRouteUnavailable) {
+    return err.reason === "relay" || err.reason === "busy" ? "relay" : "unreachable";
   }
   const code = typeof err === "object" && err !== null && "code" in err ? (err as { code: unknown }).code : undefined;
   return code === OBS_AUTHENTICATION_FAILED ? "authentication" : "unreachable";

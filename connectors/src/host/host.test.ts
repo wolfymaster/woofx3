@@ -20,6 +20,7 @@ import {
   halfRandom,
   RecordingLogger,
   shippedLinkReaders,
+  testCompanion,
   text,
 } from "./testing";
 
@@ -48,6 +49,7 @@ async function setup(served: ServedSubject = twitchapi, env: Record<string, unkn
   const host = new Host({
     config: hostConfig(HostEnvSchema.parse(env)),
     gateway: gatewayConfig(GatewayEnvSchema.parse({})),
+    companion: testCompanion(),
     dbProxy: { baseURL: "http://db.test" },
     bus,
     busConnected: () => true,
@@ -99,6 +101,7 @@ describe("Host", () => {
       new Host({
         config: hostConfig(HostEnvSchema.parse({})),
         gateway: gatewayConfig(GatewayEnvSchema.parse({})),
+        companion: testCompanion(),
         dbProxy: { baseURL: "http://db.test" },
         bus: new FakeBus(),
         busConnected: () => true,
@@ -113,6 +116,54 @@ describe("Host", () => {
         logger: new RecordingLogger(),
       });
     expect(build).toThrow('the adapter "twitch" has no host state entry');
+  });
+
+  test("refuses to be built when two adapters claim one local endpoint", () => {
+    const time = new FakeTime();
+    const claiming = (id: "twitch" | "obs") => {
+      const adapter = new FakeAdapter(id);
+      Object.assign(adapter.manifest, { localEndpoints: [{ moduleId: "woofx3_obs", endpointId: "obs" }] });
+      return adapter;
+    };
+    const build = () =>
+      new Host({
+        config: hostConfig(HostEnvSchema.parse({})),
+        gateway: gatewayConfig(GatewayEnvSchema.parse({})),
+        companion: testCompanion(),
+        dbProxy: { baseURL: "http://db.test" },
+        bus: new FakeBus(),
+        busConnected: () => true,
+        linkStore: fixedLinkStore({}),
+        adapters: new Map([
+          ["twitch", claiming("twitch")],
+          ["obs", claiming("obs")],
+        ]),
+        hostStates: new Map([
+          ["twitch", undefined],
+          ["obs", undefined],
+        ]),
+        readers: shippedLinkReaders(),
+        clock: time,
+        random: halfRandom,
+        ids: countingIds(),
+        timers: time,
+        logger: new RecordingLogger(),
+      });
+    expect(build).toThrow("the local endpoint woofx3_obs/obs is claimed by both");
+  });
+
+  test("hands each adapter a companion handle scoped to its own claims", async () => {
+    const { adapter, host, announce, values } = await setup();
+    await host.start();
+    values.twitch_token = "tok";
+    values["integration.twitch.enabled"] = "true";
+    await announce(true);
+    const companion = adapter.lastContext?.companion;
+    expect(companion).toBeDefined();
+    expect(() =>
+      companion?.resolve({ moduleId: "woofx3_obs", endpointId: "obs" }, { signal: new AbortController().signal })
+    ).toThrow('the adapter "twitch" does not claim the local endpoint woofx3_obs/obs');
+    await host.stop();
   });
 
   test("starts the adapter on link, stops it on disable and on unlink, without a restart", async () => {
