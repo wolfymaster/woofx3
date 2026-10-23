@@ -228,9 +228,12 @@ export class EndpointDialer {
         return { kind: "failed", message: "the companion relay answered without a ticket" };
       }
       const expiresInMs = body?.expiresInMs;
+      // The relay's lifetime is only a hint: a missing, non-positive or
+      // fractional value gets the default, and none may hold a permit longer
+      // than the ticket lifetime the relay is configured with.
       const validFor =
         typeof expiresInMs === "number" && Number.isInteger(expiresInMs) && expiresInMs > 0
-          ? expiresInMs
+          ? Math.min(expiresInMs, RELAY_TICKET_TTL_MS)
           : RELAY_TICKET_TTL_MS;
       return { kind: "ticket", ticket, expiresInMs: validFor };
     } catch (error) {
