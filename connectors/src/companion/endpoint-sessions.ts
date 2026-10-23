@@ -418,7 +418,8 @@ export class EndpointSession {
   /**
    * Writes one text frame and answers with the first inbound JSON object
    * whose top-level `match.field` is `match.value`. One pending request per
-   * match on a session, so concurrent callers never take each other's replies.
+   * match on a session; a frame goes to one request only (the earliest that
+   * matches), so concurrent callers never take each other's replies.
    */
   request(match: ModuleEndpointMatch, message: string, signal: AbortSignal): Promise<RequestOutcome> {
     const refused = this.writable(message, signal);
@@ -516,17 +517,16 @@ export class EndpointSession {
       return;
     }
     const fields = parsed as Record<string, unknown>;
-    let matched = false;
-    for (const waiter of [...this.waiters.values()]) {
+    // Map order is registration order: a frame that fits several pending
+    // requests goes to the earliest one, so no caller takes a later one's reply.
+    for (const waiter of this.waiters.values()) {
       const { field, value } = waiter.match;
       if (Object.hasOwn(fields, field) && fields[field] === value) {
-        matched = true;
         waiter.finish({ ok: true, reply: data, sessionEpoch: this.epoch });
+        return;
       }
     }
-    if (!matched) {
-      frames.unmatched++;
-    }
+    frames.unmatched++;
   }
 
   private failed(code: ModuleEndpointFailureCode, message: string): SessionFailure {
