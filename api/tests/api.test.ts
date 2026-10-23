@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { createHash } from "node:crypto";
 import { Api } from "../src/api";
+import { MarketplaceClient } from "../src/marketplace-client";
 
 function fakeLogger() {
   return {
@@ -29,7 +31,7 @@ const MARKETPLACE_CTX = {
   marketplaceModuleId: "mp-123",
 };
 
-function makeApi(opts: { db: any; webhookClient?: any }) {
+function makeApi(opts: { db: any; webhookClient?: any; marketplace?: MarketplaceClient | null }) {
   const logger = fakeLogger();
   const db = opts.db;
   const api = new Api({
@@ -37,9 +39,17 @@ function makeApi(opts: { db: any; webhookClient?: any }) {
     nats: null,
     functions: null,
     barkloaderUrl: BARKLOADER_URL,
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger,
+    marketplace:
+      opts.marketplace === undefined
+        ? new MarketplaceClient({
+            baseUrl: "https://marketplace.example.com",
+            downloadHosts: ["marketplace.example.com"],
+          })
+        : opts.marketplace,
   });
   if (opts.webhookClient) {
     api.setWebhookClient(opts.webhookClient);
@@ -102,6 +112,11 @@ describe("Api.installModuleFromUrl", () => {
     expect(fetchCalls.length).toBe(2);
     expect(fetchCalls[0]!.url).toBe(DOWNLOAD_URL);
     expect(fetchCalls[1]!.url).toBe(`${BARKLOADER_URL}/functions`);
+    // The engine secret goes to barkloader only, never to the marketplace.
+    expect(new Headers(fetchCalls[0]!.init?.headers).get("Authorization")).toBeNull();
+    expect(new Headers(fetchCalls[1]!.init.headers).get("Authorization")).toBe(
+      "Bearer test-barkloader-key-0123456789abcdef"
+    );
 
     const body = fetchCalls[1]!.init.body as FormData;
     expect(body.get("client_id")).toBe(MARKETPLACE_CTX.clientId);
@@ -158,7 +173,7 @@ describe("Api.installModuleFromUrl", () => {
     }) as any;
 
     await expect(api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, MARKETPLACE_CTX)).rejects.toThrow(
-      /Marketplace fetch failed: 403/
+      /Archive download failed: 403/
     );
 
     expect(webhookClient.send).toHaveBeenCalledTimes(1);
@@ -244,7 +259,7 @@ describe("Api.installModuleFromUrl", () => {
     expect((webhookClient.send as any).mock.calls[0][0].type).toBe("module.install_failed");
   });
 
-  it("size cap via body length: throws after reading body when header is missing/false", async () => {
+  it("size cap on the streamed body: cuts off a body larger than its content-length says", async () => {
     const db = { getModuleByModuleKey: mock(async () => null) } as any;
     const webhookClient = fakeWebhookClient();
     const { api } = makeApi({ db, webhookClient });
@@ -282,5 +297,94 @@ describe("Api.installModuleFromUrl", () => {
         clientId: "",
       })
     ).rejects.toThrow(/clientId is required/);
+  });
+
+  it("refuses a file: URL without fetching it", async () => {
+    const db = { getModuleByModuleKey: mock(async () => null) } as any;
+    const webhookClient = fakeWebhookClient();
+    const { api } = makeApi({ db, webhookClient });
+    const fetchMock = mock(async () => new Response("should not be fetched"));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(
+      api.installModuleFromUrl("file:///etc/hostname", MARKETPLACE_CTX.moduleKey, MARKETPLACE_CTX)
+    ).rejects.toThrow(/scheme file: is not allowed/);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((webhookClient.send as any).mock.calls[0][0].type).toBe("module.install_failed");
+  });
+
+  it("refuses a host outside the download allow-list without fetching it", async () => {
+    const db = { getModuleByModuleKey: mock(async () => null) } as any;
+    const { api } = makeApi({ db, webhookClient: fakeWebhookClient() });
+    const fetchMock = mock(async () => new Response("should not be fetched"));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(
+      api.installModuleFromUrl("http://127.0.0.1:5555/v1/modules", MARKETPLACE_CTX.moduleKey, MARKETPLACE_CTX)
+    ).rejects.toThrow(/is not an allowed download host/);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses an archive that does not match the given sha256, before barkloader sees it", async () => {
+    const db = { getModuleByModuleKey: mock(async () => null) } as any;
+    const { api } = makeApi({ db, webhookClient: fakeWebhookClient() });
+    const fetchCalls: string[] = [];
+    globalThis.fetch = mock(async (input: string | URL | Request) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      fetchCalls.push(url);
+      return zipResponse(new Uint8Array(new TextEncoder().encode("PK tampered")));
+    }) as unknown as typeof fetch;
+    const expected = createHash("sha256").update("PK original").digest("hex");
+
+    await expect(
+      api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, { ...MARKETPLACE_CTX, sha256: expected })
+    ).rejects.toThrow(/does not match its expected sha256/);
+
+    expect(fetchCalls).toEqual([DOWNLOAD_URL]);
+  });
+
+  it("installs an archive that matches the given sha256, accepting it in upper case", async () => {
+    const archiveBytes = new Uint8Array(new TextEncoder().encode("PK original"));
+    const db = { getModuleByModuleKey: mock(async () => null) } as any;
+    const { api } = makeApi({ db, webhookClient: fakeWebhookClient() });
+    globalThis.fetch = mock(async (input: string | URL | Request) => {
+      const url = input instanceof Request ? input.url : input.toString();
+      return url === DOWNLOAD_URL ? zipResponse(archiveBytes) : barkloaderOkResponse("uploaded");
+    }) as unknown as typeof fetch;
+    const expected = createHash("sha256").update(archiveBytes).digest("hex").toUpperCase();
+
+    const result = await api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, {
+      ...MARKETPLACE_CTX,
+      sha256: expected,
+    });
+
+    expect(result).toEqual({ success: true, message: "uploaded" });
+  });
+
+  it("refuses a malformed sha256 before fetching anything", async () => {
+    const db = { getModuleByModuleKey: mock(async () => null) } as any;
+    const { api } = makeApi({ db });
+    const fetchMock = mock(async () => new Response("should not be fetched"));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(
+      api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, { ...MARKETPLACE_CTX, sha256: "abc" })
+    ).rejects.toThrow(/sha256 must be 64 hex characters/);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses to run with marketplace installs turned off", async () => {
+    const getModuleByModuleKey = mock(async () => null);
+    const { api } = makeApi({ db: { getModuleByModuleKey } as any, marketplace: null });
+    const fetchMock = mock(async () => new Response("should not be fetched"));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(api.installModuleFromUrl(DOWNLOAD_URL, MARKETPLACE_CTX.moduleKey, MARKETPLACE_CTX)).rejects.toThrow(
+      /turned off/
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(getModuleByModuleKey).not.toHaveBeenCalled();
   });
 });

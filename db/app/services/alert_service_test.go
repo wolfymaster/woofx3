@@ -18,6 +18,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/workers"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"gorm.io/gorm"
@@ -29,7 +30,7 @@ func newAlertSvc(t *testing.T, db *gorm.DB) client.AlertService {
 	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	publisher := workers.NewEventPublisher(repo.NewDbEventRepository(db), logger)
-	svc, err := NewAlertService(repo.NewAlertRepository(db), publisher, testAlertRetention)
+	svc, err := NewAlertService(repo.NewAlertRepository(db, database.RandomIDs{}), publisher, testAlertRetention)
 	if err != nil {
 		t.Fatalf("NewAlertService: %v", err)
 	}

@@ -28,5 +28,7 @@ export type {
   RuntimeEvent,
 } from "./runtime";
 export { createRuntime, Runtime } from "./runtime";
+export type { SecretProblem, SecretProblemKind, SecretResult } from "./secret";
+export { MIN_SECRET_BYTES, validateSecret } from "./secret";
 export type { Service } from "./service";
 export { createNATSHealthCheck, createNATSHeartbeat } from "./utils";

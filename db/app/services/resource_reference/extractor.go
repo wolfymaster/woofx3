@@ -174,7 +174,6 @@ func ExtractCommandEdges(src CommandSource, actionsJSON string) []models.Resourc
 
 func newEdge(src WorkflowSource, targetType, targetName, context string) models.ResourceReference {
 	return models.ResourceReference{
-		ID:                  uuid.New(),
 		SourceType:          "workflow",
 		SourceID:            src.ID,
 		SourceName:          src.Name,
@@ -188,7 +187,6 @@ func newEdge(src WorkflowSource, targetType, targetName, context string) models.
 
 func newEdgeFromCommand(src CommandSource, targetType, targetName, context string) models.ResourceReference {
 	return models.ResourceReference{
-		ID:                  uuid.New(),
 		SourceType:          "command",
 		SourceID:            src.ID,
 		SourceName:          src.Name,
@@ -268,7 +266,6 @@ func ExtractSceneEdges(src SceneSource, widgetsJSON string) []models.ResourceRef
 
 func newEdgeFromScene(src SceneSource, targetName, context string) models.ResourceReference {
 	return models.ResourceReference{
-		ID:                  uuid.New(),
 		SourceType:          "scene",
 		SourceID:            src.ID,
 		SourceName:          src.Name,

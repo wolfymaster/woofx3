@@ -51,6 +51,9 @@ func forEachDialect(t *testing.T, test func(t *testing.T, db *gorm.DB)) {
 		if err != nil {
 			t.Fatalf("open postgres: %v", err)
 		}
+		if err := database.RegisterIDAssignment(db, database.RandomIDs{}); err != nil {
+			t.Fatalf("register id assignment: %v", err)
+		}
 		var tables int64
 		if err := db.Raw(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'`).
 			Scan(&tables).Error; err != nil {

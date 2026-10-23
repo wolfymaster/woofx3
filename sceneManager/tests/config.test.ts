@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OPEN_REQUEST_GUARD_POLICY } from "@woofx3/common/http/request-guard";
+import { OPEN_REQUEST_GUARD_POLICY, RequestGuard } from "@woofx3/common/http/request-guard";
 import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
 import { loadConfig, type SceneManagerRuntimeConfig, validateConfig } from "../src/config";
 
@@ -14,13 +14,14 @@ writeFileSync(join(publicDir, WIDGET_HOST_SHIM_FILE), "");
 const valid: SceneManagerRuntimeConfig = {
   port: 9101,
   bindHost: "127.0.0.1",
-  tokenSecret: "secret",
+  tokenSecret: "token-secret-0123456789abcdef0123456789",
   rootDir: "/tmp",
   publicDir,
   fontCacheDir: "/tmp/fonts",
   databaseProxyUrl: "http://127.0.0.1:9000",
+  dbProxyToken: "db-proxy-token-0123456789abcdef0123456789",
   barkloaderUrl: "http://127.0.0.1:9653",
-  mediaProxySecret: "media-secret",
+  barkloaderKey: "media-secret-0123456789abcdef0123456789",
   requestGuard: OPEN_REQUEST_GUARD_POLICY,
   obs: { host: "127.0.0.1", port: "4455" },
   nats: { url: "ws://127.0.0.1:4225", name: "scene-manager" },
@@ -41,6 +42,24 @@ describe("validateConfig", () => {
       expect(() => validateConfig(config)).toThrow(field);
     }
   });
+});
+
+describe("validateConfig secrets", () => {
+  for (const [field, setting, value] of [
+    ["tokenSecret", "sceneManagerTokenSecret", ""],
+    ["tokenSecret", "sceneManagerTokenSecret", "CHANGE_ME"],
+    ["tokenSecret", "sceneManagerTokenSecret", "short-secret"],
+    ["barkloaderKey", "barkloaderKey", ""],
+    ["barkloaderKey", "barkloaderKey", "CHANGE_ME"],
+    ["barkloaderKey", "barkloaderKey", "short-secret"],
+    ["dbProxyToken", "dbProxyToken", ""],
+    ["dbProxyToken", "dbProxyToken", "CHANGE_ME"],
+    ["dbProxyToken", "dbProxyToken", "short-secret"],
+  ] as const) {
+    it(`refuses ${field} = "${value}"`, () => {
+      expect(() => validateConfig({ ...valid, [field]: value })).toThrow(setting);
+    });
+  }
 });
 
 describe("message bus token", () => {
@@ -73,5 +92,45 @@ describe("message bus token", () => {
     delete process.env.WOOFX3_MESSAGEBUS_TOKEN;
 
     expect(loadConfig().nats.token).toBeUndefined();
+  });
+});
+
+describe("request guard defaults", () => {
+  const snapshot = { ...process.env };
+
+  afterEach(() => {
+    for (const name of Object.keys(process.env)) {
+      if (!(name in snapshot)) {
+        delete process.env[name];
+      }
+    }
+    Object.assign(process.env, snapshot);
+  });
+
+  function guard(env: Record<string, string>): RequestGuard {
+    delete process.env.WOOFX3_BEHIND_EDGE;
+    delete process.env.WOOFX3_ALLOWED_HOSTS;
+    delete process.env.WOOFX3_ALLOWED_ORIGINS;
+    delete process.env.WOOFX3_SCENE_MANAGER_HOST;
+    delete process.env.WOOFX3_SCENE_MANAGER_URL;
+    Object.assign(process.env, env);
+    return new RequestGuard(loadConfig().requestGuard);
+  }
+
+  function request(headers: Record<string, string>): Request {
+    return new Request("http://127.0.0.1:9101/health", { headers });
+  }
+
+  it("admits widget frames and refuses a hostile page when nothing is set", () => {
+    const g = guard({});
+    expect(g.reject(request({ host: "127.0.0.1:9101", origin: "null" }))).toBeNull();
+    expect(g.reject(request({ host: "127.0.0.1:9101", origin: "https://evil.example" }))?.status).toBe(403);
+    expect(g.reject(request({ host: "rebound.attacker.example" }))?.status).toBe(421);
+  });
+
+  it("behind the edge, accepts the Host the proxy sends and the public page's own origin", () => {
+    const g = guard({ WOOFX3_BEHIND_EDGE: "true", WOOFX3_SCENE_MANAGER_URL: "https://streamer.example" });
+    expect(g.reject(request({ host: "eng-1.up.railway.app", origin: "https://streamer.example" }))).toBeNull();
+    expect(g.reject(request({ host: "eng-1.up.railway.app", origin: "https://evil.example" }))?.status).toBe(403);
   });
 });

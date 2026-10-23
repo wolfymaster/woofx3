@@ -13,6 +13,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/workers"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -41,7 +42,7 @@ func newFactSvc(t *testing.T, db *gorm.DB) *viewerFactService {
 	svc := NewViewerFactService(
 		repo.NewViewerFactRepository(db),
 		repo.NewViewerSegmentRepository(db),
-		repo.NewModuleRepository(db),
+		repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }),
 		workers.NewEventPublisher(repo.NewDbEventRepository(db), logger),
 	).(*viewerFactService)
 	svc.now = func() time.Time { return factNow.Add(time.Hour) }

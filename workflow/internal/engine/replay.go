@@ -73,17 +73,17 @@ func (e *Engine[TServices]) Replay(req ReplayRequest) error {
 		return e.refuseReplay(req.WorkflowID, event, err)
 	}
 
-	go func() {
-		// A replay reads the viewer's facts as they are now, not as they were
-		// when the original run read them: those values were never recorded.
-		execution := e.beginExecutionAs(def, event, req.DryRun, e.newViewerLoader(viewerTrigger(def), event))
-		e.logger.Info("Replaying workflow run",
-			"workflow", def.ID,
-			"execution", execution.ID,
-			"from_task", req.FromTaskID,
-			"start_index", start)
+	// A replay reads the viewer's facts as they are now, not as they were when
+	// the original run read them: those values were never recorded.
+	execution := e.beginExecutionAs(def, event, req.DryRun, e.newViewerLoader(viewerTrigger(def), event))
+	e.logger.Info("Replaying workflow run",
+		"workflow", def.ID,
+		"execution", execution.ID,
+		"from_task", req.FromTaskID,
+		"start_index", start)
+	e.safeGo("replay", refTo(execution), func() {
 		e.runTasksFrom(execution, order, start, exports, event, skipped)
-	}()
+	})
 	return nil
 }
 
