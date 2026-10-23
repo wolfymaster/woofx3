@@ -81,14 +81,22 @@ const REDACTED = "[redacted]";
 /** A key containing any of these words is treated as holding a secret. */
 const SECRET_KEY = /password|token|ticket|credential/i;
 
-/** Copies `value` with every secret-named key's value replaced, at any depth. */
-export function redactDetail(value: unknown): unknown {
+/**
+ * Copies `value` with every secret-named key's value replaced, at any depth.
+ * The copy keeps the shape of `T` except that a replaced value is the string
+ * "[redacted]" whatever type `T` gives it; callers only serialize the result.
+ */
+export function redactDetail<T>(value: T): T {
+  return redactValue(value) as T;
+}
+
+function redactValue(value: unknown): unknown {
   if (Array.isArray(value)) {
-    return value.map(redactDetail);
+    return value.map(redactValue);
   }
   if (typeof value === "object" && value !== null) {
     return Object.fromEntries(
-      Object.entries(value).map(([key, inner]) => [key, SECRET_KEY.test(key) ? REDACTED : redactDetail(inner)])
+      Object.entries(value).map(([key, inner]) => [key, SECRET_KEY.test(key) ? REDACTED : redactValue(inner)])
     );
   }
   return value;
@@ -130,7 +138,7 @@ function adapterHealth(report: AdapterReport): AdapterHealth {
     link: report.link,
     counts: report.counts,
     bus: report.bus,
-    detail: report.detail === null ? null : (redactDetail(report.detail) as Record<string, unknown>),
+    detail: redactDetail(report.detail),
   };
 }
 
@@ -161,7 +169,7 @@ function companionHealth(status: CompanionGatewayStatus): CompanionHealth {
       requests: status.modules.requests,
     },
   };
-  return redactDetail(body) as CompanionHealth;
+  return redactDetail(body);
 }
 
 function iso(ms: number | undefined): string | null {
