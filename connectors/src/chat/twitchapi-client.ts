@@ -100,26 +100,26 @@ function readReply<T>(reply: Uint8Array, resultType: string, schema: z.ZodType<T
   try {
     body = JSON.parse(new TextDecoder().decode(reply));
   } catch {
-    return failed("the Twitch service sent a reply that is not JSON");
+    return failed("the Twitch adapter sent a reply that is not JSON");
   }
   const envelope = replyEnvelope.safeParse(body);
   if (!envelope.success) {
-    return failed("the Twitch service sent a reply that is not an event");
+    return failed("the Twitch adapter sent a reply that is not an event");
   }
   if (envelope.data.type === TWITCHAPI_ERROR_TYPE) {
     const refusal = refusalData.safeParse(envelope.data.data);
     if (!refusal.success) {
-      return failed("the Twitch service refused the request");
+      return failed("the Twitch adapter refused the request");
     }
     const { error, code } = refusal.data;
     return { ok: false, failure: { kind: "refused", message: error, code: isReplyCode(code) ? code : undefined } };
   }
   if (envelope.data.type !== resultType) {
-    return failed(`the Twitch service sent a reply of an unexpected type (${envelope.data.type})`);
+    return failed(`the Twitch adapter sent a reply of an unexpected type (${envelope.data.type})`);
   }
   const value = schema.safeParse(envelope.data.data);
   if (!value.success) {
-    return failed("the Twitch service sent a reply of an unexpected shape");
+    return failed("the Twitch adapter sent a reply of an unexpected shape");
   }
   return { ok: true, value: value.data };
 }

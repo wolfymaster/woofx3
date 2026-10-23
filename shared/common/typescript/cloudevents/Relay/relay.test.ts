@@ -36,27 +36,44 @@ describe("companion relay subjects", () => {
 
 describe("parseStoredRelayConfig", () => {
   test("accepts a configuration with its client id", () => {
-    expect(parseStoredRelayConfig(STORED)).toEqual(STORED);
+    expect(parseStoredRelayConfig(STORED)).toEqual({ ok: true, value: STORED });
   });
 
   for (const clientId of [undefined, "", 7]) {
     test(`refuses clientId ${JSON.stringify(clientId)}`, () => {
-      expect(() => parseStoredRelayConfig({ ...STORED, clientId })).toThrow("clientId");
+      const parsed = parseStoredRelayConfig({ ...STORED, clientId });
+      expect(parsed.ok).toBe(false);
+      expect(parsed.ok ? "" : parsed.error).toContain("clientId");
     });
   }
 
-  test("is what readStoredRelayConfig reads, and anything else reads as nothing stored", () => {
-    expect(readStoredRelayConfig(JSON.stringify(STORED))).toEqual(STORED);
-    expect(readStoredRelayConfig(JSON.stringify({ ...STORED, clientId: "" }))).toBeNull();
-    expect(readStoredRelayConfig("not json")).toBeNull();
-    expect(readStoredRelayConfig(null)).toBeNull();
+  test("is what readStoredRelayConfig reads", () => {
+    expect(readStoredRelayConfig(JSON.stringify(STORED))).toEqual({ kind: "set", config: STORED });
+  });
+});
+
+describe("readStoredRelayConfig", () => {
+  for (const raw of [null, "", "  "]) {
+    test(`reads ${JSON.stringify(raw)} as absent`, () => {
+      expect(readStoredRelayConfig(raw)).toEqual({ kind: "absent" });
+    });
+  }
+
+  test("reads text that is not JSON as invalid", () => {
+    expect(readStoredRelayConfig("not json")).toEqual({ kind: "invalid", error: "relay config is not JSON" });
+  });
+
+  test("reads a configuration that fails its checks as invalid, with the reason", () => {
+    const read = readStoredRelayConfig(JSON.stringify({ ...STORED, clientId: "" }));
+    expect(read.kind).toBe("invalid");
+    expect(read.kind === "invalid" ? read.error : "").toContain("clientId");
   });
 });
 
 describe("parseRelayCredentialResponse", () => {
   test("accepts a grant and relay: null", () => {
-    expect(parseRelayCredentialResponse({ relay: GRANT })).toEqual({ relay: GRANT });
-    expect(parseRelayCredentialResponse({ relay: null })).toEqual({ relay: null });
+    expect(parseRelayCredentialResponse({ relay: GRANT })).toEqual({ ok: true, value: { relay: GRANT } });
+    expect(parseRelayCredentialResponse({ relay: null })).toEqual({ ok: true, value: { relay: null } });
   });
 
   const bad: unknown[] = [
@@ -72,7 +89,7 @@ describe("parseRelayCredentialResponse", () => {
   ];
   for (const body of bad) {
     test(`refuses ${JSON.stringify(body)}`, () => {
-      expect(() => parseRelayCredentialResponse(body)).toThrow();
+      expect(parseRelayCredentialResponse(body).ok).toBe(false);
     });
   }
 });

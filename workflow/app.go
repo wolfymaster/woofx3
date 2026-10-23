@@ -273,9 +273,9 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 		a.logger.Error("Failed to subscribe to action execute events", "error", err)
 	}
 
-	appServices := buildAppServices()
-	if appServices.PlatformGateway() == nil {
-		return fmt.Errorf("platform gateway did not resolve from the service registry")
+	appServices, err := buildAppServices()
+	if err != nil {
+		return fmt.Errorf("resolving app services: %w", err)
 	}
 
 	// Register the engine's built-in action handlers. The handler name

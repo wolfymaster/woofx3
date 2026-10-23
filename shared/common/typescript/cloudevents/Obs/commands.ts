@@ -5,6 +5,8 @@ import { z } from "zod";
 // names lives in Convex's PlatformActionMap. See woofx3/browser-source-spec.md.
 // Not the payload of `engine.obs.command`, which is ObsControlCommand below.
 
+import { asRecord, type ParseResult } from "../utils";
+
 export type OBSCommandType =
   | "scene_transition"
   | "source_visibility"
@@ -167,22 +169,14 @@ export type ObsBrowserSourceRefreshReply =
   | { status: "invalid"; error: string }
   | { status: "unavailable"; error: string };
 
-export type ObsRefreshParse<T> = { ok: true; value: T } | { ok: false; error: string };
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function parseBootId(value: unknown): ObsRefreshParse<string> {
+function parseBootId(value: unknown): ParseResult<string> {
   if (typeof value !== "string" || value.length < 1 || value.length > OBS_REFRESH_BOOT_ID_MAX_LENGTH) {
     return { ok: false, error: `bootId must be a string of 1 to ${OBS_REFRESH_BOOT_ID_MAX_LENGTH} characters` };
   }
   return { ok: true, value };
 }
 
-export function parseObsBrowserSourceRefresh(value: unknown): ObsRefreshParse<ObsBrowserSourceRefresh> {
+export function parseObsBrowserSourceRefresh(value: unknown): ParseResult<ObsBrowserSourceRefresh> {
   const body = asRecord(value);
   if (!body) {
     return { ok: false, error: "the request must be an object" };
@@ -198,7 +192,7 @@ export function parseObsBrowserSourceRefresh(value: unknown): ObsRefreshParse<Ob
   return { ok: true, value: { overlayPort: port, bootId: bootId.value } };
 }
 
-export function parseObsBrowserSourceRefreshReply(value: unknown): ObsRefreshParse<ObsBrowserSourceRefreshReply> {
+export function parseObsBrowserSourceRefreshReply(value: unknown): ParseResult<ObsBrowserSourceRefreshReply> {
   const body = asRecord(value);
   if (!body) {
     return { ok: false, error: "the reply must be an object" };

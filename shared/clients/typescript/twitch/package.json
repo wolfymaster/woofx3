@@ -6,7 +6,7 @@
     "test": "bun test"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "1.2.21",
     "@types/express": "^5.0.3"
   },
   "peerDependencies": {

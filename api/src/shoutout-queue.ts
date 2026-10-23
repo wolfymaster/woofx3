@@ -42,7 +42,7 @@ export async function enqueueShoutout(target: unknown, deps: ShoutoutQueueDeps):
   }
 }
 
-/** Answer the twitch service's shoutout requests on `SHOUTOUT_ENQUEUE_SUBJECT`. */
+/** Answer shoutout requests from the connectors host's Twitch adapter on `SHOUTOUT_ENQUEUE_SUBJECT`. */
 export async function serveShoutoutQueue(
   nats: NATSClient,
   deps: ShoutoutQueueDeps,

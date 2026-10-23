@@ -384,6 +384,44 @@ describe("EndpointDialer bridge opens", () => {
     expect(time.pending).toBe(0);
   });
 
+  it("releases a permit at once when a ticket arrives after stop", async () => {
+    const reply = Promise.withResolvers<Response>();
+    const { dial, dialer, opens, time } = setup({
+      relayConfig: routed,
+      opens: new BridgeOpens(1),
+      fetch: () => reply.promise,
+    });
+    const resolving = dial();
+    await flush();
+    expect(opens.status().inUse).toBe(1);
+    dialer.stop();
+    reply.resolve(ticketReply());
+    expect(await resolving).toMatchObject({ ok: true, route: "companion" });
+    expect(opens.status().inUse).toBe(0);
+    expect(time.pending).toBe(0);
+  });
+
+  const lifetimes: Array<[string, unknown, number]> = [
+    ["longer than the ticket lifetime", RELAY_TICKET_TTL_MS * 100, RELAY_TICKET_TTL_MS],
+    ["shorter than the ticket lifetime", 1_000, 1_000],
+    ["zero", 0, RELAY_TICKET_TTL_MS],
+    ["negative", -5, RELAY_TICKET_TTL_MS],
+    ["fractional", 1.5, RELAY_TICKET_TTL_MS],
+    ["not a number", "soon", RELAY_TICKET_TTL_MS],
+  ];
+  it.each(lifetimes)("holds a permit for %s as the relay's expiresInMs", async (_name, expiresInMs, heldMs) => {
+    const { dial, opens, time } = setup({
+      relayConfig: routed,
+      opens: new BridgeOpens(1),
+      fetch: async () => Response.json({ ticket: TICKET, expiresInMs }),
+    });
+    await dial();
+    await time.advance(heldMs - 1);
+    expect(opens.status().inUse).toBe(1);
+    await time.advance(1);
+    expect(opens.status().inUse).toBe(0);
+  });
+
   it("never asks for a credential when the cap is reached", async () => {
     const { dial, relayCredential } = setup({ relayConfig: routed, opens: new BridgeOpens(1) });
     await dial();

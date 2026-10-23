@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { nonBlank } from "./env";
 
 /** Defaults for the Twitch adapter's tunables. */
 export const TWITCH_DEFAULTS = {
@@ -111,9 +112,4 @@ export function twitchConfig(env: TwitchEnv): TwitchConfig {
     sendQueueCap: env.woofx3TwitchSendQueueCap,
     selfSent: { capacity: env.woofx3TwitchSelfSentCapacity, ttlMs: env.woofx3TwitchSelfSentTtlMs },
   };
-}
-
-function nonBlank(value: string | undefined): string | undefined {
-  const text = value?.trim() ?? "";
-  return text === "" ? undefined : text;
 }

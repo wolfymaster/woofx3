@@ -401,21 +401,21 @@ export interface CtxHostError extends Error {
   /**
    * `permission_denied`: the manifest does not declare the permission the
    * function needs. `ctx.twitch` adds:
-   * - `timeout`: the function's run is out of time, or the twitch service did
-   *   not answer within 10s (the action may still have happened)
+   * - `timeout`: the function's run is out of time, or the engine's Twitch
+   *   connection did not answer within 10s (the action may still have happened)
    * - `call_limit`: the run already made 10 `ctx.twitch` calls
    * - `busy`: too many twitch requests are waiting across the engine
-   * - `unavailable`: the connectors service, which runs Twitch, is not running
+   * - `unavailable`: the engine's Twitch connection is not running
    * - `not_linked`: no Twitch account is linked
    * - `integration_unavailable`: Twitch is linked but turned off in this
    *   engine, still connecting, or failing repeatedly
    * - `request_failed`: the request could not be sent or its reply read
    *
-   * Absent when the twitch service refused (invalid input, Twitch's own
+   * Absent when Twitch or the engine refused (invalid input, Twitch's own
    * error): those carry only a message.
    *
    * `ctx.obs` uses `timeout`, `call_limit`, `busy` and `request_failed` the
-   * same way, `unavailable` when no scene manager is running, and
+   * same way, `unavailable` when the engine's OBS connection is not running, and
    * `invalid_arguments` for a call it refuses before asking. A refusal from
    * OBS (not connected, no scene by that name) carries only its message.
    *
@@ -456,11 +456,11 @@ export interface TwitchUserTarget {
 
 /**
  * `ctx.twitch.*`: registered when `TwitchExtension` is bound. Each call asks
- * the twitch service to act (a request on NATS subject `twitchapi`), waits
+ * the engine's Twitch connection to act, waits
  * up to 10 seconds (never past the end of the function's run), and returns
  * its result. A function may make at most 10 calls per run. A refusal
  * (invalid input, Twitch not linked, Twitch's own error) throws a
- * `CtxHostError` carrying the twitch service's message.
+ * `CtxHostError` carrying the reason it gave.
  *
  * `timeout` and `updateStream` are privileged: the module's manifest must
  * declare `"permissions": ["twitch.moderation"]` or `["twitch.channel"]`
@@ -550,8 +550,7 @@ export interface ObsNameOption {
 
 /**
  * `ctx.obs.*`: registered when `ObsExtension` is bound. Each call asks the
- * scene manager, which holds the engine's OBS connection, to change OBS or
- * list its names, waits up to 5 seconds (never past the end of the function's
+ * engine's OBS connection to change OBS or list its names, waits up to 5 seconds (never past the end of the function's
  * run), and returns its answer. A function may make at most 10 calls per run.
  * A refusal (OBS not connected, a name OBS does not have) throws a
  * `CtxHostError` carrying OBS's reason, which a field-options function can
