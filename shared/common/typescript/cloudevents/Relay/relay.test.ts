@@ -47,11 +47,26 @@ describe("parseStoredRelayConfig", () => {
     });
   }
 
-  test("is what readStoredRelayConfig reads, and anything else reads as nothing stored", () => {
-    expect(readStoredRelayConfig(JSON.stringify(STORED))).toEqual(STORED);
-    expect(readStoredRelayConfig(JSON.stringify({ ...STORED, clientId: "" }))).toBeNull();
-    expect(readStoredRelayConfig("not json")).toBeNull();
-    expect(readStoredRelayConfig(null)).toBeNull();
+  test("is what readStoredRelayConfig reads", () => {
+    expect(readStoredRelayConfig(JSON.stringify(STORED))).toEqual({ kind: "set", config: STORED });
+  });
+});
+
+describe("readStoredRelayConfig", () => {
+  for (const raw of [null, "", "  "]) {
+    test(`reads ${JSON.stringify(raw)} as absent`, () => {
+      expect(readStoredRelayConfig(raw)).toEqual({ kind: "absent" });
+    });
+  }
+
+  test("reads text that is not JSON as invalid", () => {
+    expect(readStoredRelayConfig("not json")).toEqual({ kind: "invalid", error: "relay config is not JSON" });
+  });
+
+  test("reads a configuration that fails its checks as invalid, with the reason", () => {
+    const read = readStoredRelayConfig(JSON.stringify({ ...STORED, clientId: "" }));
+    expect(read.kind).toBe("invalid");
+    expect(read.kind === "invalid" ? read.error : "").toContain("clientId");
   });
 });
 

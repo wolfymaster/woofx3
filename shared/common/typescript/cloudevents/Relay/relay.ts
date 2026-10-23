@@ -64,19 +64,29 @@ export function parseStoredRelayConfig(value: unknown): ParseResult<StoredRelayC
   return ok({ ...config.value, clientId });
 }
 
-/** A stored configuration, or null when the value is absent or not one. */
-export function readStoredRelayConfig(raw: string | null): StoredRelayConfig | null {
+/**
+ * What `relay.config` holds: nothing, a usable configuration, or a value that
+ * is not one. `invalid` is not `absent`: a corrupt setting must not read as
+ * "nothing is routed", so callers log it.
+ */
+export type StoredRelayConfigRead =
+  | { kind: "absent" }
+  | { kind: "set"; config: StoredRelayConfig }
+  | { kind: "invalid"; error: string };
+
+/** The stored `relay.config` value, read strictly. */
+export function readStoredRelayConfig(raw: string | null): StoredRelayConfigRead {
   if (!raw || raw.trim() === "") {
-    return null;
+    return { kind: "absent" };
   }
   let json: unknown;
   try {
     json = JSON.parse(raw);
   } catch {
-    return null;
+    return { kind: "invalid", error: "relay config is not JSON" };
   }
   const parsed = parseStoredRelayConfig(json);
-  return parsed.ok ? parsed.value : null;
+  return parsed.ok ? { kind: "set", config: parsed.value } : { kind: "invalid", error: parsed.error };
 }
 
 /** A grant from the dashboard, checked like a configuration plus its credential. */

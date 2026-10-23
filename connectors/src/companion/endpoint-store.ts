@@ -6,6 +6,7 @@ import {
 import { GetModuleByModuleId } from "@woofx3/db/module.pb";
 import { GetModuleSecretValues, ListModuleSettings } from "@woofx3/db/module_setting.pb";
 import { DeleteSetting, GetSetting, SetSetting } from "@woofx3/db/setting.pb";
+import type { Logger } from "../host/deps";
 import type { DbProxyClientConfig } from "../services/db-proxy";
 
 /** One stored module setting. A secret setting's value is always empty here; see `moduleSecrets`. */
@@ -34,8 +35,12 @@ export interface EndpointStore {
   clearRelayConfig(): Promise<void>;
 }
 
-/** The endpoint store over db-proxy. Every call carries the client's service token and timeout. */
-export function dbProxyEndpointStore(client: DbProxyClientConfig): EndpointStore {
+/**
+ * The endpoint store over db-proxy. Every call carries the client's service
+ * token and timeout. A stored `relay.config` that is not a usable
+ * configuration is logged and read as none.
+ */
+export function dbProxyEndpointStore(client: DbProxyClientConfig, logger: Logger): EndpointStore {
   return {
     moduleManifest: (moduleId) =>
       call("GetModuleByModuleId", async () => {
@@ -62,7 +67,11 @@ export function dbProxyEndpointStore(client: DbProxyClientConfig): EndpointStore
     relayConfig: () =>
       call("GetSetting", async () => {
         const response = await GetSetting({ key: RELAY_CONFIG_SETTING }, client);
-        return readStoredRelayConfig(response.setting?.value?.stringValue ?? null);
+        const read = readStoredRelayConfig(response.setting?.value?.stringValue ?? null);
+        if (read.kind === "invalid") {
+          logger.warn("stored relay configuration is not usable; treating nothing as routed", { error: read.error });
+        }
+        return read.kind === "set" ? read.config : null;
       }),
     writeRelayConfig: (config) =>
       call("SetSetting", async () => {
