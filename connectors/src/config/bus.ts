@@ -1,6 +1,7 @@
 import { validateSecret } from "@woofx3/common/runtime";
 import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { z } from "zod";
+import { nonBlank } from "./env";
 
 /** The message bus and db-proxy the host connects to. */
 export const BusEnvSchema = z.object({
@@ -39,9 +40,4 @@ export function busConfig(env: BusEnv): BusConfig {
     nkeySeed: nonBlank(env.woofx3MessagebusNKey),
     token: nonBlank(env.woofx3MessagebusToken),
   };
-}
-
-function nonBlank(value: string | number | undefined): string | undefined {
-  const text = value === undefined ? "" : String(value).trim();
-  return text === "" ? undefined : text;
 }
