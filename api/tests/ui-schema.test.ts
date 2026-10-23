@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { type DataShape, type DataShapeField, parseDataShape } from "@woofx3/api/ui-schema";
+import {
+  type ConfigField,
+  type ConfigFieldOption,
+  type DataShape,
+  type DataShapeField,
+  isFieldVisible,
+  mergePinnedOptions,
+  parseDataShape,
+  parseFieldList,
+} from "@woofx3/api/ui-schema";
 
 // parseDataShape is the one place that decides whether a trigger's `emits` /
 // an action's `returns` names anything at all. Every "no" answer means the
@@ -139,5 +148,65 @@ describe("parseDataShape", () => {
 
     expect(parseDataShape(JSON.stringify({ summary: 7, details: ["", 1], fields }))).toEqual({ fields });
     expect(parseDataShape(JSON.stringify({ details: "{tier}", fields }))).toEqual({ fields });
+  });
+});
+
+describe("mergePinnedOptions", () => {
+  const origin = { value: "origin", label: "Where it came from" };
+  const all = { value: "all", label: "Everywhere" };
+  const twitch = { value: "twitch", label: "Twitch" };
+
+  const cases: [string, ConfigFieldOption[], ConfigFieldOption[], ConfigFieldOption[]][] = [
+    ["pinned first, fetched after", [origin, all], [twitch], [origin, all, twitch]],
+    ["no fetched options", [origin, all], [], [origin, all]],
+    ["no pinned options", [], [twitch], [twitch]],
+    ["both empty", [], [], []],
+    [
+      "a fetched repeat of a pinned value is dropped, pinned label wins",
+      [origin],
+      [{ value: "origin", label: "Origin" }, twitch],
+      [origin, twitch],
+    ],
+    ["a repeat within fetched keeps the first", [], [twitch, { value: "twitch", label: "Again" }], [twitch]],
+  ];
+
+  test.each(cases)("%s", (_name, pinned, fetched, expected) => {
+    expect(mergePinnedOptions(pinned, fetched)).toEqual(expected);
+  });
+
+  test("does not mutate its inputs", () => {
+    const pinned = [origin];
+    const fetched = [twitch];
+    mergePinnedOptions(pinned, fetched);
+    expect(pinned).toEqual([origin]);
+    expect(fetched).toEqual([twitch]);
+  });
+});
+
+describe("isFieldVisible", () => {
+  const plain: ConfigField = { id: "color", label: "Colour", type: "text" };
+  const gated: ConfigField = {
+    ...plain,
+    visibleWhen: { field: "platform", oneOf: ["twitch", "kick"] },
+  };
+
+  const cases: [string, ConfigField, Record<string, unknown>, boolean][] = [
+    ["no condition is always shown", plain, {}, true],
+    ["sibling holds a listed value", gated, { platform: "twitch" }, true],
+    ["sibling holds another listed value", gated, { platform: "kick" }, true],
+    ["sibling holds an unlisted value", gated, { platform: "youtube" }, false],
+    ["sibling is unset", gated, {}, false],
+    ["sibling is not a string", gated, { platform: 1 }, false],
+    ["sibling is null", gated, { platform: null }, false],
+  ];
+
+  test.each(cases)("%s", (_name, field, values, expected) => {
+    expect(isFieldVisible(field, values)).toBe(expected);
+  });
+
+  test("a stored field list carries null for an absent condition", () => {
+    const stored = JSON.stringify([{ id: "color", label: "Colour", type: "text", visibleWhen: null }]);
+    const [field] = parseFieldList(stored);
+    expect(isFieldVisible(field, {})).toBe(true);
   });
 });

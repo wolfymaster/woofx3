@@ -1,6 +1,7 @@
-import { describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
+import { TWITCHAPI_SERVED_BUDGET_MS } from "@woofx3/common/cloudevents/Twitch/commands";
 import { EventType as TwitchEventType } from "@woofx3/common/cloudevents/Twitch/events";
 import {
   INTEGRATION_ENABLED_UPDATED_SUBJECT,
@@ -76,11 +77,34 @@ class NotLinkedError extends Error {
   }
 }
 
+type AuthFailureHandler = (err: Error, info: { provider: "refreshing" | "dashboard" }) => void;
+
+/** The auth provider every connected client hands back, for the Helix calls egress makes. */
+const fakeAuthProvider = {
+  clientId: "client-1",
+  getAccessTokenForUser: async () => ({
+    accessToken: "token-1",
+    refreshToken: null,
+    scope: [],
+    expiresIn: null,
+    obtainmentTimestamp: 0,
+    userId: "broadcaster-1",
+  }),
+};
+
+/** Every client the adapter built, newest last. */
+const clients: MockTwitchClient[] = [];
+
 class MockTwitchClient {
+  constructor(readonly args: { onAuthFailure?: AuthFailureHandler }) {
+    clients.push(this);
+  }
+
   init = mock(async () => {
     if (!linked) {
       throw new NotLinkedError();
     }
+    return fakeAuthProvider;
   });
   ApiClient = mock(() => ({ streams: { getStreamByUserId: async () => null } }));
   EventBusListener = mock(() => confirmingListener());
@@ -96,14 +120,14 @@ mock.module("@woofx3/twitch", () => ({
   },
 }));
 
-const { TWITCH_API_SERVED_BUDGET_MS, TWITCH_EVENT_SUBJECTS, TwitchAdapter, twitchApiUnavailableReply } = await import(
-  "./adapter"
-);
+const { TWITCH_EVENT_SUBJECTS, TwitchAdapter, twitchApiUnavailableReply } = await import("./adapter");
 
 const CONFIG: TwitchConfig = {
   channel: undefined,
   app: undefined,
   membership: { ttlMs: TWITCH_DEFAULTS.membershipTtlMs, deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs },
+  sendQueueCap: TWITCH_DEFAULTS.sendQueueCap,
+  selfSent: { capacity: TWITCH_DEFAULTS.selfSentCapacity, ttlMs: TWITCH_DEFAULTS.selfSentTtlMs },
 };
 
 function newAdapter(time = new FakeTime()) {
@@ -126,12 +150,16 @@ describe("TwitchAdapter manifest", () => {
     expect(manifest.subscribes).toEqual([INTEGRATION_TOKEN_UPDATED_SUBJECT]);
     expect(manifest.requests).toEqual(["engine.twitch.token", "engine.shoutout.enqueue"]);
     expect(manifest.serves.map((served) => [served.subject, served.budgetMs])).toEqual([
-      ["twitchapi", TWITCH_API_SERVED_BUDGET_MS],
+      ["twitchapi", TWITCHAPI_SERVED_BUDGET_MS],
     ]);
   });
 
+  test("performs every platform gateway chat action", () => {
+    expect(Object.keys(manifest.egress ?? {}).sort()).toEqual(["chat.announce", "chat.pin", "chat.send"]);
+  });
+
   test("gives a Helix call room to report its own timeout inside the served budget", () => {
-    expect(HELIX_DEADLINE_MS).toBeLessThan(TWITCH_API_SERVED_BUDGET_MS);
+    expect(HELIX_DEADLINE_MS).toBeLessThan(TWITCHAPI_SERVED_BUDGET_MS);
   });
 });
 
@@ -198,7 +226,7 @@ function supervised() {
     await supervisor.reconcile(new Map([["twitch", { connected, enabled }]]), new Set(["twitch" as const]));
     await supervisor.whenIdle();
   };
-  return { bus, adapter, supervisor, apply };
+  return { bus, time, adapter, supervisor, apply };
 }
 
 describe("TwitchAdapter under the supervisor", () => {
@@ -212,6 +240,7 @@ describe("TwitchAdapter under the supervisor", () => {
     expect(adapter.detail()).toEqual({
       broadcasterId: "broadcaster-1",
       eventSub: { established: expect.any(Number), expected: expect.any(Number), ready: true },
+      ownLinesAwaitingEcho: 0,
     });
   });
 
@@ -224,7 +253,7 @@ describe("TwitchAdapter under the supervisor", () => {
     const status = supervisor.status("twitch");
     expect(status.state).toBe("degraded");
     expect(status.state === "degraded" ? status.reason : "").toContain("not linked");
-    expect(adapter.detail()).toEqual({ broadcasterId: null, eventSub: null });
+    expect(adapter.detail()).toEqual({ broadcasterId: null, eventSub: null, ownLinesAwaitingEcho: 0 });
   });
 
   test("start, stop, start leaves one relink listener", async () => {
@@ -256,6 +285,91 @@ describe("TwitchAdapter under the supervisor", () => {
 
     expect(supervisor.status("twitch").state).toBe("connected");
     expect(liveListeners.size).toBe(1);
+  });
+});
+
+describe("TwitchAdapter egress", () => {
+  const egressCtx = () => ({
+    signal: new AbortController().signal,
+    deadline: new FakeTime().now() + 9_000,
+    requestedBy: { kind: "workflow" as const, ref: "workflow-1" },
+    markSent: () => {},
+  });
+
+  test("answers stopped while the adapter is not running, without calling Twitch", async () => {
+    const fetchSpy = spyOn(globalThis, "fetch");
+    try {
+      const send = newAdapter().manifest.egress?.["chat.send"];
+      expect(await send?.handle({ message: "hi" }, undefined, egressCtx())).toEqual({
+        status: "unavailable",
+        reason: "stopped",
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  test("posts through the running connection as the broadcaster, and answers stopped again after stop", async () => {
+    linked = true;
+    const { adapter, apply } = supervised();
+    const fetchSpy = spyOn(globalThis, "fetch");
+    fetchSpy.mockImplementation(
+      (async () =>
+        new Response(JSON.stringify({ data: [{ message_id: "m-1", is_sent: true }] }), {
+          status: 200,
+        })) as unknown as typeof fetch
+    );
+    try {
+      await apply(true, true);
+      const send = adapter.manifest.egress?.["chat.send"];
+
+      expect(await send?.handle({ message: "hi" }, undefined, egressCtx())).toEqual({
+        status: "delivered",
+        messageId: "m-1",
+      });
+      const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body)) as Record<string, unknown>;
+      expect(body).toEqual({ broadcaster_id: "broadcaster-1", sender_id: "broadcaster-1", message: "hi" });
+
+      await apply(true, false);
+      expect(await send?.handle({ message: "hi" }, undefined, egressCtx())).toEqual({
+        status: "unavailable",
+        reason: "stopped",
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});
+
+describe("TwitchAdapter token renewal failures under the supervisor", () => {
+  const REASON = "Twitch token renewal failed (refreshing): Invalid refresh token";
+
+  test("leave it degraded with the reason, and repeated ones park it", async () => {
+    linked = true;
+    clients.length = 0;
+    const { time, supervisor, apply } = supervised();
+    const failRenewal = async () => {
+      clients.at(-1)?.args.onAuthFailure?.(new Error("Invalid refresh token"), { provider: "refreshing" });
+      await flush();
+      await supervisor.whenIdle();
+    };
+
+    await apply(true, true);
+    await failRenewal();
+    expect(supervisor.status("twitch")).toEqual({ state: "degraded", reason: REASON, retryAt: expect.any(Number) });
+
+    // park.afterFailures is 5; each retry reconnects and fails its renewal again.
+    for (let fault = 2; fault <= 5; fault++) {
+      await time.advance(10_000);
+      await supervisor.whenIdle();
+      expect(supervisor.status("twitch").state).toBe("connected");
+      await failRenewal();
+    }
+
+    expect(supervisor.status("twitch")).toEqual({ state: "parked", reason: REASON });
+    expect(supervisor.report().find((entry) => entry.id === "twitch")?.counts.faults).toBe(5);
   });
 });
 

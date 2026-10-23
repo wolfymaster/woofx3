@@ -9,6 +9,7 @@ pub mod module_registry;
 pub mod net;
 pub mod oauth;
 pub mod permissions;
+pub mod protected_settings;
 pub mod resource_access;
 mod runtime;
 mod sandbox;

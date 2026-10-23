@@ -200,8 +200,13 @@ live db-proxy) returns an empty map.
 
 `setSetting(key, value)` refuses the keys only the streamer sets: the tokens
 `ctx.oauth` keeps (`oauth.<id>`), a `url` setting, whose origin `ctx.http` may reach,
-and a `resource_ref` setting, whose instance the module may then read and run
-(`resource_access.rs`).
+a `local[]` endpoint's host, port and password settings, which decide where the
+engine connects (`protected_settings.rs`), and a `resource_ref` setting, whose
+instance the module may then read and run (`resource_access.rs`). The protected
+keys are read from the registry at the moment of the write
+(`LiveProtectedSettings`), not copied when the invocation starts, so an
+invocation still running when its module is upgraded is refused the keys the
+new version protects.
 
 `compareAndSetSetting(key, expected, value)` writes only while the setting still
 holds `expected` and answers `{ swapped, current }`. `HttpSettingsClient` compares
