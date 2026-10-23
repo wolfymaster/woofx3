@@ -28,13 +28,9 @@ export function adapterRegistry(deps: AdapterRegistryDeps): AdapterRegistry {
       return twitchAdapterModule({ config: deps.config.twitch, clock: deps.clock, ids: deps.ids });
     },
     obs: async () => {
-      const [{ obsAdapterModule }, { dbProxyEndpointStore }] = await Promise.all([
-        import("../adapters/obs/adapter"),
-        import("../companion/endpoint-store"),
-      ]);
+      const { obsAdapterModule } = await import("../adapters/obs/adapter");
       return obsAdapterModule({
         config: deps.config.obs,
-        endpointStore: dbProxyEndpointStore,
         random: deps.random,
         timers: deps.timers,
       });
