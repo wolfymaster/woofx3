@@ -5,16 +5,16 @@ import { publishEvent } from "../publishEvent";
 
 export default function onChannelRedemptionAdd(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onChannelRedemptionAdd(ctx.broadcaster.id, async (event: EventSubChannelRedemptionAddEvent) => {
-    const { id, userId, userDisplayName, input, rewardCost, rewardId, rewardTitle } = event;
-    const [topic, data] = ctx.events.Twitch().redeem({
-      redeemId: id,
-      rewardId,
-      rewardTitle,
-      rewardCost,
-      userId,
-      userName: userDisplayName,
-      message: input || undefined,
-    });
-    await publishEvent(ctx, [topic, data]);
+    await publishEvent(ctx, () =>
+      ctx.events.Twitch().redeem({
+        redeemId: event.id,
+        rewardId: event.rewardId,
+        rewardTitle: event.rewardTitle,
+        rewardCost: event.rewardCost,
+        userId: event.userId,
+        userName: event.userDisplayName,
+        message: event.input || undefined,
+      })
+    );
   });
 }

@@ -61,23 +61,25 @@ export class AdBreakAnnouncer {
     this.flushPendingEnd();
     const endedAt = new Date(startedAtMs + durationSeconds * 1000).toISOString();
 
-    const [topic, data] = this.ctx.events.Twitch().adBreakBegin({
-      durationSeconds,
-      isAutomatic,
-      startedAt,
-      endsAt: endedAt,
-    });
-    void publishEvent(this.ctx, [topic, data]);
-
-    const publishEnd = () => {
-      this.pending = null;
-      const [endTopic, endData] = this.ctx.events.Twitch().adBreakEnd({
+    void publishEvent(this.ctx, () =>
+      this.ctx.events.Twitch().adBreakBegin({
         durationSeconds,
         isAutomatic,
         startedAt,
-        endedAt,
-      });
-      void publishEvent(this.ctx, [endTopic, endData]);
+        endsAt: endedAt,
+      })
+    );
+
+    const publishEnd = () => {
+      this.pending = null;
+      void publishEvent(this.ctx, () =>
+        this.ctx.events.Twitch().adBreakEnd({
+          durationSeconds,
+          isAutomatic,
+          startedAt,
+          endedAt,
+        })
+      );
     };
     const handle = this.timers.setTimeout(publishEnd, Math.max(0, durationSeconds * 1000));
     this.pending = { handle, publishEnd, startedAt };

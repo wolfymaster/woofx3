@@ -5,14 +5,14 @@ import { publishEvent } from "../publishEvent";
 
 export default function onChannelCheer(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onChannelCheer(ctx.broadcaster.id, async (event: EventSubChannelCheerEvent) => {
-    const { message, bits, isAnonymous, userDisplayName, userId } = event;
-    const [topic, data] = ctx.events.Twitch().cheer({
-      amount: bits,
-      isAnonymous,
-      message,
-      userName: userDisplayName,
-      userId,
-    });
-    await publishEvent(ctx, [topic, data]);
+    await publishEvent(ctx, () =>
+      ctx.events.Twitch().cheer({
+        amount: event.bits,
+        isAnonymous: event.isAnonymous,
+        message: event.message,
+        userName: event.userDisplayName,
+        userId: event.userId,
+      })
+    );
   });
 }

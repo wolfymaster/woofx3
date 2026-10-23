@@ -9,11 +9,12 @@ import { publishEvent } from "../publishEvent";
 // recap stats) should query Helix separately at the time of consumption.
 export default function onStreamOffline(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onStreamOffline(ctx.broadcaster.id, async (event: EventSubStreamOfflineEvent) => {
-    const [topic, data] = ctx.events.Twitch().streamOffline({
-      broadcasterUserId: event.broadcasterId,
-      broadcasterUserName: event.broadcasterName,
-    });
-    await publishEvent(ctx, [topic, data]);
+    await publishEvent(ctx, () =>
+      ctx.events.Twitch().streamOffline({
+        broadcasterUserId: event.broadcasterId,
+        broadcasterUserName: event.broadcasterName,
+      })
+    );
     ctx.onStreamLiveChange?.(false);
   });
 }
