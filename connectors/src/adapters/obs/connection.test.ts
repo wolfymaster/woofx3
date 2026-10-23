@@ -1,6 +1,27 @@
 import { describe, expect, it } from "bun:test";
-import { DEFAULT_OBS_BACKOFF, ObsConnection, type ObsSession, obsRetryDelay } from "./connection";
-import { executeObsControlCommand, type ObsControlClient } from "./control";
+import type { ObsControlCommand } from "@woofx3/common/cloudevents/Obs/commands";
+import { OBS_DEFAULTS, type ObsConnectionConfig } from "../../config/obs";
+import type { RandomSource, Timers } from "../../host/deps";
+import { ObsConnection, type ObsSession } from "./connection";
+import { executeObsControlCommand, type ObsControlClient, type ObsControlOptions } from "./control";
+
+const runCommand = (
+  obs: ObsControlClient | null,
+  command: ObsControlCommand,
+  options: Partial<ObsControlOptions> = {}
+) => executeObsControlCommand(obs, command, { timeoutMs: OBS_DEFAULTS.commandTimeoutMs, ...options });
+
+/** The shipped backoff and open deadline. */
+const CONFIG: Pick<ObsConnectionConfig, "backoff" | "openTimeoutMs"> = {
+  backoff: { baseMs: OBS_DEFAULTS.backoffInitialMs, maxMs: OBS_DEFAULTS.backoffMaxMs },
+  openTimeoutMs: OBS_DEFAULTS.openTimeoutMs,
+};
+
+/** Full jitter at half the ceiling, so each delay is easy to read off. */
+const half: RandomSource = { next: () => 0.5 };
+
+/** A run whose host never gives up on it; tests that need an abort make their own. */
+const forever = () => new AbortController().signal;
 
 type Level = "info" | "warn" | "error" | "debug";
 
@@ -17,15 +38,24 @@ function recordingLogger() {
 function manualTimers() {
   const pending = new Map<number, { fn: () => void; ms: number }>();
   let next = 1;
-  return {
-    setTimer: (fn: () => void, ms: number) => {
+  const timers: Timers = {
+    setTimeout: (fn, ms) => {
       const id = next++;
       pending.set(id, { fn, ms });
       return id;
     },
-    clearTimer: (handle: unknown) => {
+    clearTimeout: (handle) => {
       pending.delete(handle as number);
     },
+    setInterval: () => {
+      throw new Error("the OBS connection sets no intervals");
+    },
+    clearInterval: () => {
+      throw new Error("the OBS connection sets no intervals");
+    },
+  };
+  return {
+    timers,
     delays: () => [...pending.values()].map((t) => t.ms),
     count: () => pending.size,
     /** Fire every pending timer, then let the attempts they start settle. */
@@ -86,24 +116,12 @@ function connection(obs: ReturnType<typeof fakeObs>, extra: { onConnected?: () =
     open: obs.open,
     onConnected: () => extra.onConnected?.(),
     logger: log.logger,
-    random: () => 1,
-    setTimer: timers.setTimer,
-    clearTimer: timers.clearTimer,
+    config: CONFIG,
+    random: half,
+    timers: timers.timers,
   });
   return { conn, timers, log };
 }
-
-describe("obsRetryDelay", () => {
-  it("doubles from 1s and caps at 30s", () => {
-    const ceilings = [0, 1, 2, 3, 4, 5, 6, 20].map((n) => obsRetryDelay(n, DEFAULT_OBS_BACKOFF, 1));
-    expect(ceilings).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000]);
-  });
-
-  it("jitters down by at most half", () => {
-    expect(obsRetryDelay(2, DEFAULT_OBS_BACKOFF, 0)).toBe(2_000);
-    expect(obsRetryDelay(10, DEFAULT_OBS_BACKOFF, 0)).toBe(15_000);
-  });
-});
 
 describe("ObsConnection", () => {
   it("connects straight away when OBS is up", async () => {
@@ -116,7 +134,7 @@ describe("ObsConnection", () => {
     });
 
     expect(conn.status()).toBe("connecting");
-    conn.start();
+    conn.start(forever());
     await settle();
 
     expect(conn.status()).toBe("connected");
@@ -130,7 +148,7 @@ describe("ObsConnection", () => {
     const obs = fakeObs(3);
     const { conn, timers, log } = connection(obs);
 
-    conn.start();
+    conn.start(forever());
     await settle();
     expect(conn.status()).toBe("retrying");
     expect(conn.current()).toBeNull();
@@ -141,7 +159,7 @@ describe("ObsConnection", () => {
       await timers.fire();
     }
 
-    expect(delays).toEqual([1_000, 2_000, 4_000]);
+    expect(delays).toEqual([500, 1_000, 2_000]);
     expect(obs.opened()).toBe(1);
     expect(log.loud().map((l) => l.message)).toEqual([
       "OBS not reachable; retrying in the background",
@@ -157,13 +175,13 @@ describe("ObsConnection", () => {
         connects += 1;
       },
     });
-    conn.start();
+    conn.start(forever());
     await settle();
 
     obs.dropLatest();
     expect(conn.status()).toBe("retrying");
     expect(conn.current()).toBeNull();
-    expect(timers.delays()).toEqual([1_000]);
+    expect(timers.delays()).toEqual([500]);
 
     await timers.fire();
     expect(conn.status()).toBe("connected");
@@ -179,17 +197,17 @@ describe("ObsConnection", () => {
   it("answers obs commands as not connected while retrying", async () => {
     const obs = fakeObs(1);
     const { conn } = connection(obs);
-    conn.start();
+    conn.start(forever());
     await settle();
 
-    const reply = await executeObsControlCommand(conn.current(), { command: "switch_scene", sceneName: "Raid" });
+    const reply = await runCommand(conn.current(), { command: "switch_scene", sceneName: "Raid" });
     expect(reply).toEqual({ ok: false, error: "OBS is not connected (retrying)" });
   });
 
   it("stop() cancels a pending retry", async () => {
     const obs = fakeObs(5);
     const { conn, timers } = connection(obs);
-    conn.start();
+    conn.start(forever());
     await settle();
     expect(timers.count()).toBe(1);
 
@@ -201,7 +219,7 @@ describe("ObsConnection", () => {
   it("stop() closes the open session, and its close does not trigger a reconnect", async () => {
     const obs = fakeObs(0);
     const { conn, timers } = connection(obs);
-    conn.start();
+    conn.start(forever());
     await settle();
 
     await conn.stop();
@@ -220,7 +238,7 @@ describe("ObsConnection", () => {
         throw new Error("refresh failed");
       },
     });
-    conn.start();
+    conn.start(forever());
     await settle();
 
     expect(conn.status()).toBe("connected");
@@ -230,7 +248,7 @@ describe("ObsConnection", () => {
   it("recycle() abandons a hung session and reconnects", async () => {
     const obs = fakeObs(0);
     const { conn, timers, log } = connection(obs);
-    conn.start();
+    conn.start(forever());
     await settle();
 
     conn.recycle("an OBS request timed out");
@@ -263,11 +281,11 @@ describe("ObsConnection", () => {
         throw errors.shift() ?? new Error("ECONNREFUSED");
       },
       logger: log.logger,
-      random: () => 1,
-      setTimer: timers.setTimer,
-      clearTimer: timers.clearTimer,
+      config: CONFIG,
+      random: half,
+      timers: timers.timers,
     });
-    conn.start();
+    conn.start(forever());
     await settle();
     for (let i = 0; i < 4; i++) {
       await timers.fire();
@@ -285,8 +303,8 @@ describe("ObsConnection", () => {
 
   it("refuses to start twice", () => {
     const { conn } = connection(fakeObs(0));
-    conn.start();
-    expect(() => conn.start()).toThrow();
+    conn.start(forever());
+    expect(() => conn.start(forever())).toThrow();
   });
 
   it("reconnects at once when told, closing the open session", async () => {
@@ -297,7 +315,7 @@ describe("ObsConnection", () => {
         connects += 1;
       },
     });
-    conn.start();
+    conn.start(forever());
     await settle();
 
     conn.reconnectNow("OBS module settings changed");
@@ -314,7 +332,7 @@ describe("ObsConnection", () => {
   it("skips a scheduled retry's backoff when told to reconnect", async () => {
     const obs = fakeObs(1);
     const { conn, timers } = connection(obs);
-    conn.start();
+    conn.start(forever());
     await settle();
     expect(conn.status()).toBe("retrying");
     expect(timers.count()).toBe(1);
@@ -353,11 +371,11 @@ describe("ObsConnection", () => {
         return session("fresh");
       },
       logger: recordingLogger().logger,
-      random: () => 1,
-      setTimer: timers.setTimer,
-      clearTimer: timers.clearTimer,
+      config: CONFIG,
+      random: half,
+      timers: timers.timers,
     });
-    conn.start();
+    conn.start(forever());
     await settle();
 
     conn.reconnectNow("OBS module settings changed");
@@ -395,20 +413,19 @@ describe("ObsConnection", () => {
         }
         return session("fresh");
       },
-      openTimeoutMs: 15_000,
       logger: recordingLogger().logger,
-      random: () => 1,
-      setTimer: timers.setTimer,
-      clearTimer: timers.clearTimer,
+      config: { ...CONFIG, openTimeoutMs: 15_000 },
+      random: half,
+      timers: timers.timers,
     });
-    conn.start();
+    conn.start(forever());
     await settle();
     expect(timers.delays()).toEqual([15_000]);
 
     await timers.fire();
     expect(conn.status()).toBe("retrying");
     expect(conn.lastFailure()).toBe("unreachable");
-    expect(timers.delays()).toEqual([DEFAULT_OBS_BACKOFF.initialMs]);
+    expect(timers.delays()).toEqual([OBS_DEFAULTS.backoffInitialMs / 2]);
 
     release();
     await settle();
@@ -423,7 +440,7 @@ describe("ObsConnection", () => {
   it("does nothing once stopped", async () => {
     const obs = fakeObs(0);
     const { conn } = connection(obs);
-    conn.start();
+    conn.start(forever());
     await settle();
     await conn.stop();
 
@@ -438,7 +455,7 @@ describe("ObsConnection", () => {
     const obs = fakeObs(1);
     const { conn, timers } = connection(obs);
     expect(conn.lastFailure()).toBeNull();
-    conn.start();
+    conn.start(forever());
     await settle();
     expect(conn.lastFailure()).toBe("unreachable");
 
@@ -446,5 +463,129 @@ describe("ObsConnection", () => {
 
     expect(conn.status()).toBe("connected");
     expect(conn.lastFailure()).toBeNull();
+  });
+
+  it("keeps its retry delay at the cap however long OBS stays away", async () => {
+    const timers = manualTimers();
+    const conn = new ObsConnection<ObsControlClient>({
+      open: async () => {
+        throw new Error("connect ECONNREFUSED 127.0.0.1:4455");
+      },
+      logger: recordingLogger().logger,
+      config: CONFIG,
+      random: { next: () => 0.999 },
+      timers: timers.timers,
+    });
+    conn.start(forever());
+    await settle();
+
+    const delays: number[] = [];
+    for (let i = 0; i < 12; i++) {
+      delays.push(...timers.delays());
+      await timers.fire();
+    }
+    await conn.stop();
+
+    expect(Math.max(...delays)).toBeLessThan(OBS_DEFAULTS.backoffMaxMs);
+    expect(delays.slice(-6)).toEqual(Array(6).fill(Math.floor(0.999 * OBS_DEFAULTS.backoffMaxMs)));
+  });
+
+  it("stopped while an attempt is in flight, leaves no timer and closes the session that arrives late", async () => {
+    let release: () => void = () => {
+      throw new Error("the attempt never started");
+    };
+    const closed: string[] = [];
+    let attemptSignal: AbortSignal | null = null;
+    const timers = manualTimers();
+    const conn = new ObsConnection<ObsControlClient>({
+      open: async (signal) => {
+        attemptSignal = signal;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return {
+          client: {} as ObsControlClient,
+          onClose: () => {},
+          close: async () => {
+            closed.push("late");
+          },
+        };
+      },
+      logger: recordingLogger().logger,
+      config: CONFIG,
+      random: half,
+      timers: timers.timers,
+    });
+    conn.start(forever());
+    await settle();
+    expect(timers.delays()).toEqual([OBS_DEFAULTS.openTimeoutMs]);
+
+    expect((attemptSignal as AbortSignal | null)?.aborted).toBe(false);
+    await conn.stop();
+    expect((attemptSignal as AbortSignal | null)?.aborted).toBe(true);
+    expect(timers.count()).toBe(0);
+    release();
+    await settle();
+
+    expect(closed).toEqual(["late"]);
+    expect(conn.current()).toBeNull();
+    expect(conn.status()).toBe("stopped");
+    expect(timers.count()).toBe(0);
+  });
+
+  it("stops when its start signal aborts: the pending retry is cancelled and nothing dials again", async () => {
+    const obs = fakeObs(100);
+    const { conn, timers } = connection(obs);
+    const run = new AbortController();
+    conn.start(run.signal);
+    await settle();
+    expect(timers.count()).toBe(1);
+
+    run.abort();
+    await settle();
+    expect(conn.status()).toBe("stopped");
+    expect(timers.count()).toBe(0);
+    conn.reconnectNow("OBS module settings changed");
+    await settle();
+    expect(timers.count()).toBe(0);
+  });
+
+  it("closes the open session when its start signal aborts", async () => {
+    const obs = fakeObs(0);
+    const { conn } = connection(obs);
+    const run = new AbortController();
+    conn.start(run.signal);
+    await settle();
+
+    run.abort();
+    await settle();
+    expect(obs.closed).toEqual([1]);
+    expect(conn.current()).toBeNull();
+  });
+
+  it("never dials when started with a signal that already aborted", async () => {
+    const obs = fakeObs(0);
+    const { conn, timers } = connection(obs);
+    conn.start(AbortSignal.abort());
+    await settle();
+
+    expect(obs.opened()).toBe(0);
+    expect(conn.status()).toBe("stopped");
+    expect(timers.count()).toBe(0);
+  });
+
+  it("refuses a backoff whose cap is below its first delay, and an open deadline that is not positive", () => {
+    const build = (config: typeof CONFIG) =>
+      new ObsConnection<ObsControlClient>({
+        open: async () => {
+          throw new Error("unused");
+        },
+        logger: recordingLogger().logger,
+        config,
+        random: half,
+        timers: manualTimers().timers,
+      });
+    expect(() => build({ ...CONFIG, backoff: { baseMs: 2_000, maxMs: 1_000 } })).toThrow("backoff requires");
+    expect(() => build({ ...CONFIG, openTimeoutMs: 0 })).toThrow("openTimeoutMs");
   });
 });

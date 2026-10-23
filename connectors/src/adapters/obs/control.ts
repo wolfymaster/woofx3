@@ -81,16 +81,14 @@ export function parseObsControlCommand(data: unknown): ParsedObsCommand {
   return { ok: true, command: parsed.data };
 }
 
-/**
- * How long one command may take in OBS. Under the engine's 5s request timeout
- * on purpose, so the step fails with this service's reason rather than a bare
- * "no answer". OBS answers a local request in milliseconds; one that has not
- * answered in this long is hung, and the session is recycled.
- */
-export const OBS_COMMAND_TIMEOUT_MS = 3_500;
-
 export interface ObsControlOptions {
-  timeoutMs?: number;
+  /**
+   * How long one command may take in OBS (WOOFX3_OBS_COMMAND_TIMEOUT_MS). Under the host's reply budget on purpose,
+   * so the step fails with this service's reason rather than a bare "no
+   * answer". OBS answers a local request in milliseconds; one that has not
+   * answered in this long is hung, and the session is recycled.
+   */
+  timeoutMs: number;
   /** Called when OBS did not answer in time; the caller drops the session. */
   onTimeout?: () => void;
 }
@@ -125,12 +123,12 @@ export function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
 export async function executeObsControlCommand(
   obs: ObsControlClient | null,
   command: ObsControlCommand,
-  options: ObsControlOptions = {}
+  options: ObsControlOptions
 ): Promise<ObsControlReply> {
   if (!obs) {
     return { ok: false, error: OBS_NOT_CONNECTED };
   }
-  const timeoutMs = options.timeoutMs ?? OBS_COMMAND_TIMEOUT_MS;
+  const timeoutMs = options.timeoutMs;
   try {
     return await withDeadline(runCommand(obs, command), timeoutMs);
   } catch (err) {
@@ -357,7 +355,7 @@ export async function handleObsControlRequest(
   obs: ObsControlClient | null,
   raw: Uint8Array,
   logger: Logger,
-  options: ObsControlOptions = {}
+  options: ObsControlOptions
 ): Promise<ObsControlReply> {
   let envelope: { data?: unknown };
   try {

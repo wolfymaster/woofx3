@@ -13,7 +13,8 @@ import {
   relayChangeMovesEndpoint,
 } from "../../companion/dialer";
 import type { EndpointStore } from "../../companion/endpoint-store";
-import type { Logger } from "../../host/deps";
+import type { ObsConnectionConfig } from "../../config/obs";
+import type { Logger, RandomSource, Timers } from "../../host/deps";
 import { ObsConnection } from "./connection";
 import type Manager from "./manager";
 import type { RefreshLatch } from "./refresh-latch";
@@ -32,6 +33,9 @@ export interface ObsServiceDeps {
   fallback: ObsFallback;
   /** The overlay refresh sceneManager asked for; outlives this service. */
   latch: RefreshLatch;
+  connection: ObsConnectionConfig;
+  random: RandomSource;
+  timers: Timers;
   logger: Logger;
 }
 
@@ -45,8 +49,10 @@ export interface ObsService {
   /**
    * Starts connecting in the background and acts on the latched refresh on
    * the current or next session, and on every request latched until stop.
+   * `signal` aborting stops the connection, as the adapter's start signal does
+   * when the host gives up on the run.
    */
-  start(): void;
+  start(signal: AbortSignal): void;
   stop(): Promise<void>;
 }
 
@@ -72,11 +78,16 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
 
   const refreshes = new RefreshDrain(latch, () => connection.current(), logger);
   const connection: ObsConnection<Manager> = new ObsConnection<Manager>({
-    open: async () => {
+    open: async (signal) => {
       try {
         const route = await dialWebSocketEndpoint(dialer, target);
+        signal.throwIfAborted();
         last = { route: route.route, address: route.address };
-        return await openObsOverRoute(route);
+        return await openObsOverRoute(route, {
+          connectTimeoutMs: deps.connection.connectTimeoutMs,
+          timers: deps.timers,
+          signal,
+        });
       } catch (err) {
         if (err instanceof EndpointRelayError) {
           last = { route: "companion", address: err.address };
@@ -86,17 +97,20 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
     },
     onConnected: () => refreshes.drain(),
     logger,
+    config: deps.connection,
+    random: deps.random,
+    timers: deps.timers,
   });
 
   return {
     connection,
     status: () => obsStatusReply(connection, last),
     relayConfigMovesObs: async () => relayChangeMovesEndpoint(await store.relayConfig(), target, last),
-    start: () => {
+    start: (signal) => {
       stopListening = latch.onLatched(() => {
         void refreshes.drain();
       });
-      connection.start();
+      connection.start(signal);
       void refreshes.drain();
     },
     stop: async () => {

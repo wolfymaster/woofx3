@@ -1,16 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import {
-  assertLinkReaders,
-  LINK_READERS,
-  obsLinkReader,
-  type SettingsReader,
-  TWITCH_TOKEN_SETTING,
-  twitchLinkReader,
-} from "./link-readers";
+import { assertLinkReaders, type LinkStore, linkReaders, TWITCH_TOKEN_SETTING, twitchLinkReader } from "./link-readers";
+import { fixedLinkStore } from "./testing";
 
-function settings(values: Record<string, string | null>): SettingsReader {
-  return { getSetting: async (key) => values[key] ?? null };
-}
+const settings = (values: Record<string, string | null>) => fixedLinkStore(values);
 
 describe("twitchLinkReader", () => {
   const cases: Array<{
@@ -58,30 +50,20 @@ describe("twitchLinkReader", () => {
   }
 
   test("a failed settings read rejects rather than reading as unlinked", async () => {
-    const failing: SettingsReader = {
+    const failing: LinkStore = {
       getSetting: async () => {
         throw new Error("db-proxy is down");
       },
+      installedModules: async () => [],
     };
     await expect(twitchLinkReader.read(failing)).rejects.toThrow("db-proxy is down");
   });
 });
 
-describe("obsLinkReader", () => {
-  test("reads OBS as always connected and enabled, with no enabled setting and no settings read", async () => {
-    const untouched: SettingsReader = {
-      getSetting: async (key) => {
-        throw new Error(`obs read the setting ${key}`);
-      },
-    };
-    expect(await obsLinkReader.read(untouched)).toEqual({ connected: true, enabled: true, flag: null });
-    expect(obsLinkReader.watches).toEqual([]);
-  });
-});
-
 describe("assertLinkReaders", () => {
   test("accepts the shipped registry", () => {
-    expect(assertLinkReaders(LINK_READERS)).toBe(LINK_READERS);
+    const shipped = linkReaders({ obsHostExplicit: false });
+    expect(assertLinkReaders(shipped)).toBe(shipped);
   });
 
   test("names every adapter without a reader", () => {

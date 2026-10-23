@@ -18,6 +18,15 @@ An engine with no OBS module installed has no OBS actions, and an engine
 without `ctx.obs` does not advertise the `obs.control`
 [capability](./engine-capabilities.md).
 
+The connection is only kept while something needs it: while a module whose
+manifest lists the `obs.control` permission is installed and active, or while
+`WOOFX3_OBS_HOST` is set. Installing such a module connects to OBS and
+removing it disconnects, with no restart; switching it off disconnects within
+the connectors backstop interval (60 seconds by default). Otherwise the
+engine never dials OBS, `ctx.obs` calls fail with `OBS is turned off in this
+engine`, and the status reads `stopped` (see
+[Connectors host → Linked and enabled](./connectors.md#linked-and-enabled)).
+
 ## `ctx.obs`
 
 Registered by `ObsExtension` (`barkloader/lib_sandbox/src/extensions/obs.rs`)
@@ -74,7 +83,7 @@ module, an empty setting, or a port that is not a number from 1 to 65535.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `WOOFX3_OBS_HOST` | `127.0.0.1` | Host running OBS, when the module does not say |
+| `WOOFX3_OBS_HOST` | `127.0.0.1` | Host running OBS, when the module does not say. Set to any value, the engine keeps an OBS connection with no OBS module installed |
 | `WOOFX3_OBS_PORT` | `4455` | OBS WebSocket server port, when the module does not say |
 | `WOOFX3_OBS_RPC_TOKEN` | none | OBS WebSocket server password, when the module does not say |
 
@@ -99,8 +108,8 @@ skipping a pending retry's wait.
 
 The adapter keeps itself connected. If OBS is not running when it
 starts, or the connection drops (OBS closed or restarted), it retries in the
-background: after 1s, then doubling up to every 30s, each delay jittered down by
-up to half. OBS can be started in any order. It logs only the changes
+background: after a random delay of up to 1s, the ceiling doubling per failure
+up to 30s (`WOOFX3_OBS_BACKOFF_INITIAL_MS`, `WOOFX3_OBS_BACKOFF_MAX_MS`). OBS can be started in any order. It logs only the changes
 (`OBS not reachable; retrying in the background`, `OBS connection lost;
 reconnecting in the background`, `Connected to OBS`, `Reconnected to OBS`), so
 an evening with OBS closed is one line, not one per retry.
@@ -122,8 +131,9 @@ connection: check the WebSocket password in the OBS module's settings (or
 WOOFX3_OBS_RPC_TOKEN without the module)`, once
 each time the reason for failing changes.
 
-A command OBS has not answered within 3.5 seconds fails with `OBS did not
-answer within 3.5s; reconnecting to it`, and the adapter drops that
+A command OBS has not answered within 3.5 seconds
+(`WOOFX3_OBS_COMMAND_TIMEOUT_MS`) fails with `OBS did not answer within 3.5s;
+reconnecting to it`, and the adapter drops that
 session and reconnects: a socket that stays open while OBS has stopped
 answering would otherwise fail every command until OBS was restarted.
 

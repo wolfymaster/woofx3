@@ -1,7 +1,7 @@
 import type { ConnectorsConfig } from "../config";
 import type { Adapter, AdapterModule } from "./adapter";
 import { ADAPTER_IDS, type AdapterId } from "./adapter-ids";
-import type { Clock, IdSource } from "./deps";
+import type { Clock, IdSource, RandomSource, Timers } from "./deps";
 import { subjectCovered } from "./scoped-bus";
 
 export type AdapterLoader = () => Promise<AdapterModule>;
@@ -13,6 +13,8 @@ export interface AdapterRegistryDeps {
   config: ConnectorsConfig;
   clock: Clock;
   ids: IdSource;
+  random: RandomSource;
+  timers: Timers;
 }
 
 /**
@@ -30,7 +32,12 @@ export function adapterRegistry(deps: AdapterRegistryDeps): AdapterRegistry {
         import("../adapters/obs/adapter"),
         import("../companion/endpoint-store"),
       ]);
-      return obsAdapterModule({ fallback: deps.config.obs, endpointStore: dbProxyEndpointStore });
+      return obsAdapterModule({
+        config: deps.config.obs,
+        endpointStore: dbProxyEndpointStore,
+        random: deps.random,
+        timers: deps.timers,
+      });
     },
   };
 }

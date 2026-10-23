@@ -3,7 +3,7 @@ import type { ConnectorsConfig } from "../config";
 import type DbProxyService from "../services/db-proxy";
 import type MessageBusService from "../services/message-bus";
 import { type AdapterRegistry, type LoadedAdapters, loadAdapters } from "./adapters";
-import { dbProxySettings } from "./db-settings";
+import { dbProxyLinkStore } from "./db-link-store";
 import type { Clock, IdSource, Logger, RandomSource, Timers } from "./deps";
 import { type HealthServer, startHealthServer } from "./health";
 import { Host } from "./host";
@@ -61,7 +61,7 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
       dbProxy: dbProxy.client,
       bus: messageBus.client,
       busConnected: () => messageBus.isUp(),
-      settings: dbProxySettings(dbProxy.client),
+      linkStore: dbProxyLinkStore(dbProxy.client),
       adapters: this.loaded.adapters,
       hostStates: this.loaded.hostStates,
       readers: assertLinkReaders(this.deps.readers),

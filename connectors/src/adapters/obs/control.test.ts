@@ -1,11 +1,20 @@
 import { describe, expect, it } from "bun:test";
+import type { ObsControlCommand } from "@woofx3/common/cloudevents/Obs/commands";
+import { OBS_DEFAULTS } from "../../config/obs";
 import {
   executeObsControlCommand,
   handleObsControlRequest,
   type ObsControlClient,
+  type ObsControlOptions,
   parseObsControlCommand,
 } from "./control";
 import { type FakeInput, fakeObs, groupedScenes, logger, scenes } from "./fake-obs";
+
+const runCommand = (
+  obs: ObsControlClient | null,
+  command: ObsControlCommand,
+  options: Partial<ObsControlOptions> = {}
+) => executeObsControlCommand(obs, command, { timeoutMs: OBS_DEFAULTS.commandTimeoutMs, ...options });
 
 describe("parseObsControlCommand", () => {
   it("accepts each command in its documented shape", () => {
@@ -81,27 +90,27 @@ describe("parseObsControlCommand", () => {
 
 describe("executeObsControlCommand", () => {
   it("answers not connected when there is no OBS connection", async () => {
-    const reply = await executeObsControlCommand(null, { command: "switch_scene", sceneName: "Raid" });
+    const reply = await runCommand(null, { command: "switch_scene", sceneName: "Raid" });
     expect(reply).toEqual({ ok: false, error: "OBS is not connected (retrying)" });
   });
 
   it("switches the program scene", async () => {
     const obs = fakeObs(scenes());
-    const reply = await executeObsControlCommand(obs.client, { command: "switch_scene", sceneName: "Raid" });
+    const reply = await runCommand(obs.client, { command: "switch_scene", sceneName: "Raid" });
     expect(reply).toEqual({ ok: true });
     expect(obs.program()).toBe("Raid");
   });
 
   it("names a scene OBS does not have", async () => {
     const obs = fakeObs(scenes());
-    const reply = await executeObsControlCommand(obs.client, { command: "switch_scene", sceneName: "BRB" });
+    const reply = await runCommand(obs.client, { command: "switch_scene", sceneName: "BRB" });
     expect(reply).toEqual({ ok: false, error: 'scene "BRB" does not exist in OBS' });
   });
 
   it("shows a source in the named scene", async () => {
     const all = scenes();
     const obs = fakeObs(all, "Raid");
-    const reply = await executeObsControlCommand(obs.client, {
+    const reply = await runCommand(obs.client, {
       command: "set_source_visibility",
       sceneName: "Main",
       sourceName: "Confetti",
@@ -114,7 +123,7 @@ describe("executeObsControlCommand", () => {
 
   it("names a scene that does not exist when showing a source", async () => {
     const obs = fakeObs(scenes());
-    const reply = await executeObsControlCommand(obs.client, {
+    const reply = await runCommand(obs.client, {
       command: "set_source_visibility",
       sceneName: "BRB",
       sourceName: "Confetti",
@@ -126,7 +135,7 @@ describe("executeObsControlCommand", () => {
   it("hides a source in the current program scene when no scene is named", async () => {
     const all = scenes();
     const obs = fakeObs(all, "Main");
-    const reply = await executeObsControlCommand(obs.client, {
+    const reply = await runCommand(obs.client, {
       command: "set_source_visibility",
       sourceName: "Camera",
       visibility: "hidden",
@@ -140,15 +149,15 @@ describe("executeObsControlCommand", () => {
     const obs = fakeObs(all, "Main");
     const toggle = { command: "set_source_visibility", sourceName: "Camera", visibility: "toggle" } as const;
     const before = all[0].items[0].sceneItemEnabled;
-    expect(await executeObsControlCommand(obs.client, toggle)).toEqual({ ok: true });
+    expect(await runCommand(obs.client, toggle)).toEqual({ ok: true });
     expect(all[0].items[0].sceneItemEnabled).toBe(!before);
-    expect(await executeObsControlCommand(obs.client, toggle)).toEqual({ ok: true });
+    expect(await runCommand(obs.client, toggle)).toEqual({ ok: true });
     expect(all[0].items[0].sceneItemEnabled).toBe(before);
   });
 
   it("names a source that is not in the scene", async () => {
     const obs = fakeObs(scenes(), "Raid");
-    const reply = await executeObsControlCommand(obs.client, {
+    const reply = await runCommand(obs.client, {
       command: "set_source_visibility",
       sourceName: "Confetti",
       visibility: "visible",
@@ -161,15 +170,11 @@ describe("executeObsControlCommand", () => {
 
   it("mutes an input, and names one that does not exist", async () => {
     const obs = fakeObs(scenes());
-    expect(
-      await executeObsControlCommand(obs.client, { command: "set_input_mute", inputName: "Mic/Aux", muted: true })
-    ).toEqual({
+    expect(await runCommand(obs.client, { command: "set_input_mute", inputName: "Mic/Aux", muted: true })).toEqual({
       ok: true,
     });
     expect(obs.calls.at(-1)).toEqual({ cmd: "SetInputMute", args: { inputName: "Mic/Aux", inputMuted: true } });
-    expect(
-      await executeObsControlCommand(obs.client, { command: "set_input_mute", inputName: "Desk", muted: false })
-    ).toEqual({
+    expect(await runCommand(obs.client, { command: "set_input_mute", inputName: "Desk", muted: false })).toEqual({
       ok: false,
       error: 'input "Desk" does not exist in OBS',
     });
@@ -181,7 +186,7 @@ describe("executeObsControlCommand", () => {
         throw new Error("Not connected");
       },
     } as unknown as ObsControlClient;
-    const reply = await executeObsControlCommand(client, { command: "switch_scene", sceneName: "Raid" });
+    const reply = await runCommand(client, { command: "switch_scene", sceneName: "Raid" });
     expect(reply).toEqual({ ok: false, error: "OBS refused switch_scene: Not connected" });
   });
 });
@@ -207,7 +212,7 @@ describe("show_browser_source", () => {
     const all = scenes();
     const inputs: FakeInput[] = [];
     const obs = fakeObs(all, "Raid", [], null, inputs);
-    const reply = await executeObsControlCommand(obs.client, show());
+    const reply = await runCommand(obs.client, show());
     expect(reply).toEqual({ ok: true });
     expect(obs.calls.at(-1)).toEqual({
       cmd: "CreateInput",
@@ -228,7 +233,7 @@ describe("show_browser_source", () => {
     const all = scenes();
     const inputs = [browser("Confetti", { url: "https://old.example", width: 800, height: 600, css: "x" })];
     const obs = fakeObs(all, "Raid", [], null, inputs);
-    const reply = await executeObsControlCommand(
+    const reply = await runCommand(
       obs.client,
       show({ sceneName: "Main", sourceName: "Confetti", url: "https://new.example/" })
     );
@@ -247,7 +252,7 @@ describe("show_browser_source", () => {
     const { main, alerts } = groupedScenes();
     const inputs = [browser("Confetti", { url: "https://old.example" })];
     const obs = fakeObs([main], "Main", [alerts], null, inputs);
-    const reply = await executeObsControlCommand(obs.client, show({ sourceName: "Confetti" }));
+    const reply = await runCommand(obs.client, show({ sourceName: "Confetti" }));
     expect(reply).toEqual({ ok: true });
     expect(alerts.items[0].sceneItemEnabled).toBe(true);
     expect(main.items.map((i) => i.sourceName)).toEqual(["Camera", "Alerts"]);
@@ -257,7 +262,7 @@ describe("show_browser_source", () => {
     const all = scenes();
     const inputs = [browser("Confetti", { url: "https://old.example" })];
     const obs = fakeObs(all, "Main", [], null, inputs);
-    const reply = await executeObsControlCommand(obs.client, show({ sceneName: "Raid", sourceName: "Confetti" }));
+    const reply = await runCommand(obs.client, show({ sceneName: "Raid", sourceName: "Confetti" }));
     expect(reply).toEqual({ ok: true });
     expect(obs.calls.at(-1)).toEqual({
       cmd: "CreateSceneItem",
@@ -274,7 +279,7 @@ describe("show_browser_source", () => {
       { inputName: "Camera", inputKind: "v4l2_input", unversionedInputKind: "v4l2_input", inputSettings: {} },
     ];
     const obs = fakeObs(scenes(), "Main", [], null, inputs);
-    const reply = await executeObsControlCommand(obs.client, show({ sourceName: "Camera" }));
+    const reply = await runCommand(obs.client, show({ sourceName: "Camera" }));
     expect(reply).toEqual({
       ok: false,
       error:
@@ -286,14 +291,14 @@ describe("show_browser_source", () => {
 
   it("names a scene that does not exist, whether creating or reusing the source", async () => {
     const created = fakeObs(scenes(), "Main", [], null, []);
-    expect(await executeObsControlCommand(created.client, show({ sceneName: "BRB" }))).toEqual({
+    expect(await runCommand(created.client, show({ sceneName: "BRB" }))).toEqual({
       ok: false,
       error: 'scene "BRB" does not exist in OBS',
     });
 
     const inputs = [browser("Winner", { url: "https://old.example" })];
     const reused = fakeObs(scenes(), "Main", [], null, inputs);
-    expect(await executeObsControlCommand(reused.client, show({ sceneName: "BRB" }))).toEqual({
+    expect(await runCommand(reused.client, show({ sceneName: "BRB" }))).toEqual({
       ok: false,
       error: 'scene "BRB" does not exist in OBS',
     });
@@ -309,20 +314,25 @@ describe("handleObsControlRequest", () => {
     const reply = await handleObsControlRequest(
       obs.client,
       encode({ specversion: "1.0", type: "engine.obs.command", data: { command: "switch_scene", sceneName: "Raid" } }),
-      logger
+      logger,
+      { timeoutMs: OBS_DEFAULTS.commandTimeoutMs }
     );
     expect(reply).toEqual({ ok: true });
     expect(obs.program()).toBe("Raid");
   });
 
   it("answers a malformed payload instead of throwing", async () => {
-    const reply = await handleObsControlRequest(null, new TextEncoder().encode("{not json"), logger);
+    const reply = await handleObsControlRequest(null, new TextEncoder().encode("{not json"), logger, {
+      timeoutMs: OBS_DEFAULTS.commandTimeoutMs,
+    });
     expect(reply.ok).toBe(false);
   });
 
   it("refuses an invalid command before touching OBS", async () => {
     const obs = fakeObs(scenes());
-    const reply = await handleObsControlRequest(obs.client, encode({ data: { command: "switch_scene" } }), logger);
+    const reply = await handleObsControlRequest(obs.client, encode({ data: { command: "switch_scene" } }), logger, {
+      timeoutMs: OBS_DEFAULTS.commandTimeoutMs,
+    });
     expect(reply.ok).toBe(false);
     expect(obs.calls).toEqual([]);
   });
@@ -332,7 +342,7 @@ describe("sources inside groups", () => {
   it("shows a source that sits in a group, addressing the group", async () => {
     const { main, alerts } = groupedScenes();
     const obs = fakeObs([main], "Main", [alerts]);
-    const reply = await executeObsControlCommand(obs.client, {
+    const reply = await runCommand(obs.client, {
       command: "set_source_visibility",
       sourceName: "Confetti",
       visibility: "visible",
@@ -350,7 +360,7 @@ describe("timeouts", () => {
   it("answers with a readable reason and asks for the session to be recycled", async () => {
     const obs = fakeObs(scenes(), "Main", [], "SetCurrentProgramScene");
     let recycled = 0;
-    const reply = await executeObsControlCommand(
+    const reply = await runCommand(
       obs.client,
       { command: "switch_scene", sceneName: "Raid" },
       { timeoutMs: 20, onTimeout: () => recycled++ }
@@ -362,7 +372,7 @@ describe("timeouts", () => {
   it("does not recycle on an answered failure", async () => {
     const obs = fakeObs(scenes());
     let recycled = 0;
-    await executeObsControlCommand(
+    await runCommand(
       obs.client,
       { command: "switch_scene", sceneName: "BRB" },
       { timeoutMs: 1_000, onTimeout: () => recycled++ }

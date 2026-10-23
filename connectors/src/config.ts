@@ -2,7 +2,7 @@ import { z } from "zod";
 import { type BusConfig, BusEnvSchema, busConfig } from "./config/bus";
 import { type GatewayConfig, GatewayEnvSchema, gatewayConfig } from "./config/gateway";
 import { type HostConfig, HostEnvSchema, hostConfig, hostConfigProblems } from "./config/host";
-import { type ObsConfig, ObsEnvSchema, obsConfig } from "./config/obs";
+import { type ObsConfig, ObsEnvSchema, obsConfig, obsConfigProblems } from "./config/obs";
 import { type TwitchConfig, TwitchEnvSchema, twitchConfig } from "./config/twitch";
 
 export const ConnectorsEnvSchema = BusEnvSchema.extend(HostEnvSchema.shape)
@@ -11,7 +11,7 @@ export const ConnectorsEnvSchema = BusEnvSchema.extend(HostEnvSchema.shape)
   .extend(ObsEnvSchema.shape)
   .extend({ woofx3RootPath: z.string().optional() })
   .superRefine((env, ctx) => {
-    for (const message of hostConfigProblems(env)) {
+    for (const message of [...hostConfigProblems(env), ...obsConfigProblems(env)]) {
       ctx.addIssue({ code: "custom", message });
     }
   });
