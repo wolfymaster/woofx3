@@ -94,11 +94,13 @@ func TestDispatchRefusesBadArguments(t *testing.T) {
 // below breaks one rule of it.
 const validContract = `{
   "subjects": {"send": "platform.gateway.send", "capabilities": "platform.gateway.capabilities", "fieldOptions": "platform.gateway.field_options"},
+  "replyTypes": {"send": "platform.gateway.send.result", "capabilities": "platform.gateway.capabilities.result", "fieldOptions": "platform.gateway.field_options.result"},
   "platforms": [{"id": "twitch", "displayName": "Twitch"}],
   "requesters": ["workflow"],
   "failureCodes": ["invalid"],
   "outcomeStatuses": ["delivered"],
   "unavailableReasons": ["stopped"],
+  "platformStates": ["connected"],
   "actions": [{"id": "chat.send", "fields": [{"name": "message", "type": "string", "required": true, "maxLength": 500}]}]
 }`
 
@@ -139,7 +141,13 @@ func TestParseRefusesBadContracts(t *testing.T) {
 		{"duplicate action", `"actions": [`, `"actions": [{"id": "chat.send", "fields": [{"name": "message", "type": "string", "required": true, "maxLength": 1}]}, `, "duplicate action"},
 		{"duplicate field", `"maxLength": 500}]`, `"maxLength": 500}, {"name": "message", "type": "string", "required": false, "maxLength": 5}]`, "duplicate field"},
 		{"shared subject", `"platform.gateway.capabilities"`, `"platform.gateway.send"`, "is also"},
-		{"bad subject", `"platform.gateway.field_options"`, `"Field Options"`, "not a dotted lowercase subject"},
+		{"bad subject", `"platform.gateway.field_options"`, `"Field Options"`, "not a dotted lowercase name"},
+		{"missing reply types", `"replyTypes": {"send": "platform.gateway.send.result", "capabilities": "platform.gateway.capabilities.result", "fieldOptions": "platform.gateway.field_options.result"},`, ``, "replyTypes.send"},
+		{"bad reply type", `"platform.gateway.send.result"`, `"send result"`, "replyTypes.send"},
+		{"shared reply type", `"platform.gateway.field_options.result"`, `"platform.gateway.capabilities.result"`, "is also replyTypes.capabilities"},
+		{"reply type equal to a subject", `"platform.gateway.capabilities.result"`, `"platform.gateway.send"`, "is also subjects.send"},
+		{"no platform states", `["connected"]`, `[]`, "platformStates: is required"},
+		{"duplicate platform state", `["connected"]`, `["connected", "connected"]`, "duplicate value"},
 		{"no platforms", `[{"id": "twitch", "displayName": "Twitch"}]`, `[]`, "platforms: is required"},
 		{"missing display name", `"displayName": "Twitch"`, `"displayName": " "`, "displayName"},
 		{"unknown outcome status", `["delivered"]`, `["delivered", "exploded"]`, "no outcome shape"},
