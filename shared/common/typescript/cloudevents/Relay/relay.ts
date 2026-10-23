@@ -11,26 +11,11 @@ import type { RelayCredentialRequestedResponse } from "@woofx3/api/webhooks";
 /** Engine setting holding a `StoredRelayConfig` as JSON. Absent when nothing goes through a companion. */
 export const RELAY_CONFIG_SETTING = "relay.config";
 
-/**
- * Nothing publishes or subscribes to this: the companion gateway, the one
- * writer of `relay.config`, reports each change to its route watch in-process.
- */
-export const RELAY_CONFIG_UPDATED_SUBJECT = "engine.relay.config.updated";
-
-/**
- * Nothing answers this: the companion gateway holds the bridge credential and
- * asks the api for the dashboard's on `COMPANION_DASHBOARD_CREDENTIAL_SUBJECT`.
- * Its request is `{ force?: boolean }` and its reply a `RelayCredentialReply`.
- */
-export const RELAY_CREDENTIAL_SUBJECT = "engine.relay.credential";
-
 /** A credential for the bridge, with the configuration it is valid for. `expiresAt` is in ms since the epoch. */
 export interface RelayGrant extends RelayConfig {
   credential: string;
   expiresAt: number;
 }
-
-export type RelayCredentialReply = { relay: RelayGrant | null } | { error: string };
 
 /** The configuration as stored, with the engine client id of the dashboard that set it, which is the one asked for credentials. */
 export interface StoredRelayConfig extends RelayConfig {
@@ -97,39 +82,6 @@ export function parseRelayGrant(value: unknown): RelayGrant {
     throw new Error("relay credential has no expiry");
   }
   return { ...config, credential, expiresAt };
-}
-
-type NatsRequest = (subject: string, data: Uint8Array, opts?: { timeout?: number }) => Promise<{ data: Uint8Array }>;
-
-/**
- * Asks on `RELAY_CREDENTIAL_SUBJECT`, which nothing answers, so every call
- * rejects with a timeout. Resolves null when the reply says nothing routes
- * through a companion; `force` asks for a fresh credential.
- */
-export function requestRelayCredentialOverNats(
-  request: NatsRequest,
-  timeoutMs = 5_000
-): (force: boolean) => Promise<RelayGrant | null> {
-  return async (force) => {
-    const reply = await request(RELAY_CREDENTIAL_SUBJECT, new TextEncoder().encode(JSON.stringify({ force })), {
-      timeout: timeoutMs,
-    });
-    const body: unknown = JSON.parse(new TextDecoder().decode(reply.data));
-    if (typeof body !== "object" || body === null) {
-      throw new Error("the api service's relay credential reply is not an object");
-    }
-    const { relay, error } = body as { relay?: unknown; error?: unknown };
-    if (typeof error === "string") {
-      throw new Error(`the api service could not get a relay credential: ${error}`);
-    }
-    if (relay === null) {
-      return null;
-    }
-    if (relay === undefined) {
-      throw new Error("the api service's relay credential reply is malformed");
-    }
-    return parseRelayGrant(relay);
-  };
 }
 
 /** The dashboard's answer to `relay.credential.requested`. Throws on anything that is not one. */
