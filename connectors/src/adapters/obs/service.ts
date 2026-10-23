@@ -4,33 +4,23 @@
 // run, starts it, and stops it when the run ends; its served subjects read
 // the connection and status, and its subscriptions ask it to reconnect.
 
-import type { RelayGrant } from "@woofx3/common/cloudevents/Relay/relay";
-import {
-  type DialerDeps,
-  dialWebSocketEndpoint,
-  EndpointRelayError,
-  endpointKeysFromManifest,
-  relayChangeMovesEndpoint,
-} from "../../companion/dialer";
-import type { EndpointStore } from "../../companion/endpoint-store";
+import type { RelayConfig } from "@woofx3/api";
+import { relayChangeMovesEndpoint } from "../../companion/route-watch";
+import type { EndpointResolution } from "../../companion/types";
 import type { ObsConnectionConfig } from "../../config/obs";
 import type { Logger, RandomSource, Timers } from "../../host/deps";
-import { ObsConnection } from "./connection";
+import { ObsConnection, ObsRouteUnavailable } from "./connection";
 import type Manager from "./manager";
 import type { RefreshLatch } from "./refresh-latch";
 import { refreshOverlayBrowserSources } from "./refresh-overlays";
-import { type ObsFallback, obsDialTarget, openObsOverRoute } from "./settings";
+import { OBS_ENDPOINT, openObsOverRoute } from "./settings";
 import { type ObsLastRoute, type ObsStatusReply, obsStatusReply } from "./status";
 
 export interface ObsServiceDeps {
-  store: EndpointStore;
-  /**
-   * The bridge credential, from the api; `force` asks for a fresh one in place
-   * of a cached one. Throws when none can be had.
-   */
-  relayCredential(force: boolean): Promise<RelayGrant | null>;
-  /** Where OBS is when the OBS module's settings leave a value empty. */
-  fallback: ObsFallback;
+  /** The route for one connect attempt, from the companion gateway; read afresh each time. */
+  resolve(signal: AbortSignal): Promise<EndpointResolution>;
+  /** The stored relay configuration, to tell whether a change to it moves OBS. */
+  relayConfig(): Promise<RelayConfig | null>;
   /** The overlay refresh sceneManager asked for; outlives this service. */
   latch: RefreshLatch;
   connection: ObsConnectionConfig;
@@ -57,20 +47,7 @@ export interface ObsService {
 }
 
 export function createObsService(deps: ObsServiceDeps): ObsService {
-  const { store, latch, logger } = deps;
-  const dialer: DialerDeps = {
-    endpointKeys: async (moduleId, endpointId) =>
-      endpointKeysFromManifest(await store.moduleManifest(moduleId), endpointId),
-    settings: (moduleId) => store.moduleSettings(moduleId),
-    secrets: (moduleId) => store.moduleSecrets(moduleId),
-    // Read on every attempt, like the module settings, so a missed
-    // `engine.relay.config.updated` is picked up on the next retry.
-    relayConfig: () => store.relayConfig(),
-    relayCredential: (force) => deps.relayCredential(force),
-    fetch: (url, init) => fetch(url, init),
-    logger,
-  };
-  const target = obsDialTarget(deps.fallback);
+  const { latch, logger } = deps;
   // Where and how the latest attempt looked for OBS, for the status reply.
   // The password and any bridge ticket stay inside the attempt.
   let last: ObsLastRoute | null = null;
@@ -79,17 +56,23 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
   const refreshes = new RefreshDrain(latch, () => connection.current(), logger);
   const connection: ObsConnection<Manager> = new ObsConnection<Manager>({
     open: async (signal) => {
+      const resolution = await deps.resolve(signal);
+      signal.throwIfAborted();
+      if (!resolution.ok) {
+        if (resolution.address !== undefined) {
+          last = { route: "companion", address: resolution.address };
+        }
+        throw new ObsRouteUnavailable(resolution.reason, resolution.message, resolution.address);
+      }
+      last = { route: resolution.route, address: resolution.address };
       try {
-        const route = await dialWebSocketEndpoint(dialer, target);
-        signal.throwIfAborted();
-        last = { route: route.route, address: route.address };
-        return await openObsOverRoute(route, {
+        return await openObsOverRoute(resolution, {
           connectTimeoutMs: deps.connection.connectTimeoutMs,
           timers: deps.timers,
           signal,
         });
       } catch (err) {
-        if (err instanceof EndpointRelayError) {
+        if (err instanceof ObsRouteUnavailable && err.address !== undefined) {
           last = { route: "companion", address: err.address };
         }
         throw err;
@@ -105,7 +88,7 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
   return {
     connection,
     status: () => obsStatusReply(connection, last),
-    relayConfigMovesObs: async () => relayChangeMovesEndpoint(await store.relayConfig(), target, last),
+    relayConfigMovesObs: async () => relayChangeMovesEndpoint(await deps.relayConfig(), OBS_ENDPOINT, last),
     start: (signal) => {
       stopListening = latch.onLatched(() => {
         void refreshes.drain();

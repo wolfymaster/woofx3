@@ -20,8 +20,10 @@ import {
   fixedLinkStore,
   flush,
   halfRandom,
+  noCompanion,
   RecordingLogger,
   shippedLinkReaders,
+  testCompanion,
   text,
 } from "../../host/testing";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
@@ -185,6 +187,7 @@ function supervised() {
     {
       bus,
       dbProxy: { baseURL: "http://db.test" },
+      companion: noCompanion,
       clock: time,
       random: halfRandom,
       timers: time,
@@ -271,6 +274,7 @@ describe("TwitchAdapter in the host", () => {
     const host = new Host({
       config: hostConfig(HostEnvSchema.parse({})),
       gateway: gatewayConfig(GatewayEnvSchema.parse({})),
+      companion: testCompanion(),
       dbProxy: { baseURL: "http://db.test" },
       bus,
       busConnected: () => true,

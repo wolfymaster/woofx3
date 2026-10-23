@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { RELAY_CONFIG_UPDATED_SUBJECT } from "@woofx3/common/cloudevents/Relay/relay";
 import type { EndpointStore } from "../../companion/endpoint-store";
+import { MODULE_SETTING_UPDATED_SUBJECT } from "../../companion/route-watch";
 import { GatewayEnvSchema, gatewayConfig } from "../../config/gateway";
 import { HostEnvSchema, hostConfig } from "../../config/host";
 import { OBS_SERVED_BUDGETS_MS, type ObsConfig, ObsEnvSchema, obsConfig } from "../../config/obs";
@@ -17,9 +18,10 @@ import {
   halfRandom,
   RecordingLogger,
   shippedLinkReaders,
+  testCompanion,
   text,
 } from "../../host/testing";
-import { MODULE_SETTING_UPDATED_SUBJECT, ObsAdapter, obsAdapterModule } from "./adapter";
+import { ObsAdapter, obsAdapterModule } from "./adapter";
 import { OBS_NOT_CONNECTED } from "./control";
 import { type FakeObsServer, startFakeObs } from "./fake-obs-server";
 import { obsLinkReader } from "./link";
@@ -88,10 +90,14 @@ describe("ObsAdapter manifest", () => {
     ]);
   });
 
-  test("hears setting and relay changes, asks the api for relay credentials, publishes nothing", () => {
+  test("hears setting and relay changes, leaves relay credentials to the companion gateway, publishes nothing", () => {
     expect(manifest.subscribes).toEqual([MODULE_SETTING_UPDATED_SUBJECT, RELAY_CONFIG_UPDATED_SUBJECT]);
-    expect(manifest.requests).toEqual(["engine.relay.credential"]);
+    expect(manifest.requests).toEqual([]);
     expect(manifest.publishes).toEqual([]);
+  });
+
+  test("claims the OBS module's endpoint, so only it reaches OBS", () => {
+    expect(manifest.localEndpoints).toEqual([{ moduleId: "woofx3_obs", endpointId: "obs" }]);
   });
 
   test("keeps every budget below its callers' timeouts", () => {
@@ -197,6 +203,7 @@ function hosted(config: ObsConfig = CLOSED_OBS, store = emptyStore, modules: Ins
   const host = new Host({
     config: hostDefaults,
     gateway: gatewayConfig(GatewayEnvSchema.parse({})),
+    companion: testCompanion(store),
     dbProxy: { baseURL: "http://db.test" },
     bus,
     busConnected: () => true,
@@ -280,13 +287,14 @@ describe("ObsAdapter in the host", () => {
     await host.start();
     await host.settled();
 
+    // The companion gateway's route watch holds one of each for the life of the host.
     await setEnabled(false);
-    expect(bus.active(MODULE_SETTING_UPDATED_SUBJECT)).toBe(0);
-    expect(bus.active(RELAY_CONFIG_UPDATED_SUBJECT)).toBe(0);
-    await setEnabled(true);
-
     expect(bus.active(MODULE_SETTING_UPDATED_SUBJECT)).toBe(1);
     expect(bus.active(RELAY_CONFIG_UPDATED_SUBJECT)).toBe(1);
+    await setEnabled(true);
+
+    expect(bus.active(MODULE_SETTING_UPDATED_SUBJECT)).toBe(2);
+    expect(bus.active(RELAY_CONFIG_UPDATED_SUBJECT)).toBe(2);
     expect(bus.active("engine.obs.command")).toBe(1);
   });
 
