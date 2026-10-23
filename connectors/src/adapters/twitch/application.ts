@@ -273,6 +273,10 @@ export default class TwitchApplication {
           return;
         }
         ctx.logger.error("twitch: failed to apply the updated Twitch token", { err: errorMessage(err) });
+        // A failed reconnect or resubscribe leaves the adapter without a
+        // working connection while it still reports healthy; the host's
+        // restart with backoff is the only retry.
+        ctx.reportFault(`Twitch token update could not be applied: ${errorMessage(err)}`);
       }
     });
 
