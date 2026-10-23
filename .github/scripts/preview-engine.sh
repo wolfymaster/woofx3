@@ -37,6 +37,8 @@ owner_ref="${GITHUB_REPOSITORY}#${pr_number}"
 slug="pr-${pr_number}-woofx3"
 
 # api <method> <path> [body] [idempotency-key]
+# Prints the response body. On an HTTP error the body goes to stderr instead, so
+# the API's error code reaches the log even when the caller discards stdout.
 api() {
   local method="$1" path="$2" body="${3:-}" idempotency_key="${4:-}"
   local args=(--silent --show-error --fail-with-body
@@ -49,7 +51,13 @@ api() {
   if [ -n "$body" ]; then
     args+=(--data "$body")
   fi
-  curl "${args[@]}" "${MAINTENANCE_API_URL}${path}"
+  local response status=0
+  response="$(curl "${args[@]}" "${MAINTENANCE_API_URL}${path}")" || status=$?
+  if [ "$status" != 0 ]; then
+    echo "preview-engine: ${method} ${path} failed: ${response}" >&2
+    return "$status"
+  fi
+  printf '%s' "$response"
 }
 
 # The engine for this pull request, or "" when it has none. The list endpoint
@@ -77,6 +85,29 @@ comment() {
   fi
 }
 
+# Waits until the engine's latest run has finished, so a redeploy is not
+# refused as run_in_progress when an earlier workflow run was cancelled
+# mid-wait. Prints the final detail document; fails when the wait runs out.
+wait_until_settled() {
+  local id="$1" deadline=$((SECONDS + POLL_TIMEOUT_SECONDS)) detail status
+  while true; do
+    detail="$(api GET "/v1/engines/${id}")"
+    status="$(jq --raw-output '.run.status // "none"' <<<"$detail")"
+    case "$status" in
+    pending | running) ;;
+    *)
+      printf '%s' "$detail"
+      return 0
+      ;;
+    esac
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      printf '%s' "$detail"
+      return 1
+    fi
+    sleep "$POLL_INTERVAL_SECONDS"
+  done
+}
+
 case "$command" in
 up)
   version="${3:?usage: preview-engine.sh up <pr-number> <image-version>}"
@@ -96,6 +127,33 @@ up)
       "preview-engine:${owner_ref}")"
     engine_id="$(echo "$created" | jq --raw-output '.engine.id')"
   else
+    if ! existing="$(wait_until_settled "$engine_id")"; then
+      echo "preview-engine: an earlier run on ${engine_id} is still going" >&2
+      exit 1
+    fi
+    # An engine whose provision failed is resumed rather than redeployed: a
+    # redeploy needs a placement, which a provision that failed before placing
+    # the engine never recorded, and the API refuses it as engine_not_ready.
+    # The retry keeps the original version, so the redeploy below still moves
+    # the engine to this one.
+    if [ "$(jq --raw-output '.run.kind // ""' <<<"$existing")" = "provision" ] &&
+      [ "$(jq --raw-output '.run.status // ""' <<<"$existing")" = "failed" ]; then
+      failed_run_id="$(jq --raw-output '.run.id' <<<"$existing")"
+      # Keyed on this failure, not just the run: a run that fails again after a
+      # retry must be retried again, not answered from the idempotency cache.
+      failed_at="$(jq --raw-output '.run.finishedAt' <<<"$existing")"
+      echo "Retrying the failed provision run ${failed_run_id} of preview engine ${engine_id}"
+      api POST "/v1/engines/${engine_id}/runs/${failed_run_id}/retry" "" \
+        "preview-engine:${owner_ref}:retry:${failed_run_id}:${failed_at}" >/dev/null
+      retried="$(wait_until_settled "$engine_id")" || true
+      if [ "$(jq --raw-output '.engine.status' <<<"$retried")" != "ready" ]; then
+        step="$(jq --raw-output '.run.currentStep // "unknown"' <<<"$retried")"
+        error="$(jq --raw-output '.run.error.message // "no error reported"' <<<"$retried")"
+        comment "Preview engine failed at step \`${step}\`: ${error}"
+        echo "preview-engine: retrying the provision run did not make the engine ready" >&2
+        exit 1
+      fi
+    fi
     echo "Redeploying preview engine ${engine_id} on ${version}"
     api POST "/v1/engines/${engine_id}/redeploy" \
       "$(jq --null-input --arg version "$version" '{version: $version}')" >/dev/null
@@ -134,7 +192,7 @@ Running \`${version}\`. It is removed when this pull request closes, and expires
   # A run that failed names the step it failed on; a run still going has
   # simply outlived the wait.
   step="$(echo "$engine" | jq --raw-output '.run.currentStep // "unknown"')"
-  error="$(echo "$engine" | jq --raw-output '.run.error // "no error reported"')"
+  error="$(echo "$engine" | jq --raw-output '.run.error.message // "no error reported"')"
   if [ "$status" = "failed" ]; then
     comment "Preview engine failed at step \`${step}\`: ${error}"
     echo "preview-engine: provisioning failed at ${step}: ${error}" >&2
