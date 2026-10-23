@@ -361,16 +361,16 @@ export class DeliveryStore {
       // a full interval after this replay.
       delivery.delivered = false;
       delivery.lastAttemptAt = Date.now();
-      this.sendTo(
-        controller,
-        this.encodeDelivery({
-          eventId: delivery.eventId,
-          instanceId: delivery.instanceId,
-          type: delivery.type,
-          key: delivery.key,
-          value: delivery.value,
-        })
-      );
+      const bytes = this.encodeDelivery({
+        eventId: delivery.eventId,
+        instanceId: delivery.instanceId,
+        type: delivery.type,
+        key: delivery.key,
+        value: delivery.value,
+      });
+      if (bytes !== null) {
+        this.sendTo(controller, bytes);
+      }
     }
     // After the replay, so the page knows the whole set: what it still holds
     // beyond it was closed while its stream was down.
@@ -542,14 +542,29 @@ export class DeliveryStore {
       return;
     }
     const bytes = this.encodeDelivery(frame);
+    if (bytes === null) {
+      return;
+    }
     for (const controller of controllers) {
       this.sendTo(controller, bytes);
     }
   }
 
-  /** Presented once per send, so tokens are minted once however many pages listen. */
-  private encodeDelivery(frame: DeliveryFrame): Uint8Array {
-    return new TextEncoder().encode(encodeStreamFrame({ kind: "delivery", frame: this.present(frame) }));
+  /**
+   * Presented once per send, so tokens are minted once however many pages
+   * listen. Null when the delivery cannot be presented: it stays open and
+   * the sweep sends it again, as it would after a failed enqueue.
+   */
+  private encodeDelivery(frame: DeliveryFrame): Uint8Array | null {
+    try {
+      return new TextEncoder().encode(encodeStreamFrame({ kind: "delivery", frame: this.present(frame) }));
+    } catch (err) {
+      this.logger.warn("delivery-store: presenting a delivery failed", {
+        eventId: frame.eventId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
   }
 
   private sendTo(controller: SseController, bytes: Uint8Array): void {
