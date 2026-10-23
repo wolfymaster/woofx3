@@ -42,6 +42,21 @@ func installModule(t *testing.T, db *gorm.DB) *models.Module {
 	return module
 }
 
+// moduleTrigger, moduleAction and moduleWidget are rows a module registers
+// under a fixed manifest id. Their JSON columns hold valid JSON, which the
+// Postgres jsonb columns demand and SQLite does not check.
+func moduleTrigger(module *models.Module, id uuid.UUID, name string) *models.Trigger {
+	return &models.Trigger{ID: id, Name: name, Event: "channel.cheer", ConfigSchema: "[]", Emits: "{}", Taxonomy: "[]", CreatedByType: "MODULE", CreatedByRef: module.ModuleID, ManifestID: "cheer"}
+}
+
+func moduleAction(module *models.Module, id uuid.UUID, name string) *models.Action {
+	return &models.Action{ID: id, Name: name, Call: "hype.boost", ParamsSchema: "{}", Returns: "{}", Taxonomy: "[]", CreatedByType: "MODULE", CreatedByRef: module.ModuleID, ManifestID: "boost"}
+}
+
+func moduleWidget(module *models.Module, id uuid.UUID, name string) *models.Widget {
+	return &models.Widget{ID: id, Name: name, Directory: "board", Entry: "index.html", AlertTypes: "[]", SettingsSchema: "[]", Surfaces: "[]", Taxonomy: "[]", BehaviorKinds: `{"transitions":[],"effects":[]}`, CreatedByType: "MODULE", CreatedByRef: module.ModuleID, ManifestID: "board"}
+}
+
 // timestamps reads a row's created_at and updated_at.
 func timestamps(t *testing.T, db *gorm.DB, table string, id uuid.UUID) (time.Time, time.Time) {
 	t.Helper()
@@ -67,7 +82,7 @@ func TestModuleRepositoryUpsertsRunOnEveryDialect(t *testing.T) {
 			name:  "trigger",
 			table: "triggers",
 			upsert: func(t *testing.T, r *ModuleRepository, module *models.Module, name string, id uuid.UUID) uuid.UUID {
-				row := &models.Trigger{ID: id, Name: name, Event: "channel.cheer", CreatedByType: "MODULE", CreatedByRef: module.ModuleID, ManifestID: "cheer", Taxonomy: "[]"}
+				row := moduleTrigger(module, id, name)
 				if err := r.UpsertTrigger(row); err != nil {
 					t.Fatalf("UpsertTrigger: %v", err)
 				}
@@ -78,7 +93,7 @@ func TestModuleRepositoryUpsertsRunOnEveryDialect(t *testing.T) {
 			name:  "action",
 			table: "actions",
 			upsert: func(t *testing.T, r *ModuleRepository, module *models.Module, name string, id uuid.UUID) uuid.UUID {
-				row := &models.Action{ID: id, Name: name, Call: "hype.boost", CreatedByType: "MODULE", CreatedByRef: module.ModuleID, ManifestID: "boost", Taxonomy: "[]"}
+				row := moduleAction(module, id, name)
 				if err := r.UpsertAction(row); err != nil {
 					t.Fatalf("UpsertAction: %v", err)
 				}
@@ -89,7 +104,7 @@ func TestModuleRepositoryUpsertsRunOnEveryDialect(t *testing.T) {
 			name:  "widget",
 			table: "widgets",
 			upsert: func(t *testing.T, r *ModuleRepository, module *models.Module, name string, id uuid.UUID) uuid.UUID {
-				row := &models.Widget{ID: id, Name: name, Directory: "board", Entry: "index.html", AlertTypes: "[]", Surfaces: "[]", Taxonomy: "[]", BehaviorKinds: "[]", CreatedByType: "MODULE", CreatedByRef: module.ModuleID, ManifestID: "board"}
+				row := moduleWidget(module, id, name)
 				if err := r.UpsertWidget(row); err != nil {
 					t.Fatalf("UpsertWidget: %v", err)
 				}
@@ -282,9 +297,9 @@ func TestModuleArchivesStampTheClockOnEveryDialect(t *testing.T) {
 	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		module := installModule(t, db)
 		r := NewModuleRepository(db, database.RandomIDs{}, steppedClock(firstWrite, secondWrite))
-		trigger := &models.Trigger{Name: "cheer", Event: "channel.cheer", CreatedByType: "MODULE", CreatedByRef: module.ModuleID, ManifestID: "cheer", Taxonomy: "[]"}
-		action := &models.Action{Name: "boost", Call: "hype.boost", CreatedByType: "MODULE", CreatedByRef: module.ModuleID, ManifestID: "boost", Taxonomy: "[]"}
-		widget := &models.Widget{Name: "board", Directory: "board", Entry: "index.html", AlertTypes: "[]", Surfaces: "[]", Taxonomy: "[]", BehaviorKinds: "[]", CreatedByType: "MODULE", CreatedByRef: module.ModuleID, ManifestID: "board"}
+		trigger := moduleTrigger(module, uuid.Nil, "cheer")
+		action := moduleAction(module, uuid.Nil, "boost")
+		widget := moduleWidget(module, uuid.Nil, "board")
 		if err := r.UpsertTrigger(trigger); err != nil {
 			t.Fatalf("UpsertTrigger: %v", err)
 		}
