@@ -1483,11 +1483,6 @@ export type TwitchLinkChangedEvent = {
 } & TwitchLinkStatus;
 
 /**
- * Discriminated union of every event the engine can deliver via webhook.
- * Consumers should narrow on `event.type` — TypeScript will pick the right
- * branch without casts.
- */
-/**
  * A browser started pairing with this engine (see ./pairing.ts), so an
  * approver can tell the operator one is waiting. A notification, not a
  * record: `listPendingPairings` is the record, and an api restart forgets
@@ -1503,6 +1498,11 @@ export interface ClientPairingStartedEvent {
   expiresAt: string;
 }
 
+/**
+ * Discriminated union of every event the engine can deliver via webhook.
+ * Consumers should narrow on `event.type` — TypeScript will pick the right
+ * branch without casts.
+ */
 export type CallbackEvent =
   | ModuleTriggerRegisteredEvent
   | ModuleActionRegisteredEvent

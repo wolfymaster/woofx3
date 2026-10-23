@@ -18,8 +18,10 @@ export interface PairingConfig {
   startsPerOriginPerMinute: number;
   /** Pairings every origin together may start in a minute; a non-browser caller can forge `Origin`. */
   startsPerMinute: number;
-  /** Claims or cancels with a wrong verifier or origin that end a pairing. */
+  /** Claims or cancels with a wrong verifier, from the pairing's own origin, that end a pairing. */
   claimFailuresBeforeCancel: number;
+  /** Denied pairings remembered so their browsers learn of the denial; the oldest is forgotten first. */
+  maxDeniedRemembered: number;
 }
 
 export const DEFAULT_PAIRING_CONFIG: PairingConfig = {
@@ -31,6 +33,7 @@ export const DEFAULT_PAIRING_CONFIG: PairingConfig = {
   startsPerOriginPerMinute: 6,
   startsPerMinute: 20,
   claimFailuresBeforeCancel: 3,
+  maxDeniedRemembered: 20,
 };
 
 /** Throws, naming the field, when a limit is not a positive integer or the limits contradict each other. */

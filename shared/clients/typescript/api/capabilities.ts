@@ -282,11 +282,9 @@ export const HOSTING_ENGINE_CAPABILITIES: ReadonlyMap<EngineCapability, readonly
   [ENGINE_CAPABILITIES.clientsPairing, ["local", "self"]],
 ]);
 
-/** Whether an engine with `hosting` offers browser pairing. */
+/** Whether an engine with `hosting` offers browser pairing: whether it advertises `clients.pairing`. */
 export function hostingOffersPairing(hosting: EngineHosting | null): boolean {
-  return (
-    hosting !== null && (HOSTING_ENGINE_CAPABILITIES.get(ENGINE_CAPABILITIES.clientsPairing) ?? []).includes(hosting)
-  );
+  return supportedEngineCapabilities(hosting).includes(ENGINE_CAPABILITIES.clientsPairing);
 }
 
 /**

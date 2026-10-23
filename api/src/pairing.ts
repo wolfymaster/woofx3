@@ -71,11 +71,29 @@ export interface PairingRegistryOptions {
   emit: (event: ClientPairingStartedEvent) => void;
   now?: () => number;
   newId?: () => string;
+  /**
+   * Whether an origin is on the engine's own origin list
+   * (`WOOFX3_ALLOWED_ORIGINS`); false for every origin when none is set.
+   * Only a listed origin may pair from another computer (see
+   * `admitPairingOrigin`).
+   */
+  isListedOrigin: (origin: string) => boolean;
   /** `n` random bytes, for the user code. */
   randomBytes?: (n: number) => Uint8Array;
 }
 
-type PairingStatus = "pending" | "approved" | "denied" | "claiming";
+type PairingStatus = "pending" | "approved" | "claiming";
+
+/**
+ * What is kept of a denied pairing so its browser can still learn it was
+ * denied. A denied pairing leaves the pairings at once, so denying frees its
+ * slot for a legitimate browser.
+ */
+interface Denial {
+  origin: string;
+  verifierHash: string;
+  expiresAtMs: number;
+}
 
 interface Pairing {
   id: string;
@@ -91,39 +109,66 @@ interface Pairing {
   failedClaims: number;
 }
 
+/** Whether an `Origin` may pair, and the comparable origin it pairs as. */
+export type PairingOriginAdmission = { ok: true; origin: string } | { ok: false; error: string };
+
 /**
- * The origin `origin` (an `Origin` header) may pair as, in comparable form,
- * or null when it may not pair: absent, opaque (`null`), not a URL, or
- * anything but `https:` and loopback `http:`. A plain-http origin on another
- * host would carry the secret across the network in clear, and an app
- * origin such as `tauri://localhost` is the desktop shell's, which
- * registers rather than pairs.
+ * Whether the page at `origin` (an `Origin` header) may pair, given
+ * `isListed`, which says whether an origin is on the engine's own origin list
+ * (`WOOFX3_ALLOWED_ORIGINS`; false for every origin when it is unset).
+ *
+ * - A page on this computer (`localhost`, `127.0.0.1`, `[::1]`, over http or
+ *   https) may pair.
+ * - Any other page may pair only over https, and only when the operator has
+ *   listed its origin. A hosted web app therefore cannot pair with an engine
+ *   unless its operator chose to let it.
+ * - No `Origin` (not a browser), the opaque `null`, and the desktop app's own
+ *   window (which registers rather than pairs) may not.
  */
-export function pairingOriginOf(origin: string | null): string | null {
+export function admitPairingOrigin(
+  origin: string | null,
+  isListed: (origin: string) => boolean
+): PairingOriginAdmission {
   if (origin === null) {
-    return null;
+    return { ok: false, error: "pairing needs a web page: the request carried no Origin" };
   }
   const comparable = comparableOriginOf(origin);
   if (comparable === null) {
-    return null;
+    return { ok: false, error: `the page's origin ${JSON.stringify(origin)} cannot pair` };
   }
   const url = new URL(comparable);
-  if (APP_HOSTS.has(url.hostname)) {
-    return null;
+  if (APP_HOSTS.has(url.hostname) || (url.protocol !== "http:" && url.protocol !== "https:")) {
+    return { ok: false, error: `${comparable} is an app, not a web page; it registers rather than pairs` };
   }
-  if (url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname))) {
-    return comparable;
+  if (LOOPBACK_HOSTS.has(url.hostname)) {
+    return { ok: true, origin: comparable };
   }
-  return null;
+  if (url.protocol !== "https:") {
+    return {
+      ok: false,
+      error: `${comparable} is plain http from another computer, which would send the secret in clear`,
+    };
+  }
+  if (!isListed(comparable)) {
+    return {
+      ok: false,
+      error: `${comparable} may pair only once the engine's operator adds it to WOOFX3_ALLOWED_ORIGINS`,
+    };
+  }
+  return { ok: true, origin: comparable };
 }
 
-/** Whether `description` is 1 to 64 characters with no control characters. */
+/**
+ * Whether `description` is 1 to 64 characters with no control or format
+ * characters. Format characters include the bidi overrides and zero-width
+ * marks that could make the approval card show text other than what was sent.
+ */
 function isDescription(value: unknown): value is string {
   return (
     typeof value === "string" &&
     value.trim().length > 0 &&
     value.length <= PAIRING_DESCRIPTION_MAX_LENGTH &&
-    !/\p{Cc}/u.test(value)
+    !/[\p{Cc}\p{Cf}]/u.test(value)
   );
 }
 
@@ -178,6 +223,8 @@ class StartWindow {
  */
 export class PairingRegistry {
   private pairings = new Map<string, Pairing>();
+  /** Denied pairings by id, oldest first, at most `maxDeniedRemembered`. */
+  private denials = new Map<string, Denial>();
   private globalStarts: StartWindow;
   private originStarts = new Map<string, StartWindow>();
   private readonly config: PairingConfig;
@@ -195,20 +242,20 @@ export class PairingRegistry {
 
   /** Start a pairing for the browser at `requestOrigin`, the `Origin` header of the request that carried it. */
   async start(request: StartPairingRequest, requestOrigin: string | null): Promise<StartPairingResponse> {
-    const origin = pairingOriginOf(requestOrigin);
-    if (origin === null) {
-      this.opts.logger.warn("Refused a pairing from an origin that may not pair", { origin: requestOrigin });
-      return {
-        ok: false,
-        code: "origin_refused",
-        error: "pairing needs a browser page served over https, or over http from this computer",
-      };
+    const admission = admitPairingOrigin(requestOrigin, this.opts.isListedOrigin);
+    if (!admission.ok) {
+      this.opts.logger.warn("Refused a pairing from an origin that may not pair", {
+        origin: requestOrigin,
+        reason: admission.error,
+      });
+      return { ok: false, code: "origin_refused", error: admission.error };
     }
+    const origin = admission.origin;
     if (!isDescription(request?.description) || !isPairingVerifierHash(request?.verifierHash)) {
       return {
         ok: false,
         code: "invalid_request",
-        error: `description must be 1 to ${PAIRING_DESCRIPTION_MAX_LENGTH} characters with no control characters, and verifierHash a base64url SHA-256`,
+        error: `description must be 1 to ${PAIRING_DESCRIPTION_MAX_LENGTH} characters with no control or format characters, and verifierHash a base64url SHA-256`,
       };
     }
 
@@ -288,9 +335,6 @@ export class PairingRegistry {
       case "pending":
       case "claiming":
         return { status: "pending" };
-      case "denied":
-        this.pairings.delete(pairing.id);
-        return { status: "denied" };
       case "approved":
         return this.createClient(pairing);
     }
@@ -324,9 +368,14 @@ export class PairingRegistry {
 
   /** Approve or deny a pending pairing. `approverClientId` is the deciding client, for the log. */
   decide(request: DecidePairingRequest, approverClientId: string): DecidePairingResponse {
-    const pairing = typeof request?.pairingId === "string" ? this.pairings.get(request.pairingId) : undefined;
-    if (!pairing || (request.decision !== "approve" && request.decision !== "deny")) {
+    const pairingId = typeof request?.pairingId === "string" ? request.pairingId : null;
+    const pairing = pairingId === null ? undefined : this.pairings.get(pairingId);
+    if (request?.decision !== "approve" && request?.decision !== "deny") {
       return { ok: false, code: "not_found" };
+    }
+    if (!pairing) {
+      this.pruneExpired(this.now());
+      return { ok: false, code: pairingId !== null && this.denials.has(pairingId) ? "already_decided" : "not_found" };
     }
     if (this.expire(pairing, this.now())) {
       return { ok: false, code: "expired" };
@@ -334,7 +383,12 @@ export class PairingRegistry {
     if (pairing.status !== "pending") {
       return { ok: false, code: "already_decided" };
     }
-    pairing.status = request.decision === "approve" ? "approved" : "denied";
+    if (request.decision === "approve") {
+      pairing.status = "approved";
+    } else {
+      this.pairings.delete(pairing.id);
+      this.rememberDenial(pairing);
+    }
     this.opts.logger.info(request.decision === "approve" ? "Pairing approved" : "Pairing denied", {
       pairingId: pairing.id,
       origin: pairing.origin,
@@ -352,29 +406,51 @@ export class PairingRegistry {
 
   /**
    * The pairing `request` names, if it belongs to the caller: same origin as
-   * its start, and the verifier its start committed to. A mismatch counts
-   * against the pairing and answers `not_found`, as a pairing that does not
-   * exist does, so neither a pairing id nor a user code seen elsewhere helps.
+   * its start, and the verifier its start committed to. A mismatch answers
+   * `not_found`, as a pairing that does not exist does, so neither a pairing
+   * id nor a user code seen elsewhere helps. A wrong verifier from the
+   * pairing's own origin counts against it; a call from any other origin
+   * does not, so knowing a pairing id (from the log or the event) is not
+   * enough to cancel someone else's pairing.
    */
   private async ownPairing(
     request: { pairingId: string; verifier: string },
     requestOrigin: string | null,
     now: number
-  ): Promise<{ kind: "found"; pairing: Pairing } | { kind: "not_found" | "expired" }> {
-    const pairing = typeof request?.pairingId === "string" ? this.pairings.get(request.pairingId) : undefined;
-    if (!pairing) {
+  ): Promise<{ kind: "found"; pairing: Pairing } | { kind: "not_found" | "expired" | "denied" }> {
+    const pairingId = typeof request?.pairingId === "string" ? request.pairingId : null;
+    const pairing = pairingId === null ? undefined : this.pairings.get(pairingId);
+    const denial = pairingId === null ? undefined : this.denials.get(pairingId);
+    if (!pairing && !denial) {
       return { kind: "not_found" };
     }
     const presentedHash = isPairingVerifier(request.verifier) ? await pairingVerifierHash(request.verifier) : null;
-    // The hash was awaited: the pairing may have been claimed, cancelled or
-    // forgotten meanwhile, and a stale copy must not be acted on.
-    if (this.pairings.get(pairing.id) !== pairing) {
+    const fromOwnOrigin = requestOrigin !== null && comparableOriginOf(requestOrigin) === (pairing ?? denial)?.origin;
+    if (denial && pairingId !== null) {
+      // A denial answers its own browser once, while it would have been
+      // pending; nobody else learns anything from it.
+      if (!fromOwnOrigin || presentedHash === null || !secretsMatch(denial.verifierHash, presentedHash)) {
+        return { kind: "not_found" };
+      }
+      this.denials.delete(pairingId);
+      return now < denial.expiresAtMs ? { kind: "denied" } : { kind: "expired" };
+    }
+    // The hash was awaited: the pairing may have been claimed, cancelled,
+    // denied or forgotten meanwhile, and a stale copy must not be acted on.
+    if (!pairing || this.pairings.get(pairing.id) !== pairing) {
+      return { kind: "not_found" };
+    }
+    if (!fromOwnOrigin) {
+      this.opts.logger.warn("Refused a pairing claim from another origin", {
+        pairingId: pairing.id,
+        origin: requestOrigin,
+      });
       return { kind: "not_found" };
     }
     const verified = presentedHash !== null && secretsMatch(pairing.verifierHash, presentedHash);
-    if (!verified || pairingOriginOf(requestOrigin) !== pairing.origin) {
+    if (!verified) {
       pairing.failedClaims += 1;
-      this.opts.logger.warn("Refused a pairing claim with a wrong verifier or origin", {
+      this.opts.logger.warn("Refused a pairing claim with a wrong verifier", {
         pairingId: pairing.id,
         origin: requestOrigin,
         failedClaims: pairing.failedClaims,
@@ -405,9 +481,12 @@ export class PairingRegistry {
       credentials = await this.opts.createPairedClient({ description: pairing.description, origin: pairing.origin });
     } catch (err) {
       pairing.status = "approved";
-      const error = err instanceof Error ? err.message : String(err);
-      this.opts.logger.error("Could not create a paired client", { pairingId: pairing.id, error });
-      return { status: "failed", retryable: true, error };
+      // The detail is for the operator; the browser only needs to retry.
+      this.opts.logger.error("Could not create a paired client", {
+        pairingId: pairing.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { status: "failed", retryable: true, error: "the engine could not create the client; try again" };
     }
     this.pairings.delete(pairing.id);
     this.opts.logger.info("Pairing claimed", {
@@ -428,9 +507,30 @@ export class PairingRegistry {
     return true;
   }
 
+  private rememberDenial(pairing: Pairing): void {
+    this.denials.set(pairing.id, {
+      origin: pairing.origin,
+      verifierHash: pairing.verifierHash,
+      expiresAtMs: pairing.expiresAtMs,
+    });
+    // Oldest first: past the bound, the oldest denial's browser sees
+    // `not_found` instead of `denied`, and starts again.
+    for (const id of this.denials.keys()) {
+      if (this.denials.size <= this.config.maxDeniedRemembered) {
+        break;
+      }
+      this.denials.delete(id);
+    }
+  }
+
   private pruneExpired(now: number): void {
     for (const pairing of [...this.pairings.values()]) {
       this.expire(pairing, now);
+    }
+    for (const [id, denial] of this.denials) {
+      if (denial.expiresAtMs <= now) {
+        this.denials.delete(id);
+      }
     }
     for (const [origin, window] of this.originStarts) {
       if (window.emptyAt(now)) {
@@ -473,7 +573,7 @@ export class PairingRegistry {
   }
 }
 
-/** Whether an approver sees `pairing`: one denied is waiting only for its browser to learn so. */
+/** Whether an approver sees `pairing`: one being claimed is all but done. */
 function isListed(pairing: Pairing): boolean {
   return pairing.status === "pending" || pairing.status === "approved";
 }

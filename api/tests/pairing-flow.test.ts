@@ -75,6 +75,7 @@ function engine(pairs: boolean) {
         logger,
         createPairedClient: pairedClientCreator(db as never),
         emit: () => {},
+        isListedOrigin: () => false,
       })
     : null;
   if (pairing) {

@@ -9,7 +9,7 @@ import {
 } from "@woofx3/api/pairing";
 import type { ClientPairingStartedEvent } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
-import { type CreatePairedClient, PairingRegistry, pairingOriginOf } from "../src/pairing";
+import { admitPairingOrigin, type CreatePairedClient, PairingRegistry } from "../src/pairing";
 import { DEFAULT_PAIRING_CONFIG, type PairingConfig, validatePairingConfig } from "../src/pairing-config";
 
 const ORIGIN = "http://localhost:5173";
@@ -27,8 +27,15 @@ function recordingLogger() {
   return { logger: logger as unknown as SharedLogger, lines };
 }
 
-/** A registry on a clock the test moves, with db-proxy's client creation recorded. */
-function registry(overrides: Partial<PairingConfig> = {}, create?: CreatePairedClient) {
+/**
+ * A registry on a clock the test moves, with db-proxy's client creation
+ * recorded. Every origin counts as listed unless `listed` says otherwise.
+ */
+function registry(
+  overrides: Partial<PairingConfig> = {},
+  create?: CreatePairedClient,
+  listed: (origin: string) => boolean = () => true
+) {
   let now = Date.UTC(2026, 9, 23, 12, 0, 0);
   let ids = 0;
   const created: { description: string; origin: string }[] = [];
@@ -44,6 +51,7 @@ function registry(overrides: Partial<PairingConfig> = {}, create?: CreatePairedC
         return { clientId: `client-${created.length}`, clientSecret: `secret-${created.length}` };
       }),
     emit: (event) => events.push(event),
+    isListedOrigin: listed,
     now: () => now,
     newId: () => `pairing-${++ids}`,
   });
@@ -72,29 +80,41 @@ function started(response: StartPairingResponse) {
   return response.pairing;
 }
 
-describe("pairingOriginOf", () => {
+describe("admitPairingOrigin", () => {
+  const LISTED = new Set(["https://app.example.com"]);
+  const listed = (origin: string) => LISTED.has(origin);
+
   test.each([
-    ["http://localhost:5173", "http://localhost:5173"],
-    ["http://127.0.0.1:8080", "http://127.0.0.1:8080"],
-    ["http://[::1]:3000", "http://[::1]:3000"],
-    ["https://app.example.com", "https://app.example.com"],
-    ["HTTPS://App.Example.com:443", "https://app.example.com"],
-  ])("lets %p pair as %p", (origin, expected) => {
-    expect(pairingOriginOf(origin)).toBe(expected);
+    ["a page on this computer", "http://localhost:5173", "http://localhost:5173"],
+    ["a page on 127.0.0.1", "http://127.0.0.1:8080", "http://127.0.0.1:8080"],
+    ["a page on [::1]", "http://[::1]:3000", "http://[::1]:3000"],
+    ["https on this computer", "https://localhost:8443", "https://localhost:8443"],
+    ["a listed https origin", "https://app.example.com", "https://app.example.com"],
+    ["a listed origin written differently", "HTTPS://App.Example.com:443", "https://app.example.com"],
+  ])("admits %s", (_, origin, expected) => {
+    expect(admitPairingOrigin(origin, listed)).toEqual({ ok: true, origin: expected });
   });
 
   test.each([
-    ["no Origin", null],
-    ["the opaque origin", "null"],
-    ["plain http on another host", "http://192.168.1.20:5173"],
-    ["plain http on a public name", "http://app.example.com"],
-    ["the desktop window", "tauri://localhost"],
-    ["the desktop window on Windows", "http://tauri.localhost"],
-    ["the desktop window on Windows over https", "https://tauri.localhost"],
-    ["a file page", "file:///home/me/index.html"],
-    ["not a URL", "localhost:5173"],
-  ])("refuses %s", (_, origin) => {
-    expect(pairingOriginOf(origin)).toBeNull();
+    ["no Origin", null, "no Origin"],
+    ["the opaque origin", "null", "cannot pair"],
+    ["an https origin nobody listed", "https://hosted.example", "WOOFX3_ALLOWED_ORIGINS"],
+    ["plain http on another host", "http://192.168.1.20:5173", "in clear"],
+    ["plain http on a listed name", "http://app.example.com", "in clear"],
+    ["the desktop window", "tauri://localhost", "registers rather than pairs"],
+    ["the desktop window on Windows", "http://tauri.localhost", "registers rather than pairs"],
+    ["the desktop window on Windows over https", "https://tauri.localhost", "registers rather than pairs"],
+    ["a file page", "file:///home/me/index.html", "cannot pair"],
+    ["not a URL", "localhost:5173", "cannot pair"],
+  ])("refuses %s, saying why", (_, origin, reason) => {
+    const admission = admitPairingOrigin(origin, listed);
+    expect(admission.ok).toBe(false);
+    expect(admission.ok ? "" : admission.error).toContain(reason);
+  });
+
+  test("refuses every origin off this computer when no list is set", () => {
+    expect(admitPairingOrigin("https://app.example.com", () => false)).toMatchObject({ ok: false });
+    expect(admitPairingOrigin("http://localhost:5173", () => false)).toMatchObject({ ok: true });
   });
 });
 
@@ -106,6 +126,7 @@ describe("validatePairingConfig", () => {
   test.each([
     ["a zero limit", { maxPending: 0 }],
     ["a fractional limit", { ttlMs: 1.5 }],
+    ["no denials remembered", { maxDeniedRemembered: 0 }],
     ["more per origin than in total", { maxPendingPerOrigin: 6 }],
     ["more starts per origin than in total", { startsPerOriginPerMinute: 21 }],
   ])("refuses %s", (_, override) => {
@@ -141,6 +162,9 @@ describe("starting a pairing", () => {
     ["an empty description", { description: "  " }],
     ["a description over 64 characters", { description: "x".repeat(65) }],
     ["a control character", { description: "Chrome\u0007" }],
+    ["a bidi override", { description: "Chrome \u202Eswodni" }],
+    ["a bidi isolate", { description: "Chrome \u2066x\u2069" }],
+    ["a zero-width space", { description: "Chr\u200Bome" }],
     ["a malformed verifier hash", { verifierHash: "not-a-hash" }],
     ["no description", { description: undefined }],
   ])("refuses %s", async (_, override) => {
@@ -164,6 +188,30 @@ describe("starting a pairing", () => {
       ok: false,
       code: "origin_refused",
     });
+  });
+
+  test("refuses a hosted web app until the operator lists its origin, and names the setting", async () => {
+    const { pairings } = registry({}, undefined, () => false);
+
+    const refused = (await startFrom(pairings, "https://hosted.example")).response;
+
+    expect(refused).toMatchObject({ ok: false, code: "origin_refused" });
+    expect(refused.ok ? "" : refused.error).toContain("WOOFX3_ALLOWED_ORIGINS");
+    expect((await startFrom(pairings, ORIGIN)).response.ok).toBe(true);
+  });
+
+  test("denying a pairing frees its slot at once", async () => {
+    const { pairings } = registry();
+    const pairingIds: string[] = [];
+    for (const origin of ["https://a.example", "https://a.example", "https://b.example", "https://b.example", ORIGIN]) {
+      pairingIds.push(started((await startFrom(pairings, origin)).response).pairingId);
+    }
+    expect((await startFrom(pairings, "https://c.example")).response).toMatchObject({ code: "too_many_pending" });
+    expect((await startFrom(pairings, "https://a.example")).response).toMatchObject({ code: "too_many_pending" });
+
+    pairings.decide({ pairingId: pairingIds[0], decision: "deny" }, "desktop");
+
+    expect((await startFrom(pairings, "https://a.example")).response.ok).toBe(true);
   });
 
   test("holds at most two waiting pairings per origin and five in all", async () => {
@@ -232,6 +280,7 @@ describe("starting a pairing", () => {
       logger: recordingLogger().logger,
       createPairedClient: async () => ({ clientId: "c", clientSecret: "s" }),
       emit: () => {},
+      isListedOrigin: () => true,
       randomBytes: () => streams[Math.min(draw++, streams.length - 1)],
     });
 
@@ -248,6 +297,7 @@ describe("starting a pairing", () => {
       logger: recordingLogger().logger,
       createPairedClient: async () => ({ clientId: "c", clientSecret: "s" }),
       emit: () => {},
+      isListedOrigin: () => true,
       // 243 and above would make the first alphabet letters likelier; they are skipped.
       randomBytes: () => new Uint8Array([255, 243, 250, 27, 28, 29, 30, 31]),
     });
@@ -275,6 +325,42 @@ describe("claiming a pairing", () => {
     expect(created).toEqual([{ description: "Chrome on Windows", origin: ORIGIN }]);
     advance(5_000);
     expect(await pairings.claim({ pairingId: pairing.pairingId, verifier }, ORIGIN)).toEqual({ status: "not_found" });
+  });
+
+  test("a denied pairing is not listed, and an old denial is forgotten past the bound", async () => {
+    const { pairings, advance } = registry({ maxDeniedRemembered: 1 });
+    const first = await startFrom(pairings);
+    const second = await startFrom(pairings);
+    const firstId = started(first.response).pairingId;
+    const secondId = started(second.response).pairingId;
+
+    pairings.decide({ pairingId: firstId, decision: "deny" }, "desktop");
+    pairings.decide({ pairingId: secondId, decision: "deny" }, "desktop");
+
+    expect(pairings.listPending()).toEqual({ ok: true, pairings: [] });
+    expect(await pairings.claim({ pairingId: firstId, verifier: first.verifier }, ORIGIN)).toEqual({
+      status: "not_found",
+    });
+    expect(await pairings.claim({ pairingId: secondId, verifier: second.verifier }, ORIGIN)).toEqual({
+      status: "denied",
+    });
+    advance(5_000);
+    expect(await pairings.claim({ pairingId: secondId, verifier: second.verifier }, ORIGIN)).toEqual({
+      status: "not_found",
+    });
+  });
+
+  test("a denial tells only its own browser", async () => {
+    const { pairings } = registry();
+    const { verifier, response } = await startFrom(pairings);
+    const { pairingId } = started(response);
+    pairings.decide({ pairingId, decision: "deny" }, "desktop");
+
+    expect(await pairings.claim({ pairingId, verifier: newPairingVerifier() }, ORIGIN)).toEqual({
+      status: "not_found",
+    });
+    expect(await pairings.claim({ pairingId, verifier }, OTHER)).toEqual({ status: "not_found" });
+    expect(await pairings.claim({ pairingId, verifier }, ORIGIN)).toEqual({ status: "denied" });
   });
 
   test("answers a denied pairing once, then forgets it", async () => {
@@ -310,7 +396,7 @@ describe("claiming a pairing", () => {
     expect(await pairings.claim({ pairingId, verifier }, ORIGIN)).toEqual({ status: "pending" });
   });
 
-  test("answers a wrong verifier or origin as a pairing that does not exist, and ends it after three", async () => {
+  test("answers a wrong verifier as a pairing that does not exist, and ends it after three from its origin", async () => {
     const { pairings, created } = registry();
     const { verifier, response } = await startFrom(pairings);
     const { pairingId } = started(response);
@@ -318,13 +404,31 @@ describe("claiming a pairing", () => {
 
     const wrongs: ClaimPairingResponse[] = [
       await pairings.claim({ pairingId, verifier: newPairingVerifier() }, ORIGIN),
-      await pairings.claim({ pairingId, verifier }, OTHER),
+      await pairings.claim({ pairingId, verifier: newPairingVerifier() }, ORIGIN),
       await pairings.claim({ pairingId, verifier: "not a verifier" }, ORIGIN),
     ];
 
     expect(wrongs).toEqual([{ status: "not_found" }, { status: "not_found" }, { status: "not_found" }]);
     expect(await pairings.claim({ pairingId, verifier }, ORIGIN)).toEqual({ status: "not_found" });
     expect(created).toEqual([]);
+  });
+
+  test("calls from another origin learn nothing and cannot end someone else's pairing", async () => {
+    const { pairings, advance } = registry();
+    const { verifier, response } = await startFrom(pairings);
+    const { pairingId } = started(response);
+    pairings.decide({ pairingId, decision: "approve" }, "desktop");
+
+    for (let i = 0; i < 5; i++) {
+      expect(await pairings.claim({ pairingId, verifier }, OTHER)).toEqual({ status: "not_found" });
+      expect(await pairings.cancel({ pairingId, verifier: newPairingVerifier() }, null)).toEqual({
+        ok: false,
+        code: "not_found",
+      });
+    }
+    advance(5_000);
+
+    expect(await pairings.claim({ pairingId, verifier }, ORIGIN)).toMatchObject({ status: "approved" });
   });
 
   test("does not reveal that an unknown caller's pairing expired", async () => {
@@ -381,11 +485,9 @@ describe("claiming a pairing", () => {
     const { pairingId } = started(response);
     pairings.decide({ pairingId, decision: "approve" }, "desktop");
 
-    expect(await pairings.claim({ pairingId, verifier }, ORIGIN)).toEqual({
-      status: "failed",
-      retryable: true,
-      error: "db-proxy unavailable",
-    });
+    const failed = await pairings.claim({ pairingId, verifier }, ORIGIN);
+    expect(failed).toMatchObject({ status: "failed", retryable: true });
+    expect(JSON.stringify(failed)).not.toContain("db-proxy unavailable");
     fail = false;
     advance(5_000);
     expect(await pairings.claim({ pairingId, verifier }, ORIGIN)).toMatchObject({ status: "approved" });

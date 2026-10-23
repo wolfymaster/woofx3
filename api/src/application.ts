@@ -58,6 +58,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { ClientRevoker, ClientSessions },
       { PairingRegistry, pairedClientCreator },
       { DEFAULT_PAIRING_CONFIG },
+      { RequestGuard },
       { ConvexWebhookClient },
       { EngineEventStream },
       { EventCatalog },
@@ -99,6 +100,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./client-sessions"),
       import("./pairing"),
       import("./pairing-config"),
+      import("@woofx3/common/http/request-guard"),
       import("./convex-webhook-client"),
       import("./engine-event-stream"),
       import("./event-catalog"),
@@ -299,11 +301,13 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     api.setClientRevocation(new ClientRevoker(auth, sessions, engineEventStream, webhookClient, api));
     // Browser pairing only where the operator's own browser talks to the
     // engine: a local or self-hosted engine, never a managed one.
+    const pairingOriginList = new RequestGuard(config.requestGuard);
     const pairing = hostingOffersPairing(config.hosting)
       ? new PairingRegistry({
           config: DEFAULT_PAIRING_CONFIG,
           logger,
           createPairedClient: pairedClientCreator(db),
+          isListedOrigin: (origin) => pairingOriginList.listsOrigin(origin),
           emit: (event) => {
             webhookClient.send(event).catch((err) => {
               logger.error("Failed to announce a started pairing", {
