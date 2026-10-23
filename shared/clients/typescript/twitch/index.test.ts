@@ -46,15 +46,6 @@ mock.module("@twurple/api", () => ({
   },
 }));
 
-let lastChatClientOpts: unknown;
-mock.module("@twurple/chat", () => ({
-  ChatClient: class {
-    constructor(opts: unknown) {
-      lastChatClientOpts = opts;
-    }
-  },
-}));
-
 const eventSubConstructCount = { n: 0 };
 let lastEventSubOpts: unknown;
 mock.module("@twurple/eventsub-ws", () => ({
@@ -98,7 +89,6 @@ beforeEach(() => {
   lastApiClientAuth = undefined;
   getUserByName.mockClear();
   getUserById.mockClear();
-  lastChatClientOpts = undefined;
   eventSubConstructCount.n = 0;
   lastEventSubOpts = undefined;
 });
@@ -179,7 +169,6 @@ describe("TwitchClient", () => {
     const client = new TwitchClient({ logger: LOGGER, channel: "who", getSetting: createGetSetting(TOKEN_JSON) });
 
     expect(() => client.ApiClient()).toThrow("Must initialize TwitchClient before use");
-    expect(() => client.ChatClient()).toThrow("Must initialize TwitchClient before use");
     expect(() => client.EventBusListener()).toThrow("Must initialize TwitchClient before use");
   });
 
@@ -193,22 +182,6 @@ describe("TwitchClient", () => {
     expect(a).toBe(b);
     expect(apiClientConstructCount.n).toBe(1);
     expect(lastApiClientAuth).toBeDefined();
-  });
-
-  test("ChatClient is constructed for the configured channel with the authenticated session", async () => {
-    const client = new TwitchClient({
-      logger: LOGGER,
-      channel: "streamername",
-      getSetting: createGetSetting(TOKEN_JSON),
-    });
-    await client.init({ clientId: "i", clientSecret: "s", redirectUri: "r" });
-
-    client.ChatClient();
-
-    expect(lastChatClientOpts).toMatchObject({
-      channels: ["streamername"],
-    });
-    expect((lastChatClientOpts as { authProvider: unknown }).authProvider).toBeDefined();
   });
 
   test("EventSub listener is lazily created once and shares the Helix ApiClient", async () => {
@@ -271,22 +244,6 @@ describe("TwitchClient before and after a Twitch account is linked", () => {
     expect(getUserById).toHaveBeenCalledWith("42");
     expect(getUserByName).not.toHaveBeenCalled();
     expect(broadcaster.name).toBe("linked-login");
-  });
-
-  test("a chat client joins the channel it is given", async () => {
-    const client = new TwitchClient({ logger: LOGGER, getSetting: createGetSetting(TOKEN_JSON) });
-    await client.init(credentials);
-
-    client.ChatClient("linked-login");
-
-    expect((lastChatClientOpts as { channels: string[] }).channels).toEqual(["linked-login"]);
-  });
-
-  test("a chat client needs a channel from somewhere", async () => {
-    const client = new TwitchClient({ logger: LOGGER, getSetting: createGetSetting(TOKEN_JSON) });
-    await client.init(credentials);
-
-    expect(() => client.ChatClient()).toThrow("ChatClient needs a channel");
   });
 });
 
