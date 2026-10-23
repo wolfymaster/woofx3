@@ -29,7 +29,53 @@ export const COMPANION_DEFAULTS = {
    * default). Not configurable: it is the api's responder's own budget.
    */
   relayCredentialTimeoutMs: 5_000,
+  /**
+   * Whether module requests may dial a direct address on a `self` engine.
+   * Off by default, like barkloader's WOOFX3_MODULE_HTTP_ALLOW_PRIVATE: a VPS
+   * on a provider network would otherwise let module code reach that network.
+   */
+  moduleLocalDirect: false,
 } as const;
+
+/** Defaults for the websocket sessions the companion gateway holds for module requests. */
+export const MODULE_SESSION_DEFAULTS = {
+  /**
+   * The longest a module request is served, from arrival. Below barkloader
+   * ctx.local's 5_000 request timeout, so barkloader always gets an answer,
+   * and the contract's budgetMs maximum.
+   */
+  requestBudgetMs: 4_500,
+  /**
+   * One session open: resolving the route (with the bridge's credential and
+   * ticket exchange) and the upgrade. Independent of any call: a call whose
+   * budget ends first is answered `unavailable` and the open carries on, so
+   * the next call finds it.
+   */
+  openTimeoutMs: 10_000,
+  /** One `.local` name lookup for a direct route, within openTimeoutMs. */
+  resolveTimeoutMs: 3_000,
+  /** A session nobody has used for this long is closed. */
+  idleMs: 120_000,
+  /**
+   * Sessions open or opening at once. Bridge sessions are further limited by
+   * maxBridgeOpens and the relay's RELAY_MAX_TICKETS.
+   */
+  maxSessions: 32,
+  /** `request`s waiting for their matching frame on one session. */
+  maxPendingPerSession: 16,
+  /** The largest frame written or read, in UTF-8 bytes: the contract's message and reply bound. */
+  maxMessageBytes: 65_536,
+} as const;
+
+export interface ModuleSessionLimits {
+  requestBudgetMs: number;
+  openTimeoutMs: number;
+  resolveTimeoutMs: number;
+  idleMs: number;
+  maxSessions: number;
+  maxPendingPerSession: number;
+  maxMessageBytes: number;
+}
 
 // loadRuntimeEnv coerces all-digit values to numbers before the schema sees them.
 // A blank WOOFX3_HOSTING means the deployment does not say, the same as unset.
@@ -44,6 +90,7 @@ export const CompanionEnvSchema = z.object({
     .max(RELAY_MAX_TICKETS)
     .default(COMPANION_DEFAULTS.maxBridgeOpens),
   woofx3CompanionTicketTimeoutMs: z.number().int().positive().default(COMPANION_DEFAULTS.ticketTimeoutMs),
+  woofx3ModuleLocalDirect: z.boolean().default(COMPANION_DEFAULTS.moduleLocalDirect),
 });
 
 export type CompanionEnv = z.infer<typeof CompanionEnvSchema>;
@@ -54,6 +101,9 @@ export interface CompanionConfig {
   maxBridgeOpens: number;
   ticketTimeoutMs: number;
   relayCredentialTimeoutMs: number;
+  /** `WOOFX3_MODULE_LOCAL_DIRECT`: module requests may dial a direct address on a `self` engine. */
+  moduleLocalDirect: boolean;
+  moduleSessions: ModuleSessionLimits;
 }
 
 /** Rules the per-key schema cannot express. */
@@ -78,5 +128,7 @@ export function companionConfig(env: CompanionEnv): CompanionConfig {
     maxBridgeOpens: env.woofx3CompanionMaxBridgeOpens,
     ticketTimeoutMs: env.woofx3CompanionTicketTimeoutMs,
     relayCredentialTimeoutMs: COMPANION_DEFAULTS.relayCredentialTimeoutMs,
+    moduleLocalDirect: env.woofx3ModuleLocalDirect,
+    moduleSessions: { ...MODULE_SESSION_DEFAULTS },
   };
 }

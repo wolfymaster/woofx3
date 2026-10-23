@@ -711,6 +711,23 @@ For connectors it decides how local endpoints such as OBS are reached (see
 
 Development worktrees (`scripts/worktree.sh`) write `local`.
 
+Module code can also reach its own declared endpoints through connectors (see
+[Companion gateway → Module requests](./companion-gateway.md#module-requests)).
+Because module code sends whatever frames it likes, a direct dial for it is
+stricter than for the OBS adapter:
+
+| Value | Module requests to their own endpoints |
+|---|---|
+| `local` | dialed directly, to an address on the streamer's network |
+| `self` | through the companion's bridge when the dashboard routes the endpoint there; directly only when `WOOFX3_MODULE_LOCAL_DIRECT=true` |
+| `managed`, unset | through the companion's bridge only |
+
+`WOOFX3_MODULE_LOCAL_DIRECT` is `false` unless set to `true`; any other value
+stops connectors at startup. Turn it on only for a self-hosted engine on the
+streamer's own network: on a VPS it would let module code reach the
+provider's network. It is the same posture as barkloader's
+`WOOFX3_MODULE_HTTP_ALLOW_PRIVATE`, and the two are set separately.
+
 Readiness is deliberately strict about the message bus. barkloader reports
 ready once its bundled modules are installed, and it can only report anything
 while it holds a bus connection, so an engine whose bus never comes up stays

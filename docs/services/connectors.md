@@ -411,8 +411,10 @@ supervisor and stops it after every adapter has stopped. It holds the claims
 every adapter manifest makes (`localEndpoints`), checked at startup, and hands
 each adapter a handle scoped to its own claims as `ctx.companion`. On the
 host's bus scope it subscribes to `engine.relay.config.updated` and
-`db.module.setting.updated.*` for route changes, and requests
-`engine.relay.credential` from the api.
+`db.module.setting.updated.*` for route changes, requests
+`engine.relay.credential` from the api, and answers module code's requests to
+its own endpoints on `engine.companion.module.request` (see
+[Companion gateway → Module requests](./companion-gateway.md#module-requests)).
 
 ### The stream session
 
@@ -542,6 +544,7 @@ The companion gateway reads:
 | `WOOFX3_HOSTING` | unset | How the engine is run: `local`, `self` or `managed`. On `local` every endpoint is dialed directly. Any other value stops connectors at startup. |
 | `WOOFX3_COMPANION_MAX_BRIDGE_OPENS` | `8` | Bridge opens in flight at once, 1 to 16 (the relay's own limit). |
 | `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` | `5000` | One ticket exchange with the relay. |
+| `WOOFX3_MODULE_LOCAL_DIRECT` | `false` | `true` lets module requests on a `self` engine dial their endpoint's address directly. |
 
 The Twitch adapter reads:
 
@@ -626,7 +629,19 @@ fix what parked it.
     "endpoints": [
       { "moduleId": "woofx3_obs", "endpointId": "obs", "owner": "obs", "route": "direct", "address": "127.0.0.1:4455", "lastFailure": null }
     ],
-    "bridgeOpens": { "inUse": 0, "limit": 8, "refused": 0 }
+    "bridgeOpens": { "inUse": 0, "limit": 8, "refused": 0 },
+    "modules": {
+      "sessions": {
+        "sessions": [],
+        "opening": 0,
+        "limit": 32,
+        "opens": 0,
+        "openFailures": {},
+        "closes": { "idle": 0, "route_change": 0, "remote": 0, "stopped": 0 },
+        "frames": { "oversized": 0, "binary": 0, "unmatched": 0 }
+      },
+      "requests": { "send": {}, "request": {} }
+    }
   },
   "counters": {
     "chat": {
@@ -659,7 +674,8 @@ once). The host replaces the value of any key whose name contains `password`,
 Adapters must still keep secrets out of `detail()`.
 
 `companion` lists every endpoint an adapter claims, from startup, with where
-its latest route resolution went and its latest failure; see
+its latest route resolution went and its latest failure, and under `modules`
+the sessions held for module requests and the requests answered; see
 [Companion gateway → Health](./companion-gateway.md#health). It is redacted
 the same way.
 

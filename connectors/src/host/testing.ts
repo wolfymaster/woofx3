@@ -24,7 +24,10 @@ export const emptyEndpointStore: EndpointStore = {
   relayConfig: async () => null,
 };
 
-/** The companion gateway's deps for a host under test: shipped defaults, `store`, and a relay nobody can reach. */
+/**
+ * The companion gateway's deps for a host under test: shipped defaults,
+ * `store`, a relay nobody can reach and no name resolution. Sockets are real.
+ */
 export function testCompanion(
   store: EndpointStore = emptyEndpointStore,
   env: Record<string, unknown> = {}
@@ -35,6 +38,10 @@ export function testCompanion(
     fetch: async (url) => {
       throw new Error(`no relay in this test (${url.host})`);
     },
+    resolver: async (name) => {
+      throw new Error(`no name resolution in this test (${name})`);
+    },
+    openSocket: (url) => new WebSocket(url),
   };
 }
 

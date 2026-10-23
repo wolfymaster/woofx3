@@ -9,8 +9,10 @@ address, holds the socket and scopes the request.
 
 This page describes the wire contract between the two sides: barkloader,
 which sends a request on behalf of the module code it runs, and connectors,
-which answers it. So far only the contract and its generated code exist:
-nothing sends or answers on the subject.
+which answers it. How connectors serves a request (the checks, the address
+rules and the sessions it holds) is described in
+[Companion gateway → Module requests](./companion-gateway.md#module-requests).
+Barkloader does not send the request yet.
 
 ## One contract, generated
 

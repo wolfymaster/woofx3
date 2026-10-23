@@ -4,7 +4,8 @@ import type { RelayGrant, StoredRelayConfig } from "@woofx3/common/cloudevents/R
 import { OBS_ENDPOINT, obsAdapterFallback } from "../adapters/obs/settings";
 import { CompanionEnvSchema, companionConfig } from "../config/companion";
 import type { BusMessage, ScopedHandler } from "../host/scoped-bus";
-import { bytes, emptyEndpointStore, FakeTime, flush, RecordingLogger } from "../host/testing";
+import { HostRequests } from "../host/host-requests";
+import { bytes, countingIds, emptyEndpointStore, FakeTime, flush, RecordingLogger } from "../host/testing";
 import { ClaimRegistry, UnclaimedEndpointError } from "./claims";
 import { COMPANION_GATEWAY_GRANTS, EngineCompanionGateway } from "./companion-gateway";
 import type { Fetch } from "./dialer";
@@ -61,8 +62,14 @@ function gateway(options: { store?: Partial<EndpointStore>; fetch?: Fetch; env?:
     claims: ClaimRegistry.fromManifests([{ id: "twitch" }, { id: "obs", localEndpoints: [OBS_ENDPOINT] }]),
     store: { ...emptyEndpointStore, ...options.store },
     fetch: options.fetch ?? (async () => Response.json({ ticket: TICKET, expiresInMs: 30_000 })),
+    resolver: async (name) => {
+      throw new Error(`no name resolution in this test (${name})`);
+    },
+    openSocket: (url) => new WebSocket(url),
+    requests: new HostRequests({ clock: time, ids: countingIds(), timers: time, logger }),
     clock: time,
     timers: time,
+    ids: countingIds(),
     logger,
   });
   return { companion, time, logger };
@@ -79,6 +86,18 @@ describe("EngineCompanionGateway claims", () => {
         { moduleId: "woofx3_obs", endpointId: "obs", owner: "obs", route: null, address: null, lastFailure: null },
       ],
       bridgeOpens: { inUse: 0, limit: 8, refused: 0 },
+      modules: {
+        sessions: {
+          sessions: [],
+          opening: 0,
+          limit: 32,
+          opens: 0,
+          openFailures: {},
+          closes: { idle: 0, route_change: 0, remote: 0, stopped: 0 },
+          frames: { oversized: 0, binary: 0, unmatched: 0 },
+        },
+        requests: { send: {}, request: {} },
+      },
     });
   });
 
