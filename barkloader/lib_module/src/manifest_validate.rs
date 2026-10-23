@@ -3456,6 +3456,9 @@ mod tests {
             "workflow.cancel",
             "workflow.command.execute",
             "action.execute",
+            "platform.gateway.send",
+            "platform.gateway.capabilities",
+            "platform.gateway.field_options",
             "viewer.segment.entered",
             "viewer.segment.left",
         ] {
@@ -3594,6 +3597,8 @@ mod tests {
             "engine.obs.options",
             "message.send",
             "workflow.execute",
+            "platform.gateway.send",
+            "platform.gateway.field_options",
             "some.service.command",
         ] {
             let err = validate(&action_with_field_source(event, "{}"))

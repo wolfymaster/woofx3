@@ -33,6 +33,7 @@ func TestRegisteringAWorkflowThatPublishesAReservedSubjectFails(t *testing.T) {
 		"engine.obs.command":    `reserved for the engine ("engine.")`,
 		"workflow.cancel":       `reserved for the engine ("workflow.cancel")`,
 		"message.send":          `reserved for the engine ("message.send")`,
+		"platform.gateway.send": `reserved for the engine ("platform.gateway.")`,
 		"channel.cheer":         `reserved for the engine ("channel."); to test a workflow against a platform event, fire it with the api's simulateTwitchEvent`,
 		"stream.online":         "simulateTwitchEvent",
 		"custom.*":              "wildcards, whitespace and control characters",
