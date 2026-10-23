@@ -361,13 +361,16 @@ export class DeliveryStore {
       // a full interval after this replay.
       delivery.delivered = false;
       delivery.lastAttemptAt = Date.now();
-      this.sendTo(controller, {
-        eventId: delivery.eventId,
-        instanceId: delivery.instanceId,
-        type: delivery.type,
-        key: delivery.key,
-        value: delivery.value,
-      });
+      this.sendTo(
+        controller,
+        this.encodeDelivery({
+          eventId: delivery.eventId,
+          instanceId: delivery.instanceId,
+          type: delivery.type,
+          key: delivery.key,
+          value: delivery.value,
+        })
+      );
     }
     // After the replay, so the page knows the whole set: what it still holds
     // beyond it was closed while its stream was down.
@@ -534,14 +537,24 @@ export class DeliveryStore {
   }
 
   private push(sceneId: string, frame: DeliveryFrame): void {
-    for (const controller of this.connections.get(sceneId) ?? []) {
-      this.sendTo(controller, frame);
+    const controllers = this.connections.get(sceneId);
+    if (!controllers || controllers.size === 0) {
+      return;
+    }
+    const bytes = this.encodeDelivery(frame);
+    for (const controller of controllers) {
+      this.sendTo(controller, bytes);
     }
   }
 
-  private sendTo(controller: SseController, frame: DeliveryFrame): void {
+  /** Presented once per send, so tokens are minted once however many pages listen. */
+  private encodeDelivery(frame: DeliveryFrame): Uint8Array {
+    return new TextEncoder().encode(encodeStreamFrame({ kind: "delivery", frame: this.present(frame) }));
+  }
+
+  private sendTo(controller: SseController, bytes: Uint8Array): void {
     try {
-      controller.enqueue(new TextEncoder().encode(encodeStreamFrame({ kind: "delivery", frame: this.present(frame) })));
+      controller.enqueue(bytes);
     } catch (err) {
       this.logger.warn("delivery-store: SSE push failed", {
         error: err instanceof Error ? err.message : String(err),
