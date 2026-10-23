@@ -78,6 +78,13 @@ describe("parseAlertDelivery", () => {
       delivery({ frames: { t1: { frameUrl: "" } } }),
       delivery({ layout: { layout: { width: 0, height: 10 }, widgets: {}, behaviors: {} } }),
       delivery({ layout: { width: 10 } }),
+      delivery({
+        layout: {
+          layout: { width: 10, height: 10 },
+          widgets: { t1: { ...placement("text"), widget: "text" } },
+          behaviors: {},
+        },
+      }),
     ];
     for (const raw of cases) {
       expect(parseAlertDelivery(raw)).toBeNull();

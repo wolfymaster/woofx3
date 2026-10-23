@@ -75,14 +75,14 @@ class FakeTimers {
 }
 
 /** A one-widget alert whose shape is set by `frame`. */
-function alertOf(frame: string) {
+function alertOf(frame: string, widget = "woofx3:widget:text") {
   return {
     alertId: "a",
     layout: {
       layout: { width: 800, height: 600 },
       widgets: {
         t1: {
-          widget: "woofx3:widget:text",
+          widget,
           x: 0,
           y: 0,
           width: 100,
@@ -155,8 +155,8 @@ function setup(preparedAlerts?: number) {
     (eventId) => widget.stop(eventId)
   );
   /** An alert reaches the page as the overlay hands it over: marked, then queued. */
-  const deliver = (eventId: string, frame: string) => {
-    const value = alertOf(frame);
+  const deliver = (eventId: string, frame: string, canonicalId?: string) => {
+    const value = alertOf(frame, canonicalId);
     widget.delivered(eventId, value);
     queues.enqueue("area", { eventId, type: "alert", key: eventId, value });
   };
@@ -275,6 +275,20 @@ describe("AlertWidget", () => {
       expect(marked.filter((name) => name === "woofx3.alert/ev-1/area/finished")).toHaveLength(1);
     }
     expect(stopped.stages()).toEqual([A]);
+  });
+
+  it("finishes an alert whose widget has no canonical id, and prepares the shapes after it", () => {
+    const { timers, finished, stages, deliver } = setup();
+    deliver("ev-1", "a");
+    deliver("ev-2", "bad", "text");
+    deliver("ev-3", "b");
+
+    timers.advance(0);
+    expect(stages()).toEqual([onScreen(A), B]);
+
+    timers.advance(ALERT_PLAYS_OUT_MS);
+    expect(finished).toEqual(["ev-1", "ev-2"]);
+    expect(stages()).toEqual([onScreen(B)]);
   });
 
   it("prepares nothing ahead when it keeps no prepared alerts", () => {
