@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
+import { systemClock, systemTimers } from "../../../host/deps";
 import type { Context } from "../types";
 import TwitchEventBus from "./twitchEventBus";
 
@@ -80,6 +81,8 @@ function minimalContext(): Context {
     messageBus: { publish: mock(() => {}) } as unknown as Context["messageBus"],
     events: {} as Context["events"],
     selfSent: {} as Context["selfSent"],
+    clock: systemClock,
+    timers: systemTimers,
   };
 }
 

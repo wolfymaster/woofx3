@@ -11,6 +11,7 @@ import type {
   ServedRequestContext,
   Unavailable,
 } from "../../host/adapter";
+import type { RandomSource, Timers } from "../../host/deps";
 import type { LinkState } from "../../host/link-readers";
 import TwitchApplication, { type TwitchAppContext, type TwitchReplyDeps, twitchApiErrorReply } from "./application";
 import { type TwitchEgressSession, twitchEgress } from "./egress";
@@ -46,6 +47,8 @@ export function twitchApiUnavailableReply(unavailable: Unavailable, deps: Twitch
 
 export interface TwitchAdapterDeps extends TwitchReplyDeps {
   config: TwitchConfig;
+  timers: Timers;
+  random: RandomSource;
 }
 
 /**
@@ -95,7 +98,13 @@ export class TwitchAdapter implements Adapter {
     if (this.run !== undefined) {
       throw new Error("the twitch adapter is already running; the host never starts it twice");
     }
-    const app = new TwitchApplication({ clock: this.deps.clock, ids: this.deps.ids, selfSent: this.selfSent });
+    const app = new TwitchApplication({
+      clock: this.deps.clock,
+      ids: this.deps.ids,
+      timers: this.deps.timers,
+      random: this.deps.random,
+      selfSent: this.selfSent,
+    });
     const appCtx: TwitchAppContext = {
       logger: ctx.logger,
       bus: ctx.bus,

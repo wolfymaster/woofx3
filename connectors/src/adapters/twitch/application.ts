@@ -13,8 +13,8 @@ import { type Span, SpanKind, withSpan } from "@woofx3/common/logging";
 import { ListModuleSettings } from "@woofx3/db/module_setting.pb";
 import { GetSetting, SetSetting } from "@woofx3/db/setting.pb";
 import TwitchClient, { requestTokenOverNats, TWITCH_NOT_LINKED, type TwitchAuthProviderKind } from "@woofx3/twitch";
-import type { TwitchConfig } from "../../config/twitch";
-import { type Clock, errorMessage, type IdSource, type Logger } from "../../host/deps";
+import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
+import { type Clock, errorMessage, type IdSource, type Logger, type RandomSource, type Timers } from "../../host/deps";
 import type { BusMessage, ScopedBus } from "../../host/scoped-bus";
 import type { DbProxyClientConfig } from "../../services/db-proxy";
 import { TWITCH_EVENT_SOURCE } from "./event-source";
@@ -100,6 +100,10 @@ export interface TwitchReplyDeps {
 }
 
 export interface TwitchApplicationDeps extends TwitchReplyDeps {
+  /** Every timer the run sets: ad break timing, EventSub settling, lookup deadlines. */
+  timers: Timers;
+  /** Jitter for the ad schedule's rate-limit backoff. */
+  random: RandomSource;
   /**
    * The engine's own chat lines awaiting their echo. Outlives the run, so a
    * line said just before a restart is still known when it comes back.
@@ -242,7 +246,7 @@ export default class TwitchApplication {
       await this.connect(ctx);
       return;
     }
-    await eventBus.resubscribe(signal);
+    await eventBus.resubscribe(signal, TWITCH_DEFAULTS.subscriptionSettleTimeoutMs);
     signal.throwIfAborted();
     ctx.logger.info("twitch: relinked token applied", {
       established: eventBus.establishedCount(),
@@ -380,7 +384,8 @@ export default class TwitchApplication {
       broadcaster,
       authProvider,
       this.deps.selfSent,
-      enqueueShoutoutOverNats(busRequest(ctx.bus))
+      this.deps.clock,
+      enqueueShoutoutOverNats(busRequest(ctx.bus), TWITCH_DEFAULTS.shoutoutEnqueueTimeoutMs)
     );
     const events = new EventFactory({ source: TWITCH_EVENT_SOURCE });
     const messageBus: EventPublisher = {
@@ -400,12 +405,23 @@ export default class TwitchApplication {
       },
       logger: ctx.logger,
       readLeadSeconds: () => adBreakLeadSetting.read(),
+      clock: this.deps.clock,
+      timers: this.deps.timers,
+      random: this.deps.random,
+      options: {
+        pollIntervalMs: TWITCH_DEFAULTS.adSchedulePollIntervalMs,
+        missingScopeBackoffMs: TWITCH_DEFAULTS.adScheduleMissingScopeBackoffMs,
+        unauthorizedBackoffMs: TWITCH_DEFAULTS.adScheduleUnauthorizedBackoffMs,
+        rateLimitBackoff: TWITCH_DEFAULTS.adScheduleRateLimitBackoff,
+      },
     });
     connection.adBreakScheduler = adBreakScheduler;
 
     const eventBusCtx = {
       broadcaster,
       logger: ctx.logger,
+      clock: this.deps.clock,
+      timers: this.deps.timers,
       messageBus,
       events,
       membershipEnricher: this.buildMembershipEnricher(ctx, apiClient),
@@ -414,7 +430,7 @@ export default class TwitchApplication {
     };
     const eventBus = new TwitchEventBus(eventBusCtx, listener);
     connection.eventBus = eventBus;
-    await eventBus.start(signal);
+    await eventBus.start(signal, TWITCH_DEFAULTS.subscriptionSettleTimeoutMs);
     signal.throwIfAborted();
     if (!eventBus.isReady()) {
       // Deliberately not fatal: the `twitchapi` request/reply surface is
@@ -506,7 +522,8 @@ export default class TwitchApplication {
       ctx.logger.info("twitch: chatter membership enrichment disabled by config");
       return undefined;
     }
-    return new ChatterMembershipEnricher(new TwurpleMembershipLookup(apiClient), ctx.logger, {
+    const time = { clock: this.deps.clock, timers: this.deps.timers };
+    return new ChatterMembershipEnricher(new TwurpleMembershipLookup(apiClient), ctx.logger, time, {
       ...DEFAULT_ENRICHER_OPTIONS,
       ttlMs: membership.ttlMs,
       deadlineMs: membership.deadlineMs,

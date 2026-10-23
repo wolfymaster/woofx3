@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { OBS_DEFAULTS } from "../../config/obs";
+import { systemTimers } from "../../host/deps";
 import type { ObsControlClient, ObsControlOptions } from "./control";
 import { fakeObs, groupedScenes, logger, ObsNotFound, scenes } from "./fake-obs";
 import { executeObsOptionsRequest, handleObsOptionsRequest } from "./options";
@@ -8,7 +9,8 @@ const runOptions = (
   obs: ObsControlClient | null,
   list: Parameters<typeof executeObsOptionsRequest>[1],
   options: Partial<ObsControlOptions> = {}
-) => executeObsOptionsRequest(obs, list, { timeoutMs: OBS_DEFAULTS.commandTimeoutMs, ...options });
+) =>
+  executeObsOptionsRequest(obs, list, { timeoutMs: OBS_DEFAULTS.commandTimeoutMs, timers: systemTimers, ...options });
 
 const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
 
@@ -65,7 +67,11 @@ describe("executeObsOptionsRequest", () => {
   it("answers a hung OBS with a reason and asks for the session to be recycled", async () => {
     const obs = fakeObs(scenes(), "Main", [], "GetSceneList");
     let recycled = 0;
-    const reply = await runOptions(obs.client, "scenes", { timeoutMs: 20, onTimeout: () => recycled++ });
+    const reply = await runOptions(obs.client, "scenes", {
+      timeoutMs: 20,
+      onTimeout: () => recycled++,
+      timers: systemTimers,
+    });
     expect(reply).toEqual({ error: "OBS did not answer within 0.02s; reconnecting to it" });
     expect(recycled).toBe(1);
   });
@@ -76,6 +82,7 @@ describe("handleObsOptionsRequest", () => {
     const obs = fakeObs(scenes());
     const reply = await handleObsOptionsRequest(obs.client, encode({ data: { list: "scenes" } }), logger, {
       timeoutMs: OBS_DEFAULTS.commandTimeoutMs,
+      timers: systemTimers,
     });
     expect(reply).toEqual([
       { value: "Raid", label: "Raid" },
@@ -93,6 +100,7 @@ describe("handleObsOptionsRequest", () => {
     ]) {
       const reply = await handleObsOptionsRequest(obs.client, encode({ data }), logger, {
         timeoutMs: OBS_DEFAULTS.commandTimeoutMs,
+        timers: systemTimers,
       });
       expect(Array.isArray(reply)).toBe(false);
     }
@@ -103,6 +111,7 @@ describe("handleObsOptionsRequest", () => {
   it("answers a malformed payload instead of throwing", async () => {
     const reply = await handleObsOptionsRequest(null, new TextEncoder().encode("{not json"), logger, {
       timeoutMs: OBS_DEFAULTS.commandTimeoutMs,
+      timers: systemTimers,
     });
     expect(reply).toEqual({ error: "invalid OBS options request: payload is not JSON" });
   });

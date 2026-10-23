@@ -28,6 +28,8 @@ function refusingContext(): { ctx: Context; logger: RecordingLogger } {
     messageBus: { publish: async () => Promise.reject(BUS_DOWN) },
     events: new EventFactory({ source: "twitch" }),
     selfSent: new SelfSentRegistry({ capacity: 1, ttlMs: 1 }, new FakeTime()),
+    clock: new FakeTime(),
+    timers: new FakeTime(),
   };
   return { ctx, logger };
 }
@@ -57,6 +59,8 @@ function buildRefusingContext(): { ctx: Context; logger: RecordingLogger; publis
       },
     } as unknown as EventFactory,
     selfSent: new SelfSentRegistry({ capacity: 1, ttlMs: 1 }, new FakeTime()),
+    clock: new FakeTime(),
+    timers: new FakeTime(),
     onStreamLiveChange: (isLive) => {
       live.push(isLive);
     },

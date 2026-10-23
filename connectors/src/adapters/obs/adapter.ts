@@ -84,6 +84,7 @@ interface ObsRun {
   service: ObsService;
   logger: Logger;
   commandTimeoutMs: number;
+  timers: Timers;
 }
 
 /**
@@ -171,7 +172,12 @@ export class ObsAdapter implements Adapter<RefreshLatch> {
       timers: this.deps.timers,
       logger: ctx.logger,
     });
-    const run: ObsRun = { service, logger: ctx.logger, commandTimeoutMs: this.deps.config.commandTimeoutMs };
+    const run: ObsRun = {
+      service,
+      logger: ctx.logger,
+      commandTimeoutMs: this.deps.config.commandTimeoutMs,
+      timers: this.deps.timers,
+    };
     signal.throwIfAborted();
     this.run = run;
     service.start(signal);
@@ -216,6 +222,7 @@ async function answerCommand(run: ObsRun, request: Uint8Array): Promise<Uint8Arr
   const reply = await handleObsControlRequest(connection.current(), request, run.logger, {
     timeoutMs: run.commandTimeoutMs,
     onTimeout: () => connection.recycle("an OBS request timed out"),
+    timers: run.timers,
   });
   return json(reply);
 }
@@ -225,6 +232,7 @@ async function answerOptions(run: ObsRun, request: Uint8Array): Promise<Uint8Arr
   const reply = await handleObsOptionsRequest(connection.current(), request, run.logger, {
     timeoutMs: run.commandTimeoutMs,
     onTimeout: () => connection.recycle("an OBS request timed out"),
+    timers: run.timers,
   });
   return json(reply);
 }

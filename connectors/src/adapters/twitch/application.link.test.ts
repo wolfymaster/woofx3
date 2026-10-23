@@ -2,7 +2,8 @@ import { describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
-import { countingIds, FakeTime, RecordingLogger } from "../../host/testing";
+import { systemTimers } from "../../host/deps";
+import { countingIds, FakeTime, halfRandom, RecordingLogger } from "../../host/testing";
 import type { TwitchAppContext } from "./application";
 import { SelfSentRegistry } from "./lib/self-sent";
 
@@ -131,7 +132,13 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 function newApp(): InstanceType<typeof TwitchApplication> {
-  return new TwitchApplication({ clock: new FakeTime(), ids: countingIds(), selfSent: selfSentLines() });
+  return new TwitchApplication({
+    clock: new FakeTime(),
+    ids: countingIds(),
+    timers: systemTimers,
+    random: halfRandom,
+    selfSent: selfSentLines(),
+  });
 }
 
 function context(config: Partial<TwitchConfig> = {}) {

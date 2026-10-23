@@ -10,10 +10,10 @@ export default function onStreamOnline(ctx: Context, listener: EventSubWsListene
         broadcasterUserId: event.broadcasterId,
         broadcasterUserName: event.broadcasterName,
         // `startDate` is when the EventSub topic considers the broadcast
-        // to have begun. Falling back to `new Date()` only if Twitch
-        // omits it — extremely unlikely but keeps the payload contract
-        // (`startedAt: string`) non-nullable for downstream consumers.
-        startedAt: (event.startDate ?? new Date()).toISOString(),
+        // to have begun. Falling back to the arrival time only if Twitch
+        // omits it keeps the payload contract (`startedAt: string`)
+        // non-nullable for downstream consumers.
+        startedAt: (event.startDate ?? new Date(ctx.clock.now())).toISOString(),
       })
     );
     ctx.onStreamLiveChange?.(true);

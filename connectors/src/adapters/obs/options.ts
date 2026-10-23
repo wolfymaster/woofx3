@@ -152,7 +152,7 @@ export async function executeObsOptionsRequest(
   }
   const timeoutMs = options.timeoutMs;
   try {
-    return await withDeadline(LISTERS[list](obs), timeoutMs);
+    return await withDeadline(LISTERS[list](obs), timeoutMs, options.timers);
   } catch (err) {
     if (err instanceof ObsTimeoutError) {
       options.onTimeout?.();

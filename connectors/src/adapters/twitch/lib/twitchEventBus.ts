@@ -61,13 +61,6 @@ const OPTIONAL_SUBSCRIPTIONS: readonly OptionalSubscription[] = [
   },
 ];
 
-/**
- * How long boot waits for Twitch to confirm the subscriptions before
- * giving up and reporting what it has. Confirmations only start arriving
- * after `session_welcome`, so this must comfortably exceed connect time.
- */
-export const SUBSCRIPTION_SETTLE_TIMEOUT_MS = 20_000;
-
 export interface SubscriptionFailure {
   id: string;
   reason: string;
@@ -123,10 +116,11 @@ export default class TwitchEventBus {
    * Start the EventSub WebSocket listener and register channel handlers.
    * Subscriptions activate when Twitch sends session_welcome (Twurple calls
    * subscription.start internally). Do not call subscription.start() during boot.
-   * Stops waiting for confirmations when `signal` aborts; the caller then
-   * disconnects.
+   * Waits up to `timeoutMs` for Twitch to confirm them
+   * (TWITCH_DEFAULTS.subscriptionSettleTimeoutMs), and stops waiting when
+   * `signal` aborts; the caller then disconnects.
    */
-  async start(signal: AbortSignal, timeoutMs: number = SUBSCRIPTION_SETTLE_TIMEOUT_MS): Promise<void> {
+  async start(signal: AbortSignal, timeoutMs: number): Promise<void> {
     this.unbindOutcomes();
     this.established.clear();
     this.failures.clear();
@@ -147,7 +141,7 @@ export default class TwitchEventBus {
    * asking again. Readiness drops only for as long as Twitch takes to
    * confirm the new batch. Stops waiting when `signal` aborts.
    */
-  async resubscribe(signal: AbortSignal, timeoutMs: number = SUBSCRIPTION_SETTLE_TIMEOUT_MS): Promise<void> {
+  async resubscribe(signal: AbortSignal, timeoutMs: number): Promise<void> {
     this.unbindOutcomes();
     this.established.clear();
     this.failures.clear();
@@ -179,11 +173,11 @@ export default class TwitchEventBus {
           return;
         }
         finished = true;
-        clearTimeout(timer);
+        this.ctx.timers.clearTimeout(timer);
         signal.removeEventListener("abort", finish);
         resolve();
       };
-      const timer = setTimeout(finish, timeoutMs);
+      const timer = this.ctx.timers.setTimeout(finish, timeoutMs);
       if (signal.aborted) {
         finish();
         return;

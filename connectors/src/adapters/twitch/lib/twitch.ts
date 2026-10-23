@@ -7,6 +7,7 @@ import {
   type TwitchApiCommand,
   type UpdateStreamArgs,
 } from "@woofx3/common/cloudevents/Twitch/commands";
+import type { Clock } from "../../../host/deps";
 import { HELIX_DEADLINE_MS, type HelixAuth, runHelixOperation } from "./helix";
 import type { SelfSentRecorder } from "./self-sent";
 import type { EnqueueShoutout } from "./shoutoutQueue";
@@ -325,7 +326,8 @@ export default class TwitchApi {
   /**
    * `helixAuth` is the auth provider behind `apiClient`, which `helix` sends
    * with directly. `selfSent` records every chat line `helix` says, so its
-   * echo is marked as the engine's own. `enqueueShoutout` hands shoutouts to
+   * echo is marked as the engine's own. `clock` stamps the ad commands'
+   * `serverNow`. `enqueueShoutout` hands shoutouts to
    * the dashboard's queue; without it, every shoutout is sent directly.
    */
   constructor(
@@ -333,6 +335,7 @@ export default class TwitchApi {
     private broadcaster: HelixUser,
     private helixAuth: HelixAuth,
     private selfSent: SelfSentRecorder,
+    private clock: Clock,
     private enqueueShoutout?: EnqueueShoutout
   ) {}
 
@@ -440,7 +443,7 @@ export default class TwitchApi {
       prerollFreeSeconds: wholeSeconds(row?.preroll_free_time),
       snoozeCount: wholeSeconds(row?.snooze_count),
       snoozeRefreshAt: normalizeHelixTime(row?.snooze_refresh_at),
-      serverNow: new Date().toISOString(),
+      serverNow: new Date(this.clock.now()).toISOString(),
     };
   }
 
@@ -634,7 +637,7 @@ export default class TwitchApi {
       snoozeCount: wholeSeconds(row?.snooze_count),
       snoozeRefreshAt: normalizeHelixTime(row?.snooze_refresh_at),
       nextAdAt: normalizeHelixTime(row?.next_ad_at),
-      serverNow: new Date().toISOString(),
+      serverNow: new Date(this.clock.now()).toISOString(),
     };
   }
 

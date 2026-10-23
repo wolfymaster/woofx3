@@ -4,14 +4,6 @@
  */
 export const SHOUTOUT_ENQUEUE_SUBJECT = "engine.shoutout.enqueue";
 
-/**
- * How long to wait for the api service, which waits up to 5s for the
- * dashboard. Under the 10s a module's `ctx.twitch` call waits for this
- * service, so a slow dashboard surfaces as this error rather than as the
- * sandbox's own timeout.
- */
-const ENQUEUE_TIMEOUT_MS = 8_000;
-
 export interface ShoutoutTarget {
   twitchUserId: string;
   login: string;
@@ -40,8 +32,9 @@ type NatsRequest = (subject: string, data: Uint8Array, opts?: { timeout?: number
  * Only "nobody answers on the subject" falls back to a direct send. A timeout
  * does not: the dashboard may have queued the shoutout after the wait ran out,
  * and sending it directly as well would shout the user out twice.
+ * `timeoutMs` is TWITCH_DEFAULTS.shoutoutEnqueueTimeoutMs outside tests.
  */
-export function enqueueShoutoutOverNats(request: NatsRequest, timeoutMs = ENQUEUE_TIMEOUT_MS): EnqueueShoutout {
+export function enqueueShoutoutOverNats(request: NatsRequest, timeoutMs: number): EnqueueShoutout {
   return async (target) => {
     let reply: { data: Uint8Array };
     try {

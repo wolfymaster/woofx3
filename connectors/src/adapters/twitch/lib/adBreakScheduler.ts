@@ -1,32 +1,17 @@
 import type { AdBreakUpcoming } from "@woofx3/common/cloudevents/Twitch/events";
-import type { Logger } from "../../../host/deps";
+import { type Backoff, type BackoffConfig, createBackoff } from "@woofx3/common/runtime";
+import type { Clock, Logger, RandomSource, TimerHandle, Timers } from "../../../host/deps";
 import { type AdSchedule, TwitchApiError, type TwitchApiErrorCode } from "./twitch";
 
-const POLL_INTERVAL_MS = 60_000;
-
-/**
- * How long to stop asking Twitch after a failure that asking again soon
- * cannot fix. A missing scope needs the streamer to relink, so it waits
- * longest; a rate limit doubles from its base on each consecutive refusal.
- */
-const BACKOFF_MS: Record<Exclude<TwitchApiErrorCode, "failed" | "invalid_arguments">, number> = {
-  missing_scope: 15 * 60_000,
-  unauthorized: 5 * 60_000,
-  rate_limited: 2 * 60_000,
-};
-const MAX_BACKOFF_MS = 30 * 60_000;
-
-export interface SchedulerClock {
-  now(): number;
-  setTimeout(fn: () => void, ms: number): unknown;
-  clearTimeout(handle: unknown): void;
+/** How often the schedule is read, and how long to leave it after a refusal. See TWITCH_DEFAULTS. */
+export interface AdBreakSchedulerOptions {
+  pollIntervalMs: number;
+  /** A missing scope needs the streamer to relink, so it waits longest. */
+  missingScopeBackoffMs: number;
+  unauthorizedBackoffMs: number;
+  /** Jittered and doubling on each consecutive rate limit, reset by a successful read. */
+  rateLimitBackoff: BackoffConfig;
 }
-
-const REAL_CLOCK: SchedulerClock = {
-  now: () => Date.now(),
-  setTimeout: (fn, ms) => setTimeout(fn, ms),
-  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-};
 
 export interface AdBreakSchedulerDeps {
   fetchSchedule(): Promise<AdSchedule>;
@@ -37,7 +22,11 @@ export interface AdBreakSchedulerDeps {
    * setting applies within a minute. Must resolve to positive whole seconds.
    */
   readLeadSeconds(): Promise<number>;
-  clock?: SchedulerClock;
+  clock: Clock;
+  timers: Timers;
+  /** Jitter for the rate-limit backoff. */
+  random: RandomSource;
+  options: AdBreakSchedulerOptions;
 }
 
 /**
@@ -61,13 +50,14 @@ export interface AdBreakSchedulerDeps {
  * every ad, and a restart inside a lead window announces that ad again.
  */
 export class AdBreakScheduler {
-  private readonly clock: SchedulerClock;
-  private pollTimer: unknown = null;
-  private leadTimer: unknown = null;
+  private readonly clock: Clock;
+  private readonly timers: Timers;
+  private readonly rateLimitBackoff: Backoff;
+  private pollTimer: TimerHandle | null = null;
+  private leadTimer: TimerHandle | null = null;
   /** The `nextAdAt` of the ad already announced: each ad is announced once. */
   private announcedAdAt: string | null = null;
   private backoffUntil = 0;
-  private rateLimitStreak = 0;
   private lastFailureCode: TwitchApiErrorCode | null = null;
   private live = false;
   /**
@@ -80,8 +70,10 @@ export class AdBreakScheduler {
   private liveFromEvent = false;
   private stopped = false;
 
-  constructor(private deps: AdBreakSchedulerDeps) {
-    this.clock = deps.clock ?? REAL_CLOCK;
+  constructor(private readonly deps: AdBreakSchedulerDeps) {
+    this.clock = deps.clock;
+    this.timers = deps.timers;
+    this.rateLimitBackoff = createBackoff(deps.options.rateLimitBackoff, deps.random);
   }
 
   /** The stream went online or offline, as EventSub reported it. */
@@ -123,7 +115,7 @@ export class AdBreakScheduler {
       return;
     }
     if (this.pollTimer !== null) {
-      this.clock.clearTimeout(this.pollTimer);
+      this.timers.clearTimeout(this.pollTimer);
       this.pollTimer = null;
     }
     this.clearLeadTimer();
@@ -138,7 +130,7 @@ export class AdBreakScheduler {
     if (!this.live || epoch !== this.liveEpoch) {
       return;
     }
-    this.pollTimer = this.clock.setTimeout(async () => {
+    this.pollTimer = this.timers.setTimeout(async () => {
       this.pollTimer = null;
       try {
         await this.pollOnce();
@@ -147,7 +139,7 @@ export class AdBreakScheduler {
           error: err instanceof Error ? err.message : String(err),
         });
       }
-      this.schedulePoll(POLL_INTERVAL_MS, epoch);
+      this.schedulePoll(this.deps.options.pollIntervalMs, epoch);
     }, delayMs);
   }
 
@@ -171,7 +163,7 @@ export class AdBreakScheduler {
       this.deps.logger.info("AdBreakScheduler: ad schedule readable again");
     }
     this.lastFailureCode = null;
-    this.rateLimitStreak = 0;
+    this.rateLimitBackoff.reset();
     this.backoffUntil = 0;
 
     const leadSeconds = await this.deps.readLeadSeconds();
@@ -209,7 +201,7 @@ export class AdBreakScheduler {
       this.announceOnce(nextAdAt, nextAdAtMs, schedule.durationSeconds);
       return;
     }
-    this.leadTimer = this.clock.setTimeout(() => {
+    this.leadTimer = this.timers.setTimeout(() => {
       this.leadTimer = null;
       this.announceOnce(nextAdAt, nextAdAtMs, schedule.durationSeconds);
     }, fireAtMs - now);
@@ -237,13 +229,15 @@ export class AdBreakScheduler {
     let backoffMs = 0;
     switch (code) {
       case "rate_limited": {
-        backoffMs = Math.min(BACKOFF_MS.rate_limited * 2 ** this.rateLimitStreak, MAX_BACKOFF_MS);
-        this.rateLimitStreak += 1;
+        backoffMs = this.rateLimitBackoff.next();
         break;
       }
-      case "missing_scope":
+      case "missing_scope": {
+        backoffMs = this.deps.options.missingScopeBackoffMs;
+        break;
+      }
       case "unauthorized": {
-        backoffMs = BACKOFF_MS[code];
+        backoffMs = this.deps.options.unauthorizedBackoffMs;
         break;
       }
       case "invalid_arguments":
@@ -264,7 +258,7 @@ export class AdBreakScheduler {
 
   private clearLeadTimer(): void {
     if (this.leadTimer !== null) {
-      this.clock.clearTimeout(this.leadTimer);
+      this.timers.clearTimeout(this.leadTimer);
       this.leadTimer = null;
     }
   }

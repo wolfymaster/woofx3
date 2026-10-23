@@ -1,17 +1,8 @@
 import type { EventSubChannelAdBreakBeginEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
+import type { TimerHandle } from "../../../../host/deps";
 import type { Context } from "../../types";
 import { publishEvent } from "../publishEvent";
-
-export interface AdBreakTimers {
-  setTimeout(fn: () => void, ms: number): unknown;
-  clearTimeout(handle: unknown): void;
-}
-
-const REAL_TIMERS: AdBreakTimers = {
-  setTimeout: (fn, ms) => setTimeout(fn, ms),
-  clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
-};
 
 /**
  * The fields of Twurple's begin event this service reads. Twurple passes
@@ -39,19 +30,16 @@ export interface AdBreakBeginInput {
  * the pending break is a redelivery and is ignored.
  */
 export class AdBreakAnnouncer {
-  private pending: { handle: unknown; publishEnd: () => void; startedAt: string } | null = null;
+  private pending: { handle: TimerHandle; publishEnd: () => void; startedAt: string } | null = null;
 
-  constructor(
-    private ctx: Context,
-    private timers: AdBreakTimers = REAL_TIMERS
-  ) {}
+  constructor(private readonly ctx: Context) {}
 
   begin(event: AdBreakBeginInput): void {
     const durationSeconds = Math.max(0, Math.trunc(Number(event.durationSeconds) || 0));
     const isAutomatic = event.isAutomatic === true || event.isAutomatic === "true";
     let startedAtMs = event.startDate.getTime();
     if (Number.isNaN(startedAtMs)) {
-      startedAtMs = Date.now();
+      startedAtMs = this.ctx.clock.now();
       this.ctx.logger.warn("twitch: ad break begin had an unreadable started_at; using the time it arrived");
     }
     const startedAt = new Date(startedAtMs).toISOString();
@@ -81,7 +69,7 @@ export class AdBreakAnnouncer {
         })
       );
     };
-    const handle = this.timers.setTimeout(publishEnd, Math.max(0, durationSeconds * 1000));
+    const handle = this.ctx.timers.setTimeout(publishEnd, Math.max(0, durationSeconds * 1000));
     this.pending = { handle, publishEnd, startedAt };
   }
 
@@ -91,7 +79,7 @@ export class AdBreakAnnouncer {
    */
   dispose(): void {
     if (this.pending !== null) {
-      this.timers.clearTimeout(this.pending.handle);
+      this.ctx.timers.clearTimeout(this.pending.handle);
       this.pending = null;
     }
   }
@@ -101,7 +89,7 @@ export class AdBreakAnnouncer {
       return;
     }
     const { handle, publishEnd } = this.pending;
-    this.timers.clearTimeout(handle);
+    this.ctx.timers.clearTimeout(handle);
     publishEnd();
   }
 }

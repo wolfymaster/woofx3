@@ -10,7 +10,7 @@
 import type { ObsControlCommand, ObsControlReply } from "@woofx3/common/cloudevents/Obs/commands";
 import type { OBSRequestTypes, OBSResponseTypes } from "obs-websocket-js";
 import { z } from "zod";
-import type { Logger } from "../../host/deps";
+import type { Logger, TimerHandle, Timers } from "../../host/deps";
 
 /** The slice of `manager.ts` a command needs; structural so tests can fake OBS. */
 export interface ObsControlClient {
@@ -91,6 +91,8 @@ export interface ObsControlOptions {
   timeoutMs: number;
   /** Called when OBS did not answer in time; the caller drops the session. */
   onTimeout?: () => void;
+  /** Runs the `timeoutMs` deadline. */
+  timers: Timers;
 }
 
 /** A refusal already worded for the streamer, passed through as is. */
@@ -107,12 +109,12 @@ export function isNotFound(err: unknown): boolean {
   );
 }
 
-export function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+export function withDeadline<T>(work: Promise<T>, ms: number, timers: Timers): Promise<T> {
+  let timer: TimerHandle | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new ObsTimeoutError(`timeout after ${ms}ms`)), ms);
+    timer = timers.setTimeout(() => reject(new ObsTimeoutError(`timeout after ${ms}ms`)), ms);
   });
-  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+  return Promise.race([work, deadline]).finally(() => timers.clearTimeout(timer));
 }
 
 /**
@@ -130,7 +132,7 @@ export async function executeObsControlCommand(
   }
   const timeoutMs = options.timeoutMs;
   try {
-    return await withDeadline(runCommand(obs, command), timeoutMs);
+    return await withDeadline(runCommand(obs, command), timeoutMs, options.timers);
   } catch (err) {
     if (err instanceof ObsTimeoutError) {
       options.onTimeout?.();
