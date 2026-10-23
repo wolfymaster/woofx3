@@ -3,15 +3,21 @@ import { type GatewayConfig, GatewayEnvSchema, gatewayConfig } from "../config/g
 import { HOST_DEFAULTS, type HostConfig, HostEnvSchema, hostConfig } from "../config/host";
 import { type HealthBody, handleHealthRequest, startHealthServer } from "./health";
 import { Host } from "./host";
-import { LINK_READERS, type SettingsReader } from "./link-readers";
-import { countingIds, FakeAdapter, FakeBus, FakeTime, halfRandom, RecordingLogger } from "./testing";
+import {
+  countingIds,
+  FakeAdapter,
+  FakeBus,
+  FakeTime,
+  fixedLinkStore,
+  halfRandom,
+  RecordingLogger,
+  shippedLinkReaders,
+} from "./testing";
 
 const config: HostConfig = hostConfig(HostEnvSchema.parse({}));
 const gateway: GatewayConfig = gatewayConfig(GatewayEnvSchema.parse({}));
 
-const linkedSettings: SettingsReader = {
-  getSetting: async (key) => ({ twitch_token: "tok", "integration.twitch.enabled": "true" })[key] ?? null,
-};
+const linkedSettings = fixedLinkStore({ twitch_token: "tok", "integration.twitch.enabled": "true" });
 
 async function runningHost(adapter: FakeAdapter, busUp = { value: true }) {
   const time = new FakeTime();
@@ -21,10 +27,10 @@ async function runningHost(adapter: FakeAdapter, busUp = { value: true }) {
     dbProxy: { baseURL: "http://db.test" },
     bus: new FakeBus(),
     busConnected: () => busUp.value,
-    settings: linkedSettings,
+    linkStore: linkedSettings,
     adapters: new Map([["twitch", adapter]]),
     hostStates: new Map([["twitch", undefined]]),
-    readers: LINK_READERS,
+    readers: shippedLinkReaders(),
     clock: time,
     random: halfRandom,
     ids: countingIds(),
@@ -86,10 +92,10 @@ describe("health", () => {
       dbProxy: { baseURL: "http://db.test" },
       bus: new FakeBus(),
       busConnected: () => true,
-      settings: linkedSettings,
+      linkStore: linkedSettings,
       adapters: new Map(),
       hostStates: new Map(),
-      readers: LINK_READERS,
+      readers: shippedLinkReaders(),
       clock: time,
       random: halfRandom,
       ids: countingIds(),
