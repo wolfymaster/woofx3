@@ -6,7 +6,7 @@ use super::db_proxy_client::HttpDbProxyClient;
 use super::manifest_validate::{InstallProvenance, SystemOnlyActions};
 use super::module_file::ModuleFile;
 use super::module_file::ModuleFileKind;
-use super::module_install::run_install_with_provenance;
+use super::module_install::{InstallOutcome, reset_endpoint_settings, run_install_with_provenance};
 use super::module_manifest::ModuleManifest;
 
 /// How strongly an archive member name reads as the module manifest: lower
@@ -118,7 +118,7 @@ where
         composite_module_key: &str,
         client_id: &str,
         marketplace: Option<&MarketplaceOrigin>,
-    ) -> Result<()> {
+    ) -> Result<InstallOutcome> {
         self.install_with_provenance(
             archive_key,
             db_proxy_url,
@@ -140,7 +140,7 @@ where
         client_id: &str,
         provenance: InstallProvenance,
         marketplace: Option<&MarketplaceOrigin>,
-    ) -> Result<()> {
+    ) -> Result<InstallOutcome> {
         let manifest = self
             .stored_manifest
             .as_ref()
@@ -159,6 +159,29 @@ where
             provenance,
             marketplace,
             &self.system_only_actions,
+        )
+        .await
+    }
+
+    /// Resets the endpoint settings `outcome` names again, to be called once
+    /// the sandbox registry holds the installed version: between the install
+    /// and that refresh, code of the previous version could still write them.
+    pub async fn reset_relocated_endpoint_settings(
+        &self,
+        db_proxy_url: &str,
+        outcome: &InstallOutcome,
+    ) -> Result<()> {
+        if outcome.relocated_endpoint_settings.is_empty() {
+            return Ok(());
+        }
+        let manifest = self
+            .stored_manifest
+            .as_ref()
+            .ok_or_else(|| anyhow!("reset endpoint settings: manifest not loaded"))?;
+        reset_endpoint_settings(
+            &HttpDbProxyClient::new(db_proxy_url),
+            manifest,
+            &outcome.relocated_endpoint_settings,
         )
         .await
     }
