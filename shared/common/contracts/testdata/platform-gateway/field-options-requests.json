@@ -1,0 +1,14 @@
+{
+  "cases": [
+    { "name": "a known action", "invalidField": null, "request": { "action": "chat.pin" } },
+    {
+      "name": "an unknown key is ignored",
+      "invalidField": null,
+      "request": { "action": "chat.send", "fieldId": "platform" }
+    },
+    { "name": "no action", "invalidField": "action", "request": {} },
+    { "name": "a null action", "invalidField": "action", "request": { "action": null } },
+    { "name": "an empty action", "invalidField": "action", "request": { "action": "" } },
+    { "name": "an unknown action", "invalidField": "action", "request": { "action": "chat.shout" } }
+  ]
+}

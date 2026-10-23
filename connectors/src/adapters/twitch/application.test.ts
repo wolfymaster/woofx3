@@ -90,6 +90,7 @@ const CONFIG: TwitchConfig = {
   channel: "mychan",
   app: { clientId: "cid", clientSecret: "sec", redirectUri: "http://localhost/oauth" },
   membership: { ttlMs: TWITCH_DEFAULTS.membershipTtlMs, deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs },
+  sendQueueCap: TWITCH_DEFAULTS.sendQueueCap,
 };
 
 const encoder = new TextEncoder();

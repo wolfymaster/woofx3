@@ -695,13 +695,13 @@ fn build_lua_ctx(
         // already holds. `key` does not have to be manifest-declared.
         let host_for_set = invocation.host.clone();
         let module_id_for_set = invocation.module_id.clone();
-        let url_settings = invocation.url_settings.clone();
+        let protected_settings = invocation.protected_settings.clone();
         let link_settings = invocation.resource_link_settings.clone();
         let set_setting_fn = lua.create_function(move |_, (key, value): (String, String)| {
             super::host_bindings::set_module_setting(
                 &host_for_set,
                 &module_id_for_set,
-                &url_settings,
+                &protected_settings,
                 &link_settings,
                 &key,
                 &value,
@@ -716,7 +716,7 @@ fn build_lua_ctx(
         // `{ swapped, current }`. Set directly on the table, like setSetting.
         let host_for_cas = invocation.host.clone();
         let module_id_for_cas = invocation.module_id.clone();
-        let url_settings_for_cas = invocation.url_settings.clone();
+        let protected_settings_for_cas = invocation.protected_settings.clone();
         let link_settings_for_cas = invocation.resource_link_settings.clone();
         let compare_and_set_setting_fn = lua.create_function(
             move |lua, (key, expected, value): (String, LuaValue, LuaValue)| {
@@ -725,7 +725,7 @@ fn build_lua_ctx(
                 let outcome = super::host_bindings::compare_and_set_module_setting(
                     &host_for_cas,
                     &module_id_for_cas,
-                    &url_settings_for_cas,
+                    &protected_settings_for_cas,
                     &link_settings_for_cas,
                     &key,
                     &json_expected,
@@ -964,7 +964,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -991,7 +992,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1036,7 +1038,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1067,7 +1070,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1092,7 +1096,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         }
@@ -1109,7 +1114,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1219,7 +1225,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1253,7 +1260,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1294,7 +1302,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1332,7 +1341,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1402,7 +1412,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "2.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
@@ -1440,7 +1451,8 @@ mod tests {
             module_name: "My Module".to_string(),
             module_version: "1.0.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
