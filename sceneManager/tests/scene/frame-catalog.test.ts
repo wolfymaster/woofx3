@@ -1,7 +1,13 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { CompositionDocument } from "@woofx3/scene/model";
 import type { BarkloaderFrameClient, BarkloaderFrameInfo } from "../../src/scene/frame-assembler";
-import { FrameCatalog, UNAVAILABLE_VERSION, frameDocumentUrl, frameVersion } from "../../src/scene/frame-catalog";
+import {
+  AlertFrameUnavailableError,
+  FrameCatalog,
+  frameDocumentUrl,
+  frameVersion,
+  UNAVAILABLE_VERSION,
+} from "../../src/scene/frame-catalog";
 import type { OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function logger() {
@@ -150,10 +156,25 @@ describe("FrameCatalog.frameAlert", () => {
     expect(links).toHaveBeenCalledTimes(1);
   });
 
-  it("frames a widget barkloader cannot answer for at an unversioned document", async () => {
-    const catalog = new FrameCatalog({ fetchWidgetFrame: async () => null }, logger());
+  it("asks again for a widget barkloader could not answer for, so the alert's media is signed", async () => {
+    let calls = 0;
+    const themed: BarkloaderFrameInfo = { ...INFO, theme: { css: "", tokens: {} } as never };
+    const fetchWidgetFrame = mock(async () => {
+      calls += 1;
+      return calls === 1 ? null : themed;
+    });
+    const catalog = new FrameCatalog({ fetchWidgetFrame }, logger(), undefined, 0);
     const frames = await catalog.frameAlert(layoutOf({ t1: { widget: "mod:widget:w", settings: {} } }));
-    expect(frames.t1!.frameUrl).toBe(frameDocumentUrl("mod", "w", undefined, UNAVAILABLE_VERSION));
+    expect(fetchWidgetFrame).toHaveBeenCalledTimes(2);
+    expect(frames.t1!.frameUrl).toBe(frameDocumentUrl("mod", "w", undefined, frameVersion(themed)));
+  });
+
+  it("refuses an alert whose widget barkloader still cannot answer for", async () => {
+    const fetchWidgetFrame = mock(async () => null);
+    const catalog = new FrameCatalog({ fetchWidgetFrame }, logger(), undefined, 0);
+    const framed = catalog.frameAlert(layoutOf({ t1: { widget: "mod:widget:w", settings: {} } }));
+    await expect(framed).rejects.toBeInstanceOf(AlertFrameUnavailableError);
+    expect(fetchWidgetFrame).toHaveBeenCalledTimes(2);
   });
 
   it("refuses a widget whose canonical id does not parse", async () => {

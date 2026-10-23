@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import type { AlertQueueState } from "@woofx3/api";
 import {
   AlertReplays,
@@ -11,7 +11,7 @@ import {
 } from "../../src/events/alert-controls";
 import { dispatchAlert, presentAlertDeliveries } from "../../src/events/alert-dispatch";
 import { DeliveryStore } from "../../src/events/delivery-store";
-import type { AlertFraming } from "../../src/scene/frame-catalog";
+import { AlertFrameUnavailableError, type AlertFraming } from "../../src/scene/frame-catalog";
 import type { OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function fakeLogger() {
@@ -716,6 +716,37 @@ describe("dispatchAlert", () => {
         error: 'no alert widget named "sidebar" on a running scene',
       },
     ]);
+  });
+
+  it("reports an alert as not played when a widget's frame is unavailable", async () => {
+    const { overlays, writes, deps } = setup({ "scene-1": [alertInstance("inst-1", "default")] });
+    const framing: AlertFraming = {
+      frameAlert: async () => {
+        throw new AlertFrameUnavailableError("t1", "woofx3:widget:text");
+      },
+    };
+
+    const outcome = await dispatchAlert({ ...JSON.parse(envelope()), rowId: "row-9" }, { ...deps, framing });
+
+    expect(outcome.ok).toBe(false);
+    expect(overlays[0]!.deliveries()).toEqual([]);
+    expect(writes.lifecycle).toEqual([
+      {
+        id: "row-9",
+        envelopeId: "env-original",
+        status: "failed",
+        error: "widget woofx3:widget:text's frame is unavailable",
+      },
+    ]);
+  });
+
+  it("does not frame an alert that reaches no scene", async () => {
+    const { deps } = setup({ "scene-1": [alertInstance("inst-1", "default")] });
+    const frameAlert = mock(async () => ({}));
+
+    await dispatchAlert(JSON.parse(envelope("sidebar")), { ...deps, framing: { frameAlert } });
+
+    expect(frameAlert).not.toHaveBeenCalled();
   });
 
   it("delivers a composition, converting a list-shaped layout", async () => {
