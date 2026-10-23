@@ -419,22 +419,30 @@ export interface CtxHostError extends Error {
    * `invalid_arguments` for a call it refuses before asking. A refusal from
    * OBS (not connected, no scene by that name) carries only its message.
    *
-   * `ctx.local` uses `timeout`, `call_limit`, `busy`, `unavailable`,
-   * `request_failed` and `invalid_arguments` the same way, and adds:
+   * `ctx.local` sets these codes. Worth trying again later (in a later run,
+   * or after a short wait):
+   * - `timeout`: the function's run is out of time, the device did not answer
+   *   before the time ran out, or the connectors service did not answer
+   *   within 5s (a `send` may still have reached the device)
+   * - `unavailable`: no connectors service is running, or the device could
+   *   not be reached in time
+   * - `busy`: too many local endpoint requests are waiting across the
+   *   engine, or a request waiting for the same answer is already pending
+   * - `not_routed`: the engine has no way to reach the endpoint yet. For a
+   *   cloud engine, the streamer turns on the woofx3 companion for it
+   * - `store_unreadable`: the engine could not read the module's settings
+   * - `request_failed`: the request could not be sent or its reply read
+   *
+   * Not worth retrying until something changes:
+   * - `call_limit`: the run already made 20 `ctx.local` calls
+   * - `invalid_arguments`: the call's arguments are wrong; the message says
+   *   which one
    * - `not_declared`: your manifest declares no local endpoint with that id
    * - `protocol_unsupported`: the endpoint is not a websocket one
    * - `adapter_owned`: the engine itself manages that endpoint (OBS, for
    *   example); use its own extension, such as `ctx.obs`
-   * - `not_routed`: the engine has no way to reach the endpoint yet. For a
-   *   cloud engine, the streamer turns on the woofx3 companion for it
    * - `address_refused`: the address in the endpoint's settings is not on the
    *   streamer's own network
-   * - `store_unreadable`: the engine could not read the module's settings
-   * - `unavailable`: the device could not be reached in time, or no
-   *   connectors service is running
-   * - `timeout`: the device did not answer before the time ran out
-   * - `busy`: too many requests are waiting, or one waiting for the same
-   *   answer is already pending
    * - `invalid`: the engine refused the request itself
    */
   code?: string;
