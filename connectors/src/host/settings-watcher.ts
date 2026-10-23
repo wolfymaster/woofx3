@@ -175,7 +175,10 @@ export class SettingsWatcher {
     });
   }
 
-  private logFlag(id: AdapterId, flag: IntegrationEnabled): void {
+  private logFlag(id: AdapterId, flag: IntegrationEnabled | null): void {
+    if (flag === null) {
+      return;
+    }
     const seen = flag.kind === "invalid" ? `invalid:${flag.raw}` : flag.kind;
     if (this.flagLogged.get(id) === seen) {
       return;

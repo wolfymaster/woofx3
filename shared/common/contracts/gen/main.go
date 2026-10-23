@@ -1,4 +1,4 @@
-// Command gen writes the Go and TypeScript code for the engine's
+// Command gen writes the Go, TypeScript and Rust code for the engine's
 // cross-language contracts in shared/common/contracts. Each contract is one
 // JSON file; the generator refuses unknown keys and contradictory entries, so
 // a mistake in the contract stops generation instead of reaching the code.
@@ -6,6 +6,7 @@
 // Usage (scripts/gen-contracts.sh runs every contract):
 //
 //	gen platform-gateway <contract.json> <go-output> <ts-output>
+//	gen companion-gateway <contract.json> <ts-output> <rust-output>
 package main
 
 import (
@@ -26,6 +27,10 @@ func generators() map[string]generator {
 		"platform-gateway": {
 			usage: "platform-gateway <contract.json> <go-output> <ts-output>",
 			run:   runPlatformGateway,
+		},
+		"companion-gateway": {
+			usage: "companion-gateway <contract.json> <ts-output> <rust-output>",
+			run:   runCompanionGateway,
 		},
 	}
 }
@@ -87,6 +92,36 @@ func runPlatformGateway(args []string) error {
 	}
 	if err := os.WriteFile(tsPath, tsSource, 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", tsPath, err)
+	}
+	return nil
+}
+
+func runCompanionGateway(args []string) error {
+	if len(args) != 3 {
+		return fmt.Errorf("usage: gen %s", generators()["companion-gateway"].usage)
+	}
+	contractPath, tsPath, rustPath := args[0], args[1], args[2]
+	raw, err := os.ReadFile(contractPath)
+	if err != nil {
+		return fmt.Errorf("reading contract: %w", err)
+	}
+	contract, err := parseCompanionGateway(raw)
+	if err != nil {
+		return fmt.Errorf("%s: %w", contractPath, err)
+	}
+	tsSource, err := emitCompanionTS(contract)
+	if err != nil {
+		return err
+	}
+	rustSource, err := emitRust(contract)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(tsPath, tsSource, 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", tsPath, err)
+	}
+	if err := os.WriteFile(rustPath, rustSource, 0o644); err != nil {
+		return fmt.Errorf("writing %s: %w", rustPath, err)
 	}
 	return nil
 }

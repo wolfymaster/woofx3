@@ -79,7 +79,7 @@ export const ENGINE_CAPABILITIES = {
   obsStatus: "obs.status",
   /**
    * A manifest's `local[]` endpoints, `setRelayConfig`, the
-   * `relay.credential.requested` callback, and sceneManager's endpoint dialer
+   * `relay.credential.requested` callback, and the connectors host's endpoint dialer
    * reaching OBS through the companion's bridge.
    */
   modulesLocalEndpoints: "modules.localEndpoints",

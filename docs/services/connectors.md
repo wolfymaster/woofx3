@@ -6,8 +6,8 @@ third-party platforms and local apps. Each connection is an **adapter**. The
 linked and enabled, runs the adapter only while it should run, and answers the
 request subjects adapters serve even while they are down.
 
-It ships with one adapter, `twitch` (see [The Twitch adapter](#the-twitch-adapter)),
-and runs in every packaged engine (`build/config/services.json`), where the
+It ships with two adapters, `twitch` (see [The Twitch adapter](#the-twitch-adapter))
+and `obs` (see [The OBS adapter](#the-obs-adapter)), and runs in every packaged engine (`build/config/services.json`), where the
 orchestrator checks its `/health` before reporting the engine ready.
 
 ```
@@ -48,6 +48,10 @@ For Twitch:
 The api writes both rows when Twitch is linked or unlinked, then publishes
 `setting.integration.enabled.updated` and `setting.integration.token.updated`
 (see [Twitch channel controls](./twitch-channel.md)).
+
+OBS has no integration and no enabled setting: its reader always reads
+`{connected: true, enabled: true}` and reads no settings, so the `obs` adapter
+runs whenever the host does.
 
 ### When links are read
 
@@ -300,6 +304,45 @@ connectors pins its `@twurple/*` packages to the release
 copies' classes as one type when name and version match, so upgrade both
 lockfiles together.
 
+## The OBS adapter
+
+`connectors/src/adapters/obs/` holds the engine's one obs-websocket
+connection (see [OBS control](./obs.md)). The local endpoint dialer and the
+store it reads routes from live in `connectors/src/companion/` (see
+[Local endpoints](./local-endpoints.md)).
+
+- **When it runs.** Always. OBS being closed is not a reason to stop: the
+  connection retries in the background with capped, jittered backoff.
+- **Start.** Each start builds a fresh OBS service over the host's db-proxy
+  client and the adapter's scoped bus, subscribes to
+  `db.module.setting.updated.*` (a change to the `woofx3_obs` module's
+  settings reconnects at once) and `engine.relay.config.updated` (a change
+  that moves OBS to another route reconnects), and starts connecting. It
+  resolves without waiting for OBS, so the adapter is `connected` while its
+  loop runs, and a request while OBS is closed reaches the handler and is
+  answered `OBS is not connected (retrying)` at once.
+- **Stop.** Closes the OBS session and cancels any pending retry; the host
+  then closes the adapter's subscriptions.
+- **Manifest.** Publishes nothing, requests `engine.relay.credential` from the
+  api, and serves:
+
+| Subject | Budget | While the adapter is not running |
+|---|---|---|
+| `engine.obs.command` | 4_500 ms, below barkloader `ctx.obs`'s 5_000 | `{ok: false, error: "OBS is turned off in this engine"}`, or `"OBS is starting"` |
+| `engine.obs.options` | 4_500 ms | `{error: ...}` with the same messages |
+| `engine.obs.status` | 2_500 ms, below the api's 3_000 | `{state: "stopped", failure: null, address: null}` |
+| `engine.obs.browser_source.refresh` | 1_500 ms, below sceneManager's 2_000 request timeout | answered in every state (below) |
+
+- **Overlay refresh.** `engine.obs.browser_source.refresh` has availability
+  `always`. The adapter module's host state is a refresh latch: the newest
+  request and the last 16 boot ids already refreshed. A valid request is
+  latched and accepted at once, whatever the adapter is doing; the running
+  adapter, or the next one to start, refreshes on the current or next OBS
+  session, once per boot id. See
+  [Local endpoints → Overlay recovery](./local-endpoints.md#overlay-recovery).
+- **`/health` detail.** `state`, `failure`, `route` and `address`, as in
+  `engine.obs.status`; never the password or a bridge ticket.
+
 ### The stream session
 
 Every event is stamped with the current stream session, which is held per
@@ -337,6 +380,14 @@ The Twitch adapter reads:
 | `WOOFX3_TWITCH_MEMBERSHIP_TTL_MS` | `600000` | How long a looked-up answer is kept. |
 | `WOOFX3_TWITCH_MEMBERSHIP_DEADLINE_MS` | `250` | How long a chat message waits on a lookup before it is published without it. |
 | `WOOFX3_TWITCH_SEND_QUEUE_CAP` | `100` | How many platform gateway chat writes may wait behind the one being sent; one more is refused as rate limited. |
+
+The OBS adapter reads, for whatever the OBS module's settings leave empty:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WOOFX3_OBS_HOST` | `127.0.0.1` | Host running OBS. |
+| `WOOFX3_OBS_PORT` | `4455` | OBS WebSocket server port, 1 to 65535. |
+| `WOOFX3_OBS_RPC_TOKEN` | none | OBS WebSocket server password. |
 
 The host also reads the bus settings (`WOOFX3_MESSAGEBUS_URL`, `_JWT`, `_NKEY`,
 `_TOKEN`), `WOOFX3_DATABASE_PROXY_URL` and `WOOFX3_DB_PROXY_TOKEN`, the

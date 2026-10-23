@@ -20,7 +20,7 @@ A request is a `RequestEnvelope` whose `type` is an `EngineRequestType`:
 | Request | Asked when | Answer |
 |---|---|---|
 | `twitch.token.requested` | A Twitch token the client sent is about to expire, or Twitch refused it | `TwitchTokenRequestedResponse` |
-| `relay.credential.requested` | sceneManager needs a bridge credential for the companion relay; see [Local endpoints](./local-endpoints.md#the-bridge-credential) | `RelayCredentialRequestedResponse` |
+| `relay.credential.requested` | the connectors host (its endpoint dialer and obs adapter) needs a bridge credential for the companion relay; see [Local endpoints](./local-endpoints.md#the-bridge-credential) | `RelayCredentialRequestedResponse` |
 | `shoutout.enqueue.requested` | A workflow or chat command asked for a shoutout | `ShoutoutEnqueueRequestedResponse` |
 
 Each request goes to one client, chosen the same way whatever the transport:

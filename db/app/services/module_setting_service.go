@@ -147,7 +147,7 @@ func (s *ModuleSettingService) publishChange(setting models.ModuleSetting) {
 
 // GetModuleSecretValues opens the module's secret settings. Its callers are
 // barkloader, building `ctx.module.settings` for the owning module's own
-// functions, and the scene manager, reading the OBS module's WebSocket
+// functions, and the connectors host's obs adapter, reading the OBS module's WebSocket
 // password to open the connection the module's functions reach through
 // `ctx.obs`.
 func (s *ModuleSettingService) GetModuleSecretValues(ctx context.Context, req *client.GetModuleSecretValuesRequest) (*client.GetModuleSecretValuesResponse, error) {
