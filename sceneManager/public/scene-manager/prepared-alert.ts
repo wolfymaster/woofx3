@@ -77,6 +77,11 @@ export class PreparedAlert {
   private readonly stage: HTMLElement;
   private readonly staged: StagedAlert;
   private readonly frames = new Map<NodeId, PreparedFrame>();
+  /**
+   * The delivery whose settings the frames hold: the one the stage was built
+   * from until another is adopted. A frame mounted later boots from it.
+   */
+  private current: AlertDelivery;
   private playing: Playing | null = null;
   private finished: (() => void) | null = null;
   /** The area's size the stage was last fitted to. */
@@ -84,10 +89,11 @@ export class PreparedAlert {
 
   constructor(
     private readonly deps: PreparedAlertDeps,
-    private readonly delivery: AlertDelivery,
+    delivery: AlertDelivery,
     /** Unique on the page: frames boot with `{id}.{widgetId}` as their instance id. */
     private readonly id: string
   ) {
+    this.current = delivery;
     this.shape = alertShape(delivery);
     const canvas = canvasOf(delivery.layout);
     this.stage = deps.document.createElement("div");
@@ -147,6 +153,7 @@ export class PreparedAlert {
       frame.bridge.sendSettings(settings);
       frame.settings = settings;
     }
+    this.current = next;
     return true;
   }
 
@@ -197,7 +204,7 @@ export class PreparedAlert {
       return;
     }
     this.fittedTo = area;
-    const fit = fitCanvas(canvasOf(this.delivery.layout), area);
+    const fit = fitCanvas(canvasOf(this.current.layout), area);
     this.stage.style.transform = `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`;
   }
 
@@ -215,8 +222,8 @@ export class PreparedAlert {
     facts: AlertFrameFacts
   ): AlertFrame {
     const { bridges, document, host, assets } = this.deps;
-    const placement = this.delivery.layout.widgets[widgetId];
-    const framing = this.delivery.frames[widgetId];
+    const placement = this.current.layout.widgets[widgetId];
+    const framing = this.current.frames[widgetId];
     if (placement === undefined || framing === undefined) {
       throw new Error(`alert: widget ${widgetId} is not in its layout`);
     }
