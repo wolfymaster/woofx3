@@ -158,6 +158,37 @@ none. Once every timed widget is done, or after 5 seconds when none is timed, th
 widgets play their exits; once those are over the page removes the frames, acks the
 scene event, and plays the alert widget's next alert.
 
+#### Measuring an alert's latency
+
+Where an alert's time goes is recorded at both ends, so a slow alert can be traced
+without adding logging:
+
+- **Dispatch.** The scene manager logs `ui.notify.alert: dispatched` once per alert it
+  delivers, with `layoutMs` (reading the layout and checking it against the widget catalog), `scenesMs`
+  (finding each running scene's alert widgets), `recordMs` (recording and pushing each
+  scene's delivery) and `totalMs`, timed from when the scene manager starts dispatching the alert.
+- **Frame documents.** Every widget frame document that is built per request carries a
+  `Server-Timing` header: `event` (reading the alert's scene event back), `frame`
+  (barkloader's widget entry), `links` (the module's linked resources) and `total`.
+  Browser devtools show it on the frame's request. A frame document the browser caches
+  for good carries none, since a cached response would replay the first miss's numbers.
+- **The page.** One alert is delivered to every alert area on a scene, and each area
+  plays it on its own, so the overlay's User Timing marks are named for the area
+  (`areaId`, the alert area's placement id) as well as the alert:
+  `woofx3.alert/{eventId}/{areaId}/{stage}` for `delivered`, `started` and `finished`
+  (the alert is off the stage: played out, skipped, or torn down with its area), and
+  `woofx3.alert/{eventId}/{areaId}/{widgetId}/{stage}` for each frame's `mounted`,
+  `ready` (the frame's shim is running: its response arrived and its head was parsed up
+  to the shim script, while the body and the widget's own scripts are still to load),
+  `subscribed` (the widget's own script has run) and `rendered`. The measure
+  `woofx3.alert/{eventId}/{areaId}/on-screen` spans from delivery to the area's first
+  widget paint; its `detail.from` is `delivered`, or `started` for an alert delivered
+  before the page loaded. They appear in the devtools Performance panel, and
+  `performance.getEntriesByType("mark")` reads them from a script. Entries are cleared
+  once more than 20 later alerts have finished, so a burst's queued alerts keep theirs
+  until they have played, and at most 200 alerts are tracked, since an overlay can stay
+  open for a whole stream.
+
 #### Skip, clear and replay
 
 An operator can act on the alerts queued in open overlays through the api's

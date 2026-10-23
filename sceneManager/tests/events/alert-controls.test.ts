@@ -622,6 +622,33 @@ describe("dispatchAlert", () => {
     expect(overlays[1]!.deliveries()).toEqual([]);
   });
 
+  it("logs where the dispatch's time went, read from the injected clock", async () => {
+    const { deps } = setup({ "scene-1": [alertInstance("inst-1", "default")] });
+    const logged: Array<{ message: string; fields: Record<string, unknown> }> = [];
+    let time = 0;
+
+    await dispatchAlert(
+      { ...JSON.parse(envelope()), rowId: "row-9" },
+      {
+        ...deps,
+        logger: {
+          ...fakeLogger(),
+          info: (message: string, fields: Record<string, unknown>) => logged.push({ message, fields }),
+        },
+        now: () => {
+          time += 5;
+          return time;
+        },
+      }
+    );
+
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toEqual({
+      message: "ui.notify.alert: dispatched",
+      fields: { alertId: "env-original", scenes: 1, layoutMs: 5, scenesMs: 5, recordMs: 5, totalMs: 35 },
+    });
+  });
+
   it("carries the engine's row id into the delivery", async () => {
     const { overlays, deps } = setup({ "scene-1": [alertInstance("inst-1", "default")] });
 
