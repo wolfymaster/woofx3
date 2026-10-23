@@ -171,6 +171,64 @@ describe("CommandStore", () => {
     expect(table.match("!hug", "twitch")?.definition).toBe(before as CommandDefinition);
   });
 
+  describe("rows that share a name", () => {
+    const older = storedCommand({ id: "c-older", command: "foo", createdAt: { seconds: 100n, nanos: 0 }, cooldown: 1 });
+    const newer = storedCommand({ id: "c-newer", command: "foo", createdAt: { seconds: 200n, nanos: 0 }, cooldown: 2 });
+
+    async function reload(): Promise<void> {
+      store.requestReload();
+      await time.advance(CONFIG.reloadDebounceMs);
+      await store.idle();
+    }
+
+    for (const order of [
+      [older, newer],
+      [newer, older],
+    ]) {
+      test(`the oldest row runs whatever the listing order (${order.map((c) => c.id).join(", ")})`, async () => {
+        db.commands = order;
+        await store.start();
+        expect(table.match("!foo", "twitch")?.definition.cooldownSeconds).toBe(1);
+        expect(store.snapshot().storedCommands).toBe(1);
+      });
+    }
+
+    test("rows created at the same time resolve by id", async () => {
+      const twin = storedCommand({ id: "c-a", command: "foo", createdAt: { seconds: 200n, nanos: 0 }, cooldown: 3 });
+      db.commands = [newer, twin];
+      await store.start();
+      expect(table.match("!foo", "twitch")?.definition.cooldownSeconds).toBe(3);
+    });
+
+    test("the shadowed row is logged once, not on every reload", async () => {
+      db.commands = [older, newer];
+      await store.start();
+      await reload();
+      const shadowed = logger
+        .at("warn")
+        .filter((entry) => entry.message === "a stored command shares its name with an older one; the older one runs");
+      expect(shadowed).toHaveLength(1);
+    });
+
+    test("deleting the running row lets the other take over", async () => {
+      db.commands = [older, newer];
+      await store.start();
+      db.commands = [newer];
+      await reload();
+      expect(table.match("!foo", "twitch")?.definition.cooldownSeconds).toBe(2);
+    });
+
+    test("deleting the shadowed row leaves the running one in place", async () => {
+      db.commands = [newer, older];
+      await store.start();
+      const before = table.match("!foo", "twitch")?.definition;
+      db.commands = [older];
+      await reload();
+      expect(table.match("!foo", "twitch")?.definition).toBe(before as CommandDefinition);
+      expect(table.storedNames()).toEqual(["foo"]);
+    });
+  });
+
   test("stop cancels pending reloads", async () => {
     await store.start();
     store.requestReload();

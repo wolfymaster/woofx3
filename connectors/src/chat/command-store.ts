@@ -152,6 +152,8 @@ interface Applied {
  */
 export class CommandStore {
   private readonly applied = new Map<string, Applied>();
+  /** Ids already logged as shadowed, so a lasting duplicate is logged once rather than on every reload. */
+  private readonly shadowedLogged = new Set<string>();
   private debounce: TimerHandle | undefined;
   private backstop: TimerHandle | undefined;
   private running: Promise<void> | undefined;
@@ -258,7 +260,7 @@ export class CommandStore {
 
   /** Removals first, so a command renamed to another's old name is not removed after it was set. */
   private apply(commands: readonly StoredCommand[]): void {
-    const listed = new Map(commands.map((command) => [command.id, command]));
+    const listed = new Map(this.resolveNames(commands).map((command) => [command.id, command]));
     for (const [id, applied] of this.applied) {
       const next = listed.get(id);
       if (next === undefined || next.command !== applied.name) {
@@ -290,6 +292,53 @@ export class CommandStore {
       this.applied.set(id, { name: command.command, fingerprint });
     }
   }
+
+  /**
+   * One row per name. db-proxy only keeps names unique per creator, so a
+   * user's command and a module's can share one; the table holds one
+   * definition per name, so the oldest row runs and the others are shadowed.
+   * Choosing from the whole listing on every reload, rather than letting the
+   * last row set win, means deleting either row leaves the other running.
+   */
+  private resolveNames(commands: readonly StoredCommand[]): StoredCommand[] {
+    const byName = new Map<string, StoredCommand>();
+    for (const command of commands) {
+      const current = byName.get(command.command);
+      if (current === undefined || runsBefore(command, current)) {
+        byName.set(command.command, command);
+      }
+    }
+    const shadowed = commands.filter((command) => byName.get(command.command) !== command);
+    const shadowedIds = new Set(shadowed.map((command) => command.id));
+    for (const command of shadowed) {
+      if (this.shadowedLogged.has(command.id)) {
+        continue;
+      }
+      this.shadowedLogged.add(command.id);
+      this.deps.logger.warn("a stored command shares its name with an older one; the older one runs", {
+        command: command.command,
+        id: command.id,
+        runningId: byName.get(command.command)?.id,
+      });
+    }
+    for (const id of this.shadowedLogged) {
+      if (!shadowedIds.has(id)) {
+        this.shadowedLogged.delete(id);
+      }
+    }
+    return [...byName.values()];
+  }
+}
+
+/** Oldest first, then by id, so the same listing resolves the same way in any order. */
+function runsBefore(a: StoredCommand, b: StoredCommand): boolean {
+  if (a.createdAt.seconds !== b.createdAt.seconds) {
+    return a.createdAt.seconds < b.createdAt.seconds;
+  }
+  if (a.createdAt.nanos !== b.createdAt.nanos) {
+    return a.createdAt.nanos < b.createdAt.nanos;
+  }
+  return a.id < b.id;
 }
 
 /** The fields a definition is built from; a row whose fingerprint is unchanged is not rebuilt. */
