@@ -8,7 +8,11 @@ import {
   type GatewayRequest,
   PLATFORM_DISPLAY_NAMES,
   PLATFORM_IDS,
+  type PlatformCapability,
   type PlatformResults,
+  parseCapabilitiesReply,
+  parseFieldOptionsReply,
+  parseFieldOptionsRequest,
   parseGatewayReply,
   parseGatewayRequest,
   parsePayload,
@@ -50,6 +54,30 @@ describe("shared reply fixtures", () => {
   for (const fixture of readFixtures("replies.json")) {
     test(fixture.name, () => {
       expect(invalidAt(parseGatewayReply(fixture.reply))).toBe(fixture.invalidField);
+    });
+  }
+});
+
+describe("shared capabilities reply fixtures", () => {
+  for (const fixture of readFixtures("capabilities-replies.json")) {
+    test(fixture.name, () => {
+      expect(invalidAt(parseCapabilitiesReply(fixture.reply))).toBe(fixture.invalidField);
+    });
+  }
+});
+
+describe("shared field-options request fixtures", () => {
+  for (const fixture of readFixtures("field-options-requests.json")) {
+    test(fixture.name, () => {
+      expect(invalidAt(parseFieldOptionsRequest(fixture.request))).toBe(fixture.invalidField);
+    });
+  }
+});
+
+describe("shared field-options reply fixtures", () => {
+  for (const fixture of readFixtures("field-options-replies.json")) {
+    test(fixture.name, () => {
+      expect(invalidAt(parseFieldOptionsReply(fixture.reply))).toBe(fixture.invalidField);
     });
   }
 });
@@ -142,6 +170,51 @@ describe("parseGatewayReply", () => {
 
   test("refuses an ok that is not a boolean", () => {
     expect(invalidAt(parseGatewayReply({ ok: "yes", results: {} }))).toBe("ok");
+  });
+});
+
+// Wrong JSON types fail to decode in Go before validation runs, so these
+// cases cannot live in the shared fixtures.
+describe("discovery parsers refuse wrong JSON types", () => {
+  const capability: PlatformCapability = {
+    id: "twitch",
+    displayName: "Twitch",
+    state: "connected",
+    connected: true,
+    enabled: true,
+    actions: [],
+  };
+
+  test.each<[string, GatewayParseResult<unknown>, string]>([
+    ["a capabilities reply that is not an object", parseCapabilitiesReply([]), "reply"],
+    ["platforms that are not an array", parseCapabilitiesReply({ platforms: {} }), "platforms"],
+    ["an error that is not a string", parseCapabilitiesReply({ error: 1 }), "error"],
+    [
+      "an enabled that is not a boolean",
+      parseCapabilitiesReply({ platforms: [{ ...capability, enabled: "yes" }] }),
+      "platforms[0].enabled",
+    ],
+    [
+      "actions that are not an array",
+      parseCapabilitiesReply({ platforms: [{ ...capability, actions: "chat.send" }] }),
+      "platforms[0].actions",
+    ],
+    ["a field-options request that is not an object", parseFieldOptionsRequest("chat.send"), "request"],
+    ["a non-string action", parseFieldOptionsRequest({ action: 3 }), "action"],
+    ["an option that is not an object", parseFieldOptionsReply(["twitch"]), "[0]"],
+  ])("refuses %s", (_name, result, field) => {
+    expect(invalidAt(result)).toBe(field);
+  });
+
+  test("keeps only what the contract declares", () => {
+    expect(parseCapabilitiesReply({ platforms: [{ ...capability, extra: 1 }], at: 2 })).toEqual({
+      ok: true,
+      value: { platforms: [capability] },
+    });
+    expect(parseFieldOptionsRequest({ action: "chat.pin", fieldId: "platform" })).toEqual({
+      ok: true,
+      value: { action: "chat.pin" },
+    });
   });
 });
 
