@@ -109,7 +109,7 @@ export function playAlert<TElement extends RenderElement<TElement>, THandle>(
     document: options.document,
     root: options.stage,
     // A widget enters once its frame has painted, which a frame under
-    // `visibility: hidden` never does.
+    // `visibility: hidden` cannot do until it is shown (see `HideWith`).
     hideWith: "opacity",
     mountContent: (slot, widgetId) => {
       // The engine dispatched only the widget kinds each widget declares
