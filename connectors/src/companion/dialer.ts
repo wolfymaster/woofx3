@@ -8,6 +8,7 @@ import type { EngineHosting, RelayConfig } from "@woofx3/api";
 import { type RelayGrant, routesEndpoint } from "@woofx3/common/cloudevents/Relay/relay";
 import { RELAY_TICKET_TTL_MS } from "../config/companion";
 import { errorMessage, type Logger, type TimerHandle, type Timers } from "../host/deps";
+import { abortable } from "./abortable";
 import type { BridgeOpenPermit, BridgeOpens } from "./bridge-opens";
 import { endpointKey } from "./claims";
 import type { DirectDecision, RoutePolicy } from "./route-policy";
@@ -245,25 +246,4 @@ function unavailable(reason: EndpointUnavailable["reason"], message: string, add
     result.address = address;
   }
   return result;
-}
-
-/** `work`, or a rejection with the signal's reason as soon as it aborts. */
-function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) {
-    return Promise.reject(signal.reason);
-  }
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason);
-    signal.addEventListener("abort", onAbort, { once: true });
-    work.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      }
-    );
-  });
 }
