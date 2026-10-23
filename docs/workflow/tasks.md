@@ -104,7 +104,7 @@ Otherwise it fails with one reason per platform, for example
 `chat.send did not go through: twitch: unavailable (disabled)`, so
 a turned-off or unlinked platform shows in the run history rather than passing
 silently. It also fails when connectors is not running, and when the gateway
-does not answer within 12 seconds; that error says the platform may have acted,
+does not answer within its caller timeout of 12 seconds; that error says the platform may have acted,
 since the request was sent.
 
 Returns:

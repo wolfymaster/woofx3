@@ -82,6 +82,7 @@ func TestDocsListTheContractColours(t *testing.T) {
 	for _, page := range []string{
 		filepath.Join("docs", "workflow", "tasks.md"),
 		filepath.Join("docs", "services", "connectors.md"),
+		filepath.Join("docs", "services", "platform-gateway.md"),
 	} {
 		t.Run(page, func(t *testing.T) {
 			raw, err := os.ReadFile(filepath.Join(repoRoot, page))
