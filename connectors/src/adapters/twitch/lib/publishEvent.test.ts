@@ -3,9 +3,10 @@ import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
-import { RecordingLogger } from "../../../host/testing";
+import { FakeTime, RecordingLogger } from "../../../host/testing";
 import type { Context } from "../types";
 import { publishEvent } from "./publishEvent";
+import { SelfSentRegistry } from "./self-sent";
 import onChannelChatMessage from "./subscriptions/onChannelChatMessage";
 import onChannelCheer from "./subscriptions/onChannelCheer";
 import onChannelFollow from "./subscriptions/onChannelFollow";
@@ -24,6 +25,7 @@ function refusingContext(): { ctx: Context; logger: RecordingLogger } {
     logger,
     messageBus: { publish: async () => Promise.reject(BUS_DOWN) },
     events: new EventFactory({ source: "twitch" }),
+    selfSent: new SelfSentRegistry({ capacity: 1, ttlMs: 1 }, new FakeTime()),
   };
   return { ctx, logger };
 }
@@ -69,7 +71,9 @@ describe("publishEvent", () => {
 
 describe("EventSub callbacks when the bus refuses the publish", () => {
   const chatMessage = {
+    messageId: "msg-1",
     chatterId: "u1",
+    chatterName: "pup",
     chatterDisplayName: "Pup",
     messageText: "hi",
     sourceBroadcasterId: null,

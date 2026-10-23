@@ -7,6 +7,7 @@
 
 import type { RelayConfig, RelayEndpoint } from "@woofx3/api";
 import type { RelayCredentialRequestedResponse } from "@woofx3/api/webhooks";
+import { ENDPOINT_ID_PATTERN, MODULE_ID_PATTERN } from "../Companion/module-request";
 
 /** Engine setting holding a `StoredRelayConfig` as JSON. Absent when nothing goes through a companion. */
 export const RELAY_CONFIG_SETTING = "relay.config";
@@ -41,13 +42,14 @@ export interface StoredRelayConfig extends RelayConfig {
 export const MAX_RELAY_ENDPOINTS = 50;
 
 /**
- * A manifest id, as a bridge path segment. Must match `parseBridgePath` in
- * woofx3-maintenance worker/src/relay/paths.ts, which also refuses `.` and
- * `..` (see `isModuleId`).
+ * A manifest id, as a bridge path segment. The pattern is the companion
+ * gateway contract's (companion-gateway.json), which must match
+ * `parseBridgePath` in woofx3-maintenance worker/src/relay/paths.ts; the
+ * relay also refuses `.` and `..` (see `isModuleId`).
  */
-const MODULE_ID = /^[A-Za-z0-9._-]{1,100}$/;
-/** A `local[]` endpoint id (barkloader lib_module `validate_local`). */
-const ENDPOINT_ID = /^[a-z0-9_-]{1,40}$/;
+const MODULE_ID = MODULE_ID_PATTERN;
+/** A `local[]` endpoint id (barkloader lib_module `validate_local`), the companion gateway contract's pattern. */
+const ENDPOINT_ID = ENDPOINT_ID_PATTERN;
 const CREDENTIAL = /^wfxr1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
 /**

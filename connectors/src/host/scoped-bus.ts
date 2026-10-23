@@ -277,6 +277,18 @@ export class ScopedBus {
    */
   async closeAll(): Promise<void> {
     this.closed = true;
+    await this.unsubscribeAll();
+  }
+
+  /**
+   * Like closeAll, but the scope stays open: the handlers still running can
+   * publish and request until they finish, and nothing new is delivered.
+   */
+  async drainSubscriptions(): Promise<void> {
+    await this.unsubscribeAll();
+  }
+
+  private async unsubscribeAll(): Promise<void> {
     const failures: unknown[] = [];
     const draining: Promise<void>[] = [];
     for (const { subscription, limited } of this.subscriptions.splice(0)) {

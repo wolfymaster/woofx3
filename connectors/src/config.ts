@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { type BusConfig, BusEnvSchema, busConfig } from "./config/bus";
+import { type ChatConfig, ChatEnvSchema, chatConfig } from "./config/chat";
 import { type CompanionConfig, CompanionEnvSchema, companionConfig, companionConfigProblems } from "./config/companion";
 import { type GatewayConfig, GatewayEnvSchema, gatewayConfig } from "./config/gateway";
 import { type HostConfig, HostEnvSchema, hostConfig, hostConfigProblems } from "./config/host";
@@ -9,6 +10,7 @@ import { type TwitchConfig, TwitchEnvSchema, twitchConfig } from "./config/twitc
 export const ConnectorsEnvSchema = BusEnvSchema.extend(HostEnvSchema.shape)
   .extend(GatewayEnvSchema.shape)
   .extend(TwitchEnvSchema.shape)
+  .extend(ChatEnvSchema.shape)
   .extend(ObsEnvSchema.shape)
   .extend(CompanionEnvSchema.shape)
   .extend({ woofx3RootPath: z.string().optional() })
@@ -28,6 +30,7 @@ export interface ConnectorsConfig {
   host: HostConfig;
   gateway: GatewayConfig;
   twitch: TwitchConfig;
+  chat: ChatConfig;
   obs: ObsConfig;
   companion: CompanionConfig;
   /** Logs go under <rootPath>/logs. */
@@ -44,6 +47,7 @@ export function connectorsConfig(env: Record<string, unknown>): ConnectorsConfig
     host: hostConfig(parsed),
     gateway: gatewayConfig(parsed),
     twitch: twitchConfig(parsed),
+    chat: chatConfig(parsed),
     obs: obsConfig(parsed),
     companion: companionConfig(parsed),
     rootPath: parsed.woofx3RootPath,

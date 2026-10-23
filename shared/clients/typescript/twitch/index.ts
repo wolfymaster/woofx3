@@ -16,6 +16,27 @@ export { publicClientIdOf, selectStrategy, type TokenStrategy } from "./token-st
 export type GetSettingFn = (key: string) => Promise<string | undefined>;
 export type SetSettingFn = (key: string, value: string) => Promise<void>;
 
+/** The slice of a structured logger the client writes to; the shared service logger fits it. */
+export interface TwitchClientLogger {
+  debug(message: string, metadata?: Record<string, unknown>): void;
+  info(message: string, metadata?: Record<string, unknown>): void;
+  warn(message: string, metadata?: Record<string, unknown>): void;
+  error(message: string, metadata?: Record<string, unknown>): void;
+}
+
+/**
+ * Which auth provider renews the linked token: `refreshing` refreshes it here
+ * with the engine's confidential app, `dashboard` asks the api service.
+ */
+export type TwitchAuthProviderKind = "refreshing" | "dashboard";
+
+/**
+ * Called when the linked token could not be renewed: a refresh Twitch
+ * refused, or a request to the api service that failed or was refused. Until
+ * the next renewal succeeds, Twitch calls made with the token fail.
+ */
+export type TwitchAuthFailureHandler = (error: Error, info: { provider: TwitchAuthProviderKind }) => void;
+
 export type TwitchClientArgs = {
   /**
    * The broadcaster's channel (login name). Optional: when absent the
@@ -41,6 +62,9 @@ export type TwitchClientArgs = {
    * are single-use, so the api service alone refreshes it).
    */
   requestToken?: RequestDashboardToken;
+  logger: TwitchClientLogger;
+  /** Told about every failed token renewal, after it is logged. Must not throw. */
+  onAuthFailure?: TwitchAuthFailureHandler;
 };
 
 export type TwitchAuthCredentials = {
@@ -252,8 +276,9 @@ export default class TwitchClient {
           (stored.refreshToken ?? null) !== this.knownRefreshToken ||
           (stored.obtainmentTimestamp ?? 0) > token.obtainmentTimestamp;
         if (replacedElsewhere) {
-          console.warn(
-            "twitch_token changed since it was loaded (relinked?); not overwriting it with a refresh of the old token"
+          this.args.logger.warn(
+            "twitch_token changed since it was loaded (relinked?); not overwriting it with a refresh of the old token",
+            { userId }
           );
           return;
         }
@@ -261,7 +286,7 @@ export default class TwitchClient {
       await this.args.setSetting("twitch_token", JSON.stringify({ ...token, userId }));
       this.knownRefreshToken = token.refreshToken ?? null;
     } catch (err) {
-      console.error("failed to persist refreshed twitch_token: ", err);
+      this.args.logger.error("failed to persist refreshed twitch_token", { userId, err: errorMessage(err) });
     }
   }
 
@@ -302,7 +327,9 @@ export default class TwitchClient {
       );
     }
     this.linkedUserId = dashboardToken.userId;
-    return new DashboardAuthProvider(dashboardToken, this.args.requestToken);
+    return new DashboardAuthProvider(dashboardToken, this.args.requestToken, {
+      onRequestFailure: (error) => this.authFailed(error, "dashboard", dashboardToken.userId),
+    });
   }
 
   private async authenticateWithEngineRefresh(
@@ -317,7 +344,7 @@ export default class TwitchClient {
     const authProvider = new RefreshingAuthProvider(credentials);
 
     authProvider.onRefresh(async (userId, token) => {
-      console.log("refreshing token for: ", userId);
+      this.args.logger.debug("twitch token refreshed", { userId });
       // Without persisting, an engine restart loads the pre-refresh row and
       // has to refresh again, which fails once Twitch invalidates the old
       // refresh token.
@@ -325,8 +352,7 @@ export default class TwitchClient {
     });
 
     authProvider.onRefreshFailure((userId, error) => {
-      console.log("failed to refresh token for: ", userId);
-      console.error(error);
+      this.authFailed(error, "refreshing", userId);
     });
 
     this.linkedUserId = await authProvider.addUserForToken(stored, ["chat"]);
@@ -334,6 +360,15 @@ export default class TwitchClient {
 
     return authProvider;
   }
+
+  private authFailed(error: Error, provider: TwitchAuthProviderKind, userId: string): void {
+    this.args.logger.warn("twitch token renewal failed", { provider, userId, err: error.message });
+    this.args.onAuthFailure?.(error, { provider });
+  }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**

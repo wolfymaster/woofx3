@@ -4,6 +4,7 @@ import type { EventSubSubscription } from "@twurple/eventsub-base";
 import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
 import { countingIds, FakeTime, RecordingLogger } from "../../host/testing";
 import type { TwitchAppContext } from "./application";
+import { SelfSentRegistry } from "./lib/self-sent";
 
 /** Whether listeners confirm subscriptions; false leaves TwitchEventBus waiting to settle. */
 let confirmSubscriptions = true;
@@ -58,7 +59,9 @@ function confirmingListener() {
  * account is linked, until `linkTwitch()` is called.
  */
 let linked = false;
-let constructedWith: Array<{ channel?: string }> = [];
+type AuthFailureHandler = (err: Error, info: { provider: "refreshing" | "dashboard" }) => void;
+type ClientArgs = { channel?: string; onAuthFailure?: AuthFailureHandler };
+let constructedWith: ClientArgs[] = [];
 let instances: MockTwitchClient[] = [];
 /** What the next `reloadToken` reports, as a relink in the UI would. */
 let nextReload = { userId: "42", userChanged: false, providerChanged: false };
@@ -78,7 +81,7 @@ class NotLinkedError extends Error {
 }
 
 class MockTwitchClient {
-  constructor(config: { channel?: string }) {
+  constructor(config: ClientArgs) {
     constructedWith.push(config);
     instances.push(this);
   }
@@ -122,7 +125,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 function newApp(): InstanceType<typeof TwitchApplication> {
-  return new TwitchApplication({ clock: new FakeTime(), ids: countingIds() });
+  return new TwitchApplication({ clock: new FakeTime(), ids: countingIds(), selfSent: selfSentLines() });
 }
 
 function context(config: Partial<TwitchConfig> = {}) {
@@ -131,6 +134,7 @@ function context(config: Partial<TwitchConfig> = {}) {
     handlers.set(subject, handler);
   });
   const logger = new RecordingLogger();
+  const reportFault = mock((_reason: string) => {});
   const ctx: TwitchAppContext = {
     logger,
     bus: {
@@ -140,8 +144,9 @@ function context(config: Partial<TwitchConfig> = {}) {
     },
     db: { baseURL: "http://db-proxy" },
     config: { ...CREDENTIALS, ...config },
+    reportFault,
   } as unknown as TwitchAppContext;
-  return { ctx, handlers, logger };
+  return { ctx, handlers, logger, reportFault };
 }
 
 function event(body: unknown): { data: Uint8Array } {
@@ -158,7 +163,16 @@ const CREDENTIALS: TwitchConfig = {
   channel: undefined,
   app: { clientId: "cid", clientSecret: "sec", redirectUri: "http://localhost/oauth" },
   membership: { ttlMs: TWITCH_DEFAULTS.membershipTtlMs, deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs },
+  sendQueueCap: TWITCH_DEFAULTS.sendQueueCap,
+  selfSent: { capacity: TWITCH_DEFAULTS.selfSentCapacity, ttlMs: TWITCH_DEFAULTS.selfSentTtlMs },
 };
+
+function selfSentLines(): SelfSentRegistry {
+  return new SelfSentRegistry(
+    { capacity: TWITCH_DEFAULTS.selfSentCapacity, ttlMs: TWITCH_DEFAULTS.selfSentTtlMs },
+    new FakeTime()
+  );
+}
 
 function reset() {
   linked = false;
@@ -479,6 +493,53 @@ describe("TwitchApplication stop", () => {
     release();
     await stopping;
     expect(stopped).toBe(true);
+  });
+});
+
+describe("TwitchApplication token renewal failures", () => {
+  const tokenUpdated = event({ data: { integration: "twitch" } });
+
+  test.each([
+    ["refreshing", "Invalid refresh token"],
+    ["dashboard", "the api service could not get a Twitch token: relink_required"],
+  ] as const)("a failed %s renewal while connected reports a fault with the reason", async (provider, message) => {
+    reset();
+    linkTwitch();
+    const { ctx, reportFault } = context();
+    await newApp().start(ctx, running);
+
+    constructedWith[0]?.onAuthFailure?.(new Error(message), { provider });
+
+    expect(reportFault.mock.calls).toEqual([[`Twitch token renewal failed (${provider}): ${message}`]]);
+  });
+
+  test("a failure after stop is ignored", async () => {
+    reset();
+    linkTwitch();
+    const { ctx, reportFault } = context();
+    const app = newApp();
+    await app.start(ctx, running);
+    await app.stop(ctx);
+
+    constructedWith[0]?.onAuthFailure?.(new Error("Invalid refresh token"), { provider: "refreshing" });
+
+    expect(reportFault).not.toHaveBeenCalled();
+  });
+
+  test("a failure from the connection a relink replaced is ignored; the new one's is reported", async () => {
+    reset();
+    linkTwitch();
+    const { ctx, handlers, reportFault } = context();
+    await newApp().start(ctx, running);
+    nextReload = { userId: "42", userChanged: false, providerChanged: true };
+    await handlers.get(TOKEN_UPDATED)?.(tokenUpdated);
+    expect(constructedWith).toHaveLength(2);
+
+    constructedWith[0]?.onAuthFailure?.(new Error("old token"), { provider: "refreshing" });
+    expect(reportFault).not.toHaveBeenCalled();
+
+    constructedWith[1]?.onAuthFailure?.(new Error("new token"), { provider: "dashboard" });
+    expect(reportFault.mock.calls).toEqual([["Twitch token renewal failed (dashboard): new token"]]);
   });
 });
 

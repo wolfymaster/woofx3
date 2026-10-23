@@ -27,8 +27,8 @@ export const HOST_DEFAULTS = {
   adapterQueueCap: 256,
   /**
    * Whole-process shutdown, after which the process exits 1. Must exceed
-   * dbProxyTimeoutMs plus the larger of stopDeadlineMs and the longest served
-   * budget (Host checks the budgets once the adapters are loaded). Under the
+   * dbProxyTimeoutMs plus the chat drain plus the larger of stopDeadlineMs and
+   * the longest served budget (Host checks the budgets once the adapters are loaded). Under the
    * orchestrator, connectors depends on the bus and db-proxy, which are asked
    * to stop once dependentStopPeriod (8s, build/orchestrator/main.go) has
    * passed; a drain that runs longer loses them. The bus and db-proxy going

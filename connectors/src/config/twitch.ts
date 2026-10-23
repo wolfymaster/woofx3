@@ -10,6 +10,20 @@ export const TWITCH_DEFAULTS = {
   membershipTtlMs: 600_000,
   /** How long a chat message may wait on a cache miss before publishing without the unresolved fields. */
   membershipDeadlineMs: 250,
+  /**
+   * How many chat writes from the platform gateway may wait behind the one
+   * being sent. One more is refused as rate limited rather than queued, which
+   * bounds memory and pending handlers. A line whose caller stopped waiting is
+   * dropped from the queue by its deadline, not by this cap.
+   */
+  sendQueueCap: 100,
+  /**
+   * How many of the engine's own chat lines are remembered while their echo
+   * is awaited. Far above what the send queue lets through in `selfSentTtlMs`.
+   */
+  selfSentCapacity: 256,
+  /** How long an own line waits for its echo; EventSub delivers one within a few seconds. */
+  selfSentTtlMs: 30_000,
 } as const;
 
 // loadRuntimeEnv coerces env strings to boolean/number before the schema sees
@@ -26,6 +40,9 @@ export const TwitchEnvSchema = z.object({
   woofx3TwitchMembershipEnrichmentEnabled: z.boolean().default(TWITCH_DEFAULTS.membershipEnrichmentEnabled),
   woofx3TwitchMembershipTtlMs: z.number().int().positive().default(TWITCH_DEFAULTS.membershipTtlMs),
   woofx3TwitchMembershipDeadlineMs: z.number().int().positive().default(TWITCH_DEFAULTS.membershipDeadlineMs),
+  woofx3TwitchSendQueueCap: z.number().int().nonnegative().default(TWITCH_DEFAULTS.sendQueueCap),
+  woofx3TwitchSelfSentCapacity: z.number().int().positive().default(TWITCH_DEFAULTS.selfSentCapacity),
+  woofx3TwitchSelfSentTtlMs: z.number().int().positive().default(TWITCH_DEFAULTS.selfSentTtlMs),
 });
 
 export type TwitchEnv = z.infer<typeof TwitchEnvSchema>;
@@ -48,6 +65,10 @@ export interface TwitchConfig {
   app: TwitchAppCredentials | undefined;
   /** Undefined when enrichment is switched off. */
   membership: { ttlMs: number; deadlineMs: number } | undefined;
+  /** See TWITCH_DEFAULTS.sendQueueCap. */
+  sendQueueCap: number;
+  /** See TWITCH_DEFAULTS.selfSentCapacity and selfSentTtlMs. */
+  selfSent: { capacity: number; ttlMs: number };
 }
 
 export function twitchConfig(env: TwitchEnv): TwitchConfig {
@@ -62,6 +83,8 @@ export function twitchConfig(env: TwitchEnv): TwitchConfig {
     membership: env.woofx3TwitchMembershipEnrichmentEnabled
       ? { ttlMs: env.woofx3TwitchMembershipTtlMs, deadlineMs: env.woofx3TwitchMembershipDeadlineMs }
       : undefined,
+    sendQueueCap: env.woofx3TwitchSendQueueCap,
+    selfSent: { capacity: env.woofx3TwitchSelfSentCapacity, ttlMs: env.woofx3TwitchSelfSentTtlMs },
   };
 }
 

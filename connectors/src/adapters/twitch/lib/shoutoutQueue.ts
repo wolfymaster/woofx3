@@ -83,7 +83,7 @@ function readReply(body: unknown): EnqueueOutcome {
   throw new Error("shoutout: the api service's queue reply is malformed");
 }
 
-/** The NATS client's request failures, told apart by name and message, as woofwoofwoof does. */
+/** The NATS client's request failures, told apart by name and message. */
 function isTimeout(err: unknown): boolean {
   const name = err instanceof Error ? err.name : "";
   const message = err instanceof Error ? err.message : String(err);

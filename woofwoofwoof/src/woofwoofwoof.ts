@@ -96,6 +96,7 @@ const runtime = createRuntime({
           });
         },
         sentLines: new SentLineRegistry(sentLineConfig(config), Date.now),
+        logger,
       })
     );
 

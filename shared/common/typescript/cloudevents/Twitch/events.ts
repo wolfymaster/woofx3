@@ -43,14 +43,32 @@ export enum EventType {
 }
 
 export interface ChatMessage {
+  /** Twitch's id for the line: what a reply or a pin names. */
+  messageId: string;
   amount: number;
   isPaid: boolean;
   channelId: string | null;
   channelName: string | null;
   chatterId: string;
+  /** The chatter's display name. */
   chatterName: string;
+  /** The chatter's login: their account name, lowercase. */
+  chatterLogin: string;
   message: string;
   membership: ChatterMembership;
+  /**
+   * True for a line the engine said itself and Twitch handed back. The engine
+   * speaks with the broadcaster's token, so without it an engine line reads
+   * as the streamer typing. A claimed line's event also carries the
+   * `workflowChain` of the workflow that said it.
+   */
+  fromEngine: boolean;
+}
+
+/** CloudEvent attributes a chat message's event may carry besides its payload. */
+export interface ChatMessageAttributes {
+  /** Set on an engine line a workflow said; see BaseEvent.workflowChain. */
+  workflowChain?: string;
 }
 
 export interface Cheer {
