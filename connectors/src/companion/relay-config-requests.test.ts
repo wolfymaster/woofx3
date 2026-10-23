@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { StoredRelayConfig } from "@woofx3/common/cloudevents/Relay/relay";
+import { RELAY_API_REQUEST_TIMEOUT_MS, type StoredRelayConfig } from "@woofx3/common/cloudevents/Relay/relay";
 import { bytes, RecordingLogger, text } from "../host/testing";
 import { RELAY_CONFIG_SET_DEFAULTS, RelayConfigRequests } from "./relay-config-requests";
 
@@ -8,6 +8,8 @@ const STORED: StoredRelayConfig = {
   endpoints: [{ moduleId: "woofx3_obs", endpointId: "obs" }],
   clientId: "dash-client",
 };
+
+const running = () => new AbortController().signal;
 
 function requests(setConfig = mock(async (_config: StoredRelayConfig | null) => {})) {
   const logger = new RecordingLogger();
@@ -20,13 +22,13 @@ describe("RelayConfigRequests", () => {
     expect(spec.subject).toBe("engine.companion.relay_config.set");
     expect(spec.replyMode).toBe("raw");
     expect(spec.budgetMs).toBe(RELAY_CONFIG_SET_DEFAULTS.budgetMs);
-    expect(RELAY_CONFIG_SET_DEFAULTS.budgetMs).toBeLessThan(5_000);
+    expect(RELAY_CONFIG_SET_DEFAULTS.budgetMs).toBeLessThan(RELAY_API_REQUEST_TIMEOUT_MS);
   });
 
   test("stores a configuration and clears on null, answering stored", async () => {
     const { setConfig, served } = requests();
-    expect(await served.handle({ config: STORED })).toEqual({ status: "stored" });
-    expect(await served.handle({ config: null })).toEqual({ status: "stored" });
+    expect(await served.handle({ config: STORED }, running())).toEqual({ status: "stored" });
+    expect(await served.handle({ config: null }, running())).toEqual({ status: "stored" });
     expect(setConfig.mock.calls as unknown[]).toEqual([[STORED], [null]]);
   });
 
@@ -36,11 +38,31 @@ describe("RelayConfigRequests", () => {
         throw new Error("db-proxy SetSetting: unavailable");
       })
     );
-    expect(await served.handle({ config: STORED })).toEqual({
+    expect(await served.handle({ config: STORED }, running())).toEqual({
       status: "failed",
       error: "db-proxy SetSetting: unavailable",
     });
     expect(logger.at("warn")).toHaveLength(1);
+  });
+
+  test("answers failed when the budget runs out on a held write, and logs the write's late failure", async () => {
+    let failWrite: (error: Error) => void = () => {};
+    const { served, logger } = requests(
+      mock(
+        () =>
+          new Promise<void>((_resolve, reject) => {
+            failWrite = reject;
+          })
+      )
+    );
+    const budget = new AbortController();
+    const reply = served.handle({ config: STORED }, budget.signal);
+    budget.abort(new Error("engine.companion.relay_config.set: the 4500ms budget ran out"));
+    expect(await reply).toEqual({ status: "failed", error: "the budget ran out; the write may still land" });
+    expect(logger.at("warn")).toHaveLength(1);
+    failWrite(new Error("db-proxy SetSetting: unavailable"));
+    await Bun.sleep(0);
+    expect(logger.at("warn")).toHaveLength(2);
   });
 
   const parses: Array<[name: string, raw: string, ok: boolean]> = [

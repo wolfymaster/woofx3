@@ -12,6 +12,7 @@ import {
 } from "@woofx3/common/cloudevents/Relay/relay";
 import { errorMessage, type Logger } from "../host/deps";
 import { type ParseResult, parsed, parseFailed, type RawRequestSpec } from "../host/host-requests";
+import { abortable } from "./abortable";
 import type { RelayCredentialSource } from "./relay-credentials";
 
 export const RELAY_CONFIG_SET_DEFAULTS = {
@@ -41,17 +42,30 @@ export class RelayConfigRequests {
       budgetMs: RELAY_CONFIG_SET_DEFAULTS.budgetMs,
       replyMode: "raw",
       parse: parseRequest,
-      handle: async (request) => encode(await this.handle(request)),
+      handle: async (request, ctx) => encode(await this.handle(request, ctx.signal)),
       errorReply: (code, message) => encode({ status: "failed", error: `${code}: ${message}` }),
     };
   }
 
-  /** Stores the configuration, or clears it; a failed write is answered, not thrown. */
-  async handle(request: RelayConfigSetRequest): Promise<RelayConfigSetReply> {
+  /**
+   * Stores the configuration, or clears it; a failed write is answered, not
+   * thrown. When `signal` aborts first the answer is a failure saying the
+   * write may still land, since it stays queued behind the lock.
+   */
+  async handle(request: RelayConfigSetRequest, signal: AbortSignal): Promise<RelayConfigSetReply> {
     const { config } = request;
+    const write = this.deps.source.setConfig(config);
     try {
-      await this.deps.source.setConfig(config);
+      await abortable(write, signal);
     } catch (error) {
+      if (signal.aborted) {
+        write.catch((late: unknown) => {
+          this.deps.logger.warn("relay configuration not stored", { error: errorMessage(late) });
+        });
+        const message = "the budget ran out; the write may still land";
+        this.deps.logger.warn("relay configuration not confirmed", { error: message });
+        return { status: "failed", error: message };
+      }
       const message = errorMessage(error);
       this.deps.logger.warn("relay configuration not stored", { error: message });
       return { status: "failed", error: message };
