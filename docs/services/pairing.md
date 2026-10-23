@@ -31,14 +31,16 @@ The user code is a correlation id, not a credential. Approving needs a client of
 
 - The request must carry an `Origin`. A call without one is not from a browser.
 - `null` is refused: opaque origins cannot be told apart.
-- The scheme must be `https:`, or `http:` on `localhost`, `127.0.0.1` or `[::1]`. A plain-http origin on any other host would carry the secret across the network in clear.
+- A page on the engine's own computer (`localhost`, `127.0.0.1` or `[::1]`, over http or https) may pair.
+- A page anywhere else may pair only over https, and only once the operator has listed its origin in `WOOFX3_ALLOWED_ORIGINS`. With no list set, the engine refuses every such origin, and the refusal names the setting. A hosted web app therefore cannot pair with an engine unless that engine's operator chose to let it.
+- Plain http from another computer is refused even when listed: it would carry the secret across the network in clear.
 - The desktop app's own window (`tauri://localhost`, `tauri.localhost`) is refused: the desktop shell registers with the registration token instead.
 
-The request guard runs first. With `WOOFX3_ALLOWED_ORIGINS` set, only listed origins reach `startPairing` at all, and pairing narrows that list further, never widens it. With the list unset, the operator's approval, which shows the origin, is the only origin check.
+The request guard runs first. With `WOOFX3_ALLOWED_ORIGINS` set, only listed origins reach `startPairing` at all; the desktop app sets it to the loopback origins and its own window, so the hosted web app cannot reach a desktop engine. Pairing never admits more than the list does.
 
-A paired client stays bound to its origin. `authenticate` refuses its credentials from any other origin, or from a request with no `Origin`, with the same refusal as wrong credentials. A stolen secret therefore does not work from another web page on the same machine. It does not stop a native process that forges headers; such a process already runs as the user and could read the registration token file.
+A paired client stays bound to its origin. `authenticate` refuses its credentials from any other origin, or from a request with no `Origin`, with the same refusal as wrong credentials. That stops the secret being used from another web page, because a browser always sends the page's real `Origin`. It is not a defence against a stolen secret: any client outside a browser, on any machine that can reach the engine, can send the paired origin. Treat a paired secret like any other client secret, and delete the client if it is exposed.
 
-The claim must come from the origin that started the pairing.
+The claim must come from the origin that started the pairing. Calls naming a pairing from any other origin answer `not_found` and change nothing, so a pairing id seen in the log or the event cannot be used to end someone else's pairing.
 
 ## Limits
 
@@ -52,19 +54,46 @@ Each limit bounds what an unauthenticated caller can make the engine hold or do.
 | Pairings waiting from one origin | 2 | So one origin cannot fill every slot. |
 | Starts per origin | 6 a minute | A sliding window. |
 | Starts from every origin together | 20 a minute | A non-browser caller can forge `Origin`. |
-| Wrong claims before a pairing ends | 3 | A wrong verifier or origin on `claimPairing` or `cancelPairing`. |
+| Wrong claims before a pairing ends | 3 | A wrong verifier on `claimPairing` or `cancelPairing` from the pairing's own origin. |
+| Denials remembered | 20 | So a denied browser learns it was denied; the oldest is forgotten first, and its browser then sees `not_found`. |
 
-A refused start says why (`rate_limited` with `retryAfterMs`, or `too_many_pending`), and the engine logs each refusal.
+A refused start says why (`rate_limited` with `retryAfterMs`, or `too_many_pending`), and the engine logs each refusal. Denying a pairing frees its slot at once, so an operator can clear a flood of unwanted requests without waiting for them to expire.
 
 ## Where pairings live
 
 Pending pairings live in the api's memory, like Twitch device logins. A pairing is a request waiting a few minutes for a person, not a record: the client it may become is created through db-proxy, which owns clients, only when the browser claims it. Keeping pairings out of the database means a verifier hash and an unapproved request never reach disk, and nothing needs cleaning up. An api restart forgets every pending pairing; the browser, which is polling, sees `not_found` and starts again. Expiry is checked whenever a pairing is touched, and the limits bound how many there can be, so no timer runs.
 
-The client row is created at claim time, not at approval. The pairing is marked as being claimed in the same turn as the check, so two claims at once cannot create two clients. If db-proxy fails, the pairing goes back to approved and the claim answers `failed`; the next poll retries. An approval that is never claimed expires without creating anything. If the credentials are created but the answer never reaches the browser, the client exists but was never used; it can be deleted like any other client.
+The client row is created at claim time, not at approval. The pairing is marked as being claimed in the same turn as the check, so two claims at once cannot create two clients. If db-proxy fails, the pairing goes back to approved and the claim answers `failed` with a generic message (the detail goes to the engine's log); the next poll retries. An approval that is never claimed expires without creating anything. If the credentials are created but the answer never reaches the browser, the client exists but was never used; it can be deleted like any other client.
 
 ## Running a self-hosted engine with pairing
 
 - Set `WOOFX3_HOSTING=self`.
-- Set `WOOFX3_ALLOWED_ORIGINS` to the origins of the web app that will pair, and `WOOFX3_ALLOWED_HOSTS` to the engine's own host names.
+- Set `WOOFX3_ALLOWED_ORIGINS` to the origins of the web app that will pair, and `WOOFX3_ALLOWED_HOSTS` to the engine's own host names. Without the origin list, only a browser on the engine's own computer can pair.
 - Serve the engine and the web app over https, unless both are on the same machine.
-- Approve the first browser from a client you already have. Every paired browser can approve the next one; there are no roles.
+- Every paired browser can approve the next one; there are no roles.
+
+### Approving the first browser
+
+The first browser needs an approver that is already a client. On the desktop engine that is the desktop window. A self-hosted engine may have no such client yet, and the engine has no command of its own for approving from the server. Until it does, approve with a short script that registers its own client with the engine's registration token, then decides the pairing by the code the browser shows:
+
+```ts
+import type { Woofx3EngineApi } from "@woofx3/api";
+import type { ApiGatewayContract } from "@woofx3/api/rpc";
+import { newWebSocketRpcSession } from "capnweb";
+
+const gateway = newWebSocketRpcSession<ApiGatewayContract>("ws://127.0.0.1:5050/api");
+const { clientId, clientSecret } = await gateway.registerClient("pairing approver", {
+  registrationToken: process.env.WOOFX3_REGISTRATION_TOKEN,
+});
+const api = gateway.authenticate(clientId, clientSecret) as unknown as Woofx3EngineApi;
+
+const found = await api.lookupPairing({ userCode: process.argv[2] });
+if (!found.ok) {
+  throw new Error(`no pairing for that code: ${found.code}`);
+}
+console.log(`${found.pairing.description} at ${found.pairing.origin}`);
+// Check the origin is the web app you expect before approving.
+console.log(await api.decidePairing({ pairingId: found.pairing.pairingId, decision: "approve" }));
+```
+
+Run it on the engine's host, with the code the browser shows (`bun approve.ts ABCD-EFGH`). The registered client stays; delete it afterwards with `deleteClient` if you no longer need it.
