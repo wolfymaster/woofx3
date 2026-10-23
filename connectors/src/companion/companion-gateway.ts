@@ -104,8 +104,9 @@ export class EngineCompanionGateway implements CompanionGateway {
   forAdapter(id: AdapterId): CompanionHandle {
     return {
       resolve: (ref, opts) => {
-        // Thrown, not returned: asking for an unclaimed ref is a bug in the adapter.
+        // Thrown synchronously, not returned as a rejection: an unclaimed ref is a bug in the adapter.
         this.deps.claims.assertClaimedBy(id, ref);
+        this.started();
         return this.resolveClaimed(ref, opts);
       },
       onRouteChange: (ref, listener) => {
@@ -145,7 +146,7 @@ export class EngineCompanionGateway implements CompanionGateway {
   private record(ref: LocalEndpointRef, resolution: EndpointResolution): void {
     const record = this.records.get(endpointKey(ref));
     if (record === undefined) {
-      return;
+      throw new Error(`no companion record for ${endpointKey(ref)}; every claimed endpoint is seeded at construction`);
     }
     if (resolution.ok) {
       record.attempt = { route: resolution.route, address: resolution.address };

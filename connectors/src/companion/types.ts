@@ -101,8 +101,9 @@ export interface CompanionHandle {
   /**
    * The route for one connect attempt. Settings, relay configuration and the
    * credential are read afresh each time, and each bridge route carries a
-   * fresh ticket. Never rejects for an endpoint failure, only on abort; an
-   * unclaimed ref throws, because that is a bug in the adapter.
+   * fresh ticket. Never rejects for an endpoint failure, only on abort. An
+   * unclaimed ref throws synchronously, before a promise exists, and so does a
+   * gateway that was not started, because both are wiring bugs.
    */
   resolve(ref: LocalEndpointRef, opts: ResolveOptions): Promise<EndpointResolution>;
   /** Calls `listener` when the endpoint's route may have moved. Returns the unsubscribe. */

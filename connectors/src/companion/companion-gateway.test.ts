@@ -151,15 +151,11 @@ describe("EngineCompanionGateway resolution", () => {
     }
   });
 
-  it("answers relay when it was never started, because no credential can be asked for", async () => {
+  it("throws when resolving before it was started, because that is a wiring bug", () => {
     const { companion } = gateway({ store: { relayConfig: async () => CONFIG } });
-    expect(
-      await companion.forAdapter("obs").resolve(OBS_ENDPOINT, { signal: live(), fallback: FALLBACK })
-    ).toMatchObject({
-      ok: false,
-      reason: "relay",
-      message: expect.stringContaining("not started"),
-    });
+    expect(() => companion.forAdapter("obs").resolve(OBS_ENDPOINT, { signal: live(), fallback: FALLBACK })).toThrow(
+      "not started"
+    );
   });
 
   it("goes direct on a local engine whatever the relay configuration says", async () => {
