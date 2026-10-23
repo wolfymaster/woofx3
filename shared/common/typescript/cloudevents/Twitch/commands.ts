@@ -1,6 +1,6 @@
 import { encodeCommand } from "../utils";
 
-/** The NATS subject the twitch service takes `twitchapi` commands on. */
+/** The NATS subject the connectors host's Twitch adapter takes `twitchapi` commands on. */
 export const TWITCHAPI_SUBJECT = "twitchapi";
 
 /**
@@ -87,7 +87,7 @@ export const TWITCHAPI_REPLY_CODES = [
 export type TwitchApiReplyCode = (typeof TWITCHAPI_REPLY_CODES)[number];
 
 /**
- * The commands the twitch service serves on the `twitchapi` subject. Listed
+ * The commands the connectors host's Twitch adapter serves on the `twitchapi` subject. Listed
  * rather than read off its client class, so a request can never reach a
  * private helper or `constructor`.
  */
@@ -115,7 +115,7 @@ export function twitchApiResultType(command: TwitchApiCommand): string {
 }
 
 /**
- * Argument shapes of the `twitchapi` commands. The twitch service
+ * Argument shapes of the `twitchapi` commands. The connectors host's Twitch adapter
  * (connectors/src/adapters/twitch/lib/twitch.ts) is the authority on them and validates each.
  */
 export interface TimeoutArgs {
@@ -175,7 +175,7 @@ export type HelixOperationName =
 
 export interface HelixCommandArgs {
   operation: HelixOperationName;
-  /** By Helix's own names. The linked broadcaster's ids are filled in by the twitch service. */
+  /** By Helix's own names. The linked broadcaster's ids are filled in by the connectors host's Twitch adapter. */
   params?: Record<string, unknown>;
 }
 
