@@ -3706,6 +3706,31 @@ mod tests {
         .expect("only bus requests are limited to top-level fields");
     }
 
+    // `ctx.local` asks on this subject on module code's behalf, stamping the
+    // module's id from the invocation. A form or button sends the payload
+    // its manifest declares, moduleId included, so an upload must never
+    // reach it there.
+    #[test]
+    fn test_validate_refuses_an_upload_form_request_to_the_companion_gateway() {
+        let subject = lib_sandbox::contracts::companion_gateway::SUBJECT_MODULE_REQUEST;
+        let payload = r#"{ "op": "send", "moduleId": "woofx3_obs", "endpointId": "obs", "message": "x", "budgetMs": 4500 }"#;
+        let err = validate(&action_with_field_source(subject, payload))
+            .expect_err("a field source may not request the companion gateway")
+            .to_string();
+        assert!(err.contains("may request only"), "{err}");
+        assert!(err.contains("`source`"), "{err}");
+
+        let button = parse(&format!(
+            r#"{{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "settings": [{{ "id": "go", "label": "Go", "type": "button",
+                "action": {{ "kind": "internal", "request": {{ "event": "{subject}", "payload": {payload} }} }} }}]}}"#
+        ));
+        let err = validate(&button)
+            .expect_err("a settings button may not request the companion gateway")
+            .to_string();
+        assert!(err.contains("setting #0 (go): `action`"), "{err}");
+    }
+
     #[test]
     fn rejects_an_upload_settings_button_on_a_command_subject() {
         let m = parse(
