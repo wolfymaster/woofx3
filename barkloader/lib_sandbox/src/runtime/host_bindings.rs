@@ -21,6 +21,7 @@
 //! for those, same as before.
 
 use crate::host::{HostContext, StorageSetOptions};
+use crate::protected_settings::LiveProtectedSettings;
 use crate::resource_access::ResourceAccess;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -334,14 +335,16 @@ fn require_schedule_identity(module_id: &str, deadline_id: &str, key: &str) -> R
 /// `Rc<RefCell<Option<_>>>` for that, since the cache needs to live
 /// inside a closure captured by that engine's accessor/metatable hook).
 /// `ctx.module.setSetting(key, value)` — write one of the module's own
-/// settings. Refused for a `url` setting: its value grants `ctx.http` the
-/// URL's origin (`crate::net`), so only the streamer may set it. Refused for a
-/// resource-link setting too: its value lets the module read and run another
-/// module's instance (`crate::resource_access`).
+/// settings. Refused for a protected setting (`crate::protected_settings`): a
+/// `url` setting's value grants `ctx.http` the URL's origin (`crate::net`),
+/// and a local endpoint's host, port and password decide where the engine
+/// connects, so only the streamer (or the companion) may set them. Refused for
+/// a resource-link setting too: its value lets the module read and run
+/// another module's instance (`crate::resource_access`).
 pub fn set_module_setting(
     host: &HostContext,
     module_id: &str,
-    url_settings: &HashSet<String>,
+    protected_settings: &LiveProtectedSettings,
     resource_link_settings: &HashSet<String>,
     key: &str,
     value: &str,
@@ -351,10 +354,8 @@ pub fn set_module_setting(
             "ctx.module.setSetting: {key:?} is reserved for the tokens ctx.oauth keeps"
         ));
     }
-    if url_settings.contains(key) {
-        return Err(format!(
-            "ctx.module.setSetting: {key:?} is a url setting, which only the streamer sets"
-        ));
+    if let Some(reason) = protected_settings.get(key) {
+        return Err(format!("ctx.module.setSetting: {key:?} {reason}"));
     }
     if resource_link_settings.contains(key) {
         return Err(format!(
@@ -376,7 +377,7 @@ pub fn set_module_setting(
 pub fn compare_and_set_module_setting(
     host: &HostContext,
     module_id: &str,
-    url_settings: &HashSet<String>,
+    protected_settings: &LiveProtectedSettings,
     resource_link_settings: &HashSet<String>,
     key: &str,
     expected: &Value,
@@ -387,10 +388,8 @@ pub fn compare_and_set_module_setting(
             "ctx.module.compareAndSetSetting: {key:?} is reserved for the tokens ctx.oauth keeps"
         ));
     }
-    if url_settings.contains(key) {
-        return Err(format!(
-            "ctx.module.compareAndSetSetting: {key:?} is a url setting, which only the streamer sets"
-        ));
+    if let Some(reason) = protected_settings.get(key) {
+        return Err(format!("ctx.module.compareAndSetSetting: {key:?} {reason}"));
     }
     if resource_link_settings.contains(key) {
         return Err(format!(
@@ -792,29 +791,178 @@ mod tests {
         assert!(err.contains("reserved"), "{err}");
     }
 
+    fn obs_protected_settings() -> LiveProtectedSettings {
+        use crate::protected_settings::ProtectedReason;
+        let address = || ProtectedReason::LocalEndpointAddress {
+            endpoint_id: "obs".into(),
+        };
+        let settings: crate::protected_settings::ProtectedSettings = [
+            ("server".to_string(), ProtectedReason::Url),
+            ("obs_host".to_string(), address()),
+            ("obs_port".to_string(), address()),
+            (
+                "obs_password".to_string(),
+                ProtectedReason::LocalEndpointSecret {
+                    endpoint_id: "obs".into(),
+                },
+            ),
+        ]
+        .into();
+        LiveProtectedSettings::new(settings)
+    }
+
     #[test]
-    fn module_code_cannot_write_a_url_setting() {
-        let host = noop_host_context();
-        let url_settings: std::collections::HashSet<String> = ["server".to_string()].into();
+    fn test_set_module_setting_refuses_a_key_protected_after_the_invocation_started() {
+        use crate::module_registry::{
+            ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule,
+        };
+        use crate::protected_settings::ProtectedReason;
+        let module = |protected_settings| RegisteredModule {
+            metadata: ModuleMetadata {
+                name: "obs".into(),
+                version: "1.0.0".into(),
+                installed_at: 0,
+                updated_at: 0,
+            },
+            functions: Default::default(),
+            state: ModuleState::Active,
+            event_types: Default::default(),
+            permissions: Default::default(),
+            protected_settings,
+            local_endpoints: Default::default(),
+            resource_link_settings: Default::default(),
+            oauth: Default::default(),
+            actions: Default::default(),
+        };
+        let registry = ModuleRegistry::new();
+        registry
+            .register_module("obs".into(), module(Default::default()))
+            .unwrap();
+        // An invocation of the version being upgraded away from, still running.
+        let held_by_invocation = registry.protected_settings("obs");
+
+        registry
+            .register_module(
+                "obs".into(),
+                module(
+                    [(
+                        "obs_address".to_string(),
+                        ProtectedReason::LocalEndpointAddress {
+                            endpoint_id: "obs".into(),
+                        },
+                    )]
+                    .into(),
+                ),
+            )
+            .unwrap();
+
         let err = set_module_setting(
-            &host,
-            "mymod",
-            &url_settings,
+            &noop_host_context(),
+            "obs",
+            &held_by_invocation,
             &Default::default(),
-            "server",
-            "https://evil.example.com",
+            "obs_address",
+            "10.0.0.66",
         )
         .unwrap_err();
-        assert!(err.contains("only the streamer sets"), "{err}");
+        assert!(
+            err.contains("decides where the engine connects for endpoint obs"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn test_set_module_setting_refuses_protected_settings() {
+        let host = noop_host_context();
+        let protected = obs_protected_settings();
+        let cases = [
+            (
+                "server",
+                "ctx.module.setSetting: \"server\" is a url setting, which only the streamer sets",
+            ),
+            (
+                "obs_host",
+                "ctx.module.setSetting: \"obs_host\" decides where the engine connects for endpoint obs; only the streamer or the companion may set it",
+            ),
+            (
+                "obs_port",
+                "ctx.module.setSetting: \"obs_port\" decides where the engine connects for endpoint obs; only the streamer or the companion may set it",
+            ),
+            (
+                "obs_password",
+                "ctx.module.setSetting: \"obs_password\" is the password for endpoint obs; only the streamer or the companion may set it",
+            ),
+        ];
+        for (key, expected) in cases {
+            let err = set_module_setting(
+                &host,
+                "mymod",
+                &protected,
+                &Default::default(),
+                key,
+                "evil.example.com",
+            )
+            .unwrap_err();
+            assert_eq!(err, expected);
+        }
         set_module_setting(
             &host,
             "mymod",
-            &url_settings,
+            &protected,
             &Default::default(),
             "token",
             "x",
         )
         .expect("other settings stay writable");
+    }
+
+    #[test]
+    fn test_compare_and_set_module_setting_refuses_protected_settings() {
+        let host = noop_host_context();
+        let protected = obs_protected_settings();
+        let cases = [
+            ("server", "is a url setting, which only the streamer sets"),
+            (
+                "obs_host",
+                "decides where the engine connects for endpoint obs",
+            ),
+            (
+                "obs_port",
+                "decides where the engine connects for endpoint obs",
+            ),
+            ("obs_password", "is the password for endpoint obs"),
+        ];
+        for (key, expected) in cases {
+            let err = compare_and_set_module_setting(
+                &host,
+                "mymod",
+                &protected,
+                &Default::default(),
+                key,
+                &Value::Null,
+                &serde_json::json!("evil.example.com"),
+            )
+            .unwrap_err();
+            assert!(
+                err.starts_with(&format!(
+                    "ctx.module.compareAndSetSetting: {key:?} {expected}"
+                )),
+                "{err}"
+            );
+        }
+        // The noop settings client has no compare-and-set, so an unprotected
+        // key gets past the guard and is answered by the client.
+        let err = compare_and_set_module_setting(
+            &host,
+            "mymod",
+            &protected,
+            &Default::default(),
+            "token",
+            &Value::Null,
+            &serde_json::json!("x"),
+        )
+        .unwrap_err();
+        assert!(err.contains("not available on this engine"), "{err}");
     }
 
     #[test]

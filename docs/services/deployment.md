@@ -385,6 +385,10 @@ a hash of the secret, so neither a wrong secret nor an earlier success changes
 the answer for another secret. Failed checks are never reused. Deleting a
 client drops its cached checks at once.
 
+`WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` (default `12000`) is how long
+`sendToPlatforms` waits for the platform gateway's reply; it cannot be set below
+`12000`, the gateway's caller window (see [Platform gateway](./platform-gateway.md)).
+
 ### Refusals
 
 capnweb sends a rejected call's error name and message, but the receiving side
@@ -723,3 +727,18 @@ Linking, relinking and unlinking in the UI write the token to engine settings
 and publish `setting.integration.token.updated`. That starts, reloads or stops
 the Twitch adapter, and reloads woofwoofwoof's chat client, with no restart
 (see [Connectors host](./connectors.md)).
+
+## OBS
+
+connectors holds the engine's OBS connection (its `obs` adapter), not
+sceneManager. Set `WOOFX3_OBS_HOST`, `WOOFX3_OBS_PORT` and
+`WOOFX3_OBS_RPC_TOKEN`, when an engine needs them at all, where connectors
+reads its configuration; the OBS module's own settings take precedence over
+them. connectors connects to OBS only while a module that controls OBS is
+installed and active, or while `WOOFX3_OBS_HOST` is set; an engine with
+neither never dials OBS. With connectors stopped, OBS control fails the same way it did with
+sceneManager stopped: `ctx.obs` reports that nothing answered, and the OBS
+module's page shows the status as unanswered. Overlays still recover after a
+sceneManager restart when connectors starts later, because sceneManager keeps
+asking for the refresh until connectors accepts it (see
+[Local endpoints → Overlay recovery](./local-endpoints.md#overlay-recovery)).
