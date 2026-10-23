@@ -41,7 +41,8 @@ fn registry_with(file_name: &str, code: &str) -> Arc<ModuleRegistry> {
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: Default::default(),
-        url_settings: Default::default(),
+        protected_settings: Default::default(),
+        local_endpoints: Default::default(),
         resource_link_settings: Default::default(),
         oauth: Default::default(),
     };

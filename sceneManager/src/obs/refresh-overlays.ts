@@ -8,9 +8,10 @@
 // browser sources persist across sceneManager's lifetime and survive
 // its restarts. OBS *is* the registry.
 //
-// So on startup we walk OBS's inputs, find the browser sources pointed
-// at our own overlay routes, and refresh them. Those overlays come back
-// immediately instead of waiting out a backoff. The client-side
+// So when a refresh is requested (see obs/service.ts) we walk OBS's inputs,
+// find the browser sources pointed at our own overlay routes, and refresh
+// them. Those overlays come back immediately instead of waiting out a
+// backoff. The client-side
 // reconnect loop (public/scene-manager/event-source.ts) remains the
 // fallback for every case this can't cover: OBS not running, OBS
 // started after us, a scene open in a plain browser tab, or a drop that
@@ -63,16 +64,18 @@ interface ObsInput {
 /**
  * Refreshes every OBS browser source pointing at this sceneManager.
  * Best-effort throughout: OBS being absent, an input disappearing
- * mid-walk, or a refusal to press the button must never keep
- * sceneManager from starting. Returns how many sources were refreshed.
+ * mid-walk, or a refusal to press the button is logged and never thrown.
+ * Returns how many sources were refreshed, or null when OBS could not be
+ * asked at all (no session, or its input list unavailable), so a caller can
+ * try again on a later session.
  */
 export async function refreshOverlayBrowserSources(
   obs: ObsRequester | null,
   port: number,
   logger: Logger
-): Promise<number> {
+): Promise<number | null> {
   if (!obs) {
-    return 0;
+    return null;
   }
 
   let inputs: unknown[];
@@ -83,7 +86,7 @@ export async function refreshOverlayBrowserSources(
     logger.warn("OBS input list unavailable; skipping overlay refresh", {
       error: err instanceof Error ? err.message : String(err),
     });
-    return 0;
+    return null;
   }
 
   const names: string[] = [];
@@ -117,7 +120,7 @@ export async function refreshOverlayBrowserSources(
   }
 
   if (refreshed > 0) {
-    logger.info("Refreshed OBS overlay browser sources after startup", { count: refreshed, inputs: names });
+    logger.info("Refreshed OBS overlay browser sources", { count: refreshed, inputs: names });
   }
   return refreshed;
 }

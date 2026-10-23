@@ -6,6 +6,21 @@ import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
 import { z } from "zod";
 
+/** How the OBS overlay refresh request is made and retried (obs/refresh-request.ts). */
+export interface ObsRefreshConfig {
+  /** How long one request waits for a reply. */
+  requestTimeoutMs: number;
+  /** The first retry's backoff ceiling; it doubles up to `retryMaxMs`. */
+  retryBaseMs: number;
+  retryMaxMs: number;
+}
+
+export const OBS_REFRESH_DEFAULTS: ObsRefreshConfig = {
+  requestTimeoutMs: 2_000,
+  retryBaseMs: 1_000,
+  retryMaxMs: 30_000,
+};
+
 export const SceneManagerEnvSchema = z.object({
   woofx3SceneManagerPort: z.union([z.number(), z.string()]).default("9101"),
   // sceneManager binds loopback by default: a reverse proxy (or direct
@@ -37,6 +52,11 @@ export const SceneManagerEnvSchema = z.object({
   // True where the edge listens beyond loopback and forwards to sceneManager; the production image sets it.
   woofx3BehindEdge: z.boolean().optional(),
   woofx3DbProxyToken: z.string().optional(),
+  woofx3SceneManagerObsRefreshRequestTimeoutMs: z
+    .union([z.number(), z.string()])
+    .default(OBS_REFRESH_DEFAULTS.requestTimeoutMs),
+  woofx3SceneManagerObsRefreshRetryBaseMs: z.union([z.number(), z.string()]).default(OBS_REFRESH_DEFAULTS.retryBaseMs),
+  woofx3SceneManagerObsRefreshRetryMaxMs: z.union([z.number(), z.string()]).default(OBS_REFRESH_DEFAULTS.retryMaxMs),
 });
 
 export interface SceneManagerRuntimeConfig {
@@ -67,6 +87,7 @@ export interface SceneManagerRuntimeConfig {
     port: string;
     token?: string;
   };
+  obsRefresh: ObsRefreshConfig;
   nats: {
     url: string;
     name: string;
@@ -98,6 +119,19 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
     new URL(config.barkloaderUrl);
   } catch {
     throw new Error(`sceneManager: barkloaderUrl is not a valid URL: ${config.barkloaderUrl}`);
+  }
+  const refresh = config.obsRefresh;
+  for (const [name, value] of [
+    ["obsRefresh.requestTimeoutMs", refresh.requestTimeoutMs],
+    ["obsRefresh.retryBaseMs", refresh.retryBaseMs],
+    ["obsRefresh.retryMaxMs", refresh.retryMaxMs],
+  ] as const) {
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`sceneManager: ${name} must be a positive whole number of milliseconds, got ${value}`);
+    }
+  }
+  if (refresh.retryMaxMs < refresh.retryBaseMs) {
+    throw new Error("sceneManager: obsRefresh.retryMaxMs must not be below obsRefresh.retryBaseMs");
   }
   if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65535) {
     throw new Error(
@@ -207,6 +241,11 @@ export function loadConfig(): SceneManagerRuntimeConfig {
       host: obsHost,
       port: obsPort,
       token: obsToken,
+    },
+    obsRefresh: {
+      requestTimeoutMs: Number(c.woofx3SceneManagerObsRefreshRequestTimeoutMs),
+      retryBaseMs: Number(c.woofx3SceneManagerObsRefreshRetryBaseMs),
+      retryMaxMs: Number(c.woofx3SceneManagerObsRefreshRetryMaxMs),
     },
     nats: {
       url: messagebusUrl,
