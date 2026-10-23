@@ -206,6 +206,6 @@ The project backlog is tracked in Notion in the **Backlog** database (ID: `272a5
 
 **Important notes:**
 - UI and Website project tasks are **not** in this repository -- they live in a separate codebase. Filter them out when looking for work to do here.
-- Projects that map to this repo: API, Barkloader, Db, Module, Shared, Wooflow, WoofWoofWoof, Treats, Twitch, Tauri.
+- Projects that map to this repo: API, Barkloader, Db, Module, Shared, Wooflow, Connectors, Treats, Twitch, Tauri.
 - When picking up a task, update its Status to "In progress" in Notion.
 - When completing a task, update its Status to "Done" in Notion.

@@ -58,7 +58,7 @@ func NewCommandService(
 // create/update so the join tables and the policy rows never drift; the
 // caller reloads the enforcer once tx commits, since the enforcer reads the
 // policy outside it. Public commands never get Casbin rows - visibility is
-// checked in application code (woofwoofwoof) before Casbin is ever consulted.
+// checked in application code (the connectors chat dispatcher) before Casbin is ever consulted.
 // A restricted command with no grant gets no rows either, so Casbin denies
 // everyone: restricted means "only those granted", and granting nobody is
 // how the dashboard presents a command no one can use yet.

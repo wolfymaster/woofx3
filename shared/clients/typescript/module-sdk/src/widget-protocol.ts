@@ -223,7 +223,7 @@ export interface EventQueueConfig {
    *  needed. `false`: the widget must call `event.complete()` (or
    *  `ctx.completeEvent(event)`-equivalent) itself. */
   autoComplete?: boolean;
-  /** Safe expression (resolver.ts grammar — ternary/comparisons/arith/
+  /** Safe expression (widget-host page/expression.ts grammar — ternary/comparisons/arith/
    *  paths, no `eval`, no DOM/global access) evaluated by the host
    *  queue against each arriving `WidgetEvent` to get its priority for
    *  a priority-heap ordering. Omitted = FIFO. */

@@ -41,7 +41,7 @@ The system follows a microservices architecture with three primary communication
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
 │  ┌──────────────┐    NATS/CloudEvents    ┌──────────────────────────────┐  │
-│  │  WoofWoofWoof │ ──────────────────────│  Wooflow (Workflow Engine)    │  │
+│  │  Connectors   │ ──────────────────────│  Wooflow (Workflow Engine)    │  │
 │  │  (Chatbot)    │                         │                               │  │
 │  └──────┬───────┘                         └───────────────┬──────────────┘  │
 │         │                                                 │                  │
@@ -70,7 +70,7 @@ The system follows a microservices architecture with three primary communication
 | **wooflow** | Go | 26533 (gRPC) | Workflow orchestration engine |
 | **barkloader** | Rust | 9653 (HTTP/WS) | Module/plugin management and sandbox execution |
 | **twitch** | TypeScript/Bun | 26633 (HTTP) | Twitch API integration and EventBus |
-| **woofwoofwoof** | TypeScript/Bun | 26666 (HTTP) | Twitch chatbot and command processing |
+| **connectors** | TypeScript/Bun | - | Platform connectors host and Twitch chat command dispatcher |
 | **api** | TypeScript/Bun | 3000 (HTTP) | Public API for UI clients |
 | **messagebus-gateway** | Go | 8080 (WS) | WebSocket-to-NATS bridge |
 
@@ -316,7 +316,7 @@ Events → Fact Updates → Rete Network → Rule Evaluation → Actions/Fire
 | `raid.channel.twitch` | Raid incoming |
 | `channel.state.twitch` | Stream state change |
 
-#### 3.5.2 WoofWoofWoof (Chatbot)
+#### 3.5.2 Connectors chat dispatcher
 
 **Purpose**: Process Twitch chat messages, execute commands, and interact with the module system.
 
@@ -676,7 +676,7 @@ The following capabilities are identified for future development:
 | **Twirp** | RPC framework using protocol buffers |
 | **Barkloader** | The module/plugin system |
 | **Wooflow** | The workflow orchestration engine |
-| **WoofWoofWoof** | The Twitch chatbot service |
+| **Connectors** | The host that runs platform adapters and the chat command dispatcher |
 
 ---
 
