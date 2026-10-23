@@ -140,6 +140,8 @@ const validContract = `{
   "outcomeStatuses": ["delivered"],
   "unavailableReasons": ["stopped"],
   "platformStates": ["connected"],
+  "limits": {"maxRefLength": 200, "maxWorkflowChainRuns": 8, "callerTimeoutMs": 12000},
+  "platformOptions": {"twitch": {"announcementColors": ["primary"]}},
   "actions": [{"id": "chat.send", "fields": [{"name": "message", "type": "string", "required": true, "maxLength": 500}]}]
 }`
 
@@ -188,6 +190,14 @@ func TestParseRefusesBadContracts(t *testing.T) {
 		{"no platform states", `["connected"]`, `[]`, "platformStates: is required"},
 		{"duplicate platform state", `["connected"]`, `["connected", "connected"]`, "duplicate value"},
 		{"no platforms", `[{"id": "twitch", "displayName": "Twitch"}]`, `[]`, "platforms: is required"},
+		{"missing limit", `"maxRefLength": 200, `, ``, "limits.maxRefLength"},
+		{"zero limit", `"maxWorkflowChainRuns": 8`, `"maxWorkflowChainRuns": 0`, "limits.maxWorkflowChainRuns"},
+		{"negative caller timeout", `"callerTimeoutMs": 12000`, `"callerTimeoutMs": -1`, "limits.callerTimeoutMs"},
+		{"unknown limit", `"callerTimeoutMs": 12000`, `"callerTimeoutMs": 12000, "maxRuns": 3`, "unknown field"},
+		{"workflow chain past safe integers", `"maxRefLength": 200`, `"maxRefLength": 9007199254740991`, "too long for TypeScript"},
+		{"options for an undeclared platform", `[{"id": "twitch", "displayName": "Twitch"}]`, `[{"id": "kick", "displayName": "Kick"}]`, "platformOptions.twitch"},
+		{"no announcement colours", `"announcementColors": ["primary"]`, `"announcementColors": []`, "announcementColors: is required"},
+		{"duplicate announcement colour", `"announcementColors": ["primary"]`, `"announcementColors": ["primary", "primary"]`, "duplicate value"},
 		{"missing display name", `"displayName": "Twitch"`, `"displayName": " "`, "displayName"},
 		{"unknown outcome status", `["delivered"]`, `["delivered", "exploded"]`, "no outcome shape"},
 		{"unbounded string", `, "maxLength": 500`, ``, "positive maxLength"},

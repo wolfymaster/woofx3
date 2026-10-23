@@ -386,7 +386,10 @@ trigger event plus the run's workflow:
 An event nothing in a workflow caused — a platform event, a dashboard request, a
 background task such as the timer expiry check — has no chain, and starts one.
 
-**A run is refused when the chain behind it holds `MaxWorkflowChain` (8) runs.**
+**A run is refused when the chain behind it holds 8 runs**, the
+`limits.maxWorkflowChainRuns` of the
+[platform gateway contract](../services/platform-gateway.md#one-contract-generated),
+which also bounds the chain a chat step hands the gateway.
 The refused run is recorded as failed, with an error naming the loop:
 `stopped a workflow loop: Counter changed keeps triggering itself (Counter changed →
 Counter changed), 8 runs deep`, or the whole chain when it does not close on the

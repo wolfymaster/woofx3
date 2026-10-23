@@ -13,14 +13,6 @@ import (
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 )
 
-// PlatformGatewayTimeout is how long a send waits for the gateway's reply. It
-// must exceed the gateway's own deadline for every platform of a request (9 s,
-// WOOFX3_CONNECTORS_GATEWAY_ADAPTER_DEADLINE_MS), so the gateway always gets
-// to answer with per-platform results and a timeout here means connectors
-// itself went quiet. Must match GATEWAY_CALLER_TIMEOUT_MS in
-// connectors/src/config/gateway.ts.
-const PlatformGatewayTimeout = 12 * time.Second
-
 var (
 	// ErrGatewayUnavailable is a request nobody answered at once: connectors
 	// is not running or the bus is closed. Nothing reached a platform.
@@ -55,7 +47,7 @@ type NATSPlatformGateway struct {
 }
 
 func NewNATSPlatformGateway(bus busRequester, logger tasks.Logger) *NATSPlatformGateway {
-	return &NATSPlatformGateway{bus: bus, timeout: PlatformGatewayTimeout, logger: logger}
+	return &NATSPlatformGateway{bus: bus, timeout: platformgateway.CallerTimeout, logger: logger}
 }
 
 // Send validates the request against the contract, sends it and reads the

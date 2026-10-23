@@ -1,4 +1,5 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
+import { CALLER_TIMEOUT_MS } from "@woofx3/api/platform-gateway";
 import { RELAY_API_REQUEST_TIMEOUT_MS, RELAY_CONFIG_SET_BUDGET_MS } from "@woofx3/common/cloudevents/Relay/relay";
 import { parseRequestGuardPolicy, type RequestGuardPolicy, resolveExposure } from "@woofx3/common/http/request-guard";
 import { loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
@@ -8,7 +9,6 @@ import { DEFAULT_AUTH_CACHE_TTL_MS } from "./auth";
 import { type BarkloaderWebhookAuth, parseBarkloaderWebhookAuth } from "./barkloader-webhook-auth";
 import { downloadOrigin } from "./guarded-download";
 import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL } from "./marketplace-client";
-import { DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS } from "./platform-gateway-client";
 import { assertRegistrationExposure, type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
 import { UNVERSIONED } from "./version";
 
@@ -99,8 +99,8 @@ export interface ApiConfig {
   companionRequestTimeoutMs: number;
   /**
    * How long a send to the platform gateway waits for its reply, in
-   * milliseconds (`WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS`);
-   * DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS when unset.
+   * milliseconds (`WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS`); the contract's
+   * CALLER_TIMEOUT_MS when unset.
    */
   platformGatewayTimeoutMs: number;
   nats: {
@@ -312,19 +312,19 @@ export function resolveCompanionRequestTimeoutMs(value: unknown): number {
 
 /**
  * `WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` as a whole number of milliseconds no
- * lower than DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS, or that default when unset
+ * lower than the contract's CALLER_TIMEOUT_MS, or that default when unset
  * or blank. A lower wait would report a timeout for sends the gateway still
  * answers normally. Anything else stops startup.
  */
 export function resolvePlatformGatewayTimeoutMs(value: unknown): number {
   const text = nonBlank(value);
   if (text === undefined) {
-    return DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS;
+    return CALLER_TIMEOUT_MS;
   }
   const timeoutMs = Number(text);
-  if (!Number.isInteger(timeoutMs) || timeoutMs < DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS) {
+  if (!Number.isInteger(timeoutMs) || timeoutMs < CALLER_TIMEOUT_MS) {
     throw new Error(
-      `Config error: woofx3PlatformGatewayTimeoutMs (WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS) must be a whole number of at least ${DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS} (the gateway's caller window), got ${text}`
+      `Config error: woofx3PlatformGatewayTimeoutMs (WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS) must be a whole number of at least ${CALLER_TIMEOUT_MS} (the gateway's caller window), got ${text}`
     );
   }
   return timeoutMs;

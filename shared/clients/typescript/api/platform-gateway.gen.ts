@@ -20,8 +20,18 @@ export const PLATFORM_GATEWAY_REPLY_TYPES = {
 /** Bounds idempotency keys, requester refs and origin ids, in characters (Unicode code points). */
 export const MAX_REF_LENGTH = 200;
 
-/** The most workflow runs a chain names; the workflow loop guard refuses a longer one. */
+/**
+ * The most workflow runs a chain names. The workflow loop guard refuses a run
+ * behind a chain this long, and the gateway refuses a request whose chain is longer.
+ */
 export const MAX_WORKFLOW_CHAIN_RUNS = 8;
+
+/**
+ * How long a caller waits for a send's reply, in milliseconds. The gateway's
+ * deadline for every platform of a request is below it, so the gateway always
+ * answers with per-platform results and a timeout means connectors itself went quiet.
+ */
+export const CALLER_TIMEOUT_MS = 12000;
 
 /**
  * Bounds a request's workflowChain, in characters (Unicode code points): up to
@@ -83,6 +93,14 @@ export type PlatformState = (typeof PLATFORM_STATES)[number];
 
 export function isPlatformState(value: unknown): value is PlatformState {
   return typeof value === "string" && (PLATFORM_STATES as readonly string[]).includes(value);
+}
+
+/** A colour of a Twitch announcement, `options.twitch.color` on `chat.announce`. */
+export const TWITCH_ANNOUNCEMENT_COLORS = ["primary", "blue", "green", "orange", "purple"] as const;
+export type TwitchAnnouncementColor = (typeof TWITCH_ANNOUNCEMENT_COLORS)[number];
+
+export function isTwitchAnnouncementColor(value: unknown): value is TwitchAnnouncementColor {
+  return typeof value === "string" && (TWITCH_ANNOUNCEMENT_COLORS as readonly string[]).includes(value);
 }
 
 /** Each platform's name as a streamer reads it. */

@@ -9,15 +9,6 @@ import {
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 
-/**
- * How long a send waits for the gateway's reply. The gateway answers every
- * request within this window with per-platform results (its own adapter
- * deadline is shorter; this must match `GATEWAY_CALLER_TIMEOUT_MS` in
- * connectors), so a timeout here means the connectors host itself went quiet.
- * It is also the lowest wait the api accepts from configuration.
- */
-export const DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS = 12_000;
-
 type Requester = Pick<NATSClient, "request">;
 
 function errorMessage(err: unknown): string {

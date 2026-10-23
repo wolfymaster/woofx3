@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -33,11 +34,16 @@ const (
 // characters (Unicode code points).
 const MaxRefLength = 200
 
-// MaxWorkflowChainRuns is the most workflow ids a chain names; the workflow
-// loop guard refuses a longer one. It must match MaxWorkflowChain in
-// workflow/internal/engine/loopguard.go, or the gateway refuses chains the
-// loop guard allows.
+// MaxWorkflowChainRuns is the most workflow ids a chain names. The workflow
+// loop guard refuses a run behind a chain this long, and the gateway refuses
+// a request whose chain is longer.
 const MaxWorkflowChainRuns = 8
+
+// CallerTimeout is how long a caller waits for a send's reply. The gateway's
+// deadline for every platform of a request is below it, so the gateway always
+// answers with per-platform results and a timeout means connectors itself
+// went quiet.
+const CallerTimeout = 12000 * time.Millisecond
 
 // MaxWorkflowChainLength bounds a request's WorkflowChain, in characters
 // (Unicode code points): up to MaxWorkflowChainRuns workflow ids of at most
@@ -230,6 +236,31 @@ func PlatformStates() []PlatformState {
 func (v PlatformState) Valid() bool {
 	switch v {
 	case PlatformStateStopped, PlatformStateStarting, PlatformStateConnected, PlatformStateDegraded, PlatformStateParked, PlatformStateStopping:
+		return true
+	}
+	return false
+}
+
+// TwitchAnnouncementColor is a colour of a Twitch announcement, options.twitch.color on chat.announce.
+type TwitchAnnouncementColor string
+
+const (
+	TwitchAnnouncementColorPrimary TwitchAnnouncementColor = "primary"
+	TwitchAnnouncementColorBlue    TwitchAnnouncementColor = "blue"
+	TwitchAnnouncementColorGreen   TwitchAnnouncementColor = "green"
+	TwitchAnnouncementColorOrange  TwitchAnnouncementColor = "orange"
+	TwitchAnnouncementColorPurple  TwitchAnnouncementColor = "purple"
+)
+
+// TwitchAnnouncementColors returns every TwitchAnnouncementColor in contract order.
+func TwitchAnnouncementColors() []TwitchAnnouncementColor {
+	return []TwitchAnnouncementColor{TwitchAnnouncementColorPrimary, TwitchAnnouncementColorBlue, TwitchAnnouncementColorGreen, TwitchAnnouncementColorOrange, TwitchAnnouncementColorPurple}
+}
+
+// Valid reports whether v is one of the contract's values.
+func (v TwitchAnnouncementColor) Valid() bool {
+	switch v {
+	case TwitchAnnouncementColorPrimary, TwitchAnnouncementColorBlue, TwitchAnnouncementColorGreen, TwitchAnnouncementColorOrange, TwitchAnnouncementColorPurple:
 		return true
 	}
 	return false

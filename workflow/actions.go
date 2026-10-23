@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -257,11 +256,15 @@ const (
 	pinDurationMaxSeconds = 1200
 )
 
-// announcementColors are the colours Twitch's announcements take, the options
-// of the `twitchColor` select in modules/woofx3/manifest.json. Must match
-// ANNOUNCEMENT_COLORS in connectors/src/adapters/twitch/egress.ts.
-func announcementColors() []string {
-	return []string{"primary", "blue", "green", "orange", "purple"}
+// announcementColorNames are the contract's Twitch announcement colours, the
+// options of the `twitchColor` select in modules/woofx3/manifest.json.
+func announcementColorNames() []string {
+	colors := platformgateway.TwitchAnnouncementColors()
+	names := make([]string, len(colors))
+	for i, color := range colors {
+		names[i] = string(color)
+	}
+	return names
 }
 
 // announcementColorParam is the `twitchColor` parameter, "" when unset.
@@ -274,10 +277,10 @@ func announcementColorParam(params map[string]any) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("twitchColor must be text, got %s", describeParam(raw))
 	}
-	if color == "" || slices.Contains(announcementColors(), color) {
+	if color == "" || platformgateway.TwitchAnnouncementColor(color).Valid() {
 		return color, nil
 	}
-	return "", fmt.Errorf("twitchColor must be one of %s, got %s", strings.Join(announcementColors(), ", "), describeParam(raw))
+	return "", fmt.Errorf("twitchColor must be one of %s, got %s", strings.Join(announcementColorNames(), ", "), describeParam(raw))
 }
 
 // validateAnnouncementParams is the registration check of a chat.announce

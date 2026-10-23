@@ -1,9 +1,12 @@
-import type {
-  ChatPinPayload,
-  ChatSendPayload,
-  FailureCode,
-  PlatformOutcome,
-  UnavailableReason,
+import {
+  type ChatPinPayload,
+  type ChatSendPayload,
+  type FailureCode,
+  isTwitchAnnouncementColor,
+  type PlatformOutcome,
+  TWITCH_ANNOUNCEMENT_COLORS,
+  type TwitchAnnouncementColor,
+  type UnavailableReason,
 } from "@woofx3/api/platform-gateway";
 import type { HelixCommandArgs, HelixCommandResult } from "@woofx3/common/cloudevents/Twitch/commands";
 import type { EgressContext, EgressHandlerSpec, EgressHandlers } from "../../host/adapter";
@@ -14,16 +17,12 @@ import type { SendQueue } from "./lib/send-queue";
 import type { TwitchApiCall } from "./lib/twitch";
 import { TwitchApiError } from "./lib/twitchApiError";
 
-/** The colours Twitch's Send Chat Announcement takes. */
-export const ANNOUNCEMENT_COLORS = ["primary", "blue", "green", "orange", "purple"] as const;
-export type AnnouncementColor = (typeof ANNOUNCEMENT_COLORS)[number];
-
 /** Used when a `chat.announce` request carries no Twitch options: the channel's accent colour. */
-export const DEFAULT_ANNOUNCEMENT_COLOR: AnnouncementColor = "primary";
+export const DEFAULT_ANNOUNCEMENT_COLOR: TwitchAnnouncementColor = "primary";
 
 /** `options.twitch` on a `chat.announce` request. */
 export interface AnnounceOptions {
-  color: AnnouncementColor;
+  color: TwitchAnnouncementColor;
 }
 
 /**
@@ -113,14 +112,10 @@ export function parseAnnounceOptions(raw: unknown): ParseResult<AnnounceOptions>
   if (color === undefined) {
     return parsed(defaultAnnounceOptions());
   }
-  if (!isAnnouncementColor(color)) {
-    return parseFailed(`color must be one of ${ANNOUNCEMENT_COLORS.join(", ")}`);
+  if (!isTwitchAnnouncementColor(color)) {
+    return parseFailed(`color must be one of ${TWITCH_ANNOUNCEMENT_COLORS.join(", ")}`);
   }
   return parsed({ color });
-}
-
-function isAnnouncementColor(value: unknown): value is AnnouncementColor {
-  return typeof value === "string" && (ANNOUNCEMENT_COLORS as readonly string[]).includes(value);
 }
 
 /** Runs `job` in its turn in the send queue, or says why it never ran. */

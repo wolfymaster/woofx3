@@ -18,10 +18,20 @@ export const PLATFORM_GATEWAY_REPLY_TYPES = {
 } as const;
 
 /** Bounds idempotency keys, requester refs and origin ids, in characters (Unicode code points). */
-export const MAX_REF_LENGTH = 200;
+export const MAX_REF_LENGTH = {{.Limits.MaxRefLength}};
 
-/** The most workflow runs a chain names; the workflow loop guard refuses a longer one. */
-export const MAX_WORKFLOW_CHAIN_RUNS = 8;
+/**
+ * The most workflow runs a chain names. The workflow loop guard refuses a run
+ * behind a chain this long, and the gateway refuses a request whose chain is longer.
+ */
+export const MAX_WORKFLOW_CHAIN_RUNS = {{.Limits.MaxWorkflowChainRuns}};
+
+/**
+ * How long a caller waits for a send's reply, in milliseconds. The gateway's
+ * deadline for every platform of a request is below it, so the gateway always
+ * answers with per-platform results and a timeout means connectors itself went quiet.
+ */
+export const CALLER_TIMEOUT_MS = {{.Limits.CallerTimeoutMs}};
 
 /**
  * Bounds a request's workflowChain, in characters (Unicode code points): up to

@@ -8,6 +8,7 @@ import {
   PLATFORM_IDS,
   type PlatformOutcome,
   parseGatewayReply,
+  TWITCH_ANNOUNCEMENT_COLORS,
 } from "@woofx3/api/platform-gateway";
 import type { HelixCommandArgs, HelixCommandResult } from "@woofx3/common/cloudevents/Twitch/commands";
 import { GatewayEnvSchema, gatewayConfig } from "../../config/gateway";
@@ -30,7 +31,6 @@ import {
   unlinked,
 } from "../../host/testing";
 import {
-  ANNOUNCEMENT_COLORS,
   type AnnounceOptions,
   helixFailureCode,
   parseAnnounceOptions,
@@ -407,7 +407,7 @@ describe("twitch egress, send queue", () => {
 
 describe("parseAnnounceOptions", () => {
   test("takes each Twitch colour", () => {
-    for (const color of ANNOUNCEMENT_COLORS) {
+    for (const color of TWITCH_ANNOUNCEMENT_COLORS) {
       expect(parseAnnounceOptions({ color })).toEqual({ ok: true, value: { color } });
     }
   });

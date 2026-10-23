@@ -70,6 +70,7 @@ type goData struct {
 	Source        string
 	Subjects      gatewaySubjects
 	ReplyTypes    gatewaySubjects
+	Limits        limits
 	Enums         []goEnum
 	Platforms     []goPlatform
 	Actions       []goAction
@@ -78,7 +79,7 @@ type goData struct {
 }
 
 func emitGo(c platformGateway) ([]byte, error) {
-	data := goData{Source: platformGatewaySource, Subjects: c.Subjects, ReplyTypes: c.ReplyTypes}
+	data := goData{Source: platformGatewaySource, Subjects: c.Subjects, ReplyTypes: c.ReplyTypes, Limits: c.Limits}
 
 	platformValues := make([]goEnumValue, 0, len(c.Platforms))
 	for _, p := range c.Platforms {
@@ -99,6 +100,7 @@ func emitGo(c platformGateway) ([]byte, error) {
 		goEnumOf("FailureCode", "classifies a failed outcome or a refused request.", "Failure", "FailureCodes", c.FailureCodes),
 		goEnumOf("UnavailableReason", "says why a platform could not take a request.", "Unavailable", "UnavailableReasons", c.UnavailableReasons),
 		goEnumOf("PlatformState", "is a platform adapter's lifecycle state, as a capabilities reply reports it.", "PlatformState", "PlatformStates", c.PlatformStates),
+		goEnumOf("TwitchAnnouncementColor", "is a colour of a Twitch announcement, options.twitch.color on chat.announce.", "TwitchAnnouncementColor", "TwitchAnnouncementColors", c.PlatformOptions.Twitch.AnnouncementColors),
 	}
 
 	for _, a := range c.Actions {

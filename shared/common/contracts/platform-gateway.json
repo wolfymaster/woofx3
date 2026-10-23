@@ -15,6 +15,10 @@
   "outcomeStatuses": ["delivered", "dropped", "unsupported", "unavailable", "unconfirmed", "failed"],
   "unavailableReasons": ["not_linked", "disabled", "stopped", "starting", "parked"],
   "platformStates": ["stopped", "starting", "connected", "degraded", "parked", "stopping"],
+  "limits": { "maxRefLength": 200, "maxWorkflowChainRuns": 8, "callerTimeoutMs": 12000 },
+  "platformOptions": {
+    "twitch": { "announcementColors": ["primary", "blue", "green", "orange", "purple"] }
+  },
   "actions": [
     {
       "id": "chat.send",

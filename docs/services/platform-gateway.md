@@ -33,6 +33,20 @@ with one emitter per language. It refuses unknown keys and contradictory
 entries (a duplicate platform, action, field or enum value, an unbounded
 field, overlapping variants), so a mistake in the contract stops generation.
 
+Besides the subjects, enums and actions, the contract holds the numbers and
+value sets every side must agree on, so no consumer keeps its own copy:
+
+| Key | Value | Generated as (Go / TypeScript) | Used by |
+| --- | --- | --- | --- |
+| `limits.maxRefLength` | 200 | `MaxRefLength` / `MAX_REF_LENGTH` | the request validators |
+| `limits.maxWorkflowChainRuns` | 8 | `MaxWorkflowChainRuns` / `MAX_WORKFLOW_CHAIN_RUNS` | the request validators and the workflow loop guard |
+| `limits.callerTimeoutMs` | 12000 | `CallerTimeout` / `CALLER_TIMEOUT_MS` | every caller's wait, and the bound on the gateway's own deadline |
+| `platformOptions.twitch.announcementColors` | `primary`, `blue`, `green`, `orange` or `purple` | `TwitchAnnouncementColor` / `TWITCH_ANNOUNCEMENT_COLORS` | the workflow `chat.announce` step and the Twitch adapter |
+
+The woofx3 module's `twitchColor` select and the pages that list the colours
+cannot import the generated list; a workflow test fails when they differ from
+it.
+
 After editing the contract:
 
 ```bash
@@ -119,7 +133,8 @@ of the wrong type or out of bounds. An empty optional string counts as absent.
   comma-joined form workflow events carry, so the platform's echo of a posted
   line can carry it back to the workflow loop guard. It is at most 1607
   characters: eight workflow ids of 200 characters and the commas between them.
-  Eight matches the workflow loop guard's limit.
+  Eight is the contract's `limits.maxWorkflowChainRuns`, the workflow loop
+  guard's limit too.
 
 The TypeScript parser (`parseGatewayRequest`) refuses unknown keys at every
 level, so a misspelt field fails instead of being dropped. The Go validator
@@ -221,7 +236,7 @@ The gateway never retries a platform. The reply's `ok` follows `replyOk`.
 | --- | --- |
 | A platform adapter's own call (Twitch Helix) | 8 s |
 | The gateway, for every platform of one request | 9 s (`WOOFX3_CONNECTORS_GATEWAY_ADAPTER_DEADLINE_MS`) |
-| Callers of `platform.gateway.send` | 12 s |
+| Callers of `platform.gateway.send` | 12 s (the contract's `limits.callerTimeoutMs`) |
 
 The deadline runs from when the request arrives, so time spent queued behind
 busy requests counts. Each layer waits longer than the one below it, so a
@@ -320,7 +335,7 @@ who is asking. The answer never rejects for a send that did not happen:
 | `{ ok: false, code: "failed" }` | The bus failed, or the reply was unreadable. | maybe |
 
 The api waits `WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` (default 12000, the
-callers' window in the table above, and the lowest value accepted) for the
+contract's caller timeout from the table above, and the lowest value accepted) for the
 reply. Retry a `timeout` or `failed` result with the same `idempotencyKey`: the
 gateway replays a reply that reached a platform, or joins a send still running,
 rather than sending twice. A reply where nothing reached a platform is not
@@ -354,7 +369,7 @@ action, or an action registered twice stops connectors at startup. The Twitch ad
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `WOOFX3_CONNECTORS_GATEWAY_ADAPTER_DEADLINE_MS` | `9000` | Reply budget of one request, and so of each platform it reaches. Must be below 12000. |
+| `WOOFX3_CONNECTORS_GATEWAY_ADAPTER_DEADLINE_MS` | `9000` | Reply budget of one request, and so of each platform it reaches. Must be below the contract's caller timeout, 12000. |
 | `WOOFX3_CONNECTORS_GATEWAY_IDEMPOTENCY_CAPACITY` | `1024` | Replies kept for replay. |
 | `WOOFX3_CONNECTORS_GATEWAY_IDEMPOTENCY_TTL_MS` | `600000` | How long a reply is replayed. |
 

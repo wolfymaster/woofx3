@@ -104,7 +104,7 @@ Otherwise it fails with one reason per platform, for example
 `chat.send did not go through: twitch: unavailable (disabled)`, so
 a turned-off or unlinked platform shows in the run history rather than passing
 silently. It also fails when connectors is not running, and when the gateway
-does not answer within 12 seconds; that error says the platform may have acted,
+does not answer within its caller timeout of 12 seconds; that error says the platform may have acted,
 since the request was sent.
 
 Returns:
@@ -161,7 +161,7 @@ that it cannot do this, which fails the step.
 | `action` | `string` | Yes | Must be `"chat.announce"`. Set at the task top level. |
 | `parameters.message` | `string` | Yes | What to announce, up to 500 characters. Supports expressions. |
 | `parameters.platform` | `string` | No | `origin` (the default), `all`, or a platform id. Supports expressions. An announcement is never a reply, so the trigger's message id is not used. |
-| `parameters.twitchColor` | `string` | No | `primary` (the channel's colour), `blue`, `green`, `orange` or `purple`. Sent to the gateway as Twitch's options, and left out when unset. Other platforms ignore it. Supports expressions. |
+| `parameters.twitchColor` | `string` | No | One of `primary`, `blue`, `green`, `orange` or `purple`; `primary` is the channel's colour. Sent to the gateway as Twitch's options, and left out when unset. Other platforms ignore it. Supports expressions. |
 
 The editor shows `twitchColor` while `platform` is `origin`, `all`, `twitch` or
 an expression (a variable has no value to compare until the run), and hides it

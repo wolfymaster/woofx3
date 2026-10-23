@@ -214,11 +214,11 @@ func TestNATSPlatformGatewaySend(t *testing.T) {
 }
 
 // The default wait is the caller's share of the gateway's deadlines; tests
-// shorten it, so the constructor is pinned to the named constant.
+// shorten it, so the constructor is pinned to the contract's constant.
 func TestNATSPlatformGatewayWaitsTheCallerTimeout(t *testing.T) {
 	gateway := NewNATSPlatformGateway(nil, quietLogger{})
-	if gateway.timeout != PlatformGatewayTimeout {
-		t.Errorf("timeout = %s, want %s", gateway.timeout, PlatformGatewayTimeout)
+	if gateway.timeout != platformgateway.CallerTimeout {
+		t.Errorf("timeout = %s, want %s", gateway.timeout, platformgateway.CallerTimeout)
 	}
 }
 

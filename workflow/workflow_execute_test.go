@@ -336,7 +336,7 @@ func (r *settledChatRuns) count() int {
 // A workflow that answers every chat line answers its own lines too, since
 // the engine speaks as the broadcaster. The chain the chat step hands the
 // gateway comes back on the echo, so the loop guard stops it after
-// MaxWorkflowChain lines instead of letting it talk to itself forever.
+// platformgateway.MaxWorkflowChainRuns lines instead of letting it talk to itself forever.
 func TestAWorkflowAnsweringItsOwnChatLinesIsStopped(t *testing.T) {
 	quiet := quietLogger{}
 	runs := engine.New[AppServices](quiet)
@@ -373,9 +373,9 @@ func TestAWorkflowAnsweringItsOwnChatLinesIsStopped(t *testing.T) {
 		t.Fatalf("the loop was not stopped; %d runs settled", recorder.count())
 	}
 	deadline := time.Now().Add(5 * time.Second)
-	for recorder.count() < engine.MaxWorkflowChain+1 {
+	for recorder.count() < platformgateway.MaxWorkflowChainRuns+1 {
 		if time.Now().After(deadline) {
-			t.Fatalf("%d runs settled, want %d", recorder.count(), engine.MaxWorkflowChain+1)
+			t.Fatalf("%d runs settled, want %d", recorder.count(), platformgateway.MaxWorkflowChainRuns+1)
 		}
 		time.Sleep(time.Millisecond)
 	}
@@ -383,8 +383,8 @@ func TestAWorkflowAnsweringItsOwnChatLinesIsStopped(t *testing.T) {
 	chat.mu.Lock()
 	sent := chat.sent
 	chat.mu.Unlock()
-	if sent != engine.MaxWorkflowChain {
-		t.Errorf("sent %d lines, want %d", sent, engine.MaxWorkflowChain)
+	if sent != platformgateway.MaxWorkflowChainRuns {
+		t.Errorf("sent %d lines, want %d", sent, platformgateway.MaxWorkflowChainRuns)
 	}
 	recorder.mu.Lock()
 	defer recorder.mu.Unlock()

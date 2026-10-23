@@ -106,7 +106,7 @@ export interface TwitchSendChatMessageParams {
 /** `POST /helix/chat/announcements`. */
 export interface TwitchSendChatAnnouncementParams {
   message: string;
-  /** `primary`, `blue`, `green`, `orange` or `purple`; Twitch's default when absent. */
+  /** One of TWITCH_ANNOUNCEMENT_COLORS in `platform-gateway.gen.ts`; Twitch's default when absent. */
   color?: string;
 }
 
