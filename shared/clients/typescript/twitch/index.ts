@@ -86,10 +86,17 @@ export default class TwitchClient {
    * Authenticate with the stored token. A token from a dashboard or from the
    * engine's public Twitch app needs `requestToken`; any other token is
    * refreshed here, with `credentials`.
+   *
+   * Rejects with `signal`'s reason once it aborts, between steps: reading the
+   * stored token and registering it with Twitch each run to completion, but
+   * nothing after an abort is kept, so the client stays uninitialized.
    */
-  async init(credentials?: TwitchAuthCredentials): Promise<AuthProvider> {
-    this.authProvider = await this.authenticate(credentials);
-    return this.authProvider;
+  async init(credentials?: TwitchAuthCredentials, signal?: AbortSignal): Promise<AuthProvider> {
+    signal?.throwIfAborted();
+    const authProvider = await this.authenticate(credentials, signal);
+    signal?.throwIfAborted();
+    this.authProvider = authProvider;
+    return authProvider;
   }
 
   ApiClient(): ApiClient {
@@ -266,8 +273,12 @@ export default class TwitchClient {
     return JSON.parse(token) satisfies AccessTokenWithUserId;
   }
 
-  private async authenticate(credentials: TwitchAuthCredentials | undefined): Promise<AuthProvider> {
+  private async authenticate(
+    credentials: TwitchAuthCredentials | undefined,
+    signal: AbortSignal | undefined
+  ): Promise<AuthProvider> {
     const stored = await this.getBroadcasterToken();
+    signal?.throwIfAborted();
     switch (selectStrategy(stored)) {
       case "dashboard":
         return this.authenticateWithDashboard(stored);

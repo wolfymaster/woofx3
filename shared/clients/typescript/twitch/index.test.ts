@@ -69,6 +69,8 @@ beforeAll(async () => {
   ({ default: TwitchClient } = await import("./index"));
 });
 
+const CREDENTIALS = { clientId: "cid", clientSecret: "sec", redirectUri: "https://app/cb" };
+
 function createGetSetting(tokenJson: string | undefined) {
   const fn = mock(async (_key: string) => tokenJson);
   return fn;
@@ -123,6 +125,45 @@ describe("TwitchClient", () => {
     await expect(client.init({ clientId: "x", clientSecret: "y", redirectUri: "z" })).rejects.toThrow(
       "Missing broadcaster token in db proxy setting: twitch_token"
     );
+  });
+
+  test("init gives up on an aborted signal without asking for the token", async () => {
+    const getSetting = createGetSetting(TOKEN_JSON);
+    const client = new TwitchClient({ channel: "c", getSetting });
+    const reason = new Error("stopped");
+
+    await expect(client.init(CREDENTIALS, AbortSignal.abort(reason))).rejects.toBe(reason);
+
+    expect(getSetting).not.toHaveBeenCalled();
+  });
+
+  test("init aborted while reading the token registers nothing and stays uninitialized", async () => {
+    const abort = new AbortController();
+    const reason = new Error("stopped");
+    const getSetting = mock(async (_key: string) => {
+      abort.abort(reason);
+      return TOKEN_JSON;
+    });
+    const client = new TwitchClient({ channel: "c", getSetting });
+
+    await expect(client.init(CREDENTIALS, abort.signal)).rejects.toBe(reason);
+
+    expect(addUserForToken).not.toHaveBeenCalled();
+    expect(() => client.ApiClient()).toThrow("Must initialize TwitchClient before use");
+  });
+
+  test("init aborted while registering the token stays uninitialized", async () => {
+    const abort = new AbortController();
+    const reason = new Error("stopped");
+    addUserForToken.mockImplementationOnce(async () => {
+      abort.abort(reason);
+      return "42";
+    });
+    const client = new TwitchClient({ channel: "c", getSetting: createGetSetting(TOKEN_JSON) });
+
+    await expect(client.init(CREDENTIALS, abort.signal)).rejects.toBe(reason);
+
+    expect(() => client.ApiClient()).toThrow("Must initialize TwitchClient before use");
   });
 
   test("facade methods require init before exposing Twitch surfaces", async () => {

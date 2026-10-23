@@ -88,6 +88,9 @@ function minimalContext(): Context {
 // let start() time out immediately rather than emitting outcomes.
 const SETTLE_MS = 5;
 
+/** A signal that never aborts, for the tests that are not about aborting. */
+const running = new AbortController().signal;
+
 describe("TwitchEventBus", () => {
   let ctx: Context;
   let listener: ReturnType<typeof createMockListener>;
@@ -100,7 +103,7 @@ describe("TwitchEventBus", () => {
   test("start begins the listener and registers every handler", async () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
 
-    await bus.start(SETTLE_MS);
+    await bus.start(running, SETTLE_MS);
 
     expect(listener.start).toHaveBeenCalledTimes(1);
     expect(listener.onChannelFollow).toHaveBeenCalledTimes(1);
@@ -109,7 +112,7 @@ describe("TwitchEventBus", () => {
 
   test("disconnect stops the listener and tears down any registered EventSub subscriptions", async () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    await bus.start(SETTLE_MS);
+    await bus.start(running, SETTLE_MS);
 
     const firstSubs = [
       listener.onChannelBan.mock.results[0]?.value,
@@ -127,13 +130,13 @@ describe("TwitchEventBus", () => {
   test("start replaces a previous subscription batch when called again", async () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
 
-    await bus.start(SETTLE_MS);
+    await bus.start(running, SETTLE_MS);
 
     expect(listener.onChannelBan).toHaveBeenCalledTimes(1);
 
     const firstBanSub = listener.onChannelBan.mock.results[0]?.value as { stop: ReturnType<typeof mock> };
 
-    await bus.start(SETTLE_MS);
+    await bus.start(running, SETTLE_MS);
 
     expect(firstBanSub.stop).toHaveBeenCalled();
     expect(listener.onChannelBan).toHaveBeenCalledTimes(2);
@@ -141,7 +144,7 @@ describe("TwitchEventBus", () => {
 
   test("resumeSubscriptions and stopSubscriptions forward lifecycle calls to each active subscription", async () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    await bus.start(SETTLE_MS);
+    await bus.start(running, SETTLE_MS);
 
     const stubs = listener.onStreamOnline.mock.results.map(
       (r) => r.value as { start: ReturnType<typeof mock>; stop: ReturnType<typeof mock> }
@@ -163,7 +166,7 @@ describe("TwitchEventBus", () => {
     // socket is up, so nothing looks broken, but a refused subscription
     // delivers no events at all. Health has to reflect that.
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    const started = bus.start(50);
+    const started = bus.start(running, 50);
     const subs = allStubs(listener);
     for (const sub of subs.slice(0, TwitchEventBus.expectedSubscriptionCount - 1)) {
       listener.emitSuccess(sub);
@@ -181,7 +184,7 @@ describe("TwitchEventBus", () => {
 
   test("is ready only once every expected subscription is confirmed", async () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    const started = bus.start(50);
+    const started = bus.start(running, 50);
     const subs = allStubs(listener);
     for (const sub of subs.slice(0, TwitchEventBus.expectedSubscriptionCount)) {
       listener.emitSuccess(sub);
@@ -195,7 +198,7 @@ describe("TwitchEventBus", () => {
 
   test("is not ready when confirmations never arrive before the timeout", async () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    await bus.start(5);
+    await bus.start(running, 5);
 
     expect(bus.isReady()).toBe(false);
     expect(bus.establishedCount()).toBe(0);
@@ -205,7 +208,7 @@ describe("TwitchEventBus", () => {
     // Twurple keeps retrying refused subscriptions, so a bus that boots
     // unhealthy must be able to heal without a restart.
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    const started = bus.start(50);
+    const started = bus.start(running, 50);
     const subs = allStubs(listener);
     const expected = TwitchEventBus.expectedSubscriptionCount;
     for (const sub of subs.slice(0, expected - 1)) {
@@ -222,7 +225,7 @@ describe("TwitchEventBus", () => {
 
   test("the optional ad-break subscription is attempted but left out of readiness", async () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    const started = bus.start(50);
+    const started = bus.start(running, 50);
     const [adBreak] = listener.onChannelAdBreakBegin.mock.results.map((r) => r.value as EventSubSubscription);
     expect(adBreak).toBeDefined();
     for (const sub of allStubs(listener)) {
@@ -245,7 +248,7 @@ describe("TwitchEventBus", () => {
 
   test("a confirmed optional subscription does not count toward the required total", async () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    const started = bus.start(50);
+    const started = bus.start(running, 50);
     const [adBreak] = listener.onChannelAdBreakBegin.mock.results.map((r) => r.value as EventSubSubscription);
     listener.emitSuccess(adBreak!);
     const required = allStubs(listener);
@@ -260,7 +263,7 @@ describe("TwitchEventBus", () => {
 
   test("resubscribe requests every subscription again, retrying a refused optional one", async () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    const started = bus.start(50);
+    const started = bus.start(running, 50);
     for (const sub of allStubs(listener)) {
       listener.emitSuccess(sub);
     }
@@ -269,7 +272,7 @@ describe("TwitchEventBus", () => {
     await started;
     const requiredBefore = allStubs(listener);
 
-    const resubscribed = bus.resubscribe(50);
+    const resubscribed = bus.resubscribe(running, 50);
     expect(listener.onChannelAdBreakBegin).toHaveBeenCalledTimes(2);
     expect(listener.start).toHaveBeenCalledTimes(1);
     for (const sub of requiredBefore) {
@@ -283,9 +286,40 @@ describe("TwitchEventBus", () => {
     expect(bus.isReady()).toBe(true);
   });
 
+  test("start stops waiting for confirmations when its signal aborts", async () => {
+    const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
+    const abort = new AbortController();
+
+    const started = bus.start(abort.signal, 60_000);
+    abort.abort();
+    await started;
+
+    expect(bus.isReady()).toBe(false);
+  });
+
+  test("start returns at once on a signal that has already aborted", async () => {
+    const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
+
+    await bus.start(AbortSignal.abort(), 60_000);
+
+    expect(bus.isReady()).toBe(false);
+  });
+
+  test("resubscribe stops waiting when its signal aborts", async () => {
+    const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
+    await bus.start(running, SETTLE_MS);
+    const abort = new AbortController();
+
+    const resubscribed = bus.resubscribe(abort.signal, 60_000);
+    abort.abort();
+    await resubscribed;
+
+    expect(bus.isReady()).toBe(false);
+  });
+
   test("disconnect unbinds the outcome handlers and clears readiness", async () => {
     const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    const started = bus.start(50);
+    const started = bus.start(running, 50);
     const subs = allStubs(listener);
     for (const sub of subs.slice(0, TwitchEventBus.expectedSubscriptionCount)) {
       listener.emitSuccess(sub);

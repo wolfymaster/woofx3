@@ -90,14 +90,14 @@ export class TwitchAdapter implements Adapter {
    * adapter degraded and retries: the link said connected, and the next
    * settings read settles which one is right.
    */
-  async start(ctx: AdapterContext): Promise<void> {
+  async start(ctx: AdapterContext, signal: AbortSignal): Promise<void> {
     if (this.run !== undefined) {
       throw new Error("the twitch adapter is already running; the host never starts it twice");
     }
     const app = new TwitchApplication(this.deps);
     const appCtx: TwitchAppContext = { logger: ctx.logger, bus: ctx.bus, db: ctx.dbProxy, config: this.deps.config };
     this.run = { app, ctx: appCtx };
-    const outcome = await app.start(appCtx);
+    const outcome = await app.start(appCtx, signal);
     if (outcome === "not_linked") {
       throw new Error("Twitch is not linked: no Twitch token is stored");
     }

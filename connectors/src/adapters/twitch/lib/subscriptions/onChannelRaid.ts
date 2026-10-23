@@ -1,6 +1,7 @@
 import type { EventSubChannelRaidEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { Context } from "../../types";
+import { publishEvent } from "../publishEvent";
 
 export default function onChannelRaid(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onChannelRaidTo(ctx.broadcaster.id, async (event: EventSubChannelRaidEvent) => {
@@ -10,6 +11,6 @@ export default function onChannelRaid(ctx: Context, listener: EventSubWsListener
       fromBroadcasterUserName: raidingBroadcasterDisplayName,
       viewers,
     });
-    ctx.messageBus.publish(topic, data);
+    await publishEvent(ctx, [topic, data]);
   });
 }

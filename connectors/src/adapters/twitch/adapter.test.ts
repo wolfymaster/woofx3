@@ -16,12 +16,19 @@ import { Supervisor } from "../../host/supervisor";
 import { bytes, countingIds, FakeBus, FakeTime, flush, halfRandom, RecordingLogger, text } from "../../host/testing";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
 
+/** EventSub listeners started and not stopped since, across every client. */
+const liveListeners = new Set<object>();
+
 /** An EventSub listener that confirms every subscription as it is created. */
 function confirmingListener() {
   const successHandlers: Array<(sub: EventSubSubscription) => void> = [];
   const base: Record<string, unknown> = {
-    start: () => {},
-    stop: () => {},
+    start: () => {
+      liveListeners.add(base);
+    },
+    stop: () => {
+      liveListeners.delete(base);
+    },
     onSubscriptionCreateSuccess: (handler: (sub: EventSubSubscription) => void) => {
       successHandlers.push(handler);
       return { unbind: () => {} };
@@ -220,6 +227,23 @@ describe("TwitchAdapter under the supervisor", () => {
     expect(supervisor.status("twitch").state).toBe("connected");
     expect(bus.active(INTEGRATION_TOKEN_UPDATED_SUBJECT)).toBe(1);
   });
+
+  test("enable, disable and re-enable cycles leave one EventSub listener", async () => {
+    linked = true;
+    liveListeners.clear();
+    const { supervisor, apply } = supervised();
+
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await apply(true, true);
+      expect(liveListeners.size).toBe(1);
+      await apply(true, false);
+      expect(liveListeners.size).toBe(0);
+    }
+    await apply(true, true);
+
+    expect(supervisor.status("twitch").state).toBe("connected");
+    expect(liveListeners.size).toBe(1);
+  });
 });
 
 describe("TwitchAdapter in the host", () => {
@@ -227,8 +251,9 @@ describe("TwitchAdapter in the host", () => {
     return bytes(JSON.stringify({ specversion: "1.0", id: "e", type: subject, source: "api", data }));
   }
 
-  test("enabling starts it, disabling answers integration_unavailable, clearing the token answers not_linked", async () => {
+  test("enabling starts it, disabling answers integration_unavailable, unlinking stops EventSub and answers not_linked", async () => {
     linked = true;
+    liveListeners.clear();
     const values: Record<string, string> = { twitch_token: "tok", "integration.twitch.enabled": "true" };
     const settings: SettingsReader = { getSetting: async (key) => values[key] ?? null };
     const bus = new FakeBus();
@@ -278,9 +303,13 @@ describe("TwitchAdapter in the host", () => {
     expect(await ask()).toEqual(["integration_unavailable"]);
 
     values["integration.twitch.enabled"] = "true";
+    await announce();
+    expect(liveListeners.size).toBe(1);
+
     values.twitch_token = "";
     await announce();
     expect(await ask()).toEqual(["not_linked"]);
+    expect(liveListeners.size).toBe(0);
 
     values.twitch_token = "tok";
     await announce();

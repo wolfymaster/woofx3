@@ -15,6 +15,7 @@ import { AdBreakScheduler } from "./lib/adBreakScheduler";
 import { AdBreakLeadSetting } from "./lib/adBreakSettings";
 import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
+import { type PublishTarget, publishEvent } from "./lib/publishEvent";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
 import type TwitchApiClient from "./lib/twitch";
 import TwitchApiClientImpl, {
@@ -24,6 +25,7 @@ import TwitchApiClientImpl, {
   twitchApiErrorCodeOf,
 } from "./lib/twitch";
 import TwitchEventBus from "./lib/twitchEventBus";
+import type { EventPublisher } from "./types";
 
 /**
  * Inbound request on the `twitchapi` subject: `{ command, args? }`.
@@ -61,6 +63,11 @@ export function parseTwitchApiRequest(body: unknown): TwitchApiRequest | null {
  */
 const TWITCH_NOT_LINKED = "TwitchNotLinked";
 
+/** Whether `err` is TwitchClient's refusal for a missing or blank stored token. */
+function isNotLinked(err: unknown): boolean {
+  return err instanceof Error && err.name === TWITCH_NOT_LINKED;
+}
+
 /** The CloudEvent type of every `twitchapi` refusal. Must match ERROR_REPLY_TYPE in barkloader's twitch extension. */
 export const TWITCHAPI_ERROR_TYPE = "twitchapi.error";
 
@@ -89,6 +96,37 @@ export interface TwitchReplyDeps {
 /** How a connect attempt ended. `not_linked`: no Twitch token is stored. */
 export type ConnectOutcome = "connected" | "not_linked";
 
+/**
+ * What one connect builds, filled in as it goes, so a connect that fails or
+ * is aborted part-way can close exactly what it got to.
+ */
+interface Connection {
+  client: TwitchClient;
+  adBreakScheduler?: AdBreakScheduler;
+  eventBus?: TwitchEventBus;
+}
+
+/** The parts of a finished connect the rest of the run reads. */
+interface Connected {
+  apiClient: ApiClient;
+  broadcaster: HelixUser;
+  twitchApi: TwitchApiClient;
+  adBreakScheduler: AdBreakScheduler;
+}
+
+/** Stops everything a connection built, however far its connect got. */
+async function closeConnection(connection: Connection): Promise<void> {
+  try {
+    connection.eventBus?.disconnect();
+  } finally {
+    try {
+      connection.adBreakScheduler?.stop();
+    } finally {
+      await connection.client.close();
+    }
+  }
+}
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
@@ -105,13 +143,22 @@ export default class TwitchApplication {
    * with an unlink, or a relink that arrives mid-connect.
    */
   private link: "waiting" | "connecting" | "connected" = "waiting";
-  private eventBus: TwitchEventBus | null = null;
-  private twitchClient: TwitchClient | null = null;
-  private adBreakScheduler: AdBreakScheduler | null = null;
+  private connection: Connection | null = null;
   /** A token update arrived mid-connect; applied once the connect finishes. */
   private relinkPending = false;
+  /**
+   * Aborted when this run ends, by `stop` or by the adapter's start signal.
+   * Every connect and relink gives up on it, so nothing connects after stop.
+   */
+  private readonly lifetime = new AbortController();
+  /** Background work `stop` waits for: event publishes and the live-state read. */
+  private readonly inFlight = new Set<Promise<unknown>>();
 
   private async onTokenUpdated(ctx: TwitchAppContext): Promise<void> {
+    if (this.lifetime.signal.aborted) {
+      ctx.logger.debug("twitch: ignoring a Twitch token update after stop");
+      return;
+    }
     switch (this.link) {
       case "waiting": {
         await this.connect(ctx);
@@ -141,31 +188,40 @@ export default class TwitchApplication {
    * Neither is covered by a token swap, so both reconnect from scratch.
    */
   private async relink(ctx: TwitchAppContext): Promise<void> {
-    const client = this.twitchClient;
-    const eventBus = this.eventBus;
-    if (!client || !eventBus) {
+    const connection = this.connection;
+    const eventBus = connection?.eventBus;
+    if (!connection || !eventBus) {
       return;
     }
-    const { userChanged, providerChanged } = await client.reloadToken();
+    const signal = this.lifetime.signal;
+    let reloaded: { userChanged: boolean; providerChanged: boolean };
+    try {
+      reloaded = await connection.client.reloadToken();
+    } catch (err) {
+      // An unlink clears the token and announces it like a relink. The host
+      // stops this adapter once it reads the link, so the running
+      // connection is left alone until then.
+      if (isNotLinked(err)) {
+        ctx.logger.debug("twitch: ignoring a Twitch token update that left no token stored");
+        return;
+      }
+      throw err;
+    }
+    signal.throwIfAborted();
+    const { userChanged, providerChanged } = reloaded;
     const broadcasterChanged = userChanged && ctx.config.channel === undefined;
     if (providerChanged || broadcasterChanged) {
       ctx.logger.info("twitch: Twitch was relinked with a token this connection cannot take; reconnecting", {
         providerChanged,
         broadcasterChanged,
       });
-      eventBus.disconnect();
-      this.adBreakScheduler?.stop();
-      this.adBreakScheduler = null;
-      await client.close();
-      this.eventBus = null;
-      this.twitchClient = null;
-      ctx.twitchEventBus = undefined;
-      ctx.twitchApi = undefined;
-      ctx.broadcaster = undefined;
+      this.link = "connecting";
+      await this.dropConnection(ctx);
       await this.connect(ctx);
       return;
     }
-    await eventBus.resubscribe();
+    await eventBus.resubscribe(signal);
+    signal.throwIfAborted();
     ctx.logger.info("twitch: relinked token applied", {
       established: eventBus.establishedCount(),
       expected: TwitchEventBus.expectedSubscriptionCount,
@@ -175,8 +231,15 @@ export default class TwitchApplication {
   /**
    * Listens for relinks, then connects. On `not_linked` nothing runs but that
    * listener, which the adapter's stop closes with the rest of its bus scope.
+   * Gives up, closing whatever it built, once `signal` aborts.
    */
-  async start(ctx: TwitchAppContext): Promise<ConnectOutcome> {
+  async start(ctx: TwitchAppContext, signal: AbortSignal): Promise<ConnectOutcome> {
+    if (signal.aborted) {
+      this.lifetime.abort(signal.reason);
+    } else {
+      signal.addEventListener("abort", () => this.lifetime.abort(signal.reason), { once: true });
+    }
+
     // Published when the streamer links (or relinks) Twitch in the UI. A
     // relink while connected swaps the token in place (see `relink`),
     // without a restart.
@@ -187,6 +250,10 @@ export default class TwitchApplication {
       try {
         await this.onTokenUpdated(ctx);
       } catch (err) {
+        if (this.lifetime.signal.aborted) {
+          ctx.logger.debug("twitch: a Twitch token update was cut short by stop", { err: errorMessage(err) });
+          return;
+        }
         ctx.logger.error("twitch: failed to apply the updated Twitch token", { err: errorMessage(err) });
       }
     });
@@ -197,42 +264,88 @@ export default class TwitchApplication {
   /**
    * Connect to Twitch with the linked account, or stay waiting when none is
    * linked. The channel is the configured one when set, else the account
-   * that linked Twitch.
+   * that linked Twitch. A connect that fails or is aborted part-way closes
+   * everything it built before rejecting.
    */
   private async connect(ctx: TwitchAppContext): Promise<ConnectOutcome> {
+    const signal = this.lifetime.signal;
+    signal.throwIfAborted();
     this.link = "connecting";
     const db = ctx.db;
-    const twitchClient = new TwitchClient({
-      channel: ctx.config.channel,
-      getSetting: async (key) => {
-        const response = await GetSetting({ key }, db);
-        return response.setting.value.stringValue ?? undefined;
-      },
-      setSetting: async (key, value) => {
-        await SetSetting({ key, value: { stringValue: value }, userId: "" }, db);
-      },
-      requestToken: requestTokenOverNats(busRequest(ctx.bus)),
-    });
+    const connection: Connection = {
+      client: new TwitchClient({
+        channel: ctx.config.channel,
+        getSetting: async (key) => {
+          const response = await GetSetting({ key }, db);
+          return response.setting.value.stringValue ?? undefined;
+        },
+        setSetting: async (key, value) => {
+          await SetSetting({ key, value: { stringValue: value }, userId: "" }, db);
+        },
+        requestToken: requestTokenOverNats(busRequest(ctx.bus)),
+      }),
+    };
 
     // Only an engine that refreshes Twitch tokens itself has an app of its
     // own; one whose token comes from a dashboard asks the dashboard instead.
+    // A rejected init keeps nothing, so there is nothing to close yet.
     let authProvider: AuthProvider;
     try {
-      authProvider = await twitchClient.init(ctx.config.app);
+      authProvider = await connection.client.init(ctx.config.app, signal);
     } catch (err) {
-      if (err instanceof Error && err.name === TWITCH_NOT_LINKED) {
-        this.link = "waiting";
-        this.relinkPending = false;
+      this.link = "waiting";
+      this.relinkPending = false;
+      if (isNotLinked(err)) {
         ctx.logger.info("twitch: no Twitch account linked yet; waiting for a Twitch link");
         return "not_linked";
       }
-      this.link = "waiting";
       throw err;
     }
 
-    const apiClient = twitchClient.ApiClient();
-    const listener = twitchClient.EventBusListener();
-    const broadcaster = await twitchClient.broadcaster();
+    let connected: Connected;
+    try {
+      connected = await this.build(ctx, connection, authProvider, signal);
+      signal.throwIfAborted();
+    } catch (err) {
+      this.link = "waiting";
+      this.relinkPending = false;
+      try {
+        await closeConnection(connection);
+      } catch (closeErr) {
+        ctx.logger.error("twitch: closing a failed connect also failed", { err: errorMessage(closeErr) });
+      }
+      throw err;
+    }
+
+    this.connection = connection;
+    ctx.broadcaster = connected.broadcaster;
+    ctx.twitchApi = connected.twitchApi;
+    ctx.twitchEventBus = connection.eventBus;
+    this.link = "connected";
+    void this.track(this.seedLiveState(ctx, connected, signal));
+    ctx.logger.info("twitch: connected", { broadcasterId: connected.broadcaster.id });
+    if (this.relinkPending) {
+      this.relinkPending = false;
+      await this.relink(ctx);
+    }
+    return "connected";
+  }
+
+  /**
+   * Builds the connection's parts on `connection` as it goes, so the caller
+   * can close whatever was built when this rejects. Rejects with `signal`'s
+   * reason once it aborts.
+   */
+  private async build(
+    ctx: TwitchAppContext,
+    connection: Connection,
+    authProvider: AuthProvider,
+    signal: AbortSignal
+  ): Promise<Connected> {
+    const apiClient = connection.client.ApiClient();
+    const listener = connection.client.EventBusListener();
+    const broadcaster = await untilAborted(connection.client.broadcaster(), signal);
+    signal.throwIfAborted();
 
     const twitchApi = new TwitchApiClientImpl(
       apiClient,
@@ -241,22 +354,25 @@ export default class TwitchApplication {
       enqueueShoutoutOverNats(busRequest(ctx.bus))
     );
     const events = new EventFactory({ source: "twitch" });
-    const messageBus = ctx.bus;
+    const messageBus: EventPublisher = {
+      publish: (subject, data) => this.track(ctx.bus.publish(subject, data)),
+    };
+    const eventTarget: PublishTarget = { messageBus, logger: ctx.logger };
     const adBreakLeadSetting = new AdBreakLeadSetting(
       {
-        listModuleSettings: async (moduleId) => (await ListModuleSettings({ moduleId }, db)).settings,
+        listModuleSettings: async (moduleId) => (await ListModuleSettings({ moduleId }, ctx.db)).settings,
       },
       ctx.logger
     );
     const adBreakScheduler = new AdBreakScheduler({
       fetchSchedule: () => twitchApi.getAdSchedule({}),
       publishUpcoming: (event) => {
-        const [topic, data] = events.Twitch().adBreakUpcoming(event);
-        messageBus.publish(topic, data);
+        void publishEvent(eventTarget, events.Twitch().adBreakUpcoming(event));
       },
       logger: ctx.logger,
       readLeadSeconds: () => adBreakLeadSetting.read(),
     });
+    connection.adBreakScheduler = adBreakScheduler;
 
     const eventBusCtx = {
       broadcaster,
@@ -266,33 +382,21 @@ export default class TwitchApplication {
       membershipEnricher: this.buildMembershipEnricher(ctx, apiClient),
       onStreamLiveChange: (live: boolean) => adBreakScheduler.setLive(live),
     };
-    const twitchEventBus = new TwitchEventBus(eventBusCtx, listener);
-    await twitchEventBus.start();
-    if (!twitchEventBus.isReady()) {
+    const eventBus = new TwitchEventBus(eventBusCtx, listener);
+    connection.eventBus = eventBus;
+    await eventBus.start(signal);
+    signal.throwIfAborted();
+    if (!eventBus.isReady()) {
       // Deliberately not fatal: the `twitchapi` request/reply surface is
       // still worth serving, and Twurple keeps retrying refused
       // subscriptions. The adapter's /health detail shows the shortfall.
       ctx.logger.error("Twitch EventSub subscriptions incomplete; no events arrive for the missing ones", {
-        established: twitchEventBus.establishedCount(),
+        established: eventBus.establishedCount(),
         expected: TwitchEventBus.expectedSubscriptionCount,
-        failures: twitchEventBus.failedSubscriptions(),
+        failures: eventBus.failedSubscriptions(),
       });
     }
-
-    ctx.broadcaster = broadcaster;
-    ctx.twitchApi = twitchApi;
-    ctx.twitchEventBus = twitchEventBus;
-    this.eventBus = twitchEventBus;
-    this.twitchClient = twitchClient;
-    this.adBreakScheduler = adBreakScheduler;
-    void this.seedLiveState(ctx, apiClient, broadcaster.id, adBreakScheduler);
-    this.link = "connected";
-    ctx.logger.info("twitch: connected", { broadcasterId: broadcaster.id });
-    if (this.relinkPending) {
-      this.relinkPending = false;
-      await this.relink(ctx);
-    }
-    return "connected";
+    return { apiClient, broadcaster, twitchApi, adBreakScheduler };
   }
 
   /**
@@ -300,20 +404,44 @@ export default class TwitchApplication {
    * service connected, so a service started mid-stream asks Helix once.
    * A failed read leaves the scheduler offline until the next online event:
    * a missed heads-up is better than polling a stream that is not live.
+   * Stops waiting, and seeds nothing, once `signal` aborts.
    */
-  private async seedLiveState(
-    ctx: TwitchAppContext,
-    apiClient: ApiClient,
-    broadcasterId: string,
-    scheduler: AdBreakScheduler
-  ): Promise<void> {
+  private async seedLiveState(ctx: TwitchAppContext, connected: Connected, signal: AbortSignal): Promise<void> {
     try {
-      const stream = await apiClient.streams.getStreamByUserId(broadcasterId);
-      scheduler.seedLive(stream !== null);
+      const stream = await untilAborted(
+        connected.apiClient.streams.getStreamByUserId(connected.broadcaster.id),
+        signal
+      );
+      connected.adBreakScheduler.seedLive(stream !== null);
     } catch (err) {
+      if (signal.aborted) {
+        return;
+      }
       ctx.logger.warn("twitch: could not read whether the stream is live; ad heads-up waits for stream.online", {
         err: errorMessage(err),
       });
+    }
+  }
+
+  /** Keeps `work` in `inFlight` until it settles, for `stop` to wait on. */
+  private track<T>(work: Promise<T>): Promise<T> {
+    this.inFlight.add(work);
+    const forget = () => {
+      this.inFlight.delete(work);
+    };
+    work.then(forget, forget);
+    return work;
+  }
+
+  /** Closes the current connection and clears what the context exposed from it. Shared by relink and stop. */
+  private async dropConnection(ctx: TwitchAppContext): Promise<void> {
+    const connection = this.connection;
+    this.connection = null;
+    ctx.twitchEventBus = undefined;
+    ctx.twitchApi = undefined;
+    ctx.broadcaster = undefined;
+    if (connection) {
+      await closeConnection(connection);
     }
   }
 
@@ -342,17 +470,26 @@ export default class TwitchApplication {
    * Twitch events are not reaching the engine at all.
    */
   eventSubStatus(): { established: number; expected: number; ready: boolean } {
+    const eventBus = this.connection?.eventBus;
     return {
-      established: this.eventBus?.establishedCount() ?? 0,
+      established: eventBus?.establishedCount() ?? 0,
       expected: TwitchEventBus.expectedSubscriptionCount,
-      ready: this.eventBus?.isReady() ?? false,
+      ready: eventBus?.isReady() ?? false,
     };
   }
 
+  /**
+   * Ends this run for good: aborts a connect or relink in flight (which
+   * closes what it built), closes the connection, then waits for in-flight
+   * publishes and the live-state read. The host bounds how long it waits; the
+   * bus scope it closes afterwards drains any relink handler still running.
+   */
   async stop(ctx: TwitchAppContext): Promise<void> {
-    this.adBreakScheduler?.stop();
-    this.adBreakScheduler = null;
-    ctx.twitchEventBus?.disconnect();
+    this.lifetime.abort(new Error("the twitch application stopped"));
+    this.relinkPending = false;
+    this.link = "waiting";
+    await this.dropConnection(ctx);
+    await Promise.allSettled([...this.inFlight]);
   }
 
   /**
@@ -449,6 +586,31 @@ function twitchApiReply(type: string, data: unknown, deps: TwitchReplyDeps): Uin
       data,
     })
   );
+}
+
+/**
+ * Settles as `work` does, or rejects with `signal`'s reason once it aborts,
+ * whichever comes first. For calls that take no signal of their own: `work`
+ * still runs to completion, but nobody waits for it.
+ */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(signal.reason);
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (err: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(err);
+      }
+    );
+  });
 }
 
 /**

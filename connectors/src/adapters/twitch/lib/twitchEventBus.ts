@@ -127,15 +127,17 @@ export default class TwitchEventBus {
    * Start the EventSub WebSocket listener and register channel handlers.
    * Subscriptions activate when Twitch sends session_welcome (Twurple calls
    * subscription.start internally). Do not call subscription.start() during boot.
+   * Stops waiting for confirmations when `signal` aborts; the caller then
+   * disconnects.
    */
-  async start(timeoutMs: number = SUBSCRIPTION_SETTLE_TIMEOUT_MS): Promise<void> {
+  async start(signal: AbortSignal, timeoutMs: number = SUBSCRIPTION_SETTLE_TIMEOUT_MS): Promise<void> {
     this.unbindOutcomes();
     this.established.clear();
     this.failures.clear();
     this.optionalWarned.clear();
     // Bind before creating anything: a confirmation that arrives while
     // no handler is attached is lost, and readiness would never settle.
-    const settled = this.trackSubscriptionOutcomes(timeoutMs);
+    const settled = this.trackSubscriptionOutcomes(signal, timeoutMs);
     this.listener.start();
     this.registerSubscriptions();
     await settled;
@@ -147,14 +149,14 @@ export default class TwitchEventBus {
    * after the streamer relinks Twitch: a relink is how a scope gets granted,
    * and an optional subscription refused for that scope is only retried by
    * asking again. Readiness drops only for as long as Twitch takes to
-   * confirm the new batch.
+   * confirm the new batch. Stops waiting when `signal` aborts.
    */
-  async resubscribe(timeoutMs: number = SUBSCRIPTION_SETTLE_TIMEOUT_MS): Promise<void> {
+  async resubscribe(signal: AbortSignal, timeoutMs: number = SUBSCRIPTION_SETTLE_TIMEOUT_MS): Promise<void> {
     this.unbindOutcomes();
     this.established.clear();
     this.failures.clear();
     this.optionalWarned.clear();
-    const settled = this.trackSubscriptionOutcomes(timeoutMs);
+    const settled = this.trackSubscriptionOutcomes(signal, timeoutMs);
     this.registerSubscriptions();
     await settled;
   }
@@ -167,11 +169,12 @@ export default class TwitchEventBus {
   }
 
   /**
-   * Resolves once every subscription has been confirmed or refused, or
-   * once `timeoutMs` elapses — whichever comes first. The event handlers
-   * stay bound afterwards so later retries keep `isReady()` current.
+   * Resolves once every subscription has been confirmed or refused, once
+   * `timeoutMs` elapses, or once `signal` aborts — whichever comes first.
+   * The event handlers stay bound afterwards so later retries keep
+   * `isReady()` current.
    */
-  private trackSubscriptionOutcomes(timeoutMs: number): Promise<void> {
+  private trackSubscriptionOutcomes(signal: AbortSignal, timeoutMs: number): Promise<void> {
     const expected = SUBSCRIPTION_FACTORIES.length;
     return new Promise<void>((resolve) => {
       let finished = false;
@@ -181,9 +184,15 @@ export default class TwitchEventBus {
         }
         finished = true;
         clearTimeout(timer);
+        signal.removeEventListener("abort", finish);
         resolve();
       };
       const timer = setTimeout(finish, timeoutMs);
+      if (signal.aborted) {
+        finish();
+        return;
+      }
+      signal.addEventListener("abort", finish, { once: true });
       // Optional subscriptions are recorded like any other and filtered out
       // when read: an outcome can arrive before the factory that created the
       // subscription has returned, so its id may not be known as optional yet.

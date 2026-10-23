@@ -55,15 +55,22 @@ function createMockListener() {
 }
 
 let lastTwitchClientConfig: unknown;
+let lastClient: MockTwitchClient | undefined;
+let lastListener: ReturnType<typeof createMockListener> | undefined;
 
 class MockTwitchClient {
   constructor(config: unknown) {
     lastTwitchClientConfig = config;
+    lastClient = this;
   }
 
   init = mock(async () => {});
+  close = mock(async () => {});
   ApiClient = mock(() => ({}));
-  EventBusListener = mock(() => createMockListener());
+  EventBusListener = mock(() => {
+    lastListener = createMockListener();
+    return lastListener;
+  });
   broadcaster = mock(async () => ({ id: "broadcaster-1", displayName: "Stream" }) as HelixUser);
 }
 
@@ -75,6 +82,9 @@ mock.module("@woofx3/twitch", () => ({
 }));
 
 const { default: TwitchApplication } = await import("./application");
+
+/** A start signal that never aborts, for the tests that are not about aborting. */
+const running = new AbortController().signal;
 
 const CONFIG: TwitchConfig = {
   channel: "mychan",
@@ -117,7 +127,7 @@ describe("TwitchApplication", () => {
     const ctx = context();
     const app = new TwitchApplication({ clock: new FakeTime(), ids: countingIds() });
 
-    expect(await app.start(ctx)).toBe("connected");
+    expect(await app.start(ctx, running)).toBe("connected");
 
     expect(lastTwitchClientConfig).toEqual(expect.objectContaining({ channel: "mychan" }));
     expect(typeof (lastTwitchClientConfig as { getSetting: unknown }).getSetting).toBe("function");
@@ -128,13 +138,28 @@ describe("TwitchApplication", () => {
     expect(ctx.twitchEventBus).toBeDefined();
   });
 
-  test("stop disconnects the EventSub bus when present", async () => {
+  test("stop closes the TwitchClient, stops EventSub and clears the context", async () => {
+    const ctx = context();
     const app = new TwitchApplication({ clock: new FakeTime(), ids: countingIds() });
-    const disconnect = mock(() => {});
+    await app.start(ctx, running);
+    const listener = lastListener;
 
-    await app.stop(context({ twitchEventBus: { disconnect } as unknown as TwitchAppContext["twitchEventBus"] }));
+    await app.stop(ctx);
 
-    expect(disconnect).toHaveBeenCalledTimes(1);
+    expect(lastClient?.close).toHaveBeenCalledTimes(1);
+    expect(listener?.stop).toHaveBeenCalled();
+    expect(ctx.twitchApi).toBeUndefined();
+    expect(ctx.twitchEventBus).toBeUndefined();
+    expect(ctx.broadcaster).toBeUndefined();
+    expect(app.eventSubStatus()).toEqual({ established: 0, expected: expect.any(Number), ready: false });
+  });
+
+  test("stop before anything connected is safe", async () => {
+    const app = new TwitchApplication({ clock: new FakeTime(), ids: countingIds() });
+
+    await app.stop(context());
+
+    expect(app.eventSubStatus().ready).toBe(false);
   });
 });
 

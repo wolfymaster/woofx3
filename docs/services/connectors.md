@@ -204,9 +204,21 @@ it for the host:
   scoped bus, the host's db-proxy client and the Twitch settings. It listens
   for `setting.integration.token.updated` (a relink while running swaps the
   token in place), then connects. A start that finds no token stored after all
-  rejects, so the adapter goes `degraded` and is retried.
-- **Stop.** Stops the ad heads-up scheduler and disconnects EventSub; the host
-  closes the adapter's subscriptions.
+  rejects, so the adapter goes `degraded` and is retried. When the host aborts
+  a start, the connect gives up at its next step (reading the token, looking
+  up the broadcaster, or waiting for EventSub to confirm) and closes whatever
+  it had built.
+- **Unlink.** An unlink clears the token and publishes the same
+  `setting.integration.token.updated` as a relink. The running adapter ignores
+  an update that leaves no token stored (debug log) and keeps its connection
+  until the host reads the link as disconnected and stops it.
+- **Stop.** Aborts a connect or relink still in progress, stops the ad
+  heads-up scheduler, disconnects EventSub, closes the Twitch client, and
+  waits for event publishes still in flight, all within the host's stop
+  deadline. Nothing from a stopped run survives into the next start, so
+  enable, disable and re-enable cycles leave one EventSub connection. A
+  publish the bus refuses is logged with its subject and dropped. The host
+  then closes the adapter's subscriptions.
 - **Manifest.** Publishes every Twitch event subject
   (`@woofx3/common/cloudevents/Twitch/events`), subscribes to
   `setting.integration.token.updated`, requests `engine.twitch.token` and

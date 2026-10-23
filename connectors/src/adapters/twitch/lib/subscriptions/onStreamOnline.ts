@@ -1,6 +1,7 @@
 import type { EventSubStreamOnlineEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { Context } from "../../types";
+import { publishEvent } from "../publishEvent";
 
 export default function onStreamOnline(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onStreamOnline(ctx.broadcaster.id, async (event: EventSubStreamOnlineEvent) => {
@@ -13,7 +14,7 @@ export default function onStreamOnline(ctx: Context, listener: EventSubWsListene
       // (`startedAt: string`) non-nullable for downstream consumers.
       startedAt: (event.startDate ?? new Date()).toISOString(),
     });
-    ctx.messageBus.publish(topic, data);
+    await publishEvent(ctx, [topic, data]);
     ctx.onStreamLiveChange?.(true);
   });
 }
