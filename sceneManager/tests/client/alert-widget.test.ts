@@ -170,7 +170,7 @@ function setup(preparedAlerts?: number) {
     disposing = true;
     widget.dispose();
   };
-  return { timers, finished, marked, stages, deliver, cancel, dispose };
+  return { area: element, timers, finished, marked, stages, deliver, cancel, dispose };
 }
 
 function descendants(element: FakeElement): FakeElement[] {
@@ -214,6 +214,25 @@ describe("AlertWidget", () => {
 
     expect(stages()).toEqual([onScreen(A)]);
     expect(marked).not.toContain("woofx3.alert/ev-1/prepared");
+  });
+
+  it("fits a prepared stage to the area as it is built, and again as it plays only if the area changed", () => {
+    const { area, timers, deliver } = setup();
+    area.clientWidth = 400;
+    area.clientHeight = 300;
+    deliver("ev-1", "a");
+    deliver("ev-2", "b");
+    timers.advance(0);
+    const prepared = area.children[1]!;
+    expect(prepared.style.opacity).toBe("0");
+    expect(prepared.style.transform).toBe("translate(0px, 0px) scale(0.5)");
+
+    area.clientWidth = 800;
+    area.clientHeight = 600;
+    timers.advance(ALERT_PLAYS_OUT_MS);
+
+    expect(prepared.style.opacity).toBe("");
+    expect(prepared.style.transform).toBe("translate(0px, 0px) scale(1)");
   });
 
   it("prepares nothing ahead when it keeps no prepared alerts", () => {

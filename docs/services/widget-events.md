@@ -160,10 +160,11 @@ one `alert` event whose `data` is the triggering CloudEvent (`{ type, data }`, o
 `null` when nothing triggered the workflow).
 
 The page plays alerts on **prepared** stages, so a widget's frame has usually loaded
-before its alert is due. A prepared stage is built transparent, with its frames
-booting and painting and its time held at its first moment. (Transparent rather than
-`visibility: hidden`, which stops Chromium rendering a cross-origin frame, so a widget
-could not paint before it is shown.) An alert area keeps up to four prepared stages,
+before its alert is due. A prepared stage is built transparent and already fitted
+to the area, with its frames booting and painting and its time held at its first
+moment. (Transparent rather than `visibility: hidden`, and fitted rather than left at
+its canvas size, because Chromium stops rendering a cross-origin frame that is hidden
+or clipped out of view, so a widget could not paint before it is shown.) An alert area keeps up to four prepared stages,
 one per shape (the same layout, behaviors and frames, whatever the settings), and
 decides which from its queue each time the queue changes: first the shapes of the
 alerts waiting in it, in the order they will play, so an alert's frames boot while it

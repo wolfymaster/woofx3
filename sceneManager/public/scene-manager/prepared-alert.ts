@@ -79,6 +79,8 @@ export class PreparedAlert {
   private readonly frames = new Map<NodeId, PreparedFrame>();
   private playing: Playing | null = null;
   private finished: (() => void) | null = null;
+  /** The area's size the stage was last fitted to. */
+  private fittedTo = { width: -1, height: -1 };
 
   constructor(
     private readonly deps: PreparedAlertDeps,
@@ -92,10 +94,13 @@ export class PreparedAlert {
     this.stage.className = "alert-stage";
     this.stage.style.width = `${canvas.width}px`;
     this.stage.style.height = `${canvas.height}px`;
-    // Laid out like a playing alert, so its frames boot at their real size,
-    // and transparent until it plays: under `visibility: hidden` Chromium
-    // would stop rendering the frames, and a widget enters only once its
-    // frame has painted.
+    // Laid out like a playing alert, fitted to the area, so its frames boot
+    // at their real size and stay inside the area's clipping: Chromium stops
+    // rendering a cross-origin frame that is out of view, and a widget enters
+    // only once its frame has painted. Transparent until it plays for the
+    // same reason, since `visibility: hidden` would stop that rendering too
+    // and opacity does not.
+    this.fit();
     this.stage.style.opacity = "0";
     deps.element.appendChild(this.stage);
     this.staged = stageAlert<HTMLElement, unknown>({
@@ -154,7 +159,7 @@ export class PreparedAlert {
     if (this.playing !== null) {
       throw new Error("alert: a prepared alert plays once");
     }
-    const { element, timings, host } = this.deps;
+    const { timings, host } = this.deps;
     this.playing = {
       eventId,
       event: {
@@ -180,10 +185,20 @@ export class PreparedAlert {
       }
       frame.heldSubscriptions = [];
     }
-    const fit = fitCanvas(canvasOf(this.delivery.layout), { width: element.clientWidth, height: element.clientHeight });
-    this.stage.style.transform = `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`;
+    this.fit();
     this.stage.style.opacity = "";
     this.staged.start();
+  }
+
+  /** Scale the stage's canvas to the area, unless the area is the size it was last fitted to. */
+  private fit(): void {
+    const area = { width: this.deps.element.clientWidth, height: this.deps.element.clientHeight };
+    if (area.width === this.fittedTo.width && area.height === this.fittedTo.height) {
+      return;
+    }
+    this.fittedTo = area;
+    const fit = fitCanvas(canvasOf(this.delivery.layout), area);
+    this.stage.style.transform = `translate(${fit.x}px, ${fit.y}px) scale(${fit.scale})`;
   }
 
   /** Take the alert off the page now, without reporting it finished. Idempotent. */
