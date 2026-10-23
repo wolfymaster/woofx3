@@ -244,6 +244,37 @@ describe("EventQueueManager — routing and lifecycle", () => {
   });
 });
 
+describe("EventQueueManager.pending", () => {
+  it("lists what is waiting, next first, without what is in flight, finished or cancelled", () => {
+    const mgr = new EventQueueManager();
+    const registration = mgr.register("inst-1", { maxInFlight: 1, priorityExpr: "value" }, () => true, () => {});
+    mgr.enqueue("inst-1", item("evt-1", 1));
+    mgr.enqueue("inst-1", item("evt-2", 1));
+    mgr.enqueue("inst-1", item("evt-3", 5));
+    mgr.enqueue("inst-1", item("evt-4", 1));
+
+    expect(mgr.pending(registration).map((i) => i.eventId)).toEqual(["evt-3", "evt-2", "evt-4"]);
+
+    mgr.cancel("inst-1", ["evt-2"]);
+    mgr.complete(registration, "evt-1");
+
+    expect(mgr.pending(registration)).toEqual([item("evt-4", 1)]);
+  });
+
+  it("is empty for a queue another has replaced, which took over what was waiting", () => {
+    const mgr = new EventQueueManager();
+    const old = mgr.register("inst-1", { maxInFlight: 1 }, () => true, () => {});
+    mgr.enqueue("inst-1", item("evt-1"));
+    mgr.enqueue("inst-1", item("evt-2"));
+    mgr.enqueue("inst-1", item("evt-3"));
+
+    const current = mgr.register("inst-1", { maxInFlight: 1 }, () => true, () => {});
+
+    expect(mgr.pending(old)).toEqual([]);
+    expect(mgr.pending(current)).toEqual([item("evt-3")]);
+  });
+});
+
 describe("toWidgetEvent", () => {
   const frame = { eventId: "e1", type: "channel.follow", key: "channel.follow" };
 
