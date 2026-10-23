@@ -139,13 +139,13 @@ WoofX3 is built around six engineering principles:
             └──┬──────────────┬──────────────┬──────────────┬────────┘
                │              │              │              │
                ▼              ▼              ▼              ▼
-         ┌──────────┐  ┌────────────┐  ┌─────────────┐  ┌──────────────┐
-         │  twitch  │  │  workflow  │  │  barkloader │  │  connectors  │
-         │  Helix + │  │   engine + │  │   modules + │  │  adapters +  │
-         │  EventSub│  │ rete rules │  │  Lua/QJS sbx│  │  chat cmds   │
-         └────┬─────┘  └─────┬──────┘  └──────┬──────┘  └──────┬───────┘
-              │              │                │                │
-              └──────────────┴────────┬───────┴────────────────┘
+         ┌────────────┐  ┌─────────────┐  ┌──────────────────────────┐
+         │  workflow  │  │  barkloader │  │        connectors        │
+         │   engine + │  │   modules + │  │  Twitch + OBS adapters,  │
+         │ rete rules │  │  Lua/QJS sbx│  │  chat dispatcher         │
+         └─────┬──────┘  └──────┬──────┘  └────────────┬─────────────┘
+               │                │                      │
+               └────────────────┴───────────┬──────────┘
                                       │ Twirp (gRPC)
                                       ▼
                        ┌──────────────────────────────┐
@@ -369,7 +369,6 @@ woofx3/
 ├── barkloader/      Module runtime + Lua/QuickJS sandboxes (Rust)
 ├── db/              Database proxy, protobuf, migrations (Go)
 ├── workflow/        Event-driven workflow engine (Go)
-├── twitch/          Twitch Helix + EventSub bridge (TS / Bun)
 ├── treats/          Viewer treats system (planned)
 ├── services/
 │   └── nats/        Local NATS message bus
@@ -439,7 +438,7 @@ docker compose -f docker-compose.dev.yml up messagebus db barkloader
 docker compose -f docker-compose.dev.yml logs -f api
 
 # Restart a single service
-docker compose -f docker-compose.dev.yml restart twitch
+docker compose -f docker-compose.dev.yml restart connectors
 
 # Stop everything (keeps caches)
 docker compose -f docker-compose.dev.yml down
