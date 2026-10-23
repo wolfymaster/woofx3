@@ -364,6 +364,7 @@ impl InvocationContext {
     pub fn call_scope(&self) -> CallScope {
         CallScope::new(self.permissions.clone(), self.deadline)
             .with_module_id(self.module_id.clone())
+            .with_local_endpoints(self.local_endpoints.clone())
     }
 }
 

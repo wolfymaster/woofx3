@@ -1,4 +1,4 @@
-use lib_sandbox::extensions::TwitchExtension;
+use lib_sandbox::extensions::{LocalExtension, TwitchExtension};
 use lib_sandbox::host::noop::noop_host_context;
 use lib_sandbox::host::{
     ExtensionRegistry, HostExtension, HostFunction, NatsPublisher, NatsRequester, RequestError,
@@ -669,6 +669,139 @@ end
             invoke_with_twitch(code, ext, &["twitch.moderation"], twitch.clone()).unwrap();
         assert_eq!(allowed, serde_json::json!({ "ok": true }), "{ext}");
         assert_eq!(twitch.requests.lock().unwrap().len(), 1, "{ext}");
+    }
+}
+
+/// Stands in for the connectors host's companion gateway: answers every
+/// module endpoint request with the device echoing what it was sent.
+struct FakeCompanionGateway {
+    requests: Mutex<Vec<serde_json::Value>>,
+}
+
+impl NatsRequester for FakeCompanionGateway {
+    fn request(
+        &self,
+        subject: &str,
+        data: serde_json::Value,
+        _timeout: Duration,
+    ) -> Result<serde_json::Value, RequestError> {
+        assert_eq!(subject, "engine.companion.module.request");
+        self.requests.lock().unwrap().push(data.clone());
+        Ok(serde_json::json!({
+            "status": "ok",
+            "reply": data["message"],
+            "sessionEpoch": "epoch-1"
+        }))
+    }
+}
+
+/// Runs `code` as a function of module `vts`, which declares the websocket
+/// endpoint `api`, against a gateway that echoes.
+fn invoke_with_local(code: &str, ext: &str) -> (serde_json::Value, Vec<serde_json::Value>) {
+    let mut module = single_function_module("vts", "run", code, ext);
+    module.local_endpoints = vec![RegisteredLocalEndpoint {
+        id: "api".into(),
+        protocol: LocalEndpointProtocol::Websocket,
+    }];
+    let registry = Arc::new(ModuleRegistry::new());
+    registry.register_module("vts".to_string(), module).unwrap();
+    let gateway = Arc::new(FakeCompanionGateway {
+        requests: Mutex::new(Vec::new()),
+    });
+    let mut host_ctx = noop_host_context();
+    host_ctx.extensions =
+        Arc::new(ExtensionRegistry::new().with(Arc::new(LocalExtension::new(gateway.clone()))));
+    let result = Sandbox::new(registry, host_ctx, SandboxLimits::default())
+        .unwrap()
+        .invoke(InvokeRequest {
+            function: "vts:function:run".to_string(),
+            event: serde_json::Value::Null,
+            user: None,
+            params: serde_json::Value::Null,
+            workflow_chain: None,
+            timeout_ms: None,
+        })
+        .unwrap();
+    let requests = gateway.requests.lock().unwrap().clone();
+    (result, requests)
+}
+
+#[test]
+fn test_local_request_reaches_the_gateway_from_both_runtimes() {
+    // `local` is a Lua keyword, so Lua code reaches the namespace as
+    // `ctx["local"]`.
+    let cases = [
+        (
+            "js",
+            r#"function run(ctx) {
+    const answer = ctx.local.request({
+        endpoint: "api",
+        message: { requestID: "r1" },
+        match: { field: "requestID", value: "r1" },
+    });
+    return { id: answer.reply.requestID, epoch: answer.sessionEpoch };
+}"#,
+        ),
+        (
+            "lua",
+            r#"
+function run(ctx)
+    local answer = ctx["local"].request({
+        endpoint = "api",
+        message = { requestID = "r1" },
+        match = { field = "requestID", value = "r1" },
+    })
+    return { id = answer.reply.requestID, epoch = answer.sessionEpoch }
+end
+"#,
+        ),
+    ];
+    for (ext, code) in cases {
+        let (result, requests) = invoke_with_local(code, ext);
+        assert_eq!(
+            result,
+            serde_json::json!({ "id": "r1", "epoch": "epoch-1" }),
+            "{ext}"
+        );
+        assert_eq!(requests.len(), 1, "{ext}");
+        assert_eq!(requests[0]["op"], "request", "{ext}");
+        assert_eq!(requests[0]["moduleId"], "vts", "{ext}");
+        assert_eq!(requests[0]["endpointId"], "api", "{ext}");
+    }
+}
+
+#[test]
+fn test_local_refusal_carries_its_code_in_both_runtimes() {
+    let cases = [
+        (
+            "js",
+            r#"function run(ctx) {
+    try {
+        ctx.local.send({ endpoint: "obs", message: "hi" });
+        return { threw: false };
+    } catch (e) {
+        return { threw: true, code: e.code };
+    }
+}"#,
+        ),
+        (
+            "lua",
+            r#"
+function run(ctx)
+    local ok, err = pcall(ctx["local"].send, { endpoint = "obs", message = "hi" })
+    return { threw = not ok, code = err.code }
+end
+"#,
+        ),
+    ];
+    for (ext, code) in cases {
+        let (result, requests) = invoke_with_local(code, ext);
+        assert_eq!(
+            result,
+            serde_json::json!({ "threw": true, "code": "not_declared" }),
+            "{ext}"
+        );
+        assert!(requests.is_empty(), "{ext}");
     }
 }
 
