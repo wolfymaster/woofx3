@@ -43,8 +43,8 @@ export function invalidCommandVariableNames(pattern: string): string[] {
 
 /** Assigns `value` into `target` at a possibly dotted path (e.g.
  * "user.name" -> target.user.name = value), creating intermediate objects
- * as needed. Lets a dotted variable name build a nested object that the
- * `{template}` resolver's existing dotted-path traversal can address. */
+ * as needed. Lets a dotted variable name build a nested object that
+ * dotted-path traversal of `{template}` strings can address. */
 function setNestedValue(target: Record<string, unknown>, dottedKey: string, value: unknown): void {
   const segments = dottedKey.split(".");
   let cur = target;
