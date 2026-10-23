@@ -1,10 +1,12 @@
 // Tells an endpoint's listeners to reconnect when its route may have moved:
 // the relay configuration changed in a way that moves it, or a setting of the
 // module that declares it was written. Routes are read afresh on every
-// connect, so a reconnect is all a listener needs to do.
+// connect, so a reconnect is all a listener needs to do. The companion
+// gateway is the one writer of the relay configuration, so it reports each
+// change here in-process; module settings changes arrive over the bus.
 
 import type { EngineHosting, RelayConfig } from "@woofx3/api";
-import { RELAY_CONFIG_UPDATED_SUBJECT, routesEndpoint } from "@woofx3/common/cloudevents/Relay/relay";
+import { routesEndpoint } from "@woofx3/common/cloudevents/Relay/relay";
 import { errorMessage, type Logger } from "../host/deps";
 import type { BusMessage, ScopedBus } from "../host/scoped-bus";
 import { endpointKey } from "./claims";
@@ -14,7 +16,7 @@ import type { EndpointRoute, LocalEndpointRef, RouteChangeListener } from "./typ
 export const MODULE_SETTING_UPDATED_SUBJECT = "db.module.setting.updated.*";
 
 /** What the route watch subscribes to on the host scope. */
-export const ROUTE_WATCH_SUBJECTS = [RELAY_CONFIG_UPDATED_SUBJECT, MODULE_SETTING_UPDATED_SUBJECT] as const;
+export const ROUTE_WATCH_SUBJECTS = [MODULE_SETTING_UPDATED_SUBJECT] as const;
 
 /** Where the latest attempt for an endpoint went. */
 export interface LastRoute {
@@ -23,7 +25,6 @@ export interface LastRoute {
 }
 
 export interface RouteWatchDeps {
-  relayConfig(): Promise<RelayConfig | null>;
   /** The endpoint's latest route, or null before its first resolution. */
   lastRoute(ref: LocalEndpointRef): LastRoute | null;
   hosting: EngineHosting | null;
@@ -61,32 +62,17 @@ export class RouteWatch {
   }
 
   async subscribe(scope: Pick<ScopedBus, "subscribe">): Promise<void> {
-    await scope.subscribe(RELAY_CONFIG_UPDATED_SUBJECT, () => this.relayConfigUpdated());
     await scope.subscribe(MODULE_SETTING_UPDATED_SUBJECT, (msg) => {
       this.moduleSettingUpdated(msg);
     });
   }
 
   /**
-   * Re-reads the relay configuration and tells each endpoint it moves. A
-   * `local` engine never takes the bridge, so nothing moves there. A
-   * configuration that cannot be read is assumed to move every endpoint.
+   * Tells each endpoint the stored relay configuration moves. A `local`
+   * engine never takes the bridge, so nothing moves there.
    */
-  async relayConfigUpdated(): Promise<void> {
-    if (this.deps.hosting === "local" || this.watched.size === 0) {
-      return;
-    }
-    let config: RelayConfig | null;
-    try {
-      config = await this.deps.relayConfig();
-    } catch (error) {
-      this.deps.logger.warn(
-        "relay config change: could not read where endpoints are reached; reconnecting to be sure",
-        {
-          error: errorMessage(error),
-        }
-      );
-      this.notifyAll(() => true, "Relay configuration changed");
+  relayConfigChanged(config: RelayConfig | null): void {
+    if (this.deps.hosting === "local") {
       return;
     }
     this.notifyAll(

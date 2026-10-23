@@ -74,7 +74,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { StreamGaugeSampler },
       { TwitchHelixGauges },
       { serveTwitchToken },
-      { serveRelayCredential },
+      { serveDashboardRelayCredential },
       { serveShoutoutQueue },
       { UserEventRecorder },
       { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient },
@@ -112,7 +112,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./stream-gauge-sampler"),
       import("./twitch-helix-gauges"),
       import("./twitch-token-source"),
-      import("./relay-credential-source"),
+      import("./relay-dashboard-edge"),
       import("./shoutout-queue"),
       import("./user-event-recorder"),
       import("./webhook-client"),
@@ -187,6 +187,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
         : null,
       twitchPublicClientId: config.twitchPublicClientId,
       twitchClientId: config.twitchClientId,
+      companionRequestTimeoutMs: config.companionRequestTimeoutMs,
     });
     this.api = api;
 
@@ -270,7 +271,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
       await initOverlayTokenHandlers(natsClient, webhookClient, logger);
       await serveTwitchToken(natsClient, api.twitchToken, logger);
-      await serveRelayCredential(natsClient, api.relayCredential, logger);
+      await serveDashboardRelayCredential(natsClient, () => webhookClient, logger);
       await serveShoutoutQueue(
         natsClient,
         { linkedDashboardClientId: () => api.twitchToken.linkedDashboardClientId(), dashboard: () => webhookClient },

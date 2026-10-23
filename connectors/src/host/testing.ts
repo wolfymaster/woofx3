@@ -1,11 +1,13 @@
 // Fakes shared by the host's tests: a hand-driven clock and timers, a bus,
 // a recording logger and a scriptable adapter. Not imported by the host.
+import type { StoredRelayConfig } from "@woofx3/common/cloudevents/Relay/relay";
 import type { EndpointStore } from "../companion/endpoint-store";
 import type { CompanionGateway, CompanionHandle } from "../companion/types";
 import { CompanionEnvSchema, companionConfig } from "../config/companion";
 import type { Adapter, AdapterContext, AdapterManifest, EgressHandlers, ServedSubject, Unavailable } from "./adapter";
 import type { AdapterId } from "./adapter-ids";
 import type { Clock, IdSource, Logger, LogMetadata, RandomSource, TimerHandle, Timers } from "./deps";
+import type { HostCompanionDeps } from "./host";
 import {
   type InstalledModule,
   type LinkReaderRegistry,
@@ -13,16 +15,39 @@ import {
   type LinkStore,
   linkReaders,
 } from "./link-readers";
-import type { HostCompanionDeps } from "./host";
 import { type BusClient, type BusHandler, type BusMessage, type BusSubscription, subjectCovered } from "./scoped-bus";
 
-/** An endpoint store with nothing installed and nothing routed through a companion. */
+/** An endpoint store with nothing installed and nothing routed through a companion; it refuses relay writes. */
 export const emptyEndpointStore: EndpointStore = {
   moduleManifest: async () => null,
   moduleSettings: async () => [],
   moduleSecrets: async () => ({}),
   relayConfig: async () => null,
+  writeRelayConfig: async () => {
+    throw new Error("this test's endpoint store takes no relay configuration");
+  },
+  clearRelayConfig: async () => {
+    throw new Error("this test's endpoint store takes no relay configuration");
+  },
 };
+
+/** An endpoint store with nothing installed whose relay configuration lives in `relay.config`, written in place. */
+export function relayConfigStore(initial: StoredRelayConfig | null = null): EndpointStore & {
+  relay: { config: StoredRelayConfig | null };
+} {
+  const relay = { config: initial };
+  return {
+    ...emptyEndpointStore,
+    relay,
+    relayConfig: async () => relay.config,
+    writeRelayConfig: async (config) => {
+      relay.config = config;
+    },
+    clearRelayConfig: async () => {
+      relay.config = null;
+    },
+  };
+}
 
 /** The companion gateway's deps for a host under test: shipped defaults, `store`, and a relay nobody can reach. */
 export function testCompanion(

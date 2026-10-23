@@ -4,15 +4,18 @@
 // who may ask; it knows no device protocol. Always on, for the life of the
 // host. See docs/services/companion-gateway.md.
 
-import { RELAY_CREDENTIAL_SUBJECT, requestRelayCredentialOverNats } from "@woofx3/common/cloudevents/Relay/relay";
+import { COMPANION_DASHBOARD_CREDENTIAL_SUBJECT } from "@woofx3/common/cloudevents/Relay/relay";
 import type { CompanionConfig } from "../config/companion";
 import type { AdapterId } from "../host/adapter-ids";
 import type { Clock, Logger, Timers } from "../host/deps";
+import type { HostRequests } from "../host/host-requests";
 import type { ScopedBus } from "../host/scoped-bus";
 import { BridgeOpens } from "./bridge-opens";
 import { type ClaimRegistry, endpointKey } from "./claims";
 import { EndpointDialer, type Fetch } from "./dialer";
 import type { EndpointStore } from "./endpoint-store";
+import { RelayConfigRequests } from "./relay-config-requests";
+import { askDashboardOverBus, RelayCredentialSource } from "./relay-credentials";
 import { adapterPolicy, type RoutePolicy } from "./route-policy";
 import { type LastRoute, ROUTE_WATCH_SUBJECTS, RouteWatch } from "./route-watch";
 import type {
@@ -28,15 +31,17 @@ import type {
 /** What the companion gateway does on the host's bus scope, for the host to grant. */
 export const COMPANION_GATEWAY_GRANTS = {
   subscribes: ROUTE_WATCH_SUBJECTS,
-  requests: [RELAY_CREDENTIAL_SUBJECT],
+  requests: [COMPANION_DASHBOARD_CREDENTIAL_SUBJECT],
 } as const;
 
 export interface CompanionGatewayDeps {
   config: CompanionConfig;
   claims: ClaimRegistry;
-  /** Read afresh on every resolution. */
+  /** Read afresh on every resolution; the gateway is the one writer of its relay configuration. */
   store: EndpointStore;
   fetch: Fetch;
+  /** Serves the relay configuration writes on the host's scope. */
+  requests: HostRequests;
   clock: Clock;
   timers: Timers;
   logger: Logger;
@@ -60,30 +65,32 @@ export class EngineCompanionGateway implements CompanionGateway {
   /** Every claimed endpoint is resolved under the adapter policy; module requests get their own. */
   private readonly claimedPolicy: RoutePolicy;
   private readonly records = new Map<string, EndpointRecord>();
+  private readonly relayCredentials: RelayCredentialSource;
+  private readonly relayConfigRequests: RelayConfigRequests;
 
   constructor(private readonly deps: CompanionGatewayDeps) {
     const logger = deps.logger;
     this.opens = new BridgeOpens(deps.config.maxBridgeOpens);
-    const relayCredential = requestRelayCredentialOverNats((subject, data, opts) => {
-      if (opts?.timeout === undefined) {
-        throw new Error(`${subject}: a request needs a timeout`);
-      }
-      return this.started().request(subject, data, { timeout: opts.timeout });
-    }, deps.config.relayCredentialTimeoutMs);
+    this.watch = new RouteWatch({
+      lastRoute: (ref) => this.records.get(endpointKey(ref))?.attempt ?? null,
+      hosting: deps.config.hosting,
+      logger,
+    });
+    this.relayCredentials = new RelayCredentialSource({
+      store: deps.store,
+      askDashboard: askDashboardOverBus(() => this.started(), deps.config.dashboardRequestTimeoutMs),
+      configChanged: (config) => this.watch.relayConfigChanged(config),
+      clock: deps.clock,
+    });
+    this.relayConfigRequests = new RelayConfigRequests({ source: this.relayCredentials, logger });
     this.dialer = new EndpointDialer({
       relayConfig: () => deps.store.relayConfig(),
-      relayCredential,
+      relayCredential: (force) => this.relayCredentials.current(force),
       fetch: deps.fetch,
       opens: this.opens,
       hosting: deps.config.hosting,
       ticketTimeoutMs: deps.config.ticketTimeoutMs,
       timers: deps.timers,
-      logger,
-    });
-    this.watch = new RouteWatch({
-      relayConfig: () => deps.store.relayConfig(),
-      lastRoute: (ref) => this.records.get(endpointKey(ref))?.attempt ?? null,
-      hosting: deps.config.hosting,
       logger,
     });
     this.claimedPolicy = adapterPolicy({ store: deps.store, logger });
@@ -92,13 +99,22 @@ export class EngineCompanionGateway implements CompanionGateway {
     }
   }
 
-  /** Follows route changes on the host's scope, which also carries the bridge credential requests. */
+  /** The subjects the gateway answers, for the host's grants and drain budget. */
+  get served(): ReadonlyArray<{ subject: string; budgetMs: number }> {
+    return this.relayConfigRequests.served;
+  }
+
+  /**
+   * Follows route changes and stores relay configurations on the host's
+   * scope, which also carries the bridge credential requests.
+   */
   async start(scope: Pick<ScopedBus, "request" | "subscribe">): Promise<void> {
     if (this.scope !== null) {
       throw new Error("the companion gateway is already started");
     }
     this.scope = scope;
     await this.watch.subscribe(scope);
+    await this.deps.requests.serveRequest(scope, this.relayConfigRequests.spec());
   }
 
   forAdapter(id: AdapterId): CompanionHandle {

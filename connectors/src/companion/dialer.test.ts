@@ -3,7 +3,7 @@ import type { EngineHosting, RelayConfig } from "@woofx3/api";
 import { type RelayGrant, requestRelayCredentialOverNats } from "@woofx3/common/cloudevents/Relay/relay";
 import { OBS_ENDPOINT, obsAdapterFallback } from "../adapters/obs/settings";
 import { RELAY_TICKET_TTL_MS } from "../config/companion";
-import { FakeTime, flush, RecordingLogger } from "../host/testing";
+import { emptyEndpointStore, FakeTime, flush, RecordingLogger } from "../host/testing";
 import { BridgeOpens } from "./bridge-opens";
 import { type DialerDeps, EndpointDialer, type Fetch } from "./dialer";
 import type { EndpointStore } from "./endpoint-store";
@@ -24,13 +24,12 @@ const DIRECT: EndpointResolution = {
 };
 
 const store: EndpointStore = {
-  moduleManifest: async () => null,
+  ...emptyEndpointStore,
   moduleSettings: async () => [
     { key: "host", value: "192.168.1.20" },
     { key: "port", value: "4460" },
   ],
   moduleSecrets: async () => ({ password: "hunter2" }),
-  relayConfig: async () => null,
 };
 
 const ticketReply = () => Response.json({ ticket: TICKET, expiresInMs: RELAY_TICKET_TTL_MS });

@@ -1,10 +1,20 @@
 import { describe, expect, it } from "bun:test";
-import type { RelayConfig } from "@woofx3/api";
 import type { RelayGrant, StoredRelayConfig } from "@woofx3/common/cloudevents/Relay/relay";
 import { OBS_ENDPOINT, obsAdapterFallback } from "../adapters/obs/settings";
 import { CompanionEnvSchema, companionConfig } from "../config/companion";
+import type { Clock } from "../host/deps";
+import { HostRequests } from "../host/host-requests";
 import type { BusMessage, ScopedHandler } from "../host/scoped-bus";
-import { bytes, emptyEndpointStore, FakeTime, flush, RecordingLogger } from "../host/testing";
+import {
+  bytes,
+  countingIds,
+  emptyEndpointStore,
+  FakeTime,
+  flush,
+  RecordingLogger,
+  relayConfigStore,
+  text,
+} from "../host/testing";
 import { ClaimRegistry, UnclaimedEndpointError } from "./claims";
 import { COMPANION_GATEWAY_GRANTS, EngineCompanionGateway } from "./companion-gateway";
 import type { Fetch } from "./dialer";
@@ -26,30 +36,46 @@ const GRANT: RelayGrant = {
 const FALLBACK = obsAdapterFallback({ host: "127.0.0.1", port: "4455", token: "obs-secret" });
 const LIGHTS: LocalEndpointRef = { moduleId: "woofx3_lights", endpointId: "bridge" };
 
-/** A host scope that records subscriptions and answers credential requests with `grant`. */
+/** A host scope that records subscriptions and answers dashboard credential requests with `grant`. */
 class FakeScope {
   readonly handlers = new Map<string, ScopedHandler>();
-  readonly requested: string[] = [];
+  readonly requested: Array<{ subject: string; body: unknown }> = [];
 
-  constructor(private readonly grant: RelayGrant | null = GRANT) {}
+  constructor(
+    private readonly grant: RelayGrant | null = GRANT,
+    private readonly clock: Clock = { now: () => 0 }
+  ) {}
 
   async subscribe(subject: string, handler: ScopedHandler): Promise<void> {
     this.handlers.set(subject, handler);
   }
 
-  async request(subject: string): Promise<{ subject: string; data: Uint8Array }> {
-    this.requested.push(subject);
-    return { subject, data: bytes(JSON.stringify({ relay: this.grant })) };
+  async request(subject: string, data: Uint8Array): Promise<{ subject: string; data: Uint8Array }> {
+    const body = JSON.parse(text(data)) as { clientId: string };
+    this.requested.push({ subject, body });
+    const reply = { status: "answered", clientId: body.clientId, answer: { relay: this.grant } };
+    return { subject, data: bytes(JSON.stringify(reply)) };
   }
 
-  deliver(subject: string, data: Uint8Array): void {
-    const msg: BusMessage = { subject, data, respond: () => false };
+  /** Delivers a message to every matching handler and returns the replies it collects. */
+  deliver(subject: string, data: Uint8Array): Uint8Array[] {
+    const replies: Uint8Array[] = [];
+    const msg: BusMessage = {
+      subject,
+      data,
+      reply: "inbox",
+      respond: (out) => {
+        replies.push(out);
+        return true;
+      },
+    };
     for (const [pattern, handler] of this.handlers) {
       const prefix = pattern.replace(/\*$/, "");
       if (pattern === subject || (pattern.endsWith("*") && subject.startsWith(prefix))) {
-        void handler(msg, { arrivedAt: 0 } as never);
+        void handler(msg, { receivedAt: this.clock.now() } as never);
       }
     }
+    return replies;
   }
 }
 
@@ -61,6 +87,7 @@ function gateway(options: { store?: Partial<EndpointStore>; fetch?: Fetch; env?:
     claims: ClaimRegistry.fromManifests([{ id: "twitch" }, { id: "obs", localEndpoints: [OBS_ENDPOINT] }]),
     store: { ...emptyEndpointStore, ...options.store },
     fetch: options.fetch ?? (async () => Response.json({ ticket: TICKET, expiresInMs: 30_000 })),
+    requests: new HostRequests({ clock: time, ids: countingIds(), timers: time, logger }),
     clock: time,
     timers: time,
     logger,
@@ -92,14 +119,22 @@ describe("EngineCompanionGateway claims", () => {
     expect(() => companion.forAdapter("obs").onRouteChange(LIGHTS, () => {})).toThrow(UnclaimedEndpointError);
   });
 
-  it("asks for the relay credential only on the host scope it was started with", async () => {
-    expect(COMPANION_GATEWAY_GRANTS.requests).toEqual(["engine.relay.credential"]);
+  it("asks the api for the dashboard's credential only on the host scope it was started with", async () => {
+    expect(COMPANION_GATEWAY_GRANTS.requests).toEqual(["engine.companion.dashboard_credential"]);
     const { companion } = gateway({ store: { relayConfig: async () => CONFIG } });
     const scope = new FakeScope();
     await companion.start(scope);
     await companion.forAdapter("obs").resolve(OBS_ENDPOINT, { signal: live(), fallback: FALLBACK });
-    expect(scope.requested).toEqual(["engine.relay.credential"]);
+    expect(scope.requested).toEqual([{ subject: "engine.companion.dashboard_credential", body: { clientId: "dash" } }]);
     await expect(companion.start(scope)).rejects.toThrow("already started");
+  });
+
+  it("serves the relay configuration writes and subscribes to nothing else of the relay", async () => {
+    const { companion } = gateway();
+    const scope = new FakeScope();
+    await companion.start(scope);
+    expect(companion.served).toEqual([{ subject: "engine.companion.relay_config.set", budgetMs: 4_500 }]);
+    expect([...scope.handlers.keys()]).toEqual(["db.module.setting.updated.*", "engine.companion.relay_config.set"]);
   });
 });
 
@@ -195,13 +230,74 @@ describe("EngineCompanionGateway resolution", () => {
   });
 });
 
+describe("EngineCompanionGateway relay ownership", () => {
+  const setConfig = (config: StoredRelayConfig | null) => bytes(JSON.stringify({ config }));
+
+  async function started(store = relayConfigStore()) {
+    const setup = gateway({ store });
+    const scope = new FakeScope(GRANT, setup.time);
+    await setup.companion.start(scope);
+    return { ...setup, scope, store };
+  }
+
+  async function reply(replies: Uint8Array[]): Promise<unknown> {
+    while (replies.length === 0) {
+      await flush();
+    }
+    return JSON.parse(text(replies[0] as Uint8Array));
+  }
+
+  it("stores a configuration it is sent, and clears it on null", async () => {
+    const { scope, store } = await started();
+    expect(await reply(scope.deliver("engine.companion.relay_config.set", setConfig(CONFIG)))).toEqual({
+      status: "stored",
+    });
+    expect(store.relay.config).toEqual(CONFIG);
+    expect(await reply(scope.deliver("engine.companion.relay_config.set", setConfig(null)))).toEqual({
+      status: "stored",
+    });
+    expect(store.relay.config).toBeNull();
+  });
+
+  it("refuses a configuration without a dashboard client id, and stores nothing", async () => {
+    const { scope, store } = await started();
+    const { clientId: _, ...anonymous } = CONFIG;
+    const answer = await reply(
+      scope.deliver("engine.companion.relay_config.set", bytes(JSON.stringify({ config: anonymous })))
+    );
+    expect(answer).toEqual({ status: "failed", error: "invalid: relay config clientId must be a non-empty string" });
+    expect(store.relay.config).toBeNull();
+  });
+
+  it("answers a failed write as failed", async () => {
+    const { scope } = await started({
+      ...relayConfigStore(),
+      writeRelayConfig: async () => {
+        throw new Error("db-proxy SetSetting: unavailable");
+      },
+    } as ReturnType<typeof relayConfigStore>);
+    expect(await reply(scope.deliver("engine.companion.relay_config.set", setConfig(CONFIG)))).toEqual({
+      status: "failed",
+      error: "db-proxy SetSetting: unavailable",
+    });
+  });
+
+  it("clears the stored configuration when the dashboard answers that nothing is routed", async () => {
+    const store = relayConfigStore(CONFIG);
+    const setup = gateway({ store });
+    await setup.companion.start(new FakeScope(null));
+    expect(
+      await setup.companion.forAdapter("obs").resolve(OBS_ENDPOINT, { signal: live(), fallback: FALLBACK })
+    ).toMatchObject({ ok: true, route: "direct" });
+    expect(store.relay.config).toBeNull();
+  });
+});
+
 describe("EngineCompanionGateway route changes", () => {
   it("tells a claimed endpoint's listener when its module settings are written or the relay moves it", async () => {
-    let config: RelayConfig | null = null;
-    const { companion } = gateway({
-      store: { relayConfig: async () => (config === null ? null : { ...config, clientId: "dash" }) },
-    });
-    const scope = new FakeScope();
+    const store = relayConfigStore();
+    const { companion, time } = gateway({ store });
+    const scope = new FakeScope(GRANT, time);
     await companion.start(scope);
     const handle = companion.forAdapter("obs");
     await handle.resolve(OBS_ENDPOINT, { signal: live(), fallback: FALLBACK });
@@ -209,10 +305,9 @@ describe("EngineCompanionGateway route changes", () => {
     const stop = handle.onRouteChange(OBS_ENDPOINT, (why) => heard.push(why));
 
     scope.deliver("db.module.setting.updated.woofx3_obs", bytes(JSON.stringify({ data: { moduleId: "woofx3_obs" } })));
-    scope.deliver("engine.relay.config.updated", bytes("{}"));
+    scope.deliver("engine.companion.relay_config.set", bytes(JSON.stringify({ config: null })));
     await flush();
-    config = CONFIG;
-    scope.deliver("engine.relay.config.updated", bytes("{}"));
+    scope.deliver("engine.companion.relay_config.set", bytes(JSON.stringify({ config: CONFIG })));
     await flush();
     expect(heard).toEqual(["woofx3_obs settings changed", "Relay configuration changed"]);
 

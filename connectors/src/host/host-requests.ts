@@ -87,7 +87,7 @@ export class HostRequests {
   constructor(private readonly deps: HostRequestsDeps) {}
 
   /** Subscribes `scope` to `spec.subject` and answers each request on it until the scope closes. */
-  async serveRequest<Req, Rep>(scope: ScopedBus, spec: ServeRequestSpec<Req, Rep>): Promise<void> {
+  async serveRequest<Req, Rep>(scope: Pick<ScopedBus, "subscribe">, spec: ServeRequestSpec<Req, Rep>): Promise<void> {
     if (!(Number.isInteger(spec.budgetMs) && spec.budgetMs > 0)) {
       throw new Error(`${spec.subject}: budgetMs must be a whole number of milliseconds above 0, got ${spec.budgetMs}`);
     }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { RELAY_CONFIG_UPDATED_SUBJECT } from "@woofx3/common/cloudevents/Relay/relay";
+import { COMPANION_RELAY_CONFIG_SET_SUBJECT } from "@woofx3/common/cloudevents/Relay/relay";
 import type { EndpointStore } from "../../companion/endpoint-store";
 import { MODULE_SETTING_UPDATED_SUBJECT } from "../../companion/route-watch";
 import { GatewayEnvSchema, gatewayConfig } from "../../config/gateway";
@@ -11,12 +11,14 @@ import type { InstalledModule, LinkState } from "../../host/link-readers";
 import {
   bytes,
   countingIds,
+  emptyEndpointStore,
   FakeBus,
   FakeTime,
   fixedLinkStore,
   flush,
   halfRandom,
   RecordingLogger,
+  relayConfigStore,
   shippedLinkReaders,
   testCompanion,
   text,
@@ -28,13 +30,6 @@ import { obsLinkReader } from "./link";
 import { RefreshLatch } from "./refresh-latch";
 
 const OVERLAY_PORT = 9101;
-
-const emptyStore: EndpointStore = {
-  moduleManifest: async () => null,
-  moduleSettings: async () => [],
-  moduleSecrets: async () => ({}),
-  relayConfig: async () => null,
-};
 
 /** The shipped OBS configuration, pointed at `port` on this machine. */
 function obsAt(port: number, env: Record<string, unknown> = {}): ObsConfig {
@@ -193,7 +188,11 @@ describe("ObsAdapter desired", () => {
  * begin with; `setEnabled` switches that module on or off and lets the
  * host's backstop pass apply it.
  */
-function hosted(config: ObsConfig = CLOSED_OBS, store = emptyStore, modules: InstalledModule[] = [obsModule()]) {
+function hosted(
+  config: ObsConfig = CLOSED_OBS,
+  store = emptyEndpointStore,
+  modules: InstalledModule[] = [obsModule()]
+) {
   const time = new FakeTime();
   const bus = new FakeBus();
   const latch = new RefreshLatch();
@@ -286,14 +285,14 @@ describe("ObsAdapter in the host", () => {
     await host.start();
     await host.settled();
 
-    // Only the companion gateway's route watch subscribes to them, once for the life of the host.
+    // Only the companion gateway subscribes to them, once for the life of the host.
     await setEnabled(false);
     expect(bus.active(MODULE_SETTING_UPDATED_SUBJECT)).toBe(1);
-    expect(bus.active(RELAY_CONFIG_UPDATED_SUBJECT)).toBe(1);
+    expect(bus.active(COMPANION_RELAY_CONFIG_SET_SUBJECT)).toBe(1);
     await setEnabled(true);
 
     expect(bus.active(MODULE_SETTING_UPDATED_SUBJECT)).toBe(1);
-    expect(bus.active(RELAY_CONFIG_UPDATED_SUBJECT)).toBe(1);
+    expect(bus.active(COMPANION_RELAY_CONFIG_SET_SUBJECT)).toBe(1);
     expect(bus.active("engine.obs.command")).toBe(1);
   });
 
@@ -327,7 +326,7 @@ describe("When the OBS adapter runs", () => {
 
   test("with no OBS module and no host set: stopped, never dials, and ctx.obs hears it is turned off", async () => {
     const fake = startFakeObs();
-    const { host, ask, obsState } = hosted(obsAt(fake.port), emptyStore, []);
+    const { host, ask, obsState } = hosted(obsAt(fake.port), emptyEndpointStore, []);
     running = { host, fake };
     await host.start();
     await host.settled();
@@ -343,7 +342,7 @@ describe("When the OBS adapter runs", () => {
 
   test("installing the OBS module starts it at once, and removing it stops it, without a restart", async () => {
     const fake = startFakeObs();
-    const { host, adapter, setInstalled, obsState } = hosted(obsAt(fake.port), emptyStore, []);
+    const { host, adapter, setInstalled, obsState } = hosted(obsAt(fake.port), emptyEndpointStore, []);
     running = { host, fake };
     await host.start();
     await host.settled();
@@ -370,7 +369,11 @@ describe("When the OBS adapter runs", () => {
 
   test("WOOFX3_OBS_HOST set keeps it running with no OBS module installed", async () => {
     const fake = startFakeObs();
-    const { host, adapter, obsState } = hosted(obsAt(fake.port, { woofx3ObsHost: "127.0.0.1" }), emptyStore, []);
+    const { host, adapter, obsState } = hosted(
+      obsAt(fake.port, { woofx3ObsHost: "127.0.0.1" }),
+      emptyEndpointStore,
+      []
+    );
     running = { host, fake };
     await host.start();
     await host.settled();
@@ -380,7 +383,7 @@ describe("When the OBS adapter runs", () => {
   });
 
   test("an OBS module whose manifest cannot be read does not start it", async () => {
-    const { host, obsState } = hosted(CLOSED_OBS, emptyStore, [
+    const { host, obsState } = hosted(CLOSED_OBS, emptyEndpointStore, [
       { moduleId: "woofx3_obs", manifest: "{", disabled: false },
     ]);
     running = { host };
@@ -402,7 +405,7 @@ describe("ObsAdapter reconnects", () => {
   const settingEvent = (moduleId: string) =>
     bytes(JSON.stringify({ type: "db.module.setting.updated", data: { moduleId, key: "password" } }));
 
-  async function connected(store: EndpointStore = emptyStore) {
+  async function connected(store: EndpointStore = emptyEndpointStore) {
     const fake = startFakeObs();
     const setup = hosted(obsAt(fake.port), store);
     running = { host: setup.host, fake };
@@ -426,30 +429,39 @@ describe("ObsAdapter reconnects", () => {
     expect(fake.upgrades).toHaveLength(1);
   });
 
+  const setRelayConfig = (config: unknown) => bytes(JSON.stringify({ config }));
+
   test("not when a relay configuration change leaves OBS on its route", async () => {
-    const { fake, bus } = await connected();
-    bus.deliver(RELAY_CONFIG_UPDATED_SUBJECT, bytes("{}"));
+    const { fake, ask } = await connected(relayConfigStore());
+    const [reply] = await ask(COMPANION_RELAY_CONFIG_SET_SUBJECT, setRelayConfig(null));
+    expect(parsed(reply)).toEqual({ status: "stored" });
     await settle();
     expect(fake.upgrades).toHaveLength(1);
   });
 
-  test("when the relay configuration cannot be read, to be sure", async () => {
-    // Only the read the change triggers fails; the reconnect's own read succeeds.
-    let failNextRead = false;
-    const store: EndpointStore = {
-      ...emptyStore,
-      relayConfig: async () => {
-        if (failNextRead) {
-          failNextRead = false;
-          throw new Error("db-proxy is down");
-        }
-        return null;
-      },
-    };
-    const { fake, bus } = await connected(store);
-    failNextRead = true;
-    bus.deliver(RELAY_CONFIG_UPDATED_SUBJECT, bytes("{}"));
-    await until(() => fake.upgrades.length === 2);
+  test("off the bridge when the dashboard clears the relay configuration", async () => {
+    const fake = startFakeObs();
+    const store = relayConfigStore({
+      bridgeOrigin: "https://c-abcdefghijkl.woofx3.tv",
+      endpoints: [{ moduleId: "woofx3_obs", endpointId: "obs" }],
+      clientId: "dash-client",
+    });
+    // A backoff longer than the test, so only the route change can bring OBS back.
+    const config = obsAt(fake.port, { woofx3ObsBackoffInitialMs: 60_000, woofx3ObsBackoffMaxMs: 60_000 });
+    const { host, adapter, ask } = hosted(config, store);
+    running = { host, fake };
+    await host.start();
+    await host.settled();
+    // No api answers the dashboard credential request here, so the bridge attempt fails.
+    await until(() => adapter.detail().failure === "relay");
+    expect(fake.upgrades).toHaveLength(0);
+
+    const [reply] = await ask(COMPANION_RELAY_CONFIG_SET_SUBJECT, setRelayConfig(null));
+    expect(parsed(reply)).toEqual({ status: "stored" });
+    expect(store.relay.config).toBeNull();
+    await until(() => adapter.detail().state === "connected");
+    expect(adapter.detail()).toMatchObject({ route: "direct" });
+    expect(fake.upgrades).toHaveLength(1);
   });
 });
 

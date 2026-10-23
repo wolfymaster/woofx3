@@ -100,7 +100,6 @@ export class Host {
       clock: deps.clock,
       logger: deps.logger.child({ component: "platform-gateway" }),
     });
-    assertNoSecondResponder(deps.adapters, this.gateway.served);
     // Built before the supervisor, which hands each adapter its scoped handle,
     // and stopped after it, so no adapter run outlives it.
     this.companion = new EngineCompanionGateway({
@@ -108,10 +107,12 @@ export class Host {
       claims: ClaimRegistry.fromManifests([...deps.adapters.values()].map((adapter) => adapter.manifest)),
       store: deps.companion.store,
       fetch: deps.companion.fetch,
+      requests: this.requests,
       clock: deps.clock,
       timers: deps.timers,
       logger: deps.logger.child({ component: "companion-gateway" }),
     });
+    assertNoSecondResponder(deps.adapters, [...this.gateway.served, ...this.companion.served]);
     const longestBudgetMs = Math.max(0, ...this.servedBudgets());
     this.drainMs = Math.max(deps.config.stopDeadlineMs, longestBudgetMs);
     const stopWorstCaseMs = deps.config.dbProxyTimeoutMs + this.drainMs;
@@ -250,9 +251,13 @@ export class Host {
     };
   }
 
-  /** Every subject the host answers: each adapter's served subjects and the gateway's. */
+  /** Every subject the host answers: each adapter's served subjects, the platform gateway's and the companion gateway's. */
   private answered(): Array<{ subject: string; budgetMs: number }> {
-    return [...[...this.deps.adapters.values()].flatMap((adapter) => adapter.manifest.serves), ...this.gateway.served];
+    return [
+      ...[...this.deps.adapters.values()].flatMap((adapter) => adapter.manifest.serves),
+      ...this.gateway.served,
+      ...this.companion.served,
+    ];
   }
 
   private servedBudgets(): number[] {

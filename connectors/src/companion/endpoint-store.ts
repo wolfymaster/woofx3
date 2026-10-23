@@ -5,7 +5,7 @@ import {
 } from "@woofx3/common/cloudevents/Relay/relay";
 import { GetModuleByModuleId } from "@woofx3/db/module.pb";
 import { GetModuleSecretValues, ListModuleSettings } from "@woofx3/db/module_setting.pb";
-import { GetSetting } from "@woofx3/db/setting.pb";
+import { DeleteSetting, GetSetting, SetSetting } from "@woofx3/db/setting.pb";
 import type { DbProxyClientConfig } from "../services/db-proxy";
 
 /** One stored module setting. A secret setting's value is always empty here; see `moduleSecrets`. */
@@ -28,6 +28,10 @@ export interface EndpointStore {
   moduleSecrets(moduleId: string): Promise<Record<string, string>>;
   /** The stored `relay.config`, or null when nothing is routed through a companion. */
   relayConfig(): Promise<StoredRelayConfig | null>;
+  /** Stores `relay.config`. The companion gateway's RelayCredentialSource is its one writer. */
+  writeRelayConfig(config: StoredRelayConfig): Promise<void>;
+  /** Deletes `relay.config`; deleting one that is not stored succeeds. */
+  clearRelayConfig(): Promise<void>;
 }
 
 /** The endpoint store over db-proxy. Every call carries the client's service token and timeout. */
@@ -60,7 +64,27 @@ export function dbProxyEndpointStore(client: DbProxyClientConfig): EndpointStore
         const response = await GetSetting({ key: RELAY_CONFIG_SETTING }, client);
         return readStoredRelayConfig(response.setting?.value?.stringValue ?? null);
       }),
+    writeRelayConfig: (config) =>
+      call("SetSetting", async () => {
+        const response = await SetSetting(
+          { key: RELAY_CONFIG_SETTING, value: { stringValue: JSON.stringify(config) }, userId: "" },
+          client
+        );
+        // db-proxy answers a stored setting with no status, and refuses one with a Twirp error.
+        assertStatusOk(response.status);
+      }),
+    clearRelayConfig: () =>
+      call("DeleteSetting", async () => {
+        assertStatusOk(await DeleteSetting({ key: RELAY_CONFIG_SETTING }, client));
+      }),
   };
+}
+
+/** Throws on a status db-proxy sent that is not OK; an absent status is success. */
+function assertStatusOk(status: { code?: string; message?: string } | undefined): void {
+  if (status?.code !== undefined && status.code !== "OK") {
+    throw new Error(`${status.code}: ${status.message ?? ""}`);
+  }
 }
 
 /**

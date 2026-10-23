@@ -25,10 +25,13 @@ export const COMPANION_DEFAULTS = {
   /** One ticket exchange with the relay. */
   ticketTimeoutMs: 5_000,
   /**
-   * One bridge credential request to the api (the `requestRelayCredentialOverNats`
-   * default). Not configurable: it is the api's responder's own budget.
+   * One bridge credential request to the api, which asks the dashboard on the
+   * gateway's behalf. Must exceed the api's own wait for the dashboard
+   * (DEFAULT_WEBHOOK_CLIENT_CONFIG.timeoutMs, 5_000, in api/src/webhook-client.ts),
+   * so the api's answer, a failure included, always arrives first. Not
+   * configurable for that reason.
    */
-  relayCredentialTimeoutMs: 5_000,
+  dashboardRequestTimeoutMs: 6_000,
 } as const;
 
 // loadRuntimeEnv coerces all-digit values to numbers before the schema sees them.
@@ -53,7 +56,7 @@ export interface CompanionConfig {
   hosting: EngineHosting | null;
   maxBridgeOpens: number;
   ticketTimeoutMs: number;
-  relayCredentialTimeoutMs: number;
+  dashboardRequestTimeoutMs: number;
 }
 
 /** Rules the per-key schema cannot express. */
@@ -77,6 +80,6 @@ export function companionConfig(env: CompanionEnv): CompanionConfig {
     hosting,
     maxBridgeOpens: env.woofx3CompanionMaxBridgeOpens,
     ticketTimeoutMs: env.woofx3CompanionTicketTimeoutMs,
-    relayCredentialTimeoutMs: COMPANION_DEFAULTS.relayCredentialTimeoutMs,
+    dashboardRequestTimeoutMs: COMPANION_DEFAULTS.dashboardRequestTimeoutMs,
   };
 }

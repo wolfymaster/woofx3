@@ -89,6 +89,12 @@ export interface ApiConfig {
    * (`WOOFX3_AUTH_CACHE_TTL_MS`); DEFAULT_AUTH_CACHE_TTL_MS when unset.
    */
   authCacheTtlMs: number;
+  /**
+   * How long `setRelayConfig` waits for the connectors host's companion
+   * gateway to store a relay configuration, in milliseconds
+   * (`WOOFX3_COMPANION_REQUEST_TIMEOUT_MS`); DEFAULT_COMPANION_REQUEST_TIMEOUT_MS when unset.
+   */
+  companionRequestTimeoutMs: number;
   nats: {
     url: string;
     name: string;
@@ -154,6 +160,7 @@ export const ApiEnvSchema = z.looseObject({
   woofx3TwitchPublicClientId: z.union([z.string(), z.number()]).optional(),
   woofx3TwitchClientId: z.union([z.string(), z.number()]).optional(),
   woofx3AuthCacheTtlMs: z.union([z.number(), z.string()]).optional(),
+  woofx3CompanionRequestTimeoutMs: z.union([z.number(), z.string()]).optional(),
   // True where the edge listens beyond loopback and forwards to the api; the production image sets it.
   woofx3BehindEdge: z.boolean().optional(),
   woofx3DbProxyToken: z.string().optional(),
@@ -269,6 +276,33 @@ export function resolveAuthCacheTtlMs(value: unknown): number {
   return ttlMs;
 }
 
+/**
+ * Above the companion gateway's 4_500ms budget for storing a relay
+ * configuration (RELAY_CONFIG_SET_DEFAULTS in
+ * connectors/src/companion/relay-config-requests.ts), so its answer, a
+ * failure included, arrives before the api gives up.
+ */
+export const DEFAULT_COMPANION_REQUEST_TIMEOUT_MS = 5_000;
+
+/**
+ * `WOOFX3_COMPANION_REQUEST_TIMEOUT_MS` as a positive whole number of
+ * milliseconds, or DEFAULT_COMPANION_REQUEST_TIMEOUT_MS when unset or blank.
+ * Anything else stops startup.
+ */
+export function resolveCompanionRequestTimeoutMs(value: unknown): number {
+  const text = nonBlank(value);
+  if (text === undefined) {
+    return DEFAULT_COMPANION_REQUEST_TIMEOUT_MS;
+  }
+  const timeoutMs = Number(text);
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(
+      `Config error: woofx3CompanionRequestTimeoutMs (WOOFX3_COMPANION_REQUEST_TIMEOUT_MS) must be a positive integer, got ${text}`
+    );
+  }
+  return timeoutMs;
+}
+
 export function loadConfig(): ApiConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: ApiEnvSchema });
   const config = result.config;
@@ -361,6 +395,7 @@ export function loadConfig(): ApiConfig {
   );
   const messageBusToken = nonBlank(config.woofx3MessagebusToken) ?? nonBlank(config.messagebusToken);
   const authCacheTtlMs = resolveAuthCacheTtlMs(config.woofx3AuthCacheTtlMs);
+  const companionRequestTimeoutMs = resolveCompanionRequestTimeoutMs(config.woofx3CompanionRequestTimeoutMs);
 
   return {
     version,
@@ -384,6 +419,7 @@ export function loadConfig(): ApiConfig {
     rootDir,
     requestGuard,
     authCacheTtlMs,
+    companionRequestTimeoutMs,
     nats: {
       url: messageBusUrl,
       name: "woofx3-api",
