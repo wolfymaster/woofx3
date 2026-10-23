@@ -232,6 +232,24 @@ it for the host:
   `setting.integration.token.updated` as a relink. The running adapter ignores
   an update that leaves no token stored (debug log) and keeps its connection
   until the host reads the link as disconnected and stops it.
+- **Token renewal.** Who renews the stored token depends on where it came
+  from (`selectStrategy` and `publicClientIdOf` in
+  `shared/clients/typescript/twitch/token-strategy.ts` decide, for every
+  service alike):
+
+  | Token from | Renewed by | How the adapter gets a new one |
+  |---|---|---|
+  | A dashboard's Twitch app | The dashboard, which keeps the refresh token and app secret | Asks the api service on `engine.twitch.token` |
+  | The engine's public Twitch app (a device login) | The api service alone, since its refresh tokens are single-use | Asks the api service on `engine.twitch.token` |
+  | The engine's confidential app (`WOOFX3_TWITCH_CLIENT_ID` and `_SECRET`) | Each service holding the token, with the app's credentials | Refreshes it and writes it back to `twitch_token`, unless a relink replaced the stored token meanwhile |
+
+  A renewal that fails (Twitch refuses the refresh, or the api service is
+  unreachable or refuses) is logged and reported as a fault, reason
+  `Twitch token renewal failed (<provider>): <error>`: the adapter goes
+  `degraded`, its restart reads the stored token afresh, and repeated failures
+  park it until Twitch is relinked or re-enabled. The reason shows under the
+  adapter's status in `/health`. A failure from a connection already closed
+  (by stop or a relink) is ignored.
 - **Stop.** Aborts a connect or relink still in progress, stops the ad
   heads-up scheduler, disconnects EventSub, closes the Twitch client, and
   waits for event publishes still in flight, all within the host's stop
@@ -243,7 +261,7 @@ it for the host:
   (`@woofx3/common/cloudevents/Twitch/events`), subscribes to
   `setting.integration.token.updated`, requests `engine.twitch.token` and
   `engine.shoutout.enqueue` from the api, and serves `twitchapi` with a
-  9_000 ms budget (`TWITCH_API_SERVED_BUDGET_MS`): below the 10_000 ms the
+  9_000 ms budget (`TWITCHAPI_SERVED_BUDGET_MS`): below the 10_000 ms the
   api, the sandbox's `ctx.twitch` and woofwoofwoof's built-in commands wait,
   and above a Helix call's own 8_000 ms deadline. A served `helix` call gets
   the smaller of that deadline and the time left in the budget.
@@ -255,6 +273,80 @@ it for the host:
   `{established, expected, ready}`: how many EventSub subscriptions Twitch has
   confirmed. A subscription Twitch refused delivers no events at all, so a
   shortfall here is worth investigating even while the adapter is `connected`.
+
+### Chat egress
+
+The Twitch adapter performs the [platform gateway](./platform-gateway.md)'s
+chat actions (`egress.ts`), each as one Helix call made as the broadcaster
+through the same `helix` path the dashboard uses:
+
+| Action | Helix call | Delivered when |
+|---|---|---|
+| `chat.send` | Send Chat Message, with `reply_parent_message_id` from `replyToMessageId` | Twitch posts the line; the outcome carries its `messageId`. A line Twitch did not post (AutoMod, a blocked term, a chat mode) is `dropped` with Twitch's reason. |
+| `chat.announce` | Send Chat Announcement | Twitch answers 2xx (it sends 204). `options.twitch` is `{ color? }`, one of `primary`, `blue`, `green`, `orange` or `purple`; `primary` when absent. Any other key or colour fails the request for Twitch as `invalid`. |
+| `chat.pin` | Pin Chat Message for `{ messageId }`; Send Chat Message then Pin Chat Message for `{ message, durationSeconds? }`, with `durationSeconds` as `duration` | Twitch pins the line. A line posted but not pinned is `failed` with the message "posted but not pinned: ..." and still carries its `messageId`, so a caller can pin it again instead of posting it twice. |
+
+Every line goes through `guardChatLine`: a line that starts with the command
+prefix (`!`, from `connectors/src/chat/command-prefix.ts`) gets a zero-width
+space in front, so the engine's own line, which comes back on the chat feed as
+the broadcaster's, never runs a command. The legacy `twitchapi` `helix` chat
+operations get the same guard, since both paths build the request in one place.
+
+Twitch's error statuses map to failure codes in one table:
+
+| Helix status | Failure code |
+|---|---|
+| 400, 422 | `invalid` |
+| 401, 403 | `forbidden` |
+| 429 | `rate_limited` |
+| anything else | `upstream` |
+
+A call that gets no answer is `unconfirmed` if the request had left for
+Twitch (Twitch may have acted, so it is never resent), else `failed`/`upstream`
+"did not reach Twitch before the deadline". Each call gets the smaller of
+Helix's 8 s deadline and the time left in the gateway's budget.
+
+All gateway chat writes wait their turn in one send queue, which runs them one at a time
+in arrival order, so gateway lines reach chat in the order they were sent. The queue
+lives as long as the adapter, so its order holds across a restart. A write
+still waiting when its request's deadline passes is dropped without being
+sent. Once `WOOFX3_TWITCH_SEND_QUEUE_CAP` writes are waiting, the next is
+`failed`/`rate_limited` at once. Nothing is retried, a 429 included. A write
+whose turn comes while the adapter is stopped or reconnecting after a relink
+is `unavailable` with `stopped` or `starting`.
+
+### Own lines on the chat feed
+
+The engine speaks with the broadcaster's token, so every line it says comes
+back on EventSub's chat feed as the broadcaster's. The adapter tells those
+lines apart from the streamer typing and marks them on the `user.message`
+event (`lib/self-sent.ts`):
+
+- Every Send Chat Message call is recorded just before the request leaves,
+  whether it comes from the platform gateway or the legacy `twitchapi`
+  `helix` command, along with the gateway request's `workflowChain` when
+  there is one. Twitch's answer settles the record: a posted line is kept
+  under its message id, and a refused or dropped line is forgotten. A call
+  with no answer keeps the record, because Twitch may have posted the line.
+- A chat message is the engine's when its id matches a recorded line. An echo
+  that arrives before Twitch has answered the send matches by its text
+  instead, ignoring whitespace and the guard's zero-width space, and only
+  when the broadcaster sent it. A command the engine said behind the guard is
+  not matched by an echo that starts with a bare `!`, since that is the
+  streamer running the command. Each record answers for one echo only, so the
+  streamer typing the same words afterwards is still the streamer.
+- A matched message is published with `fromEngine: true`, and its CloudEvent
+  carries the sending run's `workflowChain`, which is how the workflow loop
+  guard sees a workflow answering its own line. Every other message has
+  `fromEngine: false` and no chain. Lines sent through the legacy `twitchapi`
+  command are marked `fromEngine` but never carry a chain.
+
+Records expire after `WOOFX3_TWITCH_SELF_SENT_TTL_MS`, and at most
+`WOOFX3_TWITCH_SELF_SENT_CAPACITY` are held, the oldest forgotten first. They
+live as long as the adapter, so a line said just before a restart is still
+known when it echoes after it; `/health` shows how many are waiting as
+`ownLinesAwaitingEcho`. Announcements are not recorded: Twitch hands them
+back as chat notifications, not chat messages.
 
 connectors pins its `@twurple/*` packages to the release
 `shared/clients/typescript/twitch` resolves. TypeScript only treats the two
@@ -327,6 +419,96 @@ process. The host, not each adapter run, subscribes to `session.started` for
 the life of the process, so an adapter that starts after a session change
 still stamps the current session.
 
+## Chat command dispatcher
+
+`connectors/src/chat/` holds the platform-neutral chat command dispatcher: it
+reads every platform's chat lines, runs the commands they name, and replies
+through the [platform gateway](./platform-gateway.md) to the platform each
+line came from. The host does not start it; chat commands are run by
+woofwoofwoof (see [WoofWoofWoof](../woofwoofwoof/application.md)). Whoever starts it
+adds `CHAT_DISPATCHER_GRANTS` to the scope it runs in.
+
+Each `user.message` goes through these steps in order:
+
+1. **Trust.** A line the engine said itself (`fromEngine: true`, see
+   [Own lines on the chat feed](#own-lines-on-the-chat-feed)) is dropped. A
+   line with no known `platform` attribute or no speaker id is refused. A
+   line is trusted only when its CloudEvent `source` is its platform
+   adapter's (`twitch` for Twitch), and a trusted line with no speaker login
+   is refused. An untrusted line, such as one the api's event simulator
+   published, still runs commands, but its badges count as
+   unknown: they never satisfy a role, and it writes no groups. A line said
+   in a partner channel during a shared chat session never counts as the
+   broadcaster or a moderator, and writes no groups either.
+2. **Groups.** A trusted line from the channel itself updates the built-in
+   derived groups (subscriber, vip, moderator, broadcaster, the tiers,
+   follower), writing only what changed since that viewer's last line.
+3. **Match.** `!name rest` names a command. Built-in commands win over a
+   stored command with the same name, and a built-in can be limited to some
+   platforms.
+4. **Authorise.** A public command runs for anyone. A command that allows
+   roles runs for a speaker the platform reported in one. Anyone else needs
+   a grant on `command/<name>`. A refused speaker is told so. The grant is
+   looked up by the login the line names, and an untrusted line's login is
+   whatever its publisher wrote, so anything that can publish on the bus can
+   run a command granted to a login it names. Bus publishers are not yet
+   authenticated per identity; until they are, a grant is only as strong as
+   the bus's own access control.
+5. **Cooldown.** The cooldown is per command. A line inside it is dropped
+   completely and is not announced.
+6. **Handler.** The invocation is announced on `chat.command.<slug>`
+   (source `connectors`, `platform` set to the line's platform), and then the
+   command runs: a stored command runs its workflow or its actions.
+
+A non-empty reply is a `chat.send` to the `origin` target. For a trusted line
+it is threaded under that line. Its idempotency key is
+`dispatcher:<line id>:<command name>`, where the line id is the platform's id
+for the message, or the CloudEvent id for an untrusted line, and it is
+`requestedBy` `dispatcher`. A reply longer than 500 characters is cut.
+Nothing is retried; an undelivered reply is logged.
+
+**Who a viewer is.** In-memory state is keyed by the platform and that
+platform's user id, never by a display name. The memory of written groups
+is keyed this way, and the permission cache by that, the login and whether
+the line was trusted, so two accounts that show the same name never share a
+decision and an untrusted line never fills in one a trusted line reads.
+Permission and group rows in db-proxy are keyed by the speaker's login,
+lowercased. That is what the database keys on
+today.
+
+**Stored commands** are read from db-proxy, the owner of the data.
+`command.created`, `command.updated` and `command.deleted` only trigger a
+reload, and the snapshot they carry is never applied. Reloads wait
+`WOOFX3_CONNECTORS_DISPATCHER_RELOAD_DEBOUNCE_MS` for more events. Then one
+listing is read and applied by command id, so a renamed command stops
+answering to its old name. Reloads run one at a time, in order. A failed
+reload keeps the last good table, and a backstop reloads every
+`WOOFX3_CONNECTORS_DISPATCHER_RELOAD_BACKSTOP_MS` even with no event. A
+command's cooldown keeps running when the command is reloaded. Starting the
+dispatcher fails if its first listing fails.
+
+**Built-in commands** (`connectors/src/chat/builtins.ts`) are handed to the
+dispatcher as its `builtins`. Each runs only for a line from the platform
+itself: a simulated line is ignored and logged.
+
+| Command | Platforms | Who | What it does |
+|---|---|---|---|
+| `!grantcommands <login>` | all | a grant on the command | Gives the login the moderator role on every command. |
+| `!revokecommands <login>` | all | a grant on the command | Takes it back. |
+| `!vanish` | Twitch | a grant on the command | Times the speaker out for 1 to 600 seconds. A broadcaster or moderator is spared. |
+| `!title <text>` | Twitch | broadcaster, moderator, or a grant | Sets the stream title. |
+| `!category <name>` | Twitch | broadcaster, moderator, or a grant | Sets the stream category. |
+| `!marker [text]` | Twitch | broadcaster, moderator, or a grant | Places a stream marker and says its position. |
+
+The login of a grant command must match `^[a-z0-9_]{1,25}$` after the `@` is
+dropped and case is folded; anything else gets a usage line and changes
+nothing. The Twitch commands call the Twitch adapter on the `twitchapi`
+subject and wait `WOOFX3_CONNECTORS_DISPATCHER_TWITCH_API_TIMEOUT_MS`. A
+failure becomes a chat line: no answer in time is reported as unknown (Twitch
+may still apply the change), a Twitch adapter that is off or not linked says
+so, and any other refusal gives Twitch's reason. `CHAT_DISPATCHER_GRANTS`
+includes `twitchapi` among its requests.
+
 ## Configuration
 
 | Variable | Default | Meaning |
@@ -364,6 +546,21 @@ The Twitch adapter reads:
 | `WOOFX3_TWITCH_MEMBERSHIP_ENRICHMENT_ENABLED` | `true` | Look up follower status and subscription tier for chatters. |
 | `WOOFX3_TWITCH_MEMBERSHIP_TTL_MS` | `600000` | How long a looked-up answer is kept. |
 | `WOOFX3_TWITCH_MEMBERSHIP_DEADLINE_MS` | `250` | How long a chat message waits on a lookup before it is published without it. |
+| `WOOFX3_TWITCH_SEND_QUEUE_CAP` | `100` | How many platform gateway chat writes may wait behind the one being sent; one more is refused as rate limited. |
+| `WOOFX3_TWITCH_SELF_SENT_CAPACITY` | `256` | How many of the engine's own chat lines are remembered while their echo is awaited. |
+| `WOOFX3_TWITCH_SELF_SENT_TTL_MS` | `30000` | How long one of the engine's own lines waits for its echo before it is forgotten. |
+
+The chat command dispatcher reads:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WOOFX3_CONNECTORS_DISPATCHER_AUTH_CACHE_CAPACITY` | `2048` | Permission decisions remembered, per viewer, login, trust and command. |
+| `WOOFX3_CONNECTORS_DISPATCHER_AUTH_CACHE_TTL_MS` | `5000` | How stale a remembered decision may be after a grant changes. |
+| `WOOFX3_CONNECTORS_DISPATCHER_GROUP_LAST_SEEN_CAPACITY` | `4096` | Viewers whose last written group membership is remembered; a forgotten viewer is rewritten on their next line. |
+| `WOOFX3_CONNECTORS_DISPATCHER_GROUP_CATALOG_TTL_MS` | `300000` | How long the built-in group catalog is used before it is read again. |
+| `WOOFX3_CONNECTORS_DISPATCHER_RELOAD_DEBOUNCE_MS` | `250` | How long a command event waits for more before the commands reload. |
+| `WOOFX3_CONNECTORS_DISPATCHER_RELOAD_BACKSTOP_MS` | `300000` | How often the commands reload with no event. |
+| `WOOFX3_CONNECTORS_DISPATCHER_TWITCH_API_TIMEOUT_MS` | `10000` | How long a built-in Twitch command waits for the Twitch adapter's answer. Must exceed the adapter's 9000 ms served budget, or slow calls are reported as unknown. |
 
 The OBS adapter reads, for whatever the OBS module's settings leave empty:
 

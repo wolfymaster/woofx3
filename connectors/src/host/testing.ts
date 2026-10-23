@@ -218,7 +218,11 @@ export class FakeBus implements BusClient {
     };
   }
 
-  async request(subject: string): Promise<{ subject: string; data: Uint8Array }> {
+  async request(
+    subject: string,
+    _data: Uint8Array,
+    _opts: { timeout: number }
+  ): Promise<{ subject: string; data: Uint8Array }> {
     throw new Error(`no responder on ${subject}`);
   }
 

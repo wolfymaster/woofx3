@@ -2,6 +2,7 @@ import type { HelixUser } from "@twurple/api";
 import type EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import type { Logger } from "../../host/deps";
 import type { ChatterMembershipEnricher } from "./lib/chatterMembership";
+import type { SelfSentRegistry } from "./lib/self-sent";
 
 /**
  * Where the adapter's events go. The adapter's scoped bus satisfies it, and
@@ -22,6 +23,8 @@ export interface Context {
    * publishes fine without it - the unresolved fields are simply absent.
    */
   membershipEnricher?: ChatterMembershipEnricher;
+  /** The engine's own chat lines, claimed as their echoes arrive on the chat feed. */
+  selfSent: SelfSentRegistry;
   /** Told when stream.online / stream.offline arrives, after it is published. */
   onStreamLiveChange?: (live: boolean) => void;
 }

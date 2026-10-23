@@ -5,6 +5,7 @@ import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
 import { countingIds, FakeTime, RecordingLogger } from "../../host/testing";
 import type { TwitchAppContext } from "./application";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
+import { SelfSentRegistry } from "./lib/self-sent";
 
 let stubCounter = 0;
 
@@ -90,7 +91,16 @@ const CONFIG: TwitchConfig = {
   channel: "mychan",
   app: { clientId: "cid", clientSecret: "sec", redirectUri: "http://localhost/oauth" },
   membership: { ttlMs: TWITCH_DEFAULTS.membershipTtlMs, deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs },
+  sendQueueCap: TWITCH_DEFAULTS.sendQueueCap,
+  selfSent: { capacity: TWITCH_DEFAULTS.selfSentCapacity, ttlMs: TWITCH_DEFAULTS.selfSentTtlMs },
 };
+
+function selfSentLines(): SelfSentRegistry {
+  return new SelfSentRegistry(
+    { capacity: TWITCH_DEFAULTS.selfSentCapacity, ttlMs: TWITCH_DEFAULTS.selfSentTtlMs },
+    new FakeTime()
+  );
+}
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -125,7 +135,7 @@ async function ask(
 describe("TwitchApplication", () => {
   test("start wires TwitchClient with the channel and DB-backed settings, starts EventSub and listens for relinks", async () => {
     const ctx = context();
-    const app = new TwitchApplication({ clock: new FakeTime(), ids: countingIds() });
+    const app = new TwitchApplication({ clock: new FakeTime(), ids: countingIds(), selfSent: selfSentLines() });
 
     expect(await app.start(ctx, running)).toBe("connected");
 
@@ -140,7 +150,7 @@ describe("TwitchApplication", () => {
 
   test("stop closes the TwitchClient, stops EventSub and clears the context", async () => {
     const ctx = context();
-    const app = new TwitchApplication({ clock: new FakeTime(), ids: countingIds() });
+    const app = new TwitchApplication({ clock: new FakeTime(), ids: countingIds(), selfSent: selfSentLines() });
     await app.start(ctx, running);
     const listener = lastListener;
 
@@ -155,7 +165,7 @@ describe("TwitchApplication", () => {
   });
 
   test("stop before anything connected is safe", async () => {
-    const app = new TwitchApplication({ clock: new FakeTime(), ids: countingIds() });
+    const app = new TwitchApplication({ clock: new FakeTime(), ids: countingIds(), selfSent: selfSentLines() });
 
     await app.stop(context());
 
@@ -165,7 +175,7 @@ describe("TwitchApplication", () => {
 
 describe("TwitchApplication twitchapi requests", () => {
   const time = new FakeTime(Date.parse("2026-10-22T12:00:00.000Z"));
-  const app = new TwitchApplication({ clock: time, ids: countingIds() });
+  const app = new TwitchApplication({ clock: time, ids: countingIds(), selfSent: selfSentLines() });
 
   test("answers a command with its result in a twitchapi.<command>.result CloudEvent", async () => {
     const getStreamInfo = mock(async () => ({ title: "hello" }));

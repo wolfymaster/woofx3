@@ -29,6 +29,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 - **[Marketplace catalog](/services/marketplace-catalog)** - Catalog reads through the engine: search, counts, a listing, an author page and a quote, answered with the marketplace's JSON unchanged, and the error format a caller parses
 - **[Connectors host](/services/connectors)** - The service that runs platform and local-app adapters while they are linked and enabled: adapter states, served subjects, the scoped bus, configuration and `/health`
 - **[Companion gateway](/services/companion-gateway)** - How the connectors host finds a route to an endpoint on the streamer's network: endpoint claims, route policies, the bridge-open cap and route changes
+- **[Companion gateway module requests](/services/companion-module-requests)** - The contract module code reaches its own local endpoints through: the `engine.companion.module.request` request and reply, their validation, and the TypeScript and Rust code generated from one contract
 - **[Local endpoints and the companion bridge](/services/local-endpoints)** - How the engine reaches a module's `local[]` endpoints: straight to the address, or through the woofx3 companion's bridge for a cloud engine
 - **[OBS control](/services/obs)** - Connecting OBS, the `ctx.obs` host extension the OBS module calls, and the `engine.obs.command` request/reply contract
 - **[Analytics](/services/analytics)** - Design: turning stream events into per-session and lifetime totals, and why counters are not that

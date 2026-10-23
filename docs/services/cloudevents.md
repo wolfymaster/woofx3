@@ -23,6 +23,7 @@ interface BaseEvent<T> {
   id: string;           // unique event ID
   time: Date;           // event timestamp
   platform?: string;    // extension attribute: where the event came from
+  workflowChain?: string; // extension attribute: the workflow runs that led to it
   data: T;              // event-specific payload
 }
 ```
@@ -34,6 +35,12 @@ originating platform — module lifecycle, db outbox, scheduler — and, today, 
 absent from every family except Twitch, because only that factory stamps it
 (`Twitch/index.ts:112-118`). See [Stream sessions](./stream-sessions.md) for why
 the next extension attribute is stamped centrally instead.
+
+`workflowChain` names the workflow runs that led to the event, oldest first, as
+comma-joined workflow ids. The workflow engine refuses a run whose chain is too
+long, which stops a workflow that keeps triggering itself. Absent on an event
+nothing in a workflow caused; a `user.message` carries it when the line is one
+a workflow said through the platform gateway.
 
 ## EventFactory
 
@@ -60,13 +67,17 @@ Each factory method returns an `EventTuple` — a `[subject, payload]` pair read
 ```typescript
 const nats = // ... your NATS connection
 const [subject, payload] = factory.Twitch().chatMessage({
+    messageId: 'abc-1',
     channelId: '123',
     channelName: 'wolfymaster',
     chatterId: '456',
-    chatterName: 'viewer1',
+    chatterName: 'Viewer1',
+    chatterLogin: 'viewer1',
     message: 'hello world',
     amount: 0,
     isPaid: false,
+    membership: { isBroadcaster: false, isModerator: false, isSubscriber: false, isVip: false },
+    fromEngine: false,
 });
 
 nats.publish(subject, payload);
@@ -99,13 +110,17 @@ Twitch channel events carry a full CloudEvent envelope. The NATS subject doubles
 
 ```typescript
 interface ChatMessage {
+    messageId: string;    // Twitch's id for the line, what a reply or pin names
     amount: number;       // dollar amount if paid message, otherwise 0
     isPaid: boolean;
     channelId: string | null;
     channelName: string | null;
     chatterId: string;
-    chatterName: string;
+    chatterName: string;  // display name
+    chatterLogin: string; // account name, lowercase
     message: string;
+    membership: ChatterMembership;
+    fromEngine: boolean;  // a line the engine said itself, handed back by Twitch
 }
 ```
 
@@ -218,6 +233,10 @@ the announced `chat.command.<slug>` CloudEvent itself, not a copy: the same
 workflow service runs that one workflow (`Engine.RunCommand`), which must have
 a trigger of type `"command"` whose `event` matches `event.type`; its trigger
 conditions apply, nothing else is checked again.
+
+`data.platform` and the `platform` attribute name the platform the invoking
+line was said on, one of the platform gateway's platform ids (`twitch`
+today).
 
 ```jsonc
 // subject: "workflow.command.execute"

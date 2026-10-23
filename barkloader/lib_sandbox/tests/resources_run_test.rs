@@ -63,7 +63,8 @@ fn module(
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: permissions.iter().map(|p| p.to_string()).collect(),
-        url_settings: Default::default(),
+        protected_settings: Default::default(),
+        local_endpoints: Default::default(),
         resource_link_settings: ["timer".to_string()].into(),
         oauth: Default::default(),
         actions: actions

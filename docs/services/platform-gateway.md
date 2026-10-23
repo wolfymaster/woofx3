@@ -62,13 +62,16 @@ outcome status needs a shape there, and so generator code.
 
 ## Subjects
 
-All three are request/reply.
+All three are request/reply. Each reply is a CloudEvent whose type the
+contract also names (`replyTypes`; `ReplyType*` in Go,
+`PLATFORM_GATEWAY_REPLY_TYPES` in TypeScript) and whose `data` is the reply
+shape below.
 
-| Subject | Purpose |
-| --- | --- |
-| `platform.gateway.send` | Perform one action on the target's platforms. |
-| `platform.gateway.capabilities` | Which platforms are linked and running, and which actions each supports. |
-| `platform.gateway.field_options` | The platforms that can perform one action, as options for a select field. |
+| Subject | Reply type | Reply shape | Purpose |
+| --- | --- | --- | --- |
+| `platform.gateway.send` | `platform.gateway.send.result` | `GatewayReply` | Perform one action on the target's platforms. |
+| `platform.gateway.capabilities` | `platform.gateway.capabilities.result` | `CapabilitiesReply` | Which platforms are linked and running, and which actions each supports. |
+| `platform.gateway.field_options` | `platform.gateway.field_options.result` | `FieldOptionsReply` | The platforms that can perform one action, as options for a select field. |
 
 ## Actions
 
@@ -266,15 +269,62 @@ budget of 2000 ms. Both reply as a CloudEvent (types
 - **capabilities** (the request body is ignored):
   `{ platforms: [{ id, displayName, state, connected, enabled, actions }] }`,
   one entry per platform with an adapter. `state` is the adapter's lifecycle
-  state, `connected` and `enabled` its last link reading (both false before the
-  first read), and `actions` the actions it can perform whatever its state.
+  state, one of the contract's `platformStates`, `connected` and `enabled` its
+  last link reading (both false before the first read), and `actions` the
+  actions it can perform whatever its state. An error reply is `{ error }`
+  with no `platforms`.
 - **field_options**: the request is `{ action }`; the envelope form
   `{ data: { action } }`, which the api sends for a module field, is read the
   same way. The reply is `[{ value, label }]`, one per platform that is
   connected, enabled and able to perform the action. `all` and `origin` are not
   listed, since a field's manifest pins them. An unknown action, or a request
-  without one, gets `{ error }`, the failure shape the api relays to the UI as
-  the reason a picker is empty.
+  without one, gets `{ error }` naming the field and the problem (for example
+  `action: unknown action "chat.shout"`), the failure shape the api relays to
+  the UI as the reason a picker is empty.
+
+The shapes are generated with the rest of the contract: `PlatformCapability`,
+`CapabilitiesReply`, `FieldOptionsRequest`, `FieldOption` and
+`FieldOptionsReply` in both languages, read with `parseCapabilitiesReply`,
+`parseFieldOptionsRequest` and `parseFieldOptionsReply` in TypeScript and the
+types' `Validate` methods in Go. In Go, `FieldOptionsReply` decodes and
+encodes both wire forms (the bare array and `{ error }`), and both reply types
+write an empty list rather than `null` when there is nothing to list.
+
+### Sending from the dashboard
+
+The api serves one platform-neutral RPC, `sendToPlatforms`, so the dashboard
+sends a chat line without knowing which platform carries it. It is advertised
+by the `platform.gateway` capability and sits beside the `twitch*` methods,
+which stay.
+
+```ts
+sendToPlatforms({
+  action: "chat.send", // or chat.announce, chat.pin; the payload follows the action
+  platforms: ["twitch"],
+  payload: { message: "hello" },
+  options: { twitch: { color: "blue" } }, // optional, per platform
+  idempotencyKey: "a key the dashboard makes up per click",
+}): Promise<PlatformGatewayResult>
+```
+
+The api builds a `platforms` target and sets `requestedBy` to
+`{ kind: "api", ref: <the calling session's client id> }`. A caller cannot name
+who is asking. The answer never rejects for a send that did not happen:
+
+| Result | Meaning | Sent? |
+| --- | --- | --- |
+| `{ ok: true, reply }` | The gateway answered. `reply.ok` and `reply.results` say what each platform did, including a platform that refused. | per outcome |
+| `{ ok: false, code: "invalid" }` | The request broke the contract (for example an unknown platform or an empty line). Nothing was asked. | no |
+| `{ ok: false, code: "unavailable" }` | No message bus, or connectors is not running. | no |
+| `{ ok: false, code: "timeout" }` | The gateway did not answer in time. | maybe |
+| `{ ok: false, code: "failed" }` | The bus failed, or the reply was unreadable. | maybe |
+
+The api waits `WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` (default 12000, the
+callers' window in the table above, and the lowest value accepted) for the
+reply. Retry a `timeout` or `failed` result with the same `idempotencyKey`: the
+gateway replays a reply that reached a platform, or joins a send still running,
+rather than sending twice. A reply where nothing reached a platform is not
+held, so a retry sends again.
 
 ### Adding egress to an adapter
 
@@ -296,7 +346,9 @@ egress: {
 `ctx` carries the abort `signal` and `deadline`, `requestedBy`, and the
 request's `workflowChain` for the adapter to attach to the platform's echo of
 the line. An adapter that is not a platform declaring egress, an unknown
-action, or an action registered twice stops connectors at startup.
+action, or an action registered twice stops connectors at startup. The Twitch adapter's handlers are described under
+[Chat egress](./connectors.md#chat-egress), and how it marks the echo under
+[Own lines on the chat feed](./connectors.md#own-lines-on-the-chat-feed).
 
 ### Configuration and health
 
@@ -315,7 +367,9 @@ and each platform's status. `requestedBy` is logged, not authenticated.
 ## Shared fixtures
 
 `shared/common/contracts/testdata/platform-gateway/` holds request and reply
-cases, each marked valid or with the field it must be refused at. The Go tests
+cases for each subject (`requests.json`, `replies.json`,
+`capabilities-replies.json`, `field-options-requests.json`,
+`field-options-replies.json`), each marked valid or with the field it must be refused at. The Go tests
 (`shared/common/golang/platformgateway/catalog_test.go`) and the TypeScript
 tests (`api/tests/platform-gateway-contract.test.ts`) run the same cases, so
 both languages accept and refuse the same input and report the same field

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   type GatewayReply,
   PLATFORM_DISPLAY_NAMES,
+  PLATFORM_GATEWAY_REPLY_TYPES,
   PLATFORM_GATEWAY_SUBJECTS,
   type PlatformId,
   type PlatformOutcome,
@@ -28,7 +29,7 @@ import {
   unlinked,
 } from "../host/testing";
 import { EgressRegistry } from "./egress-registry";
-import { GATEWAY_SEND_RESULT_TYPE, type GatewayAdapters, PlatformGateway } from "./platform-gateway";
+import { type GatewayAdapters, PlatformGateway } from "./platform-gateway";
 
 const SEND = PLATFORM_GATEWAY_SUBJECTS.send;
 const DEADLINE_MS = GATEWAY_DEFAULTS.adapterDeadlineMs;
@@ -143,7 +144,7 @@ async function setup(manifests: AdapterManifest[], env: Record<string, unknown> 
 function only(replies: Uint8Array[]): GatewayReply {
   expect(replies).toHaveLength(1);
   const event = JSON.parse(text(replies[0] as Uint8Array)) as { type: string; data: GatewayReply };
-  expect(event.type).toBe(GATEWAY_SEND_RESULT_TYPE);
+  expect(event.type).toBe(PLATFORM_GATEWAY_REPLY_TYPES.send);
   if (event.data.results[KICK] === undefined) {
     const reply = parseGatewayReply(event.data);
     if (!reply.ok) {
