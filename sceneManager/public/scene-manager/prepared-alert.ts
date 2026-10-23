@@ -47,6 +47,12 @@ interface PreparedFrame {
   bridge: WidgetBridge;
   moduleId: string | null;
   settings: Record<string, unknown>;
+  /**
+   * The widget's script has run: it subscribed or painted. The shim reports
+   * setting reads no later than either, so only then are the reads the
+   * bridge knows all the widget made as it booted.
+   */
+  settled: boolean;
   /** Subscriptions the widget opened before there was an alert to send them. */
   heldSubscriptions: string[];
   /** The latest status report for each key, held until the alert's id is known. */
@@ -111,7 +117,8 @@ export class PreparedAlert {
    * Take on `next`'s settings, if this alert's frames can: each widget whose
    * settings differ gets them as a patch, which its bindings apply in place.
    * False, and nothing changed, when a widget would need a fresh frame for
-   * them (it read a changed setting as it booted, or has not booted yet).
+   * them: it read a changed setting as it booted, or has not settled, so what
+   * it read is not known yet.
    */
   adopt(next: AlertDelivery): boolean {
     if (alertShape(next) !== this.shape || this.playing !== null) {
@@ -123,7 +130,7 @@ export class PreparedAlert {
       if (settings === undefined) {
         throw new Error(`alert: prepared widget ${widgetId} is missing from an alert of the same shape`);
       }
-      const update = settingsUpdate(frame.settings, settings, frame.bridge.settingsReads());
+      const update = settingsUpdate(frame.settings, settings, frame.settled ? frame.bridge.settingsReads() : null);
       if (update === "reload") {
         return false;
       }
@@ -207,6 +214,11 @@ export class PreparedAlert {
         this.deps.timings.frame(this.playing.eventId, widgetId, stage);
       }
     };
+    const settle = (): void => {
+      if (prepared !== null) {
+        prepared.settled = true;
+      }
+    };
     const frame = mountWidgetFrame({
       slot,
       instanceId,
@@ -239,6 +251,7 @@ export class PreparedAlert {
         onAssetLoad: assets.loaderFor(moduleId),
         onReady: () => reach("ready"),
         onEventsSubscribe: (subId, queue) => {
+          settle();
           reach("subscribed");
           facts.subscribed(queue?.autoComplete === false);
           if (this.playing === null) {
@@ -256,6 +269,7 @@ export class PreparedAlert {
         onEventComplete: () => facts.completed(),
         onDispose: () => {},
         onRendered: () => {
+          settle();
           reach("rendered");
           facts.rendered();
         },
@@ -265,6 +279,7 @@ export class PreparedAlert {
       bridge: frame.bridge,
       moduleId,
       settings: placement.settings,
+      settled: false,
       heldSubscriptions: [],
       heldStatus: new Map(),
       reached: [],

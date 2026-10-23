@@ -546,6 +546,21 @@ describe("an overlay page", () => {
     expect(page.marked).not.toContain("woofx3.alert/ev-2/prepared");
   });
 
+  it("plays an alert on fresh frames when a prepared widget has not said yet what it read", async () => {
+    const page = await afterFirstAlert();
+    const prepared = alertFrame(page, "prepared-2.t1");
+    page.fromFrame(prepared, { type: "hello", instanceId: "", sdkVersion: "test" });
+
+    await page.streams[0]!.send({ kind: "delivery", frame: alertFrameOf("ev-2", "two") });
+    await page.timers.advance(10);
+    page.fromFrame(prepared, { type: "settings.reads", keys: ["text"], all: false });
+
+    expect(sentTo(prepared, "settings.changed")).toEqual([]);
+    expect(() => alertFrame(page, "prepared-2.t1")).toThrow();
+    const fresh = alertFrame(page, "prepared-3.t1");
+    expect(decodePlacementBoot(fresh.src.slice(fresh.src.indexOf("#")))?.settings).toEqual({ text: "two" });
+  });
+
   it("reports what a prepared widget said before its alert came under that alert", async () => {
     const page = await afterFirstAlert();
     const prepared = alertFrame(page, "prepared-2.t1");
