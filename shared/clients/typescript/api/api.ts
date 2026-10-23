@@ -833,7 +833,7 @@ export interface RecentActivity {
 
 // ==================== OBS ====================
 
-/** The scene manager's connection to OBS. Mirrors ObsConnectionState in sceneManager/src/obs/connection.ts. */
+/** The connectors host's connection to OBS. Mirrors ObsConnectionState in connectors/src/adapters/obs/connection.ts. */
 export type ObsConnectionState = "connecting" | "connected" | "retrying" | "stopped";
 
 /** What the dashboard collected when the streamer approved a module's OAuth integration. */
@@ -2527,7 +2527,7 @@ export interface Woofx3EngineApi {
   getAlertQueue(): Promise<AlertQueueState>;
 
   /**
-   * How the scene manager's connection to OBS is doing, for the OBS module's
+   * How the connectors host's connection to OBS is doing, for the OBS module's
    * page. Requires the `obs.status` capability.
    */
   getObsStatus(): Promise<ObsStatus>;

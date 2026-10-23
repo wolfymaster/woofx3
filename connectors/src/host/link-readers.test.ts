@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   assertLinkReaders,
   LINK_READERS,
+  obsLinkReader,
   type SettingsReader,
   TWITCH_TOKEN_SETTING,
   twitchLinkReader,
@@ -48,7 +49,7 @@ describe("twitchLinkReader", () => {
       const reading = await twitchLinkReader.read(
         settings({ [TWITCH_TOKEN_SETTING]: c.token, "integration.twitch.enabled": c.flag })
       );
-      expect({ connected: reading.connected, enabled: reading.enabled, kind: reading.flag.kind }).toEqual({
+      expect({ connected: reading.connected, enabled: reading.enabled, kind: reading.flag?.kind }).toEqual({
         connected: c.connected,
         enabled: c.enabled,
         kind: c.kind,
@@ -66,12 +67,24 @@ describe("twitchLinkReader", () => {
   });
 });
 
+describe("obsLinkReader", () => {
+  test("reads OBS as always connected and enabled, with no enabled setting and no settings read", async () => {
+    const untouched: SettingsReader = {
+      getSetting: async (key) => {
+        throw new Error(`obs read the setting ${key}`);
+      },
+    };
+    expect(await obsLinkReader.read(untouched)).toEqual({ connected: true, enabled: true, flag: null });
+    expect(obsLinkReader.watches).toEqual([]);
+  });
+});
+
 describe("assertLinkReaders", () => {
   test("accepts the shipped registry", () => {
     expect(assertLinkReaders(LINK_READERS)).toBe(LINK_READERS);
   });
 
   test("names every adapter without a reader", () => {
-    expect(() => assertLinkReaders({})).toThrow("no link reader for adapter(s): twitch");
+    expect(() => assertLinkReaders({})).toThrow("no link reader for adapter(s): twitch, obs");
   });
 });
