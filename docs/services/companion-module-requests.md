@@ -12,7 +12,9 @@ which sends a request on behalf of the module code it runs, and connectors,
 which answers it. How connectors serves a request (the checks, the address
 rules and the sessions it holds) is described in
 [Companion gateway → Module requests](./companion-gateway.md#module-requests).
-Barkloader does not send the request yet.
+Barkloader sends it from the `ctx.local` host extension
+(`barkloader/lib_sandbox/src/extensions/local.rs`; see
+[Module format → Talking to a local endpoint](../barkloader/modules.md#talking-to-a-local-endpoint-ctx-local)).
 
 ## One contract, generated
 
