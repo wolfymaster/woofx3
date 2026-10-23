@@ -4,23 +4,21 @@
 // run, starts it, and stops it when the run ends; its served subjects read
 // the connection and status, and its subscriptions ask it to reconnect.
 
-import type { RelayConfig } from "@woofx3/api";
-import { relayChangeMovesEndpoint } from "../../companion/route-watch";
-import type { EndpointResolution } from "../../companion/types";
+import type { EndpointResolution, EndpointRouteFound, RouteChangeListener } from "../../companion/types";
 import type { ObsConnectionConfig } from "../../config/obs";
 import type { Logger, RandomSource, Timers } from "../../host/deps";
-import { ObsConnection, ObsRouteUnavailable } from "./connection";
+import { ObsConnection, ObsRouteUnavailable, type ObsSession, obsFailureKind } from "./connection";
 import type Manager from "./manager";
+import { type ObsConnectLimits, openObsSession } from "./manager";
 import type { RefreshLatch } from "./refresh-latch";
 import { refreshOverlayBrowserSources } from "./refresh-overlays";
-import { OBS_ENDPOINT, openObsOverRoute } from "./settings";
 import { type ObsLastRoute, type ObsStatusReply, obsStatusReply } from "./status";
 
 export interface ObsServiceDeps {
   /** The route for one connect attempt, from the companion gateway; read afresh each time. */
   resolve(signal: AbortSignal): Promise<EndpointResolution>;
-  /** The stored relay configuration, to tell whether a change to it moves OBS. */
-  relayConfig(): Promise<RelayConfig | null>;
+  /** Calls the listener when the route to OBS may have moved; returns the unsubscribe. */
+  watchRoute(listener: RouteChangeListener): () => void;
   /** The overlay refresh sceneManager asked for; outlives this service. */
   latch: RefreshLatch;
   connection: ObsConnectionConfig;
@@ -34,11 +32,10 @@ export interface ObsService {
   readonly connection: ObsConnection<Manager>;
   /** The connection's state for `engine.obs.status`, without touching OBS. */
   status(): ObsStatusReply;
-  /** Whether the stored relay configuration moves OBS off the route its latest attempt took. */
-  relayConfigMovesObs(): Promise<boolean>;
   /**
    * Starts connecting in the background and acts on the latched refresh on
    * the current or next session, and on every request latched until stop.
+   * Reconnects whenever the companion gateway says the route may have moved.
    * `signal` aborting stops the connection, as the adapter's start signal does
    * when the host gives up on the run.
    */
@@ -52,6 +49,7 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
   // The password and any bridge ticket stay inside the attempt.
   let last: ObsLastRoute | null = null;
   let stopListening: (() => void) | null = null;
+  let stopWatching: (() => void) | null = null;
 
   const refreshes = new RefreshDrain(latch, () => connection.current(), logger);
   const connection: ObsConnection<Manager> = new ObsConnection<Manager>({
@@ -66,7 +64,7 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
       }
       last = { route: resolution.route, address: resolution.address };
       try {
-        return await openObsOverRoute(resolution, {
+        return await openOnRoute(resolution, {
           connectTimeoutMs: deps.connection.connectTimeoutMs,
           timers: deps.timers,
           signal,
@@ -88,20 +86,45 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
   return {
     connection,
     status: () => obsStatusReply(connection, last),
-    relayConfigMovesObs: async () => relayChangeMovesEndpoint(await deps.relayConfig(), OBS_ENDPOINT, last),
     start: (signal) => {
       stopListening = latch.onLatched(() => {
         void refreshes.drain();
       });
+      stopWatching = deps.watchRoute((why) => connection.reconnectNow(why));
       connection.start(signal);
       void refreshes.drain();
     },
     stop: async () => {
       stopListening?.();
       stopListening = null;
+      stopWatching?.();
+      stopWatching = null;
       await connection.stop();
     },
   };
+}
+
+/**
+ * Open an OBS session on the route the companion gateway gave. Through the
+ * companion, a failure other than OBS refusing the password is the bridge's:
+ * the relay refusing the upgrade (502, 503), the companion refusing the
+ * endpoint (4403), or the companion not reaching OBS. It reads as `relay`, so
+ * the streamer is pointed at the companion rather than at OBS.
+ */
+async function openOnRoute(route: EndpointRouteFound, limits: ObsConnectLimits): Promise<ObsSession<Manager>> {
+  try {
+    return await openObsSession({ url: route.url, token: route.password, ...limits });
+  } catch (err) {
+    if (route.route === "companion" && obsFailureKind(err) !== "authentication") {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new ObsRouteUnavailable(
+        "relay",
+        `OBS could not be reached through the companion: ${message}`,
+        route.address
+      );
+    }
+    throw err;
+  }
 }
 
 /**
