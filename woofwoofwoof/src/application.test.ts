@@ -96,6 +96,7 @@ function buildTestContext(options: {
     client: {
       hasPermission: mock(options.hasPermission ?? (async () => ({ code: "OK" }))),
       listCommands: mock(listCommandsFn),
+      findCommandById: async (id: string) => (await listCommandsFn()).commands.find((c) => c.id === id) ?? null,
       addUserToResource: mock(async () => ({ code: "OK" as const })),
       removeUserFromResource: mock(async () => ({ code: "OK" as const })),
       registerTriggers,
@@ -105,6 +106,7 @@ function buildTestContext(options: {
   const twitchChat = {
     channel: () => "testchannel",
     say: (text: string, opts?: unknown) => say("testchannel", text, opts),
+    consumeOwnEcho: (_chatterId: string, _text: string) => false,
   };
 
   const services = {
@@ -581,7 +583,16 @@ describe("WoofWoofWoof application", () => {
   });
 
   test("a command switched off stops matching", async () => {
-    const { base, chat } = await startWith(linkedCommand());
+    let stored = linkedCommand();
+    const app = new WoofWoofWoof();
+    const base = buildTestContext({
+      listCommands: async () => ({ status: { code: "OK", message: "" }, commands: [stored] }),
+    });
+    const ctx = { ...app.context, ...base } as InitCtx & typeof base;
+    await app.init(ctx);
+    await app.run(ctx);
+    const chat = getChatHandler(base);
+    stored = linkedCommand({ enabled: false });
     const updated = base.subscriptions.find((s) => s.eventType === "command.updated");
     if (!updated) {
       throw new Error("expected a command.updated subscription");

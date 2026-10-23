@@ -73,19 +73,29 @@ func (f *commandPermFixture) createCommand(t *testing.T, name string, groupIDs, 
 	}
 }
 
-// A command with no group and no user grant must stay usable by everyone.
-// `visibility` defaults to "restricted", so this is the ordinary case for every
-// command that predates group binding - regressing it would silently break the
-// whole chat surface.
-func TestCommandPermissions_NoGrantsMeansUnrestricted(t *testing.T) {
+// A restricted command with no group and no user grant is usable by nobody,
+// and has no policy rows at all: "restricted" is the default visibility, so
+// reading an empty grant list as "everyone" would open every command a
+// writer forgot to grant.
+func TestCommandPermissions_NoGrantsDeniesEveryone(t *testing.T) {
 	f := newCommandPermFixture(t)
 	f.createCommand(t, "song", nil, nil)
 
-	if !f.can(t, "randomchatter", "song") {
-		t.Fatal("a command with no grants must be usable by any user")
+	if f.can(t, "randomchatter", "song") {
+		t.Fatal("a restricted command with no grants must be denied to every user")
 	}
-	if !f.can(t, "someoneelse", "song") {
-		t.Fatal("a command with no grants must be usable by any user")
+	if f.can(t, "wolfymaster", "song") {
+		t.Fatal("a restricted command with no grants must be denied to every user")
+	}
+
+	var rows int64
+	if err := f.db.Model(&models.Permission{}).
+		Where("ptype = 'p' AND v1 = ?", "command/song").
+		Count(&rows).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if rows != 0 {
+		t.Fatalf("expected no policy rows for an ungranted restricted command, got %d", rows)
 	}
 }
 
@@ -160,7 +170,7 @@ func TestCommandPermissions_PublicVisibilitySkipsPolicy(t *testing.T) {
 		Command:     "uptime",
 		ActionsJson: "[]",
 		Enabled:     true,
-		Visibility:  commandVisibilityPublic,
+		Visibility:  string(models.CommandVisibilityPublic),
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -179,9 +189,9 @@ func TestCommandPermissions_PublicVisibilitySkipsPolicy(t *testing.T) {
 	}
 }
 
-// Removing every grant from a previously restricted command must return it to
-// the unrestricted state rather than leaving it denied for everyone.
-func TestCommandPermissions_ClearingGrantsRestoresUnrestricted(t *testing.T) {
+// Removing every grant from a restricted command leaves it usable by nobody,
+// not by everybody.
+func TestCommandPermissions_ClearingGrantsDeniesEveryone(t *testing.T) {
 	f := newCommandPermFixture(t)
 
 	mods, err := f.groupRepo.GetByName(models.GroupModerator)
@@ -206,8 +216,8 @@ func TestCommandPermissions_ClearingGrantsRestoresUnrestricted(t *testing.T) {
 		t.Fatalf("update: %v", err)
 	}
 
-	if !f.can(t, "randomchatter", "vanish") {
-		t.Fatal("clearing all grants must restore the unrestricted state")
+	if f.can(t, "randomchatter", "vanish") {
+		t.Fatal("clearing all grants must not open the command to everyone")
 	}
 }
 

@@ -6,7 +6,8 @@ const REQUIRED: Record<string, string> = {
   WOOFX3_DATABASE_PROXY_URL: "http://127.0.0.1:5555",
   WOOFX3_SCENE_MANAGER_URL: "http://127.0.0.1:9101",
   WOOFX3_BARKLOADER_WS_URL: "ws://127.0.0.1:9653/ws",
-  WOOFX3_BARKLOADER_KEY: "test-key",
+  WOOFX3_BARKLOADER_KEY: "test-barkloader-key-0123456789abcdef",
+  WOOFX3_DB_PROXY_TOKEN: "test-db-proxy-token-0123456789abcdef",
 };
 
 // loadConfig writes the resolved config back into process.env, so every
@@ -25,6 +26,12 @@ afterEach(() => {
 function withEnv(vars: Record<string, string>): void {
   delete process.env.WOOFX3_API_HOST;
   delete process.env.API_HOST;
+  delete process.env.PORT;
+  delete process.env.WOOFX3_BEHIND_EDGE;
+  delete process.env.WOOFX3_REGISTRATION_MODE;
+  delete process.env.WOOFX3_REGISTRATION_TOKEN;
+  delete process.env.WOOFX3_ALLOWED_HOSTS;
+  delete process.env.WOOFX3_ALLOWED_ORIGINS;
   Object.assign(process.env, REQUIRED, vars);
 }
 
@@ -39,6 +46,60 @@ describe("api listener", () => {
     withEnv({ WOOFX3_API_HOST: "0.0.0.0" });
 
     expect(loadConfig().host).toBe("0.0.0.0");
+  });
+});
+
+describe("secure defaults", () => {
+  test("registration is first when neither a mode nor a token is set", () => {
+    withEnv({});
+
+    expect(loadConfig().registration).toEqual({ mode: "first", token: null });
+  });
+
+  test("open registration stops startup behind the edge", () => {
+    withEnv({ WOOFX3_REGISTRATION_MODE: "open", WOOFX3_BEHIND_EDGE: "true" });
+
+    expect(() => loadConfig()).toThrow("WOOFX3_REGISTRATION_MODE=open");
+  });
+
+  test("open registration stops startup on a non-loopback bind", () => {
+    withEnv({ WOOFX3_REGISTRATION_MODE: "open", WOOFX3_API_HOST: "0.0.0.0" });
+
+    expect(() => loadConfig()).toThrow("WOOFX3_REGISTRATION_MODE=open");
+  });
+
+  test("open registration is allowed on a loopback-only engine", () => {
+    withEnv({ WOOFX3_REGISTRATION_MODE: "open" });
+
+    expect(loadConfig().registration.mode).toBe("open");
+  });
+
+  test("a PORT exported by the parent shell does not change the exposure", () => {
+    withEnv({ WOOFX3_REGISTRATION_MODE: "open", PORT: "3000" });
+
+    expect(loadConfig().registration.mode).toBe("open");
+  });
+
+  test("a WOOFX3_BEHIND_EDGE that is not true or false stops startup", () => {
+    withEnv({ WOOFX3_BEHIND_EDGE: "yes" });
+
+    expect(() => loadConfig()).toThrow();
+  });
+
+  test("an unset request guard checks Origin, and Host on a loopback-only engine", () => {
+    withEnv({});
+
+    const { requestGuard } = loadConfig();
+    expect(requestGuard.allowedOrigins).not.toBeNull();
+    expect(requestGuard.allowedHosts).not.toBeNull();
+  });
+
+  test("behind the edge an unset request guard still checks Origin but not Host", () => {
+    withEnv({ WOOFX3_BEHIND_EDGE: "true" });
+
+    const { requestGuard } = loadConfig();
+    expect(requestGuard.allowedOrigins).not.toBeNull();
+    expect(requestGuard.allowedHosts).toBeNull();
   });
 });
 
@@ -95,7 +156,6 @@ describe("message bus token", () => {
 
   test("is unset when nothing sets it", () => {
     delete process.env.WOOFX3_MESSAGEBUS_TOKEN;
-    delete process.env.MESSAGEBUS_TOKEN;
     withEnv({});
 
     expect(loadConfig().nats.token).toBeUndefined();
@@ -149,5 +209,31 @@ describe("confidential Twitch app", () => {
   test("refuses a value that is not a client id", () => {
     withEnv({ WOOFX3_TWITCH_CLIENT_ID: "abc def" });
     expect(() => loadConfig()).toThrow("WOOFX3_TWITCH_CLIENT_ID");
+  });
+});
+
+describe("barkloader key", () => {
+  for (const value of ["", "CHANGE_ME", "short-key"]) {
+    test(`refuses "${value}"`, () => {
+      withEnv({ WOOFX3_BARKLOADER_KEY: value });
+
+      expect(() => loadConfig()).toThrow("barkloaderKey (WOOFX3_BARKLOADER_KEY)");
+    });
+  }
+});
+
+describe("db proxy token", () => {
+  for (const value of ["", "CHANGE_ME", "short-token"]) {
+    test(`refuses "${value}"`, () => {
+      withEnv({ WOOFX3_DB_PROXY_TOKEN: value });
+
+      expect(() => loadConfig()).toThrow("dbProxyToken (WOOFX3_DB_PROXY_TOKEN)");
+    });
+  }
+
+  test("keeps a usable token", () => {
+    withEnv({});
+
+    expect(loadConfig().dbProxyToken).toBe(REQUIRED.WOOFX3_DB_PROXY_TOKEN);
   });
 });

@@ -1,6 +1,6 @@
 //! Keeps this process's CloudEvent stamping current from the bus.
 //!
-//! barkloader publishes `module.storage.changed` and `message.send` through
+//! barkloader publishes `module.storage.changed` through
 //! `BaseEvent::new`, which stamps whatever session this holder knows. Without
 //! this subscription those events go out with no session, and the only sign is
 //! a one-time warning.

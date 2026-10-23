@@ -30,6 +30,66 @@ describe("routes for stored files", () => {
   });
 });
 
+describe("handleStorageAssetRoute inert headers", () => {
+  const BARKLOADER_CSP = "sandbox; default-src 'none'";
+  const html = (extra: Record<string, string> = {}) =>
+    upstream(
+      new Response("<script>1</script>", {
+        headers: {
+          "Content-Type": "text/html",
+          "Content-Security-Policy": BARKLOADER_CSP,
+          "X-Content-Type-Options": "nosniff",
+          ...extra,
+        },
+      })
+    );
+
+  it("serves barkloader's headers for a user upload, attachment included", async () => {
+    const { req, url } = get("/assets/user/res-1/x.svg");
+    const resp = await handleStorageAssetRoute(
+      req,
+      url,
+      BARKLOADER_URL,
+      logger,
+      html({ "Content-Disposition": "attachment" }) as never
+    );
+    expect(resp.headers.get("Content-Security-Policy")).toBe(BARKLOADER_CSP);
+    expect(resp.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(resp.headers.get("Content-Disposition")).toBe("attachment");
+  });
+
+  it("keeps the sandbox on a module file that is not part of a widget or theme bundle", async () => {
+    const { req, url } = get("/assets/modules/m1/abc123/assets/page.html");
+    const resp = await handleStorageAssetRoute(req, url, BARKLOADER_URL, logger, html() as never);
+    expect(resp.headers.get("Content-Security-Policy")).toBe(BARKLOADER_CSP);
+  });
+
+  it("drops the sandbox from widget and theme bundle files but still never sniffs them", async () => {
+    for (const path of [
+      "/assets/modules/m1/abc123/widgets/w1/app.js",
+      "/assets/modules/pack/abc123/themes/neon/theme.css",
+    ]) {
+      const { req, url } = get(path);
+      const resp = await handleStorageAssetRoute(req, url, BARKLOADER_URL, logger, html() as never);
+      expect(resp.headers.get("Content-Security-Policy")).toBeNull();
+      expect(resp.headers.get("X-Content-Type-Options")).toBe("nosniff");
+    }
+  });
+
+  it("treats an encoded or lookalike path as not exempt", async () => {
+    for (const path of [
+      "/assets/modules/m1/abc123%2Fwidgets/w1/app.js",
+      "/assets/modules/m1/abc123%2Fassets/widgets/x.html",
+      "/assets/modules/widgets/abc123/assets/x.html",
+      "/assets/user/res-1/widgets/w1/app.js",
+    ]) {
+      const { req, url } = get(path);
+      const resp = await handleStorageAssetRoute(req, url, BARKLOADER_URL, logger, html() as never);
+      expect(resp.headers.get("Content-Security-Policy")).toBe(BARKLOADER_CSP);
+    }
+  });
+});
+
 describe("handleStorageAssetRoute", () => {
   it("relays a presigned redirect to the browser instead of following it", async () => {
     const signed = "https://bucket.test/modules/m1/abc123/assets/bell.mp3?X-Amz-Signature=abc";

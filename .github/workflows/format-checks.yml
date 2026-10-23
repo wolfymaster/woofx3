@@ -48,3 +48,11 @@ jobs:
 
       - name: Check formatting
         run: make format-check
+
+      # CI reads .bun-version and developers read mise.toml; nothing else
+      # keeps the two pins together.
+      - name: Check the Bun pins agree
+        run: |
+          mise_bun=$(sed -n 's/^bun = "\(.*\)"$/\1/p' mise.toml)
+          test -n "$mise_bun"
+          test "$mise_bun" = "$(cat .bun-version)"

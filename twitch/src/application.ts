@@ -1,8 +1,8 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
 import type { AuthProvider } from "@twurple/auth";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
-import { HELIX_COMMAND } from "@woofx3/common/cloudevents/Twitch/commands";
 import { subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
+import { HELIX_COMMAND } from "@woofx3/common/cloudevents/Twitch/commands";
 import { type SharedLogger, type Span, SpanKind, withSpan } from "@woofx3/common/logging";
 import type { Application, IApplication } from "@woofx3/common/runtime";
 import { ListModuleSettings } from "@woofx3/db/module_setting.pb";
@@ -200,16 +200,16 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
    */
   private async connect(ctx: TwitchApiContext): Promise<void> {
     this.link = "connecting";
-    const dbBaseURL = ctx.services.dbProxy.client.baseURL;
+    const db = ctx.services.dbProxy.client;
     const channel = ctx.config.getConfig("woofx3TwitchChannelName") as string | undefined;
     const twitchClient = new TwitchClient({
       channel: channel || undefined,
       getSetting: async (key) => {
-        const response = await GetSetting({ key }, { baseURL: dbBaseURL });
+        const response = await GetSetting({ key }, db);
         return response.setting.value.stringValue ?? undefined;
       },
       setSetting: async (key, value) => {
-        await SetSetting({ key, value: { stringValue: value }, userId: "" }, { baseURL: dbBaseURL });
+        await SetSetting({ key, value: { stringValue: value }, userId: "" }, db);
       },
       requestToken: requestTokenOverNats((subject, data, opts) =>
         ctx.services.messageBus.client.request(subject, data, opts)
@@ -252,8 +252,7 @@ export default class TwitchApi implements IApplication<TwitchApiContext, TwitchA
     const messageBus = ctx.services.messageBus.client;
     const adBreakLeadSetting = new AdBreakLeadSetting(
       {
-        listModuleSettings: async (moduleId) =>
-          (await ListModuleSettings({ moduleId }, { baseURL: dbBaseURL })).settings,
+        listModuleSettings: async (moduleId) => (await ListModuleSettings({ moduleId }, db)).settings,
       },
       ctx.logger
     );

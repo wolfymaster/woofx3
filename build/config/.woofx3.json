@@ -2,7 +2,6 @@
   "apiPort": "5050",
   "barkloaderWsUrl": "ws://127.0.0.1:9653/ws",
   "barkloaderUrl": "http://127.0.0.1:9653",
-  "barkloaderKey": "CHANGE_ME",
   "storagePath": "./data/module-storage.db",
   "databaseProxyUrl": "http://127.0.0.1:5555",
   "databaseProxyPort": "5555",
@@ -15,7 +14,6 @@
   "messagebusJwt": "",
   "messagebusNKey": "",
   "sceneManagerHost": "127.0.0.1",
-  "sceneManagerTokenSecret": "CHANGE_ME",
   "twitchChannelName": "",
   "twitchClientId": "",
   "twitchClientSecret": ""
