@@ -123,8 +123,9 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
   const parameters =
     typeof raw.parameters === "object" && raw.parameters !== null ? (raw.parameters as Record<string, unknown>) : {};
   const timings = new StageTimings<DispatchStage>(deps.now ?? (() => performance.now()));
-  const catalog = await timings.time("layout", () => host.loadWidgetCatalog());
-  const parsed = parseAlertLayout(parameters.layout, catalog);
+  const parsed = await timings.time("layout", async () =>
+    parseAlertLayout(parameters.layout, await host.loadWidgetCatalog())
+  );
   if (!parsed.ok) {
     logger.warn("ui.notify.alert: unusable parameters.layout; dropping", { alertId, reason: parsed.reason });
     await reportAlertNotPlayed(db, logger, { target, reason: parsed.reason });
