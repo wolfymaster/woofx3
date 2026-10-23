@@ -11,6 +11,13 @@ export type DirectDecision = (EndpointRouteFound & { route: "direct" }) | Endpoi
 
 export interface RoutePolicy {
   /**
+   * Whether a direct route still stands when the relay configuration cannot
+   * be read. Only the bridge needs it, so a policy that trusts its caller with
+   * a best-effort route says true; one that fails closed says false and the
+   * answer is `store_unreadable`.
+   */
+  readonly directWithoutRelayConfig: boolean;
+  /**
    * The direct route this policy allows for the endpoint, or why there is
    * none. Reads the store afresh and never rejects. Through the companion the
    * route's password still comes from here.
@@ -32,6 +39,7 @@ export interface RoutePolicy {
  */
 export function adapterPolicy(deps: { store: EndpointStore; logger: Logger }): RoutePolicy {
   return {
+    directWithoutRelayConfig: true,
     direct: async (ref, fallback) => {
       let entry: DeclaredEndpoint | null = null;
       let settings: StoredModuleSetting[] = [];
@@ -94,7 +102,8 @@ function unavailable(reason: EndpointUnavailable["reason"], message: string): En
   return { ok: false, reason, message };
 }
 
-function validPort(value: string): string | null {
+/** The port as a canonical decimal string, or null when it is not 1 to 65535. */
+export function validPort(value: string): string | null {
   if (!/^\d+$/.test(value)) {
     return null;
   }
@@ -103,6 +112,6 @@ function validPort(value: string): string | null {
 }
 
 /** An IPv6 address goes in brackets in a URL; anything else is used as typed. */
-function urlHost(host: string): string {
+export function urlHost(host: string): string {
   return host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 }
