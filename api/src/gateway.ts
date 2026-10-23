@@ -51,16 +51,16 @@ export class AuthenticationRefused extends Error {
   }
 }
 
-/**
- * The unauthenticated gateway's behaviour, shared by every connection. It is
- * not served itself: capnweb serves a `GatewayConnection` per connection,
- * which calls in here with what it knows about that connection.
- */
 /** Whether `connection` came from `boundOrigin`, a comparable origin. */
 function fromOrigin(connection: ConnectionInfo, boundOrigin: string): boolean {
   return connection.origin !== null && comparableOriginOf(connection.origin) === boundOrigin;
 }
 
+/**
+ * The unauthenticated gateway's behaviour, shared by every connection. It is
+ * not served itself: capnweb serves a `GatewayConnection` per connection,
+ * which calls in here with what it knows about that connection.
+ */
 export class ApiGateway {
   private webhookClient: WebhookClient | null = null;
 
