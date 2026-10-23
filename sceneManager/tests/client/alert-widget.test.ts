@@ -121,6 +121,8 @@ function setup(preparedAlerts?: number) {
   const queues = new EventQueueManager(timers);
   let registration: QueueRegistration | null = null;
   let disposing = false;
+  /** How many waiting deliveries' values the widget has read. */
+  const read = { values: 0 };
   const widget = new AlertWidget({
     element: element as unknown as HTMLElement,
     instanceId: "area",
@@ -133,7 +135,14 @@ function setup(preparedAlerts?: number) {
         queues.complete(registration, eventId);
       }
     },
-    waiting: () => (registration === null ? [] : queues.pending(registration)),
+    waiting: () =>
+      (registration === null ? [] : queues.pending(registration)).map((item) => ({
+        ...item,
+        get value() {
+          read.values += 1;
+          return item.value;
+        },
+      })),
     document: {
       createElement: () => new FakeElement(),
       timeline: { currentTime: 0 },
@@ -171,7 +180,7 @@ function setup(preparedAlerts?: number) {
     disposing = true;
     widget.dispose();
   };
-  return { area: element, timers, finished, marked, stages, deliver, cancel, dispose };
+  return { area: element, read, timers, finished, marked, stages, deliver, cancel, dispose };
 }
 
 function descendants(element: FakeElement): FakeElement[] {
@@ -289,6 +298,20 @@ describe("AlertWidget", () => {
     timers.advance(ALERT_PLAYS_OUT_MS);
     expect(finished).toEqual(["ev-1", "ev-2"]);
     expect(stages()).toEqual([onScreen(B)]);
+  });
+
+  it("reads a long queue only as far as it has stages to prepare", () => {
+    const { read, timers, stages, deliver } = setup(2);
+    deliver("ev-1", "a");
+    for (let n = 2; n <= 50; n += 1) {
+      deliver(`ev-${n}`, n % 2 === 0 ? "b" : "c");
+    }
+    read.values = 0;
+
+    timers.advance(0);
+
+    expect(stages()).toEqual([onScreen(A), B, C]);
+    expect(read.values).toBe(2);
   });
 
   it("prepares nothing ahead when it keeps no prepared alerts", () => {

@@ -224,11 +224,17 @@ export class AlertWidget {
   /**
    * The shapes to keep prepared, soonest wanted first, each with a delivery
    * to prepare it from: the waiting alerts' shapes in the order they play,
-   * then, when nothing is on screen, the shapes played most recently.
+   * then, when nothing is on screen, the shapes played most recently. At most
+   * `capacity` of them, since a shape ranked after that many is never
+   * prepared, so a long queue (a burst of gifted subs) is read only as far as
+   * the pool reaches.
    */
   private wantedShapes(): Map<string, AlertDelivery> {
     const wanted = new Map<string, AlertDelivery>();
     for (const item of this.opts.waiting()) {
+      if (wanted.size >= this.capacity) {
+        return wanted;
+      }
       const delivery = parseAlertDelivery(item.value);
       if (delivery === null) {
         continue;
@@ -240,6 +246,9 @@ export class AlertWidget {
     }
     if (this.playing.size === 0) {
       for (const [shape, delivery] of [...this.played].reverse()) {
+        if (wanted.size >= this.capacity) {
+          break;
+        }
         if (!wanted.has(shape)) {
           wanted.set(shape, delivery);
         }
