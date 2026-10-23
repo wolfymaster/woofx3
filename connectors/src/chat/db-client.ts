@@ -1,7 +1,7 @@
 import { type Command, ListCommands } from "@woofx3/db/command.pb";
 import type { ResponseStatus } from "@woofx3/db/common.pb";
 import { AddUserToGroup, ListGroups, RemoveUserFromGroup } from "@woofx3/db/group.pb";
-import { HasPermission } from "@woofx3/db/permission.pb";
+import { AddUserToResource, HasPermission, RemoveUserFromResource } from "@woofx3/db/permission.pb";
 import type { DbProxyClientConfig } from "../services/db-proxy";
 
 export type StoredCommand = Command;
@@ -21,6 +21,8 @@ export interface DispatcherDb {
   listBuiltInGroups(): Promise<Map<string, string>>;
   addUserToGroup(groupId: string, username: string): Promise<void>;
   removeUserFromGroup(groupId: string, username: string): Promise<void>;
+  addUserToResource(username: string, resource: string, role: string): Promise<void>;
+  removeUserFromResource(username: string, resource: string, role: string): Promise<void>;
 }
 
 /** The dispatcher's db-proxy client. Built once and shared by every part of the dispatcher. */
@@ -57,6 +59,12 @@ export function dbProxyDispatcherDb(config: DbProxyClientConfig): DispatcherDb {
     },
     removeUserFromGroup: async (groupId, username) => {
       requireOk("RemoveUserFromGroup", await RemoveUserFromGroup({ groupId, username }, config));
+    },
+    addUserToResource: async (username, resource, role) => {
+      requireOk("AddUserToResource", await AddUserToResource({ username, resource, role }, config));
+    },
+    removeUserFromResource: async (username, resource, role) => {
+      requireOk("RemoveUserFromResource", await RemoveUserFromResource({ username, resource, role }, config));
     },
   };
 }

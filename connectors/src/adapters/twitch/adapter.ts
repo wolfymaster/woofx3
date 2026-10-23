@@ -1,4 +1,4 @@
-import { TWITCHAPI_SUBJECT } from "@woofx3/common/cloudevents/Twitch/commands";
+import { TWITCHAPI_SERVED_BUDGET_MS, TWITCHAPI_SUBJECT } from "@woofx3/common/cloudevents/Twitch/commands";
 import { EventType as TwitchEventType } from "@woofx3/common/cloudevents/Twitch/events";
 import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/integration-settings";
 import { TWITCH_TOKEN_SUBJECT } from "@woofx3/twitch/dashboard-auth-provider";
@@ -17,15 +17,6 @@ import { type TwitchEgressSession, twitchEgress } from "./egress";
 import { SelfSentRegistry } from "./lib/self-sent";
 import { SendQueue } from "./lib/send-queue";
 import { SHOUTOUT_ENQUEUE_SUBJECT } from "./lib/shoutoutQueue";
-
-/**
- * The host's reply budget for `twitchapi`, time spent held while the adapter
- * starts included. Below the api's TWITCH_HELIX_TIMEOUT_MS (10_000) and the
- * 10_000 the sandbox's `ctx.twitch` and woofwoofwoof's built-in commands wait,
- * so a caller always gets a reply; above HELIX_DEADLINE_MS (8_000), so a Helix call
- * reports its own timeout first.
- */
-export const TWITCH_API_SERVED_BUDGET_MS = 9_000;
 
 /** Every subject the adapter publishes: one per Twitch event type. */
 export const TWITCH_EVENT_SUBJECTS: readonly string[] = Object.values(TwitchEventType);
@@ -82,7 +73,7 @@ export class TwitchAdapter implements Adapter {
       serves: [
         {
           subject: TWITCHAPI_SUBJECT,
-          budgetMs: TWITCH_API_SERVED_BUDGET_MS,
+          budgetMs: TWITCHAPI_SERVED_BUDGET_MS,
           handle: (request, ctx) => this.handle(request, ctx),
           unavailableReply: (unavailable) => twitchApiUnavailableReply(unavailable, deps),
         },

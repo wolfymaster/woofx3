@@ -13,7 +13,6 @@ import { httpStatusOf, TwitchApiError } from "./twitchApiError";
 export {
   TwitchApiError,
   type TwitchApiErrorCode,
-  type TwitchApiReplyCode,
   twitchApiErrorCodeOf,
 } from "./twitchApiError";
 

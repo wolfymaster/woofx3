@@ -1,7 +1,13 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
 import type { AuthProvider } from "@twurple/auth";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
-import { HELIX_COMMAND, TWITCHAPI_SUBJECT } from "@woofx3/common/cloudevents/Twitch/commands";
+import {
+  HELIX_COMMAND,
+  TWITCHAPI_ERROR_TYPE,
+  TWITCHAPI_SUBJECT,
+  type TwitchApiReplyCode,
+  twitchApiResultType,
+} from "@woofx3/common/cloudevents/Twitch/commands";
 import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/integration-settings";
 import { type Span, SpanKind, withSpan } from "@woofx3/common/logging";
 import { ListModuleSettings } from "@woofx3/db/module_setting.pb";
@@ -20,12 +26,7 @@ import { type PublishTarget, publishEvent } from "./lib/publishEvent";
 import type { SelfSentRegistry } from "./lib/self-sent";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
 import type TwitchApiClient from "./lib/twitch";
-import TwitchApiClientImpl, {
-  isTwitchApiCommand,
-  type TwitchApiCall,
-  type TwitchApiReplyCode,
-  twitchApiErrorCodeOf,
-} from "./lib/twitch";
+import TwitchApiClientImpl, { isTwitchApiCommand, type TwitchApiCall, twitchApiErrorCodeOf } from "./lib/twitch";
 import TwitchEventBus from "./lib/twitchEventBus";
 import type { EventPublisher } from "./types";
 
@@ -69,9 +70,6 @@ const TWITCH_NOT_LINKED = "TwitchNotLinked";
 function isNotLinked(err: unknown): boolean {
   return err instanceof Error && err.name === TWITCH_NOT_LINKED;
 }
-
-/** The CloudEvent type of every `twitchapi` refusal. Must match ERROR_REPLY_TYPE in barkloader's twitch extension. */
-export const TWITCHAPI_ERROR_TYPE = "twitchapi.error";
 
 /** The slice of the adapter's scoped bus the twitch application uses. */
 export type TwitchBus = Pick<ScopedBus, "publish" | "subscribe" | "request">;
@@ -594,7 +592,7 @@ export default class TwitchApplication {
 
     try {
       const result = await twitchApi[request.command](request.args ?? {}, call);
-      return twitchApiReply(`twitchapi.${request.command}.result`, result, this.deps);
+      return twitchApiReply(twitchApiResultType(request.command), result, this.deps);
     } catch (err) {
       const message = errorMessage(err);
       ctx.logger.error("twitchapi: handler failed", { command: request.command, err: message });

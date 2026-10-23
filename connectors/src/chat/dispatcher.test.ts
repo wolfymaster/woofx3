@@ -13,6 +13,7 @@ const CONFIG: ChatConfig = {
   authCache: { capacity: CHAT_DEFAULTS.authCacheCapacity, ttlMs: CHAT_DEFAULTS.authCacheTtlMs },
   groups: { lastSeenCapacity: CHAT_DEFAULTS.groupLastSeenCapacity, catalogTtlMs: CHAT_DEFAULTS.groupCatalogTtlMs },
   store: { reloadDebounceMs: CHAT_DEFAULTS.reloadDebounceMs, reloadBackstopMs: CHAT_DEFAULTS.reloadBackstopMs },
+  twitchApi: { timeoutMs: CHAT_DEFAULTS.twitchApiTimeoutMs },
   replyTimeoutMs: 12_000,
 };
 

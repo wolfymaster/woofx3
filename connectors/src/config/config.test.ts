@@ -61,6 +61,7 @@ describe("connectorsConfig", () => {
       authCache: { capacity: 2_048, ttlMs: 5_000 },
       groups: { lastSeenCapacity: CHAT_DEFAULTS.groupLastSeenCapacity, catalogTtlMs: 300_000 },
       store: { reloadDebounceMs: 250, reloadBackstopMs: 300_000 },
+      twitchApi: { timeoutMs: 10_000 },
       replyTimeoutMs: GATEWAY_CALLER_TIMEOUT_MS,
     });
   });
@@ -82,6 +83,11 @@ describe("connectorsConfig", () => {
     ["a placeholder db-proxy token", { ...required, woofx3DbProxyToken: "CHANGE_ME" }, "dbProxyToken"],
     ["a short db-proxy token", { ...required, woofx3DbProxyToken: "short-token" }, "dbProxyToken"],
     ["db-proxy url that is not a URL", { ...required, woofx3DatabaseProxyUrl: "db-proxy" }, "woofx3DatabaseProxyUrl"],
+    [
+      "a twitchapi timeout at the adapter's served budget",
+      { ...required, woofx3ConnectorsDispatcherTwitchApiTimeoutMs: 9_000 },
+      "woofx3ConnectorsDispatcherTwitchApiTimeoutMs",
+    ],
     ["port out of range", { ...required, woofx3ConnectorsPort: 70_000 }, "woofx3ConnectorsPort"],
     [
       "non-numeric interval",
