@@ -419,7 +419,7 @@ async fn upload_handler(
             .as_ref()
             .map(|rc| rc.client_id.clone())
             .unwrap_or_default();
-        if let Err(e) = module
+        let outcome = match module
             .install(
                 &archive_key,
                 ctx.db_proxy_url.as_deref(),
@@ -429,22 +429,25 @@ async fn upload_handler(
             )
             .await
         {
-            let err_msg = e.to_string();
-            error!("Module install failed: {}", err_msg);
-            notify_install(
-                db_proxy_ref,
-                module_name,
-                module_version,
-                "failed",
-                &err_msg,
-                request_context.as_ref(),
-            )
-            .await;
-            return;
-        }
+            Ok(outcome) => outcome,
+            Err(e) => {
+                let err_msg = e.to_string();
+                error!("Module install failed: {}", err_msg);
+                notify_install(
+                    db_proxy_ref,
+                    module_name,
+                    module_version,
+                    "failed",
+                    &err_msg,
+                    request_context.as_ref(),
+                )
+                .await;
+                return;
+            }
+        };
 
-        if let Some(db_proxy_url) = ctx.db_proxy_url.as_deref()
-            && let Err(err) = registry_loader::refresh_module_in_registry(
+        if let Some(db_proxy_url) = ctx.db_proxy_url.as_deref() {
+            if let Err(err) = registry_loader::refresh_module_in_registry(
                 &ctx.registry,
                 db_proxy_url,
                 module_name,
@@ -452,11 +455,21 @@ async fn upload_handler(
                 &ctx.scheduler,
             )
             .await
-        {
-            error!(
-                "Module installed to repository but sandbox registry refresh failed for {}: {}",
-                module_name, err
-            );
+            {
+                error!(
+                    "Module installed to repository but sandbox registry refresh failed for {}: {}",
+                    module_name, err
+                );
+            }
+            if let Err(err) = module
+                .reset_relocated_endpoint_settings(db_proxy_url, &outcome)
+                .await
+            {
+                error!(
+                    "Module {} installed but its local endpoint settings could not be reset after the registry refresh: {}",
+                    module_name, err
+                );
+            }
         }
 
         // archive the original zip keyed by module_key
@@ -974,7 +987,7 @@ async fn rollback_handler(
     let composite_module_key =
         format!("{}:{}:{}", manifest_module_id, resolved_version, hash_short);
 
-    module
+    let outcome = module
         .install(
             &archive_key,
             Some(db_proxy_url),
@@ -997,6 +1010,16 @@ async fn rollback_handler(
     )
     .await
     .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
+
+    module
+        .reset_relocated_endpoint_settings(db_proxy_url, &outcome)
+        .await
+        .map_err(|e| {
+            actix_web::error::ErrorInternalServerError(format!(
+                "Rollback installed but its local endpoint settings could not be reset: {}",
+                e
+            ))
+        })?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "success": true,
