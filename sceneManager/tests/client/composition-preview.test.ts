@@ -248,7 +248,11 @@ function setup(resolve?: (doc: CompositionDocument) => Promise<FrameResolution>)
   const of = <T extends PreviewReport["type"]>(type: T) =>
     reports.filter((report): report is Extract<PreviewReport, { type: T }> => report.type === type);
   const last = <T extends PreviewReport["type"]>(type: T) => of(type).at(-1);
-  const visible = (id: string) => stage.find("data-scene-widget", id)?.style.visibility === "";
+  // The preview hides a widget with opacity 0, so its frame can paint before it enters.
+  const visible = (id: string) => {
+    const opacity = stage.find("data-scene-widget", id)?.style.opacity;
+    return opacity !== undefined && opacity !== "0";
+  };
   return { base, stage, reports, frames, fitted, preview, live, of, last, visible };
 }
 
