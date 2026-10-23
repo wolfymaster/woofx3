@@ -2055,6 +2055,52 @@ fn validate_select_options(field: &ManifestConfigField, context: &str) -> Result
     }
 }
 
+/// Field types whose value is never a string; a `visibleWhen` on one of them
+/// can never match.
+const NON_TEXT_FIELD_TYPES: [&str; 6] = ["number", "range", "toggle", "button", "layout", "list"];
+
+/// `visibleWhen` names another field of the same top-level list, one that is
+/// itself always shown, and the values that reveal this one.
+fn validate_visible_when(
+    field: &ManifestConfigField,
+    siblings: &[ManifestConfigField],
+    context: &str,
+) -> Result<()> {
+    let Some(condition) = &field.visible_when else {
+        return Ok(());
+    };
+    if condition.field == field.id {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` cannot name the field itself"
+        ));
+    }
+    let Some(target) = siblings.iter().find(|s| s.id == condition.field) else {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` {:?} is not a field of this list",
+            condition.field
+        ));
+    };
+    if target.visible_when.is_some() {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` {:?} has a `visibleWhen` of its own; conditions go one level only",
+            condition.field
+        ));
+    }
+    if NON_TEXT_FIELD_TYPES.contains(&target.field_type.as_str()) {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` {:?} is a `{}` field, which never holds text, so the condition could not match",
+            condition.field,
+            target.field_type
+        ));
+    }
+    if condition.one_of.is_empty() || condition.one_of.iter().any(|v| v.trim().is_empty()) {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.oneOf` must list at least one non-empty value"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<()> {
     let mut seen: HashSet<&str> = HashSet::with_capacity(fields.len());
     for (i, field) in fields.iter().enumerate() {
@@ -2108,6 +2154,7 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
             )?;
         }
         validate_item_fields(field, &format!("{context} field #{i} ({id})"))?;
+        validate_visible_when(field, fields, &format!("{context} field #{i} ({id})"))?;
         validate_operators(field, &format!("{context} field #{i} ({id})"))?;
         // An empty `anyText` is meaningful - it drops the part of the sentence -
         // but whitespace alone is neither that nor words, so it is a slip.
@@ -2200,6 +2247,12 @@ fn validate_list_rows(
         ));
     }
     for (i, item) in item_fields.iter().enumerate() {
+        if item.visible_when.is_some() {
+            return Err(anyhow!(
+                "{context}: item field #{i} ({}) has `visibleWhen`, which a list row does not take",
+                item.id
+            ));
+        }
         if !LIST_ITEM_FIELD_TYPES.contains(&item.field_type.as_str()) {
             return Err(anyhow!(
                 "{context}: item field #{i} ({}) has type {:?}; a list row takes only: {}",
@@ -4270,9 +4323,13 @@ mod tests {
     }
 
     fn resource_with_field(field: &str) -> ModuleManifest {
+        resource_with_fields(&format!("[{field}]"))
+    }
+
+    fn resource_with_fields(fields: &str) -> ModuleManifest {
         minimal(&format!(
             r#",
-            "resources": [{{ "kind": "counter", "name": "Counter", "schema": [{field}] }}]"#
+            "resources": [{{ "kind": "counter", "name": "Counter", "schema": {fields} }}]"#
         ))
     }
 
@@ -4301,6 +4358,77 @@ mod tests {
         );
         let err = validate(&empty).expect_err("list with an empty row");
         assert!(err.to_string().contains("at least one field"), "{err}");
+    }
+
+    #[test]
+    fn accepts_visible_when_naming_a_sibling() {
+        let both = resource_with_fields(
+            r#"[{ "id": "mode", "label": "Mode", "type": "text" },
+                { "id": "color", "label": "Colour", "type": "text",
+                  "visibleWhen": { "field": "mode", "oneOf": ["a", "b"] } }]"#,
+        );
+        validate(&both).expect("visibleWhen on a sibling validates");
+    }
+
+    #[test]
+    fn rejects_visible_when_misuse() {
+        let cases = [
+            (
+                r#"[{ "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "x", "oneOf": ["a"] } }]"#,
+                "cannot name the field itself",
+            ),
+            (
+                r#"[{ "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "ghost", "oneOf": ["a"] } }]"#,
+                "is not a field of this list",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": [] } }]"#,
+                "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": [""] } }]"#,
+                "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": [" "] } }]"#,
+                "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "toggle" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": ["a"] } }]"#,
+                "never holds text",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "n", "label": "N", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": ["a"] } },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "n", "oneOf": ["a"] } }]"#,
+                "one level only",
+            ),
+            (
+                r#"[{ "id": "goals", "label": "Goals", "type": "list", "itemFields": [
+                    { "id": "a", "label": "A", "type": "text" },
+                    { "id": "b", "label": "B", "type": "text",
+                      "visibleWhen": { "field": "a", "oneOf": ["x"] } }] }]"#,
+                "a list row does not take",
+            ),
+        ];
+        for (fields, expected) in cases {
+            let err = validate(&resource_with_fields(fields))
+                .expect_err("invalid visibleWhen")
+                .to_string();
+            assert!(err.contains(expected), "{expected}: {err}");
+        }
     }
 
     #[test]

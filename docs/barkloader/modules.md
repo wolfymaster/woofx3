@@ -311,6 +311,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover. An illustration, not a declaration: nothing reads its keys. |
 | `anyText` | string | no | Trigger `schema` only. The words a [trigger sentence](#trigger-sentences) shows in place of this field when it is set to "any". `""` drops that part of the sentence; whitespace alone is rejected. Rejected on an action field, which is never set to "any". |
 | `missingText` | string | no | Trigger and action `schema` only. The words a [trigger sentence](#trigger-sentences) or [action sentence](#action-sentences) shows in place of this field while it has no value: for a required field, until one is set; for an optional action field, whenever the step leaves it empty, so they say what the action does then. Must be non-empty when present. |
+| `visibleWhen` | object | no | `{ "field": "<sibling id>", "oneOf": ["a", "b"] }`. Shows the field only while that sibling holds one of the listed values. A form must drop a hidden field's value on save and skip its `required`. |
 
 The info icon next to a field's label appears if and only if `hint` or `examplePayload` is present. `description` renders independently below the input.
 
@@ -450,6 +451,12 @@ The request is sent verbatim, so for an uploaded module barkloader accepts an `i
 The bundled system module's forms may also read engine subjects. Engine-held names a platform module offers, such as OBS's scenes, come from one of its own functions calling a host extension (`ctx.obs.listScenes`), through `barkloader.module.field_options`.
 
 A select may carry `options` beside an `internal` source. The options are pinned: the form lists them first, then what the source returns, and a fetched option whose value a pinned one already names is dropped (`mergePinnedOptions` in `shared/clients/typescript/api/ui-schema.ts`). A platform picker can pin `origin` and `all` this way and leave the connected platforms to the source. Barkloader checks option values are distinct; without a `source` the `defaultValue` must be one of the options, and with a `source` it must be a string, since it may name a value only the source knows.
+
+### Conditional fields (`visibleWhen`)
+
+`visibleWhen` hides a field until another field of the same form holds a matching value, such as an announcement colour that only a Twitch target uses. `isFieldVisible(field, values)` in `shared/clients/typescript/api/ui-schema.ts` decides; an unset or non-text sibling hides the field. Barkloader refuses a condition that names the field itself or an id not in the same list, a target that has a `visibleWhen` of its own (one level only), a target that holds no text (`number`, `range`, `toggle`, `button`, `layout`, `list`), an empty `oneOf` or a blank value in it, and any `visibleWhen` inside a `list` field's `itemFields`.
+
+An engine that predates `visibleWhen` refuses a manifest that uses it, because manifest properties are checked strictly. Take care before uploading such a module to a fleet that still runs older engines.
 
 An `internal` source or action is supported on top-level fields only. The api and the UI do not resolve one inside a `list` field's `itemFields`, so barkloader refuses it there, for every module.
 
