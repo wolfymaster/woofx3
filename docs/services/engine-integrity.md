@@ -29,7 +29,7 @@ Returning values keeps ordering, validation and attribution in one place the eng
 | `ctx.resources.*` | Engine-defined create / get / delete / list operations. A module deletes only its own instances and reads its own plus the ones the streamer linked to it through a `resource_ref` setting, which module code cannot write (the link is the streamer's pick, or what the manifest's install-time `create` set) | Yes |
 | `ctx.resources.run` | Runs the providing module's `{kind}.{verb}` function action on an instance the module owns or its `resource_ref` settings link to; the caller must declare the provider's permissions, and a `systemOnly` action is never runnable | Yes: the instance was linked by the streamer or at install, and the action is one the provider declared |
 | `ctx.twitch.*` | Fixed subject and command table defined by the engine; the module supplies arguments and gets the twitch service's answer. Commands that act on the channel or its chatters need a permission the manifest declares | Yes: a capability, not a channel |
-| `ctx.obs.*` | Fixed subjects (`engine.obs.command`, `engine.obs.options`) and function table defined by the engine; the module supplies names and gets the scene manager's answer. Changing OBS needs the `obs.control` permission the manifest declares; listing names needs none | Yes: a capability, not a channel |
+| `ctx.obs.*` | Fixed subjects (`engine.obs.command`, `engine.obs.options`) and function table defined by the engine; the module supplies names and gets the OBS adapter's answer. Changing OBS needs the `obs.control` permission the manifest declares; listing names needs none | Yes: a capability, not a channel |
 | `ctx.oauth.request` | Engine-defined: the module names an integration its manifest declares; the engine attaches the token it keeps, refreshes it, and sends it only to the integration's hosts, enforced even under `WOOFX3_MODULE_HTTP=log`, and never across a redirect to another origin. Module code never holds a client secret or a token | Yes: a capability, not a channel |
 | `ctx.http.request` | Reaches only hosts the manifest declares as `net:<host>` permissions, approved at install, and URLs the streamer entered in `url` settings; redirects and resolved addresses are checked too, and credential headers are dropped on a cross-origin redirect. Enforced by default; `WOOFX3_MODULE_HTTP=log` is a migration opt-in that logs ungranted destinations instead. Private, loopback and link-local addresses are refused in both modes unless `WOOFX3_MODULE_HTTP_ALLOW_PRIVATE=true` | Yes, unless an operator opts into `log`: the streamer approves every destination |
 | `ctx.crypto.*` | Pure computation over the arguments (HMAC, Ed25519 verification, constant-time comparison) | Yes: nothing reaches the engine |
@@ -72,7 +72,14 @@ What a module reaches on the streamer's own network is declared in its
 manifest's `local[]` (see [Module format → Local endpoints](../barkloader/modules.md#local-endpoints-local)),
 shown on the module install page beside its permissions, and fixed at install
 like them. An entry names settings that hold an address; it never carries an
-address the platform dials on the module's say-so.
+address the platform dials on the module's say-so, and module code cannot write
+the settings an entry names (`ctx.module.setSetting` refuses them), so only the
+streamer or the companion decides the address. An upgrade that gives a setting
+that role for the first time resets the value already stored in it.
+
+A module installed from a zip upload or a URL is one the streamer chose and
+supplied themselves. Those install paths show no review of the module's local
+endpoints, just as they show no review of its permissions.
 
 When an endpoint goes through the woofx3 companion, the engine names only
 `(moduleId, endpointId)` on the bridge. The engine never tells the companion an

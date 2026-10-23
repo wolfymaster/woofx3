@@ -62,13 +62,16 @@ outcome status needs a shape there, and so generator code.
 
 ## Subjects
 
-All three are request/reply.
+All three are request/reply. Each reply is a CloudEvent whose type the
+contract also names (`replyTypes`; `ReplyType*` in Go,
+`PLATFORM_GATEWAY_REPLY_TYPES` in TypeScript) and whose `data` is the reply
+shape below.
 
-| Subject | Purpose |
-| --- | --- |
-| `platform.gateway.send` | Perform one action on the target's platforms. |
-| `platform.gateway.capabilities` | Which platforms are linked and running, and which actions each supports. |
-| `platform.gateway.field_options` | The platforms that can perform one action, as options for a select field. |
+| Subject | Reply type | Reply shape | Purpose |
+| --- | --- | --- | --- |
+| `platform.gateway.send` | `platform.gateway.send.result` | `GatewayReply` | Perform one action on the target's platforms. |
+| `platform.gateway.capabilities` | `platform.gateway.capabilities.result` | `CapabilitiesReply` | Which platforms are linked and running, and which actions each supports. |
+| `platform.gateway.field_options` | `platform.gateway.field_options.result` | `FieldOptionsReply` | The platforms that can perform one action, as options for a select field. |
 
 ## Actions
 
@@ -266,15 +269,26 @@ budget of 2000 ms. Both reply as a CloudEvent (types
 - **capabilities** (the request body is ignored):
   `{ platforms: [{ id, displayName, state, connected, enabled, actions }] }`,
   one entry per platform with an adapter. `state` is the adapter's lifecycle
-  state, `connected` and `enabled` its last link reading (both false before the
-  first read), and `actions` the actions it can perform whatever its state.
+  state, one of the contract's `platformStates`, `connected` and `enabled` its
+  last link reading (both false before the first read), and `actions` the
+  actions it can perform whatever its state. An error reply is `{ error }`
+  with no `platforms`.
 - **field_options**: the request is `{ action }`; the envelope form
   `{ data: { action } }`, which the api sends for a module field, is read the
   same way. The reply is `[{ value, label }]`, one per platform that is
   connected, enabled and able to perform the action. `all` and `origin` are not
   listed, since a field's manifest pins them. An unknown action, or a request
-  without one, gets `{ error }`, the failure shape the api relays to the UI as
-  the reason a picker is empty.
+  without one, gets `{ error }` naming the field and the problem (for example
+  `action: unknown action "chat.shout"`), the failure shape the api relays to
+  the UI as the reason a picker is empty.
+
+The shapes are generated with the rest of the contract: `PlatformCapability`,
+`CapabilitiesReply`, `FieldOptionsRequest`, `FieldOption` and
+`FieldOptionsReply` in both languages, read with `parseCapabilitiesReply`,
+`parseFieldOptionsRequest` and `parseFieldOptionsReply` in TypeScript and the
+types' `Validate` methods in Go. In Go, `FieldOptionsReply` decodes and
+encodes both wire forms (the bare array and `{ error }`), and both reply types
+write an empty list rather than `null` when there is nothing to list.
 
 ### Adding egress to an adapter
 
@@ -316,7 +330,9 @@ and each platform's status. `requestedBy` is logged, not authenticated.
 ## Shared fixtures
 
 `shared/common/contracts/testdata/platform-gateway/` holds request and reply
-cases, each marked valid or with the field it must be refused at. The Go tests
+cases for each subject (`requests.json`, `replies.json`,
+`capabilities-replies.json`, `field-options-requests.json`,
+`field-options-replies.json`), each marked valid or with the field it must be refused at. The Go tests
 (`shared/common/golang/platformgateway/catalog_test.go`) and the TypeScript
 tests (`api/tests/platform-gateway-contract.test.ts`) run the same cases, so
 both languages accept and refuse the same input and report the same field

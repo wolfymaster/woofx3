@@ -142,6 +142,16 @@ export type ConfigFieldSource =
   | ScenesConfigFieldSource
   | ScenePlacementsConfigFieldSource;
 
+/**
+ * Shows a field only while the top-level sibling `field` holds one of the
+ * `oneOf` values. Conditions go one level only: the sibling is itself always
+ * shown, and a list row's `itemFields` take none.
+ */
+export interface VisibleWhen {
+  field: string;
+  oneOf: string[];
+}
+
 export interface ConfigField {
   /** Stable field id; the key the collected value is stored under. */
   id: string;
@@ -150,7 +160,15 @@ export interface ConfigField {
   required?: boolean;
   placeholder?: string;
   unit?: string;
-  /** Required for `type: "select"` — a select with nothing to select is a dead control. */
+  /**
+   * Required for `type: "select"` unless a `source` supplies the choices — a
+   * select with nothing to select is a dead control. Beside an `internal`
+   * source the options are pinned: the form lists them first and the fetched
+   * options after, `mergePinnedOptions` dropping a fetched value a pinned one
+   * already names. Values are distinct. Without a source the `defaultValue`
+   * is one of them; with a source it is a string, since it may name a value
+   * only the source knows.
+   */
   options?: ConfigFieldOption[];
   source?: ConfigFieldSource;
   min?: number;
@@ -209,6 +227,28 @@ export interface ConfigField {
    * while it is required and has no value yet. Non-empty when present.
    */
   missingText?: string;
+  /**
+   * Shown only while a sibling holds one of the listed values. A consumer
+   * must drop a hidden field's value on save and skip its `required`.
+   * Stored field lists carry `null` for an absent condition.
+   * Engines that predate this property refuse the manifest at install.
+   */
+  visibleWhen?: VisibleWhen;
+}
+
+/**
+ * Whether the form shows `field` given the form's current `values`. A field
+ * with no condition is always shown; one with a condition is shown only when
+ * the named sibling's value is a string listed in `oneOf`, so an unset sibling
+ * hides it.
+ */
+export function isFieldVisible(field: ConfigField, values: Readonly<Record<string, unknown>>): boolean {
+  const condition = field.visibleWhen;
+  if (condition == null) {
+    return true;
+  }
+  const current = values[condition.field];
+  return typeof current === "string" && condition.oneOf.includes(current);
 }
 
 function isConfigFieldType(raw: unknown): raw is ConfigFieldType {
@@ -420,4 +460,25 @@ export function parseDataShape(raw: string | undefined | null): DataShape | unde
     }
   }
   return shape;
+}
+
+/**
+ * A select's pinned options followed by the fetched ones. A fetched option
+ * whose value a pinned one already names is dropped, so the pinned label wins
+ * and no value appears twice; a repeat within `fetched` keeps its first entry.
+ */
+export function mergePinnedOptions(
+  pinned: readonly ConfigFieldOption[],
+  fetched: readonly ConfigFieldOption[]
+): ConfigFieldOption[] {
+  const seen = new Set<string>();
+  const merged: ConfigFieldOption[] = [];
+  for (const option of [...pinned, ...fetched]) {
+    if (seen.has(option.value)) {
+      continue;
+    }
+    seen.add(option.value);
+    merged.push(option);
+  }
+  return merged;
 }
