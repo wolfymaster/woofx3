@@ -74,7 +74,7 @@ export interface SubscriptionFailure {
 }
 
 export default class TwitchEventBus {
-  private subscriptions: EventSubSubscription[];
+  private subscriptions: EventSubSubscription[] = [];
   private readonly established = new Set<string>();
   private readonly failures = new Map<string, string>();
   private readonly optionalById = new Map<string, OptionalSubscription>();
@@ -83,11 +83,9 @@ export default class TwitchEventBus {
   private readonly optionalDeps: OptionalSubscriptionDeps;
 
   constructor(
-    private ctx: Context,
-    private listener: EventSubWsListener
+    private readonly ctx: Context,
+    private readonly listener: EventSubWsListener
   ) {
-    this.subscriptions = [];
-    this.listener = listener;
     this.optionalDeps = { adBreaks: new AdBreakAnnouncer(ctx) };
   }
 
@@ -267,18 +265,5 @@ export default class TwitchEventBus {
     }
     this.subscriptions = [];
     this.optionalById.clear();
-  }
-
-  /** Re-activate subscriptions after a manual stop(). Not used during initial boot. */
-  resumeSubscriptions(): void {
-    for (const sub of this.subscriptions) {
-      sub.start();
-    }
-  }
-
-  stopSubscriptions(): void {
-    for (const sub of this.subscriptions) {
-      sub.stop();
-    }
   }
 }

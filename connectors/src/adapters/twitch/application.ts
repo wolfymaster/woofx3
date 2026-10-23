@@ -12,7 +12,7 @@ import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/i
 import { type Span, SpanKind, withSpan } from "@woofx3/common/logging";
 import { ListModuleSettings } from "@woofx3/db/module_setting.pb";
 import { GetSetting, SetSetting } from "@woofx3/db/setting.pb";
-import TwitchClient, { requestTokenOverNats, type TwitchAuthProviderKind } from "@woofx3/twitch";
+import TwitchClient, { requestTokenOverNats, TWITCH_NOT_LINKED, type TwitchAuthProviderKind } from "@woofx3/twitch";
 import type { TwitchConfig } from "../../config/twitch";
 import { type Clock, errorMessage, type IdSource, type Logger } from "../../host/deps";
 import type { BusMessage, ScopedBus } from "../../host/scoped-bus";
@@ -25,8 +25,7 @@ import { HELIX_DEADLINE_MS } from "./lib/helix";
 import { type PublishTarget, publishEvent } from "./lib/publishEvent";
 import type { SelfSentRegistry } from "./lib/self-sent";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
-import type TwitchApiClient from "./lib/twitch";
-import TwitchApiClientImpl, { isTwitchApiCommand, type TwitchApiCall, twitchApiErrorCodeOf } from "./lib/twitch";
+import TwitchApi, { isTwitchApiCommand, type TwitchApiCall, twitchApiErrorCodeOf } from "./lib/twitch";
 import { TWITCH_API_HANDLERS } from "./lib/twitchApiCommands";
 import TwitchEventBus from "./lib/twitchEventBus";
 import type { EventPublisher } from "./types";
@@ -72,13 +71,6 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-/**
- * The error name TwitchClient.init rejects with while no Twitch account is
- * linked. Must match TWITCH_NOT_LINKED in shared/clients/typescript/twitch;
- * not imported, because tests replace that module with a default-only mock.
- */
-const TWITCH_NOT_LINKED = "TwitchNotLinked";
-
 /** Whether `err` is TwitchClient's refusal for a missing or blank stored token. */
 function isNotLinked(err: unknown): boolean {
   return err instanceof Error && err.name === TWITCH_NOT_LINKED;
@@ -97,9 +89,8 @@ export type TwitchAppContext = {
   reportFault(reason: string): void;
   /** Absent until connected. */
   broadcaster?: HelixUser;
-  twitchEventBus?: TwitchEventBus;
   /** Absent until connected. */
-  twitchApi?: TwitchApiClient;
+  twitchApi?: TwitchApi;
 };
 
 /** Stamps `twitchapi` replies. */
@@ -140,7 +131,7 @@ interface Connection {
 interface Connected {
   apiClient: ApiClient;
   broadcaster: HelixUser;
-  twitchApi: TwitchApiClient;
+  twitchApi: TwitchApi;
   adBreakScheduler: AdBreakScheduler;
 }
 
@@ -358,7 +349,6 @@ export default class TwitchApplication {
     this.connection = connection;
     ctx.broadcaster = connected.broadcaster;
     ctx.twitchApi = connected.twitchApi;
-    ctx.twitchEventBus = connection.eventBus;
     this.link = "connected";
     void this.track(this.seedLiveState(ctx, connected, signal));
     ctx.logger.info("twitch: connected", { broadcasterId: connected.broadcaster.id });
@@ -385,7 +375,7 @@ export default class TwitchApplication {
     const broadcaster = await untilAborted(connection.client.broadcaster(), signal);
     signal.throwIfAborted();
 
-    const twitchApi = new TwitchApiClientImpl(
+    const twitchApi = new TwitchApi(
       apiClient,
       broadcaster,
       authProvider,
@@ -497,7 +487,6 @@ export default class TwitchApplication {
   private async dropConnection(ctx: TwitchAppContext): Promise<void> {
     const connection = this.connection;
     this.connection = null;
-    ctx.twitchEventBus = undefined;
     ctx.twitchApi = undefined;
     ctx.broadcaster = undefined;
     if (connection) {

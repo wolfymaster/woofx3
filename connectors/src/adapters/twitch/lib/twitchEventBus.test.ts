@@ -141,25 +141,6 @@ describe("TwitchEventBus", () => {
     expect(listener.onChannelFollow).toHaveBeenCalledTimes(2);
   });
 
-  test("resumeSubscriptions and stopSubscriptions forward lifecycle calls to each active subscription", async () => {
-    const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    await bus.start(running, SETTLE_MS);
-
-    const stubs = listener.onStreamOnline.mock.results.map(
-      (r) => r.value as { start: ReturnType<typeof mock>; stop: ReturnType<typeof mock> }
-    );
-
-    bus.resumeSubscriptions();
-    for (const s of stubs) {
-      expect(s.start).toHaveBeenCalledTimes(1);
-    }
-
-    bus.stopSubscriptions();
-    for (const s of stubs) {
-      expect(s.stop).toHaveBeenCalled();
-    }
-  });
-
   test("is not ready when Twitch refuses a subscription", async () => {
     // The 429 "number of websocket transports limit exceeded" case: the
     // socket is up, so nothing looks broken, but a refused subscription

@@ -79,6 +79,7 @@ mock.module("@woofx3/twitch", () => ({
   requestTokenOverNats: () => async () => {
     throw new Error("no dashboard in this test");
   },
+  TWITCH_NOT_LINKED: "TwitchNotLinked",
 }));
 
 const { default: TwitchApplication } = await import("./application");
@@ -144,7 +145,7 @@ describe("TwitchApplication", () => {
     expect(ctx.bus.subscribe).not.toHaveBeenCalledWith("twitchapi", expect.any(Function));
     expect(ctx.broadcaster?.id).toBe("broadcaster-1");
     expect(ctx.twitchApi).toBeDefined();
-    expect(ctx.twitchEventBus).toBeDefined();
+    expect(app.eventSubStatus().ready).toBe(true);
   });
 
   test("stop closes the TwitchClient, stops EventSub and clears the context", async () => {
@@ -158,7 +159,6 @@ describe("TwitchApplication", () => {
     expect(lastClient?.close).toHaveBeenCalledTimes(1);
     expect(listener?.stop).toHaveBeenCalled();
     expect(ctx.twitchApi).toBeUndefined();
-    expect(ctx.twitchEventBus).toBeUndefined();
     expect(ctx.broadcaster).toBeUndefined();
     expect(app.eventSubStatus()).toEqual({ established: 0, expected: expect.any(Number), ready: false });
   });

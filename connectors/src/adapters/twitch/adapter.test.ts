@@ -120,6 +120,7 @@ mock.module("@woofx3/twitch", () => ({
   requestTokenOverNats: () => async () => {
     throw new Error("no dashboard in this test");
   },
+  TWITCH_NOT_LINKED: "TwitchNotLinked",
 }));
 
 const { TWITCH_EVENT_SUBJECTS, TwitchAdapter, twitchApiUnavailableReply } = await import("./adapter");
