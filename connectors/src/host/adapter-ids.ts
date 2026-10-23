@@ -4,7 +4,7 @@
  * account-backed credential the api stores, while an adapter is anything the
  * host runs. A local adapter joins this list without becoming an integration.
  */
-export const ADAPTER_IDS = ["twitch"] as const;
+export const ADAPTER_IDS = ["twitch", "obs"] as const;
 
 export type AdapterId = (typeof ADAPTER_IDS)[number];
 

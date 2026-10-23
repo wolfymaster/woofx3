@@ -6,8 +6,8 @@ third-party platforms and local apps. Each connection is an **adapter**. The
 linked and enabled, runs the adapter only while it should run, and answers the
 request subjects adapters serve even while they are down.
 
-It ships with one adapter, `twitch` (see [The Twitch adapter](#the-twitch-adapter)),
-and runs in every packaged engine (`build/config/services.json`), where the
+It ships with two adapters, `twitch` (see [The Twitch adapter](#the-twitch-adapter))
+and `obs` (see [The OBS adapter](#the-obs-adapter)), and runs in every packaged engine (`build/config/services.json`), where the
 orchestrator checks its `/health` before reporting the engine ready.
 
 ```
@@ -27,9 +27,10 @@ request out to the platform adapters' egress handlers.
 ## Linked and enabled
 
 An adapter decides whether it should run from a **link state**,
-`{connected, enabled}`, which a **link reader** builds from engine settings.
-Every adapter id (`ADAPTER_IDS` in `host/adapter-ids.ts`) must have a reader in
-`LINK_READERS`; a missing one stops startup.
+`{connected, enabled}`, which a **link reader** builds from stored records:
+engine settings and the installed modules, read through db-proxy. Every adapter
+id (`ADAPTER_IDS` in `host/adapter-ids.ts`) must have a reader in
+`linkReaders()` (`host/link-readers.ts`); a missing one stops startup.
 
 Adapter ids are separate from integration ids. An integration
 (`@woofx3/common/integrations/integration-settings`) is an account the api
@@ -49,12 +50,31 @@ The api writes both rows when Twitch is linked or unlinked, then publishes
 `setting.integration.enabled.updated` and `setting.integration.token.updated`
 (see [Twitch channel controls](./twitch-channel.md)).
 
+OBS has no integration and no enabled setting. What makes OBS wanted is a
+module that controls it, so its reader (`adapters/obs/link.ts`) reads the
+installed modules:
+
+| Records | Meaning |
+|---|---|
+| An installed module's manifest lists the `obs.control` permission | connected |
+| One such module's stored state is not `disabled` | enabled |
+| `WOOFX3_OBS_HOST` holds a value | connected and enabled, whatever is installed; no modules are read |
+| A module's stored manifest is not readable JSON with a string list of permissions | that module is left out (logged once at warn) |
+
+With no such module and no `WOOFX3_OBS_HOST`, the `obs` adapter stays stopped
+and dials nothing.
+
 ### When links are read
 
 The settings watcher reads every link when the host starts, re-reads the
-adapters an event names when either settings event arrives, and reads every
-link again on the backstop interval (`WOOFX3_CONNECTORS_RECONCILE_INTERVAL_MS`)
-in case an event was missed. Reads run one pass at a time; events that arrive
+adapters an event names when either settings event arrives, re-reads an
+adapter when an event its reader lists arrives (OBS: `db.module.installed.*`
+and `db.module.deleted.*`, which db-proxy publishes when an install or removal
+finishes), and reads every link again on the backstop interval
+(`WOOFX3_CONNECTORS_RECONCILE_INTERVAL_MS`) in case an event was missed.
+Switching a module on or off publishes no event, so OBS follows that change on
+the next backstop pass. A reader's events count as a settings change for the
+adapter: they unpark it and skip a pending retry's wait. Reads run one pass at a time; events that arrive
 during a pass merge into the next one, so an older read never overrides a newer
 one. A read that fails, or takes longer than
 `WOOFX3_CONNECTORS_DB_PROXY_TIMEOUT_MS`, keeps the adapter on its last link
@@ -333,12 +353,129 @@ connectors pins its `@twurple/*` packages to the release
 copies' classes as one type when name and version match, so upgrade both
 lockfiles together.
 
+## The OBS adapter
+
+`connectors/src/adapters/obs/` holds the engine's one obs-websocket
+connection (see [OBS control](./obs.md)). The local endpoint dialer and the
+store it reads routes from live in `connectors/src/companion/` (see
+[Local endpoints](./local-endpoints.md)).
+
+- **When it runs.** While a module that controls OBS is installed and active,
+  or `WOOFX3_OBS_HOST` is set (see [Linked and enabled](#linked-and-enabled)).
+  Installing such a module starts the adapter and removing it stops it, with
+  no restart. While it runs, OBS being closed is not a reason to stop: the
+  connection retries in the background with the shared capped, full-jitter
+  backoff (`createBackoff` from `@woofx3/runtime`), from
+  `WOOFX3_OBS_BACKOFF_INITIAL_MS` up to `WOOFX3_OBS_BACKOFF_MAX_MS`.
+- **Start.** Each start builds a fresh OBS service over the host's db-proxy
+  client and the adapter's scoped bus, subscribes to
+  `db.module.setting.updated.*` (a change to the `woofx3_obs` module's
+  settings reconnects at once) and `engine.relay.config.updated` (a change
+  that moves OBS to another route reconnects), and starts connecting. It
+  resolves without waiting for OBS, so the adapter is `connected` while its
+  loop runs, and a request while OBS is closed reaches the handler and is
+  answered `OBS is not connected (retrying)` at once. The host's start signal
+  stays live for the whole run; when it aborts, the connection stops dialing
+  as a stop does.
+- **Stop.** Closes the OBS session, cancels any pending retry and ends the
+  open deadline and OBS connect timer of an attempt in flight; a relay
+  credential request already sent finishes on its own (bounded by its own
+  timeout), and a session that opens after the stop is closed at once. The host then closes
+  the adapter's subscriptions.
+- **Manifest.** Publishes nothing, requests `engine.relay.credential` from the
+  api, and serves:
+
+| Subject | Budget | While the adapter is not running |
+|---|---|---|
+| `engine.obs.command` | 4_500 ms, below barkloader `ctx.obs`'s 5_000 | `{ok: false, error: "OBS is turned off in this engine"}`, or `"OBS is starting"` |
+| `engine.obs.options` | 4_500 ms | `{error: ...}` with the same messages |
+| `engine.obs.status` | 2_500 ms, below the api's 3_000 | `{state: "stopped", failure: null, address: null}` |
+| `engine.obs.browser_source.refresh` | 1_500 ms, below sceneManager's 2_000 request timeout | answered in every state (below) |
+
+- **Overlay refresh.** `engine.obs.browser_source.refresh` has availability
+  `always`. The adapter module's host state is a refresh latch: the newest
+  request and the last 16 boot ids already refreshed. A valid request is
+  latched and accepted at once, whatever the adapter is doing, even while no
+  OBS module is installed; the running adapter, or the next one to start,
+  refreshes on the current or next OBS session, once per boot id. See
+  [Local endpoints → Overlay recovery](./local-endpoints.md#overlay-recovery).
+- **`/health` detail.** `state`, `failure`, `route` and `address`, as in
+  `engine.obs.status`; never the password or a bridge ticket.
+
 ### The stream session
 
 Every event is stamped with the current stream session, which is held per
 process. The host, not each adapter run, subscribes to `session.started` for
 the life of the process, so an adapter that starts after a session change
 still stamps the current session.
+
+## Chat command dispatcher
+
+`connectors/src/chat/` holds the platform-neutral chat command dispatcher: it
+reads every platform's chat lines, runs the commands they name, and replies
+through the [platform gateway](./platform-gateway.md) to the platform each
+line came from. The host does not start it; chat commands are run by
+woofwoofwoof (see [WoofWoofWoof](../woofwoofwoof/application.md)). Whoever starts it
+adds `CHAT_DISPATCHER_GRANTS` to the scope it runs in.
+
+Each `user.message` goes through these steps in order:
+
+1. **Trust.** A line the engine said itself (`fromEngine: true`, see
+   [Own lines on the chat feed](#own-lines-on-the-chat-feed)) is dropped. A
+   line with no known `platform` attribute or no speaker id is refused. A
+   line is trusted only when its CloudEvent `source` is its platform
+   adapter's (`twitch` for Twitch), and a trusted line with no speaker login
+   is refused. An untrusted line, such as one the api's event simulator
+   published, still runs commands, but its badges count as
+   unknown: they never satisfy a role, and it writes no groups. A line said
+   in a partner channel during a shared chat session never counts as the
+   broadcaster or a moderator, and writes no groups either.
+2. **Groups.** A trusted line from the channel itself updates the built-in
+   derived groups (subscriber, vip, moderator, broadcaster, the tiers,
+   follower), writing only what changed since that viewer's last line.
+3. **Match.** `!name rest` names a command. Built-in commands win over a
+   stored command with the same name, and a built-in can be limited to some
+   platforms.
+4. **Authorise.** A public command runs for anyone. A command that allows
+   roles runs for a speaker the platform reported in one. Anyone else needs
+   a grant on `command/<name>`. A refused speaker is told so. The grant is
+   looked up by the login the line names, and an untrusted line's login is
+   whatever its publisher wrote, so anything that can publish on the bus can
+   run a command granted to a login it names. Bus publishers are not yet
+   authenticated per identity; until they are, a grant is only as strong as
+   the bus's own access control.
+5. **Cooldown.** The cooldown is per command. A line inside it is dropped
+   completely and is not announced.
+6. **Handler.** The invocation is announced on `chat.command.<slug>`
+   (source `connectors`, `platform` set to the line's platform), and then the
+   command runs: a stored command runs its workflow or its actions.
+
+A non-empty reply is a `chat.send` to the `origin` target. For a trusted line
+it is threaded under that line. Its idempotency key is
+`dispatcher:<line id>:<command name>`, where the line id is the platform's id
+for the message, or the CloudEvent id for an untrusted line, and it is
+`requestedBy` `dispatcher`. A reply longer than 500 characters is cut.
+Nothing is retried; an undelivered reply is logged.
+
+**Who a viewer is.** In-memory state is keyed by the platform and that
+platform's user id, never by a display name. The memory of written groups
+is keyed this way, and the permission cache by that, the login and whether
+the line was trusted, so two accounts that show the same name never share a
+decision and an untrusted line never fills in one a trusted line reads.
+Permission and group rows in db-proxy are keyed by the speaker's login,
+lowercased. That is what the database keys on
+today.
+
+**Stored commands** are read from db-proxy, the owner of the data.
+`command.created`, `command.updated` and `command.deleted` only trigger a
+reload, and the snapshot they carry is never applied. Reloads wait
+`WOOFX3_CONNECTORS_DISPATCHER_RELOAD_DEBOUNCE_MS` for more events. Then one
+listing is read and applied by command id, so a renamed command stops
+answering to its old name. Reloads run one at a time, in order. A failed
+reload keeps the last good table, and a backstop reloads every
+`WOOFX3_CONNECTORS_DISPATCHER_RELOAD_BACKSTOP_MS` even with no event. A
+command's cooldown keeps running when the command is reloaded. Starting the
+dispatcher fails if its first listing fails.
 
 ## Configuration
 
@@ -372,6 +509,35 @@ The Twitch adapter reads:
 | `WOOFX3_TWITCH_SEND_QUEUE_CAP` | `100` | How many platform gateway chat writes may wait behind the one being sent; one more is refused as rate limited. |
 | `WOOFX3_TWITCH_SELF_SENT_CAPACITY` | `256` | How many of the engine's own chat lines are remembered while their echo is awaited. |
 | `WOOFX3_TWITCH_SELF_SENT_TTL_MS` | `30000` | How long one of the engine's own lines waits for its echo before it is forgotten. |
+
+The chat command dispatcher reads:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WOOFX3_CONNECTORS_DISPATCHER_AUTH_CACHE_CAPACITY` | `2048` | Permission decisions remembered, per viewer, login, trust and command. |
+| `WOOFX3_CONNECTORS_DISPATCHER_AUTH_CACHE_TTL_MS` | `5000` | How stale a remembered decision may be after a grant changes. |
+| `WOOFX3_CONNECTORS_DISPATCHER_GROUP_LAST_SEEN_CAPACITY` | `4096` | Viewers whose last written group membership is remembered; a forgotten viewer is rewritten on their next line. |
+| `WOOFX3_CONNECTORS_DISPATCHER_GROUP_CATALOG_TTL_MS` | `300000` | How long the built-in group catalog is used before it is read again. |
+| `WOOFX3_CONNECTORS_DISPATCHER_RELOAD_DEBOUNCE_MS` | `250` | How long a command event waits for more before the commands reload. |
+| `WOOFX3_CONNECTORS_DISPATCHER_RELOAD_BACKSTOP_MS` | `300000` | How often the commands reload with no event. |
+
+The OBS adapter reads, for whatever the OBS module's settings leave empty:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WOOFX3_OBS_HOST` | `127.0.0.1` | Host running OBS. Set to any value, it also runs the adapter with no OBS module installed. |
+| `WOOFX3_OBS_PORT` | `4455` | OBS WebSocket server port, 1 to 65535. |
+| `WOOFX3_OBS_RPC_TOKEN` | none | OBS WebSocket server password. |
+
+and these tunables:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WOOFX3_OBS_BACKOFF_INITIAL_MS` | `1000` | First retry ceiling after OBS could not be reached. |
+| `WOOFX3_OBS_BACKOFF_MAX_MS` | `30000` | Retry ceiling cap; at least the initial value. |
+| `WOOFX3_OBS_CONNECT_TIMEOUT_MS` | `3000` | One WebSocket connect and sign-in. Below the open timeout. |
+| `WOOFX3_OBS_OPEN_TIMEOUT_MS` | `15000` | One attempt, from dialing to a session ready for requests. Through the companion it must exceed the relay credential request (5000, 6000 once the companion gateway owns credentials) plus the ticket exchange (5000) plus the upgrade. |
+| `WOOFX3_OBS_COMMAND_TIMEOUT_MS` | `3500` | One command or listing in OBS before the session is recycled. Below the 4500 ms reply budget of `engine.obs.command` and `engine.obs.options`. |
 
 The host also reads the bus settings (`WOOFX3_MESSAGEBUS_URL`, `_JWT`, `_NKEY`,
 `_TOKEN`), `WOOFX3_DATABASE_PROXY_URL` and `WOOFX3_DB_PROXY_TOKEN`, the
