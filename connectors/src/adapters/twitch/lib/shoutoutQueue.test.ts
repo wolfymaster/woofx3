@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { NoRespondersError, RequestError, TimeoutError } from "@woofx3/nats/src/errors";
 import { enqueueShoutoutOverNats, SHOUTOUT_ENQUEUE_SUBJECT } from "./shoutoutQueue";
 
 const TIMEOUT_MS = 8_000;
@@ -37,7 +38,7 @@ describe("enqueueShoutoutOverNats", () => {
         reason: "not via a dashboard",
       }
     );
-    const noResponders = new Error("503", { cause: Object.assign(new Error("x"), { name: "NoResponders" }) });
+    const noResponders = new RequestError("no responders", { cause: new NoRespondersError(SHOUTOUT_ENQUEUE_SUBJECT) });
     expect(await enqueueShoutoutOverNats(failing(noResponders), TIMEOUT_MS)(TARGET)).toMatchObject({
       kind: "no_queue",
     });
@@ -47,7 +48,7 @@ describe("enqueueShoutoutOverNats", () => {
     await expect(enqueueShoutoutOverNats(replying({ error: "HTTP 500" }), TIMEOUT_MS)(TARGET)).rejects.toThrow(
       "could not queue the shoutout: HTTP 500"
     );
-    const timeout = Object.assign(new Error("timeout"), { name: "TimeoutError" });
+    const timeout = new TimeoutError();
     await expect(enqueueShoutoutOverNats(failing(timeout), TIMEOUT_MS)(TARGET)).rejects.toThrow("did not confirm");
     await expect(enqueueShoutoutOverNats(replying({ nope: 1 }), TIMEOUT_MS)(TARGET)).rejects.toThrow("malformed");
   });

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { NoRespondersError, RequestError, TimeoutError } from "@woofx3/nats/src/errors";
 import { bytes, text } from "../host/testing";
 import { failureReply, TwitchApiClient, type TwitchApiFailure } from "./twitchapi-client";
 
@@ -53,8 +54,18 @@ describe("TwitchApiClient", () => {
   });
 
   const failures: Array<[name: string, request: Request, expected: TwitchApiFailure]> = [
-    ["a timeout", failing(Object.assign(new Error("timeout"), { name: "TimeoutError" })), { kind: "no_answer" }],
-    ["no responders", failing(new Error("no responders available")), { kind: "unreachable" }],
+    ["a timeout", failing(new TimeoutError()), { kind: "no_answer" }],
+    [
+      "no responders",
+      failing(new RequestError("no responders", { cause: new NoRespondersError("twitchapi") })),
+      { kind: "unreachable" },
+    ],
+    ["a bare no responders", failing(new NoRespondersError("twitchapi")), { kind: "unreachable" }],
+    [
+      "an error whose message only mentions no responders",
+      failing(new Error("no responders 503")),
+      { kind: "failed", message: "no responders 503" },
+    ],
     ["another bus error", failing(new Error("connection closed")), { kind: "failed", message: "connection closed" }],
     [
       "a coded refusal",

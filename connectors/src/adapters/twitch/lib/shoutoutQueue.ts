@@ -1,3 +1,5 @@
+import { requestFailureKind } from "@woofx3/nats/src/errors";
+
 /**
  * NATS subject the api service answers by queueing a shoutout on the
  * dashboard. Must match `SHOUTOUT_ENQUEUE_SUBJECT` in api/src/shoutout-queue.ts.
@@ -42,10 +44,11 @@ export function enqueueShoutoutOverNats(request: NatsRequest, timeoutMs: number)
         timeout: timeoutMs,
       });
     } catch (err) {
-      if (isNoResponders(err)) {
+      const failure = requestFailureKind(err);
+      if (failure === "no_responders") {
         return { kind: "no_queue", reason: "the api service is not running" };
       }
-      if (isTimeout(err)) {
+      if (failure === "timeout") {
         throw new Error(
           "shoutout: the dashboard did not confirm the shoutout was queued in time; check the shoutout queue before trying again"
         );
@@ -74,17 +77,4 @@ function readReply(body: unknown): EnqueueOutcome {
     }
   }
   throw new Error("shoutout: the api service's queue reply is malformed");
-}
-
-/** The NATS client's request failures, told apart by name and message. */
-function isTimeout(err: unknown): boolean {
-  const name = err instanceof Error ? err.name : "";
-  const message = err instanceof Error ? err.message : String(err);
-  return name === "TimeoutError" || message === "timeout" || message === "TIMEOUT";
-}
-
-function isNoResponders(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  const cause = err instanceof Error && err.cause instanceof Error ? err.cause.name : "";
-  return cause === "NoResponders" || message.includes("no responders") || message.includes("503");
 }
