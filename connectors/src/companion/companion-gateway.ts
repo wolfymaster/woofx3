@@ -4,7 +4,7 @@
 // who may ask; it knows no device protocol. Always on, for the life of the
 // host. See docs/services/companion-gateway.md.
 
-import { RELAY_CREDENTIAL_SUBJECT, requestRelayCredentialOverNats } from "@woofx3/common/cloudevents/Relay/relay";
+import { COMPANION_DASHBOARD_CREDENTIAL_SUBJECT } from "@woofx3/common/cloudevents/Relay/relay";
 import type { CompanionConfig } from "../config/companion";
 import type { AdapterId } from "../host/adapter-ids";
 import type { Clock, IdSource, Logger, Timers } from "../host/deps";
@@ -13,11 +13,13 @@ import type { ScopedBus } from "../host/scoped-bus";
 import { BridgeOpens } from "./bridge-opens";
 import { type ClaimRegistry, endpointKey } from "./claims";
 import { EndpointDialer, type Fetch } from "./dialer";
-import type { EndpointStore } from "./endpoint-store";
 import { EndpointSessions, type OpenSocket } from "./endpoint-sessions";
+import type { EndpointStore } from "./endpoint-store";
 import { boundedResolver, type NameResolver } from "./local-address";
-import { modulePolicy } from "./module-route-policy";
 import { ModuleRequests } from "./module-requests";
+import { modulePolicy } from "./module-route-policy";
+import { RelayConfigRequests } from "./relay-config-requests";
+import { askDashboardOverBus, RelayCredentialSource } from "./relay-credentials";
 import { adapterPolicy, type RoutePolicy } from "./route-policy";
 import { type LastRoute, ROUTE_WATCH_SUBJECTS, RouteWatch } from "./route-watch";
 import type {
@@ -33,19 +35,19 @@ import type {
 /** What the companion gateway does on the host's bus scope, for the host to grant. */
 export const COMPANION_GATEWAY_GRANTS = {
   subscribes: ROUTE_WATCH_SUBJECTS,
-  requests: [RELAY_CREDENTIAL_SUBJECT],
+  requests: [COMPANION_DASHBOARD_CREDENTIAL_SUBJECT],
 } as const;
 
 export interface CompanionGatewayDeps {
   config: CompanionConfig;
   claims: ClaimRegistry;
-  /** Read afresh on every resolution. */
+  /** Read afresh on every resolution; the gateway is the one writer of its relay configuration. */
   store: EndpointStore;
   fetch: Fetch;
   /** Resolves a `.local` name in a module endpoint's address. */
   resolver: NameResolver;
   openSocket: OpenSocket;
-  /** Serves module requests on the host's scope. */
+  /** Serves the relay configuration writes and module requests on the host's scope. */
   requests: HostRequests;
   clock: Clock;
   timers: Timers;
@@ -71,32 +73,34 @@ export class EngineCompanionGateway implements CompanionGateway {
   /** Every claimed endpoint is resolved under the adapter policy; module requests get their own. */
   private readonly claimedPolicy: RoutePolicy;
   private readonly records = new Map<string, EndpointRecord>();
+  private readonly relayCredentials: RelayCredentialSource;
+  private readonly relayConfigRequests: RelayConfigRequests;
   private readonly sessions: EndpointSessions;
   private readonly moduleRequests: ModuleRequests;
 
   constructor(private readonly deps: CompanionGatewayDeps) {
     const logger = deps.logger;
     this.opens = new BridgeOpens(deps.config.maxBridgeOpens);
-    const relayCredential = requestRelayCredentialOverNats((subject, data, opts) => {
-      if (opts?.timeout === undefined) {
-        throw new Error(`${subject}: a request needs a timeout`);
-      }
-      return this.started().request(subject, data, { timeout: opts.timeout });
-    }, deps.config.relayCredentialTimeoutMs);
+    this.watch = new RouteWatch({
+      lastRoute: (ref) => this.records.get(endpointKey(ref))?.attempt ?? null,
+      hosting: deps.config.hosting,
+      logger,
+    });
+    this.relayCredentials = new RelayCredentialSource({
+      store: deps.store,
+      askDashboard: askDashboardOverBus(() => this.started(), deps.config.dashboardRequestTimeoutMs),
+      configChanged: (config) => this.watch.relayConfigChanged(config),
+      clock: deps.clock,
+    });
+    this.relayConfigRequests = new RelayConfigRequests({ source: this.relayCredentials, logger });
     this.dialer = new EndpointDialer({
       relayConfig: () => deps.store.relayConfig(),
-      relayCredential,
+      relayCredential: (force) => this.relayCredentials.current(force),
       fetch: deps.fetch,
       opens: this.opens,
       hosting: deps.config.hosting,
       ticketTimeoutMs: deps.config.ticketTimeoutMs,
       timers: deps.timers,
-      logger,
-    });
-    this.watch = new RouteWatch({
-      relayConfig: () => deps.store.relayConfig(),
-      lastRoute: (ref) => this.records.get(endpointKey(ref))?.attempt ?? null,
-      hosting: deps.config.hosting,
       logger,
     });
     this.claimedPolicy = adapterPolicy({ store: deps.store, logger });
@@ -134,12 +138,13 @@ export class EngineCompanionGateway implements CompanionGateway {
 
   /** The subjects the gateway answers, for the host's grants and drain budget. */
   get served(): ReadonlyArray<{ subject: string; budgetMs: number }> {
-    return this.moduleRequests.served;
+    return [...this.relayConfigRequests.served, ...this.moduleRequests.served];
   }
 
   /**
-   * Follows route changes and answers module requests on the host's scope,
-   * which also carries the bridge credential requests.
+   * Follows route changes, stores relay configurations and answers module
+   * requests on the host's scope, which also carries the bridge credential
+   * requests.
    */
   async start(scope: Pick<ScopedBus, "request" | "subscribe">): Promise<void> {
     if (this.scope !== null) {
@@ -147,6 +152,7 @@ export class EngineCompanionGateway implements CompanionGateway {
     }
     this.scope = scope;
     await this.watch.subscribe(scope);
+    await this.deps.requests.serveRequest(scope, this.relayConfigRequests.spec());
     await this.deps.requests.serveRequest(scope, this.moduleRequests.spec());
   }
 
@@ -185,6 +191,7 @@ export class EngineCompanionGateway implements CompanionGateway {
     this.lifetime.abort(new Error("the companion gateway stopped"));
     await this.sessions.stop();
     this.dialer.stop();
+    await this.relayCredentials.stop();
   }
 
   private async resolveClaimed(ref: LocalEndpointRef, opts: ResolveOptions): Promise<EndpointResolution> {

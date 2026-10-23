@@ -35,12 +35,9 @@ describe("relayChangeMovesEndpoint", () => {
   }
 });
 
-function watch(
-  options: { config?: () => Promise<RelayConfig | null>; hosting?: EngineHosting | null; last?: LastRoute | null } = {}
-) {
+function watch(options: { hosting?: EngineHosting | null; last?: LastRoute | null } = {}) {
   const logger = new RecordingLogger();
   const routeWatch = new RouteWatch({
-    relayConfig: options.config ?? (async () => CONFIG),
     lastRoute: () => (options.last === undefined ? DIRECT : options.last),
     hosting: options.hosting ?? null,
     logger,
@@ -56,7 +53,7 @@ const settingWritten = (moduleId: string): BusMessage => ({
 });
 
 describe("RouteWatch", () => {
-  it("subscribes to the relay configuration and module setting writes", async () => {
+  it("subscribes to module setting writes only; relay changes arrive in-process", async () => {
     const subscribed: string[] = [];
     const { routeWatch } = watch();
     await routeWatch.subscribe({
@@ -65,51 +62,36 @@ describe("RouteWatch", () => {
       },
     });
     expect(subscribed).toEqual([...ROUTE_WATCH_SUBJECTS]);
-    expect(subscribed).toContain(MODULE_SETTING_UPDATED_SUBJECT);
+    expect(subscribed).toEqual([MODULE_SETTING_UPDATED_SUBJECT]);
   });
 
-  it("tells an endpoint's listeners when a relay change moves it", async () => {
+  it("tells an endpoint's listeners when a relay change moves it", () => {
     const { routeWatch, heard, record } = watch({ last: DIRECT });
     routeWatch.listen(OBS, record("obs"));
     routeWatch.listen(LIGHTS, record("lights"));
-    await routeWatch.relayConfigUpdated();
+    routeWatch.relayConfigChanged(CONFIG);
     expect(heard).toEqual(["obs: Relay configuration changed"]);
   });
 
-  it("stays quiet when a relay change leaves the endpoint on its route", async () => {
+  it("moves a bridged endpoint off the bridge when the configuration is cleared", () => {
     const { routeWatch, heard, record } = watch({ last: BRIDGED });
     routeWatch.listen(OBS, record("obs"));
-    await routeWatch.relayConfigUpdated();
+    routeWatch.relayConfigChanged(null);
+    expect(heard).toEqual(["obs: Relay configuration changed"]);
+  });
+
+  it("stays quiet when a relay change leaves the endpoint on its route", () => {
+    const { routeWatch, heard, record } = watch({ last: BRIDGED });
+    routeWatch.listen(OBS, record("obs"));
+    routeWatch.relayConfigChanged(CONFIG);
     expect(heard).toEqual([]);
   });
 
-  it("reconnects every endpoint when the configuration cannot be read", async () => {
-    const { routeWatch, heard, record, logger } = watch({
-      last: BRIDGED,
-      config: async () => {
-        throw new Error("db down");
-      },
-    });
+  it("ignores relay changes on a local engine, which never takes the bridge", () => {
+    const { routeWatch, heard, record } = watch({ hosting: "local", last: BRIDGED });
     routeWatch.listen(OBS, record("obs"));
-    routeWatch.listen(LIGHTS, record("lights"));
-    await routeWatch.relayConfigUpdated();
-    expect(heard).toHaveLength(2);
-    expect(logger.at("warn")).toHaveLength(1);
-  });
-
-  it("ignores relay changes on a local engine, which never takes the bridge", async () => {
-    let reads = 0;
-    const { routeWatch, heard, record } = watch({
-      hosting: "local",
-      config: async () => {
-        reads++;
-        return CONFIG;
-      },
-    });
-    routeWatch.listen(OBS, record("obs"));
-    await routeWatch.relayConfigUpdated();
+    routeWatch.relayConfigChanged(null);
     expect(heard).toEqual([]);
-    expect(reads).toBe(0);
   });
 
   it("tells the endpoints of the module whose settings were written, and no others", () => {

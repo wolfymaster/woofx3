@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { ResponseStatus } from "@woofx3/db/common.pb";
 import { ModuleResponse } from "@woofx3/db/module.pb";
 import { GetModuleSecretValuesResponse, ListModuleSettingsResponse } from "@woofx3/db/module_setting.pb";
-import { SettingResponse } from "@woofx3/db/setting.pb";
+import { DeleteSettingRequest, SetSettingRequest, SettingResponse } from "@woofx3/db/setting.pb";
 import { dbProxyClientConfig } from "../services/db-proxy";
 import { dbProxyEndpointStore, type EndpointStore } from "./endpoint-store";
 
@@ -9,13 +10,14 @@ const TOKEN = "connectors-db-proxy-token-0123456789abcdef";
 
 type Answer = Uint8Array | { status: number; code: string; msg: string };
 
-/** A db-proxy that answers each Twirp method from a table, as protobuf. */
-function fakeDbProxy(answers: Record<string, Answer>) {
+/** A db-proxy that answers each Twirp method from a table, as protobuf, and keeps each request body. */
+function fakeDbProxy(answers: Record<string, Answer>, received: Array<{ method: string; body: Uint8Array }>) {
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch: (request) => {
+    fetch: async (request) => {
       const method = new URL(request.url).pathname.split("/").pop() ?? "";
+      received.push({ method, body: new Uint8Array(await request.arrayBuffer()) });
       const answer = answers[method];
       if (answer === undefined) {
         return Response.json({ code: "unimplemented", msg: method }, { status: 501 });
@@ -37,8 +39,11 @@ afterEach(() => {
   running = undefined;
 });
 
-function serve(answers: Record<string, Answer>): EndpointStore {
-  const { server, store } = fakeDbProxy(answers);
+function serve(
+  answers: Record<string, Answer>,
+  received: Array<{ method: string; body: Uint8Array }> = []
+): EndpointStore {
+  const { server, store } = fakeDbProxy(answers, received);
   running = server;
   return store;
 }
@@ -96,6 +101,60 @@ describe("dbProxyEndpointStore", () => {
     test(`reads the relay configuration: ${name}`, async () => {
       const store = serve({ GetSetting: settingAnswer(stored) });
       expect(await store.relayConfig()).toEqual(expected as never);
+    });
+  }
+
+  const STORED = {
+    bridgeOrigin: "https://c-abc.woofx3.tv",
+    endpoints: [{ moduleId: "woofx3_obs", endpointId: "obs" }],
+    clientId: "client-1",
+  };
+
+  test("writes the relay configuration as JSON under relay.config", async () => {
+    const received: Array<{ method: string; body: Uint8Array }> = [];
+    // db-proxy answers a stored setting with no status.
+    const store = serve({ SetSetting: SettingResponse.encode({}) }, received);
+    await store.writeRelayConfig(STORED);
+    const [call] = received;
+    expect(call?.method).toBe("SetSetting");
+    const request = SetSettingRequest.decode(call?.body ?? new Uint8Array());
+    expect(request.key).toBe("relay.config");
+    expect(JSON.parse(request.value.stringValue ?? "")).toEqual(STORED);
+  });
+
+  test("clears the relay configuration by deleting relay.config", async () => {
+    const received: Array<{ method: string; body: Uint8Array }> = [];
+    const store = serve({ DeleteSetting: ResponseStatus.encode({ code: "OK", message: "Setting deleted" }) }, received);
+    await store.clearRelayConfig();
+    expect(received.map((call) => call.method)).toEqual(["DeleteSetting"]);
+    expect(DeleteSettingRequest.decode(received[0]?.body ?? new Uint8Array()).key).toBe("relay.config");
+  });
+
+  const failedWrites: Array<
+    [name: string, answers: Record<string, Answer>, run: (store: EndpointStore) => Promise<void>, message: string]
+  > = [
+    [
+      "a refused write",
+      { SetSetting: { status: 500, code: "internal", msg: "disk full" } },
+      (store) => store.writeRelayConfig(STORED),
+      "db-proxy SetSetting: internal: disk full",
+    ],
+    [
+      "a write answered with a failed status",
+      { SetSetting: SettingResponse.encode({ status: { code: "INTERNAL", message: "sealed" } } as never) },
+      (store) => store.writeRelayConfig(STORED),
+      "db-proxy SetSetting: INTERNAL: sealed",
+    ],
+    [
+      "a delete answered with a failed status",
+      { DeleteSetting: ResponseStatus.encode({ code: "INTERNAL", message: "locked" }) },
+      (store) => store.clearRelayConfig(),
+      "db-proxy DeleteSetting: INTERNAL: locked",
+    ],
+  ];
+  for (const [name, answers, run, message] of failedWrites) {
+    test(`rejects ${name}`, async () => {
+      await expect(run(serve(answers))).rejects.toThrow(message);
     });
   }
 

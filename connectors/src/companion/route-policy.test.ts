@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { OBS_ENDPOINT, obsAdapterFallback } from "../adapters/obs/settings";
-import { RecordingLogger } from "../host/testing";
+import { emptyEndpointStore, RecordingLogger } from "../host/testing";
 import type { EndpointStore } from "./endpoint-store";
 import { adapterPolicy, directRouteFrom } from "./route-policy";
 
@@ -21,13 +21,7 @@ const OBS_MANIFEST = JSON.stringify({
 });
 
 function storeWith(overrides: Partial<EndpointStore>): EndpointStore {
-  return {
-    moduleManifest: async () => null,
-    moduleSettings: async () => [],
-    moduleSecrets: async () => ({}),
-    relayConfig: async () => null,
-    ...overrides,
-  };
+  return { ...emptyEndpointStore, ...overrides };
 }
 
 const unreadable = async (): Promise<never> => {

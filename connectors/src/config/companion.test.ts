@@ -24,7 +24,7 @@ const SHIPPED: CompanionConfig = {
   hosting: null,
   maxBridgeOpens: 8,
   ticketTimeoutMs: 5_000,
-  relayCredentialTimeoutMs: 5_000,
+  dashboardRequestTimeoutMs: 6_000,
   moduleLocalDirect: false,
   moduleSessions: {
     requestBudgetMs: 4_500,
@@ -74,7 +74,7 @@ describe("companionConfig", () => {
     [
       "an OBS open deadline the bridge setup does not fit in",
       { woofx3CompanionTicketTimeoutMs: 10_000, woofx3ObsOpenTimeoutMs: 15_000 },
-      "woofx3ObsOpenTimeoutMs (15000) must exceed the relay credential request (5000) plus woofx3CompanionTicketTimeoutMs (10000)",
+      "woofx3ObsOpenTimeoutMs (15000) must exceed the bridge credential request (6000) plus woofx3CompanionTicketTimeoutMs (10000)",
     ],
   ];
   for (const [name, env, message] of refused) {

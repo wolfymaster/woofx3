@@ -1,4 +1,5 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
+import { RELAY_DASHBOARD_REQUEST_TIMEOUT_MS } from "@woofx3/common/cloudevents/Relay/relay";
 import { z } from "zod";
 
 /**
@@ -25,10 +26,12 @@ export const COMPANION_DEFAULTS = {
   /** One ticket exchange with the relay. */
   ticketTimeoutMs: 5_000,
   /**
-   * One bridge credential request to the api (the `requestRelayCredentialOverNats`
-   * default). Not configurable: it is the api's responder's own budget.
+   * One bridge credential request to the api, which asks the dashboard on the
+   * gateway's behalf. Exceeds the api's own wait for the dashboard, so the
+   * api's answer, a failure included, always arrives first. Not configurable
+   * for that reason.
    */
-  relayCredentialTimeoutMs: 5_000,
+  dashboardRequestTimeoutMs: RELAY_DASHBOARD_REQUEST_TIMEOUT_MS,
   /**
    * Whether module requests may dial a direct address on a `self` engine.
    * Off by default, like barkloader's WOOFX3_MODULE_HTTP_ALLOW_PRIVATE: a VPS
@@ -100,7 +103,7 @@ export interface CompanionConfig {
   hosting: EngineHosting | null;
   maxBridgeOpens: number;
   ticketTimeoutMs: number;
-  relayCredentialTimeoutMs: number;
+  dashboardRequestTimeoutMs: number;
   /** `WOOFX3_MODULE_LOCAL_DIRECT`: module requests may dial a direct address on a `self` engine. */
   moduleLocalDirect: boolean;
   moduleSessions: ModuleSessionLimits;
@@ -127,7 +130,7 @@ export function companionConfig(env: CompanionEnv): CompanionConfig {
     hosting,
     maxBridgeOpens: env.woofx3CompanionMaxBridgeOpens,
     ticketTimeoutMs: env.woofx3CompanionTicketTimeoutMs,
-    relayCredentialTimeoutMs: COMPANION_DEFAULTS.relayCredentialTimeoutMs,
+    dashboardRequestTimeoutMs: COMPANION_DEFAULTS.dashboardRequestTimeoutMs,
     moduleLocalDirect: env.woofx3ModuleLocalDirect,
     moduleSessions: { ...MODULE_SESSION_DEFAULTS },
   };

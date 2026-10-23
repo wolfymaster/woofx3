@@ -1767,10 +1767,89 @@ role across the upgrade keeps its value. The cost: a value the streamer typed
 into the setting before it became an endpoint setting is cleared once, and
 has to be set again.
 
-Module code cannot open a local endpoint yet. Today the one endpoint in use is
-OBS's, and the connectors host's obs adapter holds that connection on the module's behalf
-(`woofx3_obs/obs`, see [OBS](../services/obs.md)); module code reaches OBS
-through `ctx.obs`.
+#### Talking to a local endpoint (`ctx.local`)
+
+Module code talks to its own websocket endpoints with `ctx.local`. It names
+the endpoint by its `local[]` id and passes a message; the engine's companion
+gateway (in the connectors host) checks the module may reach it, chooses the
+address from the endpoint's settings or goes through the woofx3 companion,
+keeps the connection open between calls and writes the message. Module code
+never supplies an address, never names a module and never holds a socket.
+The streamer approved the endpoint when they installed the module, so there
+is no permission to declare; an engine with `ctx.local` advertises the
+`modules.localEndpointCalls` capability.
+
+| Call | Returns | Notes |
+|---|---|---|
+| `ctx.local.send({ endpoint, message, timeoutMs? })` | `{ ok: true, sessionEpoch }` | Writes one text frame and does not wait for an answer. |
+| `ctx.local.request({ endpoint, message, match: { field, value }, timeoutMs? })` | `{ reply, sessionEpoch }` | Writes one text frame and waits for the first JSON object the device sends back whose top-level `field` holds `value` exactly (the string `"1"` is not the number 1). `reply` is that object. |
+
+- `endpoint` is one of the module's own `local[]` ids. Only websocket
+  endpoints are reachable.
+- `message` is a string, sent as it is, or an object or list, sent as JSON.
+  At most 65,536 bytes.
+- `match.field` is letters, digits and `_`, at most 40 characters;
+  `match.value` a non-empty string of at most 200 characters, or a whole
+  number. Device protocols carry a request id in each message for this, such
+  as VTube Studio's `requestID`. A second call waiting for the same match on
+  the same endpoint at the same time is refused with `busy`.
+- `timeoutMs` is how long the call may wait, at least 100. It defaults to, and
+  is capped at, 4,500, and never runs past the end of the function's run
+  (less 200 ms, so the answer gets back in time). With less than 100 ms left
+  the call throws `timeout` without asking.
+- A function may make at most 20 `ctx.local` calls per run.
+
+`sessionEpoch` names the connection the gateway used. It changes whenever the
+gateway opens a new one: after the connection was idle for 2 minutes, when
+the device closed it, or when the endpoint's address or the relay
+configuration changed. A device that wants one sign-in per connection
+(VTube Studio, Streamlabs Desktop, Streamer.bot) needs the module to sign in
+again when it changes; keep the last epoch in `ctx.storage` and compare.
+
+```js
+function run(ctx) {
+  const answer = ctx.local.request({
+    endpoint: "vts",
+    message: { apiName: "VTubeStudioPublicAPI", apiVersion: "1.0", requestID: "state", messageType: "APIStateRequest" },
+    match: { field: "requestID", value: "state" },
+  });
+  return ctx.success("VTube Studio answered", { active: answer.reply.data.active });
+}
+```
+
+`local` is a Lua keyword, so Lua code writes `ctx["local"]`:
+
+```lua
+function run(ctx)
+  local answer = ctx["local"].request({
+    endpoint = "vts",
+    message = { apiName = "VTubeStudioPublicAPI", apiVersion = "1.0", requestID = "state", messageType = "APIStateRequest" },
+    match = { field = "requestID", value = "state" },
+  })
+  return ctx.success("VTube Studio answered", { active = answer.reply.data.active })
+end
+```
+
+A refused call throws (Lua raises) an error whose `code` says why:
+
+| `code` | Meaning |
+|---|---|
+| `not_declared` | The module declares no local endpoint with that id. |
+| `protocol_unsupported` | The endpoint is an `http` one. |
+| `adapter_owned` | The engine manages the endpoint itself; OBS's (`woofx3_obs/obs`) belongs to the connectors host's obs adapter, and module code reaches OBS through `ctx.obs` (see [OBS](../services/obs.md)). |
+| `not_routed` | The engine has no way to reach the endpoint: an empty host or port setting, or a cloud engine whose streamer has not turned the companion on for it. |
+| `address_refused` | The address in the endpoint's settings is not on the streamer's own network. |
+| `store_unreadable` | The engine could not read the module's settings. |
+| `unavailable` | The device could not be reached in time, the connection closed while waiting, or no connectors host is running. |
+| `timeout` | No answer before the time ran out, or too little of the run was left to ask. After a `send` times out, the message may still have been sent. |
+| `busy` | Too many requests are waiting, or the same match is already pending. |
+| `call_limit` | The run already made 20 `ctx.local` calls. |
+| `invalid_arguments` | The call was refused before anything was sent; the message names the argument. |
+| `invalid` | The gateway refused the request. |
+| `request_failed` | The request could not be sent, or the answer could not be read. |
+
+How the gateway picks the address, and which addresses it refuses, is
+described in [Companion gateway → Module requests](../services/companion-gateway.md#module-requests).
 
 ## Runtime resource instances
 

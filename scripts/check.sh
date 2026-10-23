@@ -228,7 +228,7 @@ run_steps() {
       (cd "$dir" && bun run typecheck) || return 1
       if ! $quick; then
         if [ "$dir" = "shared/common/typescript" ]; then
-          (cd "$dir" && bun test runtime/ logging/ integrations/ cloudevents/Obs/ cloudevents/Companion/) || return 1
+          (cd "$dir" && bun test runtime/ logging/ integrations/ cloudevents/Obs/ cloudevents/Relay/ cloudevents/Companion/) || return 1
         else
           (cd "$dir" && bun test) || return 1
         fi

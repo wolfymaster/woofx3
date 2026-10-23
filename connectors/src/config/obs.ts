@@ -101,10 +101,10 @@ export function obsConfigProblems(env: ObsEnv & { woofx3CompanionTicketTimeoutMs
       `woofx3ObsConnectTimeoutMs (${env.woofx3ObsConnectTimeoutMs}) must be below woofx3ObsOpenTimeoutMs (${env.woofx3ObsOpenTimeoutMs}), which includes it`
     );
   }
-  const bridgeSetupMs = COMPANION_DEFAULTS.relayCredentialTimeoutMs + env.woofx3CompanionTicketTimeoutMs;
+  const bridgeSetupMs = COMPANION_DEFAULTS.dashboardRequestTimeoutMs + env.woofx3CompanionTicketTimeoutMs;
   if (env.woofx3ObsOpenTimeoutMs <= bridgeSetupMs) {
     problems.push(
-      `woofx3ObsOpenTimeoutMs (${env.woofx3ObsOpenTimeoutMs}) must exceed the relay credential request (${COMPANION_DEFAULTS.relayCredentialTimeoutMs}) plus woofx3CompanionTicketTimeoutMs (${env.woofx3CompanionTicketTimeoutMs}), which an open through the companion includes`
+      `woofx3ObsOpenTimeoutMs (${env.woofx3ObsOpenTimeoutMs}) must exceed the bridge credential request (${COMPANION_DEFAULTS.dashboardRequestTimeoutMs}) plus woofx3CompanionTicketTimeoutMs (${env.woofx3CompanionTicketTimeoutMs}), which an open through the companion includes`
     );
   }
   // Options share the command budget; both are checked through the smaller.

@@ -23,12 +23,16 @@ is dialed directly.
 ## The companion gateway
 
 The connectors host's [companion gateway](./companion-gateway.md) is the only
-part of the engine that finds a route to a local endpoint, and its `obs`
-adapter the only part that holds a connection to one, OBS's
-(`woofx3_obs/obs`). On every connect attempt the gateway reads the module's
-stored manifest, settings and secrets and the relay configuration afresh,
-builds the direct address (each empty setting falling back to connectors' own
-`WOOFX3_OBS_*` configuration), and picks the route; see
+part of the engine that finds a route to a local endpoint or holds a
+connection to one. Its `obs` adapter holds OBS's (`woofx3_obs/obs`), and the
+gateway holds the sessions module code uses through `ctx.local` for its own
+unclaimed websocket endpoints (see
+[Companion gateway → Module requests](./companion-gateway.md#module-requests)).
+On every connect attempt the gateway reads the module's stored manifest,
+settings and secrets and the relay configuration afresh, builds the direct
+address (for OBS, each empty setting falls back to connectors' own
+`WOOFX3_OBS_*` configuration; module code gets no fallback), and picks the
+route; see
 [Companion gateway → Routes](./companion-gateway.md#routes) for the table.
 
 Once the ticket is in hand, any failure to open OBS through the bridge other
@@ -63,33 +67,45 @@ tells the engine with `setRelayConfig`:
 ```
 
 The api checks it (an `https:` origin with no path, query or credentials; at
-most 50 endpoints; manifest ids and endpoint ids of the right shape), stores it
-in engine setting `relay.config` with the engine client id of the dashboard
-that sent it, and publishes `engine.relay.config.updated`. `setRelayConfig(null)`
-deletes the setting and publishes the same subject. On that subject
-the obs adapter re-reads the configuration and reconnects to OBS only when the
-change moves OBS to another route: onto or off the bridge, or to another
-bridge host.
+most 50 endpoints; manifest ids and endpoint ids of the right shape) and
+forwards it, with the engine client id of the dashboard that sent it, to the
+connectors host's companion gateway on NATS `engine.companion.relay_config.set`
+(request `{ "config": <configuration> | null }`, reply `{ "status": "stored" }`
+or `{ "status": "failed", "error": "…" }`). The companion gateway is the one
+writer of engine setting `relay.config`: it checks the configuration again,
+stores it, and replies once it is stored. `setRelayConfig(null)` deletes the
+setting the same way.
 
-The api writes `relay.config` from two places, `setRelayConfig` and a
+`setRelayConfig` fails when the gateway does not store the configuration: it
+refused it, the write failed, or nothing answered within
+`WOOFX3_COMPANION_REQUEST_TIMEOUT_MS` (5 seconds by default, and above the
+4.5 seconds the gateway answers within). That is the case while connectors is down. The
+dashboard's syncEngine retries, and the gateway's next credential renewal
+applies the dashboard's configuration anyway (see below), so a missed call
+heals.
+
+The gateway writes `relay.config` from two places, `setRelayConfig` and a
 dashboard answer that replaces or clears it, so all writes run behind one lock.
 A `setRelayConfig` call also invalidates any renewal already under way: its
 answer, which was for the old configuration, is neither written nor cached,
-and the renewal starts over.
+and the renewal starts over. After each write the gateway tells its route
+watch in-process, which reconnects an endpoint only when the change moves it
+to another route: onto or off the bridge, or to another bridge host. Nothing
+is published on the bus.
 
 The configuration survives a restart, so the engine knows from its own
-database to use the bridge. Engine `settings` writes publish no event of their
-own, which is why the api publishes one.
+database to use the bridge.
 
 ## The bridge credential
 
 The credential that opens the bridge lasts five minutes and is never pushed or
-stored. When the companion gateway needs one, it asks the api on NATS
-`engine.relay.credential` (request `{ "force"?: boolean }`, reply
-`{ "relay": <grant> | null }` or `{ "error": "…" }`, 5 second timeout). The api
-caches the grant until a minute before it expires, and otherwise asks the
-dashboard with the `relay.credential.requested` request (the same URL, Bearer
-token and envelope as every callback, answered in the response body):
+stored. The companion gateway caches it until a minute before it expires.
+When it needs a new one, it asks the api on NATS
+`engine.companion.dashboard_credential` (request `{ "clientId": "…" }`, the
+client id stored with the configuration; 6 second timeout, longer than the
+api's own 5 second wait for the dashboard). The api asks the dashboard with the
+`relay.credential.requested` request (the same URL, Bearer token and envelope
+as every callback, answered in the response body):
 
 ```json
 {
@@ -102,17 +118,22 @@ token and envelope as every callback, answered in the response body):
 }
 ```
 
-The answer is authoritative. `{ "relay": null }` clears `relay.config` and
-announces it; an answer naming another bridge or other endpoints replaces the
-stored configuration. So an engine that was down when the dashboard sent
+It checks the answer and replies
+`{ "status": "answered", "clientId": "…", "answer": <the dashboard's answer> }`,
+or `{ "status": "failed", "error": "…" }` when no dashboard answered usably.
+The api keeps nothing between requests.
+
+The answer is authoritative. `{ "relay": null }` clears `relay.config`; an
+answer naming another bridge or other endpoints replaces the stored
+configuration. So an engine that was down when the dashboard sent
 `setRelayConfig(null)` stops dialing the bridge the next time it asks for a
 credential. A `setRelayConfig` call drops the cached credential, which may be
 for another bridge.
 
 The dashboard asked is the one whose engine client id was stored with the
 configuration. If that client is no longer registered (the dashboard
-registered again), the api asks a registered dashboard instead and stores its
-client id.
+registered again), the api asks a registered dashboard instead and names it in
+the reply, and the gateway stores that client id.
 
 Only the api talks to the dashboard. connectors never holds the dashboard's
 address or credentials, as for the Twitch token (`engine.twitch.token`).
