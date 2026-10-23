@@ -18,6 +18,12 @@ export interface PairingConfig {
   startsPerOriginPerMinute: number;
   /** Pairings every origin together may start in a minute; a non-browser caller can forge `Origin`. */
   startsPerMinute: number;
+  /**
+   * Pairings one peer address may start in a minute, whatever `Origin` it
+   * sends. The address is the one the server sees: behind a reverse proxy
+   * every browser shares the proxy's, and the limit applies to them together.
+   */
+  startsPerAddressPerMinute: number;
   /** Claims or cancels with a wrong verifier, from the pairing's own origin, that end a pairing. */
   claimFailuresBeforeCancel: number;
   /** Denied pairings remembered so their browsers learn of the denial; the oldest is forgotten first. */
@@ -32,6 +38,7 @@ export const DEFAULT_PAIRING_CONFIG: PairingConfig = {
   maxPendingPerOrigin: 2,
   startsPerOriginPerMinute: 6,
   startsPerMinute: 20,
+  startsPerAddressPerMinute: 10,
   claimFailuresBeforeCancel: 3,
   maxDeniedRemembered: 20,
 };
@@ -46,6 +53,11 @@ export function validatePairingConfig(config: PairingConfig): PairingConfig {
   if (config.maxPendingPerOrigin > config.maxPending) {
     throw new Error(
       `PairingConfig.maxPendingPerOrigin (${config.maxPendingPerOrigin}) exceeds maxPending (${config.maxPending})`
+    );
+  }
+  if (config.startsPerAddressPerMinute > config.startsPerMinute) {
+    throw new Error(
+      `PairingConfig.startsPerAddressPerMinute (${config.startsPerAddressPerMinute}) exceeds startsPerMinute (${config.startsPerMinute})`
     );
   }
   if (config.startsPerOriginPerMinute > config.startsPerMinute) {

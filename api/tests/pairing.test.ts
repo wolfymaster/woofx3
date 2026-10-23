@@ -29,12 +29,15 @@ function recordingLogger() {
 
 /**
  * A registry on a clock the test moves, with db-proxy's client creation
- * recorded. Every origin counts as listed unless `listed` says otherwise.
+ * recorded. Every origin counts as listed unless `listed` says otherwise, and
+ * loopback origins pair unlisted, as on a desktop engine, unless
+ * `loopbackPairsUnlisted` is false.
  */
 function registry(
   overrides: Partial<PairingConfig> = {},
   create?: CreatePairedClient,
-  listed: (origin: string) => boolean = () => true
+  listed: (origin: string) => boolean = () => true,
+  loopbackPairsUnlisted = true
 ) {
   let now = Date.UTC(2026, 9, 23, 12, 0, 0);
   let ids = 0;
@@ -52,6 +55,7 @@ function registry(
       }),
     emit: (event) => events.push(event),
     isListedOrigin: listed,
+    loopbackPairsUnlisted,
     now: () => now,
     newId: () => `pairing-${++ids}`,
   });
@@ -66,10 +70,27 @@ function registry(
   };
 }
 
-/** A browser's side of one pairing: its verifier, and its start. */
-async function startFrom(pairings: PairingRegistry, origin: string | null = ORIGIN, description = "Chrome on Windows") {
+let peers = 0;
+
+/** A peer address no other start in the run used, so the per-address limit stays out of the way. */
+function freshPeer(): string {
+  peers++;
+  return `198.51.${Math.floor(peers / 250)}.${peers % 250}`;
+}
+
+/** A browser's side of one pairing: its verifier, and its start from `peer`. */
+async function startFrom(
+  pairings: PairingRegistry,
+  origin: string | null = ORIGIN,
+  description = "Chrome on Windows",
+  peer: string | null = freshPeer()
+) {
   const verifier = newPairingVerifier();
-  const response = await pairings.start({ description, verifierHash: await pairingVerifierHash(verifier) }, origin);
+  const response = await pairings.start(
+    { description, verifierHash: await pairingVerifierHash(verifier) },
+    origin,
+    peer
+  );
   return { verifier, response };
 }
 
@@ -92,7 +113,7 @@ describe("admitPairingOrigin", () => {
     ["a listed https origin", "https://app.example.com", "https://app.example.com"],
     ["a listed origin written differently", "HTTPS://App.Example.com:443", "https://app.example.com"],
   ])("admits %s", (_, origin, expected) => {
-    expect(admitPairingOrigin(origin, listed)).toEqual({ ok: true, origin: expected });
+    expect(admitPairingOrigin(origin, listed, true)).toEqual({ ok: true, origin: expected });
   });
 
   test.each([
@@ -107,14 +128,33 @@ describe("admitPairingOrigin", () => {
     ["a file page", "file:///home/me/index.html", "cannot pair"],
     ["not a URL", "localhost:5173", "cannot pair"],
   ])("refuses %s, saying why", (_, origin, reason) => {
-    const admission = admitPairingOrigin(origin, listed);
+    const admission = admitPairingOrigin(origin, listed, true);
     expect(admission.ok).toBe(false);
     expect(admission.ok ? "" : admission.error).toContain(reason);
   });
 
-  test("refuses every origin off this computer when no list is set", () => {
-    expect(admitPairingOrigin("https://app.example.com", () => false)).toMatchObject({ ok: false });
-    expect(admitPairingOrigin("http://localhost:5173", () => false)).toMatchObject({ ok: true });
+  test("on a desktop engine, refuses every origin but loopback when no list is set", () => {
+    expect(admitPairingOrigin("https://app.example.com", () => false, true)).toMatchObject({ ok: false });
+    expect(admitPairingOrigin("http://localhost:5173", () => false, true)).toMatchObject({ ok: true });
+  });
+
+  test.each([
+    ["http://localhost:5173"],
+    ["http://127.0.0.1:8080"],
+    ["https://[::1]:8443"],
+  ])("on any other engine, refuses an unlisted loopback origin (%s), which names the browser's machine", (origin) => {
+    const admission = admitPairingOrigin(origin, () => false, false);
+    expect(admission.ok).toBe(false);
+    expect(admission.ok ? "" : admission.error).toContain("WOOFX3_ALLOWED_ORIGINS");
+  });
+
+  test("on any other engine, admits a listed loopback origin, http included", () => {
+    const listedLoopback = (origin: string) => origin === "http://localhost:5173";
+    expect(admitPairingOrigin("http://localhost:5173", listedLoopback, false)).toEqual({
+      ok: true,
+      origin: "http://localhost:5173",
+    });
+    expect(admitPairingOrigin("http://localhost:3000", listedLoopback, false)).toMatchObject({ ok: false });
   });
 });
 
@@ -129,6 +169,7 @@ describe("validatePairingConfig", () => {
     ["no denials remembered", { maxDeniedRemembered: 0 }],
     ["more per origin than in total", { maxPendingPerOrigin: 6 }],
     ["more starts per origin than in total", { startsPerOriginPerMinute: 21 }],
+    ["more starts per address than in total", { startsPerAddressPerMinute: 21 }],
   ])("refuses %s", (_, override) => {
     expect(() => validatePairingConfig({ ...DEFAULT_PAIRING_CONFIG, ...override })).toThrow();
   });
@@ -175,7 +216,7 @@ describe("starting a pairing", () => {
       ...override,
     };
 
-    const response = await pairings.start(request as never, ORIGIN);
+    const response = await pairings.start(request as never, ORIGIN, freshPeer());
 
     expect(response).toMatchObject({ ok: false, code: "invalid_request" });
     expect(events).toEqual([]);
@@ -188,6 +229,15 @@ describe("starting a pairing", () => {
       ok: false,
       code: "origin_refused",
     });
+  });
+
+  test("on a self-hosted engine, refuses an unlisted localhost page", async () => {
+    const { pairings } = registry({}, undefined, () => false, false);
+
+    const refused = (await startFrom(pairings, ORIGIN)).response;
+
+    expect(refused).toMatchObject({ ok: false, code: "origin_refused" });
+    expect(refused.ok ? "" : refused.error).toContain("WOOFX3_ALLOWED_ORIGINS");
   });
 
   test("refuses a hosted web app until the operator lists its origin, and names the setting", async () => {
@@ -248,6 +298,34 @@ describe("starting a pairing", () => {
     expect((await startFrom(pairings)).response.ok).toBe(true);
   });
 
+  test("limits starts from one peer address per minute, whatever Origin it sends", async () => {
+    const { pairings, advance } = registry({ maxPending: 20, maxPendingPerOrigin: 2 });
+    for (let i = 0; i < 10; i++) {
+      started((await startFrom(pairings, `https://forged-${i}.example`, "x", "203.0.113.7")).response);
+    }
+
+    expect((await startFrom(pairings, "https://forged-10.example", "x", "203.0.113.7")).response).toMatchObject({
+      ok: false,
+      code: "rate_limited",
+      retryAfterMs: 60_000,
+    });
+    expect((await startFrom(pairings, "https://forged-11.example", "x", "203.0.113.8")).response.ok).toBe(true);
+
+    advance(60_000);
+    expect((await startFrom(pairings, "https://forged-12.example", "x", "203.0.113.7")).response.ok).toBe(true);
+  });
+
+  test("peers the transport could not name share one window", async () => {
+    const { pairings } = registry({ maxPending: 20, maxPendingPerOrigin: 2 });
+    for (let i = 0; i < 10; i++) {
+      started((await startFrom(pairings, `https://unnamed-${i}.example`, "x", null)).response);
+    }
+
+    expect((await startFrom(pairings, "https://unnamed-10.example", "x", null)).response).toMatchObject({
+      code: "rate_limited",
+    });
+  });
+
   test("limits starts from every origin together per minute", async () => {
     const { pairings } = registry({ maxPending: 30, maxPendingPerOrigin: 2 });
     for (let i = 0; i < 20; i++) {
@@ -281,6 +359,7 @@ describe("starting a pairing", () => {
       createPairedClient: async () => ({ clientId: "c", clientSecret: "s" }),
       emit: () => {},
       isListedOrigin: () => true,
+      loopbackPairsUnlisted: true,
       randomBytes: () => streams[Math.min(draw++, streams.length - 1)],
     });
 
@@ -298,6 +377,7 @@ describe("starting a pairing", () => {
       createPairedClient: async () => ({ clientId: "c", clientSecret: "s" }),
       emit: () => {},
       isListedOrigin: () => true,
+      loopbackPairsUnlisted: true,
       // 243 and above would make the first alphabet letters likelier; they are skipped.
       randomBytes: () => new Uint8Array([255, 243, 250, 27, 28, 29, 30, 31]),
     });

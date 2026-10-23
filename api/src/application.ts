@@ -308,6 +308,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
           logger,
           createPairedClient: pairedClientCreator(db),
           isListedOrigin: (origin) => pairingOriginList.listsOrigin(origin),
+          loopbackPairsUnlisted: config.hosting === "local",
           emit: (event) => {
             webhookClient.send(event).catch((err) => {
               logger.error("Failed to announce a started pairing", {

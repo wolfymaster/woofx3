@@ -74,10 +74,16 @@ export interface PairingRegistryOptions {
   /**
    * Whether an origin is on the engine's own origin list
    * (`WOOFX3_ALLOWED_ORIGINS`); false for every origin when none is set.
-   * Only a listed origin may pair from another computer (see
-   * `admitPairingOrigin`).
+   * See `admitPairingOrigin`.
    */
   isListedOrigin: (origin: string) => boolean;
+  /**
+   * Whether loopback origins may pair unlisted. True only for the desktop
+   * engine (`WOOFX3_HOSTING=local`), which listens on loopback alone, so a
+   * page on localhost runs on the engine's own machine. See
+   * `admitPairingOrigin`.
+   */
+  loopbackPairsUnlisted: boolean;
   /** `n` random bytes, for the user code. */
   randomBytes?: (n: number) => Uint8Array;
 }
@@ -117,17 +123,23 @@ export type PairingOriginAdmission = { ok: true; origin: string } | { ok: false;
  * `isListed`, which says whether an origin is on the engine's own origin list
  * (`WOOFX3_ALLOWED_ORIGINS`; false for every origin when it is unset).
  *
- * - A page on this computer (`localhost`, `127.0.0.1`, `[::1]`, over http or
- *   https) may pair.
- * - Any other page may pair only over https, and only when the operator has
- *   listed its origin. A hosted web app therefore cannot pair with an engine
- *   unless its operator chose to let it.
+ * A loopback origin (`localhost`, `127.0.0.1`, `[::1]`) names the browser's
+ * machine, not the engine's. Only when `loopbackPairsUnlisted` holds, on a
+ * desktop engine that listens on loopback alone, are the two the same
+ * machine, so only there may such a page pair unlisted.
+ *
+ * - On a desktop engine, a loopback page may pair, over http or https.
+ * - Any other page, and a loopback page on any other engine, may pair only
+ *   once the operator has listed its origin, and a non-loopback page only
+ *   over https. A hosted web app therefore cannot pair with an engine unless
+ *   its operator chose to let it.
  * - No `Origin` (not a browser), the opaque `null`, and the desktop app's own
  *   window (which registers rather than pairs) may not.
  */
 export function admitPairingOrigin(
   origin: string | null,
-  isListed: (origin: string) => boolean
+  isListed: (origin: string) => boolean,
+  loopbackPairsUnlisted: boolean
 ): PairingOriginAdmission {
   if (origin === null) {
     return { ok: false, error: "pairing needs a web page: the request carried no Origin" };
@@ -140,10 +152,11 @@ export function admitPairingOrigin(
   if (APP_HOSTS.has(url.hostname) || (url.protocol !== "http:" && url.protocol !== "https:")) {
     return { ok: false, error: `${comparable} is an app, not a web page; it registers rather than pairs` };
   }
-  if (LOOPBACK_HOSTS.has(url.hostname)) {
+  const loopback = LOOPBACK_HOSTS.has(url.hostname);
+  if (loopback && loopbackPairsUnlisted) {
     return { ok: true, origin: comparable };
   }
-  if (url.protocol !== "https:") {
+  if (!loopback && url.protocol !== "https:") {
     return {
       ok: false,
       error: `${comparable} is plain http from another computer, which would send the secret in clear`,
@@ -227,6 +240,8 @@ export class PairingRegistry {
   private denials = new Map<string, Denial>();
   private globalStarts: StartWindow;
   private originStarts = new Map<string, StartWindow>();
+  /** Keyed by the peer address the server saw. */
+  private addressStarts = new Map<string, StartWindow>();
   private readonly config: PairingConfig;
   private readonly now: () => number;
   private readonly newId: () => string;
@@ -241,8 +256,18 @@ export class PairingRegistry {
   }
 
   /** Start a pairing for the browser at `requestOrigin`, the `Origin` header of the request that carried it. */
-  async start(request: StartPairingRequest, requestOrigin: string | null): Promise<StartPairingResponse> {
-    const admission = admitPairingOrigin(requestOrigin, this.opts.isListedOrigin);
+  /**
+   * Start a pairing for the browser at `requestOrigin`, the `Origin` header
+   * of the request that carried it, from `remoteAddress`, the peer address
+   * the server saw (behind a reverse proxy, the proxy's; never a forwarded
+   * header).
+   */
+  async start(
+    request: StartPairingRequest,
+    requestOrigin: string | null,
+    remoteAddress: string | null
+  ): Promise<StartPairingResponse> {
+    const admission = admitPairingOrigin(requestOrigin, this.opts.isListedOrigin, this.opts.loopbackPairsUnlisted);
     if (!admission.ok) {
       this.opts.logger.warn("Refused a pairing from an origin that may not pair", {
         origin: requestOrigin,
@@ -261,9 +286,19 @@ export class PairingRegistry {
 
     const now = this.now();
     this.pruneExpired(now);
-    const retryAfterMs = Math.max(this.globalStarts.waitAt(now), this.originWindow(origin).waitAt(now));
+    // A peer the transport could not name shares one window.
+    const peer = remoteAddress ?? "unknown";
+    const retryAfterMs = Math.max(
+      this.globalStarts.waitAt(now),
+      windowFor(this.originStarts, origin, this.config.startsPerOriginPerMinute).waitAt(now),
+      windowFor(this.addressStarts, peer, this.config.startsPerAddressPerMinute).waitAt(now)
+    );
     if (retryAfterMs > 0) {
-      this.opts.logger.warn("Refused a pairing over the start rate limit", { origin, retryAfterMs });
+      this.opts.logger.warn("Refused a pairing over the start rate limit", {
+        origin,
+        remoteAddress: peer,
+        retryAfterMs,
+      });
       return { ok: false, code: "rate_limited", error: "too many pairings were started recently", retryAfterMs };
     }
     const fromOrigin = [...this.pairings.values()].filter((pairing) => pairing.origin === origin).length;
@@ -273,7 +308,8 @@ export class PairingRegistry {
     }
 
     this.globalStarts.record(now);
-    this.originWindow(origin).record(now);
+    windowFor(this.originStarts, origin, this.config.startsPerOriginPerMinute).record(now);
+    windowFor(this.addressStarts, peer, this.config.startsPerAddressPerMinute).record(now);
     const pairing: Pairing = {
       id: this.newId(),
       userCode: this.newUserCode(),
@@ -532,20 +568,13 @@ export class PairingRegistry {
         this.denials.delete(id);
       }
     }
-    for (const [origin, window] of this.originStarts) {
-      if (window.emptyAt(now)) {
-        this.originStarts.delete(origin);
+    for (const windows of [this.originStarts, this.addressStarts]) {
+      for (const [key, window] of windows) {
+        if (window.emptyAt(now)) {
+          windows.delete(key);
+        }
       }
     }
-  }
-
-  private originWindow(origin: string): StartWindow {
-    let window = this.originStarts.get(origin);
-    if (!window) {
-      window = new StartWindow(this.config.startsPerOriginPerMinute);
-      this.originStarts.set(origin, window);
-    }
-    return window;
   }
 
   /**
@@ -571,6 +600,20 @@ export class PairingRegistry {
     }
     throw new Error(`no unused pairing code in ${USER_CODE_ATTEMPTS} draws: the random source is not random`);
   }
+}
+
+/**
+ * The start window for `key` in `windows`, made on first use. Windows are
+ * recorded only for starts that passed every limit, so the global limit
+ * bounds how many exist at once.
+ */
+function windowFor(windows: Map<string, StartWindow>, key: string, limit: number): StartWindow {
+  let window = windows.get(key);
+  if (!window) {
+    window = new StartWindow(limit);
+    windows.set(key, window);
+  }
+  return window;
 }
 
 /** Whether an approver sees `pairing`: one being claimed is all but done. */

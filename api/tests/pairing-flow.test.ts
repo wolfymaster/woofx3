@@ -76,6 +76,7 @@ function engine(pairs: boolean) {
         createPairedClient: pairedClientCreator(db as never),
         emit: () => {},
         isListedOrigin: () => false,
+        loopbackPairsUnlisted: true,
       })
     : null;
   if (pairing) {

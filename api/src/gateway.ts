@@ -225,7 +225,7 @@ export class ApiGateway {
     if (!this.pairing) {
       return { ok: false, code: "not_available", error: "this engine does not offer browser pairing" };
     }
-    return this.pairing.start(request, connection.origin);
+    return this.pairing.start(request, connection.origin, connection.remoteAddress);
   }
 
   /** On an engine that does not pair no pairing exists, so every claim answers `not_found`. */
