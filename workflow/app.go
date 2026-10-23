@@ -286,14 +286,27 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	// point -- declaration and implementation stop living in one file.
 	//
 	// Each declares whether a dry run may call it (see tasks.ActionSpec).
-	a.engine.RegisterActionWithSpec("function", WithServices(appServices, NewBarkloaderAction()), functionActionSpec)
-	a.engine.RegisterActionWithSpec("alert", WithServices(appServices, NewAlertAction()), alertActionSpec)
-	a.engine.RegisterActionWithSpec("chat.reply", WithServices(appServices, NewChatReplyAction()), chatReplyActionSpec)
-	a.engine.RegisterActionWithSpec("scene.widget.visibility", WithServices(appServices, NewWidgetVisibilityAction()), widgetVisibilityActionSpec)
-	a.engine.RegisterActionWithSpec("print", func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
-		a.logger.Info("Action: print", "params", params)
-		return params, nil
-	}, tasks.ActionSpec{SideEffect: false})
+	registrations := []struct {
+		name   string
+		action tasks.ActionFunc[AppServices]
+		spec   tasks.ActionSpec
+	}{
+		{"function", WithServices(appServices, NewBarkloaderAction()), functionActionSpec},
+		{"alert", WithServices(appServices, NewAlertAction()), alertActionSpec},
+		{"chat.reply", WithServices(appServices, NewChatReplyAction()), chatReplyActionSpec},
+		{"chat.announce", WithServices(appServices, NewChatAnnounceAction()), chatAnnounceActionSpec},
+		{"chat.pin", WithServices(appServices, NewChatPinAction()), chatPinActionSpec},
+		{"scene.widget.visibility", WithServices(appServices, NewWidgetVisibilityAction()), widgetVisibilityActionSpec},
+		{"print", func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
+			a.logger.Info("Action: print", "params", params)
+			return params, nil
+		}, tasks.ActionSpec{SideEffect: false}},
+	}
+	for _, registration := range registrations {
+		if err := a.engine.RegisterActionWithSpec(registration.name, registration.action, registration.spec); err != nil {
+			return fmt.Errorf("register action %s: %w", registration.name, err)
+		}
+	}
 
 	return a.engine.Start(ctx)
 }
