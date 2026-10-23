@@ -129,6 +129,17 @@ describe("WidgetBridge settings", () => {
     fromWidget("rendered");
     expect(rendered).toBe(1);
   });
+
+  it("reports ready on the first hello of each document, not on the shim's repeats", () => {
+    let ready = 0;
+    const { bridge, fromWidget } = setup({ onReady: () => ready++ });
+    fromWidget("hello");
+    fromWidget("hello");
+    expect(ready).toBe(1);
+    bridge.onFrameLoad();
+    fromWidget("hello");
+    expect(ready).toBe(2);
+  });
 });
 
 describe("WidgetBridge assets", () => {

@@ -8,6 +8,7 @@ import type {
 import { createMessageBus } from "@woofx3/nats";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { SceneManagerRuntimeConfig } from "./config";
+import { presentAlertDeliveries } from "./events/alert-dispatch";
 import { DeliveryStore } from "./events/delivery-store";
 import { closeDeliveriesToRemovedPlacements } from "./events/removed-placements";
 import { GoogleFontCache } from "./fonts/google-font-cache";
@@ -49,6 +50,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
   readonly __finalContextType!: SceneManagerContext;
   private server: ReturnType<typeof Bun.serve> | null = null;
   private deliveryStore: DeliveryStore | null = null;
+  private framing: FrameCatalog | null = null;
   private obs: ObsService | null = null;
   private sceneDocuments: SceneDocuments | null = null;
   private nats: NATSClient | null = null;
@@ -82,12 +84,15 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const db = ctx.services.db.client;
     const resolver = new OverlayTokenResolver(db, logger);
     const barkloader = new HttpBarkloaderFrameClient(runtimeConfig.barkloaderUrl, runtimeConfig.barkloaderKey, logger);
-    const framing = new FrameCatalog(barkloader, logger, (moduleId) => linkedResources(db, moduleId));
+    const framing = new FrameCatalog(barkloader, logger, {
+      linkedResources: (moduleId) => linkedResources(db, moduleId),
+    });
+    this.framing = framing;
     const host = new OverlayHost(resolver, db, logger, { framing });
     const mediaProxy = new MediaProxy(runtimeConfig.barkloaderKey);
     const sessionTokens = new SessionTokenService(runtimeConfig.tokenSecret);
 
-    const deliveryStore = new DeliveryStore(db, logger);
+    const deliveryStore = new DeliveryStore(db, logger, presentAlertDeliveries(mediaProxy));
     // Edits are written back here, so the database stays each scene's record.
     const sceneDocuments = new SceneDocuments(host, deliveryStore, logger, {
       mediaProxy,
@@ -95,11 +100,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       backups: dbSceneBackupStore(db),
     });
     this.sceneDocuments = sceneDocuments;
-    const frameAssembler = new FrameAssembler(host, logger, {
-      barkloader,
-      linkedResources: (moduleId) => linkedResources(db, moduleId),
-      mediaProxy,
-    });
+    const frameAssembler = new FrameAssembler(logger, { barkloader });
     // Held before hydrating, so a start that fails after this still stops
     // the store's timers.
     this.deliveryStore = deliveryStore;
@@ -129,6 +130,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       db,
       host,
       deliveryStore,
+      framing,
       moduleState,
       resolver,
       sceneDocuments,
@@ -183,6 +185,8 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     this.sceneDocuments = null;
     this.deliveryStore?.stopSweep();
     this.deliveryStore = null;
+    this.framing?.stop();
+    this.framing = null;
     // Forced: open event streams would otherwise hold the server, and their
     // heartbeats, past shutdown.
     await this.server?.stop(true);

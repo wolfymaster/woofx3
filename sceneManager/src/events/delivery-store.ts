@@ -34,6 +34,13 @@ export interface OpenDeliveryRef {
 
 type SseController = ReadableStreamDefaultController<Uint8Array>;
 
+/**
+ * A delivery as a page is sent it. The store keeps what was recorded; this
+ * derives what a page sees each time it is sent, for anything that must be
+ * fresh then (signed media URLs).
+ */
+export type PresentDelivery = (frame: DeliveryFrame) => DeliveryFrame;
+
 const REDELIVER_AFTER_MS = 5_000;
 const SWEEP_INTERVAL_MS = 3_000;
 /** The wait before trying a failed hydration again, doubling up to the cap. */
@@ -70,7 +77,8 @@ export class DeliveryStore {
 
   constructor(
     private readonly db: DbClient,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly present: PresentDelivery = (frame) => frame
   ) {}
 
   /**
@@ -353,13 +361,16 @@ export class DeliveryStore {
       // a full interval after this replay.
       delivery.delivered = false;
       delivery.lastAttemptAt = Date.now();
-      this.sendTo(controller, {
+      const bytes = this.encodeDelivery({
         eventId: delivery.eventId,
         instanceId: delivery.instanceId,
         type: delivery.type,
         key: delivery.key,
         value: delivery.value,
       });
+      if (bytes !== null) {
+        this.sendTo(controller, bytes);
+      }
     }
     // After the replay, so the page knows the whole set: what it still holds
     // beyond it was closed while its stream was down.
@@ -526,14 +537,39 @@ export class DeliveryStore {
   }
 
   private push(sceneId: string, frame: DeliveryFrame): void {
-    for (const controller of this.connections.get(sceneId) ?? []) {
-      this.sendTo(controller, frame);
+    const controllers = this.connections.get(sceneId);
+    if (!controllers || controllers.size === 0) {
+      return;
+    }
+    const bytes = this.encodeDelivery(frame);
+    if (bytes === null) {
+      return;
+    }
+    for (const controller of controllers) {
+      this.sendTo(controller, bytes);
     }
   }
 
-  private sendTo(controller: SseController, frame: DeliveryFrame): void {
+  /**
+   * Presented once per send, so tokens are minted once however many pages
+   * listen. Null when the delivery cannot be presented: it stays open and
+   * the sweep sends it again, as it would after a failed enqueue.
+   */
+  private encodeDelivery(frame: DeliveryFrame): Uint8Array | null {
     try {
-      controller.enqueue(new TextEncoder().encode(encodeStreamFrame({ kind: "delivery", frame })));
+      return new TextEncoder().encode(encodeStreamFrame({ kind: "delivery", frame: this.present(frame) }));
+    } catch (err) {
+      this.logger.warn("delivery-store: presenting a delivery failed", {
+        eventId: frame.eventId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+  }
+
+  private sendTo(controller: SseController, bytes: Uint8Array): void {
+    try {
+      controller.enqueue(bytes);
     } catch (err) {
       this.logger.warn("delivery-store: SSE push failed", {
         error: err instanceof Error ? err.message : String(err),
