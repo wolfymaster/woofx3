@@ -69,25 +69,25 @@ describe("TwitchApiClient", () => {
     [
       "a refusal without an error",
       answer("twitchapi.error", { code: "unauthorized" }),
-      { kind: "failed", message: "the Twitch service refused the request" },
+      { kind: "failed", message: "the Twitch adapter refused the request" },
     ],
     [
       "a result of the wrong shape",
       answer("twitchapi.createMarker.result", { positionSeconds: "soon" }),
-      { kind: "failed", message: "the Twitch service sent a reply of an unexpected shape" },
+      { kind: "failed", message: "the Twitch adapter sent a reply of an unexpected shape" },
     ],
     [
       "a result of another command",
       answer("twitchapi.updateStream.result", { title: "x" }),
       {
         kind: "failed",
-        message: "the Twitch service sent a reply of an unexpected type (twitchapi.updateStream.result)",
+        message: "the Twitch adapter sent a reply of an unexpected type (twitchapi.updateStream.result)",
       },
     ],
     [
       "a reply that is not JSON",
       async (subject) => ({ subject, data: bytes("nope") }),
-      { kind: "failed", message: "the Twitch service sent a reply that is not JSON" },
+      { kind: "failed", message: "the Twitch adapter sent a reply that is not JSON" },
     ],
   ];
 

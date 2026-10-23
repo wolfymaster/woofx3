@@ -15,7 +15,7 @@
  *   Twitch (an unknown or misshapen parameter).
  * - `not_linked`: no Twitch account is linked to the engine.
  * - `unavailable`: Twitch is turned off in this engine, or not running.
- * - `timeout`: the twitch service did not answer within 10 seconds. Twitch
+ * - `timeout`: the engine's Twitch connection did not answer within 10 seconds. Twitch
  *   may still have acted.
  * - `failed`: anything else; `error` says what.
  */

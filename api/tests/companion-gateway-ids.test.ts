@@ -18,13 +18,11 @@ describe("ids agree with the relay configuration", () => {
   for (const { moduleId, endpointId } of ids) {
     test(`${moduleId.slice(0, 20)}/${endpointId.slice(0, 20)}`, () => {
       const contract = parseModuleEndpointRequest({ op: "send", moduleId, endpointId, message: "x", budgetMs: 1000 });
-      let relay = true;
-      try {
-        parseRelayConfig({ bridgeOrigin: "https://c-1.example.test", endpoints: [{ moduleId, endpointId }] });
-      } catch {
-        relay = false;
-      }
-      expect(contract.ok).toBe(relay);
+      const relay = parseRelayConfig({
+        bridgeOrigin: "https://c-1.example.test",
+        endpoints: [{ moduleId, endpointId }],
+      });
+      expect(contract.ok).toBe(relay.ok);
     });
   }
 });

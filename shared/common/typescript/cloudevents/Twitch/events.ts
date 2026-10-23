@@ -135,7 +135,7 @@ export interface Redeem {
 }
 
 /**
- * An ad break is scheduled soon. Not a Twitch event: the twitch service
+ * An ad break is scheduled soon. Not a Twitch event: the connectors Twitch adapter
  * reads the ad schedule while the stream is live and publishes this once
  * per scheduled break, `secondsUntil` ahead of it
  * (docs/services/twitch-channel.md).
@@ -158,7 +158,7 @@ export interface AdBreakBegin {
 }
 
 /**
- * An ad break ended. Twitch sends no end event: the twitch service
+ * An ad break ended. Twitch sends no end event: the connectors Twitch adapter
  * publishes this `durationSeconds` after the begin event, so `endedAt` is
  * when the break was due to end, not an observation that it did.
  */

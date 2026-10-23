@@ -26,7 +26,11 @@ export const relayRoutes = routeModule({
       if (!clientId) {
         throw new Error("setRelayConfig needs the session's client id to ask for bridge credentials");
       }
-      stored = { ...parseRelayConfig(config), clientId };
+      const parsed = parseRelayConfig(config);
+      if (!parsed.ok) {
+        throw new Error(parsed.error);
+      }
+      stored = { ...parsed.value, clientId };
     }
     await forwardRelayConfig(this.nats, stored, this.companionRequestTimeoutMs);
     if (stored === null) {

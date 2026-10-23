@@ -339,7 +339,7 @@ export const commandsRoutes = routeModule({
 
   /**
    * Persist the broadcaster's Twitch OAuth token in the engine's
-   * settings table. The Twitch service reads this on bootstrap (see
+   * settings table. The connectors Twitch adapter reads this on bootstrap (see
    * `shared/clients/typescript/twitch/index.ts`).
    *
    * A token carrying the Twitch app's `clientId` comes from a dashboard that
