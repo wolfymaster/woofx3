@@ -57,8 +57,13 @@ describe("AdBreakLeadSetting", () => {
     expect(await setting([{ key: "adBreakLeadSeconds", value: "" }]).lead.read()).toBe(DEFAULT_AD_BREAK_LEAD_SECONDS);
   });
 
-  test("uses the default when db-proxy cannot be read", async () => {
-    expect(await setting(new Error("connection refused")).lead.read()).toBe(DEFAULT_AD_BREAK_LEAD_SECONDS);
+  test("uses the default when db-proxy cannot be read, warning once per outage", async () => {
+    const { lead, warnings } = setting(new Error("connection refused"));
+
+    expect(await lead.read()).toBe(DEFAULT_AD_BREAK_LEAD_SECONDS);
+    expect(await lead.read()).toBe(DEFAULT_AD_BREAK_LEAD_SECONDS);
+
+    expect(warnings).toEqual([{ error: "connection refused", defaultSeconds: DEFAULT_AD_BREAK_LEAD_SECONDS }]);
   });
 
   test("uses the default for a bad value and warns once per value", async () => {

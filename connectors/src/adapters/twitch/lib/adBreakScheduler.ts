@@ -36,18 +36,19 @@ export interface AdBreakSchedulerDeps {
  * the Helix ad schedule, which has to be polled.
  *
  * Twitch is polled only while the stream is live. The owner reports that
- * through `setLive`, from this service's own `stream.online` /
+ * through `setLive`, from the twitch adapter's own `stream.online` /
  * `stream.offline` subscriptions plus one Helix read at connect (EventSub
- * does not replay an online event that happened before the service started).
+ * does not replay an online event that happened before the adapter started).
  *
- * The schedule is read once a minute and the announcement is then armed as
- * a timer, so it lands on time rather than up to a minute late. Every read re-arms from scratch, so a snooze (which moves
- * `nextAdAt`) cancels the old announcement and schedules a new one: an
- * announcement is keyed by the ad's time, and a moved ad is a new ad.
+ * The schedule is read every poll interval and the announcement is then
+ * armed as a timer, so it lands on time rather than up to an interval late.
+ * Every read re-arms from scratch, so a snooze (which moves `nextAdAt`)
+ * cancels the old announcement and schedules a new one: an announcement is
+ * keyed by the ad's time, and a moved ad is a new ad.
  *
- * Assumes one twitch service per engine, as the engine is deployed today.
- * Which ad was announced lives in memory, so two instances would each announce
- * every ad, and a restart inside a lead window announces that ad again.
+ * Which ad was announced lives in memory, so an adapter restart inside a
+ * lead window announces that ad again. An engine runs one twitch adapter, so
+ * no other instance announces it as well.
  */
 export class AdBreakScheduler {
   private readonly clock: Clock;

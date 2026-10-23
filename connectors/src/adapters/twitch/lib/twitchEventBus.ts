@@ -13,7 +13,7 @@ import onStreamOffline from "./subscriptions/onStreamOffline";
 import onStreamOnline from "./subscriptions/onStreamOnline";
 
 /**
- * Every subscription this service needs. Kept as data so the expected
+ * Every subscription the twitch adapter needs. Kept as data so the expected
  * count is known before any of them is created — readiness is "Twitch
  * confirmed all of these", which cannot be judged without it.
  */
@@ -49,9 +49,9 @@ interface OptionalSubscription {
 /**
  * Subscriptions that need a scope the streamer may not have granted. They
  * are attempted, but a refusal only costs the events they carry, so they are
- * left out of readiness: a service that reports unready over a missing
- * optional scope would be restarted forever for something only a reconnect
- * in the UI can fix.
+ * left out of readiness: an adapter that reports unready over a missing
+ * optional scope would be restarted forever for something only a relink in
+ * the UI can fix.
  */
 const OPTIONAL_SUBSCRIPTIONS: readonly OptionalSubscription[] = [
   {

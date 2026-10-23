@@ -20,11 +20,8 @@ export {
 } from "./twitchApiError";
 
 /**
- * Each Twitch API method returns a plain data shape — the dispatcher in
- * application.ts wraps it into a CloudEvent reply for `msg.respond()`.
- * No more "publish a follow-up message on a different topic" pattern;
- * callers that issued the request via `nats.request()` get the data back
- * on the muxed inbox and decide what to do with it.
+ * Each Twitch API method returns a plain data shape, which the dispatcher in
+ * application.ts wraps in the CloudEvent reply to the `twitchapi` request.
  */
 
 export interface ClipResult {

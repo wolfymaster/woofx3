@@ -6,8 +6,9 @@ import type {
   HelixOperationName,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import { COMMAND_PREFIX } from "../../../chat/command-prefix";
-import type { SelfSentLine, SelfSentRecorder } from "./self-sent";
+import { type SelfSentLine, type SelfSentRecorder, ZERO_WIDTH_SPACE } from "./self-sent";
 import { TwitchApiError } from "./twitchApiError";
+import { untilAborted } from "./untilAborted";
 
 // Twurple passes these straight to fetch and leaves declaring the ones a
 // caller uses to the caller.
@@ -57,9 +58,6 @@ interface HelixOperation {
    */
   echoesAsChatMessage?: true;
 }
-
-/** U+200B ZERO WIDTH SPACE. */
-const ZERO_WIDTH_SPACE = "\u200b";
 
 /**
  * `text` with a zero-width space in front when it would start with the
@@ -448,21 +446,6 @@ export const HELIX_DEADLINE_MS = 8_000;
 
 /** What `runHelixOperation` needs of the twitch service's Twurple auth provider. */
 export type HelixAuth = Pick<AuthProvider, "clientId" | "getAccessTokenForUser" | "refreshAccessTokenForUser">;
-
-/**
- * `promise`'s outcome, or the signal's reason once it aborts first. Bounds a
- * wait the signal cannot cancel, such as the dashboard auth provider asking
- * the api for a token, which has a longer timeout of its own; that request
- * carries on and still stores the token it gets.
- */
-function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  signal.throwIfAborted();
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason);
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
-  });
-}
 
 /** How one `runHelixOperation` call is bounded and observed. */
 export interface HelixRunOptions {

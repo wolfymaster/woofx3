@@ -28,6 +28,7 @@ import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
 import TwitchApi, { isTwitchApiCommand, type TwitchApiCall, twitchApiErrorCodeOf } from "./lib/twitch";
 import { TWITCH_API_HANDLERS } from "./lib/twitchApiCommands";
 import TwitchEventBus from "./lib/twitchEventBus";
+import { untilAborted } from "./lib/untilAborted";
 import type { EventPublisher } from "./types";
 
 /** Inbound request on the `twitchapi` subject: `{ command, args? }`. */
@@ -654,31 +655,6 @@ function twitchApiReply(type: string, data: unknown, deps: TwitchReplyDeps): Uin
       data,
     })
   );
-}
-
-/**
- * Settles as `work` does, or rejects with `signal`'s reason once it aborts,
- * whichever comes first. For calls that take no signal of their own: `work`
- * still runs to completion, but nobody waits for it.
- */
-function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) {
-    return Promise.reject(signal.reason);
-  }
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(signal.reason);
-    signal.addEventListener("abort", onAbort, { once: true });
-    work.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (err: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(err);
-      }
-    );
-  });
 }
 
 /**

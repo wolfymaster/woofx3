@@ -5,7 +5,7 @@ import type { Context } from "../../types";
 import { publishEvent } from "../publishEvent";
 
 /**
- * The fields of Twurple's begin event this service reads. Twurple passes
+ * The fields of Twurple's begin event the announcer reads. Twurple passes
  * Twitch's raw values through its getters, so they are typed loosely here
  * and coerced in `begin`.
  */
@@ -74,8 +74,8 @@ export class AdBreakAnnouncer {
   }
 
   /**
-   * Drop a pending end without publishing it, for when the service is
-   * disconnecting and its bus is going away with it.
+   * Drop a pending end without publishing it, for when the adapter is
+   * disconnecting and its bus scope is closing with it.
    */
   dispose(): void {
     if (this.pending !== null) {

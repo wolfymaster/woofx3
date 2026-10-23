@@ -1,5 +1,5 @@
-// The `engine.obs.command` request/reply handler: the engine asks, this
-// service carries the request to OBS over the WebSocket it holds, and answers
+// The `engine.obs.command` request/reply handler: the engine asks, the obs
+// adapter carries the request to OBS over the WebSocket it holds, and answers
 // with whether OBS did it.
 //
 // Every failure is an answer rather than a throw or a silence. The engine is
@@ -47,9 +47,9 @@ export function parseObsControlCommand(data: unknown): ParsedObsCommand {
 
 export interface ObsControlOptions {
   /**
-   * How long one command may take in OBS (WOOFX3_OBS_COMMAND_TIMEOUT_MS). Under the host's reply budget on purpose,
-   * so the step fails with this service's reason rather than a bare "no
-   * answer". OBS answers a local request in milliseconds; one that has not
+   * How long one command may take in OBS (WOOFX3_OBS_COMMAND_TIMEOUT_MS).
+   * Under the host's reply budget on purpose, so the step fails with the
+   * adapter's reason rather than a bare "no answer". OBS answers a local request in milliseconds; one that has not
    * answered in this long is hung, and the session is recycled.
    */
   timeoutMs: number;
@@ -300,13 +300,16 @@ function describeObsError(command: ObsControlCommand, err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   if (isNotFound(err)) {
     switch (command.command) {
-      case "switch_scene":
+      case "switch_scene": {
         return `scene ${JSON.stringify(command.sceneName)} does not exist in OBS`;
-      case "set_input_mute":
+      }
+      case "set_input_mute": {
         return `input ${JSON.stringify(command.inputName)} does not exist in OBS`;
+      }
       case "set_source_visibility":
-      case "show_browser_source":
+      case "show_browser_source": {
         break;
+      }
     }
   }
   return `OBS refused ${command.command}: ${message}`;

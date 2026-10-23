@@ -1,6 +1,6 @@
 import type { ApiClient } from "@twurple/api";
 import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
-import type { Clock, Timers } from "../../../host/deps";
+import { type Clock, errorMessage, type Logger, type Timers } from "../../../host/deps";
 
 /**
  * The two membership facts Twitch does not stamp on a chat message.
@@ -75,10 +75,6 @@ export const DEFAULT_ENRICHER_OPTIONS: EnricherOptions = {
   failureTtlMs: 60 * 1000,
   maxEntries: 5000,
 };
-
-interface Logger {
-  warn(message: string, meta?: unknown): void;
-}
 
 /** What expires cached answers and bounds the wait on a miss. */
 export interface EnricherTime {
@@ -209,7 +205,7 @@ export class ChatterMembershipEnricher {
 
   constructor(
     lookup: MembershipLookup,
-    logger: Logger,
+    logger: Pick<Logger, "warn">,
     time: EnricherTime,
     options: EnricherOptions = DEFAULT_ENRICHER_OPTIONS
   ) {
@@ -217,13 +213,13 @@ export class ChatterMembershipEnricher {
       (broadcasterId, userId) => lookup.isFollower(broadcasterId, userId),
       options,
       time,
-      (err) => logger.warn("twitch: follower lookup failed", { err })
+      (err) => logger.warn("twitch: follower lookup failed", { err: errorMessage(err) })
     );
     this.tiers = new LookupCache(
       (broadcasterId, userId) => lookup.subscriberTier(broadcasterId, userId),
       options,
       time,
-      (err) => logger.warn("twitch: subscription lookup failed", { err })
+      (err) => logger.warn("twitch: subscription lookup failed", { err: errorMessage(err) })
     );
   }
 
