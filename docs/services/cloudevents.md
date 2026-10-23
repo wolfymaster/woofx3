@@ -100,7 +100,7 @@ Twitch channel events carry a full CloudEvent envelope. The NATS subject doubles
 | `streamOnline` | `stream.online` | The stream went online |
 | `subscribe` | `channel.subscribe` | A viewer subscribed |
 | `subscriptionGift` | `channel.subscriptionGift` | A subscription was gifted |
-| `adBreakUpcoming` | `channel.ad_break.upcoming` | An ad break is scheduled soon (published by the twitch service; see [Twitch ad breaks](/services/twitch-channel)) |
+| `adBreakUpcoming` | `channel.ad_break.upcoming` | An ad break is scheduled soon (published by the connectors Twitch adapter; see [Twitch ad breaks](/services/twitch-channel)) |
 | `adBreakBegin` | `channel.ad_break.begin` | An ad break started |
 | `adBreakEnd` | `channel.ad_break.end` | An ad break is due to have ended (synthesized, not from Twitch) |
 
@@ -281,7 +281,7 @@ workflow id this run does not have.
 
 ## Twitch API Commands
 
-`TwitchApi` events use a command envelope rather than a CloudEvent. All commands publish to the `twitchapi` NATS subject; the twitch service reads the bare envelope and a CloudEvent carrying it as `data` alike.
+`TwitchApi` events use a command envelope rather than a CloudEvent. All commands publish to the `twitchapi` NATS subject; the connectors Twitch adapter reads the bare envelope and a CloudEvent carrying it as `data` alike.
 
 ```typescript
 // shared/common/typescript/cloudevents/Twitch/commands.ts
@@ -317,7 +317,7 @@ interface CreateMarkerArgs {
 }
 ```
 
-The twitch service serves more commands than these helpers build; the full list, the replies and the rules it checks are in [Twitch channel controls](./twitch-channel.md).
+The connectors Twitch adapter serves more commands than these helpers build; the full list, the replies and the rules it checks are in [Twitch channel controls](./twitch-channel.md).
 
 ### Usage
 
