@@ -3,8 +3,27 @@
 import type { Adapter, AdapterContext, AdapterManifest, EgressHandlers, ServedSubject, Unavailable } from "./adapter";
 import type { AdapterId } from "./adapter-ids";
 import type { Clock, IdSource, Logger, LogMetadata, RandomSource, TimerHandle, Timers } from "./deps";
-import type { LinkState } from "./link-readers";
+import {
+  type InstalledModule,
+  type LinkReaderRegistry,
+  type LinkState,
+  type LinkStore,
+  linkReaders,
+} from "./link-readers";
 import { type BusClient, type BusHandler, type BusMessage, type BusSubscription, subjectCovered } from "./scoped-bus";
+
+/** The shipped link readers on an engine with WOOFX3_OBS_HOST unset. */
+export function shippedLinkReaders(): LinkReaderRegistry {
+  return linkReaders({ obsHostExplicit: false });
+}
+
+/** A link store over fixed settings and installed modules; a missing setting reads as null. */
+export function fixedLinkStore(settings: Record<string, string | null>, modules: InstalledModule[] = []): LinkStore {
+  return {
+    getSetting: async (key) => settings[key] ?? null,
+    installedModules: async () => modules,
+  };
+}
 
 /** Lets every pending promise callback run. */
 export async function flush(): Promise<void> {

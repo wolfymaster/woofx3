@@ -8,11 +8,35 @@ import {
 import type { AdapterId } from "./adapter-ids";
 import { bounded } from "./bounded";
 import { type Clock, errorMessage, type Logger, type TimerHandle, type Timers } from "./deps";
-import type { LinkReaderRegistry, LinkState, SettingsReader } from "./link-readers";
+import type { LinkReaderRegistry, LinkReading, LinkState, LinkStore } from "./link-readers";
 import type { BusMessage, ScopedBus } from "./scoped-bus";
 
-/** The settings events the watcher reacts to. The host scope must be allowed to subscribe to both. */
+/** The integration settings events the watcher reacts to, routed by the integration they name. */
 export const SETTINGS_SUBJECTS = [INTEGRATION_ENABLED_UPDATED_SUBJECT, INTEGRATION_TOKEN_UPDATED_SUBJECT] as const;
+
+/** Every subject the watcher subscribes to: the settings events, then each reader's own events once each. */
+export function watchedSubjects(readers: LinkReaderRegistry): string[] {
+  return [...SETTINGS_SUBJECTS, ...readerEventSubjects(readers)];
+}
+
+/**
+ * The readers' own events, once each. A reader names a settings event through
+ * `watches`, never `events`: that event is routed by the integration it names.
+ */
+function readerEventSubjects(readers: LinkReaderRegistry): string[] {
+  const subjects = new Set<string>();
+  for (const reader of Object.values(readers)) {
+    for (const subject of reader.events) {
+      if (SETTINGS_SUBJECTS.some((settings) => settings === subject)) {
+        throw new Error(
+          `a link reader lists the settings event "${subject}" in events; name its integration in watches`
+        );
+      }
+      subjects.add(subject);
+    }
+  }
+  return [...subjects];
+}
 
 /** Where new link states go: the supervisor. */
 export interface LinkSink {
@@ -22,7 +46,7 @@ export interface LinkSink {
 export interface SettingsWatcherDeps {
   adapters: readonly AdapterId[];
   readers: LinkReaderRegistry;
-  settings: SettingsReader;
+  store: LinkStore;
   sink: LinkSink;
   scope: ScopedBus;
   clock: Clock;
@@ -41,8 +65,9 @@ interface PendingPass {
 
 /**
  * Keeps the supervisor fed with each adapter's link state. It reads every
- * link at start, again for the adapters a settings event names, and all of
- * them on the backstop interval in case an event was missed. Passes run one
+ * link at start, again for the adapters a settings event names or whose
+ * reader lists the event's subject, and all of them on the backstop interval
+ * in case an event was missed. Passes run one
  * at a time and later requests merge into the next one, so an older read
  * never lands after a newer one.
  */
@@ -54,13 +79,21 @@ export class SettingsWatcher {
   private lastPassAt: number | undefined;
   /** The flag reading already logged per adapter, so a missing or bad flag is logged once, not every pass. */
   private readonly flagLogged = new Map<AdapterId, string>();
+  /** The ignored records each adapter's last reading named, so each is logged once while it stays. */
+  private readonly ignoredLogged = new Map<AdapterId, ReadonlySet<string>>();
 
   constructor(private readonly deps: SettingsWatcherDeps) {}
 
-  /** Subscribes to the settings events, runs the first pass and arms the backstop. */
+  /** Subscribes to the settings and reader events, runs the first pass and arms the backstop. */
   async start(): Promise<void> {
     for (const subject of SETTINGS_SUBJECTS) {
       await this.deps.scope.subscribe(subject, (msg) => this.onSettingsEvent(msg));
+    }
+    for (const subject of readerEventSubjects(this.deps.readers)) {
+      const named = this.deps.adapters.filter((id) => this.deps.readers[id].events.includes(subject));
+      if (named.length > 0) {
+        await this.deps.scope.subscribe(subject, () => this.request(named, named));
+      }
     }
     this.backstop = this.deps.timers.setInterval(() => {
       this.request(this.deps.adapters, []);
@@ -139,7 +172,7 @@ export class SettingsWatcher {
     await Promise.all(
       [...pass.read].map(async (id) => {
         const outcome = await bounded(
-          () => this.deps.readers[id].read(this.deps.settings),
+          () => this.deps.readers[id].read(this.deps.store),
           this.deps.readTimeoutMs,
           this.deps.timers
         );
@@ -147,6 +180,7 @@ export class SettingsWatcher {
         switch (outcome.kind) {
           case "done":
             this.logFlag(id, outcome.value.flag);
+            this.logIgnored(id, outcome.value);
             links.set(id, { connected: outcome.value.connected, enabled: outcome.value.enabled });
             return;
           case "failed":
@@ -175,7 +209,20 @@ export class SettingsWatcher {
     });
   }
 
-  private logFlag(id: AdapterId, flag: IntegrationEnabled): void {
+  private logIgnored(id: AdapterId, reading: LinkReading): void {
+    const seen = this.ignoredLogged.get(id);
+    for (const record of reading.ignored) {
+      if (seen?.has(record) !== true) {
+        this.deps.logger.warn("link read ignored a stored record", { adapter: id, record });
+      }
+    }
+    this.ignoredLogged.set(id, new Set(reading.ignored));
+  }
+
+  private logFlag(id: AdapterId, flag: IntegrationEnabled | null): void {
+    if (flag === null) {
+      return;
+    }
     const seen = flag.kind === "invalid" ? `invalid:${flag.raw}` : flag.kind;
     if (this.flagLogged.get(id) === seen) {
       return;

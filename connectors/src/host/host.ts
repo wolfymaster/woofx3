@@ -12,10 +12,10 @@ import { bounded } from "./bounded";
 import { type Clock, errorMessage, type IdSource, type Logger, type RandomSource, type Timers } from "./deps";
 import type { HealthSnapshot } from "./health";
 import { HostRequests } from "./host-requests";
-import type { LinkReaderRegistry, SettingsReader } from "./link-readers";
+import type { LinkReaderRegistry, LinkStore } from "./link-readers";
 import { type BusClient, ScopeCounters, ScopedBus, subjectCovered } from "./scoped-bus";
 import { ServedSubjects } from "./served-subjects";
-import { SETTINGS_SUBJECTS, SettingsWatcher } from "./settings-watcher";
+import { SettingsWatcher, watchedSubjects } from "./settings-watcher";
 import { Supervisor } from "./supervisor";
 
 /** The scope name of the host's own subscriptions, in refusals and log lines. */
@@ -34,7 +34,7 @@ export interface HostDeps {
   dbProxy: DbProxyClientConfig;
   bus: BusClient;
   busConnected: () => boolean;
-  settings: SettingsReader;
+  linkStore: LinkStore;
   adapters: ReadonlyMap<AdapterId, Adapter>;
   hostStates: ReadonlyMap<AdapterId, unknown>;
   readers: LinkReaderRegistry;
@@ -115,7 +115,7 @@ export class Host {
       client: deps.bus,
       grants: {
         publishes: [],
-        subscribes: [...SETTINGS_SUBJECTS, SessionEventType.SessionStarted, ...this.servedSubjects()],
+        subscribes: [...watchedSubjects(deps.readers), SessionEventType.SessionStarted, ...this.servedSubjects()],
         requests: [],
       },
       limits: deps.config.subscriptionLimits,
@@ -133,7 +133,7 @@ export class Host {
     this.watcher = new SettingsWatcher({
       adapters: this.supervisor.adapterIds,
       readers: deps.readers,
-      settings: deps.settings,
+      store: deps.linkStore,
       sink: this.supervisor,
       scope: this.scope,
       clock: deps.clock,

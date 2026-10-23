@@ -21,6 +21,7 @@ import { moduleOAuthRoutes } from "./module-oauth";
 import { modulesRoutes } from "./modules";
 import { obsRoutes } from "./obs";
 import { overlayTokenRoutes } from "./overlay-tokens";
+import { platformRoutes } from "./platform";
 import { relayRoutes } from "./relay";
 import { resourcesRoutes } from "./resources";
 import { scenesRoutes } from "./scenes";
@@ -70,6 +71,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof configBundlesRoutes &
   typeof moduleOAuthRoutes &
   typeof relayRoutes &
+  typeof platformRoutes &
   typeof viewerFactsRoutes &
   typeof twitchRoutes &
   typeof uiSettingsRoutes &
@@ -137,6 +139,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(configBundlesRoutes),
     instrumentRoutes(moduleOAuthRoutes),
     instrumentRoutes(relayRoutes),
+    instrumentRoutes(platformRoutes),
     instrumentRoutes(viewerFactsRoutes),
     instrumentRoutes(twitchRoutes),
     instrumentRoutes(uiSettingsRoutes),

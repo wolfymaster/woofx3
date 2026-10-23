@@ -13,7 +13,7 @@ import { RUNTIME_HEARTBEAT_INTERVAL_MS, RUNTIME_LIVENESS_INTERVAL_MS } from "./c
 import { adapterRegistry } from "./host/adapters";
 import ConnectorsApplication from "./host/application";
 import { systemClock, systemIds, systemRandom, systemTimers } from "./host/deps";
-import { LINK_READERS } from "./host/link-readers";
+import { linkReaders } from "./host/link-readers";
 import DbProxyService from "./services/db-proxy";
 import MessageBusService from "./services/message-bus";
 
@@ -30,8 +30,8 @@ const bus = await MessageBus.createMessageBus({ name: "connectors", ...config.bu
 const application = new ConnectorsApplication({
   config,
   logger,
-  adapters: adapterRegistry({ config, clock: systemClock, ids: systemIds }),
-  readers: LINK_READERS,
+  adapters: adapterRegistry({ config, clock: systemClock, ids: systemIds, random: systemRandom, timers: systemTimers }),
+  readers: linkReaders({ obsHostExplicit: config.obs.hostExplicit }),
   clock: systemClock,
   random: systemRandom,
   ids: systemIds,

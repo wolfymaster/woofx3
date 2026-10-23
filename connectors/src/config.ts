@@ -3,15 +3,17 @@ import { type BusConfig, BusEnvSchema, busConfig } from "./config/bus";
 import { type ChatConfig, ChatEnvSchema, chatConfig } from "./config/chat";
 import { type GatewayConfig, GatewayEnvSchema, gatewayConfig } from "./config/gateway";
 import { type HostConfig, HostEnvSchema, hostConfig, hostConfigProblems } from "./config/host";
+import { type ObsConfig, ObsEnvSchema, obsConfig, obsConfigProblems } from "./config/obs";
 import { type TwitchConfig, TwitchEnvSchema, twitchConfig } from "./config/twitch";
 
 export const ConnectorsEnvSchema = BusEnvSchema.extend(HostEnvSchema.shape)
   .extend(GatewayEnvSchema.shape)
   .extend(TwitchEnvSchema.shape)
   .extend(ChatEnvSchema.shape)
+  .extend(ObsEnvSchema.shape)
   .extend({ woofx3RootPath: z.string().optional() })
   .superRefine((env, ctx) => {
-    for (const message of hostConfigProblems(env)) {
+    for (const message of [...hostConfigProblems(env), ...obsConfigProblems(env)]) {
       ctx.addIssue({ code: "custom", message });
     }
   });
@@ -27,6 +29,7 @@ export interface ConnectorsConfig {
   gateway: GatewayConfig;
   twitch: TwitchConfig;
   chat: ChatConfig;
+  obs: ObsConfig;
   /** Logs go under <rootPath>/logs. */
   rootPath: string | undefined;
 }
@@ -42,6 +45,7 @@ export function connectorsConfig(env: Record<string, unknown>): ConnectorsConfig
     gateway: gatewayConfig(parsed),
     twitch: twitchConfig(parsed),
     chat: chatConfig(parsed),
+    obs: obsConfig(parsed),
     rootPath: parsed.woofx3RootPath,
   };
 }
