@@ -19,7 +19,7 @@ export interface ChatServiceDeps {
   db?: DispatcherDb;
   bus: BusClient;
   limits: SubscriptionLimits;
-  /** How long stop waits for lines still being handled. */
+  /** How long drain waits for lines still being handled. */
   drainMs: number;
   clock: Clock;
   random: RandomSource;
@@ -37,8 +37,9 @@ export interface ChatSnapshot extends DispatcherCounters {
  * Runs the chat dispatcher inside the host: it gives the dispatcher its own
  * bus scope (the dispatcher's grants and nothing more), the db-proxy client
  * and the built-in commands. The host starts it once the platform gateway
- * answers and stops it before the adapters, so a command never runs against
- * a gateway that is going away.
+ * answers. It stops in two steps around the adapters: `drain` stops reading
+ * lines and lets those in flight finish while the gateway and the adapters
+ * still answer, and `close` ends the scope once they are gone.
  */
 export class ChatService {
   private readonly counters = new ScopeCounters();
@@ -79,33 +80,46 @@ export class ChatService {
     });
   }
 
-  /** Throws when the first command listing fails; the scope is closed again so a retry starts clean. */
+  /**
+   * Throws when the first command listing fails. The service is then closed
+   * for good; the caller builds a new Host to try again.
+   */
   async start(): Promise<void> {
     try {
       await this.dispatcher.start();
     } catch (error) {
-      await this.stop();
+      await this.drain();
+      await this.close();
       throw error;
     }
   }
 
   /**
    * Stops reloading and reading lines at once, then waits at most `drainMs`
-   * for lines still being handled. A handler waiting on a platform answers
-   * when that wait ends, so the wait is bounded rather than tied to the
-   * adapters, and the caller can stop them while this drains.
+   * for lines still being handled. The scope stays open meanwhile, so a line
+   * can still publish, ask twitchapi and send its reply through a gateway
+   * the caller keeps running until this returns.
    */
-  async stop(): Promise<void> {
-    const [, closed] = await Promise.all([
+  async drain(): Promise<void> {
+    const [, drained] = await Promise.all([
       this.dispatcher.stop(),
-      bounded(() => this.scope.closeAll(), this.deps.drainMs, this.deps.timers),
+      bounded(() => this.scope.drainSubscriptions(), this.deps.drainMs, this.deps.timers),
     ]);
-    if (closed.kind === "timeout") {
+    if (drained.kind === "timeout") {
       this.deps.logger.error("chat lines still being handled past the stop deadline; leaving them", {
         drainMs: this.deps.drainMs,
       });
-    } else if (closed.kind === "failed") {
-      this.deps.logger.error("closing the chat bus scope failed", { error: errorMessage(closed.error) });
+    } else if (drained.kind === "failed") {
+      this.deps.logger.error("draining the chat bus scope failed", { error: errorMessage(drained.error) });
+    }
+  }
+
+  /** Ends the scope: every later publish or request is refused. Call after drain. */
+  async close(): Promise<void> {
+    try {
+      await this.scope.closeAll();
+    } catch (error) {
+      this.deps.logger.error("closing the chat bus scope failed", { error: errorMessage(error) });
     }
   }
 

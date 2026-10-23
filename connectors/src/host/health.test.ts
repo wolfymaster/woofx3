@@ -80,6 +80,12 @@ describe("health", () => {
       outcomes: {},
       idempotency: { replayed: 0, coalesced: 0, mismatched: 0, held: 0 },
     });
+    expect(body.counters.chat).toMatchObject({
+      commands: expect.any(Object),
+      lines: expect.any(Object),
+      replies: { delivered: 0, failed: 0 },
+      bus: expect.any(Object),
+    });
   });
 
   test("a host with no adapters answers 200", async () => {

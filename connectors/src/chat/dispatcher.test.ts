@@ -14,6 +14,7 @@ const CONFIG: ChatConfig = {
   groups: { lastSeenCapacity: CHAT_DEFAULTS.groupLastSeenCapacity, catalogTtlMs: CHAT_DEFAULTS.groupCatalogTtlMs },
   store: { reloadDebounceMs: CHAT_DEFAULTS.reloadDebounceMs, reloadBackstopMs: CHAT_DEFAULTS.reloadBackstopMs },
   twitchApi: { timeoutMs: CHAT_DEFAULTS.twitchApiTimeoutMs },
+  drainMs: CHAT_DEFAULTS.drainMs,
   replyTimeoutMs: 12_000,
 };
 

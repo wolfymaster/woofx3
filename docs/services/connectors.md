@@ -451,7 +451,7 @@ includes `twitchapi` among its requests.
 | `WOOFX3_CONNECTORS_DB_PROXY_TIMEOUT_MS` | `2000` | Every db-proxy call (the startup ping, each link read) is aborted after this. |
 | `WOOFX3_CONNECTORS_ADAPTER_CONCURRENCY` | `16` | Handlers one subscription runs at once. |
 | `WOOFX3_CONNECTORS_ADAPTER_QUEUE_CAP` | `256` | Messages one subscription queues behind them. |
-| `WOOFX3_CONNECTORS_SHUTDOWN_DEADLINE_MS` | `15000` | Whole-process shutdown before exit code 1. Must exceed the db-proxy timeout plus the larger of the stop deadline and the longest served budget, the platform gateway's included. |
+| `WOOFX3_CONNECTORS_SHUTDOWN_DEADLINE_MS` | `15000` | Whole-process shutdown before exit code 1. Must exceed the db-proxy timeout plus the chat drain plus the larger of the stop deadline and the longest served budget, the platform gateway's included. |
 
 The platform gateway's own settings (`WOOFX3_CONNECTORS_GATEWAY_*`) are listed
 in [Platform gateway contract](./platform-gateway.md#configuration-and-health).
@@ -480,6 +480,7 @@ The chat command dispatcher reads:
 | `WOOFX3_CONNECTORS_DISPATCHER_GROUP_CATALOG_TTL_MS` | `300000` | How long the built-in group catalog is used before it is read again. |
 | `WOOFX3_CONNECTORS_DISPATCHER_RELOAD_DEBOUNCE_MS` | `250` | How long a command event waits for more before the commands reload. |
 | `WOOFX3_CONNECTORS_DISPATCHER_RELOAD_BACKSTOP_MS` | `300000` | How often the commands reload with no event. |
+| `WOOFX3_CONNECTORS_DISPATCHER_DRAIN_MS` | `2000` | How long shutdown waits for chat lines still being handled before abandoning them. |
 | `WOOFX3_CONNECTORS_DISPATCHER_TWITCH_API_TIMEOUT_MS` | `10000` | How long a built-in Twitch command waits for the Twitch adapter's answer. Must exceed the adapter's 9000 ms served budget, or slow calls are reported as unknown. |
 
 The host also reads the bus settings (`WOOFX3_MESSAGEBUS_URL`, `_JWT`, `_NKEY`,
@@ -552,11 +553,15 @@ Any other path or method answers `404` with
 
 SIGTERM, SIGINT and SIGBREAK (Windows) start one graceful shutdown through the
 shared `installShutdown`: the health server closes, and the watcher stops once
-any read in flight ends (at most the db-proxy timeout). Then, together, the
-chat dispatcher stops reading lines, every adapter is stopped in parallel under
-its stop deadline and the host's subscriptions close; held requests are
-answered as their adapters stop. The dispatcher waits for lines still being
-handled, and the close waits at most the larger of the stop deadline, the longest
-served budget, the platform gateway reply timeout and the Twitch API timeout. The host refuses to start when the shutdown deadline does not cover
-both steps. A second signal, or `WOOFX3_CONNECTORS_SHUTDOWN_DEADLINE_MS`
+any read in flight ends (at most the db-proxy timeout). Then the chat
+dispatcher stops reading lines and waits at most
+`WOOFX3_CONNECTORS_DISPATCHER_DRAIN_MS` for those still being handled; the
+gateway and the adapters still answer meanwhile, so those lines get their
+replies. Then, together, every adapter is stopped in parallel under its stop
+deadline and the host's subscriptions close; held requests are answered as
+their adapters stop, and the close waits at most the larger of the stop
+deadline and the longest served budget. Lines still running at the end of their
+wait are abandoned and logged. The host refuses to start when the shutdown
+deadline does not cover all three steps. A second signal, or
+`WOOFX3_CONNECTORS_SHUTDOWN_DEADLINE_MS`
 elapsing, exits with code 1.
