@@ -1,4 +1,5 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
+import { RELAY_API_REQUEST_TIMEOUT_MS, RELAY_CONFIG_SET_BUDGET_MS } from "@woofx3/common/cloudevents/Relay/relay";
 import { parseRequestGuardPolicy, type RequestGuardPolicy, resolveExposure } from "@woofx3/common/http/request-guard";
 import { loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
 import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
@@ -277,17 +278,15 @@ export function resolveAuthCacheTtlMs(value: unknown): number {
 }
 
 /**
- * Above the companion gateway's 4_500ms budget for storing a relay
- * configuration (RELAY_CONFIG_SET_DEFAULTS in
- * connectors/src/companion/relay-config-requests.ts), so its answer, a
- * failure included, arrives before the api gives up.
+ * Above the companion gateway's budget for storing a relay configuration, so
+ * its answer, a failure included, arrives before the api gives up.
  */
-export const DEFAULT_COMPANION_REQUEST_TIMEOUT_MS = 5_000;
+export const DEFAULT_COMPANION_REQUEST_TIMEOUT_MS = RELAY_API_REQUEST_TIMEOUT_MS;
 
 /**
- * `WOOFX3_COMPANION_REQUEST_TIMEOUT_MS` as a positive whole number of
- * milliseconds, or DEFAULT_COMPANION_REQUEST_TIMEOUT_MS when unset or blank.
- * Anything else stops startup.
+ * `WOOFX3_COMPANION_REQUEST_TIMEOUT_MS` as a whole number of milliseconds
+ * above RELAY_CONFIG_SET_BUDGET_MS, or DEFAULT_COMPANION_REQUEST_TIMEOUT_MS
+ * when unset or blank. Anything else stops startup.
  */
 export function resolveCompanionRequestTimeoutMs(value: unknown): number {
   const text = nonBlank(value);
@@ -295,9 +294,9 @@ export function resolveCompanionRequestTimeoutMs(value: unknown): number {
     return DEFAULT_COMPANION_REQUEST_TIMEOUT_MS;
   }
   const timeoutMs = Number(text);
-  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= RELAY_CONFIG_SET_BUDGET_MS) {
     throw new Error(
-      `Config error: woofx3CompanionRequestTimeoutMs (WOOFX3_COMPANION_REQUEST_TIMEOUT_MS) must be a positive integer, got ${text}`
+      `Config error: woofx3CompanionRequestTimeoutMs (WOOFX3_COMPANION_REQUEST_TIMEOUT_MS) must be an integer above the companion gateway's ${RELAY_CONFIG_SET_BUDGET_MS}ms budget, got ${text}`
     );
   }
   return timeoutMs;

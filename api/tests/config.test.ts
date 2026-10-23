@@ -251,7 +251,7 @@ describe("companion request timeout", () => {
     ["", DEFAULT_COMPANION_REQUEST_TIMEOUT_MS],
     ["  ", DEFAULT_COMPANION_REQUEST_TIMEOUT_MS],
     [6_000, 6_000],
-    ["250", 250],
+    ["4501", 4_501],
   ];
   for (const [value, expected] of valid) {
     test(`${JSON.stringify(value)} resolves to ${expected}`, () => {
@@ -259,7 +259,7 @@ describe("companion request timeout", () => {
     });
   }
 
-  for (const value of ["0", "-5", "1.5", "soon", 0]) {
+  for (const value of ["0", "-5", "1.5", "soon", 0, "250", "4500", 4_500]) {
     test(`${JSON.stringify(value)} stops startup`, () => {
       expect(() => resolveCompanionRequestTimeoutMs(value)).toThrow("WOOFX3_COMPANION_REQUEST_TIMEOUT_MS");
     });
