@@ -124,7 +124,7 @@ type RuntimeConfig struct {
 ::: code-group
 
 ```typescript [TypeScript]
-// woofwoofwoof/src/woofwoofwoof.ts
+// src/server.ts
 import { createRuntime, createApplication } from "@woofx3/common/runtime";
 
 const app = new MyApplication({ /* initial context */ });
@@ -336,7 +336,7 @@ The runtime validates configuration against a Zod schema (TypeScript) or schema 
 ::: code-group
 
 ```typescript [TypeScript]
-// woofwoofwoof/src/config.ts
+// src/config.ts
 import { z } from "zod";
 
 export const WoofEnvSchema = z.object({
@@ -410,7 +410,7 @@ The runtime handles graceful shutdown on:
 ::: code-group
 
 ```typescript [TypeScript]
-// woofwoofwoof/src/woofwoofwoof.ts
+// src/server.ts
 async function gracefulShutdown(signal: string): Promise<void> {
   console.log(`Received ${signal}, starting graceful shutdown...`);
   try {

@@ -121,8 +121,9 @@ themselves.
 
 ## Chatbot built-ins
 
-woofwoofwoof registers these commands itself. Each waits for the twitch
-service's answer and says the outcome in chat. When nothing answers in time
+The chat command dispatcher in connectors registers these commands itself
+(see [Connectors](./connectors.md#chat-command-dispatcher)). Each waits for the Twitch
+adapter's answer and says the outcome in chat. When nothing answers in time
 the reply says the outcome is unknown, not that it failed: the change may
 still land.
 
@@ -497,7 +498,7 @@ holds it decides how the token is renewed:
   the dashboard that sent it. When it is about to expire, or Twitch refuses
   it, the api service sends that dashboard a `twitch.token.requested` request
   (`TwitchTokenSource`, `api/src/twitch-token-source.ts`) and stores the
-  access token it answers with. The twitch service and woofwoofwoof ask the
+  access token it answers with. The connectors service asks the
   api service on the `engine.twitch.token` NATS subject
   (`DashboardAuthProvider`, `shared/clients/typescript/twitch`), and need no
   Twitch app credentials of their own.
@@ -510,8 +511,8 @@ holds it decides how the token is renewed:
   link would be lost. So the api service alone refreshes it
   (`TwitchTokenSource.publicToken`), with the client id and no secret, and
   writes the new access and refresh tokens together, as one `twitch_token`
-  value, before it hands the access token out. The twitch service and
-  woofwoofwoof ask the api service for it on `engine.twitch.token`, exactly as
+  value, before it hands the access token out. The connectors service
+  asks the api service for it on `engine.twitch.token`, exactly as
   for a dashboard's token. When Twitch refuses the refresh token, every ask
   answers "link Twitch again", and the api service does not try that refresh
   token again; the twitch service then cannot connect, and the connectors host
