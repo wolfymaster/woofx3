@@ -1,3 +1,4 @@
+import { HEALTH_CHECK_INTERVAL_MS } from "@woofx3/common/runtime";
 import { z } from "zod";
 
 /**
@@ -19,7 +20,8 @@ export const HOST_DEFAULTS = {
   /**
    * Every db-proxy call (the startup ping and each link read) is aborted after
    * this long. Below the backstop interval, so a hung db-proxy costs one pass
-   * a warning instead of stalling every pass after it.
+   * a warning instead of stalling every pass after it, and below the
+   * runtime's health check interval, so one health ping ends before the next.
    */
   dbProxyTimeoutMs: 2_000,
   /**
@@ -88,6 +90,13 @@ export function hostConfigProblems(env: HostEnv): string[] {
   if (env.woofx3ConnectorsBackoffBaseMs > env.woofx3ConnectorsBackoffMaxMs) {
     problems.push(
       `woofx3ConnectorsBackoffBaseMs (${env.woofx3ConnectorsBackoffBaseMs}) must not exceed woofx3ConnectorsBackoffMaxMs (${env.woofx3ConnectorsBackoffMaxMs})`
+    );
+  }
+  // The runtime pings db-proxy on every health check without waiting for the
+  // last one, so a ping that may outlast the interval lets pings pile up.
+  if (env.woofx3ConnectorsDbProxyTimeoutMs >= HEALTH_CHECK_INTERVAL_MS) {
+    problems.push(
+      `woofx3ConnectorsDbProxyTimeoutMs (${env.woofx3ConnectorsDbProxyTimeoutMs}) must be below the runtime health check interval (${HEALTH_CHECK_INTERVAL_MS}ms)`
     );
   }
   // Shutdown first waits out a link read in flight, then stops every adapter

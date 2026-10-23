@@ -529,7 +529,7 @@ includes `twitchapi` among its requests.
 | `WOOFX3_CONNECTORS_PARK_AFTER_FAILURES` | `5` | Failures that park an adapter... |
 | `WOOFX3_CONNECTORS_PARK_WINDOW_MS` | `600000` | ...within this window. |
 | `WOOFX3_CONNECTORS_STOP_DEADLINE_MS` | `10000` | How long one adapter's stop may take, abort and bus close included. |
-| `WOOFX3_CONNECTORS_DB_PROXY_TIMEOUT_MS` | `2000` | Every db-proxy call (the startup ping, each link read) is aborted after this. |
+| `WOOFX3_CONNECTORS_DB_PROXY_TIMEOUT_MS` | `2000` | Every db-proxy call (the startup ping, each health ping, each link read) is aborted after this. Must be below the runtime's 5 s health check interval. |
 | `WOOFX3_CONNECTORS_DB_PROXY_HEALTH_FAILURES` | `3` | Failed db-proxy pings in a row before the runtime's health check fails and reconnects every service. |
 | `WOOFX3_CONNECTORS_ADAPTER_CONCURRENCY` | `16` | Handlers one subscription runs at once. |
 | `WOOFX3_CONNECTORS_ADAPTER_QUEUE_CAP` | `256` | Messages one subscription queues behind them. |
