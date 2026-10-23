@@ -8,18 +8,18 @@
 // streamer can act on -- the reason becomes the step's error in the run log.
 
 import type { ObsControlCommand, ObsControlReply } from "@woofx3/common/cloudevents/Obs/commands";
-import type { Logger } from "@woofx3/common/runtime";
 import type { OBSRequestTypes, OBSResponseTypes } from "obs-websocket-js";
 import { z } from "zod";
+import type { Logger } from "../../host/deps";
 
-/** The slice of `obs/manager.ts` a command needs; structural so tests can fake OBS. */
+/** The slice of `manager.ts` a command needs; structural so tests can fake OBS. */
 export interface ObsControlClient {
   request<T extends keyof OBSRequestTypes>(cmd: T, args?: OBSRequestTypes[T]): Promise<OBSResponseTypes[T]>;
 }
 
 /**
  * The answer while no OBS session is open. "Retrying" is always true while
- * this service runs: `obs/connection.ts` keeps trying until it is stopped.
+ * the adapter runs: `connection.ts` keeps trying until it is stopped.
  */
 export const OBS_NOT_CONNECTED = "OBS is not connected (retrying)";
 
@@ -380,45 +380,4 @@ export async function handleObsControlRequest(
     logger.warn("engine.obs.command: failed", { command: parsed.command.command, error: reply.error });
   }
   return reply;
-}
-
-/** The slice of a NATS message `answerObsCommand` needs. */
-export interface ObsCommandMessage {
-  reply?: string;
-  data: Uint8Array;
-  respond(data: Uint8Array): boolean;
-}
-
-/** The slice of `obs/connection.ts` `answerObsCommand` needs. */
-export interface ObsSessionSource {
-  current(): ObsControlClient | null;
-  recycle(reason: string): void;
-}
-
-/**
- * Answer one `engine.obs.command` message.
- *
- * A message with no reply subject is refused before anything reaches OBS.
- * The one legitimate sender, barkloader's `ctx.obs` extension, sends a request and
- * waits for the answer, so a bare publish on this subject comes from something
- * that is not the engine, and OBS control is not something anything else on
- * the bus may drive.
- */
-export async function answerObsCommand(obs: ObsSessionSource, msg: ObsCommandMessage, logger: Logger): Promise<void> {
-  if (!msg.reply) {
-    logger.warn("engine.obs.command: refused a message with no reply subject; OBS control is request/reply only");
-    return;
-  }
-  try {
-    const reply = await handleObsControlRequest(obs.current(), msg.data, logger, {
-      onTimeout: () => obs.recycle("an OBS request timed out"),
-    });
-    msg.respond(new TextEncoder().encode(JSON.stringify(reply)));
-  } catch (err) {
-    // handleObsControlRequest answers every failure it knows of; this is the
-    // one it does not, and the requester is still owed an answer.
-    const error = err instanceof Error ? err.message : String(err);
-    logger.error("engine.obs.command: handler failed", { error });
-    msg.respond(new TextEncoder().encode(JSON.stringify({ ok: false, error: `scene manager error: ${error}` })));
-  }
 }

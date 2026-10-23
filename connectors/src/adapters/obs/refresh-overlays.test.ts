@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { isOverlayUrl, type ObsRequester, refreshOverlayBrowserSources } from "../../src/obs/refresh-overlays";
+import { isOverlayUrl, type ObsRequester, refreshOverlayBrowserSources } from "./refresh-overlays";
 
 const logger = {
   info: () => {},

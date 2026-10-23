@@ -139,15 +139,13 @@ export class DbClient {
     return resp.module?.manifest || null;
   }
 
-  // A module's settings, read for the OBS module's connection details
-  // (endpoints/dialer.ts). A secret's value is never in these records.
+  // A module's settings. A secret's value is never in these records.
   async listModuleSettings(moduleId: string): Promise<module_setting.ModuleSettingRecord[]> {
     const resp = await module_setting.ListModuleSettings({ moduleId }, this.config);
     return resp.settings;
   }
 
-  // Opens a module's secret settings. sceneManager reads only the OBS
-  // module's WebSocket password, and never logs or forwards it.
+  // Opens a module's secret settings; callers must never log or forward them.
   async getModuleSecretValues(moduleId: string): Promise<Record<string, string>> {
     const resp = await module_setting.GetModuleSecretValues({ moduleId }, this.config);
     const values: Record<string, string> = {};

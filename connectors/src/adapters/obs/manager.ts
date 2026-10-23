@@ -14,7 +14,7 @@ const OBS_CONNECT_TIMEOUT_MS = 3_000;
 
 /**
  * Open one OBS WebSocket session, or throw. Retrying
- * is the caller's business (see `obs/connection.ts`).
+ * is the caller's business (see `connection.ts`).
  *
  * The connect is raced against a timeout because obs-websocket-js does
  * not surface one for a stalled TCP handshake.

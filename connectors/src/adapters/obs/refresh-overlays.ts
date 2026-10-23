@@ -8,21 +8,21 @@
 // browser sources persist across sceneManager's lifetime and survive
 // its restarts. OBS *is* the registry.
 //
-// So when a refresh is requested (see obs/service.ts) we walk OBS's inputs,
+// So when a refresh is requested (see service.ts) we walk OBS's inputs,
 // find the browser sources pointed at our own overlay routes, and refresh
 // them. Those overlays come back immediately instead of waiting out a
 // backoff. The client-side
-// reconnect loop (public/scene-manager/event-source.ts) remains the
+// reconnect loop (sceneManager/public/scene-manager/event-source.ts) remains the
 // fallback for every case this can't cover: OBS not running, OBS
 // started after us, a scene open in a plain browser tab, or a drop that
 // isn't a restart.
 
-import type { Logger } from "@woofx3/common/runtime";
+import type { Logger } from "../../host/deps";
 
 const BROWSER_SOURCE_KIND = "browser_source";
 const REFRESH_BUTTON = "refreshnocache";
 
-/** The slice of `obs/manager.ts` this needs. Keeping it structural
+/** The slice of `manager.ts` this needs. Keeping it structural
  *  means the refresh logic is testable without an OBS connection. */
 export interface ObsRequester {
   request(cmd: "GetInputList", args: Record<string, never>): Promise<{ inputs: unknown[] }>;

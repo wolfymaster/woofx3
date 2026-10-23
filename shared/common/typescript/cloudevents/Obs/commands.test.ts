@@ -41,6 +41,8 @@ describe("parseObsBrowserSourceRefreshReply", () => {
     ["accepted without a bootId", { status: "accepted" }, false],
     ["accepted with an over-long bootId", { status: "accepted", bootId: "a".repeat(65) }, false],
     ["invalid without an error", { status: "invalid" }, false],
+    ["unavailable", { status: "unavailable", error: "busy" }, true],
+    ["unavailable without an error", { status: "unavailable" }, false],
     ["an unknown status", { status: "later" }, false],
     ["a non-object", "accepted", false],
   ];

@@ -5,7 +5,7 @@
 // - The client must offer `obswebsocket.json` or `obswebsocket.msgpack`, and
 //   the server must choose it; obs-websocket-js refuses a connection without
 //   it. Under Bun, `import "obs-websocket-js"` resolves to the msgpack build,
-//   so sceneManager offers `obswebsocket.msgpack` and every message is a
+//   so the adapter offers `obswebsocket.msgpack` and every message is a
 //   binary msgpack frame. This server answers in whichever was offered.
 // - op 0 Hello from the server, with `authentication: { challenge, salt }`
 //   when a password is set.

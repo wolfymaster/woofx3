@@ -313,7 +313,7 @@ nats.publish(subject, payload);
 
 ### OBS control (`engine.obs.command`)
 
-barkloader's `ctx.obs` host extension controls OBS through the scene manager
+barkloader's `ctx.obs` host extension controls OBS through the connectors host's obs adapter
 with a request/reply CloudEvent on `engine.obs.command`, on behalf of module
 code holding the `obs.control` permission. Every request is answered with `{ ok, error? }`. `ctx.obs.listScenes` and its siblings read OBS
 over the separate, read-only `engine.obs.options`. See [OBS control](./obs.md).

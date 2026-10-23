@@ -1,15 +1,16 @@
 # OBS control
 
 The engine holds the OBS connection; a module decides when to use it. The
-scene manager holds the one OBS WebSocket connection. Module code reaches it
-through the `ctx.obs` host extension, which asks the scene manager over NATS
-and returns its answer. The workflow actions and name pickers a streamer sees
+connectors host's `obs` adapter holds the one OBS WebSocket connection (see
+[Connectors host → The OBS adapter](./connectors.md#the-obs-adapter)). Module
+code reaches it through the `ctx.obs` host extension, which asks over NATS
+and returns the answer. The workflow actions and name pickers a streamer sees
 (switch scene, show or hide a source, mute an input) are declared by the OBS
 platform module (`woofx3_obs`, published from woofx3-modules), whose functions
 call `ctx.obs`, the same way the Twitch platform module calls `ctx.twitch`.
 
 ```
-workflow step ─▶ woofx3_obs function ─▶ ctx.obs ──request──▶ engine.obs.command ──▶ sceneManager ──obs-websocket v5──▶ OBS
+workflow step ─▶ woofx3_obs function ─▶ ctx.obs ──request──▶ engine.obs.command ──▶ connectors (obs) ──obs-websocket v5──▶ OBS
                                                ◀──{ ok, error? }──────────────────────┘
 ```
 
@@ -39,7 +40,7 @@ strings, `sceneName` may be absent or empty (the live program scene), and
 `visible` / `muted` default to true and accept `true`, `false`, `"true"` and
 `"false"`, since a value filled in from a step's parameters reaches the
 function as text. `visibility` is `"visible"`, `"hidden"` or `"toggle"` and
-wins over `visible` when both are given; the scene manager resolves a toggle
+wins over `visible` when both are given; the adapter resolves a toggle
 against what OBS shows when the command runs, so a source the streamer flipped
 by hand is flipped back. `showBrowserSource`'s `url` must be an absolute `http://` or
 `https://` URL (a browser source loads anything, and `file:` would put the
@@ -47,17 +48,16 @@ streamer's own files on stream), and `width` / `height` must be whole numbers
 from 1 to 7680 / 4320, as numbers or text, defaulting to 1920 x 1080. A bad
 call throws with `code: "invalid_arguments"`.
 
-A refusal from the scene manager (OBS not connected, no scene by that name)
+A refusal from the adapter (OBS not connected, no scene by that name)
 throws with OBS's reason as the message and no `code`, so a module action can
 let it fail the step with that reason. Calls are bounded like `ctx.twitch`'s:
 at most 10 per run, each waiting up to 5 seconds and never past the run's
-deadline, with `timeout`, `unavailable` (no scene manager running), `busy`,
+deadline, with `timeout`, `unavailable` (nothing answering), `busy`,
 `call_limit` and `request_failed` codes for the rest.
 
 ## Connecting OBS
 
-OBS 28 and later ship the WebSocket server the scene manager speaks (protocol
-v5).
+OBS 28 and later ship the WebSocket server the adapter speaks (protocol v5).
 
 1. In OBS, open **Tools → WebSocket Server Settings**, tick **Enable
    WebSocket server**, and note the port (4455 by default).
@@ -66,10 +66,10 @@ v5).
 3. Enter the address, port and password in the OBS module's settings
    (`woofx3_obs`: `host`, `port`, `password`).
 
-The scene manager reads those settings from db-proxy on every connect attempt:
+The adapter reads those settings from db-proxy on every connect attempt:
 `host` and `port` with `ListModuleSettings`, and `password`, a `secret`
 setting, with `GetModuleSecretValues`. Anything the module does not supply
-comes from the scene manager's own configuration: an engine without the
+comes from connectors' own configuration: an engine without the
 module, an empty setting, or a port that is not a number from 1 to 65535.
 
 | Variable | Default | Meaning |
@@ -90,15 +90,14 @@ streamer's PC. Through the bridge the companion supplies the address, and the
 module's `password` still signs in to OBS end to end. See
 [Local endpoints and the companion bridge](./local-endpoints.md). A change to
 the relay configuration (`engine.relay.config.updated`) that moves OBS to
-another route makes the scene manager reconnect at once, like a settings
-change.
+another route makes the adapter reconnect at once, like a settings change.
 
 Saving a module setting publishes `db.module.setting.updated.system` with the
-module id and the key, never the value. On one for `woofx3_obs` the scene
-manager reconnects at once with the new details, closing the open session or
+module id and the key, never the value. On one for `woofx3_obs` the adapter
+reconnects at once with the new details, closing the open session or
 skipping a pending retry's wait.
 
-The scene manager keeps itself connected. If OBS is not running when it
+The adapter keeps itself connected. If OBS is not running when it
 starts, or the connection drops (OBS closed or restarted), it retries in the
 background: after 1s, then doubling up to every 30s, each delay jittered down by
 up to half. OBS can be started in any order. It logs only the changes
@@ -106,9 +105,10 @@ up to half. OBS can be started in any order. It logs only the changes
 reconnecting in the background`, `Connected to OBS`, `Reconnected to OBS`), so
 an evening with OBS closed is one line, not one per retry.
 
-OBS browser sources pointing at the scene manager are refreshed on the first
-session after the scene manager starts, to recover overlays after a restart
-of the scene manager itself. They are not refreshed after a reconnect, because
+OBS browser sources pointing at the scene manager are refreshed once after
+each scene manager start, when the scene manager asks for it, to recover its
+overlays (see [Local endpoints → Overlay recovery](./local-endpoints.md#overlay-recovery)).
+They are not refreshed after an OBS reconnect or an adapter restart, because
 their event streams are still open and a refresh would cut off whatever is
 playing.
 
@@ -123,7 +123,7 @@ WOOFX3_OBS_RPC_TOKEN without the module)`, once
 each time the reason for failing changes.
 
 A command OBS has not answered within 3.5 seconds fails with `OBS did not
-answer within 3.5s; reconnecting to it`, and the scene manager drops that
+answer within 3.5s; reconnecting to it`, and the adapter drops that
 session and reconnects: a socket that stays open while OBS has stopped
 answering would otherwise fail every command until OBS was restarted.
 
@@ -155,11 +155,13 @@ visible. An existing input of any other kind is refused, so a module cannot
 replace the streamer's camera by naming it; the refusal is checked before
 anything changes.
 
-The reply is `{ "ok": true }` or `{ "ok": false, "error": "<reason>" }`. The scene manager answers every
-request, a malformed one included, so a requester only ever times out when no
-scene manager is running or OBS stops answering it.
+The reply is `{ "ok": true }` or `{ "ok": false, "error": "<reason>" }`. The
+connectors host answers every request, a malformed one included, within 4.5
+seconds, and answers `OBS is turned off in this engine` or `OBS is starting`
+while the adapter is not running, so a requester only ever times out when
+connectors is not running.
 
-Only `ctx.obs` sends these, always as requests, so the scene manager ignores a
+Only `ctx.obs` sends these, always as requests, so the host ignores a
 message on this subject that has no reply subject, before anything reaches
 OBS. An uploaded module cannot declare `engine.` (or any other engine command
 subject) as an eventbus trigger event or in a form's request, which would
@@ -173,7 +175,7 @@ Each field declares a field source that runs one of the module's own functions
 (see
 [Dynamic-source select fields](../barkloader/modules.md#dynamic-source-select-fields-source-kind)),
 and that function returns `ctx.obs.listScenes()`, `listSources()` or
-`listInputs()`. The scene manager answers on `engine.obs.options`, a subject
+`listInputs()`. The adapter answers on `engine.obs.options`, a subject
 apart from `engine.obs.command` that can only read OBS, so listing never needs
 the permission that changing OBS does. Uploaded modules cannot name `engine.`
 subjects in a field source at all (see
@@ -185,7 +187,7 @@ subjects in a field source at all (see
 | `sources` | `listSources` | Every scene's sources, headed by the scene. A source inside a group is labelled `Group › Source` and saved as its own name | `GetSceneList`, `GetSceneItemList` per scene, `GetGroupSceneItemList` per group |
 | `inputs` | `listInputs` | Every input, headed `Audio inputs` for audio-only kinds and `Other inputs` for the rest. Global audio devices (Desktop Audio, Mic/Aux) are included | `GetInputList` |
 
-The scene manager's reply is the UI's option list, `[{ "value", "label",
+The reply is the UI's option list, `[{ "value", "label",
 "group"? }]`, which the list function returns as it is, or `{ "error":
 "<reason>" }` (not connected, OBS hung, a malformed request), which `ctx.obs`
 throws. A field-options function that catches it and returns `{ error }` has
@@ -200,8 +202,8 @@ flagged rather than refused.
 
 ## Connection status (`engine.obs.status`)
 
-The api's `getObsStatus()` (capability `obs.status`) asks the scene manager how
-its connection is doing, for the OBS module's page. The scene manager answers
+The api's `getObsStatus()` (capability `obs.status`) asks the adapter how
+its connection is doing, for the OBS module's page. The adapter answers
 `engine.obs.status` from its own state, without touching OBS, so the reply is
 immediate whether OBS is up or not:
 
@@ -209,7 +211,9 @@ immediate whether OBS is up or not:
 { "state": "retrying", "failure": "authentication", "address": "192.168.1.20:4455", "route": "direct" }
 ```
 
-- `state`: `connecting` (first attempt), `connected`, `retrying` or `stopped`.
+- `state`: `connecting` (first attempt), `connected`, `retrying` or `stopped`
+  (the adapter is not running; the host answers with null `failure` and
+  `address`).
 - `failure`: why the last attempt failed. `authentication` means OBS refused
   the password (close code 4009); `unreachable` means nothing answered at
   `address`, or an open connection was lost; `relay` means OBS is routed
@@ -221,6 +225,6 @@ immediate whether OBS is up or not:
 - `route`: `direct` or `companion`, how the latest attempt reached OBS. Absent
   before any attempt.
 
-A scene manager that does not answer within 3 seconds comes back from the api
+A status nothing answers within 3 seconds (connectors not running) comes back from the api
 as `{ "state": "unanswered", "failure": null, "address": null }`. That says
 nothing about OBS itself.

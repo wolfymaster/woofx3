@@ -79,8 +79,8 @@ export interface SceneManagerRuntimeConfig {
   /** Which Host and Origin headers the HTTP server accepts, with their defaults resolved. */
   requestGuard: RequestGuardPolicy;
   /**
-   * Where OBS is when the OBS module's settings do not say (obs/settings.ts):
-   * the module is not installed, or a setting is empty.
+   * Not used by sceneManager, which holds no OBS connection: connectors' obs
+   * adapter reads the same WOOFX3_OBS_* variables (connectors/src/config/obs.ts).
    */
   obs: {
     host: string;

@@ -1,11 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import {
-  answerObsCommand,
   executeObsControlCommand,
   handleObsControlRequest,
   type ObsControlClient,
   parseObsControlCommand,
-} from "../../src/obs/control";
+} from "./control";
 import { type FakeInput, fakeObs, groupedScenes, logger, scenes } from "./fake-obs";
 
 describe("parseObsControlCommand", () => {
@@ -369,59 +368,5 @@ describe("timeouts", () => {
       { timeoutMs: 1_000, onTimeout: () => recycled++ }
     );
     expect(recycled).toBe(0);
-  });
-});
-
-describe("answerObsCommand", () => {
-  const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
-
-  function message(data: Uint8Array, reply?: string) {
-    const responses: unknown[] = [];
-    return {
-      msg: {
-        reply,
-        data,
-        respond(bytes: Uint8Array) {
-          responses.push(JSON.parse(new TextDecoder().decode(bytes)));
-          return true;
-        },
-      },
-      responses,
-    };
-  }
-
-  it("refuses a message with no reply subject before it reaches OBS", async () => {
-    const obs = fakeObs(scenes());
-    const { msg, responses } = message(encode({ data: { command: "switch_scene", sceneName: "Raid" } }));
-    await answerObsCommand({ current: () => obs.client, recycle: () => {} }, msg, logger);
-    expect(obs.calls).toEqual([]);
-    expect(obs.program()).toBe("Main");
-    expect(responses).toEqual([]);
-  });
-
-  it("answers a request on its reply subject", async () => {
-    const obs = fakeObs(scenes());
-    const { msg, responses } = message(encode({ data: { command: "switch_scene", sceneName: "Raid" } }), "_INBOX.1");
-    await answerObsCommand({ current: () => obs.client, recycle: () => {} }, msg, logger);
-    expect(responses).toEqual([{ ok: true }]);
-    expect(obs.program()).toBe("Raid");
-  });
-
-  it("recycles the session when OBS hangs", async () => {
-    const obs = fakeObs(scenes(), "Main", [], "SetInputMute");
-    const reasons: string[] = [];
-    const { msg } = message(
-      encode({ data: { command: "set_input_mute", inputName: "Mic/Aux", muted: true } }),
-      "_INBOX.2"
-    );
-    const original = setTimeout;
-    // Shorten the command deadline without waiting 3.5s: fire any timer at once.
-    globalThis.setTimeout = ((fn: () => void) => original(fn, 0)) as unknown as typeof setTimeout;
-    try {
-      await answerObsCommand({ current: () => obs.client, recycle: (reason) => reasons.push(reason) }, msg, logger);
-    } finally {
-      globalThis.setTimeout = original;
-    }
-    expect(reasons).toEqual(["an OBS request timed out"]);
   });
 });

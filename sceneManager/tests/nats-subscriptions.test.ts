@@ -149,10 +149,6 @@ describe("alert queue control subjects", () => {
     const { handlers, nats } = fakeNats();
     await initSubscriptions({
       nats: nats as any,
-      obs: { current: () => null, recycle: () => {}, reconnectNow: () => {} },
-      obsStatus: () => ({ state: "connected", failure: null, address: "127.0.0.1:4455" }),
-      relayConfigMovesObs: async () => false,
-      requestOverlayRefresh: () => {},
       db: db as any,
       host: {} as any,
       deliveryStore: deliveryStore as any,
@@ -275,9 +271,8 @@ describe("alert queue control subjects", () => {
 });
 
 describe("module setting changes", () => {
-  async function wire(relayConfigMovesObs: () => Promise<boolean> = async () => false) {
+  async function wire() {
     const handlers = new Map<string, (msg: any) => unknown>();
-    const reconnects: string[] = [];
     const settingsUpdated: string[] = [];
     await initSubscriptions({
       nats: {
@@ -286,10 +281,6 @@ describe("module setting changes", () => {
           return {};
         },
       } as any,
-      obs: { current: () => null, recycle: () => {}, reconnectNow: (reason: string) => reconnects.push(reason) },
-      obsStatus: () => ({ state: "retrying", failure: "authentication", address: "obs.lan:4455" }),
-      relayConfigMovesObs,
-      requestOverlayRefresh: () => {},
       db: {} as any,
       host: {} as any,
       deliveryStore: {} as any,
@@ -316,42 +307,8 @@ describe("module setting changes", () => {
       }
       return handler({ subject: "db.module.setting.updated.system", json: () => ({ data }) });
     };
-    const relayChanged = () =>
-      handlers.get("engine.relay.config.updated")?.({ subject: "engine.relay.config.updated" });
-    return { deliver, relayChanged, reconnects, settingsUpdated };
+    return { deliver, settingsUpdated };
   }
-
-  it("reconnects to OBS when a relay configuration change moves it to another route", async () => {
-    const { relayChanged, reconnects } = await wire(async () => true);
-    await relayChanged();
-    expect(reconnects).toEqual(["Relay configuration changed"]);
-  });
-
-  it("keeps the OBS session when a relay configuration change leaves its route alone", async () => {
-    const { relayChanged, reconnects } = await wire(async () => false);
-    await relayChanged();
-    expect(reconnects).toEqual([]);
-  });
-
-  it("reconnects when the relay configuration cannot be read", async () => {
-    const { relayChanged, reconnects } = await wire(async () => {
-      throw new Error("db down");
-    });
-    await relayChanged();
-    expect(reconnects).toEqual(["Relay configuration changed"]);
-  });
-
-  it("reconnects to OBS when the OBS module's settings change", async () => {
-    const { deliver, reconnects } = await wire();
-    await deliver({ moduleId: "woofx3_obs", key: "password" });
-    expect(reconnects).toEqual(["OBS module settings changed"]);
-  });
-
-  it("ignores other modules' settings", async () => {
-    const { deliver, reconnects } = await wire();
-    await deliver({ moduleId: "woofx3_spotify", key: "clientId" });
-    expect(reconnects).toEqual([]);
-  });
 
   it("hands every module's changed setting to the widgets reading it", async () => {
     const { deliver, settingsUpdated } = await wire();
@@ -359,68 +316,19 @@ describe("module setting changes", () => {
     await deliver({ moduleId: "woofx3_wheel_spin" });
     expect(settingsUpdated).toEqual(["woofx3_wheel_spin/items"]);
   });
-
-  it("answers engine.obs.status with the connection's state", async () => {
-    const handlers = new Map<string, (msg: unknown) => unknown>();
-    await initSubscriptions({
-      nats: {
-        subscribe: async (subject: string, handler: (msg: unknown) => unknown) => {
-          handlers.set(subject, handler);
-          return {};
-        },
-      } as never,
-      obs: { current: () => null, recycle: () => {}, reconnectNow: () => {} },
-      obsStatus: () => ({ state: "retrying", failure: "authentication", address: "obs.lan:4455" }),
-      relayConfigMovesObs: async () => false,
-      requestOverlayRefresh: () => {},
-      db: {} as never,
-      host: {} as never,
-      deliveryStore: {} as never,
-      moduleState: {} as never,
-      resolver: {} as never,
-      sceneDocuments: {
-        refresh: async () => {},
-        applyChange: async () => ({ ok: true as const }),
-        published: async () => null,
-        repair: async () => ({ ok: true as const, backups: 0 }),
-      },
-      editorToken: async () => ({ ok: false, reason: "unused" }),
-      previewToken: async () => ({ ok: false, reason: "unused" }),
-      logger: fakeLogger(),
-    });
-    const handler = handlers.get("engine.obs.status");
-    if (!handler) {
-      throw new Error("engine.obs.status is not answered");
-    }
-    let reply: unknown = null;
-    await handler({
-      subject: "engine.obs.status",
-      reply: "_INBOX.test",
-      json: () => ({}),
-      respond: (data: Uint8Array) => {
-        reply = JSON.parse(new TextDecoder().decode(data));
-        return true;
-      },
-    });
-    expect(reply).toEqual({ state: "retrying", failure: "authentication", address: "obs.lan:4455" });
-  });
 });
 
-describe("engine.obs.browser_source.refresh", () => {
-  async function wire() {
-    const handlers = new Map<string, (msg: unknown) => unknown>();
-    const latched: unknown[] = [];
+describe("OBS subjects", () => {
+  // The connectors host answers these; a second responder here would race it.
+  it("subscribes to none of the subjects the connectors host's obs adapter answers or hears", async () => {
+    const subjects: string[] = [];
     await initSubscriptions({
       nats: {
-        subscribe: async (subject: string, handler: (msg: unknown) => unknown) => {
-          handlers.set(subject, handler);
+        subscribe: async (subject: string) => {
+          subjects.push(subject);
           return {};
         },
       } as never,
-      obs: { current: () => null, recycle: () => {}, reconnectNow: () => {} },
-      obsStatus: () => ({ state: "connecting", failure: null, address: null }),
-      relayConfigMovesObs: async () => false,
-      requestOverlayRefresh: (request) => latched.push(request),
       db: {} as never,
       host: {} as never,
       deliveryStore: {} as never,
@@ -436,51 +344,9 @@ describe("engine.obs.browser_source.refresh", () => {
       previewToken: async () => ({ ok: false, reason: "unused" }),
       logger: fakeLogger(),
     });
-    const handler = handlers.get("engine.obs.browser_source.refresh");
-    if (!handler) {
-      throw new Error("engine.obs.browser_source.refresh is not answered");
-    }
-    const ask = async (body: unknown, reply: string | null = "_INBOX.test") => {
-      let answer: unknown = null;
-      await handler({
-        subject: "engine.obs.browser_source.refresh",
-        reply: reply ?? undefined,
-        json: () => body,
-        respond: (data: Uint8Array) => {
-          answer = JSON.parse(new TextDecoder().decode(data));
-          return true;
-        },
-      });
-      return answer;
-    };
-    return { ask, latched };
-  }
-
-  it("latches a valid request and accepts it", async () => {
-    const { ask, latched } = await wire();
-    const request = { overlayPort: 9101, bootId: "boot-1" };
-
-    expect(await ask(request)).toEqual({ status: "accepted", bootId: "boot-1" });
-    expect(latched).toEqual([request]);
-  });
-
-  for (const [name, body] of [
-    ["a port out of range", { overlayPort: 0, bootId: "boot-1" }],
-    ["no boot id", { overlayPort: 9101 }],
-    ["an empty body", {}],
-  ] as const) {
-    it(`answers invalid and latches nothing for ${name}`, async () => {
-      const { ask, latched } = await wire();
-
-      expect(await ask(body)).toMatchObject({ status: "invalid" });
-      expect(latched).toEqual([]);
-    });
-  }
-
-  it("ignores a publish that has no inbox to answer", async () => {
-    const { ask, latched } = await wire();
-
-    expect(await ask({ overlayPort: 9101, bootId: "boot-1" }, null)).toBeNull();
-    expect(latched).toEqual([]);
+    expect(subjects.length).toBeGreaterThan(0);
+    expect(
+      subjects.filter((subject) => subject.startsWith("engine.obs.") || subject.startsWith("engine.relay."))
+    ).toEqual([]);
   });
 });

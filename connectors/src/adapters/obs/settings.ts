@@ -1,12 +1,11 @@
-// Where sceneManager connects to OBS. The OBS marketplace module declares the
+// Where the OBS adapter connects to OBS. The OBS marketplace module declares the
 // connection as a `local[]` endpoint whose settings a streamer (or the
 // companion) fills in on the module's page; the endpoint dialer reads them and
-// picks the route. sceneManager's own configuration fills in whatever the
+// picks the route. connectors' own configuration (WOOFX3_OBS_*) fills in whatever the
 // module does not say, which keeps an engine without the module connecting as
 // it always has.
 
-import type { Logger } from "@woofx3/common/runtime";
-import { type DialTarget, type EndpointKeys, EndpointRelayError, type WebSocketRoute } from "../endpoints/dialer";
+import { type DialTarget, type EndpointKeys, EndpointRelayError, type WebSocketRoute } from "../../companion/dialer";
 import { type ObsSession, obsFailureKind } from "./connection";
 import type Manager from "./manager";
 import { openObsSession } from "./manager";
@@ -30,7 +29,7 @@ export interface ObsFallback {
   token?: string;
 }
 
-/** The dialer target for OBS's connection, falling back to sceneManager's configuration. */
+/** The dialer target for OBS's connection, falling back to connectors' configuration. */
 export function obsDialTarget(fallback: ObsFallback): DialTarget {
   return {
     moduleId: OBS_MODULE_ID,
@@ -47,7 +46,7 @@ export function obsDialTarget(fallback: ObsFallback): DialTarget {
  * or the companion not reaching OBS. It reads as `relay`, so the streamer is
  * pointed at the companion rather than at OBS.
  */
-export async function openObsOverRoute(route: WebSocketRoute, logger: Logger): Promise<ObsSession<Manager>> {
+export async function openObsOverRoute(route: WebSocketRoute): Promise<ObsSession<Manager>> {
   try {
     return await openObsSession({ url: route.url, token: route.password });
   } catch (err) {

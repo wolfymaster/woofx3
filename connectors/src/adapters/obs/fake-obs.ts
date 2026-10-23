@@ -1,7 +1,7 @@
-// A fake obs-websocket client for the scene manager's OBS handler tests.
+// A fake obs-websocket client for the OBS adapter's handler tests.
 
-import type { Logger } from "@woofx3/common/runtime";
-import type { ObsControlClient } from "../../src/obs/control";
+import type { Logger } from "../../host/deps";
+import type { ObsControlClient } from "./control";
 
 export const logger = {
   info: () => {},

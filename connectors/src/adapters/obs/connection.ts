@@ -1,16 +1,16 @@
-// Keeps sceneManager connected to OBS for as long as it runs.
+// Keeps the OBS adapter connected to OBS for as long as it runs.
 //
-// OBS is routinely started after sceneManager, closed mid-session, or
-// restarted, and none of those should leave sceneManager without OBS
-// control until it is restarted itself. This retries in the
+// OBS is routinely started after the engine, closed mid-session, or
+// restarted, and none of those should leave the engine without OBS
+// control until the adapter is restarted. This retries in the
 // background with capped, jittered exponential backoff, and hands each new
 // session to `onConnected` so work that depends on the connection is redone.
 //
 // Logging follows state transitions only. OBS being closed for an evening
 // is one line, not one line per retry.
 
-import type { Logger } from "@woofx3/common/runtime";
-import { EndpointRelayError } from "../endpoints/dialer";
+import { EndpointRelayError } from "../../companion/dialer";
+import type { Logger } from "../../host/deps";
 
 /** One open OBS session: the client to issue requests on, and its lifecycle. */
 export interface ObsSession<TClient> {

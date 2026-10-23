@@ -29,8 +29,8 @@ export type SourceVisibility = "visible" | "hidden" | "toggle";
 
 /**
  * One change to OBS, carried as the `data` of an `engine.obs.command`
- * CloudEvent to the OBS connection the scene manager holds. Request/reply: the
- * scene manager answers every command with an `ObsControlReply`.
+ * CloudEvent to the OBS connection the connectors host's obs adapter holds.
+ * Request/reply: the host answers every command with an `ObsControlReply`.
  *
  * The only producer is barkloader's `ctx.obs` extension, on behalf of module
  * code holding the `obs.control` permission; a module never chooses the
@@ -76,18 +76,18 @@ export type ObsControlReply =
     };
 
 /**
+ * Request/reply subject the api asks the OBS adapter's connection state on.
+ * The reply is the api's `ObsStatus` without `unanswered`, which only the api
+ * can observe.
+ */
+export const OBS_STATUS_SUBJECT = "engine.obs.status";
+
+/**
  * What to list, carried as the `data` of an `engine.obs.options` CloudEvent.
  * Sent by barkloader's `ctx.obs.listScenes`, `listSources` and `listInputs`.
  * A subject apart from `engine.obs.command`, so that reading OBS's names
  * never needs the permission that changing OBS does.
  */
-/**
- * Request/reply subject the api asks the scene manager's OBS connection state
- * on. The reply is the api's `ObsStatus` without `unanswered`, which only the
- * api can observe.
- */
-export const OBS_STATUS_SUBJECT = "engine.obs.status";
-
 export type ObsOptionsRequest = { list: ObsOptionsList };
 
 export const OBS_OPTIONS_LISTS = ["scenes", "sources", "inputs"] as const;
@@ -130,9 +130,15 @@ export interface ObsBrowserSourceRefresh {
   bootId: string;
 }
 
+/**
+ * `invalid` refuses a malformed request, which retrying cannot fix;
+ * `unavailable` means the holder of the OBS connection could not take a valid
+ * request in time, so the sender retries.
+ */
 export type ObsBrowserSourceRefreshReply =
   | { status: "accepted"; bootId: string }
-  | { status: "invalid"; error: string };
+  | { status: "invalid"; error: string }
+  | { status: "unavailable"; error: string };
 
 export type ObsRefreshParse<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -174,13 +180,13 @@ export function parseObsBrowserSourceRefreshReply(value: unknown): ObsRefreshPar
     const bootId = parseBootId(body.bootId);
     return bootId.ok ? { ok: true, value: { status: "accepted", bootId: bootId.value } } : bootId;
   }
-  if (body.status === "invalid") {
+  if (body.status === "invalid" || body.status === "unavailable") {
     if (typeof body.error !== "string") {
-      return { ok: false, error: "an invalid reply must carry an error string" };
+      return { ok: false, error: `${body.status} reply must carry an error string` };
     }
-    return { ok: true, value: { status: "invalid", error: body.error } };
+    return { ok: true, value: { status: body.status, error: body.error } };
   }
-  return { ok: false, error: 'status must be "accepted" or "invalid"' };
+  return { ok: false, error: 'status must be "accepted", "invalid" or "unavailable"' };
 }
 
 export enum EventType {

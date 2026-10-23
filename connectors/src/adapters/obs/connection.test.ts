@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { DEFAULT_OBS_BACKOFF, ObsConnection, type ObsSession, obsRetryDelay } from "../../src/obs/connection";
-import { executeObsControlCommand, type ObsControlClient } from "../../src/obs/control";
+import { DEFAULT_OBS_BACKOFF, ObsConnection, type ObsSession, obsRetryDelay } from "./connection";
+import { executeObsControlCommand, type ObsControlClient } from "./control";
 
 type Level = "info" | "warn" | "error" | "debug";
 
