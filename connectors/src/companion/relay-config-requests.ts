@@ -6,6 +6,7 @@
 import {
   COMPANION_RELAY_CONFIG_SET_SUBJECT,
   parseRelayConfigSetRequest,
+  RELAY_CONFIG_SET_BUDGET_MS,
   type RelayConfigSetReply,
   type RelayConfigSetRequest,
 } from "@woofx3/common/cloudevents/Relay/relay";
@@ -14,12 +15,8 @@ import { type ParseResult, parsed, parseFailed, type RawRequestSpec } from "../h
 import type { RelayCredentialSource } from "./relay-credentials";
 
 export const RELAY_CONFIG_SET_DEFAULTS = {
-  /**
-   * How long storing a configuration may take before the host answers for
-   * it. Below the api's own request timeout (woofx3CompanionRequestTimeoutMs,
-   * 5_000 by default), so the api hears why rather than timing out.
-   */
-  budgetMs: 4_500,
+  /** How long storing a configuration may take before the host answers for it. */
+  budgetMs: RELAY_CONFIG_SET_BUDGET_MS,
 } as const;
 
 export interface RelayConfigRequestsDeps {

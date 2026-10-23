@@ -1,4 +1,5 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
+import { RELAY_DASHBOARD_REQUEST_TIMEOUT_MS } from "@woofx3/common/cloudevents/Relay/relay";
 import { z } from "zod";
 
 /**
@@ -26,12 +27,11 @@ export const COMPANION_DEFAULTS = {
   ticketTimeoutMs: 5_000,
   /**
    * One bridge credential request to the api, which asks the dashboard on the
-   * gateway's behalf. Must exceed the api's own wait for the dashboard
-   * (DEFAULT_WEBHOOK_CLIENT_CONFIG.timeoutMs, 5_000, in api/src/webhook-client.ts),
-   * so the api's answer, a failure included, always arrives first. Not
-   * configurable for that reason.
+   * gateway's behalf. Exceeds the api's own wait for the dashboard, so the
+   * api's answer, a failure included, always arrives first. Not configurable
+   * for that reason.
    */
-  dashboardRequestTimeoutMs: 6_000,
+  dashboardRequestTimeoutMs: RELAY_DASHBOARD_REQUEST_TIMEOUT_MS,
 } as const;
 
 // loadRuntimeEnv coerces all-digit values to numbers before the schema sees them.
