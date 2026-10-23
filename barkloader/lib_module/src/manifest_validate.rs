@@ -4386,7 +4386,7 @@ mod tests {
     }
 
     #[test]
-    fn accepts_visible_when_naming_a_sibling() {
+    fn test_visible_when_accepts_a_sibling() {
         let both = resource_with_fields(
             r#"[{ "id": "mode", "label": "Mode", "type": "text" },
                 { "id": "color", "label": "Colour", "type": "text",
@@ -4396,7 +4396,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_visible_when_misuse() {
+    fn test_visible_when_rejects_misuse() {
         let cases = [
             (
                 r#"[{ "id": "x", "label": "X", "type": "text",
