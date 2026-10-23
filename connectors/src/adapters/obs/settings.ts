@@ -6,7 +6,7 @@
 // it always has.
 
 import type { AdapterFallback, EndpointKeys, EndpointRouteFound, LocalEndpointRef } from "../../companion/types";
-import { type ObsSession, ObsRouteUnavailable, obsFailureKind } from "./connection";
+import { ObsRouteUnavailable, type ObsSession, obsFailureKind } from "./connection";
 import type Manager from "./manager";
 import { type ObsConnectLimits, openObsSession } from "./manager";
 

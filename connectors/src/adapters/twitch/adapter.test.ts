@@ -7,6 +7,8 @@ import {
   INTEGRATION_ENABLED_UPDATED_SUBJECT,
   INTEGRATION_TOKEN_UPDATED_SUBJECT,
 } from "@woofx3/common/integrations/integration-settings";
+import { FakeDispatcherDb } from "../../chat/testing";
+import { ChatEnvSchema, chatConfig } from "../../config/chat";
 import { GatewayEnvSchema, gatewayConfig } from "../../config/gateway";
 import { HostEnvSchema, hostConfig } from "../../config/host";
 import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
@@ -388,6 +390,8 @@ describe("TwitchAdapter in the host", () => {
     const host = new Host({
       config: hostConfig(HostEnvSchema.parse({})),
       gateway: gatewayConfig(GatewayEnvSchema.parse({})),
+      chat: chatConfig(ChatEnvSchema.parse({})),
+      dispatcherDb: new FakeDispatcherDb(),
       companion: testCompanion(),
       dbProxy: { baseURL: "http://db.test" },
       bus,

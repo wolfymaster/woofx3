@@ -224,7 +224,7 @@ A raid on this channel is published once, as `channel.raid`, from the `channel.r
 ## Running a command's workflow
 
 `workflow.command.execute` asks the workflow engine to run the workflow a chat
-command is linked to, for one invocation. Published by woofwoofwoof once a
+command is linked to, for one invocation. Published by the connectors chat dispatcher once a
 command has matched and passed its permission and cooldown checks, after it
 has announced the match on `chat.command.<slug>`, and by the engine api's
 `executeCommand` (which publishes it first, then the announcement). `event` is
@@ -243,7 +243,7 @@ today).
 {
   "workflowId": "3f1c…",
   "event": {                     // the invocation; the run's ${trigger...}
-    "specversion": "1.0.0", "id": "...", "type": "chat.command.hug", "source": "woofwoofwoof", "time": "...",
+    "specversion": "1.0.0", "id": "...", "type": "chat.command.hug", "source": "connectors", "time": "...",
     "sessionId": "...", "platform": "twitch", "triggeredBy": "twitch",
     "data": { "command": "hug", "chatter": "wolfy", "text": "", "args": [], "variables": {}, "rawMessage": "!hug", "platform": "twitch" }
   }
@@ -259,7 +259,7 @@ time. The subject is reserved: no workflow or module may publish it.
 `action.execute` asks the workflow engine to run a list of actions that
 belongs to no workflow — the actions of a chat command that has no workflow,
 or anything else with actions to run and nothing to hang them on. Published
-by the engine api's `runActions(input)` RPC and by woofwoofwoof when such a
+by the engine api's `runActions(input)` RPC and by the connectors chat dispatcher when such a
 chat command matches;
 consumed by the workflow service, which runs them through the same executor,
 resolver and action handlers a workflow run uses.
@@ -271,7 +271,7 @@ resolver and action handlers a workflow run uses.
   "actions": [                   // run in order; a step may declare dependsOn
     { "id": "action-1", "action": "chat.reply", "parameters": { "message": "hugs ${trigger.data.chatter}" } }
   ],
-  "event": { "id": "...", "type": "chat.command.hug", "source": "woofwoofwoof", "time": "...", "data": { } }
+  "event": { "id": "...", "type": "chat.command.hug", "source": "connectors", "time": "...", "data": { } }
 }
 ```
 

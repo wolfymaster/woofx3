@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { FakeDispatcherDb } from "../chat/testing";
+import { ChatEnvSchema, chatConfig } from "../config/chat";
 import { type GatewayConfig, GatewayEnvSchema, gatewayConfig } from "../config/gateway";
 import { HOST_DEFAULTS, type HostConfig, HostEnvSchema, hostConfig } from "../config/host";
 import { type HealthBody, handleHealthRequest, healthBody, startHealthServer } from "./health";
@@ -25,6 +27,8 @@ async function runningHost(adapter: FakeAdapter, busUp = { value: true }) {
   const host = new Host({
     config,
     gateway,
+    chat: chatConfig(ChatEnvSchema.parse({})),
+    dispatcherDb: new FakeDispatcherDb(),
     companion: testCompanion(),
     dbProxy: { baseURL: "http://db.test" },
     bus: new FakeBus(),
@@ -84,6 +88,12 @@ describe("health", () => {
       outcomes: {},
       idempotency: { replayed: 0, coalesced: 0, mismatched: 0, held: 0 },
     });
+    expect(body.counters.chat).toMatchObject({
+      commands: expect.any(Object),
+      lines: expect.any(Object),
+      replies: { delivered: 0, failed: 0 },
+      bus: expect.any(Object),
+    });
   });
 
   test("a host with no adapters answers 200", async () => {
@@ -91,6 +101,8 @@ describe("health", () => {
     const host = new Host({
       config,
       gateway,
+      chat: chatConfig(ChatEnvSchema.parse({})),
+      dispatcherDb: new FakeDispatcherDb(),
       companion: testCompanion(),
       dbProxy: { baseURL: "http://db.test" },
       bus: new FakeBus(),
@@ -181,6 +193,8 @@ describe("health", () => {
       config,
       gateway,
       companion: testCompanion(),
+      chat: chatConfig(ChatEnvSchema.parse({})),
+      dispatcherDb: new FakeDispatcherDb(),
       dbProxy: { baseURL: "http://db.test" },
       bus: new FakeBus(),
       busConnected: () => true,

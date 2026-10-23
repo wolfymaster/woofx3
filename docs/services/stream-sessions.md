@@ -185,8 +185,8 @@ the successor, so clearing on `ended` would publish unstamped events in the gap
 between the two messages. A session is always present, so the holder should
 never empty once filled.
 
-All four publishing processes subscribe — `connectors/` (for its Twitch
-adapter), `woofwoofwoof/` and `barkloader/` from the bus, and `api/` from the resolver directly, since it is
+All the publishing processes subscribe — `connectors/` (for its Twitch
+adapter) and `barkloader/` from the bus, and `api/` from the resolver directly, since it is
 the process emitting the announcement.
 
 The holder therefore warns once per gap instead of passing silently. It does not
