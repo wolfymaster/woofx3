@@ -1,7 +1,7 @@
-import { AlertTimings } from "../../public/scene-manager/alert-timing";
 import { describe, expect, it } from "bun:test";
 import { EventQueueManager, type QueuedEvent } from "@woofx3/widget-host/page";
 import { type AlertArea, AlertAreas } from "../../public/scene-manager/alert-areas";
+import { AlertTimings } from "../../public/scene-manager/alert-timing";
 import type { AlertWidgetOptions } from "../../public/scene-manager/alert-widget";
 
 class FakeElement {
