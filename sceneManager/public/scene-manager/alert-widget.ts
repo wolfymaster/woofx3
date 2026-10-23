@@ -286,9 +286,12 @@ export class AlertWidget {
     const placement = delivery.layout.widgets[widgetId];
     const framing = delivery.frames[widgetId];
     if (placement === undefined || framing === undefined) {
-      throw new Error(`alert ${eventId}: widget ${widgetId} is not in its layout`);
+      throw new Error(`alert ${eventId}: widget ${widgetId} has no placement or frame`);
     }
     const moduleId = moduleIdOfCanonicalId(placement.widget);
+    if (moduleId === null) {
+      throw new Error(`alert ${eventId}: widget ${widgetId} has no canonical module id`);
+    }
     const frame = mountWidgetFrame({
       slot,
       instanceId,
@@ -307,7 +310,7 @@ export class AlertWidget {
           ...(entrance === null ? {} : { behavior: entrance }),
         })}`,
       callbacks: ({ bridge }) => ({
-        onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId ?? "", report),
+        onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId, report),
         onAssetLoad: this.opts.assets.loaderFor(moduleId),
         onReady: () => timings.frame(eventId, widgetId, "ready"),
         onEventsSubscribe: (subId, queue) => {

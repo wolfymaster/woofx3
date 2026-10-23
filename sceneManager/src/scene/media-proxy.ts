@@ -96,7 +96,7 @@ export interface OverlaySceneConfig<T> {
  *
  * Every path that hands settings to an overlay or a frame derives them with
  * `overlaySettings`: documents, snapshots and ops (`placement`), page scene
- * configs (`sceneConfig`), and a frame's boot settings.
+ * configs (`sceneConfig`), and alert deliveries as they are sent (`alertDelivery`).
  *
  * A token is `{base64url(url)}.{expiresAt}.{hex HMAC-SHA256}`, good until
  * `expiresAt` (unix seconds). An overlay stays open for a whole stream, and
