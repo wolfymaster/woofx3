@@ -54,15 +54,38 @@ export interface GatewayReplierDeps {
   logger: Logger;
 }
 
+/** What /health reports about replies: each attempt ends in exactly one of these. */
+export interface ReplierCounters {
+  delivered: number;
+  /** Not sent, unanswered, unreadable, or answered not ok. */
+  failed: number;
+}
+
 /**
  * Replies through the platform gateway on platform.gateway.send, to the
  * platform the line came from. Nothing is retried: the gateway's outcome is
  * logged, and a chatter can say the command again.
  */
 export class GatewayReplier implements ChatReplier {
+  private delivered = 0;
+  private failed = 0;
+
   constructor(private readonly deps: GatewayReplierDeps) {}
 
+  snapshot(): ReplierCounters {
+    return { delivered: this.delivered, failed: this.failed };
+  }
+
   async reply(line: ChatLine, commandName: string, text: string): Promise<void> {
+    if (await this.send(line, commandName, text)) {
+      this.delivered++;
+    } else {
+      this.failed++;
+    }
+  }
+
+  /** Whether the gateway reported the reply delivered; every other end is logged here. */
+  private async send(line: ChatLine, commandName: string, text: string): Promise<boolean> {
     const request = replyRequest(line, commandName, text);
     const checked = parseGatewayRequest(request);
     if (!checked.ok) {
@@ -71,7 +94,7 @@ export class GatewayReplier implements ChatReplier {
         field: checked.error.field,
         problem: checked.error.problem,
       });
-      return;
+      return false;
     }
     let raw: { data: Uint8Array };
     try {
@@ -84,7 +107,7 @@ export class GatewayReplier implements ChatReplier {
         platform: line.platform,
         error: errorMessage(error),
       });
-      return;
+      return false;
     }
     const reply = readReply(raw.data);
     if (!reply.ok) {
@@ -92,7 +115,7 @@ export class GatewayReplier implements ChatReplier {
         command: commandName,
         problem: reply.problem,
       });
-      return;
+      return false;
     }
     if (!reply.value.ok) {
       this.deps.logger.warn("the platform gateway did not deliver a command reply", {
@@ -101,7 +124,9 @@ export class GatewayReplier implements ChatReplier {
         error: reply.value.error,
         results: reply.value.results,
       });
+      return false;
     }
+    return true;
   }
 }
 

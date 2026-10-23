@@ -5,10 +5,14 @@ import {
   INTEGRATION_ENABLED_UPDATED_SUBJECT,
   INTEGRATION_TOKEN_UPDATED_SUBJECT,
 } from "@woofx3/common/integrations/integration-settings";
+import { FakeDispatcherDb, NO_ROLES, storedCommand } from "../chat/testing";
+import { TRUSTED_LINE_SOURCES } from "../chat/trust";
+import { ChatEnvSchema, chatConfig } from "../config/chat";
 import { GatewayEnvSchema, gatewayConfig } from "../config/gateway";
-import { HostEnvSchema, hostConfig } from "../config/host";
+import { HOST_DEFAULTS, HostEnvSchema, hostConfig } from "../config/host";
 import type { Adapter, EgressHandlers, ServedSubject } from "./adapter";
 import { Host } from "./host";
+import type { BusMessage } from "./scoped-bus";
 import {
   bytes,
   countingIds,
@@ -35,20 +39,76 @@ function event(subject: string, data: Record<string, unknown>): Uint8Array {
   return bytes(JSON.stringify({ specversion: "1.0", id: "e", type: subject, source: "api", data }));
 }
 
+/** A bus whose requests reach the host's own responders, as the real bus would route them. */
+class LoopbackBus extends FakeBus {
+  override async request(
+    subject: string,
+    data: Uint8Array,
+    _opts: { timeout: number }
+  ): Promise<{ subject: string; data: Uint8Array }> {
+    return new Promise((resolve) => {
+      const msg: BusMessage = {
+        subject,
+        data,
+        reply: "inbox",
+        respond: (out) => {
+          resolve({ subject: "inbox", data: out });
+          return true;
+        },
+      };
+      for (const subscription of this.subscriptions) {
+        if (subscription.active && subscription.pattern === subject) {
+          void subscription.handler(msg);
+        }
+      }
+    });
+  }
+}
+
+/** A line from a viewer with no grant for the restricted "hug" command, which the dispatcher answers with a reply. */
+function deniedLine(): Uint8Array {
+  return bytes(
+    JSON.stringify({
+      specversion: "1.0.0",
+      id: "evt-1",
+      type: "user.message",
+      source: TRUSTED_LINE_SOURCES.twitch,
+      platform: "twitch",
+      data: {
+        messageId: "m-1",
+        chatterId: "v-1",
+        chatterName: "Viewer",
+        chatterLogin: "viewer",
+        channelId: null,
+        membership: NO_ROLES,
+        fromEngine: false,
+        message: "!hug",
+      },
+    })
+  );
+}
+
 const chatSend: EgressHandlers = {
   "chat.send": { handle: async (payload) => ({ status: "delivered", messageId: `posted ${payload.message}` }) },
 };
 
-async function setup(served: ServedSubject = twitchapi, env: Record<string, unknown> = {}, adapterOverride?: Adapter) {
+async function setup(
+  served: ServedSubject = twitchapi,
+  env: Record<string, unknown> = {},
+  adapterOverride?: Adapter,
+  dispatcherDb = new FakeDispatcherDb(),
+  bus = new FakeBus()
+) {
   const values: Record<string, string> = {};
   const settings = fixedLinkStore(values);
-  const bus = new FakeBus();
   const adapter = new FakeAdapter("twitch", [served], chatSend);
   const time = new FakeTime();
   const logger = new RecordingLogger();
   const host = new Host({
     config: hostConfig(HostEnvSchema.parse(env)),
     gateway: gatewayConfig(GatewayEnvSchema.parse({})),
+    chat: chatConfig(ChatEnvSchema.parse({})),
+    dispatcherDb,
     companion: testCompanion(),
     dbProxy: { baseURL: "http://db.test" },
     bus,
@@ -101,6 +161,8 @@ describe("Host", () => {
       new Host({
         config: hostConfig(HostEnvSchema.parse({})),
         gateway: gatewayConfig(GatewayEnvSchema.parse({})),
+        chat: chatConfig(ChatEnvSchema.parse({})),
+        dispatcherDb: new FakeDispatcherDb(),
         companion: testCompanion(),
         dbProxy: { baseURL: "http://db.test" },
         bus: new FakeBus(),
@@ -130,6 +192,8 @@ describe("Host", () => {
         config: hostConfig(HostEnvSchema.parse({})),
         gateway: gatewayConfig(GatewayEnvSchema.parse({})),
         companion: testCompanion(),
+        chat: chatConfig(ChatEnvSchema.parse({})),
+        dispatcherDb: new FakeDispatcherDb(),
         dbProxy: { baseURL: "http://db.test" },
         bus: new FakeBus(),
         busConnected: () => true,
@@ -219,6 +283,96 @@ describe("Host", () => {
     expect(bus.subscriptions.filter((s) => s.active)).toHaveLength(0);
   });
 
+  test("start loads the chat commands and the health snapshot counts them", async () => {
+    const db = new FakeDispatcherDb();
+    db.commands = [storedCommand()];
+    const { host, bus } = await setup(twitchapi, {}, undefined, db);
+    await host.start();
+    const chat = host.snapshot().chat;
+    expect(chat.commands.storedCommands).toBe(1);
+    expect(chat.commands.builtins).toBeGreaterThan(0);
+    expect(bus.active("user.message")).toBe(1);
+    await host.stop();
+  });
+
+  test("a chat line the dispatcher cannot attribute is counted as refused", async () => {
+    const { host, bus } = await setup();
+    await host.start();
+    bus.deliver("user.message", bytes("{}"));
+    await flush();
+    expect(host.snapshot().chat.lines.refused).toBe(1);
+    await host.stop();
+  });
+
+  test("stop closes the chat subscriptions with the rest", async () => {
+    const { host, bus } = await setup();
+    await host.start();
+    await host.stop();
+    expect(bus.subscriptions.filter((s) => s.active)).toHaveLength(0);
+  });
+
+  describe("stopping with a chat line in flight", () => {
+    async function holdLine(held: Promise<void>) {
+      const db = new FakeDispatcherDb();
+      db.commands = [storedCommand({ visibility: "restricted" })];
+      const gated: EgressHandlers = {
+        "chat.send": {
+          handle: async (payload) => {
+            await held;
+            return { status: "delivered", messageId: `posted ${payload.message}` };
+          },
+        },
+      };
+      const adapter = new FakeAdapter("twitch", [twitchapi], gated);
+      const ctx = await setup(twitchapi, {}, adapter, db, new LoopbackBus());
+      ctx.values.twitch_token = "tok";
+      ctx.values["integration.twitch.enabled"] = "true";
+      await ctx.host.start();
+      await ctx.host.settled();
+      ctx.bus.deliver("user.message", deniedLine());
+      await flush();
+      return { ...ctx, adapter };
+    }
+
+    test("a line waiting on the gateway still gets its reply delivered", async () => {
+      let release = () => {};
+      const { host, adapter } = await holdLine(new Promise<void>((resolve) => (release = resolve)));
+      const stopping = host.stop();
+      await flush();
+      expect(adapter.stops).toBe(0);
+      release();
+      await stopping;
+      expect(host.snapshot().chat.replies).toEqual({ delivered: 1, failed: 0 });
+      expect(host.snapshot().gateway.outcomes.twitch?.["chat.send"]).toEqual({ delivered: 1 });
+      expect(adapter.stops).toBe(1);
+    });
+
+    test("a line that never finishes is abandoned at the chat drain time, before the adapters stop", async () => {
+      const { host, adapter, time, logger } = await holdLine(new Promise<void>(() => {}));
+      let stopped = false;
+      void host.stop().then(() => {
+        stopped = true;
+      });
+      await flush();
+      await time.advance(chatConfig(ChatEnvSchema.parse({})).drainMs - 1);
+      expect(adapter.stops).toBe(0);
+      await time.advance(1);
+      await flush();
+      expect(adapter.stops).toBe(1);
+      expect(logger.at("error").some((entry) => entry.message.includes("chat lines still being handled"))).toBe(true);
+      await time.advance(HOST_DEFAULTS.stopDeadlineMs);
+      expect(stopped).toBe(true);
+    });
+  });
+
+  test("start fails when the chat commands cannot be listed, leaving no chat subscription behind", async () => {
+    const db = new FakeDispatcherDb();
+    db.failListing = true;
+    const { host, bus } = await setup(twitchapi, {}, undefined, db);
+    await expect(host.start()).rejects.toThrow("ListCommands");
+    expect(bus.subscriptions.some((s) => s.pattern === "user.message")).toBe(false);
+  });
+
   test("stop gives up on a served handler that ignores its deadline once the drain time is spent", async () => {
     const stuck: ServedSubject = { ...twitchapi, handle: () => new Promise<Uint8Array>(() => {}) };
     const { values, bus, host, time, logger } = await setup(stuck);
@@ -233,7 +387,7 @@ describe("Host", () => {
       stopped = true;
     });
     await flush();
-    // The drain time is the larger of the 10 s stop deadline and the 9 s budget.
+    // The drain time is the longer of the 10 s stop deadline and the 9 s budget.
     await time.advance(9_999);
     expect(stopped).toBe(false);
     await time.advance(1);
@@ -244,7 +398,7 @@ describe("Host", () => {
   test("refuses a shutdown deadline that does not cover the db-proxy timeout and the longest served budget", async () => {
     const slow: ServedSubject = { ...twitchapi, budgetMs: 14_000 };
     await expect(setup(slow)).rejects.toThrow("must exceed the db-proxy timeout");
-    await expect(setup(slow, { woofx3ConnectorsShutdownDeadlineMs: 16_001 })).resolves.toBeDefined();
+    await expect(setup(slow, { woofx3ConnectorsShutdownDeadlineMs: 18_001 })).resolves.toBeDefined();
   });
 
   test("answers platform.gateway.send from the running adapter, and as unavailable once it is disabled", async () => {

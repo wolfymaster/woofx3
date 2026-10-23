@@ -7,7 +7,7 @@ Orientation for automated coding agents in the **woofx3** mono-repository (strea
 Subsystem APIs, workflow schema, barkloader/module format, and service layout are documented under **`docs/`** as **VitePress** (`docs/package.json`).
 
 - Entry: `docs/index.md`
-- Areas: `docs/workflow/`, `docs/barkloader/`, `docs/woofwoofwoof/`, `docs/services/`
+- Areas: `docs/workflow/`, `docs/barkloader/`, `docs/services/`
 
 ```bash
 cd docs && bun run docs

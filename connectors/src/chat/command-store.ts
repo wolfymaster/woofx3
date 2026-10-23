@@ -1,7 +1,7 @@
 import type { ActionStep } from "@woofx3/common/cloudevents/Action";
 import type { ChatCommandEvent } from "@woofx3/common/cloudevents/Chat/commands";
 import { parseCommandVariables } from "@woofx3/common/templates/command-variables";
-import { errorMessage, type Logger, type TimerHandle, type Timers } from "../host/deps";
+import { type Clock, errorMessage, type Logger, type TimerHandle, type Timers } from "../host/deps";
 import type { CommandDefinition, CommandTable } from "./commands";
 import type { DispatcherDb, StoredCommand } from "./db-client";
 
@@ -120,8 +120,19 @@ export interface CommandStoreDeps {
   db: Pick<DispatcherDb, "listCommands">;
   table: CommandTable;
   define: (stored: StoredCommand) => CommandDefinition;
+  clock: Clock;
   timers: Timers;
   logger: Logger;
+}
+
+/** What /health reports about the table. Times are clock milliseconds. */
+export interface CommandStoreCounters {
+  /** Stored commands currently in the table. */
+  storedCommands: number;
+  /** When a listing last succeeded and was applied; undefined before the first. */
+  lastReloadAt: number | undefined;
+  /** Listings that failed, each leaving the last good table in place. */
+  reloadFailures: number;
 }
 
 interface Applied {
@@ -146,6 +157,8 @@ export class CommandStore {
   private running: Promise<void> | undefined;
   private again = false;
   private stopped = false;
+  private lastReloadAt: number | undefined;
+  private reloadFailures = 0;
 
   constructor(private readonly deps: CommandStoreDeps) {
     for (const [key, value] of Object.entries(deps.config)) {
@@ -162,6 +175,7 @@ export class CommandStore {
     }
     const commands = await this.deps.db.listCommands();
     this.apply(commands);
+    this.lastReloadAt = this.deps.clock.now();
     this.backstop = this.deps.timers.setInterval(() => this.trigger(), this.deps.config.reloadBackstopMs);
   }
 
@@ -193,6 +207,14 @@ export class CommandStore {
     await this.running;
   }
 
+  snapshot(): CommandStoreCounters {
+    return {
+      storedCommands: this.applied.size,
+      lastReloadAt: this.lastReloadAt,
+      reloadFailures: this.reloadFailures,
+    };
+  }
+
   /** Resolves once no reload is running. For tests. */
   async idle(): Promise<void> {
     await this.running;
@@ -222,6 +244,7 @@ export class CommandStore {
     try {
       commands = await this.deps.db.listCommands();
     } catch (error) {
+      this.reloadFailures++;
       this.deps.logger.error("could not reload chat commands; keeping the last good table", {
         error: errorMessage(error),
       });
@@ -229,6 +252,7 @@ export class CommandStore {
     }
     if (!this.stopped) {
       this.apply(commands);
+      this.lastReloadAt = this.deps.clock.now();
     }
   }
 

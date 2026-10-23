@@ -1,10 +1,12 @@
 import { PLATFORM_IDS } from "@woofx3/api/platform-gateway";
 import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
 import { type SessionBus, subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
+import type { DispatcherDb } from "../chat/db-client";
 import { ClaimRegistry } from "../companion/claims";
 import { COMPANION_GATEWAY_GRANTS, EngineCompanionGateway } from "../companion/companion-gateway";
 import type { Fetch } from "../companion/dialer";
 import type { EndpointStore } from "../companion/endpoint-store";
+import type { ChatConfig } from "../config/chat";
 import type { CompanionConfig } from "../config/companion";
 import type { GatewayConfig } from "../config/gateway";
 import type { HostConfig } from "../config/host";
@@ -14,6 +16,7 @@ import type { DbProxyClientConfig } from "../services/db-proxy";
 import type { Adapter } from "./adapter";
 import type { AdapterId } from "./adapter-ids";
 import { bounded } from "./bounded";
+import { ChatService } from "./chat-service";
 import { type Clock, errorMessage, type IdSource, type Logger, type RandomSource, type Timers } from "./deps";
 import type { HealthSnapshot } from "./health";
 import { HostRequests } from "./host-requests";
@@ -45,8 +48,11 @@ export interface HostCompanionDeps {
 export interface HostDeps {
   config: HostConfig;
   gateway: GatewayConfig;
+  chat: ChatConfig;
   companion: HostCompanionDeps;
   dbProxy: DbProxyClientConfig;
+  /** Replaces the dispatcher's db-proxy client; tests pass an in-memory fake. */
+  dispatcherDb?: DispatcherDb;
   bus: BusClient;
   busConnected: () => boolean;
   linkStore: LinkStore;
@@ -73,9 +79,10 @@ export class Host {
   private readonly served: ServedSubjects;
   private readonly watcher: SettingsWatcher;
   private readonly gateway: PlatformGateway;
+  private readonly chat: ChatService;
   private readonly companion: EngineCompanionGateway;
   private running = false;
-  /** How long stop gives the adapters and the held requests together: the larger of the stop deadline and any budget. */
+  /** How long stop gives the adapters and the held requests together: the longest of the stop deadline and the served budgets. */
   private readonly drainMs: number;
 
   constructor(private readonly deps: HostDeps) {
@@ -114,10 +121,10 @@ export class Host {
     });
     const longestBudgetMs = Math.max(0, ...this.servedBudgets());
     this.drainMs = Math.max(deps.config.stopDeadlineMs, longestBudgetMs);
-    const stopWorstCaseMs = deps.config.dbProxyTimeoutMs + this.drainMs;
+    const stopWorstCaseMs = deps.config.dbProxyTimeoutMs + deps.chat.drainMs + this.drainMs;
     if (deps.config.shutdownDeadlineMs <= stopWorstCaseMs) {
       throw new Error(
-        `the shutdown deadline (${deps.config.shutdownDeadlineMs}ms) must exceed the db-proxy timeout plus the larger of the stop deadline and the longest served budget (${stopWorstCaseMs}ms)`
+        `the shutdown deadline (${deps.config.shutdownDeadlineMs}ms) must exceed the db-proxy timeout plus the chat drain plus the longest of the stop deadline and the served budgets (${stopWorstCaseMs}ms)`
       );
     }
     this.supervisor = new Supervisor(
@@ -163,6 +170,18 @@ export class Host {
       hostStates: deps.hostStates,
       logger: deps.logger,
     });
+    this.chat = new ChatService({
+      config: deps.chat,
+      dbProxy: deps.dbProxy,
+      db: deps.dispatcherDb,
+      bus: deps.bus,
+      limits: deps.config.subscriptionLimits,
+      drainMs: deps.chat.drainMs,
+      clock: deps.clock,
+      random: deps.random,
+      timers: deps.timers,
+      logger: deps.logger.child({ component: "chat" }),
+    });
     this.watcher = new SettingsWatcher({
       adapters: this.supervisor.adapterIds,
       readers: deps.readers,
@@ -182,8 +201,9 @@ export class Host {
   }
 
   /**
-   * Follows the stream session, serves every adapter's subjects, then reads
-   * the links and starts what is desired.
+   * Follows the stream session, serves every adapter's subjects and the
+   * gateway's, starts the chat dispatcher (its replies go through the
+   * gateway), then reads the links and starts what is desired.
    */
   async start(): Promise<void> {
     if (this.running) {
@@ -199,16 +219,19 @@ export class Host {
     }
     await this.gateway.serve(this.scope);
     await this.companion.start(this.scope);
+    await this.chat.start();
     await this.watcher.start();
   }
 
   /**
-   * Stops reading settings (at most one read timeout), then stops every
-   * adapter and stops answering together. Held requests settle as their
-   * adapters stop, or at their budget, so the second half takes at most the
-   * larger of the stop deadline and the longest budget. The constructor
-   * checks the shutdown deadline covers both halves. The companion gateway
-   * stops last, once no adapter can ask it for a route.
+   * Stops reading settings (at most one read timeout), drains the chat lines
+   * in flight (at most the chat drain time) while the gateway and the
+   * adapters still answer, then stops every adapter and stops answering
+   * together. Held requests settle as their adapters stop, or at their
+   * budget, so that half takes at most the larger of the stop deadline and
+   * the longest budget. The constructor checks the shutdown deadline covers
+   * all three steps. The companion gateway stops last, once no adapter can
+   * ask it for a route.
    */
   async stop(): Promise<void> {
     if (!this.running) {
@@ -216,10 +239,12 @@ export class Host {
     }
     this.running = false;
     await this.watcher.stop();
+    await this.chat.drain();
     const [, drained] = await Promise.all([
       this.supervisor.stopAll(),
       bounded(() => this.scope.closeAll(), this.drainMs, this.deps.timers),
     ]);
+    await this.chat.close();
     if (drained.kind === "timeout") {
       this.deps.logger.error("host requests still running past the stop deadline; leaving them", {
         drainMs: this.drainMs,
@@ -246,6 +271,7 @@ export class Host {
       hostRequests: this.requests.snapshot(),
       hostBus: this.hostCounters.snapshot(),
       gateway: this.gateway.snapshot(),
+      chat: this.chat.snapshot(),
       companion: this.companion.status(),
     };
   }

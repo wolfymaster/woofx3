@@ -62,15 +62,6 @@
       "output": "wooflow"
     },
     {
-      "name": "woofwoofwoof",
-      "dependencies": ["message-bus", "db-proxy", "barkloader"],
-      "type": "bun",
-      "path": "../woofwoofwoof",
-      "enabled": true,
-      "entry": "src/woofwoofwoof.ts",
-      "output": "woofwoofwoof"
-    },
-    {
       "name": "edge",
       "dependencies": ["api", "sceneManager"],
       "type": "binary",

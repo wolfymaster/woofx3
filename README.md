@@ -140,9 +140,9 @@ WoofX3 is built around six engineering principles:
                │              │              │              │
                ▼              ▼              ▼              ▼
          ┌──────────┐  ┌────────────┐  ┌─────────────┐  ┌──────────────┐
-         │  twitch  │  │  workflow  │  │  barkloader │  │ woofwoofwoof │
-         │  Helix + │  │   engine + │  │   modules + │  │   Twitch     │
-         │  EventSub│  │ rete rules │  │  Lua/QJS sbx│  │   chatbot    │
+         │  twitch  │  │  workflow  │  │  barkloader │  │  connectors  │
+         │  Helix + │  │   engine + │  │   modules + │  │  adapters +  │
+         │  EventSub│  │ rete rules │  │  Lua/QJS sbx│  │  chat cmds   │
          └────┬─────┘  └─────┬──────┘  └──────┬──────┘  └──────┬───────┘
               │              │                │                │
               └──────────────┴────────┬───────┴────────────────┘
@@ -179,8 +179,7 @@ adapted at the edges and republished onto the bus as CloudEvents.
 
 | Service | Path | Language | Role |
 | ------- | ---- | -------- | ---- |
-| **connectors** | [`connectors/`](connectors) | TypeScript (Bun) | Runs the engine's platform connections. Its Twitch adapter turns EventSub into CloudEvents on the bus and answers Twitch commands (`twitchapi`) through the Helix API, while Twitch is linked and enabled. Docs: [`docs/services/connectors.md`](docs/services/connectors.md). |
-| **woofwoofwoof** | [`woofwoofwoof/`](woofwoofwoof) | TypeScript (Bun) | Twitch chatbot. Listens to chat, processes commands, and integrates with external services and modules. Docs: [`docs/woofwoofwoof/`](docs/woofwoofwoof/index.md). |
+| **connectors** | [`connectors/`](connectors) | TypeScript (Bun) | Runs the engine's platform connections and its chat commands. Its Twitch adapter turns EventSub into CloudEvents on the bus and answers Twitch commands (`twitchapi`) through the Helix API, while Twitch is linked and enabled. Its chat command dispatcher matches chat lines from any platform against stored and built-in commands and replies through the platform gateway. Docs: [`docs/services/connectors.md`](docs/services/connectors.md). |
 | **treats** | [`treats/`](treats) | _planned_ | Viewer-engagement currency / treats system. Not yet implemented. |
 | **irl/srt-live-server** | [`irl/srt-live-server/`](irl/srt-live-server) | C++ (vendored) | SRT relay used for IRL streaming setups. |
 
@@ -346,7 +345,7 @@ Barkloader is the runtime, but a module touches several other services:
 | ------- | -------------------------- |
 | **Trigger declared** | `db` records it via Twirp `RegisterTrigger`; the workflow engine subscribes to the matching bus subject and routes events to bundled or downstream workflows. |
 | **Workflow step calls a function** | The workflow engine resolves the `#func` action to a barkloader WebSocket invoke (`module/function`) and forwards args. |
-| **Chat command matches** | `woofwoofwoof` matches the message against the module's `commands[]` and routes to either a workflow or a function invoke. |
+| **Chat command matches** | `connectors` matches the message against the module's `commands[]` and routes to either a workflow or a function invoke. |
 | **Widget / overlay loads** | Stored under `modules/{id}/widgets/...` or `overlays/...` and served as a browser source in OBS; widgets in an alert layout play when an alert reaches their scene's alert widget. |
 | **Module needs persistence** | A separate in-process `StorageClient` (gRPC to the `db` proxy's module storage) is exposed to modules. Keys are not pre-declared in the manifest — modules write to the KV namespace at runtime. |
 
@@ -371,7 +370,6 @@ woofx3/
 ├── db/              Database proxy, protobuf, migrations (Go)
 ├── workflow/        Event-driven workflow engine (Go)
 ├── twitch/          Twitch Helix + EventSub bridge (TS / Bun)
-├── woofwoofwoof/    Twitch chatbot (TS / Bun)
 ├── treats/          Viewer treats system (planned)
 ├── services/
 │   └── nats/        Local NATS message bus
@@ -501,12 +499,8 @@ Direct entry points by topic:
   ([modules](docs/barkloader/modules.md) ·
   [sandbox](docs/barkloader/sandbox.md) ·
   [API](docs/barkloader/api.md))
-- **WoofWoofWoof** — [`docs/woofwoofwoof/`](docs/woofwoofwoof/index.md)
-  ([application](docs/woofwoofwoof/application.md) ·
-  [commands](docs/woofwoofwoof/commands.md) ·
-  [Twitch chat](docs/woofwoofwoof/twitchChat.md) ·
-  [message bus](docs/woofwoofwoof/messageBus.md) ·
-  [config](docs/woofwoofwoof/config.md))
+- **Connectors** — [`docs/services/connectors.md`](docs/services/connectors.md)
+  (host, Twitch adapter, chat command dispatcher)
 - **Shared services** — [CloudEvents](docs/services/cloudevents.md) ·
   [Runtime](docs/services/runtime.md)
 

@@ -67,8 +67,7 @@ const ZERO_WIDTH_SPACE = "\u200b";
  * on the chat feed as the broadcaster's own, so without the guard any caller
  * able to send a chat line (a module function, a public command passing its
  * arguments on) could run a broadcaster-only command such as `!title`. The
- * line reads the same in chat. Must match guardOutgoingLine in
- * woofwoofwoof/src/sentLines.ts, which guards the bot's chat-client lines.
+ * line reads the same in chat.
  */
 export function guardChatLine(text: string): string {
   if (text.startsWith(COMMAND_PREFIX)) {

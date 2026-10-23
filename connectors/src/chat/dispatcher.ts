@@ -8,7 +8,7 @@ import { TWITCHAPI_SUBJECT } from "@woofx3/common/cloudevents/Twitch/commands";
 import type { ChatConfig } from "../config/chat";
 import { type Clock, errorMessage, type Logger, type Timers } from "../host/deps";
 import type { ScopedBus, SubjectGrants } from "../host/scoped-bus";
-import { CommandStore, storedCommandDefinition } from "./command-store";
+import { CommandStore, type CommandStoreCounters, storedCommandDefinition } from "./command-store";
 import { type ChatReplier, type CommandDefinition, type CommandMatch, CommandTable } from "./commands";
 import type { DispatcherDb, PermissionDecision } from "./db-client";
 import { DerivedGroupSync } from "./derived-group-sync";
@@ -50,6 +50,23 @@ export type LineWatcher = (line: ChatLine) => void | Promise<void>;
  */
 export type LineOutcome = "refused" | "from_engine" | "no_command" | "denied" | "cooling_down" | "failed" | "ran";
 
+const LINE_OUTCOMES = [
+  "refused",
+  "from_engine",
+  "no_command",
+  "denied",
+  "cooling_down",
+  "failed",
+  "ran",
+] as const satisfies readonly LineOutcome[];
+
+/** What /health reports about the dispatcher. */
+export interface DispatcherCounters {
+  commands: CommandStoreCounters & { builtins: number };
+  /** Lines handled, by how each ended. */
+  lines: Record<LineOutcome, number>;
+}
+
 export interface ChatDispatcherDeps {
   config: ChatConfig;
   /** Created once by whoever builds the dispatcher, and shared by all its parts. */
@@ -77,6 +94,10 @@ export class ChatDispatcher {
   private readonly replier: ChatReplier;
   private readonly events = new EventFactory({ source: DISPATCHER_EVENT_SOURCE });
   private readonly watchers: LineWatcher[] = [];
+  private readonly outcomes = Object.fromEntries(LINE_OUTCOMES.map((outcome) => [outcome, 0])) as Record<
+    LineOutcome,
+    number
+  >;
   private started = false;
 
   constructor(private readonly deps: ChatDispatcherDeps) {
@@ -96,6 +117,7 @@ export class ChatDispatcher {
           },
           deps.logger
         ),
+      clock: deps.clock,
       timers: deps.timers,
       logger: deps.logger,
     });
@@ -143,7 +165,20 @@ export class ChatDispatcher {
     await this.store.idle();
   }
 
+  snapshot(): DispatcherCounters {
+    return {
+      commands: { ...this.store.snapshot(), builtins: this.deps.builtins.length },
+      lines: { ...this.outcomes },
+    };
+  }
+
   async handleLine(data: Uint8Array): Promise<LineOutcome> {
+    const outcome = await this.handle(data);
+    this.outcomes[outcome]++;
+    return outcome;
+  }
+
+  private async handle(data: Uint8Array): Promise<LineOutcome> {
     let envelope: unknown;
     try {
       envelope = JSON.parse(decoder.decode(data));
