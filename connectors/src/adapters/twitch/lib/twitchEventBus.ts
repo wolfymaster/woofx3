@@ -2,7 +2,6 @@ import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { Context } from "../types";
 import onChannelAdBreakBegin, { AdBreakAnnouncer } from "./subscriptions/onChannelAdBreakBegin";
-import onChannelBan from "./subscriptions/onChannelBan";
 import onChannelChatmessage from "./subscriptions/onChannelChatMessage";
 import onChannelChatNotification from "./subscriptions/onChannelChatNotification";
 import onChannelCheer from "./subscriptions/onChannelCheer";
@@ -14,12 +13,11 @@ import onStreamOffline from "./subscriptions/onStreamOffline";
 import onStreamOnline from "./subscriptions/onStreamOnline";
 
 /**
- * Every subscription this service needs. Kept as data so the expected
+ * Every subscription the twitch adapter needs. Kept as data so the expected
  * count is known before any of them is created — readiness is "Twitch
  * confirmed all of these", which cannot be judged without it.
  */
 const SUBSCRIPTION_FACTORIES = [
-  onChannelBan,
   onChannelChatmessage,
   onChannelChatNotification,
   onChannelCheer,
@@ -51,9 +49,9 @@ interface OptionalSubscription {
 /**
  * Subscriptions that need a scope the streamer may not have granted. They
  * are attempted, but a refusal only costs the events they carry, so they are
- * left out of readiness: a service that reports unready over a missing
- * optional scope would be restarted forever for something only a reconnect
- * in the UI can fix.
+ * left out of readiness: an adapter that reports unready over a missing
+ * optional scope would be restarted forever for something only a relink in
+ * the UI can fix.
  */
 const OPTIONAL_SUBSCRIPTIONS: readonly OptionalSubscription[] = [
   {
@@ -63,20 +61,13 @@ const OPTIONAL_SUBSCRIPTIONS: readonly OptionalSubscription[] = [
   },
 ];
 
-/**
- * How long boot waits for Twitch to confirm the subscriptions before
- * giving up and reporting what it has. Confirmations only start arriving
- * after `session_welcome`, so this must comfortably exceed connect time.
- */
-export const SUBSCRIPTION_SETTLE_TIMEOUT_MS = 20_000;
-
 export interface SubscriptionFailure {
   id: string;
   reason: string;
 }
 
 export default class TwitchEventBus {
-  private subscriptions: EventSubSubscription[];
+  private subscriptions: EventSubSubscription[] = [];
   private readonly established = new Set<string>();
   private readonly failures = new Map<string, string>();
   private readonly optionalById = new Map<string, OptionalSubscription>();
@@ -85,11 +76,9 @@ export default class TwitchEventBus {
   private readonly optionalDeps: OptionalSubscriptionDeps;
 
   constructor(
-    private ctx: Context,
-    private listener: EventSubWsListener
+    private readonly ctx: Context,
+    private readonly listener: EventSubWsListener
   ) {
-    this.subscriptions = [];
-    this.listener = listener;
     this.optionalDeps = { adBreaks: new AdBreakAnnouncer(ctx) };
   }
 
@@ -127,10 +116,11 @@ export default class TwitchEventBus {
    * Start the EventSub WebSocket listener and register channel handlers.
    * Subscriptions activate when Twitch sends session_welcome (Twurple calls
    * subscription.start internally). Do not call subscription.start() during boot.
-   * Stops waiting for confirmations when `signal` aborts; the caller then
-   * disconnects.
+   * Waits up to `timeoutMs` for Twitch to confirm them
+   * (TWITCH_DEFAULTS.subscriptionSettleTimeoutMs), and stops waiting when
+   * `signal` aborts; the caller then disconnects.
    */
-  async start(signal: AbortSignal, timeoutMs: number = SUBSCRIPTION_SETTLE_TIMEOUT_MS): Promise<void> {
+  async start(signal: AbortSignal, timeoutMs: number): Promise<void> {
     this.unbindOutcomes();
     this.established.clear();
     this.failures.clear();
@@ -151,7 +141,7 @@ export default class TwitchEventBus {
    * asking again. Readiness drops only for as long as Twitch takes to
    * confirm the new batch. Stops waiting when `signal` aborts.
    */
-  async resubscribe(signal: AbortSignal, timeoutMs: number = SUBSCRIPTION_SETTLE_TIMEOUT_MS): Promise<void> {
+  async resubscribe(signal: AbortSignal, timeoutMs: number): Promise<void> {
     this.unbindOutcomes();
     this.established.clear();
     this.failures.clear();
@@ -183,11 +173,11 @@ export default class TwitchEventBus {
           return;
         }
         finished = true;
-        clearTimeout(timer);
+        this.ctx.timers.clearTimeout(timer);
         signal.removeEventListener("abort", finish);
         resolve();
       };
-      const timer = setTimeout(finish, timeoutMs);
+      const timer = this.ctx.timers.setTimeout(finish, timeoutMs);
       if (signal.aborted) {
         finish();
         return;
@@ -269,18 +259,5 @@ export default class TwitchEventBus {
     }
     this.subscriptions = [];
     this.optionalById.clear();
-  }
-
-  /** Re-activate subscriptions after a manual stop(). Not used during initial boot. */
-  resumeSubscriptions(): void {
-    for (const sub of this.subscriptions) {
-      sub.start();
-    }
-  }
-
-  stopSubscriptions(): void {
-    for (const sub of this.subscriptions) {
-      sub.stop();
-    }
   }
 }

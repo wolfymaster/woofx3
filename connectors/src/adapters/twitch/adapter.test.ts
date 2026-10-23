@@ -13,6 +13,7 @@ import { GatewayEnvSchema, gatewayConfig } from "../../config/gateway";
 import { HostEnvSchema, hostConfig } from "../../config/host";
 import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
 import type { Unavailable } from "../../host/adapter";
+import { systemTimers } from "../../host/deps";
 import { Host } from "../../host/host";
 import { Supervisor } from "../../host/supervisor";
 import {
@@ -120,6 +121,7 @@ mock.module("@woofx3/twitch", () => ({
   requestTokenOverNats: () => async () => {
     throw new Error("no dashboard in this test");
   },
+  TWITCH_NOT_LINKED: "TwitchNotLinked",
 }));
 
 const { TWITCH_EVENT_SUBJECTS, TwitchAdapter, twitchApiUnavailableReply } = await import("./adapter");
@@ -133,7 +135,13 @@ const CONFIG: TwitchConfig = {
 };
 
 function newAdapter(time = new FakeTime()) {
-  return new TwitchAdapter({ config: CONFIG, clock: time, ids: countingIds() });
+  return new TwitchAdapter({
+    config: CONFIG,
+    clock: time,
+    ids: countingIds(),
+    timers: systemTimers,
+    random: halfRandom,
+  });
 }
 
 function errorOf(reply: Uint8Array): { type: string; data: { error: string; code?: string } } {

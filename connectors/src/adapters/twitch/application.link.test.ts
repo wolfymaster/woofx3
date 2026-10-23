@@ -2,7 +2,8 @@ import { describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
-import { countingIds, FakeTime, RecordingLogger } from "../../host/testing";
+import { systemTimers } from "../../host/deps";
+import { countingIds, FakeTime, halfRandom, RecordingLogger } from "../../host/testing";
 import type { TwitchAppContext } from "./application";
 import { SelfSentRegistry } from "./lib/self-sent";
 
@@ -131,7 +132,13 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 function newApp(): InstanceType<typeof TwitchApplication> {
-  return new TwitchApplication({ clock: new FakeTime(), ids: countingIds(), selfSent: selfSentLines() });
+  return new TwitchApplication({
+    clock: new FakeTime(),
+    ids: countingIds(),
+    timers: systemTimers,
+    random: halfRandom,
+    selfSent: selfSentLines(),
+  });
 }
 
 function context(config: Partial<TwitchConfig> = {}) {
@@ -200,7 +207,7 @@ describe("TwitchApplication before Twitch is linked", () => {
 
     expect(await app.start(ctx, running)).toBe("not_linked");
 
-    expect(ctx.twitchEventBus).toBeUndefined();
+    expect(ctx.twitchApi).toBeUndefined();
     expect(app.eventSubStatus().ready).toBe(false);
     expect(logger.at("info").map((entry) => entry.message)).toContainEqual(
       expect.stringContaining("waiting for a Twitch link")
@@ -225,7 +232,7 @@ describe("TwitchApplication before Twitch is linked", () => {
     linkTwitch();
     await handlers.get(TOKEN_UPDATED)?.(event({ data: { integration: "twitch" } }));
 
-    expect(ctx.twitchEventBus).toBeDefined();
+    expect(ctx.twitchApi).toBeDefined();
     expect(ctx.broadcaster?.id).toBe("broadcaster-1");
     expect(app.eventSubStatus().ready).toBe(true);
   });
@@ -239,7 +246,7 @@ describe("TwitchApplication before Twitch is linked", () => {
     await handlers.get(TOKEN_UPDATED)?.(event({ data: { integration: "spotify" } }));
     await handlers.get(TOKEN_UPDATED)?.({ data: encoder.encode("not json") });
 
-    expect(ctx.twitchEventBus).toBeUndefined();
+    expect(ctx.twitchApi).toBeUndefined();
   });
 
   test("answers a twitchapi request with an error rather than failing", async () => {
@@ -295,14 +302,14 @@ describe("TwitchApplication relinked while connected", () => {
     const app = newApp();
     expect(await app.start(ctx, running)).toBe("connected");
     const client = instances[0];
-    const bus = ctx.twitchEventBus;
+    const twitchApi = ctx.twitchApi;
     const subscriptionsBefore = client?.listener.subscribeCount as number;
 
     await handlers.get(TOKEN_UPDATED)?.(tokenUpdated);
 
     expect(instances).toHaveLength(1);
     expect(client?.reloadToken).toHaveBeenCalledTimes(1);
-    expect(ctx.twitchEventBus).toBe(bus);
+    expect(ctx.twitchApi).toBe(twitchApi);
     expect(client?.listener.subscribeCount).toBe(subscriptionsBefore * 2);
     expect(app.eventSubStatus().ready).toBe(true);
   });
@@ -320,7 +327,7 @@ describe("TwitchApplication relinked while connected", () => {
 
     expect(first?.close).toHaveBeenCalledTimes(1);
     expect(instances).toHaveLength(2);
-    expect(ctx.twitchEventBus).toBeDefined();
+    expect(ctx.twitchApi).toBeDefined();
     expect(app.eventSubStatus().ready).toBe(true);
   });
 
@@ -338,7 +345,7 @@ describe("TwitchApplication relinked while connected", () => {
     expect(first?.close).toHaveBeenCalledTimes(1);
     expect(instances).toHaveLength(2);
     expect(instances[1]?.init).toHaveBeenCalledTimes(1);
-    expect(ctx.twitchEventBus).toBeDefined();
+    expect(ctx.twitchApi).toBeDefined();
     expect(app.eventSubStatus().ready).toBe(true);
   });
 
@@ -389,7 +396,7 @@ describe("TwitchApplication relinked while connected", () => {
     const { ctx, handlers, logger } = context();
     const app = newApp();
     await app.start(ctx, running);
-    const bus = ctx.twitchEventBus;
+    const twitchApi = ctx.twitchApi;
     const subscriptionsBefore = instances[0]?.listener.subscribeCount as number;
 
     linked = false;
@@ -397,7 +404,7 @@ describe("TwitchApplication relinked while connected", () => {
 
     expect(instances).toHaveLength(1);
     expect(instances[0]?.close).not.toHaveBeenCalled();
-    expect(ctx.twitchEventBus).toBe(bus);
+    expect(ctx.twitchApi).toBe(twitchApi);
     expect(instances[0]?.listener.subscribeCount).toBe(subscriptionsBefore);
     expect(logger.at("error")).toEqual([]);
     expect(logger.at("debug").map((entry) => entry.message)).toContainEqual(
@@ -446,7 +453,7 @@ describe("TwitchApplication stop", () => {
     expect(client?.close).toHaveBeenCalledTimes(1);
     expect(client?.listener.stop).toHaveBeenCalled();
     expect(ctx.twitchApi).toBeUndefined();
-    expect(ctx.twitchEventBus).toBeUndefined();
+    expect(ctx.twitchApi).toBeUndefined();
     expect(ctx.broadcaster).toBeUndefined();
     expect(app.eventSubStatus().ready).toBe(false);
   });
@@ -470,7 +477,7 @@ describe("TwitchApplication stop", () => {
     await expect(starting).rejects.toThrow("stopped");
     expect(instances[0]?.reloadToken).not.toHaveBeenCalled();
     expect(instances[0]?.close).toHaveBeenCalledTimes(1);
-    expect(ctx.twitchEventBus).toBeUndefined();
+    expect(ctx.twitchApi).toBeUndefined();
   });
 
   test("ignores a token update that arrives after it", async () => {
@@ -601,7 +608,7 @@ describe("TwitchApplication start aborted", () => {
     await expect(starting).rejects.toThrow("no longer wanted");
     expect(instances[0]?.listener.stop).toHaveBeenCalled();
     expect(instances[0]?.close).toHaveBeenCalledTimes(1);
-    expect(ctx.twitchEventBus).toBeUndefined();
+    expect(ctx.twitchApi).toBeUndefined();
     expect(app.eventSubStatus().ready).toBe(false);
   });
 

@@ -2,7 +2,9 @@ import { describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import type { Context } from "../../types";
-import { AdBreakAnnouncer, type AdBreakTimers } from "./onChannelAdBreakBegin";
+import type { Timers } from "../../../../host/deps";
+import { FakeTime } from "../../../../host/testing";
+import { AdBreakAnnouncer } from "./onChannelAdBreakBegin";
 
 interface Published {
   topic: string;
@@ -11,8 +13,27 @@ interface Published {
   data: Record<string, unknown>;
 }
 
+const NOW = Date.parse("2026-10-22T12:00:00.000Z");
+
 function harness() {
   const published: Published[] = [];
+  const scheduled: { fn: () => void; ms: number; cleared: boolean }[] = [];
+  const timers: Timers = {
+    setTimeout: (fn, ms) => {
+      const entry = { fn, ms, cleared: false };
+      scheduled.push(entry);
+      return entry;
+    },
+    clearTimeout: (handle) => {
+      (handle as { cleared: boolean }).cleared = true;
+    },
+    setInterval: () => {
+      throw new Error("the announcer never sets an interval");
+    },
+    clearInterval: () => {
+      throw new Error("the announcer never sets an interval");
+    },
+  };
   const ctx = {
     broadcaster: { id: "broadcaster-1" } as HelixUser,
     logger: { warn: mock(() => {}) } as unknown as Context["logger"],
@@ -23,20 +44,12 @@ function harness() {
       }),
     } as unknown as Context["messageBus"],
     events: new EventFactory({ source: "twitch" }),
+    selfSent: {} as Context["selfSent"],
+    clock: new FakeTime(NOW),
+    timers,
   } as Context;
 
-  const scheduled: { fn: () => void; ms: number; cleared: boolean }[] = [];
-  const timers: AdBreakTimers = {
-    setTimeout: (fn, ms) => {
-      const entry = { fn, ms, cleared: false };
-      scheduled.push(entry);
-      return entry;
-    },
-    clearTimeout: (handle) => {
-      (handle as { cleared: boolean }).cleared = true;
-    },
-  };
-  return { announcer: new AdBreakAnnouncer(ctx, timers), published, scheduled };
+  return { announcer: new AdBreakAnnouncer(ctx), published, scheduled };
 }
 
 const START = new Date("2026-09-28T18:00:00.000Z");
@@ -106,12 +119,10 @@ describe("AdBreakAnnouncer", () => {
 
   test("an unreadable start time falls back to now", () => {
     const { announcer, published } = harness();
-    const before = Date.now();
 
     announcer.begin({ durationSeconds: 30, isAutomatic: false, startDate: new Date("garbage") });
 
-    const startedAt = Date.parse(String(published[0]?.data.startedAt));
-    expect(startedAt).toBeGreaterThanOrEqual(before);
+    expect(published[0]?.data.startedAt).toBe(new Date(NOW).toISOString());
   });
 
   test("a redelivered begin for the pending break is ignored", () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type { ObsControlCommand } from "@woofx3/common/cloudevents/Obs/commands";
 import { OBS_DEFAULTS } from "../../config/obs";
+import { systemTimers } from "../../host/deps";
 import {
   executeObsControlCommand,
   handleObsControlRequest,
@@ -14,7 +15,12 @@ const runCommand = (
   obs: ObsControlClient | null,
   command: ObsControlCommand,
   options: Partial<ObsControlOptions> = {}
-) => executeObsControlCommand(obs, command, { timeoutMs: OBS_DEFAULTS.commandTimeoutMs, ...options });
+) =>
+  executeObsControlCommand(obs, command, {
+    timeoutMs: OBS_DEFAULTS.commandTimeoutMs,
+    timers: systemTimers,
+    ...options,
+  });
 
 describe("parseObsControlCommand", () => {
   it("accepts each command in its documented shape", () => {
@@ -315,7 +321,7 @@ describe("handleObsControlRequest", () => {
       obs.client,
       encode({ specversion: "1.0", type: "engine.obs.command", data: { command: "switch_scene", sceneName: "Raid" } }),
       logger,
-      { timeoutMs: OBS_DEFAULTS.commandTimeoutMs }
+      { timeoutMs: OBS_DEFAULTS.commandTimeoutMs, timers: systemTimers }
     );
     expect(reply).toEqual({ ok: true });
     expect(obs.program()).toBe("Raid");
@@ -324,6 +330,7 @@ describe("handleObsControlRequest", () => {
   it("answers a malformed payload instead of throwing", async () => {
     const reply = await handleObsControlRequest(null, new TextEncoder().encode("{not json"), logger, {
       timeoutMs: OBS_DEFAULTS.commandTimeoutMs,
+      timers: systemTimers,
     });
     expect(reply.ok).toBe(false);
   });
@@ -332,6 +339,7 @@ describe("handleObsControlRequest", () => {
     const obs = fakeObs(scenes());
     const reply = await handleObsControlRequest(obs.client, encode({ data: { command: "switch_scene" } }), logger, {
       timeoutMs: OBS_DEFAULTS.commandTimeoutMs,
+      timers: systemTimers,
     });
     expect(reply.ok).toBe(false);
     expect(obs.calls).toEqual([]);
@@ -363,7 +371,7 @@ describe("timeouts", () => {
     const reply = await runCommand(
       obs.client,
       { command: "switch_scene", sceneName: "Raid" },
-      { timeoutMs: 20, onTimeout: () => recycled++ }
+      { timeoutMs: 20, onTimeout: () => recycled++, timers: systemTimers }
     );
     expect(reply).toEqual({ ok: false, error: "OBS did not answer within 0.02s; reconnecting to it" });
     expect(recycled).toBe(1);
@@ -375,7 +383,7 @@ describe("timeouts", () => {
     await runCommand(
       obs.client,
       { command: "switch_scene", sceneName: "BRB" },
-      { timeoutMs: 1_000, onTimeout: () => recycled++ }
+      { timeoutMs: 1_000, onTimeout: () => recycled++, timers: systemTimers }
     );
     expect(recycled).toBe(0);
   });

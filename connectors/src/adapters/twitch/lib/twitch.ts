@@ -1,10 +1,13 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
-import type {
-  CreateMarkerArgs,
-  HelixCommandResult,
-  TimeoutArgs,
-  UpdateStreamArgs,
+import {
+  type CreateMarkerArgs,
+  type HelixCommandResult,
+  TWITCHAPI_COMMANDS,
+  type TimeoutArgs,
+  type TwitchApiCommand,
+  type UpdateStreamArgs,
 } from "@woofx3/common/cloudevents/Twitch/commands";
+import type { Clock } from "../../../host/deps";
 import { HELIX_DEADLINE_MS, type HelixAuth, runHelixOperation } from "./helix";
 import type { SelfSentRecorder } from "./self-sent";
 import type { EnqueueShoutout } from "./shoutoutQueue";
@@ -17,11 +20,8 @@ export {
 } from "./twitchApiError";
 
 /**
- * Each Twitch API method returns a plain data shape — the dispatcher in
- * application.ts wraps it into a CloudEvent reply for `msg.respond()`.
- * No more "publish a follow-up message on a different topic" pattern;
- * callers that issued the request via `nats.request()` get the data back
- * on the muxed inbox and decide what to do with it.
+ * Each Twitch API method returns a plain data shape, which the dispatcher in
+ * application.ts wraps in the CloudEvent reply to the `twitchapi` request.
  */
 
 export interface ClipResult {
@@ -219,28 +219,6 @@ export function validateTags(tags: unknown): string[] {
 }
 
 /**
- * The methods served on the `twitchapi` subject. Listed rather than read off
- * the class so a request can never reach a private helper or `constructor`.
- */
-export const TWITCH_API_COMMANDS = [
-  "clip",
-  "listChannelPointRewards",
-  "shoutout",
-  "addChannelModerator",
-  "timeout",
-  "updateStream",
-  "createMarker",
-  "searchCategories",
-  "getStreamInfo",
-  "getUser",
-  "getAdSchedule",
-  "snoozeNextAd",
-  "helix",
-] as const satisfies readonly (keyof TwitchApi)[];
-
-export type TwitchApiCommand = (typeof TWITCH_API_COMMANDS)[number];
-
-/**
  * What the dispatcher passes every command besides its args. Only `helix`
  * reads it today: the other commands go through Twurple's client, which
  * takes no deadline.
@@ -257,7 +235,7 @@ export interface TwitchApiCall {
 }
 
 export function isTwitchApiCommand(command: string): command is TwitchApiCommand {
-  return (TWITCH_API_COMMANDS as readonly string[]).includes(command);
+  return (TWITCHAPI_COMMANDS as readonly string[]).includes(command);
 }
 
 const AD_SCOPE_MESSAGE = "reconnect Twitch to allow ad controls";
@@ -345,7 +323,8 @@ export default class TwitchApi {
   /**
    * `helixAuth` is the auth provider behind `apiClient`, which `helix` sends
    * with directly. `selfSent` records every chat line `helix` says, so its
-   * echo is marked as the engine's own. `enqueueShoutout` hands shoutouts to
+   * echo is marked as the engine's own. `clock` stamps the ad commands'
+   * `serverNow`. `enqueueShoutout` hands shoutouts to
    * the dashboard's queue; without it, every shoutout is sent directly.
    */
   constructor(
@@ -353,6 +332,7 @@ export default class TwitchApi {
     private broadcaster: HelixUser,
     private helixAuth: HelixAuth,
     private selfSent: SelfSentRecorder,
+    private clock: Clock,
     private enqueueShoutout?: EnqueueShoutout
   ) {}
 
@@ -460,7 +440,7 @@ export default class TwitchApi {
       prerollFreeSeconds: wholeSeconds(row?.preroll_free_time),
       snoozeCount: wholeSeconds(row?.snooze_count),
       snoozeRefreshAt: normalizeHelixTime(row?.snooze_refresh_at),
-      serverNow: new Date().toISOString(),
+      serverNow: new Date(this.clock.now()).toISOString(),
     };
   }
 
@@ -654,7 +634,7 @@ export default class TwitchApi {
       snoozeCount: wholeSeconds(row?.snooze_count),
       snoozeRefreshAt: normalizeHelixTime(row?.snooze_refresh_at),
       nextAdAt: normalizeHelixTime(row?.next_ad_at),
-      serverNow: new Date().toISOString(),
+      serverNow: new Date(this.clock.now()).toISOString(),
     };
   }
 

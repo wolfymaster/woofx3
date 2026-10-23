@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
+import { systemClock, systemTimers } from "../../../host/deps";
 import type { Context } from "../types";
 import TwitchEventBus from "./twitchEventBus";
 
@@ -38,7 +39,6 @@ function createMockListener() {
     emitSuccess: (sub: EventSubSubscription) => successHandlers.forEach((h) => h(sub)),
     emitFailure: (sub: EventSubSubscription, err: Error) => failureHandlers.forEach((h) => h(sub, err)),
     onChannelAdBreakBegin: mock(() => subscriptionStub()),
-    onChannelBan: mock(() => subscriptionStub()),
     onChannelChatMessage: mock(() => subscriptionStub()),
     onChannelChatNotification: mock(() => subscriptionStub()),
     onChannelCheer: mock(() => subscriptionStub()),
@@ -54,7 +54,6 @@ function createMockListener() {
 /** Every required subscription stub the listener returned, in registration order. */
 function allStubs(listener: ReturnType<typeof createMockListener>): EventSubSubscription[] {
   const mocks = [
-    listener.onChannelBan,
     listener.onChannelChatMessage,
     listener.onChannelChatNotification,
     listener.onChannelCheer,
@@ -82,6 +81,8 @@ function minimalContext(): Context {
     messageBus: { publish: mock(() => {}) } as unknown as Context["messageBus"],
     events: {} as Context["events"],
     selfSent: {} as Context["selfSent"],
+    clock: systemClock,
+    timers: systemTimers,
   };
 }
 
@@ -116,7 +117,7 @@ describe("TwitchEventBus", () => {
     await bus.start(running, SETTLE_MS);
 
     const firstSubs = [
-      listener.onChannelBan.mock.results[0]?.value,
+      listener.onChannelFollow.mock.results[0]?.value,
       listener.onStreamOnline.mock.results[0]?.value,
     ].filter(Boolean) as Array<{ stop: ReturnType<typeof mock> }>;
 
@@ -133,33 +134,14 @@ describe("TwitchEventBus", () => {
 
     await bus.start(running, SETTLE_MS);
 
-    expect(listener.onChannelBan).toHaveBeenCalledTimes(1);
+    expect(listener.onChannelFollow).toHaveBeenCalledTimes(1);
 
-    const firstBanSub = listener.onChannelBan.mock.results[0]?.value as { stop: ReturnType<typeof mock> };
+    const firstFollowSub = listener.onChannelFollow.mock.results[0]?.value as { stop: ReturnType<typeof mock> };
 
     await bus.start(running, SETTLE_MS);
 
-    expect(firstBanSub.stop).toHaveBeenCalled();
-    expect(listener.onChannelBan).toHaveBeenCalledTimes(2);
-  });
-
-  test("resumeSubscriptions and stopSubscriptions forward lifecycle calls to each active subscription", async () => {
-    const bus = new TwitchEventBus(ctx, listener as unknown as EventSubWsListener);
-    await bus.start(running, SETTLE_MS);
-
-    const stubs = listener.onStreamOnline.mock.results.map(
-      (r) => r.value as { start: ReturnType<typeof mock>; stop: ReturnType<typeof mock> }
-    );
-
-    bus.resumeSubscriptions();
-    for (const s of stubs) {
-      expect(s.start).toHaveBeenCalledTimes(1);
-    }
-
-    bus.stopSubscriptions();
-    for (const s of stubs) {
-      expect(s.stop).toHaveBeenCalled();
-    }
+    expect(firstFollowSub.stop).toHaveBeenCalled();
+    expect(listener.onChannelFollow).toHaveBeenCalledTimes(2);
   });
 
   test("is not ready when Twitch refuses a subscription", async () => {

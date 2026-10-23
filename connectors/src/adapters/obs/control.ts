@@ -1,5 +1,5 @@
-// The `engine.obs.command` request/reply handler: the engine asks, this
-// service carries the request to OBS over the WebSocket it holds, and answers
+// The `engine.obs.command` request/reply handler: the engine asks, the obs
+// adapter carries the request to OBS over the WebSocket it holds, and answers
 // with whether OBS did it.
 //
 // Every failure is an answer rather than a throw or a silence. The engine is
@@ -7,10 +7,14 @@
 // `ctx.obs`), so a command that cannot be carried out has to say why in words a
 // streamer can act on -- the reason becomes the step's error in the run log.
 
-import type { ObsControlCommand, ObsControlReply } from "@woofx3/common/cloudevents/Obs/commands";
+import {
+  BROWSER_SOURCE_KIND,
+  OBS_CONTROL_COMMAND_SCHEMA,
+  type ObsControlCommand,
+  type ObsControlReply,
+} from "@woofx3/common/cloudevents/Obs/commands";
 import type { OBSRequestTypes, OBSResponseTypes } from "obs-websocket-js";
-import { z } from "zod";
-import type { Logger } from "../../host/deps";
+import type { Logger, TimerHandle, Timers } from "../../host/deps";
 
 /** The slice of `manager.ts` a command needs; structural so tests can fake OBS. */
 export interface ObsControlClient {
@@ -26,51 +30,11 @@ export const OBS_NOT_CONNECTED = "OBS is not connected (retrying)";
 /** obs-websocket v5 RequestStatus.ResourceNotFound. */
 const OBS_RESOURCE_NOT_FOUND = 600;
 
-const nonEmptyName = z.string().min(1);
-
-/** OBS's id for the browser source input kind. */
-const BROWSER_SOURCE_KIND = "browser_source";
-
-// Must match the limits in barkloader/lib_sandbox/src/extensions/obs.rs.
-const BROWSER_SOURCE_MAX_WIDTH = 7_680;
-const BROWSER_SOURCE_MAX_HEIGHT = 4_320;
-
-/**
- * An absolute http(s) URL. A browser source loads whatever it is given, and a
- * `file:` URL would put the streamer's own files on stream.
- */
-const webUrl = z.string().refine((value) => {
-  const parsed = URL.parse(value);
-  return parsed !== null && (parsed.protocol === "http:" || parsed.protocol === "https:") && parsed.host !== "";
-}, "must be an absolute http:// or https:// URL");
-
-// Mirrors ObsControlCommand in shared/common/typescript/cloudevents/Obs/commands.ts.
-// Strict objects, so a misspelled field is refused rather than silently ignored:
-// `visibile: false` must not read as a command with no visibility.
-const commandSchema = z.discriminatedUnion("command", [
-  z.strictObject({ command: z.literal("switch_scene"), sceneName: nonEmptyName }),
-  z.strictObject({
-    command: z.literal("set_source_visibility"),
-    sceneName: z.string().optional(),
-    sourceName: nonEmptyName,
-    visibility: z.enum(["visible", "hidden", "toggle"]),
-  }),
-  z.strictObject({ command: z.literal("set_input_mute"), inputName: nonEmptyName, muted: z.boolean() }),
-  z.strictObject({
-    command: z.literal("show_browser_source"),
-    sceneName: z.string().optional(),
-    sourceName: nonEmptyName,
-    url: webUrl,
-    width: z.number().int().min(1).max(BROWSER_SOURCE_MAX_WIDTH),
-    height: z.number().int().min(1).max(BROWSER_SOURCE_MAX_HEIGHT),
-  }),
-]);
-
 export type ParsedObsCommand = { ok: true; command: ObsControlCommand } | { ok: false; error: string };
 
 /** Validate the `data` of an `engine.obs.command` CloudEvent. */
 export function parseObsControlCommand(data: unknown): ParsedObsCommand {
-  const parsed = commandSchema.safeParse(data);
+  const parsed = OBS_CONTROL_COMMAND_SCHEMA.safeParse(data);
   if (!parsed.success) {
     const issues = parsed.error.issues.map((issue) => {
       const path = issue.path.join(".");
@@ -83,14 +47,16 @@ export function parseObsControlCommand(data: unknown): ParsedObsCommand {
 
 export interface ObsControlOptions {
   /**
-   * How long one command may take in OBS (WOOFX3_OBS_COMMAND_TIMEOUT_MS). Under the host's reply budget on purpose,
-   * so the step fails with this service's reason rather than a bare "no
-   * answer". OBS answers a local request in milliseconds; one that has not
+   * How long one command may take in OBS (WOOFX3_OBS_COMMAND_TIMEOUT_MS).
+   * Under the host's reply budget on purpose, so the step fails with the
+   * adapter's reason rather than a bare "no answer". OBS answers a local request in milliseconds; one that has not
    * answered in this long is hung, and the session is recycled.
    */
   timeoutMs: number;
   /** Called when OBS did not answer in time; the caller drops the session. */
   onTimeout?: () => void;
+  /** Runs the `timeoutMs` deadline. */
+  timers: Timers;
 }
 
 /** A refusal already worded for the streamer, passed through as is. */
@@ -107,12 +73,12 @@ export function isNotFound(err: unknown): boolean {
   );
 }
 
-export function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
+export function withDeadline<T>(work: Promise<T>, ms: number, timers: Timers): Promise<T> {
+  let timer: TimerHandle | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new ObsTimeoutError(`timeout after ${ms}ms`)), ms);
+    timer = timers.setTimeout(() => reject(new ObsTimeoutError(`timeout after ${ms}ms`)), ms);
   });
-  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+  return Promise.race([work, deadline]).finally(() => timers.clearTimeout(timer));
 }
 
 /**
@@ -130,7 +96,7 @@ export async function executeObsControlCommand(
   }
   const timeoutMs = options.timeoutMs;
   try {
-    return await withDeadline(runCommand(obs, command), timeoutMs);
+    return await withDeadline(runCommand(obs, command), timeoutMs, options.timers);
   } catch (err) {
     if (err instanceof ObsTimeoutError) {
       options.onTimeout?.();
@@ -334,13 +300,16 @@ function describeObsError(command: ObsControlCommand, err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   if (isNotFound(err)) {
     switch (command.command) {
-      case "switch_scene":
+      case "switch_scene": {
         return `scene ${JSON.stringify(command.sceneName)} does not exist in OBS`;
-      case "set_input_mute":
+      }
+      case "set_input_mute": {
         return `input ${JSON.stringify(command.inputName)} does not exist in OBS`;
+      }
       case "set_source_visibility":
-      case "show_browser_source":
+      case "show_browser_source": {
         break;
+      }
     }
   }
   return `OBS refused ${command.command}: ${message}`;

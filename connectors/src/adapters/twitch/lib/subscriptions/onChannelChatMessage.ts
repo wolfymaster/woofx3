@@ -2,7 +2,7 @@ import type { EventSubChannelChatMessageEvent, EventSubSubscription } from "@twu
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
 import type { Context } from "../../types";
-import { publishEvent } from "../publishEvent";
+import { type EventTuple, publishEvent } from "../publishEvent";
 
 /**
  * Map Twitch's badges onto the platform-neutral ChatterMembership shape.
@@ -48,56 +48,59 @@ export function readMembership(event: EventSubChannelChatMessageEvent, broadcast
   };
 }
 
+async function chatMessageEvent(ctx: Context, event: EventSubChannelChatMessageEvent): Promise<EventTuple> {
+  const {
+    bits,
+    chatterId,
+    chatterName,
+    chatterDisplayName,
+    messageId,
+    sourceBroadcasterName,
+    sourceBroadcasterId,
+    messageText,
+  } = event;
+
+  // Claimed before any wait, so a line is matched while its record is
+  // freshest. A claim never outlives this one message.
+  const ownLine = ctx.selfSent.claimEcho({
+    messageId,
+    text: messageText,
+    fromBroadcaster: chatterId === ctx.broadcaster.id,
+  });
+
+  // Following and subscription tier are not on the message at all, so
+  // they come from Helix. The enricher bounds how long that may take and
+  // leaves the fields absent when it does not resolve: a chat message
+  // must never wait on a permissions lookup.
+  const badged = readMembership(event, ctx.broadcaster.id);
+  const membership = ctx.membershipEnricher
+    ? await ctx.membershipEnricher.enrich(ctx.broadcaster.id, chatterId, badged)
+    : badged;
+
+  return ctx.events.Twitch().chatMessage(
+    {
+      messageId,
+      amount: bits,
+      channelId: sourceBroadcasterId,
+      channelName: sourceBroadcasterName,
+      chatterId,
+      chatterName: chatterDisplayName,
+      chatterLogin: chatterName,
+      isPaid: Boolean(bits),
+      message: messageText,
+      membership,
+      fromEngine: ownLine !== null,
+    },
+    { workflowChain: ownLine?.workflowChain }
+  );
+}
+
 export default function onChannelChatmessage(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onChannelChatMessage(
     ctx.broadcaster.id,
     ctx.broadcaster.id,
     async (event: EventSubChannelChatMessageEvent) => {
-      const {
-        bits,
-        chatterId,
-        chatterName,
-        chatterDisplayName,
-        messageId,
-        sourceBroadcasterName,
-        sourceBroadcasterId,
-        messageText,
-      } = event;
-
-      // Claimed before any wait, so a line is matched while its record is
-      // freshest. A claim never outlives this one message.
-      const ownLine = ctx.selfSent.claimEcho({
-        messageId,
-        text: messageText,
-        fromBroadcaster: chatterId === ctx.broadcaster.id,
-      });
-
-      // Following and subscription tier are not on the message at all, so
-      // they come from Helix. The enricher bounds how long that may take and
-      // leaves the fields absent when it does not resolve: a chat message
-      // must never wait on a permissions lookup.
-      const badged = readMembership(event, ctx.broadcaster.id);
-      const membership = ctx.membershipEnricher
-        ? await ctx.membershipEnricher.enrich(ctx.broadcaster.id, chatterId, badged)
-        : badged;
-
-      const [topic, data] = ctx.events.Twitch().chatMessage(
-        {
-          messageId,
-          amount: bits,
-          channelId: sourceBroadcasterId,
-          channelName: sourceBroadcasterName,
-          chatterId,
-          chatterName: chatterDisplayName,
-          chatterLogin: chatterName,
-          isPaid: Boolean(bits),
-          message: messageText,
-          membership,
-          fromEngine: ownLine !== null,
-        },
-        { workflowChain: ownLine?.workflowChain }
-      );
-      await publishEvent(ctx, [topic, data]);
+      await publishEvent(ctx, () => chatMessageEvent(ctx, event));
     }
   );
 }

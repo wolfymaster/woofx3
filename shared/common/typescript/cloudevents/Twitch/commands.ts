@@ -1,7 +1,59 @@
 import { encodeCommand } from "../utils";
 
-/** The NATS subject the twitch service takes `twitchapi` commands on. */
+/** The NATS subject the connectors host's Twitch adapter takes `twitchapi` commands on. */
 export const TWITCHAPI_SUBJECT = "twitchapi";
+
+/**
+ * Request/reply subject the api answers by queueing a shoutout on the
+ * dashboard that holds the Twitch link; the twitch adapter asks on it. The
+ * request is a `ShoutoutEnqueueTarget`, the reply a `ShoutoutEnqueueReply`.
+ */
+export const SHOUTOUT_ENQUEUE_SUBJECT = "engine.shoutout.enqueue";
+
+/** Who to shout out, as a `SHOUTOUT_ENQUEUE_SUBJECT` request. */
+export interface ShoutoutEnqueueTarget {
+  twitchUserId: string;
+  /** Lowercase login. */
+  login: string;
+  displayName: string;
+  profileImageUrl?: string;
+  /** "partner", "affiliate" or "" for neither. */
+  broadcasterType?: string;
+}
+
+/**
+ * `queued`: the dashboard has it. `unavailable`: there is no dashboard queue
+ * for this engine, because its Twitch link is its own, so the caller sends
+ * the shoutout itself. `error`: there is a queue but it could not be reached
+ * or refused, and the shoutout was not sent.
+ */
+export type ShoutoutEnqueueReply =
+  | { queued: { position: number; alreadyQueued: boolean } }
+  | { unavailable: string }
+  | { error: string };
+
+export type ShoutoutEnqueueReplyParse = { ok: true; value: ShoutoutEnqueueReply } | { ok: false; error: string };
+
+/** Reads a `SHOUTOUT_ENQUEUE_SUBJECT` reply, refusing anything that is not one. */
+export function parseShoutoutEnqueueReply(body: unknown): ShoutoutEnqueueReplyParse {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return { ok: false, error: "is not an object" };
+  }
+  const { queued, unavailable, error } = body as Record<string, unknown>;
+  if (typeof error === "string") {
+    return { ok: true, value: { error } };
+  }
+  if (typeof unavailable === "string") {
+    return { ok: true, value: { unavailable } };
+  }
+  if (typeof queued === "object" && queued !== null) {
+    const { position, alreadyQueued } = queued as Record<string, unknown>;
+    if (typeof position === "number") {
+      return { ok: true, value: { queued: { position, alreadyQueued: alreadyQueued === true } } };
+    }
+  }
+  return { ok: false, error: "is malformed" };
+}
 
 /**
  * How long the connectors host holds a `twitchapi` request before it answers
@@ -34,13 +86,36 @@ export const TWITCHAPI_REPLY_CODES = [
 
 export type TwitchApiReplyCode = (typeof TWITCHAPI_REPLY_CODES)[number];
 
+/**
+ * The commands the connectors host's Twitch adapter serves on the `twitchapi` subject. Listed
+ * rather than read off its client class, so a request can never reach a
+ * private helper or `constructor`.
+ */
+export const TWITCHAPI_COMMANDS = [
+  "clip",
+  "listChannelPointRewards",
+  "shoutout",
+  "addChannelModerator",
+  "timeout",
+  "updateStream",
+  "createMarker",
+  "searchCategories",
+  "getStreamInfo",
+  "getUser",
+  "getAdSchedule",
+  "snoozeNextAd",
+  "helix",
+] as const;
+
+export type TwitchApiCommand = (typeof TWITCHAPI_COMMANDS)[number];
+
 /** The CloudEvent type of a successful reply to `twitchapi` command `command`. */
-export function twitchApiResultType(command: string): string {
+export function twitchApiResultType(command: TwitchApiCommand): string {
   return `twitchapi.${command}.result`;
 }
 
 /**
- * Argument shapes of the `twitchapi` commands. The twitch service
+ * Argument shapes of the `twitchapi` commands. The connectors host's Twitch adapter
  * (connectors/src/adapters/twitch/lib/twitch.ts) is the authority on them and validates each.
  */
 export interface TimeoutArgs {
@@ -100,7 +175,7 @@ export type HelixOperationName =
 
 export interface HelixCommandArgs {
   operation: HelixOperationName;
-  /** By Helix's own names. The linked broadcaster's ids are filled in by the twitch service. */
+  /** By Helix's own names. The linked broadcaster's ids are filled in by the connectors host's Twitch adapter. */
   params?: Record<string, unknown>;
 }
 

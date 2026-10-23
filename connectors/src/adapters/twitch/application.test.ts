@@ -2,7 +2,8 @@ import { describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
-import { countingIds, FakeTime, RecordingLogger } from "../../host/testing";
+import { systemTimers } from "../../host/deps";
+import { countingIds, FakeTime, halfRandom, RecordingLogger } from "../../host/testing";
 import type { TwitchAppContext } from "./application";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
 import { SelfSentRegistry } from "./lib/self-sent";
@@ -42,7 +43,6 @@ function createMockListener() {
     }),
     onSubscriptionCreateFailure: mock(() => ({ unbind: mock(() => {}) })),
     onChannelAdBreakBegin: mock(() => confirmed()),
-    onChannelBan: mock(() => confirmed()),
     onChannelChatMessage: mock(() => confirmed()),
     onChannelChatNotification: mock(() => confirmed()),
     onChannelCheer: mock(() => confirmed()),
@@ -80,6 +80,7 @@ mock.module("@woofx3/twitch", () => ({
   requestTokenOverNats: () => async () => {
     throw new Error("no dashboard in this test");
   },
+  TWITCH_NOT_LINKED: "TwitchNotLinked",
 }));
 
 const { default: TwitchApplication } = await import("./application");
@@ -135,7 +136,13 @@ async function ask(
 describe("TwitchApplication", () => {
   test("start wires TwitchClient with the channel and DB-backed settings, starts EventSub and listens for relinks", async () => {
     const ctx = context();
-    const app = new TwitchApplication({ clock: new FakeTime(), ids: countingIds(), selfSent: selfSentLines() });
+    const app = new TwitchApplication({
+      clock: new FakeTime(),
+      ids: countingIds(),
+      timers: systemTimers,
+      random: halfRandom,
+      selfSent: selfSentLines(),
+    });
 
     expect(await app.start(ctx, running)).toBe("connected");
 
@@ -145,12 +152,18 @@ describe("TwitchApplication", () => {
     expect(ctx.bus.subscribe).not.toHaveBeenCalledWith("twitchapi", expect.any(Function));
     expect(ctx.broadcaster?.id).toBe("broadcaster-1");
     expect(ctx.twitchApi).toBeDefined();
-    expect(ctx.twitchEventBus).toBeDefined();
+    expect(app.eventSubStatus().ready).toBe(true);
   });
 
   test("stop closes the TwitchClient, stops EventSub and clears the context", async () => {
     const ctx = context();
-    const app = new TwitchApplication({ clock: new FakeTime(), ids: countingIds(), selfSent: selfSentLines() });
+    const app = new TwitchApplication({
+      clock: new FakeTime(),
+      ids: countingIds(),
+      timers: systemTimers,
+      random: halfRandom,
+      selfSent: selfSentLines(),
+    });
     await app.start(ctx, running);
     const listener = lastListener;
 
@@ -159,13 +172,18 @@ describe("TwitchApplication", () => {
     expect(lastClient?.close).toHaveBeenCalledTimes(1);
     expect(listener?.stop).toHaveBeenCalled();
     expect(ctx.twitchApi).toBeUndefined();
-    expect(ctx.twitchEventBus).toBeUndefined();
     expect(ctx.broadcaster).toBeUndefined();
     expect(app.eventSubStatus()).toEqual({ established: 0, expected: expect.any(Number), ready: false });
   });
 
   test("stop before anything connected is safe", async () => {
-    const app = new TwitchApplication({ clock: new FakeTime(), ids: countingIds(), selfSent: selfSentLines() });
+    const app = new TwitchApplication({
+      clock: new FakeTime(),
+      ids: countingIds(),
+      timers: systemTimers,
+      random: halfRandom,
+      selfSent: selfSentLines(),
+    });
 
     await app.stop(context());
 
@@ -175,7 +193,13 @@ describe("TwitchApplication", () => {
 
 describe("TwitchApplication twitchapi requests", () => {
   const time = new FakeTime(Date.parse("2026-10-22T12:00:00.000Z"));
-  const app = new TwitchApplication({ clock: time, ids: countingIds(), selfSent: selfSentLines() });
+  const app = new TwitchApplication({
+    clock: time,
+    ids: countingIds(),
+    timers: systemTimers,
+    random: halfRandom,
+    selfSent: selfSentLines(),
+  });
 
   test("answers a command with its result in a twitchapi.<command>.result CloudEvent", async () => {
     const getStreamInfo = mock(async () => ({ title: "hello" }));
@@ -184,7 +208,8 @@ describe("TwitchApplication twitchapi requests", () => {
       args: { a: "b" },
     });
 
-    expect(getStreamInfo).toHaveBeenCalledWith({ a: "b" }, expect.anything());
+    // Fields a command does not take are dropped, not refused.
+    expect(getStreamInfo).toHaveBeenCalledWith({});
     expect(reply).toEqual({
       id: expect.any(String),
       type: "twitchapi.getStreamInfo.result",
@@ -199,6 +224,9 @@ describe("TwitchApplication twitchapi requests", () => {
     ["a private helper", { command: "resolveUser" }, "Unknown command: resolveUser"],
     ["no command", { args: {} }, "Missing command"],
     ["a body that is not an object", 42, "Missing command"],
+    ["an empty command", { command: "" }, "Missing command"],
+    ["args that are not an object", { command: "getUser", args: "pup" }, "getUser: args must be an object"],
+    ["args that are an array", { command: "getUser", args: ["pup"] }, "getUser: args must be an object"],
   ];
   for (const [name, body, error] of refusals) {
     test(`refuses ${name} with an uncoded twitchapi.error`, async () => {
@@ -207,6 +235,40 @@ describe("TwitchApplication twitchapi requests", () => {
       expect(reply.data).toEqual({ error });
     });
   }
+
+  const badArgs: Array<[command: string, args: unknown, error: string]> = [
+    ["getUser", { userId: 123 }, "getUser: userId: Invalid input: expected string, received number"],
+    ["shoutout", { userName: false }, "shoutout: userName: Invalid input: expected string, received boolean"],
+    ["timeout", { userId: "u1" }, "timeout: durationSeconds: Invalid input: expected number, received undefined"],
+    ["updateStream", { tags: "a,b" }, "updateStream: tags: Invalid input: expected array, received string"],
+    ["searchCategories", {}, "searchCategories: query: Invalid input: expected string, received undefined"],
+    [
+      "addChannelModerator",
+      { userId: null },
+      "addChannelModerator: userId: Invalid input: expected string, received null",
+    ],
+  ];
+  for (const [command, args, error] of badArgs) {
+    test(`refuses ${command} with args of the wrong shape as invalid_arguments, without running it`, async () => {
+      const run = mock(async () => ({ ok: true }));
+      const reply = await ask(app, context({ twitchApi: { [command]: run } as never }), { command, args });
+
+      expect(reply.type).toBe("twitchapi.error");
+      expect(reply.data).toEqual({ error, code: "invalid_arguments" });
+      expect(run).not.toHaveBeenCalled();
+    });
+  }
+
+  test("reads the request out of a CloudEvent's data", async () => {
+    const getUser = mock(async () => ({ userId: "u1" }));
+    const reply = await ask(app, context({ twitchApi: { getUser } as never }), {
+      type: "twitchapi",
+      data: { command: "getUser", args: { userName: "pup" } },
+    });
+
+    expect(getUser).toHaveBeenCalledWith({ userName: "pup" });
+    expect(reply.type).toBe("twitchapi.getUser.result");
+  });
 
   test("refuses a body that is not JSON", async () => {
     const ctx = context({ twitchApi: {} as never });

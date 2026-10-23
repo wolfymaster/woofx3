@@ -5,6 +5,7 @@ import TwitchApiEvents, {
   type TwitchApiReplyCode,
   twitchApiResultType,
 } from "@woofx3/common/cloudevents/Twitch/commands";
+import { requestFailureKind } from "@woofx3/nats/src/errors";
 import { z } from "zod";
 import { errorMessage } from "../host/deps";
 import type { ScopedBus } from "../host/scoped-bus";
@@ -127,18 +128,18 @@ function failed(message: string): TwitchApiResult<never> {
   return { ok: false, failure: { kind: "failed", message } };
 }
 
-/** The NATS client's request failures, told apart by name and message. */
 function requestFailure(error: unknown): TwitchApiFailure {
-  const name = error instanceof Error ? error.name : "";
-  const message = errorMessage(error);
-  const cause = error instanceof Error && error.cause instanceof Error ? error.cause.name : "";
-  if (name === "TimeoutError" || message.toLowerCase() === "timeout") {
-    return { kind: "no_answer" };
+  switch (requestFailureKind(error)) {
+    case "timeout": {
+      return { kind: "no_answer" };
+    }
+    case "no_responders": {
+      return { kind: "unreachable" };
+    }
+    case "other": {
+      return { kind: "failed", message: errorMessage(error) };
+    }
   }
-  if (cause === "NoResponders" || message.includes("no responders") || message.includes("503")) {
-    return { kind: "unreachable" };
-  }
-  return { kind: "failed", message };
 }
 
 /**

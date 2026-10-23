@@ -1,33 +1,13 @@
+import { EngineRequestType, type ShoutoutEnqueueRequestedResponse } from "@woofx3/api/webhooks";
 import {
-  EngineRequestType,
-  type ShoutoutEnqueueRequestedEvent,
-  type ShoutoutEnqueueRequestedResponse,
-} from "@woofx3/api/webhooks";
+  SHOUTOUT_ENQUEUE_SUBJECT,
+  type ShoutoutEnqueueReply,
+  type ShoutoutEnqueueTarget,
+} from "@woofx3/common/cloudevents/Twitch/commands";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
 import type { DashboardRequester } from "./twitch-token-source";
-
-/**
- * NATS subject the connectors host's Twitch adapter asks on to queue a shoutout on the
- * dashboard. Must match `SHOUTOUT_ENQUEUE_SUBJECT` in
- * connectors/src/adapters/twitch/lib/shoutoutQueue.ts. The request is a `ShoutoutTarget`; the
- * reply is a `ShoutoutEnqueueReply`.
- */
-export const SHOUTOUT_ENQUEUE_SUBJECT = "engine.shoutout.enqueue";
-
-export type ShoutoutTarget = Omit<ShoutoutEnqueueRequestedEvent, "type">;
-
-/**
- * `queued`: the dashboard has it. `unavailable`: there is no dashboard queue
- * for this engine, because its Twitch link is its own, so the caller sends
- * the shoutout itself. `error`: there is a queue but it could not be reached
- * or refused, and the shoutout was not sent.
- */
-export type ShoutoutEnqueueReply =
-  | { queued: { position: number; alreadyQueued: boolean } }
-  | { unavailable: string }
-  | { error: string };
 
 export interface ShoutoutQueueDeps {
   /** The dashboard the Twitch link came from; `TwitchTokenSource.linkedDashboardClientId`. */
@@ -101,7 +81,7 @@ export function parseEnqueueResponse(body: unknown): ShoutoutEnqueueRequestedRes
   return { queued: true, position, alreadyQueued: alreadyQueued === true };
 }
 
-function asTarget(value: unknown): ShoutoutTarget | null {
+function asTarget(value: unknown): ShoutoutEnqueueTarget | null {
   if (typeof value !== "object" || value === null) {
     return null;
   }
