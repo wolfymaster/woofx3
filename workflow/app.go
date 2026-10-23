@@ -149,6 +149,10 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	registerService("alertLog", func() dbv1.AlertService {
 		return alertDbClient
 	})
+	platformGateway := NewNATSPlatformGateway(natsClient, a.logger)
+	registerService("platformGateway", func() PlatformGateway {
+		return platformGateway
+	})
 
 	// Attached before the first load, so a workflow that fails to load at
 	// start-up is announced like one that fails later.
@@ -270,6 +274,9 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	}
 
 	appServices := buildAppServices()
+	if appServices.PlatformGateway() == nil {
+		return fmt.Errorf("platform gateway did not resolve from the service registry")
+	}
 
 	// Register the engine's built-in action handlers. The handler name
 	// here is what `step.action` carries on workflow steps (see

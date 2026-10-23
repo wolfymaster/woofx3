@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.37.0",
+  "version": "0.38.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -281,7 +281,7 @@
     {
       "id": "chat.reply",
       "name": "Send chat message",
-      "description": "Send one message to chat. Replying is an action like any other, so a chat command that answers is a command with this action on it.",
+      "description": "Send one message to chat, where the trigger came from, on every platform, or on the one you choose. Replying is an action like any other, so a chat command that answers is a command with this action on it.",
       "sentence": "Send {message} in chat",
       "type": "native",
       "handler": "chat.reply",
@@ -293,6 +293,33 @@
           "required": true,
           "placeholder": "What should the bot say?",
           "description": "Plain text. Twitch chat enforces a 500-character limit."
+        },
+        {
+          "id": "platform",
+          "label": "Platform",
+          "type": "select",
+          "defaultValue": "origin",
+          "options": [
+            {
+              "value": "origin",
+              "label": "Where it was triggered"
+            },
+            {
+              "value": "all",
+              "label": "Every platform"
+            }
+          ],
+          "source": {
+            "kind": "internal",
+            "request": {
+              "event": "platform.gateway.field_options",
+              "payload": {
+                "action": "chat.send"
+              }
+            }
+          },
+          "hint": "Where it was triggered answers in the chat the trigger came from, as a reply when it was a chat message. With no chat behind it, such as a timer, it sends to every platform.",
+          "description": "Which chat to send to. The step fails when a platform it sends to is turned off, not connected or refuses the message."
         }
       ],
       "taxonomy": [

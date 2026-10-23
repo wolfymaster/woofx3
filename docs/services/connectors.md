@@ -420,6 +420,74 @@ process. The host, not each adapter run, subscribes to `session.started` for
 the life of the process, so an adapter that starts after a session change
 still stamps the current session.
 
+## Chat command dispatcher
+
+`connectors/src/chat/` holds the platform-neutral chat command dispatcher: it
+reads every platform's chat lines, runs the commands they name, and replies
+through the [platform gateway](./platform-gateway.md) to the platform each
+line came from. The host does not start it; chat commands are run by
+woofwoofwoof (see [WoofWoofWoof](../woofwoofwoof/application.md)). Whoever starts it
+adds `CHAT_DISPATCHER_GRANTS` to the scope it runs in.
+
+Each `user.message` goes through these steps in order:
+
+1. **Trust.** A line the engine said itself (`fromEngine: true`, see
+   [Own lines on the chat feed](#own-lines-on-the-chat-feed)) is dropped. A
+   line with no known `platform` attribute or no speaker id is refused. A
+   line is trusted only when its CloudEvent `source` is its platform
+   adapter's (`twitch` for Twitch), and a trusted line with no speaker login
+   is refused. An untrusted line, such as one the api's event simulator
+   published, still runs commands, but its badges count as
+   unknown: they never satisfy a role, and it writes no groups. A line said
+   in a partner channel during a shared chat session never counts as the
+   broadcaster or a moderator, and writes no groups either.
+2. **Groups.** A trusted line from the channel itself updates the built-in
+   derived groups (subscriber, vip, moderator, broadcaster, the tiers,
+   follower), writing only what changed since that viewer's last line.
+3. **Match.** `!name rest` names a command. Built-in commands win over a
+   stored command with the same name, and a built-in can be limited to some
+   platforms.
+4. **Authorise.** A public command runs for anyone. A command that allows
+   roles runs for a speaker the platform reported in one. Anyone else needs
+   a grant on `command/<name>`. A refused speaker is told so. The grant is
+   looked up by the login the line names, and an untrusted line's login is
+   whatever its publisher wrote, so anything that can publish on the bus can
+   run a command granted to a login it names. Bus publishers are not yet
+   authenticated per identity; until they are, a grant is only as strong as
+   the bus's own access control.
+5. **Cooldown.** The cooldown is per command. A line inside it is dropped
+   completely and is not announced.
+6. **Handler.** The invocation is announced on `chat.command.<slug>`
+   (source `connectors`, `platform` set to the line's platform), and then the
+   command runs: a stored command runs its workflow or its actions.
+
+A non-empty reply is a `chat.send` to the `origin` target. For a trusted line
+it is threaded under that line. Its idempotency key is
+`dispatcher:<line id>:<command name>`, where the line id is the platform's id
+for the message, or the CloudEvent id for an untrusted line, and it is
+`requestedBy` `dispatcher`. A reply longer than 500 characters is cut.
+Nothing is retried; an undelivered reply is logged.
+
+**Who a viewer is.** In-memory state is keyed by the platform and that
+platform's user id, never by a display name. The memory of written groups
+is keyed this way, and the permission cache by that, the login and whether
+the line was trusted, so two accounts that show the same name never share a
+decision and an untrusted line never fills in one a trusted line reads.
+Permission and group rows in db-proxy are keyed by the speaker's login,
+lowercased. That is what the database keys on
+today.
+
+**Stored commands** are read from db-proxy, the owner of the data.
+`command.created`, `command.updated` and `command.deleted` only trigger a
+reload, and the snapshot they carry is never applied. Reloads wait
+`WOOFX3_CONNECTORS_DISPATCHER_RELOAD_DEBOUNCE_MS` for more events. Then one
+listing is read and applied by command id, so a renamed command stops
+answering to its old name. Reloads run one at a time, in order. A failed
+reload keeps the last good table, and a backstop reloads every
+`WOOFX3_CONNECTORS_DISPATCHER_RELOAD_BACKSTOP_MS` even with no event. A
+command's cooldown keeps running when the command is reloaded. Starting the
+dispatcher fails if its first listing fails.
+
 ## Configuration
 
 | Variable | Default | Meaning |
@@ -460,6 +528,17 @@ The Twitch adapter reads:
 | `WOOFX3_TWITCH_SEND_QUEUE_CAP` | `100` | How many platform gateway chat writes may wait behind the one being sent; one more is refused as rate limited. |
 | `WOOFX3_TWITCH_SELF_SENT_CAPACITY` | `256` | How many of the engine's own chat lines are remembered while their echo is awaited. |
 | `WOOFX3_TWITCH_SELF_SENT_TTL_MS` | `30000` | How long one of the engine's own lines waits for its echo before it is forgotten. |
+
+The chat command dispatcher reads:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WOOFX3_CONNECTORS_DISPATCHER_AUTH_CACHE_CAPACITY` | `2048` | Permission decisions remembered, per viewer, login, trust and command. |
+| `WOOFX3_CONNECTORS_DISPATCHER_AUTH_CACHE_TTL_MS` | `5000` | How stale a remembered decision may be after a grant changes. |
+| `WOOFX3_CONNECTORS_DISPATCHER_GROUP_LAST_SEEN_CAPACITY` | `4096` | Viewers whose last written group membership is remembered; a forgotten viewer is rewritten on their next line. |
+| `WOOFX3_CONNECTORS_DISPATCHER_GROUP_CATALOG_TTL_MS` | `300000` | How long the built-in group catalog is used before it is read again. |
+| `WOOFX3_CONNECTORS_DISPATCHER_RELOAD_DEBOUNCE_MS` | `250` | How long a command event waits for more before the commands reload. |
+| `WOOFX3_CONNECTORS_DISPATCHER_RELOAD_BACKSTOP_MS` | `300000` | How often the commands reload with no event. |
 
 The OBS adapter reads, for whatever the OBS module's settings leave empty:
 

@@ -234,6 +234,10 @@ workflow service runs that one workflow (`Engine.RunCommand`), which must have
 a trigger of type `"command"` whose `event` matches `event.type`; its trigger
 conditions apply, nothing else is checked again.
 
+`data.platform` and the `platform` attribute name the platform the invoking
+line was said on, one of the platform gateway's platform ids (`twitch`
+today).
+
 ```jsonc
 // subject: "workflow.command.execute"
 {
