@@ -103,6 +103,7 @@ export class PlatformGateway {
       egress: deps.egress,
       adapters: deps.adapters,
       requests: deps.requests,
+      budgetMs: deps.config.discoveryBudgetMs,
       displayNames: deps.displayNames,
     });
     this.idempotency = new IdempotencyCache(deps.config.idempotency, deps.clock);

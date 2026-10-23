@@ -53,6 +53,7 @@ describe("connectorsConfig", () => {
   test("fills the gateway tunables from their named defaults", () => {
     expect(connectorsConfig(required).gateway).toEqual({
       adapterDeadlineMs: 9_000,
+      discoveryBudgetMs: GATEWAY_DEFAULTS.discoveryBudgetMs,
       idempotency: { capacity: GATEWAY_DEFAULTS.idempotencyCapacity, ttlMs: GATEWAY_DEFAULTS.idempotencyTtlMs },
     });
   });

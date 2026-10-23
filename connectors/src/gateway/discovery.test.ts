@@ -36,6 +36,7 @@ const FIELD_OPTIONS = PLATFORM_GATEWAY_SUBJECTS.fieldOptions;
 // The contract has one platform; a second, test-only id shows filtering across two.
 const KICK = "kick" as PlatformId;
 const CATALOG: readonly PlatformId[] = ["twitch", KICK];
+const BUDGET_MS = 1_500;
 
 class FakePlatforms implements DiscoveryAdapters {
   private readonly statuses = new Map<string, AdapterStatus>();
@@ -86,6 +87,7 @@ async function setup() {
     adapters: platforms,
     displayNames: { ...PLATFORM_DISPLAY_NAMES, [KICK]: "Kick" },
     requests: new HostRequests({ clock: time, ids: countingIds(), timers: time, logger }),
+    budgetMs: BUDGET_MS,
   });
   await discovery.serve(scope);
 
@@ -98,6 +100,7 @@ async function setup() {
     return event.data;
   };
   return {
+    discovery,
     platforms,
     capabilities: () => ask<CapabilitiesReply>(CAPABILITIES, "{}", PLATFORM_GATEWAY_REPLY_TYPES.capabilities),
     options: (body: unknown) =>
@@ -218,7 +221,32 @@ describe("platform.gateway.field_options", () => {
         egress: EgressRegistry.fromManifests([manifest(KICK, { "chat.send": handler })], CATALOG),
         adapters: new FakePlatforms(),
         requests: new HostRequests({ clock: time, ids: countingIds(), timers: time, logger: new RecordingLogger() }),
+        budgetMs: BUDGET_MS,
       });
     expect(build).toThrow('platform "kick" has no display name');
   });
+});
+
+describe("discovery budget", () => {
+  test("serves both subjects with the configured budget", async () => {
+    const { discovery } = await setup();
+    expect(discovery.served).toEqual([
+      { subject: CAPABILITIES, budgetMs: BUDGET_MS },
+      { subject: FIELD_OPTIONS, budgetMs: BUDGET_MS },
+    ]);
+  });
+
+  for (const budgetMs of [0, -1, 1.5, Number.NaN]) {
+    test(`refuses to start with a budget of ${budgetMs}`, () => {
+      const time = new FakeTime();
+      const build = () =>
+        new GatewayDiscovery({
+          egress: EgressRegistry.fromManifests([manifest("twitch", { "chat.send": handler })], CATALOG),
+          adapters: new FakePlatforms(),
+          requests: new HostRequests({ clock: time, ids: countingIds(), timers: time, logger: new RecordingLogger() }),
+          budgetMs,
+        });
+      expect(build).toThrow("budgetMs must be a positive integer");
+    });
+  }
 });

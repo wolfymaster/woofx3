@@ -38,12 +38,15 @@ export type GatewayEnv = z.infer<typeof GatewayEnvSchema>;
 
 export interface GatewayConfig {
   adapterDeadlineMs: number;
+  /** Budget of each discovery request (capabilities, field options). */
+  discoveryBudgetMs: number;
   idempotency: { capacity: number; ttlMs: number };
 }
 
 export function gatewayConfig(env: GatewayEnv): GatewayConfig {
   return {
     adapterDeadlineMs: env.woofx3ConnectorsGatewayAdapterDeadlineMs,
+    discoveryBudgetMs: GATEWAY_DEFAULTS.discoveryBudgetMs,
     idempotency: {
       capacity: env.woofx3ConnectorsGatewayIdempotencyCapacity,
       ttlMs: env.woofx3ConnectorsGatewayIdempotencyTtlMs,

@@ -8,7 +8,6 @@ import {
   type PlatformCapability,
   parseFieldOptionsRequest,
 } from "@woofx3/api/platform-gateway";
-import { GATEWAY_DEFAULTS } from "../config/gateway";
 import { platformAdapterId } from "../host/adapter";
 import { type HostRequests, type ParseResult, parsed, parseFailed } from "../host/host-requests";
 import type { ScopedBus } from "../host/scoped-bus";
@@ -21,6 +20,8 @@ export interface GatewayDiscoveryDeps {
   egress: EgressRegistry;
   adapters: DiscoveryAdapters;
   requests: HostRequests;
+  /** Budget of each request to either discovery subject. */
+  budgetMs: number;
   /** Display name per platform; defaults to the contract table. */
   displayNames?: Readonly<Record<string, string>>;
 }
@@ -34,6 +35,9 @@ export class GatewayDiscovery {
   private readonly displayNames: Readonly<Record<string, string>>;
 
   constructor(private readonly deps: GatewayDiscoveryDeps) {
+    if (!Number.isInteger(deps.budgetMs) || deps.budgetMs <= 0) {
+      throw new Error(`GatewayDiscovery: budgetMs must be a positive integer, got ${deps.budgetMs}`);
+    }
     this.displayNames = deps.displayNames ?? PLATFORM_DISPLAY_NAMES;
     for (const platform of deps.egress.platforms) {
       if (!this.displayNames[platform]) {
@@ -45,15 +49,15 @@ export class GatewayDiscovery {
   /** The subjects and budgets served, for the host scope's grants and its shutdown bound. */
   get served(): ReadonlyArray<{ subject: string; budgetMs: number }> {
     return [
-      { subject: PLATFORM_GATEWAY_SUBJECTS.capabilities, budgetMs: GATEWAY_DEFAULTS.discoveryBudgetMs },
-      { subject: PLATFORM_GATEWAY_SUBJECTS.fieldOptions, budgetMs: GATEWAY_DEFAULTS.discoveryBudgetMs },
+      { subject: PLATFORM_GATEWAY_SUBJECTS.capabilities, budgetMs: this.deps.budgetMs },
+      { subject: PLATFORM_GATEWAY_SUBJECTS.fieldOptions, budgetMs: this.deps.budgetMs },
     ];
   }
 
   async serve(scope: ScopedBus): Promise<void> {
     await this.deps.requests.serveRequest<undefined, CapabilitiesReply>(scope, {
       subject: PLATFORM_GATEWAY_SUBJECTS.capabilities,
-      budgetMs: GATEWAY_DEFAULTS.discoveryBudgetMs,
+      budgetMs: this.deps.budgetMs,
       replyMode: "cloudevent",
       replyType: PLATFORM_GATEWAY_REPLY_TYPES.capabilities,
       // The request carries nothing; whatever a caller sends is ignored.
@@ -63,7 +67,7 @@ export class GatewayDiscovery {
     });
     await this.deps.requests.serveRequest<EgressActionId, FieldOptionsReply>(scope, {
       subject: PLATFORM_GATEWAY_SUBJECTS.fieldOptions,
-      budgetMs: GATEWAY_DEFAULTS.discoveryBudgetMs,
+      budgetMs: this.deps.budgetMs,
       replyMode: "cloudevent",
       replyType: PLATFORM_GATEWAY_REPLY_TYPES.fieldOptions,
       parse: parseRequest,
