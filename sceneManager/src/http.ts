@@ -230,8 +230,8 @@ export function routeOf(pathname: string): string | null {
 
 /**
  * The CORS headers the route answering `pathname` grants: its preflight
- * answer and its responses, to a request from `origin` (every origin unless
- * WOOFX3_ALLOWED_ORIGINS is set).
+ * answer and its responses, to a request from `origin` (every origin when
+ * WOOFX3_ALLOWED_ORIGINS is `*`).
  */
 export function corsHeadersFor(pathname: string, origin: CorsOrigin = ANY_ORIGIN): Record<string, string> {
   return corsHeadersForPath(ROUTES, pathname, origin);

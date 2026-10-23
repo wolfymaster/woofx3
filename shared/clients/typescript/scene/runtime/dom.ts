@@ -82,8 +82,8 @@ export interface RenderDocument<TElement extends RenderElement<TElement>> {
 /**
  * How a widget the plan does not show is hidden:
  *
- * - `"visibility"`: `visibility: hidden`. Its frame stops rendering until it
- *   is shown, so it costs nothing while hidden.
+ * - `"visibility"`: `visibility: hidden`. Its frame stops rendering (no
+ *   animation frames, no paint) until it is shown; its scripts keep running.
  * - `"opacity"`: opacity 0. Its frame keeps rendering unseen, so a widget can
  *   paint before it enters and enter as soon as it is due.
  */

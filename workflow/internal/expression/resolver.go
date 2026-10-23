@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -171,13 +170,6 @@ func (r *Resolver) evaluateReference(expr string) (any, error) {
 	var path string
 	if len(parts) > 1 {
 		path = parts[1]
-	}
-
-	if source == "env" {
-		if path == "" {
-			return nil, fmt.Errorf("env requires a variable name")
-		}
-		return os.Getenv(path), nil
 	}
 
 	if load, lazy := r.lazySources[source]; lazy {

@@ -98,7 +98,7 @@ export function playAlert<TElement extends RenderElement<TElement>, THandle>(
     document: options.document,
     root: options.stage,
     // A widget enters once its frame has painted, which a frame under
-    // `visibility: hidden` never does.
+    // `visibility: hidden` cannot do until it is shown (see `HideWith`).
     hideWith: "opacity",
     mountContent: (slot, widgetId) => {
       // The engine dispatched only the widget kinds each widget declares
@@ -157,6 +157,8 @@ export function playAlert<TElement extends RenderElement<TElement>, THandle>(
 export interface AlertWidgetOptions {
   /** The alert widget's area on the scene. */
   element: HTMLElement;
+  /** The area's placement id, which names its marks (alert-timing.ts). */
+  instanceId: string;
   /** Every live bridge on the page; inbound messages are routed through it. */
   bridges: Set<WidgetBridge>;
   /** `moduleId` is the alert layout placement's, never the widget's claim. */
@@ -220,7 +222,7 @@ export class AlertWidget {
    * its widgets will ask for now rather than when its turn comes.
    */
   delivered(eventId: string, value: unknown): void {
-    this.opts.timings.alert(eventId, "delivered");
+    this.opts.timings.alert(eventId, this.opts.instanceId, "delivered");
     const delivery = parseAlertDelivery(value);
     if (delivery) {
       readAheadAlertAssets(this.opts.assets, delivery.layout);
@@ -228,8 +230,8 @@ export class AlertWidget {
   }
 
   private run(eventId: string, delivery: AlertDelivery): void {
-    const { element, timings } = this.opts;
-    timings.alert(eventId, "started");
+    const { element, timings, instanceId: areaId } = this.opts;
+    timings.alert(eventId, areaId, "started");
     const canvas = canvasOf(delivery.layout);
 
     const stage = this.opts.document.createElement("div");
@@ -251,6 +253,7 @@ export class AlertWidget {
     readAheadAlertAssets(this.opts.assets, delivery.layout);
     let player: AlertPlayer | null = null;
     const tearDown = (): void => {
+      timings.alert(eventId, areaId, "finished");
       this.playing.delete(eventId);
       player?.stop();
       stage.remove();
@@ -265,7 +268,6 @@ export class AlertWidget {
       mountFrame: (slot, widgetId, entrance, facts) =>
         this.mountFrame(eventId, alertEvent, delivery, slot, widgetId, entrance, facts),
       onFinished: () => {
-        timings.alert(eventId, "finished");
         tearDown();
         this.opts.onFinished(eventId);
       },
@@ -281,7 +283,7 @@ export class AlertWidget {
     entrance: WidgetBehaviorState | null,
     facts: AlertFrameFacts
   ): AlertFrame {
-    const { bridges, timings } = this.opts;
+    const { bridges, timings, instanceId: areaId } = this.opts;
     const instanceId = `${eventId}.${widgetId}`;
     const placement = delivery.layout.widgets[widgetId];
     const framing = delivery.frames[widgetId];
@@ -312,9 +314,9 @@ export class AlertWidget {
       callbacks: ({ bridge }) => ({
         onStatusReport: (report) => this.opts.postStatus(instanceId, moduleId, report),
         onAssetLoad: this.opts.assets.loaderFor(moduleId),
-        onReady: () => timings.frame(eventId, widgetId, "ready"),
+        onReady: () => timings.frame(eventId, areaId, widgetId, "ready"),
         onEventsSubscribe: (subId, queue) => {
-          timings.frame(eventId, widgetId, "subscribed");
+          timings.frame(eventId, areaId, widgetId, "subscribed");
           facts.subscribed(queue?.autoComplete === false);
           bridge().sendEvent(subId, alertEvent);
         },
@@ -322,12 +324,12 @@ export class AlertWidget {
         onEventComplete: () => facts.completed(),
         onDispose: () => {},
         onRendered: () => {
-          timings.frame(eventId, widgetId, "rendered");
+          timings.frame(eventId, areaId, widgetId, "rendered");
           facts.rendered();
         },
       }),
     });
-    timings.frame(eventId, widgetId, "mounted");
+    timings.frame(eventId, areaId, widgetId, "mounted");
     return {
       sendBehavior: (state) => frame.bridge.sendBehavior(state),
       unmount: () => frame.unmount(),

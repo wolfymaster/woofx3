@@ -9,8 +9,6 @@ import (
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
-const reconcileListTimeout = 30 * time.Second
-
 // Reconciler periodically diffs the in-memory workflow registry against the
 // canonical DB proxy list and applies adds/removes. It is the safety net that
 // converges state when NATS lifecycle events are missed.

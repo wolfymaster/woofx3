@@ -10,8 +10,9 @@ type Published = { subject: string; payload: Record<string, unknown> };
  */
 function harness() {
   const published: Published[] = [];
+  const logged: unknown[][] = [];
   const ctx = {
-    logger: { info: () => {}, debug: () => {}, warn: () => {}, error: () => {} },
+    logger: { info: (...a: unknown[]) => logged.push(a), debug: () => {}, warn: () => {}, error: () => {} },
     async publishEvent(eventType: string, data: Record<string, unknown>, subject?: string, platform?: string) {
       published.push({
         subject: subject ?? eventType,
@@ -19,7 +20,12 @@ function harness() {
       });
     },
   };
-  return { published, routes: eventsRoutes as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>, ctx };
+  return {
+    published,
+    logged,
+    routes: eventsRoutes as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>,
+    ctx,
+  };
 }
 
 describe("simulateTwitchEvent", () => {
@@ -54,14 +60,65 @@ describe("simulateTwitchEvent", () => {
   });
 });
 
-describe("triggerEvent", () => {
+describe("simulateTwitchEvent guard", () => {
+  test.each([
+    "db.workflow.created",
+    "action.execute",
+    "custom.thing",
+    "channel.*",
+    "channel.>",
+    "",
+    "channel.follow x",
+    "channel.",
+    "channel..follow",
+  ])("refuses %p and publishes nothing", async (eventType) => {
+    const { published, routes, ctx } = harness();
+    await expect(routes.simulateTwitchEvent.call(ctx, eventType, {})).rejects.toThrow(/Cannot simulate event/);
+    expect(published).toHaveLength(0);
+  });
+
+  test("logs the event type without the event data", async () => {
+    const { logged, routes, ctx } = harness();
+    await routes.simulateTwitchEvent.call(ctx, "channel.follow", { secretField: "hunter2" });
+
+    expect(JSON.stringify(logged)).not.toContain("hunter2");
+  });
+});
+
+describe("triggerEvent guard", () => {
+  test.each([
+    "action.execute",
+    "workflow.command.execute",
+    "db.workflow.created.x",
+    "engine.obs.x",
+    "command.created",
+    "module.change.add",
+    "chat.command.sr",
+    "custom.*",
+    "custom.>",
+    "",
+    "custom thing",
+    "a..b",
+    ".x",
+    "x.",
+  ])("refuses %p and publishes nothing", async (eventType) => {
+    const { published, routes, ctx } = harness();
+    await expect(routes.triggerEvent.call(ctx, eventType, {})).rejects.toThrow(/Cannot trigger event/);
+    expect(published).toHaveLength(0);
+  });
+
+  test("names the reservation in the refusal", async () => {
+    const { routes, ctx } = harness();
+    await expect(routes.triggerEvent.call(ctx, "db.workflow.created", {})).rejects.toThrow(/reserved for the engine/);
+  });
+
   // The generic path was always correct; it must stay platform-free, since a
   // caller firing `db.workflow.created` is not on any platform.
   test("publishes verbatim and stamps no platform", async () => {
     const { published, routes, ctx } = harness();
-    await routes.triggerEvent.call(ctx, "module.change.add", { module_id: "x" });
+    await routes.triggerEvent.call(ctx, "custom.thing.happened", { module_id: "x" });
 
-    expect(published[0]?.subject).toBe("module.change.add");
+    expect(published[0]?.subject).toBe("custom.thing.happened");
     expect(published[0]?.payload.platform).toBeUndefined();
   });
 });

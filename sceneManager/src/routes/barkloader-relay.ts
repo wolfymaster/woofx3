@@ -28,6 +28,8 @@ export interface BarkloaderRelay {
   passStatus?: (status: number) => boolean;
   /** Headers set on every answer, over the relayed ones. */
   responseHeaders?: (url: URL) => Record<string, string>;
+  /** Relayed headers dropped from the answer for this URL. */
+  omittedResponseHeaders?: (url: URL) => readonly string[];
 }
 
 /** Statuses whose response must not carry a body. */
@@ -98,6 +100,9 @@ export async function relayToBarkloader(
   }
   for (const [name, value] of Object.entries(relay.responseHeaders?.(url) ?? {})) {
     relayed.set(name, value);
+  }
+  for (const name of relay.omittedResponseHeaders?.(url) ?? []) {
+    relayed.delete(name);
   }
   const body = NULL_BODY_STATUSES.has(upstream.status) ? null : upstream.body;
   return new Response(body, { status: upstream.status, headers: relayed });

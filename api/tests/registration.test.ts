@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readOrCreateTokenFile, resolveRegistrationPolicy } from "../src/registration";
+import { assertRegistrationExposure, readOrCreateTokenFile, resolveRegistrationPolicy } from "../src/registration";
 
 let dir: string;
 
@@ -15,9 +15,9 @@ afterEach(() => {
 });
 
 describe("resolveRegistrationPolicy with no mode set", () => {
-  it("is open without a token, as engines always have been", () => {
-    expect(resolveRegistrationPolicy({})).toEqual({ mode: "open", token: null });
-    expect(resolveRegistrationPolicy({ token: "  ", mode: "" })).toEqual({ mode: "open", token: null });
+  it("is first (trust on first use) without a token, never open", () => {
+    expect(resolveRegistrationPolicy({})).toEqual({ mode: "first", token: null });
+    expect(resolveRegistrationPolicy({ token: "  ", mode: "" })).toEqual({ mode: "first", token: null });
   });
 
   it("requires the token when one is set, as managed engines are", () => {
@@ -29,6 +29,23 @@ describe("resolveRegistrationPolicy with no mode set", () => {
     writeFileSync(path, "from-file\n");
 
     expect(resolveRegistrationPolicy({ tokenFile: path })).toEqual({ mode: "token", token: "from-file" });
+  });
+});
+
+describe("assertRegistrationExposure", () => {
+  it("refuses open registration on an engine reachable beyond loopback", () => {
+    expect(() => assertRegistrationExposure({ mode: "open", token: null }, "network")).toThrow(
+      "WOOFX3_REGISTRATION_MODE=open"
+    );
+  });
+
+  it("allows open registration on a loopback-only engine", () => {
+    expect(() => assertRegistrationExposure({ mode: "open", token: null }, "loopback")).not.toThrow();
+  });
+
+  it("allows first and token modes anywhere", () => {
+    expect(() => assertRegistrationExposure({ mode: "first", token: null }, "network")).not.toThrow();
+    expect(() => assertRegistrationExposure({ mode: "token", token: "t" }, "network")).not.toThrow();
   });
 });
 

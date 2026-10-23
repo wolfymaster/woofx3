@@ -67,7 +67,35 @@ export interface Follow {
   userName: string;
 }
 
-export interface HypeTrainBegin {}
+/** What a viewer put into a hype train. Twitch counts anything else as "other". */
+export type HypeTrainContributionType = "bits" | "subscription" | "other";
+
+export interface HypeTrainContribution {
+  userId: string;
+  userName: string;
+  type: HypeTrainContributionType;
+  /** Points: bits count one each, a subscription counts by tier. */
+  total: number;
+}
+
+// A hype train started (EventSub channel.hype_train.begin v2).
+export interface HypeTrainBegin {
+  id: string;
+  broadcasterId: string;
+  broadcasterName: string;
+  level: number;
+  /** Points contributed to the whole train so far. */
+  total: number;
+  /** Points contributed towards the current level. */
+  progress: number;
+  /** Points the current level needs before the train moves up. */
+  goal: number;
+  topContributions: HypeTrainContribution[];
+  /** ISO-8601. */
+  startedAt: string;
+  /** ISO-8601. Twitch extends it whenever the train moves up a level. */
+  expiresAt: string;
+}
 
 // An incoming raid into the broadcaster's channel.
 export interface Raid {

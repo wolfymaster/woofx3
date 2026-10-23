@@ -130,9 +130,6 @@ async fn install<R: Repository + Clone>(
         .install_with_provenance(
             &archive_key,
             Some(db_proxy_url),
-            // Not a force install: go through the diff-aware upgrade path so a
-            // version bump archives resources the new manifest dropped.
-            false,
             &composite_module_key,
             "",
             InstallProvenance::System,
@@ -188,6 +185,16 @@ fn read_archive(module: &BundledModule) -> Result<Vec<(String, Vec<u8>)>> {
 mod tests {
     use super::*;
 
+    /// The db-proxy client is configured once per process, so every test in
+    /// this binary that dials the fake db-proxy shares this one setup.
+    fn configure_db_proxy_auth() {
+        static CONFIGURED: std::sync::Once = std::sync::Once::new();
+        CONFIGURED.call_once(|| {
+            lib_module::db_proxy::configure_service_auth("bundled-reconciler-test-token")
+                .expect("configure the db proxy client");
+        });
+    }
+
     #[test]
     fn an_absent_module_installs() {
         assert!(needs_install(None, "0.1.0"));
@@ -208,6 +215,132 @@ mod tests {
     #[test]
     fn a_downgrade_installs() {
         assert!(needs_install(Some("0.2.0"), "0.1.0"));
+    }
+
+    /// A stand-in db proxy over HTTP: records every Twirp call and answers
+    /// `{}`, except `GetModuleByModuleId` (the installed version),
+    /// `CreateModule` (a row id) and `fail_path` (a 500).
+    struct FakeDbProxyServer {
+        url: String,
+        calls: std::sync::Arc<std::sync::Mutex<Vec<(String, serde_json::Value)>>>,
+        handle: actix_web::dev::ServerHandle,
+    }
+
+    impl FakeDbProxyServer {
+        fn start(installed_version: String, fail_path: &'static str) -> Self {
+            use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
+
+            let calls: std::sync::Arc<std::sync::Mutex<Vec<(String, serde_json::Value)>>> =
+                Default::default();
+            let recorded = calls.clone();
+            let server = HttpServer::new(move || {
+                let recorded = recorded.clone();
+                let installed_version = installed_version.clone();
+                App::new().default_service(web::to(move |req: HttpRequest, body: web::Bytes| {
+                    let recorded = recorded.clone();
+                    let installed_version = installed_version.clone();
+                    async move {
+                        let path = req.path().to_string();
+                        let parsed =
+                            serde_json::from_slice(&body).unwrap_or(serde_json::Value::Null);
+                        recorded
+                            .lock()
+                            .expect("calls mutex poisoned")
+                            .push((path.clone(), parsed));
+                        if path.ends_with(fail_path) {
+                            return HttpResponse::InternalServerError().body("injected failure");
+                        }
+                        if path.ends_with("/GetModuleByModuleId") {
+                            return HttpResponse::Ok()
+                                .content_type("application/json")
+                                .body(installed_version);
+                        }
+                        if path.ends_with("/CreateModule") {
+                            return HttpResponse::Ok()
+                                .json(serde_json::json!({ "module": { "id": "row-1" } }));
+                        }
+                        HttpResponse::Ok().json(serde_json::json!({}))
+                    }
+                }))
+            })
+            .workers(1)
+            .bind(("127.0.0.1", 0))
+            .expect("bind fake db proxy");
+            let url = format!("http://{}", server.addrs()[0]);
+            let server = server.run();
+            let handle = server.handle();
+            actix_web::rt::spawn(server);
+            Self { url, calls, handle }
+        }
+
+        fn calls(&self) -> Vec<(String, serde_json::Value)> {
+            self.calls.lock().expect("calls mutex poisoned").clone()
+        }
+    }
+
+    #[actix_web::test]
+    async fn a_failed_bundled_upgrade_leaves_the_installed_version() {
+        let module = &BUNDLED_MODULES[0];
+        let mut manifest = serde_json::to_value(module.manifest().expect("bundled manifest"))
+            .expect("serialize manifest");
+        manifest["version"] = serde_json::json!("0.0.1");
+        let previous_key = format!("{}:0.0.1:0000000", module.id);
+        let installed_version = serde_json::json!({
+            "module": {
+                "id": "row-1",
+                "name": manifest["name"],
+                "module_id": module.id,
+                "module_key": previous_key,
+                "version": "0.0.1",
+                "manifest": manifest.to_string(),
+                "archive_key": format!("archives/{previous_key}.zip"),
+                "state": "active",
+                "created_by_type": "SYSTEM",
+                "created_by_ref": module.id,
+                "functions": []
+            }
+        })
+        .to_string();
+        configure_db_proxy_auth();
+        let server = FakeDbProxyServer::start(installed_version, "/RegisterActions");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repository =
+            lib_repository::FileRepository::new(lib_repository::FileRepositoryConfig {
+                destination: dir.path().to_path_buf(),
+            });
+        repository.setup().expect("repo setup");
+
+        let err = reconcile_one(module, &server.url, &repository)
+            .await
+            .expect_err("a failing step must fail the bundled install");
+        assert!(err.to_string().contains("RegisterActions"), "got: {err:#}");
+
+        let calls = server.calls();
+        let paths: Vec<&str> = calls.iter().map(|(path, _)| path.as_str()).collect();
+        for destructive in [
+            "/DeleteModule",
+            "/DeleteTriggersByModuleId",
+            "/DeleteActionsByModuleId",
+            "/DeleteWidgetsByModuleId",
+            "/DeleteBackgroundTasksByModuleId",
+            "/DeleteWorkflowsByModule",
+        ] {
+            assert!(
+                !paths.iter().any(|p| p.ends_with(destructive)),
+                "a failed bundled upgrade must not call {destructive}: {paths:?}"
+            );
+        }
+        let creates: Vec<&serde_json::Value> = calls
+            .iter()
+            .filter(|(path, _)| path.ends_with("/CreateModule"))
+            .map(|(_, body)| body)
+            .collect();
+        assert_eq!(creates.len(), 2, "install, then restore: {paths:?}");
+        assert_eq!(creates[1]["version"], "0.0.1");
+        assert_eq!(creates[1]["module_key"], previous_key.as_str());
+        assert_eq!(creates[1]["created_by_type"], "SYSTEM");
+
+        server.handle.stop(true).await;
     }
 
     #[test]

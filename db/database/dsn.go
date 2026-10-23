@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -22,8 +23,27 @@ type ParsedDSN struct {
 	Dialect Dialect
 	// DriverDSN is what the selected GORM dialector expects.
 	DriverDSN string
-	// Original is the untouched config / env value (for logs).
+	// Original is the untouched config / env value. It may hold a password:
+	// log LogSafe(), never this.
 	Original string
+}
+
+// LogSafe is the connection target as it may appear in logs. Postgres URLs
+// lose their password, query string and fragment (credentials can ride in
+// any of them, e.g. ?password=); SQLite logs its file path.
+func (p ParsedDSN) LogSafe() string {
+	if p.Dialect == DialectSQLite {
+		return p.DriverDSN
+	}
+	u, err := url.Parse(p.Original)
+	if err != nil {
+		return "<unparseable database url>"
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	u.RawFragment = ""
+	u.ForceQuery = false
+	return u.Redacted()
 }
 
 // ParseDatabaseURL chooses postgres vs sqlite from the URL scheme.
@@ -50,7 +70,9 @@ func ParseDatabaseURL(raw string) (ParsedDSN, error) {
 
 	u, err := url.Parse(raw)
 	if err != nil {
-		return ParsedDSN{}, fmt.Errorf("parse database URL: %w", err)
+		// *url.Error quotes the whole input, password included, so it is
+		// dropped rather than wrapped.
+		return ParsedDSN{}, errors.New("parse database URL: malformed URL (check that the password is percent-encoded)")
 	}
 
 	scheme := strings.ToLower(u.Scheme)
@@ -64,10 +86,7 @@ func ParseDatabaseURL(raw string) (ParsedDSN, error) {
 		}
 		return ParsedDSN{Dialect: DialectSQLite, DriverDSN: path, Original: raw}, nil
 	case "":
-		return ParsedDSN{}, fmt.Errorf(
-			"database URL %q has no scheme; use postgresql://… or sqlite://…",
-			raw,
-		)
+		return ParsedDSN{}, errors.New("database URL has no scheme; use postgresql://… or sqlite://…")
 	default:
 		return ParsedDSN{}, fmt.Errorf(
 			"unsupported database URL scheme %q (supported: postgresql, postgres, sqlite)",

@@ -4,57 +4,28 @@ import (
 	"context"
 	"testing"
 
-	"github.com/libtnb/sqlite"
-	"gorm.io/gorm"
-
+	"github.com/go-gormigrate/gormigrate/v2"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/database"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 )
 
 // newWorkflowTestService backs the workflow service with an in-memory SQLite
-// table. The module upsert names `public.workflow_definitions`, so the table
-// lives in an attached `public` schema, which unqualified names also resolve
-// to.
+// database migrated by the real SQLite chain, so the module upsert runs
+// against the schema production has.
 func newWorkflowTestService(t *testing.T) client.WorkflowService {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+	db := openEmptySQLite(t)
 	// One connection: each new :memory: connection is a separate database.
 	sqlDB, err := db.DB()
 	if err != nil {
 		t.Fatalf("sql db: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	stmts := []string{
-		`ATTACH DATABASE ':memory:' AS public`,
-		`CREATE TABLE public.workflow_definitions (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			steps TEXT,
-			trigger TEXT,
-			created_by_type TEXT NOT NULL DEFAULT 'USER',
-			created_by_ref TEXT NOT NULL DEFAULT '',
-			manifest_id TEXT NOT NULL DEFAULT '',
-			taxonomy TEXT NOT NULL DEFAULT '[]',
-			enabled BOOLEAN NOT NULL DEFAULT 0
-		)`,
-		`CREATE TABLE public.commands (
-			id TEXT PRIMARY KEY,
-			command VARCHAR(255) NOT NULL,
-			workflow_id TEXT
-		)`,
-		`CREATE UNIQUE INDEX public.idx_workflow_definitions_module_manifest
-			ON workflow_definitions (created_by_type, created_by_ref, manifest_id)
-			WHERE manifest_id <> ''`,
+	if err := gormigrate.New(db, gormigrate.DefaultOptions, sqliteChain(t)).Migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
-	for _, stmt := range stmts {
-		if err := db.Exec(stmt).Error; err != nil {
-			t.Fatalf("schema: %v", err)
-		}
-	}
-	return NewWorkflowService(repo.NewWorkflowRepository(db), repo.NewCommandRepository(db), db, nil, nil)
+	return NewWorkflowService(repo.NewWorkflowRepository(db, database.RandomIDs{}), repo.NewCommandRepository(db), db, nil, nil)
 }
 
 func createWorkflow(t *testing.T, svc client.WorkflowService, req *client.CreateWorkflowRequest) *client.Workflow {

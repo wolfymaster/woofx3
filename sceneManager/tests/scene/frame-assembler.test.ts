@@ -13,12 +13,33 @@ function fakeLogger() {
   } as any;
 }
 
+const BARKLOADER_KEY = "test-barkloader-key-0123456789abcdef";
+
+describe("HttpBarkloaderFrameClient — authentication", () => {
+  it("authenticates to barkloader with the engine secret", async () => {
+    const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
+    const fetchFn = mock(async (_url: string, _init?: RequestInit) =>
+      Response.json({ entryHtml: "<html></html>", resourceBaseUrl: "https://e/w/" })
+    );
+    const client = new HttpBarkloaderFrameClient(
+      "http://barkloader.local",
+      BARKLOADER_KEY,
+      logger,
+      fetchFn as unknown as typeof fetch
+    );
+
+    await client.fetchWidgetFrame("mymod", "mywid");
+    const [, init] = fetchFn.mock.calls[0]!;
+    expect(new Headers(init?.headers).get("Authorization")).toBe(`Bearer ${BARKLOADER_KEY}`);
+  });
+});
+
 describe("HttpBarkloaderFrameClient — logging on failure", () => {
   it("logs and returns null on a non-OK response (was previously silent)", async () => {
     const warn = mock((_message: string, _meta?: unknown) => {});
     const logger = { debug: () => {}, info: () => {}, warn, error: () => {} } as any;
     const fetchFn = mock(async () => new Response(null, { status: 404 })) as unknown as typeof fetch;
-    const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, fetchFn);
+    const client = new HttpBarkloaderFrameClient("http://barkloader.local", BARKLOADER_KEY, logger, fetchFn);
 
     const result = await client.fetchWidgetFrame("mymod", "mywid");
     expect(result).toBeNull();
@@ -32,7 +53,7 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
     const warn = mock((_message: string, _meta?: unknown) => {});
     const logger = { debug: () => {}, info: () => {}, warn, error: () => {} } as any;
     const fetchFn = mock(async () => Response.json({ unexpected: true })) as unknown as typeof fetch;
-    const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, fetchFn);
+    const client = new HttpBarkloaderFrameClient("http://barkloader.local", BARKLOADER_KEY, logger, fetchFn);
 
     const result = await client.fetchWidgetFrame("mymod", "mywid");
     expect(result).toBeNull();
@@ -46,7 +67,7 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
       new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
       })) as unknown as typeof fetch;
-    const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, hung, 10);
+    const client = new HttpBarkloaderFrameClient("http://barkloader.local", BARKLOADER_KEY, logger, hung, 10);
 
     await expect(client.fetchWidgetFrame("mymod", "mywid")).rejects.toThrow();
     const assembler = new FrameAssembler(logger, { barkloader: client });
@@ -60,7 +81,7 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
     const fetchFn = mock(async () =>
       Response.json({ entryHtml: "<html></html>", resourceBaseUrl: "https://cdn.example.com/w/" })
     ) as unknown as typeof fetch;
-    const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, fetchFn);
+    const client = new HttpBarkloaderFrameClient("http://barkloader.local", BARKLOADER_KEY, logger, fetchFn);
 
     const result = await client.fetchWidgetFrame("mymod", "mywid");
     expect(result).toEqual({
@@ -77,7 +98,7 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
     const fetchFn = mock(async () =>
       Response.json({ entryHtml: "<html></html>", resourceBaseUrl: "https://e/w/", fontSettings: ["fontFamily", 3] })
     ) as unknown as typeof fetch;
-    const client = new HttpBarkloaderFrameClient("http://barkloader.local", logger, fetchFn);
+    const client = new HttpBarkloaderFrameClient("http://barkloader.local", BARKLOADER_KEY, logger, fetchFn);
 
     const result = await client.fetchWidgetFrame("mymod", "mywid");
     expect(result?.fontSettings).toEqual(["fontFamily"]);
@@ -153,6 +174,9 @@ describe("FrameAssembler.assembleDocument", () => {
     expect(stale.headers.get("Cache-Control")).toBe("no-cache");
     const unversioned = await assembler.assembleDocument("mymod", "mywid", null, null);
     expect(unversioned.headers.get("Cache-Control")).toBe("no-cache");
+    expect(current.headers.has("Server-Timing")).toBe(false);
+    expect(stale.headers.has("Server-Timing")).toBe(true);
+    expect(unversioned.headers.has("Server-Timing")).toBe(true);
   });
 
   it("returns 502, uncached, when barkloader has no frame for the widget", async () => {
