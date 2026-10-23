@@ -42,7 +42,6 @@ function createMockListener() {
     }),
     onSubscriptionCreateFailure: mock(() => ({ unbind: mock(() => {}) })),
     onChannelAdBreakBegin: mock(() => confirmed()),
-    onChannelBan: mock(() => confirmed()),
     onChannelChatMessage: mock(() => confirmed()),
     onChannelChatNotification: mock(() => confirmed()),
     onChannelCheer: mock(() => confirmed()),

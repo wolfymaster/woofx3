@@ -2,7 +2,6 @@ import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { Context } from "../types";
 import onChannelAdBreakBegin, { AdBreakAnnouncer } from "./subscriptions/onChannelAdBreakBegin";
-import onChannelBan from "./subscriptions/onChannelBan";
 import onChannelChatmessage from "./subscriptions/onChannelChatMessage";
 import onChannelChatNotification from "./subscriptions/onChannelChatNotification";
 import onChannelCheer from "./subscriptions/onChannelCheer";
@@ -19,7 +18,6 @@ import onStreamOnline from "./subscriptions/onStreamOnline";
  * confirmed all of these", which cannot be judged without it.
  */
 const SUBSCRIPTION_FACTORIES = [
-  onChannelBan,
   onChannelChatmessage,
   onChannelChatNotification,
   onChannelCheer,
