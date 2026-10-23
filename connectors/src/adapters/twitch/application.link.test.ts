@@ -66,6 +66,9 @@ let instances: MockTwitchClient[] = [];
 /** What the next `reloadToken` reports, as a relink in the UI would. */
 let nextReload = { userId: "42", userChanged: false, providerChanged: false };
 
+/** Makes every `init` reject with this error while set. */
+let initFailure: Error | null = null;
+
 /** Holds every `init` open until released, to observe a reconnect mid-way. */
 let initGate: Promise<void> | null = null;
 
@@ -96,6 +99,9 @@ class MockTwitchClient {
   close = mock(async () => {});
 
   init = mock(async () => {
+    if (initFailure !== null) {
+      throw initFailure;
+    }
     if (!linked) {
       throw new NotLinkedError();
     }
@@ -179,6 +185,7 @@ function reset() {
   constructedWith = [];
   instances = [];
   initGate = null;
+  initFailure = null;
   confirmSubscriptions = true;
   nextReload = { userId: "42", userChanged: false, providerChanged: false };
 }
@@ -333,6 +340,20 @@ describe("TwitchApplication relinked while connected", () => {
     expect(instances[1]?.init).toHaveBeenCalledTimes(1);
     expect(ctx.twitchEventBus).toBeDefined();
     expect(app.eventSubStatus().ready).toBe(true);
+  });
+
+  test("faults the adapter when the reconnect for a different account fails", async () => {
+    reset();
+    linkTwitch();
+    const { ctx, handlers, reportFault } = context();
+    const app = newApp();
+    await app.start(ctx, running);
+
+    nextReload = { userId: "99", userChanged: true, providerChanged: false };
+    initFailure = new Error("helix unreachable");
+    await handlers.get(TOKEN_UPDATED)?.(tokenUpdated);
+
+    expect(reportFault.mock.calls).toEqual([["Twitch token update could not be applied: helix unreachable"]]);
   });
 
   test("answers every command integration_unavailable while a relink reconnects", async () => {
