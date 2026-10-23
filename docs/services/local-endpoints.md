@@ -12,7 +12,7 @@ a tray app on that PC, dials out to a relay, and the engine reaches the
 endpoint through it: the **bridge**.
 
 ```
-OBS ◀─ws 127.0.0.1:4455─ companion ══(outbound wss)══ relay ◀══wss /bridge/…══ endpoint dialer ◀─ sceneManager
+OBS ◀─ws 127.0.0.1:4455─ companion ══(outbound wss)══ relay ◀══wss /bridge/…══ companion gateway ◀─ connectors (obs adapter)
 ```
 
 Everything here needs the `modules.localEndpoints` capability
@@ -20,43 +20,25 @@ Everything here needs the `modules.localEndpoints` capability
 never sent a relay configuration behaves exactly as without it: every endpoint
 is dialed directly.
 
-## The endpoint dialer
+## The companion gateway
 
-sceneManager is the only engine service that holds a connection to a local
-endpoint, OBS's (`woofx3_obs/obs`), so the dialer lives in
-`sceneManager/src/endpoints/dialer.ts`. It runs on every connect attempt, and
-reads everything afresh each time, so a retry picks up a change whose
-announcement was missed.
+The connectors host's [companion gateway](./companion-gateway.md) is the only
+part of the engine that finds a route to a local endpoint, and its `obs`
+adapter the only part that holds a connection to one, OBS's
+(`woofx3_obs/obs`). On every connect attempt the gateway reads the module's
+stored manifest, settings and secrets and the relay configuration afresh,
+builds the direct address (each empty setting falling back to connectors' own
+`WOOFX3_OBS_*` configuration), and picks the route; see
+[Companion gateway → Routes](./companion-gateway.md#routes) for the table.
 
-1. It finds the endpoint's settings from the module's stored manifest
-   (`modules.manifest`, the `local[]` entry with that `id`). A module installed
-   before `local[]` existed uses the caller's fallback keys; for OBS those are
-   `host`, `port` and `password`.
-2. It builds the direct address from those settings, each falling back to
-   sceneManager's own configuration (`WOOFX3_OBS_HOST`, `WOOFX3_OBS_PORT`,
-   `WOOFX3_OBS_RPC_TOKEN`) when empty or unreadable.
-3. It picks the route:
-
-| Relay configuration (`relay.config`) | Credential from the api | Route |
-|---|---|---|
-| None | not asked | Direct: `ws://<host>:<port>` |
-| Does not list the endpoint | not asked | Direct |
-| Lists the endpoint | `null` (the dashboard no longer routes anything) | Direct |
-| Lists the endpoint | A grant whose endpoints leave it out | Direct |
-| Lists the endpoint | A grant that lists it | Bridge: ticket exchange, then `wss://<bridge host>/bridge/<moduleId>/<endpointId>?ticket=<t>` |
-| Lists the endpoint | None to be had (the api or dashboard did not answer) | Fails as `relay` |
-
-A relay that refuses the ticket exchange (any non-2xx: 401, 404, 429, 502,
-503), does not answer within 5 seconds, or answers without a ticket also fails
-as `relay`. A 401 first gets one more try with a fresh credential
-(`force`), for a cached credential the relay stopped accepting. Once the
-ticket is in hand, any failure to open OBS through the bridge other than OBS
-refusing the password is also `relay`: the relay refusing the upgrade (502,
-503), the companion refusing the endpoint (4403), or the companion not
-reaching OBS. The attempt then waits out sceneManager's usual backoff, and
-`getObsStatus` reports `failure: "relay"` with `route: "companion"` and the
-bridge's host, so the dashboard can tell "your companion is offline" from "OBS
-is closed".
+Once the ticket is in hand, any failure to open OBS through the bridge other
+than OBS refusing the password is also `relay`: the relay refusing the upgrade
+(502, 503), the companion refusing the endpoint (4403), or the companion not
+reaching OBS. The attempt then waits out the OBS connection's usual backoff,
+and `getObsStatus` reports `failure: "relay"` with `route: "companion"` and
+the bridge's host, so the dashboard can tell "your companion is offline" from
+"OBS is closed". A relay answering 429, or the gateway's own cap on bridge
+opens, reads the same way to the streamer and is retried on the same backoff.
 
 The relay closes a bridge with 4401 a minute after the engine credential it
 was opened with expires. That is an ordinary disconnect: OBS's connection
@@ -65,7 +47,7 @@ credential (the api renews it a minute before it expires) and a fresh ticket.
 
 The endpoint's own password (OBS's) is read from the module's settings on
 both routes. Its protocol authentication runs end to end, between
-sceneManager and OBS: the relay and the companion carry the challenge
+connectors and OBS: the relay and the companion carry the challenge
 response, never the password.
 
 ## The relay configuration (`relay.config`)
@@ -85,7 +67,7 @@ most 50 endpoints; manifest ids and endpoint ids of the right shape), stores it
 in engine setting `relay.config` with the engine client id of the dashboard
 that sent it, and publishes `engine.relay.config.updated`. `setRelayConfig(null)`
 deletes the setting and publishes the same subject. On that subject
-sceneManager re-reads the configuration and reconnects to OBS only when the
+the obs adapter re-reads the configuration and reconnects to OBS only when the
 change moves OBS to another route: onto or off the bridge, or to another
 bridge host.
 
@@ -102,7 +84,7 @@ own, which is why the api publishes one.
 ## The bridge credential
 
 The credential that opens the bridge lasts five minutes and is never pushed or
-stored. When the dialer needs one, sceneManager asks the api on NATS
+stored. When the companion gateway needs one, it asks the api on NATS
 `engine.relay.credential` (request `{ "force"?: boolean }`, reply
 `{ "relay": <grant> | null }` or `{ "error": "…" }`, 5 second timeout). The api
 caches the grant until a minute before it expires, and otherwise asks the
@@ -132,14 +114,14 @@ configuration. If that client is no longer registered (the dashboard
 registered again), the api asks a registered dashboard instead and stores its
 client id.
 
-Only the api talks to the dashboard. sceneManager never holds the dashboard's
+Only the api talks to the dashboard. connectors never holds the dashboard's
 address or credentials, as for the Twitch token (`engine.twitch.token`).
 
 ## The ticket exchange
 
 obs-websocket-js opens its own WebSocket from a URL and sets the subprotocol
-itself, so it cannot send an `Authorization` header. The dialer therefore
-opens the bridge in two steps:
+itself, so it cannot send an `Authorization` header. The bridge is therefore
+opened in two steps:
 
 1. `POST https://<bridge host>/bridge/<moduleId>/<endpointId>` with
    `Authorization: Bearer <credential>` returns
@@ -149,14 +131,59 @@ opens the bridge in two steps:
 A ticket is single-use (spent on first presentation, even when that upgrade is
 refused), bound to the host, module and endpoint, and lives 30 seconds, so a
 ticket in a log is harmless where a five-minute credential would not be. The
-dialer fetches a fresh one on every connect attempt and never reuses one.
+companion gateway fetches a fresh one on every connect attempt and never
+reuses one.
 `getObsStatus` reports the bridge's host as the address, never the path or
 the ticket.
 
 The relay passes WebSocket subprotocols end to end: the companion offers OBS
-whatever sceneManager offered, and the relay answers the upgrade with OBS's
-choice. Under Bun, sceneManager imports obs-websocket-js's msgpack build, so it
+whatever the obs adapter offered, and the relay answers the upgrade with OBS's
+choice. Under Bun, connectors imports obs-websocket-js's msgpack build, so it
 offers `obswebsocket.msgpack` and the bridge carries binary messages.
+
+## Overlay recovery
+
+After sceneManager restarts, the browser sources in OBS that show its overlays
+hold connections to a process that is gone. They are recovered by
+pressing "refresh cache of current page" on those browser sources, found by
+their URL (the overlay port and a `/scene/` path), once per start. A refresh
+cuts off whatever an overlay is playing, so it is tied to the start and never
+to a reconnect.
+
+The refresh is a request on the bus, not a call made when OBS connects:
+
+```
+sceneManager ──engine.obs.browser_source.refresh {overlayPort, bootId}──▶ connectors host (obs adapter)
+             ◀──{status: "accepted", bootId} | {status: "invalid", error}──┘
+```
+
+- After its HTTP server listens, sceneManager sends the request with the port
+  it listens on and a `bootId` that names this start. It repeats the request
+  until a reply accepts it, so it is not lost when connectors starts later
+  or restarts. Only shutdown ends the retrying. A missing
+  responder, a timeout or an invalid reply each wait and retry, with a doubling,
+  jittered delay capped at a maximum.
+- The connectors host answers the subject for as long as it runs, whatever
+  the obs adapter is doing, and keeps the request in the adapter's host state,
+  which outlives the adapter's runs. A request that arrives while the adapter is
+  stopped or restarting is accepted and waits for its next run.
+- The adapter refreshes at once when an OBS session is open and otherwise on
+  the next session. Each `bootId` refreshes at most once: a repeated request
+  for one waiting, being refreshed or already consumed is accepted and changes
+  nothing (the last 16 consumed ids are remembered), and a reconnect or an
+  adapter restart with no new request refreshes nothing. A request that arrives
+  during a refresh runs once more after it.
+- Without a message bus sceneManager cannot ask, and logs that once at warn.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `WOOFX3_SCENE_MANAGER_OBS_REFRESH_REQUEST_TIMEOUT_MS` | `2000` | How long one request waits for a reply. |
+| `WOOFX3_SCENE_MANAGER_OBS_REFRESH_RETRY_BASE_MS` | `1000` | The first retry's delay ceiling; it doubles. |
+| `WOOFX3_SCENE_MANAGER_OBS_REFRESH_RETRY_MAX_MS` | `30000` | The ceiling the delay stops growing at. |
+
+The client-side reconnect loop in the overlay page remains the fallback for
+everything this cannot cover: OBS not running, OBS started after the overlays,
+or a scene open in a plain browser tab.
 
 ## Why the companion decides the address
 

@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.38.0",
+  "version": "0.39.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -320,6 +320,148 @@
           },
           "hint": "Where it was triggered answers in the chat the trigger came from, as a reply when it was a chat message. With no chat behind it, such as a timer, it sends to every platform.",
           "description": "Which chat to send to. The step fails when a platform it sends to is turned off, not connected or refuses the message."
+        }
+      ],
+      "taxonomy": [
+        "chat"
+      ]
+    },
+    {
+      "id": "chat.announce",
+      "name": "Send announcement",
+      "description": "Post a highlighted announcement in chat, where the trigger came from, on every platform, or on the one you choose. Platforms that have no announcements make the step fail.",
+      "sentence": "Announce {message} in chat",
+      "type": "native",
+      "handler": "chat.announce",
+      "schema": [
+        {
+          "id": "message",
+          "label": "Message",
+          "type": "text",
+          "required": true,
+          "placeholder": "What should the announcement say?",
+          "description": "Plain text. Twitch chat enforces a 500-character limit."
+        },
+        {
+          "id": "platform",
+          "label": "Platform",
+          "type": "select",
+          "defaultValue": "origin",
+          "options": [
+            {
+              "value": "origin",
+              "label": "Where it was triggered"
+            },
+            {
+              "value": "all",
+              "label": "Every platform"
+            }
+          ],
+          "source": {
+            "kind": "internal",
+            "request": {
+              "event": "platform.gateway.field_options",
+              "payload": {
+                "action": "chat.announce"
+              }
+            }
+          },
+          "hint": "Where it was triggered uses the chat the trigger came from. With no chat behind it, such as a timer, it goes to every platform.",
+          "description": "Which chat to send to. The step fails when a platform it sends to is turned off, not connected or refuses the message."
+        },
+        {
+          "id": "twitchColor",
+          "label": "Twitch colour",
+          "type": "select",
+          "defaultValue": "primary",
+          "options": [
+            {
+              "value": "primary",
+              "label": "Channel colour"
+            },
+            {
+              "value": "blue",
+              "label": "Blue"
+            },
+            {
+              "value": "green",
+              "label": "Green"
+            },
+            {
+              "value": "orange",
+              "label": "Orange"
+            },
+            {
+              "value": "purple",
+              "label": "Purple"
+            }
+          ],
+          "visibleWhen": {
+            "field": "platform",
+            "oneOf": [
+              "origin",
+              "all",
+              "twitch"
+            ]
+          },
+          "description": "The colour of the announcement bar on Twitch. Shown when the step can send to Twitch."
+        }
+      ],
+      "taxonomy": [
+        "chat"
+      ]
+    },
+    {
+      "id": "chat.pin",
+      "name": "Pin message",
+      "description": "Post a message in chat and pin it, where the trigger came from, on every platform, or on the one you choose. Platforms that cannot pin make the step fail.",
+      "sentence": "Pin {message} in chat",
+      "type": "native",
+      "handler": "chat.pin",
+      "schema": [
+        {
+          "id": "message",
+          "label": "Message",
+          "type": "text",
+          "required": true,
+          "placeholder": "What should be pinned?",
+          "description": "Plain text. Twitch chat enforces a 500-character limit."
+        },
+        {
+          "id": "platform",
+          "label": "Platform",
+          "type": "select",
+          "defaultValue": "origin",
+          "options": [
+            {
+              "value": "origin",
+              "label": "Where it was triggered"
+            },
+            {
+              "value": "all",
+              "label": "Every platform"
+            }
+          ],
+          "source": {
+            "kind": "internal",
+            "request": {
+              "event": "platform.gateway.field_options",
+              "payload": {
+                "action": "chat.pin"
+              }
+            }
+          },
+          "hint": "Where it was triggered uses the chat the trigger came from. With no chat behind it, such as a timer, it goes to every platform.",
+          "description": "Which chat to send to. The step fails when a platform it sends to is turned off, not connected or refuses the message."
+        },
+        {
+          "id": "durationSeconds",
+          "label": "Pin for (seconds)",
+          "type": "number",
+          "min": 30,
+          "max": 1200,
+          "description": "How long the message stays pinned, from 30 to 1200 seconds. Leave empty to use the platform's own default.",
+          "missingText": "for the default time"
         }
       ],
       "taxonomy": [

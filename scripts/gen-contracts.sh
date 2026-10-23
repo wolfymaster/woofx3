@@ -31,6 +31,7 @@ readonly GENERATOR=shared/common/contracts/gen
 # order the generator takes them.
 readonly CONTRACTS=(
   "platform-gateway shared/common/contracts/platform-gateway.json shared/common/golang/platformgateway/catalog_gen.go shared/clients/typescript/api/platform-gateway.gen.ts"
+  "companion-gateway shared/common/contracts/companion-gateway.json shared/common/typescript/cloudevents/Companion/module-request.gen.ts barkloader/lib_sandbox/src/contracts/companion_gateway.gen.rs"
 )
 
 out_dir="$(mktemp -d)"
@@ -39,6 +40,7 @@ trap 'rm -rf "$out_dir"' EXIT
 (cd "$GENERATOR" && go build -o "$out_dir/gen" .)
 
 stale=0
+misformatted=0
 for entry in "${CONTRACTS[@]}"; do
   read -r name contract outputs <<<"$entry"
   read -r -a outputs <<<"$outputs"
@@ -51,6 +53,15 @@ for entry in "${CONTRACTS[@]}"; do
     fi
   done
   "$out_dir/gen" "$name" "$contract" "${targets[@]}"
+  # The generator lays Rust out as rustfmt does, and format.sh skips
+  # generated Rust (it is pulled in with include!), so this is what keeps the
+  # output rustfmt-clean.
+  for target in "${targets[@]}"; do
+    if [[ "$target" == *.rs ]] && ! rustfmt --edition 2024 --check "$target"; then
+      echo "gen-contracts: the generator wrote $target in a layout rustfmt would change; fix its Rust emitter" >&2
+      misformatted=1
+    fi
+  done
   if $check; then
     for i in "${!outputs[@]}"; do
       if ! diff -u "${outputs[$i]}" "${targets[$i]}"; then
@@ -61,6 +72,9 @@ for entry in "${CONTRACTS[@]}"; do
   fi
 done
 
+if [ "$misformatted" -ne 0 ]; then
+  exit 1
+fi
 if [ "$stale" -ne 0 ]; then
   echo "gen-contracts: run scripts/gen-contracts.sh and commit the result" >&2
   exit 1

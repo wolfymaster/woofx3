@@ -29,8 +29,8 @@ export type SourceVisibility = "visible" | "hidden" | "toggle";
 
 /**
  * One change to OBS, carried as the `data` of an `engine.obs.command`
- * CloudEvent to the OBS connection the scene manager holds. Request/reply: the
- * scene manager answers every command with an `ObsControlReply`.
+ * CloudEvent to the OBS connection the connectors host's obs adapter holds.
+ * Request/reply: the host answers every command with an `ObsControlReply`.
  *
  * The only producer is barkloader's `ctx.obs` extension, on behalf of module
  * code holding the `obs.control` permission; a module never chooses the
@@ -76,18 +76,18 @@ export type ObsControlReply =
     };
 
 /**
+ * Request/reply subject the api asks the OBS adapter's connection state on.
+ * The reply is the api's `ObsStatus` without `unanswered`, which only the api
+ * can observe.
+ */
+export const OBS_STATUS_SUBJECT = "engine.obs.status";
+
+/**
  * What to list, carried as the `data` of an `engine.obs.options` CloudEvent.
  * Sent by barkloader's `ctx.obs.listScenes`, `listSources` and `listInputs`.
  * A subject apart from `engine.obs.command`, so that reading OBS's names
  * never needs the permission that changing OBS does.
  */
-/**
- * Request/reply subject the api asks the scene manager's OBS connection state
- * on. The reply is the api's `ObsStatus` without `unanswered`, which only the
- * api can observe.
- */
-export const OBS_STATUS_SUBJECT = "engine.obs.status";
-
 export type ObsOptionsRequest = { list: ObsOptionsList };
 
 export const OBS_OPTIONS_LISTS = ["scenes", "sources", "inputs"] as const;
@@ -107,6 +107,87 @@ export interface ObsFieldOption {
 
 /** The options, or why OBS could not be asked; `{ error }` is the field-options failure reply. */
 export type ObsOptionsReply = ObsFieldOption[] | { error: string };
+
+/**
+ * Request/reply subject asking for the OBS browser sources that show this
+ * engine's overlays to be refreshed. sceneManager sends it once per start,
+ * after its HTTP server listens, and again until a reply accepts it; whoever
+ * holds the OBS connection answers.
+ */
+export const OBS_BROWSER_SOURCE_REFRESH_SUBJECT = "engine.obs.browser_source.refresh";
+
+/** Longest `bootId` accepted: a UUID is 36 characters. */
+export const OBS_REFRESH_BOOT_ID_MAX_LENGTH = 64;
+
+/**
+ * The refresh request. `overlayPort` is the port the overlays are served on,
+ * which identifies the browser sources to refresh; `bootId` names the
+ * sceneManager start the request is for. Answering is idempotent per `bootId`:
+ * a repeat for one already latched or consumed is accepted and changes nothing.
+ */
+export interface ObsBrowserSourceRefresh {
+  overlayPort: number;
+  bootId: string;
+}
+
+/**
+ * `invalid` refuses a malformed request, which retrying cannot fix;
+ * `unavailable` means the holder of the OBS connection could not take a valid
+ * request in time, so the sender retries.
+ */
+export type ObsBrowserSourceRefreshReply =
+  | { status: "accepted"; bootId: string }
+  | { status: "invalid"; error: string }
+  | { status: "unavailable"; error: string };
+
+export type ObsRefreshParse<T> = { ok: true; value: T } | { ok: false; error: string };
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function parseBootId(value: unknown): ObsRefreshParse<string> {
+  if (typeof value !== "string" || value.length < 1 || value.length > OBS_REFRESH_BOOT_ID_MAX_LENGTH) {
+    return { ok: false, error: `bootId must be a string of 1 to ${OBS_REFRESH_BOOT_ID_MAX_LENGTH} characters` };
+  }
+  return { ok: true, value };
+}
+
+export function parseObsBrowserSourceRefresh(value: unknown): ObsRefreshParse<ObsBrowserSourceRefresh> {
+  const body = asRecord(value);
+  if (!body) {
+    return { ok: false, error: "the request must be an object" };
+  }
+  const port = body.overlayPort;
+  if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
+    return { ok: false, error: "overlayPort must be a whole number from 1 to 65535" };
+  }
+  const bootId = parseBootId(body.bootId);
+  if (!bootId.ok) {
+    return bootId;
+  }
+  return { ok: true, value: { overlayPort: port, bootId: bootId.value } };
+}
+
+export function parseObsBrowserSourceRefreshReply(value: unknown): ObsRefreshParse<ObsBrowserSourceRefreshReply> {
+  const body = asRecord(value);
+  if (!body) {
+    return { ok: false, error: "the reply must be an object" };
+  }
+  if (body.status === "accepted") {
+    const bootId = parseBootId(body.bootId);
+    return bootId.ok ? { ok: true, value: { status: "accepted", bootId: bootId.value } } : bootId;
+  }
+  if (body.status === "invalid" || body.status === "unavailable") {
+    if (typeof body.error !== "string") {
+      return { ok: false, error: `${body.status} reply must carry an error string` };
+    }
+    return { ok: true, value: { status: body.status, error: body.error } };
+  }
+  return { ok: false, error: 'status must be "accepted", "invalid" or "unavailable"' };
+}
 
 export enum EventType {
   ObsCommand = "engine.obs.command",

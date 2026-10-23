@@ -3,17 +3,24 @@ import { FakeDispatcherDb } from "../chat/testing";
 import { ChatEnvSchema, chatConfig } from "../config/chat";
 import { type GatewayConfig, GatewayEnvSchema, gatewayConfig } from "../config/gateway";
 import { HOST_DEFAULTS, type HostConfig, HostEnvSchema, hostConfig } from "../config/host";
-import { type HealthBody, handleHealthRequest, startHealthServer } from "./health";
+import { type HealthBody, handleHealthRequest, healthBody, startHealthServer } from "./health";
 import { Host } from "./host";
-import { LINK_READERS, type SettingsReader } from "./link-readers";
-import { countingIds, FakeAdapter, FakeBus, FakeTime, halfRandom, RecordingLogger } from "./testing";
+import {
+  countingIds,
+  FakeAdapter,
+  FakeBus,
+  FakeTime,
+  fixedLinkStore,
+  halfRandom,
+  RecordingLogger,
+  shippedLinkReaders,
+  testCompanion,
+} from "./testing";
 
 const config: HostConfig = hostConfig(HostEnvSchema.parse({}));
 const gateway: GatewayConfig = gatewayConfig(GatewayEnvSchema.parse({}));
 
-const linkedSettings: SettingsReader = {
-  getSetting: async (key) => ({ twitch_token: "tok", "integration.twitch.enabled": "true" })[key] ?? null,
-};
+const linkedSettings = fixedLinkStore({ twitch_token: "tok", "integration.twitch.enabled": "true" });
 
 async function runningHost(adapter: FakeAdapter, busUp = { value: true }) {
   const time = new FakeTime();
@@ -22,13 +29,14 @@ async function runningHost(adapter: FakeAdapter, busUp = { value: true }) {
     gateway,
     chat: chatConfig(ChatEnvSchema.parse({})),
     dispatcherDb: new FakeDispatcherDb(),
+    companion: testCompanion(),
     dbProxy: { baseURL: "http://db.test" },
     bus: new FakeBus(),
     busConnected: () => busUp.value,
-    settings: linkedSettings,
+    linkStore: linkedSettings,
     adapters: new Map([["twitch", adapter]]),
     hostStates: new Map([["twitch", undefined]]),
-    readers: LINK_READERS,
+    readers: shippedLinkReaders(),
     clock: time,
     random: halfRandom,
     ids: countingIds(),
@@ -95,13 +103,14 @@ describe("health", () => {
       gateway,
       chat: chatConfig(ChatEnvSchema.parse({})),
       dispatcherDb: new FakeDispatcherDb(),
+      companion: testCompanion(),
       dbProxy: { baseURL: "http://db.test" },
       bus: new FakeBus(),
       busConnected: () => true,
-      settings: linkedSettings,
+      linkStore: linkedSettings,
       adapters: new Map(),
       hostStates: new Map(),
-      readers: LINK_READERS,
+      readers: shippedLinkReaders(),
       clock: time,
       random: halfRandom,
       ids: countingIds(),
@@ -174,6 +183,75 @@ describe("health", () => {
       nested: { Password: "[redacted]", ok: 1, list: [{ ticket: "[redacted]", name: "n" }] },
       credentialId: "[redacted]",
     });
+  });
+
+  test("lists each claimed local endpoint under companion, with its owner, before anything dials", async () => {
+    const adapter = new FakeAdapter("obs");
+    Object.assign(adapter.manifest, { localEndpoints: [{ moduleId: "woofx3_obs", endpointId: "obs" }] });
+    const time = new FakeTime();
+    const host = new Host({
+      config,
+      gateway,
+      companion: testCompanion(),
+      chat: chatConfig(ChatEnvSchema.parse({})),
+      dispatcherDb: new FakeDispatcherDb(),
+      dbProxy: { baseURL: "http://db.test" },
+      bus: new FakeBus(),
+      busConnected: () => true,
+      linkStore: linkedSettings,
+      adapters: new Map([["obs", adapter]]),
+      hostStates: new Map([["obs", undefined]]),
+      readers: shippedLinkReaders(),
+      clock: time,
+      random: halfRandom,
+      ids: countingIds(),
+      timers: time,
+      logger: new RecordingLogger(),
+    });
+    await host.start();
+    await host.settled();
+    const { body } = await getHealth(host);
+    expect(body.companion).toEqual({
+      hosting: null,
+      endpoints: [
+        { moduleId: "woofx3_obs", endpointId: "obs", owner: "obs", route: null, address: null, lastFailure: null },
+      ],
+      bridgeOpens: { inUse: 0, limit: 8, refused: 0 },
+    });
+    await host.stop();
+  });
+
+  test("shows a companion failure's time as ISO and redacts any secret-named key", async () => {
+    const { host } = await runningHost(new FakeAdapter());
+    const snapshot = host.snapshot();
+    const endpoint = {
+      moduleId: "woofx3_obs",
+      endpointId: "obs",
+      owner: "obs" as const,
+      route: "companion" as const,
+      address: "c-x.woofx3.tv",
+      lastFailure: { reason: "relay" as const, message: "the companion relay refused the bridge (503)", at: 0 },
+      ticket: "T".repeat(43),
+      credential: "wfxr1.k1.cGF5bG9hZA.c2ln",
+    };
+    const body = healthBody({ ...snapshot, companion: { ...snapshot.companion, endpoints: [endpoint] } });
+    expect(body.companion.endpoints).toEqual([
+      {
+        moduleId: "woofx3_obs",
+        endpointId: "obs",
+        owner: "obs",
+        route: "companion",
+        address: "c-x.woofx3.tv",
+        lastFailure: {
+          reason: "relay",
+          message: "the companion relay refused the bridge (503)",
+          at: "1970-01-01T00:00:00.000Z",
+        },
+        ticket: "[redacted]",
+        credential: "[redacted]",
+      } as never,
+    ]);
+    await host.stop();
   });
 
   test("detail is null for an adapter without one, and when it throws", async () => {

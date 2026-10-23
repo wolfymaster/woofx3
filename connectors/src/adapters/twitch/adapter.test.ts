@@ -14,9 +14,21 @@ import { HostEnvSchema, hostConfig } from "../../config/host";
 import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
 import type { Unavailable } from "../../host/adapter";
 import { Host } from "../../host/host";
-import { LINK_READERS, type SettingsReader } from "../../host/link-readers";
 import { Supervisor } from "../../host/supervisor";
-import { bytes, countingIds, FakeBus, FakeTime, flush, halfRandom, RecordingLogger, text } from "../../host/testing";
+import {
+  bytes,
+  countingIds,
+  FakeBus,
+  FakeTime,
+  fixedLinkStore,
+  flush,
+  halfRandom,
+  noCompanion,
+  RecordingLogger,
+  shippedLinkReaders,
+  testCompanion,
+  text,
+} from "../../host/testing";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
 
 /** EventSub listeners started and not stopped since, across every client. */
@@ -205,6 +217,7 @@ function supervised() {
     {
       bus,
       dbProxy: { baseURL: "http://db.test" },
+      companion: noCompanion,
       clock: time,
       random: halfRandom,
       timers: time,
@@ -371,7 +384,7 @@ describe("TwitchAdapter in the host", () => {
     linked = true;
     liveListeners.clear();
     const values: Record<string, string> = { twitch_token: "tok", "integration.twitch.enabled": "true" };
-    const settings: SettingsReader = { getSetting: async (key) => values[key] ?? null };
+    const settings = fixedLinkStore(values);
     const bus = new FakeBus();
     const time = new FakeTime();
     const host = new Host({
@@ -379,13 +392,14 @@ describe("TwitchAdapter in the host", () => {
       gateway: gatewayConfig(GatewayEnvSchema.parse({})),
       chat: chatConfig(ChatEnvSchema.parse({})),
       dispatcherDb: new FakeDispatcherDb(),
+      companion: testCompanion(),
       dbProxy: { baseURL: "http://db.test" },
       bus,
       busConnected: () => true,
-      settings,
+      linkStore: settings,
       adapters: new Map([["twitch", newAdapter(time)]]),
       hostStates: new Map([["twitch", undefined]]),
-      readers: LINK_READERS,
+      readers: shippedLinkReaders(),
       clock: time,
       random: halfRandom,
       ids: countingIds(),

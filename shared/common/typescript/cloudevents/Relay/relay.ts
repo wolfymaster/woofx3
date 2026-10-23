@@ -1,9 +1,10 @@
 // The engine's relay configuration: which local endpoints go through the
 // companion's bridge, and where that bridge is. The api stores it (it is the
-// only service that talks to the dashboard) and sceneManager's endpoint dialer
+// only service that talks to the dashboard) and the connectors host's endpoint dialer
 // reads it. See docs/services/local-endpoints.md.
 
 import type { RelayConfig, RelayEndpoint } from "@woofx3/api";
+import { ENDPOINT_ID_PATTERN, MODULE_ID_PATTERN } from "../Companion/module-request";
 
 /** Engine setting holding a `StoredRelayConfig` as JSON. Absent when nothing goes through a companion. */
 export const RELAY_CONFIG_SETTING = "relay.config";
@@ -37,13 +38,14 @@ export interface StoredRelayConfig extends RelayConfig {
 export const MAX_RELAY_ENDPOINTS = 50;
 
 /**
- * A manifest id, as a bridge path segment. Must match `parseBridgePath` in
- * woofx3-maintenance worker/src/relay/paths.ts, which also refuses `.` and
- * `..` (see `isModuleId`).
+ * A manifest id, as a bridge path segment. The pattern is the companion
+ * gateway contract's (companion-gateway.json), which must match
+ * `parseBridgePath` in woofx3-maintenance worker/src/relay/paths.ts; the
+ * relay also refuses `.` and `..` (see `isModuleId`).
  */
-const MODULE_ID = /^[A-Za-z0-9._-]{1,100}$/;
-/** A `local[]` endpoint id (barkloader lib_module `validate_local`). */
-const ENDPOINT_ID = /^[a-z0-9_-]{1,40}$/;
+const MODULE_ID = MODULE_ID_PATTERN;
+/** A `local[]` endpoint id (barkloader lib_module `validate_local`), the companion gateway contract's pattern. */
+const ENDPOINT_ID = ENDPOINT_ID_PATTERN;
 const CREDENTIAL = /^wfxr1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
 /**
@@ -170,7 +172,7 @@ function parseEndpoints(value: unknown): RelayEndpoint[] {
     if (typeof moduleId !== "string" || !isModuleId(moduleId)) {
       throw new Error("relay config endpoint has an invalid moduleId");
     }
-    if (typeof endpointId !== "string" || !ENDPOINT_ID.test(endpointId)) {
+    if (typeof endpointId !== "string" || !isEndpointId(endpointId)) {
       throw new Error(`relay config endpoint of ${moduleId} has an invalid endpointId`);
     }
     if (!routesEndpoint({ bridgeOrigin: "", endpoints }, moduleId, endpointId)) {
@@ -180,7 +182,15 @@ function parseEndpoints(value: unknown): RelayEndpoint[] {
   return endpoints;
 }
 
-/** A path segment URL parsing would resolve away is never a module id. */
-function isModuleId(value: string): boolean {
+/**
+ * True for a manifest id the relay accepts as a bridge path segment. A path
+ * segment URL parsing would resolve away is never a module id.
+ */
+export function isModuleId(value: string): boolean {
   return MODULE_ID.test(value) && value !== "." && value !== "..";
+}
+
+/** True for a `local[]` endpoint id the relay accepts as a bridge path segment. */
+export function isEndpointId(value: string): boolean {
+  return ENDPOINT_ID.test(value);
 }

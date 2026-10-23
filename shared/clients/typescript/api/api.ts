@@ -1,6 +1,7 @@
 // Shared API Types for woofx3 UI and Backend
 
 import type { EngineCapabilities } from "./capabilities";
+import type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
 import type {
   ConfigBundle,
   ConfigExportOptions,
@@ -10,7 +11,16 @@ import type {
 } from "./config-bundle";
 import type { EngineEventSubscribeOptions, EngineEventSubscriber, EngineRequestAnswer } from "./engine-events";
 import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "./marketplace-catalog";
+import type { PlatformGatewayResult, SendToPlatformsParams } from "./platform-gateway";
 import type { RegisterClientOptions } from "./rpc";
+import type {
+  EventLogPage,
+  EventLogQuery,
+  EventLogSelection,
+  EventLogSettings,
+  StreamEventSubscriber,
+} from "./stream-events";
+import type { TwitchDeviceLoginStartResult, TwitchDeviceLoginStateResult } from "./twitch-device-login";
 import type {
   TwitchAddBlockedTermParams,
   TwitchBanUserParams,
@@ -30,14 +40,6 @@ import type {
   TwitchUnbanUserParams,
   TwitchUpdateChatSettingsParams,
 } from "./twitch-helix";
-import type { TwitchDeviceLoginStartResult, TwitchDeviceLoginStateResult } from "./twitch-device-login";
-import type {
-  EventLogPage,
-  EventLogQuery,
-  EventLogSelection,
-  EventLogSettings,
-  StreamEventSubscriber,
-} from "./stream-events";
 import type {
   ActionDefinition,
   AlertSnapshot,
@@ -48,7 +50,6 @@ import type {
   WorkflowRunSnapshot,
   WorkflowRunStepSnapshot,
 } from "./webhooks";
-import type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
 import type { TaskDefinition, WorkflowDefinition } from "./workflow-definition";
 
 export type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
@@ -833,7 +834,7 @@ export interface RecentActivity {
 
 // ==================== OBS ====================
 
-/** The scene manager's connection to OBS. Mirrors ObsConnectionState in sceneManager/src/obs/connection.ts. */
+/** The connectors host's connection to OBS. Mirrors ObsConnectionState in connectors/src/adapters/obs/connection.ts. */
 export type ObsConnectionState = "connecting" | "connected" | "retrying" | "stopped";
 
 /** What the dashboard collected when the streamer approved a module's OAuth integration. */
@@ -2527,7 +2528,7 @@ export interface Woofx3EngineApi {
   getAlertQueue(): Promise<AlertQueueState>;
 
   /**
-   * How the scene manager's connection to OBS is doing, for the OBS module's
+   * How the connectors host's connection to OBS is doing, for the OBS module's
    * page. Requires the `obs.status` capability.
    */
   getObsStatus(): Promise<ObsStatus>;
@@ -2570,6 +2571,19 @@ export interface Woofx3EngineApi {
    * `modules.localEndpoints` capability.
    */
   setRelayConfig(config: RelayConfig | null): Promise<{ ok: true }>;
+
+  /**
+   * Send one chat action (`chat.send`, `chat.announce`, `chat.pin`) to the
+   * named platforms through the platform gateway. Never rejects for a send
+   * that did not happen: `ok: false` carries `unavailable` or `invalid` (not
+   * sent), or `timeout` or `failed` (may have been sent). With `ok: true`,
+   * `reply.results` holds each platform's own outcome. Repeating an
+   * `idempotencyKey` within the gateway's idempotency window replays a reply
+   * that reached a platform (or joins a send still running); a reply where
+   * nothing reached a platform is not held, so a retry sends again.
+   * Requires the `platform.gateway` capability.
+   */
+  sendToPlatforms(params: SendToPlatformsParams): Promise<PlatformGatewayResult>;
 
   // Overlay Tokens
   //
