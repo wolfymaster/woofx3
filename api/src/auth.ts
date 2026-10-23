@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+import { comparableOriginOf } from "@woofx3/common/http/request-guard";
 import type { SharedLogger } from "@woofx3/common/logging";
+import type * as clientPb from "@woofx3/db/client.pb";
 import type { DbClient } from "./db-client";
 
 /** How long an accepted pair of credentials is trusted without asking db-proxy again. */
@@ -10,7 +12,18 @@ export const CLIENT_AUTH_CACHE_TTL_MS = 60_000;
  * a verdict: `validate` throws instead, so a transient outage is never
  * mistaken for credentials that will never work.
  */
-export type ClientAuthVerdict = { kind: "accepted"; description: string } | { kind: "refused" };
+export type ClientAuthVerdict =
+  | {
+      kind: "accepted";
+      description: string;
+      /**
+       * The web origin the client may authenticate from, in comparable form
+       * (`comparableOriginOf`), for a client a browser paired; null for a
+       * registered client, which may authenticate from anywhere.
+       */
+      boundOrigin: string | null;
+    }
+  | { kind: "refused" };
 
 interface CacheEntry {
   verdict: ClientAuthVerdict & { kind: "accepted" };
@@ -63,7 +76,11 @@ export class ClientAuth {
     }
     const code = resp.status?.code;
     if (code === "OK" && resp.client) {
-      const verdict = { kind: "accepted", description: resp.client.description } as const;
+      const verdict = {
+        kind: "accepted",
+        description: resp.client.description,
+        boundOrigin: boundOriginOf(clientId, resp.client),
+      } as const;
       if (epoch === this.epoch) {
         this.cache.set(key, { verdict, expiresAt: now + CLIENT_AUTH_CACHE_TTL_MS });
       }
@@ -81,6 +98,27 @@ export class ClientAuth {
     this.epoch += 1;
     this.cache.clear();
     this.logger.debug("Client auth cache invalidated");
+  }
+}
+
+/**
+ * The origin a validated client is bound to, from db-proxy's kind and origin.
+ * Throws on a combination db-proxy's constraints rule out: admitting such a
+ * client unbound would let a paired browser's secret work from any origin.
+ */
+function boundOriginOf(clientId: string, client: Pick<clientPb.Client, "kind" | "origin">): string | null {
+  switch (client.kind) {
+    case "CLIENT_KIND_REGISTERED":
+      return null;
+    case "CLIENT_KIND_PAIRED": {
+      const origin = comparableOriginOf(client.origin);
+      if (origin === null) {
+        throw new Error(`paired client ${clientId} has no usable origin: ${JSON.stringify(client.origin)}`);
+      }
+      return origin;
+    }
+    default:
+      throw new Error(`client ${clientId} has kind ${client.kind}, which db-proxy never stores`);
   }
 }
 

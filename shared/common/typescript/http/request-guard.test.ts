@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   ALLOWED_ORIGINS_SETTING,
+  comparableOriginOf,
   OPEN_REQUEST_GUARD_POLICY,
   parseRequestGuardPolicy,
   RequestGuard,
@@ -245,5 +246,22 @@ describe("RequestGuard hosts and origins", () => {
     expect(guard.reject(request({ host: "evil.example", origin: "https://evil.example" }))?.status).toBe(421);
     expect(guard.reject(request({ host: "localhost", origin: "https://evil.example" }))?.status).toBe(403);
     expect(guard.reject(request({ host: "localhost:8080", origin: "http://localhost:3000" }))).toBeNull();
+  });
+});
+
+describe("comparableOriginOf", () => {
+  test.each([
+    ["http://localhost:5173", "http://localhost:5173"],
+    ["HTTP://LocalHost:5173", "http://localhost:5173"],
+    ["http://localhost:80", "http://localhost"],
+    ["https://app.example.com:443", "https://app.example.com"],
+    ["https://app.example.com/path?q=1", "https://app.example.com"],
+    ["tauri://localhost", "tauri://localhost"],
+  ])("%s compares as %s", (origin, expected) => {
+    expect(comparableOriginOf(origin)).toBe(expected);
+  });
+
+  test.each([["null"], [""], ["not a url"], ["file:///home/me/page.html"]])("%p has no comparable origin", (origin) => {
+    expect(comparableOriginOf(origin)).toBeNull();
   });
 });

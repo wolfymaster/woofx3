@@ -60,7 +60,7 @@ async function startEngine() {
     logger,
   });
   api.setStreamEventBroadcaster(broadcaster);
-  const auth = { validate: async () => ({ kind: "accepted", description: "dashboard" }) };
+  const auth = { validate: async () => ({ kind: "accepted", description: "dashboard", boundOrigin: null }) };
   const gateway = new ApiGateway(
     api,
     auth as never,

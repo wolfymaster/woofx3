@@ -5,6 +5,7 @@ import {
   type RegisterClientOptions,
   registrationRefusedMessage,
 } from "@woofx3/api/rpc";
+import { comparableOriginOf } from "@woofx3/common/http/request-guard";
 import { secretsMatch } from "@woofx3/common/http/secrets";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { Api } from "./api";
@@ -38,6 +39,11 @@ export class AuthenticationRefused extends Error {
     super(authenticationRefusedMessage(reason));
     this.name = AUTHENTICATION_REFUSED;
   }
+}
+
+/** Whether `connection` came from `boundOrigin`, a comparable origin. */
+function fromOrigin(connection: ConnectionInfo, boundOrigin: string): boolean {
+  return connection.origin !== null && comparableOriginOf(connection.origin) === boundOrigin;
 }
 
 /**
@@ -89,11 +95,23 @@ export class ApiGateway {
    * A session for `clientId`, registered so that deleting the client ends
    * it. A client deleted while its credentials were being checked is
    * refused, not admitted with a session that outlives it.
+   *
+   * A client a browser paired is bound to the origin it paired from: from
+   * any other origin, or with none, its credentials are refused with the same
+   * message as wrong ones, so the refusal says nothing about the secret.
    */
   async authenticate(clientId: string, clientSecret: string, connection: ConnectionInfo): Promise<ApiSession> {
     const generation = this.sessions.generation(clientId);
     const verdict = await this.auth.validate(clientId, clientSecret);
     if (verdict.kind === "refused") {
+      throw new AuthenticationRefused("Invalid client credentials");
+    }
+    if (verdict.boundOrigin !== null && !fromOrigin(connection, verdict.boundOrigin)) {
+      this.logger.warn("Refused a paired client from another origin", {
+        clientId,
+        origin: connection.origin,
+        remoteAddress: connection.remoteAddress,
+      });
       throw new AuthenticationRefused("Invalid client credentials");
     }
     const lease = this.sessions.register(clientId, generation, connection);

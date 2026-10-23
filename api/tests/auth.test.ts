@@ -7,7 +7,10 @@ const LOGGER = { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {
 function db() {
   const validateClient = mock(async (clientId: string, clientSecret: string) => {
     if (clientId === "c1" && clientSecret === "right") {
-      return { status: { code: "OK" as const }, client: { description: "desktop" } };
+      return {
+        status: { code: "OK" as const },
+        client: { description: "desktop", kind: "CLIENT_KIND_REGISTERED", origin: "" },
+      };
     }
     return { status: { code: "NOT_FOUND" as const, message: "Invalid credentials" } };
   });
@@ -20,7 +23,7 @@ describe("ClientAuth.validate", () => {
   test("accepts known credentials and refuses unknown ones", async () => {
     const auth = new ClientAuth(db(), LOGGER);
 
-    expect(await auth.validate("c1", "right")).toEqual({ kind: "accepted", description: "desktop" });
+    expect(await auth.validate("c1", "right")).toEqual({ kind: "accepted", description: "desktop", boundOrigin: null });
     expect(await auth.validate("c1", "wrong")).toEqual({ kind: "refused" });
     expect(await auth.validate("c2", "right")).toEqual({ kind: "refused" });
   });
@@ -113,5 +116,26 @@ describe("ClientAuth.validate", () => {
     } as unknown as ConstructorParameters<typeof ClientAuth>[0];
 
     await expect(new ClientAuth(proxy, LOGGER).validate("c1", "right")).rejects.toThrow("INTERNAL");
+  });
+
+  test.each([
+    ["a registered client", { kind: "CLIENT_KIND_REGISTERED", origin: "" }, null],
+    ["a paired client", { kind: "CLIENT_KIND_PAIRED", origin: "HTTP://LocalHost:5173" }, "http://localhost:5173"],
+  ])("binds %s to its origin", async (_, client, boundOrigin) => {
+    const proxy = { validateClient: async () => ({ status: { code: "OK" }, client: { description: "d", ...client } }) };
+
+    const verdict = await new ClientAuth(proxy as never, LOGGER).validate("c1", "s");
+
+    expect(verdict).toEqual({ kind: "accepted", description: "d", boundOrigin });
+  });
+
+  test.each([
+    ["no kind", { kind: "CLIENT_KIND_UNSPECIFIED", origin: "" }],
+    ["a paired client without an origin", { kind: "CLIENT_KIND_PAIRED", origin: "" }],
+    ["a paired client with an opaque origin", { kind: "CLIENT_KIND_PAIRED", origin: "null" }],
+  ])("is an error, not an unbound acceptance, for %s", async (_, client) => {
+    const proxy = { validateClient: async () => ({ status: { code: "OK" }, client: { description: "d", ...client } }) };
+
+    await expect(new ClientAuth(proxy as never, LOGGER).validate("c1", "s")).rejects.toThrow();
   });
 });
