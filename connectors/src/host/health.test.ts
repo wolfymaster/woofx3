@@ -203,7 +203,38 @@ describe("health", () => {
         { moduleId: "woofx3_obs", endpointId: "obs", owner: "obs", route: null, address: null, lastFailure: null },
       ],
       bridgeOpens: { inUse: 0, limit: 8, refused: 0 },
+      modules: {
+        sessions: {
+          sessions: [],
+          opening: 0,
+          limit: 32,
+          opens: 0,
+          openFailures: {},
+          closes: { idle: 0, route_change: 0, remote: 0, stopped: 0 },
+          frames: { oversized: 0, binary: 0, unmatched: 0 },
+        },
+        requests: { send: {}, request: {} },
+      },
     });
+    await host.stop();
+  });
+
+  test("shows a module session's open time as ISO", async () => {
+    const { host } = await runningHost(new FakeAdapter());
+    const snapshot = host.snapshot();
+    const session = {
+      moduleId: "vts",
+      endpointId: "vts",
+      route: "direct" as const,
+      address: "127.0.0.1:8001",
+      sessionEpoch: "epoch-1",
+      openedAt: 0,
+      pending: 1,
+    };
+    const modules = { ...snapshot.companion.modules };
+    modules.sessions = { ...modules.sessions, sessions: [session] };
+    const body = healthBody({ ...snapshot, companion: { ...snapshot.companion, modules } });
+    expect(body.companion.modules.sessions.sessions).toEqual([{ ...session, openedAt: "1970-01-01T00:00:00.000Z" }]);
     await host.stop();
   });
 

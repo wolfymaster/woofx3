@@ -4,7 +4,9 @@ import { type SessionBus, subscribeToSessionUpdates } from "@woofx3/common/cloud
 import { ClaimRegistry } from "../companion/claims";
 import { COMPANION_GATEWAY_GRANTS, EngineCompanionGateway } from "../companion/companion-gateway";
 import type { Fetch } from "../companion/dialer";
+import type { OpenSocket } from "../companion/endpoint-sessions";
 import type { EndpointStore } from "../companion/endpoint-store";
+import type { NameResolver } from "../companion/local-address";
 import type { CompanionConfig } from "../config/companion";
 import type { GatewayConfig } from "../config/gateway";
 import type { HostConfig } from "../config/host";
@@ -40,6 +42,10 @@ export interface HostCompanionDeps {
   store: EndpointStore;
   /** The relay's ticket exchange. */
   fetch: Fetch;
+  /** Resolves a `.local` name in a module endpoint's address. */
+  resolver: NameResolver;
+  /** Opens the websockets module requests are written to. */
+  openSocket: OpenSocket;
 }
 
 export interface HostDeps {
@@ -100,7 +106,6 @@ export class Host {
       clock: deps.clock,
       logger: deps.logger.child({ component: "platform-gateway" }),
     });
-    assertNoSecondResponder(deps.adapters, this.gateway.served);
     // Built before the supervisor, which hands each adapter its scoped handle,
     // and stopped after it, so no adapter run outlives it.
     this.companion = new EngineCompanionGateway({
@@ -108,10 +113,15 @@ export class Host {
       claims: ClaimRegistry.fromManifests([...deps.adapters.values()].map((adapter) => adapter.manifest)),
       store: deps.companion.store,
       fetch: deps.companion.fetch,
+      resolver: deps.companion.resolver,
+      openSocket: deps.companion.openSocket,
+      requests: this.requests,
       clock: deps.clock,
       timers: deps.timers,
+      ids: deps.ids,
       logger: deps.logger.child({ component: "companion-gateway" }),
     });
+    assertNoSecondResponder(deps.adapters, [...this.gateway.served, ...this.companion.served]);
     const longestBudgetMs = Math.max(0, ...this.servedBudgets());
     this.drainMs = Math.max(deps.config.stopDeadlineMs, longestBudgetMs);
     const stopWorstCaseMs = deps.config.dbProxyTimeoutMs + this.drainMs;
@@ -250,9 +260,13 @@ export class Host {
     };
   }
 
-  /** Every subject the host answers: each adapter's served subjects and the gateway's. */
+  /** Every subject the host answers: each adapter's served subjects, the platform gateway's and the companion gateway's. */
   private answered(): Array<{ subject: string; budgetMs: number }> {
-    return [...[...this.deps.adapters.values()].flatMap((adapter) => adapter.manifest.serves), ...this.gateway.served];
+    return [
+      ...[...this.deps.adapters.values()].flatMap((adapter) => adapter.manifest.serves),
+      ...this.gateway.served,
+      ...this.companion.served,
+    ];
   }
 
   private servedBudgets(): number[] {

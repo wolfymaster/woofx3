@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { PLATFORM_GATEWAY_SUBJECTS } from "@woofx3/api/platform-gateway";
+import { COMPANION_GATEWAY_SUBJECTS } from "@woofx3/common/cloudevents/Companion/module-request";
 import { getCurrentSessionId } from "@woofx3/common/cloudevents/session";
 import {
   INTEGRATION_ENABLED_UPDATED_SUBJECT,
@@ -320,6 +321,43 @@ describe("Host", () => {
     };
     await expect(setup(twitchapi, {}, rival)).rejects.toThrow(
       'adapter "twitch" serves "platform.gateway.send", which the host serves itself'
+    );
+  });
+
+  test("answers engine.companion.module.request on its own scope", async () => {
+    const { bus, host } = await setup();
+    await host.start();
+    const request = { op: "send", moduleId: "vtube_studio", endpointId: "vts", message: "{}", budgetMs: 4_500 };
+    const replies = bus.deliver(COMPANION_GATEWAY_SUBJECTS.moduleRequest, bytes(JSON.stringify(request)), "inbox");
+    await flush();
+    expect(replies.map((reply) => JSON.parse(text(reply)))).toEqual([
+      { status: "failed", code: "not_declared", message: 'vtube_studio declares no local endpoint "vts"' },
+    ]);
+    expect(host.snapshot().companion.modules.requests).toEqual({ send: { not_declared: 1 }, request: {} });
+  });
+
+  test("refuses an adapter that serves the companion gateway's subject", async () => {
+    const rival: Adapter = {
+      manifest: {
+        id: "twitch",
+        publishes: [],
+        subscribes: [],
+        requests: [],
+        serves: [
+          {
+            subject: COMPANION_GATEWAY_SUBJECTS.moduleRequest,
+            budgetMs: 1_000,
+            handle: async () => new Uint8Array(),
+            unavailableReply: () => new Uint8Array(),
+          },
+        ],
+      },
+      desired: () => false,
+      start: async () => {},
+      stop: async () => {},
+    };
+    await expect(setup(twitchapi, {}, rival)).rejects.toThrow(
+      'adapter "twitch" serves "engine.companion.module.request", which the host serves itself'
     );
   });
 
