@@ -52,9 +52,11 @@ export const MODULE_SESSION_DEFAULTS = {
    * One session open: resolving the route (with the bridge's credential and
    * ticket exchange) and the upgrade. Independent of any call: a call whose
    * budget ends first is answered `unavailable` and the open carries on, so
-   * the next call finds it.
+   * the next call finds it. Must exceed the bridge credential request plus the
+   * ticket exchange, which `companionConfigProblems` checks at startup; the
+   * same as the OBS adapter's open deadline.
    */
-  openTimeoutMs: 10_000,
+  openTimeoutMs: 15_000,
   /** One `.local` name lookup for a direct route, within openTimeoutMs. */
   resolveTimeoutMs: 3_000,
   /** A session nobody has used for this long is closed. */
@@ -115,6 +117,12 @@ export function companionConfigProblems(env: CompanionEnv): string[] {
   const hosting = env.woofx3Hosting?.trim();
   if (hosting !== undefined && parseEngineHosting(hosting) === null) {
     problems.push(`woofx3Hosting must be one of ${ENGINE_HOSTINGS.join(", ")}, got ${hosting}`);
+  }
+  const bridgeSetupMs = COMPANION_DEFAULTS.dashboardRequestTimeoutMs + env.woofx3CompanionTicketTimeoutMs;
+  if (MODULE_SESSION_DEFAULTS.openTimeoutMs <= bridgeSetupMs) {
+    problems.push(
+      `a module session open (${MODULE_SESSION_DEFAULTS.openTimeoutMs}) must exceed the bridge credential request (${COMPANION_DEFAULTS.dashboardRequestTimeoutMs}) plus woofx3CompanionTicketTimeoutMs (${env.woofx3CompanionTicketTimeoutMs}), which an open through the companion includes`
+    );
   }
   return problems;
 }
