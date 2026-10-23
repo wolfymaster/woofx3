@@ -148,6 +148,17 @@ describe("ChatDispatcher", () => {
     ]);
   });
 
+  test("snapshot tallies how each line ended and how many commands are loaded", async () => {
+    db.commands = [storedCommand()];
+    await start();
+    await say({ message: "!title hi", membership: BROADCASTER });
+    await say({ message: "just chatting", membership: BROADCASTER });
+    await say({ message: "!title x", membership: BROADCASTER, fromEngine: true });
+    const snapshot = dispatcher.snapshot();
+    expect(snapshot.lines).toMatchObject({ ran: 1, no_command: 1, from_engine: 1, refused: 0 });
+    expect(snapshot.commands).toMatchObject({ builtins: 1, storedCommands: 1, reloadFailures: 0 });
+  });
+
   test("a line the engine said itself runs nothing", async () => {
     await start();
     await say({ message: "!title pwned", membership: BROADCASTER, fromEngine: true });
