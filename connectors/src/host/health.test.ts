@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { FakeDispatcherDb } from "../chat/testing";
+import { ChatEnvSchema, chatConfig } from "../config/chat";
 import { type GatewayConfig, GatewayEnvSchema, gatewayConfig } from "../config/gateway";
 import { HOST_DEFAULTS, type HostConfig, HostEnvSchema, hostConfig } from "../config/host";
 import { type HealthBody, handleHealthRequest, startHealthServer } from "./health";
@@ -18,6 +20,8 @@ async function runningHost(adapter: FakeAdapter, busUp = { value: true }) {
   const host = new Host({
     config,
     gateway,
+    chat: chatConfig(ChatEnvSchema.parse({})),
+    dispatcherDb: new FakeDispatcherDb(),
     dbProxy: { baseURL: "http://db.test" },
     bus: new FakeBus(),
     busConnected: () => busUp.value,
@@ -83,6 +87,8 @@ describe("health", () => {
     const host = new Host({
       config,
       gateway,
+      chat: chatConfig(ChatEnvSchema.parse({})),
+      dispatcherDb: new FakeDispatcherDb(),
       dbProxy: { baseURL: "http://db.test" },
       bus: new FakeBus(),
       busConnected: () => true,

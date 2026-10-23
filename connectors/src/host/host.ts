@@ -1,6 +1,8 @@
 import { PLATFORM_IDS } from "@woofx3/api/platform-gateway";
 import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
 import { type SessionBus, subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
+import type { DispatcherDb } from "../chat/db-client";
+import type { ChatConfig } from "../config/chat";
 import type { GatewayConfig } from "../config/gateway";
 import type { HostConfig } from "../config/host";
 import { EgressRegistry } from "../gateway/egress-registry";
@@ -9,6 +11,7 @@ import type { DbProxyClientConfig } from "../services/db-proxy";
 import type { Adapter } from "./adapter";
 import type { AdapterId } from "./adapter-ids";
 import { bounded } from "./bounded";
+import { ChatService } from "./chat-service";
 import { type Clock, errorMessage, type IdSource, type Logger, type RandomSource, type Timers } from "./deps";
 import type { HealthSnapshot } from "./health";
 import { HostRequests } from "./host-requests";
@@ -31,7 +34,10 @@ export const LOOP_STALE_INTERVALS = 2;
 export interface HostDeps {
   config: HostConfig;
   gateway: GatewayConfig;
+  chat: ChatConfig;
   dbProxy: DbProxyClientConfig;
+  /** Replaces the dispatcher's db-proxy client; tests pass an in-memory fake. */
+  dispatcherDb?: DispatcherDb;
   bus: BusClient;
   busConnected: () => boolean;
   settings: SettingsReader;
@@ -58,6 +64,7 @@ export class Host {
   private readonly served: ServedSubjects;
   private readonly watcher: SettingsWatcher;
   private readonly gateway: PlatformGateway;
+  private readonly chat: ChatService;
   private running = false;
   /** How long stop gives the adapters and the held requests together: the larger of the stop deadline and any budget. */
   private readonly drainMs: number;
@@ -85,7 +92,7 @@ export class Host {
       logger: deps.logger.child({ component: "platform-gateway" }),
     });
     assertNoSecondResponder(deps.adapters, this.gateway.served);
-    const longestBudgetMs = Math.max(0, ...this.servedBudgets());
+    const longestBudgetMs = Math.max(deps.chat.replyTimeoutMs, deps.chat.twitchApi.timeoutMs, ...this.servedBudgets());
     this.drainMs = Math.max(deps.config.stopDeadlineMs, longestBudgetMs);
     const stopWorstCaseMs = deps.config.dbProxyTimeoutMs + this.drainMs;
     if (deps.config.shutdownDeadlineMs <= stopWorstCaseMs) {
@@ -130,6 +137,18 @@ export class Host {
       hostStates: deps.hostStates,
       logger: deps.logger,
     });
+    this.chat = new ChatService({
+      config: deps.chat,
+      dbProxy: deps.dbProxy,
+      db: deps.dispatcherDb,
+      bus: deps.bus,
+      limits: deps.config.subscriptionLimits,
+      drainMs: this.drainMs,
+      clock: deps.clock,
+      random: deps.random,
+      timers: deps.timers,
+      logger: deps.logger.child({ component: "chat" }),
+    });
     this.watcher = new SettingsWatcher({
       adapters: this.supervisor.adapterIds,
       readers: deps.readers,
@@ -149,8 +168,9 @@ export class Host {
   }
 
   /**
-   * Follows the stream session, serves every adapter's subjects, then reads
-   * the links and starts what is desired.
+   * Follows the stream session, serves every adapter's subjects and the
+   * gateway's, starts the chat dispatcher (its replies go through the
+   * gateway), then reads the links and starts what is desired.
    */
   async start(): Promise<void> {
     if (this.running) {
@@ -165,15 +185,17 @@ export class Host {
       await this.served.serveAll(id, adapter.manifest.serves);
     }
     await this.gateway.serve(this.scope);
+    await this.chat.start();
     await this.watcher.start();
   }
 
   /**
-   * Stops reading settings (at most one read timeout), then stops every
-   * adapter and stops answering together. Held requests settle as their
-   * adapters stop, or at their budget, so the second half takes at most the
-   * larger of the stop deadline and the longest budget. The constructor
-   * checks the shutdown deadline covers both halves.
+   * Stops reading settings (at most one read timeout), then stops the chat
+   * dispatcher reading lines, and stops every adapter and stops answering
+   * together with the dispatcher's lines still in flight. Held requests settle
+   * as their adapters stop, or at their budget, so the second half takes at
+   * most the larger of the stop deadline and the longest budget. The
+   * constructor checks the shutdown deadline covers both halves.
    */
   async stop(): Promise<void> {
     if (!this.running) {
@@ -181,7 +203,8 @@ export class Host {
     }
     this.running = false;
     await this.watcher.stop();
-    const [, drained] = await Promise.all([
+    const [, , drained] = await Promise.all([
+      this.chat.stop(),
       this.supervisor.stopAll(),
       bounded(() => this.scope.closeAll(), this.drainMs, this.deps.timers),
     ]);
@@ -210,6 +233,7 @@ export class Host {
       hostRequests: this.requests.snapshot(),
       hostBus: this.hostCounters.snapshot(),
       gateway: this.gateway.snapshot(),
+      chat: this.chat.snapshot(),
     };
   }
 

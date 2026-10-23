@@ -22,7 +22,9 @@ Code lives in `connectors/src/host/`; `server.ts` only wires it to the shared
 runtime (see [Runtime](./runtime.md)). The host also serves the
 [platform gateway](./platform-gateway.md) (`connectors/src/gateway/`), the
 engine's platform-neutral way to post, announce and pin, which fans each
-request out to the platform adapters' egress handlers.
+request out to the platform adapters' egress handlers, and the
+[chat command dispatcher](#chat-command-dispatcher), which runs chat commands
+for every platform.
 
 ## Linked and enabled
 
@@ -242,7 +244,7 @@ it for the host:
   `setting.integration.token.updated`, requests `engine.twitch.token` and
   `engine.shoutout.enqueue` from the api, and serves `twitchapi` with a
   9_000 ms budget (`TWITCHAPI_SERVED_BUDGET_MS`): below the 10_000 ms the
-  api, the sandbox's `ctx.twitch` and woofwoofwoof's built-in commands wait,
+  api, the sandbox's `ctx.twitch` and the chat dispatcher's built-in commands wait,
   and above a Helix call's own 8_000 ms deadline. A served `helix` call gets
   the smaller of that deadline and the time left in the budget.
 - **While it is down**, the host answers every `twitchapi` command with a
@@ -345,9 +347,14 @@ still stamps the current session.
 `connectors/src/chat/` holds the platform-neutral chat command dispatcher: it
 reads every platform's chat lines, runs the commands they name, and replies
 through the [platform gateway](./platform-gateway.md) to the platform each
-line came from. The host does not start it; chat commands are run by
-woofwoofwoof (see [WoofWoofWoof](../woofwoofwoof/application.md)). Whoever starts it
-adds `CHAT_DISPATCHER_GRANTS` to the scope it runs in.
+line came from. The host runs it (`connectors/src/host/chat-service.ts`) in a
+bus scope of its own that holds `CHAT_DISPATCHER_GRANTS` and nothing more. It
+starts once the platform gateway answers, because its replies go through the
+gateway, and before the first link settings are read. If the first command
+listing fails, the host does not start. No other
+service runs chat commands: the standalone woofwoofwoof service is gone, and the
+dispatcher announces `chat.command.<slug>` with the event `source`
+`connectors`.
 
 Each `user.message` goes through these steps in order:
 
@@ -509,6 +516,12 @@ fix what parked it.
     }
   ],
   "counters": {
+    "chat": {
+      "commands": { "storedCommands": 12, "builtins": 6, "lastReloadAt": 1792670400000, "reloadFailures": 0 },
+      "lines": { "refused": 0, "from_engine": 4, "no_command": 310, "denied": 1, "cooling_down": 2, "failed": 0, "ran": 9 },
+      "replies": { "delivered": 10, "failed": 1 },
+      "bus": { "refusals": 0, "subscriptions": {} }
+    },
     "hostRequests": { "twitchapi": { "received": 3, "replied": 3, "invalid": 0, "internal": 0, "expired": 0, "no_inbox": 0 } },
     "hostBus": { "refusals": 0, "subscriptions": {} },
     "gateway": {
@@ -518,6 +531,13 @@ fix what parked it.
   }
 }
 ```
+
+`counters.chat` is the chat dispatcher: how many stored and built-in commands
+are loaded, when the table last loaded (clock milliseconds) and how many
+reloads failed, how each chat line ended, how many replies the platform gateway
+delivered and how many it did not (no answer, an unreadable answer or a refusal;
+the reason is in the log), and the dispatcher's own bus scope. A reply that
+fails never makes `/health` fail.
 
 `detail` is whatever the adapter's optional `detail()` returns, for facts worth
 seeing at a glance, and `null` when it has none or it throws (the throw is logged
@@ -532,10 +552,11 @@ Any other path or method answers `404` with
 
 SIGTERM, SIGINT and SIGBREAK (Windows) start one graceful shutdown through the
 shared `installShutdown`: the health server closes, and the watcher stops once
-any read in flight ends (at most the db-proxy timeout). Then, together, every
-adapter is stopped in parallel under its stop deadline and the host's
-subscriptions close; held requests are answered as their adapters stop, and
-the close waits at most the larger of the stop deadline and the longest served
-budget. The host refuses to start when the shutdown deadline does not cover
+any read in flight ends (at most the db-proxy timeout). Then, together, the
+chat dispatcher stops reading lines, every adapter is stopped in parallel under
+its stop deadline and the host's subscriptions close; held requests are
+answered as their adapters stop. The dispatcher waits for lines still being
+handled, and the close waits at most the larger of the stop deadline, the longest
+served budget, the platform gateway reply timeout and the Twitch API timeout. The host refuses to start when the shutdown deadline does not cover
 both steps. A second signal, or `WOOFX3_CONNECTORS_SHUTDOWN_DEADLINE_MS`
 elapsing, exits with code 1.
