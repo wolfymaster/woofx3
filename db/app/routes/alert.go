@@ -3,7 +3,6 @@ package routes
 import (
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
@@ -18,10 +17,10 @@ import (
 // intentionally not applied yet — the alert log is gated by the
 // proxy's existing auth surface.
 func AlertRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMiddleware) error {
-	alertRepository := repo.NewAlertRepository(app.Db)
+	alertRepository := repo.NewAlertRepository(app.Db, app.IDs)
 	alertService, err := svc.NewAlertService(alertRepository, app.EventPublisher, svc.AlertRetention{
 		Period: app.Workers.EventDetailRetention,
-		Now:    time.Now,
+		Now:    app.Now,
 	})
 	if err != nil {
 		return fmt.Errorf("alert routes: %w", err)

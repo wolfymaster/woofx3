@@ -26,6 +26,8 @@ import type { AlertFrameStage, AlertTimings } from "./alert-timing";
 export interface PreparedAlertDeps {
   /** The alert widget's area, where the stage goes. */
   element: HTMLElement;
+  /** The area's placement id, which names the alert's marks (alert-timing.ts). */
+  instanceId: string;
   document: Document;
   bridges: Set<WidgetBridge>;
   assets: AssetCache;
@@ -45,7 +47,7 @@ interface Playing {
 /** One widget's frame and what it has said before its alert was known. */
 interface PreparedFrame {
   bridge: WidgetBridge;
-  moduleId: string | null;
+  moduleId: string;
   settings: Record<string, unknown>;
   /**
    * The widget's script has run: it subscribed or painted. The shim reports
@@ -178,10 +180,10 @@ export class PreparedAlert {
       },
     };
     this.finished = onFinished;
-    timings.alert(eventId, "started");
+    timings.alert(eventId, this.deps.instanceId, "started");
     for (const [widgetId, frame] of this.frames) {
       for (const stage of frame.reached) {
-        timings.frame(eventId, widgetId, stage);
+        timings.frame(eventId, this.deps.instanceId, widgetId, stage);
       }
       for (const report of frame.heldStatus.values()) {
         this.post(widgetId, frame, report);
@@ -228,12 +230,15 @@ export class PreparedAlert {
       throw new Error(`alert: widget ${widgetId} is not in its layout`);
     }
     const moduleId = moduleIdOfCanonicalId(placement.widget);
+    if (moduleId === null) {
+      throw new Error(`alert: widget ${widgetId} has no canonical module id`);
+    }
     const instanceId = `${this.id}.${widgetId}`;
     let prepared: PreparedFrame | null = null;
     const reach = (stage: AlertFrameStage): void => {
       prepared?.reached.push(stage);
       if (this.playing !== null) {
-        this.deps.timings.frame(this.playing.eventId, widgetId, stage);
+        this.deps.timings.frame(this.playing.eventId, this.deps.instanceId, widgetId, stage);
       }
     };
     const settle = (): void => {
@@ -323,7 +328,7 @@ export class PreparedAlert {
       throw new Error("alert: a status was posted before the alert was known");
     }
     const instanceId = `${this.playing.eventId}.${widgetId}`;
-    this.deps.postStatus(instanceId, frame.moduleId ?? "", { ...report, instanceId });
+    this.deps.postStatus(instanceId, frame.moduleId, { ...report, instanceId });
   }
 }
 

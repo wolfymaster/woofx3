@@ -25,7 +25,6 @@ untouched (`workflow/internal/expression/resolver.go:41`).
 | `trigger.time` | RFC3339 timestamp |
 | `trigger.data.X` | Anything on the event's `data` map |
 | `<taskId>.X` | Exports from a previously-executed task in the same workflow |
-| `env.NAME` | Process environment variable (read at substitute time) |
 | `viewer.X` | The facts of the viewer the triggering event is about, e.g. `${viewer.user.apple_mentions}`, plus `viewer.id`, `viewer.platform` and `viewer.name`; see [Facts in workflows](../services/viewer-facts.md#facts-in-workflows-viewer) |
 
 **Semantics**: a plain reference is a path lookup,
@@ -57,8 +56,14 @@ expression chooses between values, it does not compute them.
 "text": "${trigger.data.userName == 'wolfymaster' ? 'the boss' : 'a viewer'}"
 "params": ["Hello ${trigger.data.userName}!"]
 "value": "${task1.result.userId}"          // task export
-"apiKey": "${env.TWITCH_TOKEN}"
 ```
+
+There is no `env` source: workflows never read the engine's environment.
+A definition that contains `${env.` anywhere is refused when it is saved
+and when the engine loads it, with the path of the offending value. An
+API key or token belongs in a module setting (a `secret` setting for
+credentials), which the module's own functions read; see
+[Module-level settings](../barkloader/modules.md#module-level-settings-settings).
 
 A string that is exactly one `${…}` keeps the value's type, so a number
 stays a number; one inside a longer string becomes text.

@@ -441,13 +441,13 @@ describe("an overlay page", () => {
     page.fromFrame(frame, { type: "rendered" });
 
     expect(page.marked).toEqual([
-      "woofx3.alert/ev-9/delivered",
-      "woofx3.alert/ev-9/started",
-      "woofx3.alert/ev-9/t1/mounted",
-      "woofx3.alert/ev-9/t1/ready",
-      "woofx3.alert/ev-9/t1/subscribed",
-      "woofx3.alert/ev-9/t1/rendered",
-      "woofx3.alert/ev-9/on-screen",
+      "woofx3.alert/ev-9/a1/delivered",
+      "woofx3.alert/ev-9/a1/started",
+      "woofx3.alert/ev-9/a1/t1/mounted",
+      "woofx3.alert/ev-9/a1/t1/ready",
+      "woofx3.alert/ev-9/a1/t1/subscribed",
+      "woofx3.alert/ev-9/a1/t1/rendered",
+      "woofx3.alert/ev-9/a1/on-screen",
     ]);
   });
 
@@ -527,8 +527,8 @@ describe("an overlay page", () => {
       "ev-2",
     ]);
     expect(stageOf(prepared).style.opacity).toBe("");
-    expect(page.marked).toContain("woofx3.alert/ev-2/prepared");
-    expect(page.marked).toContain("woofx3.alert/ev-2/on-screen");
+    expect(page.marked).toContain("woofx3.alert/ev-2/a1/prepared");
+    expect(page.marked).toContain("woofx3.alert/ev-2/a1/on-screen");
     expect(() => alertFrame(page, "prepared-3.t1")).toThrow();
   });
 
@@ -543,7 +543,7 @@ describe("an overlay page", () => {
     expect(() => alertFrame(page, "prepared-2.t1")).toThrow();
     const fresh = alertFrame(page, "prepared-3.t1");
     expect(decodePlacementBoot(fresh.src.slice(fresh.src.indexOf("#")))?.settings).toEqual({ text: "two" });
-    expect(page.marked).not.toContain("woofx3.alert/ev-2/prepared");
+    expect(page.marked).not.toContain("woofx3.alert/ev-2/a1/prepared");
   });
 
   it("plays an alert on fresh frames when a prepared widget has not said yet what it read", async () => {

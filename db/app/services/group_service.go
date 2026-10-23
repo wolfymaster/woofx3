@@ -46,11 +46,7 @@ func toProtoGroup(g *models.Group) *client.Group {
 }
 
 func (s *groupService) CreateGroup(ctx context.Context, req *client.CreateGroupRequest) (*client.GroupResponse, error) {
-	// Assign the id here rather than leaning on the column default: that
-	// default is Postgres-only (uuid_generate_v4()), so on the SQLite backend
-	// every group would otherwise be inserted with the zero UUID and collide.
 	m := models.Group{
-		ID:          uuid.New(),
 		Name:        strings.TrimSpace(req.Name),
 		Description: req.Description,
 	}

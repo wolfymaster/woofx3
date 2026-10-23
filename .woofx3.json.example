@@ -7,7 +7,7 @@
 
   "secretsKey": "",
 
-  "messageBusHost": "",
+  "messageBusHost": "127.0.0.1",
   "messageBusWebSocketPort": 4225,
   "messageBusUrl": "ws://localhost:4225",
   "messageBusJwt": "",

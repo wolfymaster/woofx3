@@ -123,6 +123,7 @@ function setup(preparedAlerts?: number) {
   let disposing = false;
   const widget = new AlertWidget({
     element: element as unknown as HTMLElement,
+    instanceId: "area",
     bridges: new Set<WidgetBridge>(),
     postStatus: () => {},
     assets: { warm: () => {}, loaderFor: () => () => Promise.reject(new Error("no assets")) } as unknown as AssetCache,
@@ -204,7 +205,7 @@ describe("AlertWidget", () => {
     timers.advance(ALERT_PLAYS_OUT_MS);
 
     expect(stages()).toEqual([onScreen(B)]);
-    expect(marked).toContain("woofx3.alert/ev-2/prepared");
+    expect(marked).toContain("woofx3.alert/ev-2/area/prepared");
   });
 
   it("does not mark an alert that arrives while the area is idle as prepared", () => {
@@ -213,7 +214,7 @@ describe("AlertWidget", () => {
     timers.advance(0);
 
     expect(stages()).toEqual([onScreen(A)]);
-    expect(marked).not.toContain("woofx3.alert/ev-1/prepared");
+    expect(marked).not.toContain("woofx3.alert/ev-1/area/prepared");
   });
 
   it("fits a prepared stage to the area as it is built, and again as it plays only if the area changed", () => {
@@ -233,6 +234,47 @@ describe("AlertWidget", () => {
 
     expect(prepared.style.opacity).toBe("");
     expect(prepared.style.transform).toBe("translate(0px, 0px) scale(1)");
+  });
+
+  it("marks what a prepared stage's frames did before the alert under the area it plays in", () => {
+    const { timers, marked, deliver } = setup();
+    deliver("ev-1", "a");
+    deliver("ev-2", "b");
+    timers.advance(0);
+    expect(marked.filter((name) => name.startsWith("woofx3.alert/ev-2/"))).toEqual([
+      "woofx3.alert/ev-2/area/delivered",
+    ]);
+
+    timers.advance(ALERT_PLAYS_OUT_MS);
+
+    expect(marked.filter((name) => name.startsWith("woofx3.alert/ev-2/"))).toEqual([
+      "woofx3.alert/ev-2/area/delivered",
+      "woofx3.alert/ev-2/area/prepared",
+      "woofx3.alert/ev-2/area/started",
+      "woofx3.alert/ev-2/area/t1/mounted",
+    ]);
+  });
+
+  it("marks an alert finished once, whichever way it leaves the stage", () => {
+    const played = setup();
+    played.deliver("ev-1", "a");
+    played.timers.advance(ALERT_PLAYS_OUT_MS);
+    played.timers.advance(ALERT_PLAYS_OUT_MS);
+
+    const stopped = setup();
+    stopped.deliver("ev-1", "a");
+    stopped.cancel("ev-1");
+    stopped.timers.advance(ALERT_PLAYS_OUT_MS);
+
+    const disposed = setup();
+    disposed.deliver("ev-1", "a");
+    disposed.dispose();
+    disposed.timers.advance(ALERT_PLAYS_OUT_MS);
+
+    for (const { marked } of [played, stopped, disposed]) {
+      expect(marked.filter((name) => name === "woofx3.alert/ev-1/area/finished")).toHaveLength(1);
+    }
+    expect(stopped.stages()).toEqual([A]);
   });
 
   it("prepares nothing ahead when it keeps no prepared alerts", () => {

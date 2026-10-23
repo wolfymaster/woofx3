@@ -94,3 +94,24 @@ func TestEveryDialectHasAChain(t *testing.T) {
 		t.Fatal("For(mysql) must fail: no chain is registered for it")
 	}
 }
+
+// Both dialects apply the same changes in the same order, so a database's
+// migration id means the same thing whichever backend it runs on.
+func TestDialectChainsShareMigrationIDs(t *testing.T) {
+	postgresChain, err := For(database.DialectPostgres)
+	if err != nil {
+		t.Fatalf("For(postgres): %v", err)
+	}
+	sqliteChain, err := For(database.DialectSQLite)
+	if err != nil {
+		t.Fatalf("For(sqlite): %v", err)
+	}
+	if len(postgresChain) != len(sqliteChain) {
+		t.Fatalf("postgres has %d migrations, sqlite %d", len(postgresChain), len(sqliteChain))
+	}
+	for i := range postgresChain {
+		if postgresChain[i].ID != sqliteChain[i].ID {
+			t.Fatalf("migration %d is %q on postgres but %q on sqlite", i, postgresChain[i].ID, sqliteChain[i].ID)
+		}
+	}
+}

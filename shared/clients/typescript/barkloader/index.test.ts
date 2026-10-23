@@ -10,7 +10,10 @@ class FakeWebSocket {
   sent: string[] = [];
   private listeners: Record<string, ((e: unknown) => void)[]> = {};
 
-  constructor(public url: string) {
+  constructor(
+    public url: string,
+    public options?: { headers?: Record<string, string> }
+  ) {
     FakeWebSocket.instances.push(this);
   }
 
@@ -38,6 +41,7 @@ function makeClient() {
   (globalThis as { WebSocket?: unknown }).WebSocket = FakeWebSocket;
   const client = new BarkloaderClient({
     wsUrl: "ws://localhost:9999/ws",
+    key: "0123456789abcdef0123456789abcdef",
     onOpen: () => {},
     onClose: () => {},
     onError: () => {},
@@ -68,5 +72,14 @@ describe("BarkloaderClient.invoke", () => {
 
     socket.emitMessage({ type: "result", id: sent.id, data: { result: { sent: true } } });
     expect(await pending).toEqual({ sent: true });
+  });
+});
+
+describe("BarkloaderClient.connect", () => {
+  test("sends the key as a bearer header, never in the URL", () => {
+    const { socket } = makeClient();
+
+    expect(socket.url).toBe("ws://localhost:9999/ws");
+    expect(socket.options?.headers).toEqual({ Authorization: "Bearer 0123456789abcdef0123456789abcdef" });
   });
 });

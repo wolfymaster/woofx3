@@ -39,6 +39,8 @@ export const DEFAULT_PREPARED_ALERTS = 4;
 export interface AlertWidgetOptions {
   /** The alert widget's area on the scene. */
   element: HTMLElement;
+  /** The area's placement id, which names its marks (alert-timing.ts). */
+  instanceId: string;
   /** Every live bridge on the page; inbound messages are routed through it. */
   bridges: Set<WidgetBridge>;
   /** `moduleId` is the alert layout placement's, never the widget's claim. */
@@ -134,7 +136,7 @@ export class AlertWidget {
    * taken it, or dropped it as a repeat.
    */
   delivered(eventId: string, value: unknown): void {
-    this.opts.timings.alert(eventId, "delivered");
+    this.opts.timings.alert(eventId, this.opts.instanceId, "delivered");
     const delivery = parseAlertDelivery(value);
     if (delivery && !this.playing.has(eventId)) {
       readAheadAlertAssets(this.opts.assets, delivery);
@@ -143,26 +145,31 @@ export class AlertWidget {
   }
 
   private run(eventId: string, delivery: AlertDelivery): void {
+    const { timings, instanceId: areaId } = this.opts;
     readAheadAlertAssets(this.opts.assets, delivery);
     const shape = alertShape(delivery);
     const ready = this.prepared.get(shape);
     this.prepared.delete(shape);
     let alert: PreparedAlert;
     if (ready?.adopt(delivery) === true) {
-      this.opts.timings.alert(eventId, "prepared");
+      timings.alert(eventId, areaId, "prepared");
       alert = ready;
     } else {
       ready?.stop();
       alert = this.build(delivery);
     }
     this.rememberPlayed(shape, delivery);
-    this.playing.set(eventId, () => {
+    // Every way off the stage passes through here once: playing out, a
+    // stop (skip, cancel) and the area's dispose. A stopped alert never
+    // reports finishing, and a finished one is no longer in `playing`.
+    const leave = (): void => {
       this.playing.delete(eventId);
       alert.stop();
-    });
+      timings.alert(eventId, areaId, "finished");
+    };
+    this.playing.set(eventId, leave);
     alert.start(eventId, delivery, () => {
-      this.opts.timings.alert(eventId, "finished");
-      this.playing.delete(eventId);
+      leave();
       this.opts.onFinished(eventId);
       this.schedulePreparing();
     });

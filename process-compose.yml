@@ -1,3 +1,10 @@
+# Runs every service on the host, each reading the repository's .woofx3.json
+# and .env. Nothing here generates engine secrets the way the orchestrator
+# does: the message bus refuses to start, and its clients are refused,
+# unless messagebusToken in .woofx3.json (or WOOFX3_MESSAGEBUS_TOKEN in .env)
+# holds a random value of at least 32 bytes, for example from
+# `openssl rand -hex 32`.
+
 version: "0.5"
 
 environment:

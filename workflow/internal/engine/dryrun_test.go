@@ -277,9 +277,7 @@ func TestADryRunsLifecycleStartsDependentWorkflowsAsDryRuns(t *testing.T) {
 
 	var idB string
 	waitUntil(t, func() bool {
-		h.engine.executionsMu.RLock()
-		defer h.engine.executionsMu.RUnlock()
-		for execID, execution := range h.engine.executions {
+		for execID, execution := range h.engine.runs.executions() {
 			if execution.WorkflowID == "wf-b" {
 				idB = execID
 				return true

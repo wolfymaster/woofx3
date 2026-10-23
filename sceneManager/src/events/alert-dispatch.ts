@@ -7,10 +7,10 @@ import {
   hasVisibleWidget,
   parseAlertLayout,
 } from "../scene/alert-layout";
-import type { AlertFraming } from "../scene/frame-catalog";
+import { AlertFrameUnavailableError, type AlertFraming } from "../scene/frame-catalog";
+import type { MediaProxy } from "../scene/media-proxy";
 import type { OverlayHost } from "../scene/scene-host";
 import { StageTimings } from "../stage-timings";
-import type { MediaProxy } from "../scene/media-proxy";
 import type { DeliveryStore, PresentDelivery } from "./delivery-store";
 
 /** The `ui.notify.alert` envelope the workflow engine publishes and records. */
@@ -135,8 +135,9 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
   const parameters =
     typeof raw.parameters === "object" && raw.parameters !== null ? (raw.parameters as Record<string, unknown>) : {};
   const timings = new StageTimings<DispatchStage>(deps.now ?? (() => performance.now()));
-  const catalog = await timings.time("layout", () => host.loadWidgetCatalog());
-  const parsed = parseAlertLayout(parameters.layout, catalog);
+  const parsed = await timings.time("layout", async () =>
+    parseAlertLayout(parameters.layout, await host.loadWidgetCatalog())
+  );
   if (!parsed.ok) {
     logger.warn("ui.notify.alert: unusable parameters.layout; dropping", { alertId, reason: parsed.reason });
     await reportAlertNotPlayed(db, logger, { target, reason: parsed.reason });
@@ -175,12 +176,10 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
     return { ok: false, reason };
   }
   const eventType = typeof raw.event?.type === "string" ? raw.event.type : "";
-  const frames = await timings.time("frames", () => deps.framing.frameAlert(parsed.layout));
-  const delivery: AlertDelivery = {
+  const delivery: Omit<AlertDelivery, "frames"> = {
     alertId,
     ...(target.rowId ? { rowId: target.rowId } : {}),
     layout: parsed.layout,
-    frames,
     event: eventType ? { type: eventType, data: raw.event?.data ?? null } : null,
   };
   const outcome = await fanOutAlert({ target: alertTarget(parameters), report: target, delivery }, deps, timings);
@@ -229,12 +228,15 @@ export async function reportAlertNotPlayed(
  * widget of that name gets no DB write.
  */
 async function fanOutAlert(
-  alert: { target: string; report: AlertReportTarget; delivery: AlertDelivery },
+  alert: { target: string; report: AlertReportTarget; delivery: Omit<AlertDelivery, "frames"> },
   deps: AlertDispatchDeps,
   timings: StageTimings<DispatchStage>
 ): Promise<AlertDispatchOutcome> {
   const { db, host, deliveryStore, logger } = deps;
   const connectedSceneIds = deliveryStore.connectedSceneIds();
+  // Framed on the first scene that will record the alert, so an alert that
+  // reaches nobody costs no barkloader round trip.
+  let framed: Promise<AlertDelivery["frames"]> | undefined;
   let recorded = 0;
   for (const sceneId of connectedSceneIds) {
     const state = await timings.time("scenes", () => host.loadSceneById(sceneId));
@@ -247,12 +249,28 @@ async function fanOutAlert(
     if (targetInstanceIds.length === 0) {
       continue;
     }
+    framed ??= timings.time("frames", () => deps.framing.frameAlert(alert.delivery.layout));
+    let frames: AlertDelivery["frames"];
+    try {
+      frames = await framed;
+    } catch (err) {
+      if (!(err instanceof AlertFrameUnavailableError)) {
+        throw err;
+      }
+      logger.warn("ui.notify.alert: a widget's frame is unavailable; dropping", {
+        alertId: alert.delivery.alertId,
+        reason: err.message,
+      });
+      await reportAlertNotPlayed(db, logger, { target: alert.report, reason: err.message });
+      return { ok: false, reason: err.message };
+    }
+    const delivery: AlertDelivery = { ...alert.delivery, frames };
     const eventId = await timings.time("record", () =>
       deliveryStore.recordEvent({
         sceneId,
         type: ALERT_EVENT_TYPE,
-        key: alert.delivery.alertId,
-        value: alert.delivery,
+        key: delivery.alertId,
+        value: delivery,
         targetInstanceIds,
       })
     );

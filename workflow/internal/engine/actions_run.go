@@ -51,7 +51,9 @@ func (e *Engine[TServices]) RunActions(run ActionRun) (string, error) {
 	}
 
 	execution := e.beginExecution(def, run.Event)
-	go e.executeWorkflowInternal(def, execution, run.Event)
+	e.safeGo("run", refTo(execution), func() {
+		e.executeWorkflowInternal(def, execution, run.Event)
+	})
 	return execution.ID, nil
 }
 
