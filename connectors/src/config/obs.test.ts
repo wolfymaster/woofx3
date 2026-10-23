@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { CompanionEnvSchema } from "./companion";
+import { COMPANION_DEFAULTS, CompanionEnvSchema } from "./companion";
 import { OBS_DEFAULTS, OBS_SERVED_BUDGETS_MS, type ObsConfig, ObsEnvSchema, obsConfig, obsConfigProblems } from "./obs";
 
 function shaped(env: Record<string, unknown>): ObsConfig {
@@ -114,9 +114,9 @@ describe("obsConfigProblems", () => {
   }
 
   test("the open timeout covers the bridge's credential request and ticket exchange", () => {
-    // requestRelayCredentialOverNats waits up to 6_000 once the companion
-    // gateway owns credentials; the dialer's ticket exchange up to 5_000.
-    expect(OBS_DEFAULTS.openTimeoutMs).toBeGreaterThan(6_000 + 5_000);
+    expect(OBS_DEFAULTS.openTimeoutMs).toBeGreaterThan(
+      COMPANION_DEFAULTS.dashboardRequestTimeoutMs + COMPANION_DEFAULTS.ticketTimeoutMs
+    );
   });
 });
 

@@ -89,6 +89,17 @@ installed on its instance. So neither a module's settings nor a compromised
 engine can point the companion at another device on the network. See
 [Local endpoints](./local-endpoints.md).
 
+Which endpoints go through the companion, and the credential for its bridge,
+come only from the dashboard. The connectors host's companion gateway is the
+one writer of `relay.config`, and stores only a configuration the dashboard
+sent through the api's `setRelayConfig` or gave as its answer to a credential
+request. The api is the engine's one connection to the dashboard: it forwards
+`setRelayConfig` on `engine.companion.relay_config.set` and asks the dashboard
+on the gateway's behalf on `engine.companion.dashboard_credential`, so
+connectors never holds the dashboard's address or credentials. Both subjects
+sit under the reserved `engine.` prefix, so neither a workflow nor a module can
+publish there.
+
 ## Requests the dashboard asks for
 
 A manifest field's `source` and a settings button's `action` (`kind: "internal"`) are requests the api sends on the dashboard's behalf, when a form renders or a button is pressed. The dashboard never supplies them: it names the field (module id, declaration, declaration id, field id) and the api reads the request from the installed module's stored manifest, refusing a field that does not exist or a request descriptor sent in place of a reference. So a signed-in dashboard user can ask only for requests an installed module declared, never an arbitrary command on an arbitrary subject. See [dynamic-source select fields](../barkloader/modules.md#dynamic-source-select-fields-source-kind).

@@ -36,8 +36,10 @@ The code is in `connectors/src/companion/`:
 | `dialer.ts` | `EndpointDialer`: one resolution, direct or through the bridge |
 | `bridge-opens.ts` | `BridgeOpens`: the cap on bridge opens in flight |
 | `route-watch.ts` | `RouteWatch`: tells listeners when a route may have moved |
+| `relay-credentials.ts` | `RelayCredentialSource`: the bridge credential cache and the one writer of `relay.config` |
+| `relay-config-requests.ts` | Serves `engine.companion.relay_config.set`, the api's forwarded `setRelayConfig` |
 | `companion-gateway.ts` | `EngineCompanionGateway`, which puts them together |
-| `endpoint-store.ts` | The db-proxy reads: manifest, settings, secrets, `relay.config` |
+| `endpoint-store.ts` | The db-proxy reads (manifest, settings, secrets, `relay.config`) and the `relay.config` writes |
 
 ## Claims
 
@@ -152,8 +154,28 @@ The companion route is the two-step ticket exchange described in
 - Any other refusal, no answer within the ticket timeout, or an answer without
   a ticket is `relay`.
 
-The bridge credential comes from the api over `engine.relay.credential`, on
-the host's bus scope.
+The bridge credential comes from the gateway's own cache, renewed through the
+api, as described next.
+
+### Relay configuration and credential
+
+The gateway is the one writer of the engine setting `relay.config` and holds
+the bridge credential; the api stays the engine's only connection to the
+dashboard. Two subjects on the host's bus scope connect them (both are bare
+JSON, not CloudEvents; see
+[Local endpoints → The relay configuration](./local-endpoints.md#the-relay-configuration-relay-config)):
+
+| Subject | Direction | What it does |
+| --- | --- | --- |
+| `engine.companion.relay_config.set` | api asks, gateway answers within 4.5 s | Stores the dashboard's configuration, or clears it on `null`. |
+| `engine.companion.dashboard_credential` | gateway asks, api answers; the gateway waits 6 s | The api asks the dashboard for a credential and passes on its checked answer. |
+
+`RelayCredentialSource` caches the credential until a minute before it
+expires; concurrent resolutions share one renewal. The dashboard's answer is
+authoritative: a null answer clears `relay.config`, and one naming another
+bridge, other endpoints or another dashboard client replaces it. Every write,
+from `setRelayConfig` or from a renewal, runs behind one lock, and
+`setRelayConfig` makes a renewal already under way start over.
 
 ### Bridge opens
 
@@ -171,13 +193,15 @@ gateway releases them all.
 
 `ctx.companion.onRouteChange(ref, listener)` calls `listener(why)` when the
 endpoint's route may have moved, so the adapter reconnects and resolves
-afresh. The gateway subscribes on the host's scope for the life of the host:
+afresh. It happens on:
 
-- `engine.relay.config.updated`: it re-reads `relay.config` and tells each
-  endpoint it moves off the route its latest attempt took (onto a bridge, off
-  one, or to another bridge). A configuration that cannot be read tells every
-  endpoint. A `local` engine never takes the bridge, so nothing moves there.
-- `db.module.setting.updated.*`: a write to any setting of the module that
+- a write to `relay.config`, which the gateway makes itself and reports to its
+  route watch in-process: each endpoint is told when the new configuration
+  moves it off the route its latest attempt took (onto a bridge, off one, or
+  to another bridge). A `local` engine never takes the bridge, so nothing
+  moves there.
+- `db.module.setting.updated.*`, which the gateway subscribes to on the host's
+  scope for the life of the host: a write to any setting of the module that
   declares the endpoint.
 
 One listener throwing is logged and never stops the others.
@@ -357,7 +381,15 @@ password, and is redacted like adapter detail all the same.
 | `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` | `5000` | One ticket exchange with the relay. |
 | `WOOFX3_MODULE_LOCAL_DIRECT` | `false` | `true` lets module requests on a `self` engine dial their endpoint directly. Any value but `true` or `false` stops connectors at startup. |
 
-The bridge credential request waits 5000 ms. An OBS attempt through the
-companion makes that request and the ticket exchange inside its open
-deadline, so startup refuses a `WOOFX3_OBS_OPEN_TIMEOUT_MS` that does not
-exceed their sum.
+The bridge credential request waits 6000 ms, longer than the api's own
+5000 ms wait for the dashboard, so the api's answer always arrives first. An
+OBS attempt through the companion makes that request and the ticket exchange
+inside its open deadline, so startup refuses a `WOOFX3_OBS_OPEN_TIMEOUT_MS`
+that does not exceed their sum.
+
+The api waits `WOOFX3_COMPANION_REQUEST_TIMEOUT_MS` (5000 ms by default) for
+the gateway to store a relay configuration. The gateway answers within its
+4500 ms budget, a failure included, so the api refuses to start with a value
+at or below that. When the budget runs out on a write still queued, the
+gateway answers that the write may still land; see
+[Local endpoints](./local-endpoints.md#the-relay-configuration-relay-config).

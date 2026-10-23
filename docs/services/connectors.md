@@ -410,10 +410,12 @@ The host builds one [companion gateway](./companion-gateway.md) before the
 supervisor and stops it after every adapter has stopped. It holds the claims
 every adapter manifest makes (`localEndpoints`), checked at startup, and hands
 each adapter a handle scoped to its own claims as `ctx.companion`. On the
-host's bus scope it subscribes to `engine.relay.config.updated` and
-`db.module.setting.updated.*` for route changes, requests
-`engine.relay.credential` from the api, and answers module code's requests to
-its own endpoints on `engine.companion.module.request` (see
+host's bus scope it subscribes to `db.module.setting.updated.*` for route
+changes, answers `engine.companion.relay_config.set` as the one writer of
+`relay.config`, requests `engine.companion.dashboard_credential` from the api,
+which asks the dashboard for the bridge credential the gateway caches, and
+answers module code's requests to its own endpoints on
+`engine.companion.module.request` (see
 [Companion gateway → Module requests](./companion-gateway.md#module-requests)).
 
 ### The stream session
@@ -588,7 +590,7 @@ and these tunables:
 | `WOOFX3_OBS_BACKOFF_INITIAL_MS` | `1000` | First retry ceiling after OBS could not be reached. |
 | `WOOFX3_OBS_BACKOFF_MAX_MS` | `30000` | Retry ceiling cap; at least the initial value. |
 | `WOOFX3_OBS_CONNECT_TIMEOUT_MS` | `3000` | One WebSocket connect and sign-in. Below the open timeout. |
-| `WOOFX3_OBS_OPEN_TIMEOUT_MS` | `15000` | One attempt, from dialing to a session ready for requests. Through the companion it must exceed the relay credential request (5000) plus `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` plus the upgrade; startup refuses one that does not exceed the first two. |
+| `WOOFX3_OBS_OPEN_TIMEOUT_MS` | `15000` | One attempt, from dialing to a session ready for requests. Through the companion it must exceed the bridge credential request (6000) plus `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` plus the upgrade; startup refuses one that does not exceed the first two. |
 | `WOOFX3_OBS_COMMAND_TIMEOUT_MS` | `3500` | One command or listing in OBS before the session is recycled. Below the 4500 ms reply budget of `engine.obs.command` and `engine.obs.options`. |
 
 The host also reads the bus settings (`WOOFX3_MESSAGEBUS_URL`, `_JWT`, `_NKEY`,

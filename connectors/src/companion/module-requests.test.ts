@@ -43,14 +43,16 @@ const GRANT: RelayGrant = {
   expiresAt: 2_000_000_000_000,
 };
 
-/** A bus whose api answers bridge credential requests with `grant`. */
+/** A bus whose api answers the gateway's dashboard credential requests with `grant`. */
 class RelayBus extends FakeBus {
   constructor(private readonly grant: RelayGrant | null) {
     super();
   }
 
-  override async request(subject: string): Promise<{ subject: string; data: Uint8Array }> {
-    return { subject, data: bytes(JSON.stringify({ relay: this.grant })) };
+  override async request(subject: string, data: Uint8Array): Promise<{ subject: string; data: Uint8Array }> {
+    const { clientId } = JSON.parse(text(data)) as { clientId: string };
+    const reply = { status: "answered", clientId, answer: { relay: this.grant } };
+    return { subject, data: bytes(JSON.stringify(reply)) };
   }
 }
 
@@ -118,7 +120,7 @@ async function setup(options: Options = {}) {
     client: bus,
     grants: {
       publishes: [],
-      subscribes: [...COMPANION_GATEWAY_GRANTS.subscribes, SUBJECT],
+      subscribes: [...COMPANION_GATEWAY_GRANTS.subscribes, ...gateway.served.map(({ subject }) => subject)],
       requests: [...COMPANION_GATEWAY_GRANTS.requests],
     },
     limits: { concurrency: 8, queueCap: 8 },
