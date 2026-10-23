@@ -69,6 +69,7 @@ type goData struct {
 	HasIntegers   bool
 	Source        string
 	Subjects      gatewaySubjects
+	ReplyTypes    gatewaySubjects
 	Enums         []goEnum
 	Platforms     []goPlatform
 	Actions       []goAction
@@ -77,7 +78,7 @@ type goData struct {
 }
 
 func emitGo(c platformGateway) ([]byte, error) {
-	data := goData{Source: platformGatewaySource, Subjects: c.Subjects}
+	data := goData{Source: platformGatewaySource, Subjects: c.Subjects, ReplyTypes: c.ReplyTypes}
 
 	platformValues := make([]goEnumValue, 0, len(c.Platforms))
 	for _, p := range c.Platforms {
@@ -97,6 +98,7 @@ func emitGo(c platformGateway) ([]byte, error) {
 		goEnumOf("OutcomeStatus", "is what happened on one platform.", "Outcome", "OutcomeStatuses", c.OutcomeStatuses),
 		goEnumOf("FailureCode", "classifies a failed outcome or a refused request.", "Failure", "FailureCodes", c.FailureCodes),
 		goEnumOf("UnavailableReason", "says why a platform could not take a request.", "Unavailable", "UnavailableReasons", c.UnavailableReasons),
+		goEnumOf("PlatformState", "is a platform adapter's lifecycle state, as a capabilities reply reports it.", "PlatformState", "PlatformStates", c.PlatformStates),
 	}
 
 	for _, a := range c.Actions {

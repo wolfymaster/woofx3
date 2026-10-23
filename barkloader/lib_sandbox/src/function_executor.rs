@@ -95,7 +95,8 @@ mod tests {
             module_name: String::new(),
             module_version: String::new(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
             resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         }
