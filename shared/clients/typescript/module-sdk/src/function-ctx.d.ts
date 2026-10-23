@@ -387,7 +387,7 @@ export interface CtxCompareAndSetSettingResult {
 // know they're available get autocomplete; authors writing portable
 // modules check `if (ctx.twitch) …` first.
 //
-// Source: `barkloader/lib_sandbox/src/extensions/{twitch,obs}.rs`.
+// Source: `barkloader/lib_sandbox/src/extensions/{twitch,obs,local}.rs`.
 // To add a new extension, declare
 // the namespace + its function names below.
 
@@ -418,6 +418,24 @@ export interface CtxHostError extends Error {
    * same way, `unavailable` when no scene manager is running, and
    * `invalid_arguments` for a call it refuses before asking. A refusal from
    * OBS (not connected, no scene by that name) carries only its message.
+   *
+   * `ctx.local` uses `timeout`, `call_limit`, `busy`, `unavailable`,
+   * `request_failed` and `invalid_arguments` the same way, and adds:
+   * - `not_declared`: your manifest declares no local endpoint with that id
+   * - `protocol_unsupported`: the endpoint is not a websocket one
+   * - `adapter_owned`: the engine itself manages that endpoint (OBS, for
+   *   example); use its own extension, such as `ctx.obs`
+   * - `not_routed`: the engine has no way to reach the endpoint yet. For a
+   *   cloud engine, the streamer turns on the woofx3 companion for it
+   * - `address_refused`: the address in the endpoint's settings is not on the
+   *   streamer's own network
+   * - `store_unreadable`: the engine could not read the module's settings
+   * - `unavailable`: the device could not be reached in time, or no
+   *   connectors service is running
+   * - `timeout`: the device did not answer before the time ran out
+   * - `busy`: too many requests are waiting, or one waiting for the same
+   *   answer is already pending
+   * - `invalid`: the engine refused the request itself
    */
   code?: string;
 }
@@ -586,6 +604,61 @@ export interface CtxObsExtension {
 }
 
 /**
+ * How `ctx.local.request` recognises the device's answer: the first JSON
+ * object the device sends back whose top-level `field` holds `value`
+ * exactly (the string `"1"` is not the number 1). Device protocols put a
+ * request id in each message for this, such as VTube Studio's `requestID`.
+ */
+export interface LocalEndpointMatch {
+  /** Letters, digits and `_`, at most 40 characters. */
+  field: string;
+  /** A non-empty string of at most 200 characters, or a whole number. */
+  value: string | number;
+}
+
+/**
+ * `ctx.local.*`: talk to a device on the streamer's own network that your
+ * manifest declares in `local[]`, such as VTube Studio or a key light. Only
+ * your module's own websocket endpoints are reachable, never another
+ * module's, and never one the engine manages itself (OBS: use `ctx.obs`).
+ * The streamer approved the endpoint when they installed the module; there
+ * is no permission to declare.
+ *
+ * You name the endpoint by its `local[]` id; the engine chooses the address
+ * from the endpoint's settings (or reaches the device through the woofx3
+ * companion), keeps the connection open between calls, and writes your
+ * message. `message` is sent as a text frame: a string as it is, an object
+ * or a list as JSON. At most 65,536 bytes.
+ *
+ * Each call waits up to `timeoutMs` (default and most 4500, at least 100),
+ * never past the end of the function's run. A function may make at most 20
+ * calls per run. A refusal throws a `CtxHostError` with a `code`.
+ *
+ * `sessionEpoch` names the connection the engine used. It changes whenever
+ * the engine opens a new one, after the connection was idle for a while or
+ * the device's address changed. A device that wants you to sign in once per
+ * connection needs you to sign in again when it changes: keep the last epoch
+ * in storage and compare.
+ *
+ * In Lua, `local` is a keyword, so write `ctx["local"].request(...)`.
+ */
+export interface CtxLocalExtension {
+  /** Write one message to the endpoint, without waiting for an answer. */
+  send(args: { endpoint: string; message: string | object; timeoutMs?: number }): {
+    ok: true;
+    sessionEpoch: string;
+  };
+  /**
+   * Write one message and wait for the device's answer to it, the first
+   * JSON object it sends that `match` picks out. `reply` is that object.
+   */
+  request(args: { endpoint: string; message: string | object; match: LocalEndpointMatch; timeoutMs?: number }): {
+    reply: Record<string, unknown>;
+    sessionEpoch: string;
+  };
+}
+
+/**
  * `ctx.oauth.*` — requests to a provider the manifest declares under
  * `oauth[]`, with the streamer's token, which module code never sees. The
  * engine attaches the token, refreshes it, and sends it only to the
@@ -608,6 +681,8 @@ export interface CtxOAuthExtension {
 export interface CtxExtensions {
   twitch?: CtxTwitchExtension;
   obs?: CtxObsExtension;
+  /** Absent on engines that predate it. */
+  local?: CtxLocalExtension;
   oauth?: CtxOAuthExtension;
 }
 
