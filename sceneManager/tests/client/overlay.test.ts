@@ -561,6 +561,21 @@ describe("an overlay page", () => {
     expect(decodePlacementBoot(fresh.src.slice(fresh.src.indexOf("#")))?.settings).toEqual({ text: "two" });
   });
 
+  it("plays an alert on fresh frames when a prepared widget has subscribed but not painted", async () => {
+    const page = await afterFirstAlert();
+    const prepared = alertFrame(page, "prepared-2.t1");
+    page.fromFrame(prepared, { type: "hello", instanceId: "", sdkVersion: "test" });
+    page.fromFrame(prepared, { type: "events.subscribe", subId: "sub-2" });
+
+    await page.streams[0]!.send({ kind: "delivery", frame: alertFrameOf("ev-2", "two") });
+    await page.timers.advance(10);
+
+    expect(sentTo(prepared, "settings.changed")).toEqual([]);
+    expect(() => alertFrame(page, "prepared-2.t1")).toThrow();
+    const fresh = alertFrame(page, "prepared-3.t1");
+    expect(decodePlacementBoot(fresh.src.slice(fresh.src.indexOf("#")))?.settings).toEqual({ text: "two" });
+  });
+
   it("reports what a prepared widget said before its alert came under that alert", async () => {
     const page = await afterFirstAlert();
     const prepared = alertFrame(page, "prepared-2.t1");

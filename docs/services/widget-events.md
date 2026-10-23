@@ -176,7 +176,7 @@ not prepared. An alert delivered to an idle area with nothing of its shape prepa
 plays at once on frames made for it. An alert takes over the prepared stage of its
 shape. Its settings are handed to the running widgets as a settings change, and only
 then is the alert's event sent. If a widget read a setting the alert changes while it
-booted, or has not yet subscribed or painted (so what it read is not known yet), its
+booted, or has not painted yet (so what it read is not known yet), its
 frame might not show the new value, so the alert gets fresh frames instead. Each stage plays one
 alert and is then removed. A widget in a prepared stage boots with an instance id of
 its stage's (`prepared-{n}.{widgetId}`), not the alert's; its status reports are

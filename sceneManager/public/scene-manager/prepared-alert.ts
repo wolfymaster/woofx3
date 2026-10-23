@@ -50,9 +50,11 @@ interface PreparedFrame {
   moduleId: string;
   settings: Record<string, unknown>;
   /**
-   * The widget's script has run: it subscribed or painted. The shim reports
-   * setting reads no later than either, so only then are the reads the
-   * bridge knows all the widget made as it booted.
+   * The widget has painted. The shim reports paint frames after the boot
+   * scripts have run, and it posts reads from a microtask of the task that
+   * made them, so every read the widget made as it booted has reached the
+   * bridge by then. A subscription is no such sign: a script can read a
+   * setting after subscribing, and that read arrives a message later.
    */
   settled: boolean;
   /** Subscriptions the widget opened before there was an alert to send them. */
@@ -130,8 +132,8 @@ export class PreparedAlert {
    * Take on `next`'s settings, if this alert's frames can: each widget whose
    * settings differ gets them as a patch, which its bindings apply in place.
    * False, and nothing changed, when a widget would need a fresh frame for
-   * them: it read a changed setting as it booted, or has not settled, so what
-   * it read is not known yet.
+   * them: it read a changed setting as it booted, or has not painted yet, so
+   * what it read is not known.
    */
   adopt(next: AlertDelivery): boolean {
     if (alertShape(next) !== this.shape || this.playing !== null) {
@@ -278,7 +280,6 @@ export class PreparedAlert {
         onAssetLoad: assets.loaderFor(moduleId),
         onReady: () => reach("ready"),
         onEventsSubscribe: (subId, queue) => {
-          settle();
           reach("subscribed");
           facts.subscribed(queue?.autoComplete === false);
           if (this.playing === null) {
