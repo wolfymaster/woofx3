@@ -136,6 +136,41 @@ describe("DeliveryStore.recordEvent + subscribe", () => {
     expect(parseFrame(replayed.frames[0]!).value).toEqual({ recorded: 1, sent: 2 });
   });
 
+  it("keeps a delivery open when presenting it fails, and sends it once presenting works", async () => {
+    const db = {
+      recordSceneEvent: mock(async () => ({
+        status: { code: "OK" as const, message: "" },
+        sceneEvent: { id: "evt-9", sceneId: "scene-1", type: "alert", key: "a", value: "1", occurredAt: "" },
+      })),
+    } as any;
+    let broken = true;
+    const logger = fakeLogger();
+    const store = new DeliveryStore(db, logger, (frame) => {
+      if (broken) {
+        throw new Error("cannot sign");
+      }
+      return frame;
+    });
+    const live = fakeController();
+    store.subscribe("scene-1", live.controller);
+
+    const eventId = await store.recordEvent({
+      sceneId: "scene-1",
+      type: "alert",
+      key: "a",
+      value: 1,
+      targetInstanceIds: ["inst-a"],
+    });
+    expect(eventId).toBe("evt-9");
+    expect(live.frames).toEqual([]);
+    expect(logger.warn).toHaveBeenCalled();
+
+    broken = false;
+    const replayed = fakeController();
+    store.subscribe("scene-1", replayed.controller);
+    expect(parseFrame(replayed.frames[0]!)).toMatchObject({ eventId: "evt-9", instanceId: "inst-a" });
+  });
+
   it("follows the replay with the scene's open deliveries by instance, which is empty for a quiet scene", async () => {
     let next = 0;
     const db = {
