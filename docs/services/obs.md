@@ -102,10 +102,12 @@ module's `password` still signs in to OBS end to end. See
 [Local endpoints and the companion bridge](./local-endpoints.md). A change to
 the relay configuration (`engine.relay.config.updated`) that moves OBS to
 another route makes the adapter reconnect at once, like a settings change.
+The companion gateway watches these changes and tells the adapter. An engine
+running on the streamer's PC always dials directly, so it ignores relay changes.
 
 Saving a module setting publishes `db.module.setting.updated.system` with the
-module id and the key, never the value. On one for `woofx3_obs` the adapter
-reconnects at once with the new details, closing the open session or
+module id and the key, never the value. The companion gateway watches for one for `woofx3_obs`, and
+the adapter reconnects at once with the new details, closing the open session or
 skipping a pending retry's wait.
 
 The adapter keeps itself connected. If OBS is not running when it

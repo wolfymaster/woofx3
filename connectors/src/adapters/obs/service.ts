@@ -2,7 +2,8 @@
 // the connection that keeps a session open, what the latest attempt looked
 // like, and the overlay refreshes it owes. The OBS adapter creates one per
 // run, starts it, and stops it when the run ends; its served subjects read
-// the connection and status, and its subscriptions ask it to reconnect.
+// the connection and status, and the companion gateway's route watch asks it
+// to reconnect.
 
 import type { EndpointResolution, EndpointRouteFound, RouteChangeListener } from "../../companion/types";
 import type { ObsConnectionConfig } from "../../config/obs";
