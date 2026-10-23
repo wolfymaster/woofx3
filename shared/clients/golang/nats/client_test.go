@@ -2,6 +2,7 @@ package nats
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -258,4 +259,35 @@ func TestAnUndialledClientIsUnhealthy(t *testing.T) {
 	if newTestClient("nats://127.0.0.1:4222").Healthy() {
 		t.Fatal("an undialled client reports itself healthy")
 	}
+}
+
+func TestRequestWithContext(t *testing.T) {
+	server := startEchoServer(t)
+	client := newTestClient(server.url())
+	t.Cleanup(func() { _ = client.Close() })
+
+	t.Run("a reply within the context comes back", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		reply, err := client.RequestWithContext(ctx, "echo", []byte("hello"))
+		if err != nil || string(reply) != "hello" {
+			t.Fatalf("reply = %q, err = %v", reply, err)
+		}
+	})
+	t.Run("a context already done fails with its error", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if _, err := client.RequestWithContext(ctx, "echo", []byte("late")); !errors.Is(err, context.Canceled) {
+			t.Fatalf("error = %v, want context.Canceled", err)
+		}
+	})
+	t.Run("a closed client fails with ErrConnectionClosed", func(t *testing.T) {
+		closed := newTestClient(server.url())
+		if err := closed.Close(); err != nil {
+			t.Fatalf("close: %v", err)
+		}
+		if _, err := closed.RequestWithContext(context.Background(), "echo", []byte("late")); !errors.Is(err, ErrConnectionClosed) {
+			t.Fatalf("error = %v, want ErrConnectionClosed", err)
+		}
+	})
 }
