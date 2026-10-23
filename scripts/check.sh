@@ -90,31 +90,30 @@ select_for_path() {
   case "$path" in
     contracts/ | scripts/gen-contracts.sh/ | \
       shared/common/golang/platformgateway/catalog_gen.go/ | \
-      shared/clients/typescript/api/platform-gateway.gen.ts/)
+      shared/clients/typescript/api/platform-gateway.gen.ts/ | \
+      shared/common/typescript/cloudevents/Companion/module-request.gen.ts/ | \
+      barkloader/lib_sandbox/src/contracts/companion_gateway.gen.rs/)
       select_target "contracts:shared/common/contracts"
       ;;
   esac
   case "$path" in
     contracts/ | scripts/gen-contracts.sh/) return ;;
-    # The generator's golden test reads the committed outputs, and api's tests
-    # read the shared fixtures.
+    # The generator's golden test reads the committed outputs; the shared
+    # fixtures are read by the platformgateway module, api,
+    # shared/common/typescript and barkloader; and the reserved-subjects
+    # contract by the Go cloudevents package, api and barkloader.
     shared/common/contracts/*)
       select_target "contracts:shared/common/contracts"
       select_target "go:shared/common/contracts/gen"
       select_target "go:shared/common/golang/platformgateway"
+      select_target "go:shared/common/golang/cloudevents"
+      select_target "ts:shared/common/typescript"
       select_target "ts:api"
+      select_target "rust:barkloader"
       return
       ;;
     shared/common/golang/* | shared/clients/golang/*)
       for module in "${GO_MODULES[@]}"; do select_target "go:$module"; done
-      return
-      ;;
-    # The reserved-subjects contract is read by the Go cloudevents package,
-    # the api and barkloader.
-    shared/common/contracts/*)
-      select_target "go:shared/common/golang/cloudevents"
-      select_target "ts:api"
-      select_target "rust:barkloader"
       return
       ;;
     shared/common/rust/logging/*) select_target "rust:shared/common/rust/logging" ;;
@@ -229,7 +228,7 @@ run_steps() {
       (cd "$dir" && bun run typecheck) || return 1
       if ! $quick; then
         if [ "$dir" = "shared/common/typescript" ]; then
-          (cd "$dir" && bun test runtime/ logging/ integrations/) || return 1
+          (cd "$dir" && bun test runtime/ logging/ integrations/ cloudevents/Obs/ cloudevents/Relay/ cloudevents/Companion/) || return 1
         else
           (cd "$dir" && bun test) || return 1
         fi

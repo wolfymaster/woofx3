@@ -137,6 +137,11 @@ describe("connectorsConfig", () => {
       { ...required, woofx3ConnectorsDispatcherReloadDebounceMs: 2.5 },
       "woofx3ConnectorsDispatcherReloadDebounceMs",
     ],
+    [
+      "an OBS command timeout past its reply budget",
+      { ...required, woofx3ObsCommandTimeoutMs: 5_000 },
+      "woofx3ObsCommandTimeoutMs (5000) must be below the OBS command reply budget",
+    ],
   ];
   for (const [name, env, problem] of invalid) {
     test(`refuses ${name}`, () => {

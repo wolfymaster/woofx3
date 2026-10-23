@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { PLATFORM_GATEWAY_SUBJECTS } from "@woofx3/api/platform-gateway";
+import { COMPANION_GATEWAY_SUBJECTS } from "@woofx3/common/cloudevents/Companion/module-request";
 import { getCurrentSessionId } from "@woofx3/common/cloudevents/session";
 import {
   INTEGRATION_ENABLED_UPDATED_SUBJECT,
@@ -12,7 +13,6 @@ import { GatewayEnvSchema, gatewayConfig } from "../config/gateway";
 import { HOST_DEFAULTS, HostEnvSchema, hostConfig } from "../config/host";
 import type { Adapter, EgressHandlers, ServedSubject } from "./adapter";
 import { Host } from "./host";
-import { LINK_READERS, type SettingsReader } from "./link-readers";
 import type { BusMessage } from "./scoped-bus";
 import {
   bytes,
@@ -20,9 +20,12 @@ import {
   FakeAdapter,
   FakeBus,
   FakeTime,
+  fixedLinkStore,
   flush,
   halfRandom,
   RecordingLogger,
+  shippedLinkReaders,
+  testCompanion,
   text,
 } from "./testing";
 
@@ -98,7 +101,7 @@ async function setup(
   bus = new FakeBus()
 ) {
   const values: Record<string, string> = {};
-  const settings: SettingsReader = { getSetting: async (key) => values[key] ?? null };
+  const settings = fixedLinkStore(values);
   const adapter = new FakeAdapter("twitch", [served], chatSend);
   const time = new FakeTime();
   const logger = new RecordingLogger();
@@ -107,13 +110,14 @@ async function setup(
     gateway: gatewayConfig(GatewayEnvSchema.parse({})),
     chat: chatConfig(ChatEnvSchema.parse({})),
     dispatcherDb,
+    companion: testCompanion(),
     dbProxy: { baseURL: "http://db.test" },
     bus,
     busConnected: () => true,
-    settings,
+    linkStore: settings,
     adapters: new Map([["twitch", adapterOverride ?? adapter]]),
     hostStates: new Map([["twitch", undefined]]),
-    readers: LINK_READERS,
+    readers: shippedLinkReaders(),
     clock: time,
     random: halfRandom,
     ids: countingIds(),
@@ -160,13 +164,14 @@ describe("Host", () => {
         gateway: gatewayConfig(GatewayEnvSchema.parse({})),
         chat: chatConfig(ChatEnvSchema.parse({})),
         dispatcherDb: new FakeDispatcherDb(),
+        companion: testCompanion(),
         dbProxy: { baseURL: "http://db.test" },
         bus: new FakeBus(),
         busConnected: () => true,
-        settings: { getSetting: async () => null },
+        linkStore: fixedLinkStore({}),
         adapters: new Map([["twitch", new FakeAdapter("twitch", [twitchapi])]]),
         hostStates: new Map(),
-        readers: LINK_READERS,
+        readers: shippedLinkReaders(),
         clock: time,
         random: halfRandom,
         ids: countingIds(),
@@ -174,6 +179,56 @@ describe("Host", () => {
         logger: new RecordingLogger(),
       });
     expect(build).toThrow('the adapter "twitch" has no host state entry');
+  });
+
+  test("refuses to be built when two adapters claim one local endpoint", () => {
+    const time = new FakeTime();
+    const claiming = (id: "twitch" | "obs") => {
+      const adapter = new FakeAdapter(id);
+      Object.assign(adapter.manifest, { localEndpoints: [{ moduleId: "woofx3_obs", endpointId: "obs" }] });
+      return adapter;
+    };
+    const build = () =>
+      new Host({
+        config: hostConfig(HostEnvSchema.parse({})),
+        gateway: gatewayConfig(GatewayEnvSchema.parse({})),
+        companion: testCompanion(),
+        chat: chatConfig(ChatEnvSchema.parse({})),
+        dispatcherDb: new FakeDispatcherDb(),
+        dbProxy: { baseURL: "http://db.test" },
+        bus: new FakeBus(),
+        busConnected: () => true,
+        linkStore: fixedLinkStore({}),
+        adapters: new Map([
+          ["twitch", claiming("twitch")],
+          ["obs", claiming("obs")],
+        ]),
+        hostStates: new Map([
+          ["twitch", undefined],
+          ["obs", undefined],
+        ]),
+        readers: shippedLinkReaders(),
+        clock: time,
+        random: halfRandom,
+        ids: countingIds(),
+        timers: time,
+        logger: new RecordingLogger(),
+      });
+    expect(build).toThrow("the local endpoint woofx3_obs/obs is claimed by both");
+  });
+
+  test("hands each adapter a companion handle scoped to its own claims", async () => {
+    const { adapter, host, announce, values } = await setup();
+    await host.start();
+    values.twitch_token = "tok";
+    values["integration.twitch.enabled"] = "true";
+    await announce(true);
+    const companion = adapter.lastContext?.companion;
+    expect(companion).toBeDefined();
+    expect(() =>
+      companion?.resolve({ moduleId: "woofx3_obs", endpointId: "obs" }, { signal: new AbortController().signal })
+    ).toThrow('the adapter "twitch" does not claim the local endpoint woofx3_obs/obs');
+    await host.stop();
   });
 
   test("starts the adapter on link, stops it on disable and on unlink, without a restart", async () => {
@@ -420,6 +475,43 @@ describe("Host", () => {
     };
     await expect(setup(twitchapi, {}, rival)).rejects.toThrow(
       'adapter "twitch" serves "platform.gateway.send", which the host serves itself'
+    );
+  });
+
+  test("answers engine.companion.module.request on its own scope", async () => {
+    const { bus, host } = await setup();
+    await host.start();
+    const request = { op: "send", moduleId: "vtube_studio", endpointId: "vts", message: "{}", budgetMs: 4_500 };
+    const replies = bus.deliver(COMPANION_GATEWAY_SUBJECTS.moduleRequest, bytes(JSON.stringify(request)), "inbox");
+    await flush();
+    expect(replies.map((reply) => JSON.parse(text(reply)))).toEqual([
+      { status: "failed", code: "not_declared", message: 'vtube_studio declares no local endpoint "vts"' },
+    ]);
+    expect(host.snapshot().companion.modules.requests).toEqual({ send: { not_declared: 1 }, request: {} });
+  });
+
+  test("refuses an adapter that serves the companion gateway's subject", async () => {
+    const rival: Adapter = {
+      manifest: {
+        id: "twitch",
+        publishes: [],
+        subscribes: [],
+        requests: [],
+        serves: [
+          {
+            subject: COMPANION_GATEWAY_SUBJECTS.moduleRequest,
+            budgetMs: 1_000,
+            handle: async () => new Uint8Array(),
+            unavailableReply: () => new Uint8Array(),
+          },
+        ],
+      },
+      desired: () => false,
+      start: async () => {},
+      stop: async () => {},
+    };
+    await expect(setup(twitchapi, {}, rival)).rejects.toThrow(
+      'adapter "twitch" serves "engine.companion.module.request", which the host serves itself'
     );
   });
 

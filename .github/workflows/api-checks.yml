@@ -96,6 +96,6 @@ jobs:
         run: bun test
 
       # api's own test run does not reach shared/common/typescript.
-      - name: Test the integration settings
+      - name: Test the integration settings and the relay contract
         working-directory: shared/common/typescript
-        run: bun test integrations/
+        run: bun test integrations/ cloudevents/Relay/

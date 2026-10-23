@@ -2,7 +2,14 @@ import { PLATFORM_IDS } from "@woofx3/api/platform-gateway";
 import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
 import { type SessionBus, subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
 import type { DispatcherDb } from "../chat/db-client";
+import { ClaimRegistry } from "../companion/claims";
+import { COMPANION_GATEWAY_GRANTS, EngineCompanionGateway } from "../companion/companion-gateway";
+import type { Fetch } from "../companion/dialer";
+import type { OpenSocket } from "../companion/endpoint-sessions";
+import type { EndpointStore } from "../companion/endpoint-store";
+import type { NameResolver } from "../companion/local-address";
 import type { ChatConfig } from "../config/chat";
+import type { CompanionConfig } from "../config/companion";
 import type { GatewayConfig } from "../config/gateway";
 import type { HostConfig } from "../config/host";
 import { EgressRegistry } from "../gateway/egress-registry";
@@ -15,10 +22,10 @@ import { ChatService } from "./chat-service";
 import { type Clock, errorMessage, type IdSource, type Logger, type RandomSource, type Timers } from "./deps";
 import type { HealthSnapshot } from "./health";
 import { HostRequests } from "./host-requests";
-import type { LinkReaderRegistry, SettingsReader } from "./link-readers";
+import type { LinkReaderRegistry, LinkStore } from "./link-readers";
 import { type BusClient, ScopeCounters, ScopedBus, subjectCovered } from "./scoped-bus";
 import { ServedSubjects } from "./served-subjects";
-import { SETTINGS_SUBJECTS, SettingsWatcher } from "./settings-watcher";
+import { SettingsWatcher, watchedSubjects } from "./settings-watcher";
 import { Supervisor } from "./supervisor";
 
 /** The scope name of the host's own subscriptions, in refusals and log lines. */
@@ -31,16 +38,30 @@ export const HOST_SCOPE = "host";
  */
 export const LOOP_STALE_INTERVALS = 2;
 
+/** What the companion gateway is built with. */
+export interface HostCompanionDeps {
+  config: CompanionConfig;
+  /** Where endpoint settings and the relay configuration are read from. */
+  store: EndpointStore;
+  /** The relay's ticket exchange. */
+  fetch: Fetch;
+  /** Resolves a `.local` name in a module endpoint's address. */
+  resolver: NameResolver;
+  /** Opens the websockets module requests are written to. */
+  openSocket: OpenSocket;
+}
+
 export interface HostDeps {
   config: HostConfig;
   gateway: GatewayConfig;
   chat: ChatConfig;
+  companion: HostCompanionDeps;
   dbProxy: DbProxyClientConfig;
   /** Replaces the dispatcher's db-proxy client; tests pass an in-memory fake. */
   dispatcherDb?: DispatcherDb;
   bus: BusClient;
   busConnected: () => boolean;
-  settings: SettingsReader;
+  linkStore: LinkStore;
   adapters: ReadonlyMap<AdapterId, Adapter>;
   hostStates: ReadonlyMap<AdapterId, unknown>;
   readers: LinkReaderRegistry;
@@ -65,6 +86,7 @@ export class Host {
   private readonly watcher: SettingsWatcher;
   private readonly gateway: PlatformGateway;
   private readonly chat: ChatService;
+  private readonly companion: EngineCompanionGateway;
   private running = false;
   /** How long stop gives the adapters and the held requests together: the longest of the stop deadline and the served budgets. */
   private readonly drainMs: number;
@@ -91,7 +113,22 @@ export class Host {
       clock: deps.clock,
       logger: deps.logger.child({ component: "platform-gateway" }),
     });
-    assertNoSecondResponder(deps.adapters, this.gateway.served);
+    // Built before the supervisor, which hands each adapter its scoped handle,
+    // and stopped after it, so no adapter run outlives it.
+    this.companion = new EngineCompanionGateway({
+      config: deps.companion.config,
+      claims: ClaimRegistry.fromManifests([...deps.adapters.values()].map((adapter) => adapter.manifest)),
+      store: deps.companion.store,
+      fetch: deps.companion.fetch,
+      resolver: deps.companion.resolver,
+      openSocket: deps.companion.openSocket,
+      requests: this.requests,
+      clock: deps.clock,
+      timers: deps.timers,
+      ids: deps.ids,
+      logger: deps.logger.child({ component: "companion-gateway" }),
+    });
+    assertNoSecondResponder(deps.adapters, [...this.gateway.served, ...this.companion.served]);
     const longestBudgetMs = Math.max(0, ...this.servedBudgets());
     this.drainMs = Math.max(deps.config.stopDeadlineMs, longestBudgetMs);
     const stopWorstCaseMs = deps.config.dbProxyTimeoutMs + deps.chat.drainMs + this.drainMs;
@@ -111,6 +148,7 @@ export class Host {
       {
         bus: deps.bus,
         dbProxy: deps.dbProxy,
+        companion: this.companion,
         clock: deps.clock,
         random: deps.random,
         timers: deps.timers,
@@ -122,8 +160,13 @@ export class Host {
       client: deps.bus,
       grants: {
         publishes: [],
-        subscribes: [...SETTINGS_SUBJECTS, SessionEventType.SessionStarted, ...this.servedSubjects()],
-        requests: [],
+        subscribes: [
+          ...watchedSubjects(deps.readers),
+          SessionEventType.SessionStarted,
+          ...COMPANION_GATEWAY_GRANTS.subscribes,
+          ...this.servedSubjects(),
+        ],
+        requests: [...COMPANION_GATEWAY_GRANTS.requests],
       },
       limits: deps.config.subscriptionLimits,
       logger: deps.logger.child({ scope: HOST_SCOPE }),
@@ -152,7 +195,7 @@ export class Host {
     this.watcher = new SettingsWatcher({
       adapters: this.supervisor.adapterIds,
       readers: deps.readers,
-      settings: deps.settings,
+      store: deps.linkStore,
       sink: this.supervisor,
       scope: this.scope,
       clock: deps.clock,
@@ -185,6 +228,7 @@ export class Host {
       await this.served.serveAll(id, adapter.manifest.serves);
     }
     await this.gateway.serve(this.scope);
+    await this.companion.start(this.scope);
     await this.chat.start();
     await this.watcher.start();
   }
@@ -196,7 +240,8 @@ export class Host {
    * together. Held requests settle as their adapters stop, or at their
    * budget, so that half takes at most the larger of the stop deadline and
    * the longest budget. The constructor checks the shutdown deadline covers
-   * all three steps.
+   * all three steps. The companion gateway stops last, once no adapter can
+   * ask it for a route.
    */
   async stop(): Promise<void> {
     if (!this.running) {
@@ -217,6 +262,7 @@ export class Host {
     } else if (drained.kind === "failed") {
       this.deps.logger.error("closing the host bus scope failed", { error: errorMessage(drained.error) });
     }
+    await this.companion.stop();
   }
 
   /** Resolves once no settings pass or adapter transition is in progress. For tests. */
@@ -236,12 +282,17 @@ export class Host {
       hostBus: this.hostCounters.snapshot(),
       gateway: this.gateway.snapshot(),
       chat: this.chat.snapshot(),
+      companion: this.companion.status(),
     };
   }
 
-  /** Every subject the host answers: each adapter's served subjects and the gateway's. */
+  /** Every subject the host answers: each adapter's served subjects, the platform gateway's and the companion gateway's. */
   private answered(): Array<{ subject: string; budgetMs: number }> {
-    return [...[...this.deps.adapters.values()].flatMap((adapter) => adapter.manifest.serves), ...this.gateway.served];
+    return [
+      ...[...this.deps.adapters.values()].flatMap((adapter) => adapter.manifest.serves),
+      ...this.gateway.served,
+      ...this.companion.served,
+    ];
   }
 
   private servedBudgets(): number[] {

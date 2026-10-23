@@ -18,12 +18,6 @@ import type {
 } from "@woofx3/api/webhooks";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
-import {
-  RELAY_CONFIG_SETTING,
-  RELAY_CONFIG_UPDATED_SUBJECT,
-  readStoredRelayConfig,
-  type StoredRelayConfig,
-} from "@woofx3/common/cloudevents/Relay/relay";
 import { encode } from "@woofx3/common/cloudevents/utils";
 import {
   INTEGRATION_ENABLED_UPDATED_SUBJECT,
@@ -36,12 +30,13 @@ import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
 import { RpcTarget } from "capnweb";
+import { DEFAULT_COMPANION_REQUEST_TIMEOUT_MS } from "../config";
 import type { DbClient } from "../db-client";
 import type { EngineEventStream } from "../engine-event-stream";
 import type { EventLogSelectionSource } from "../event-log-selection";
 import { releaseStub } from "../held-stub";
 import type { MarketplaceClient } from "../marketplace-client";
-import { RelayCredentialSource } from "../relay-credential-source";
+import { DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS, PlatformGatewayClient } from "../platform-gateway-client";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchDeviceLogins } from "../twitch-device-login";
 import { TwitchProfiles } from "../twitch-profiles";
@@ -91,8 +86,16 @@ export interface ApiOptions {
   twitchClientId?: string | null;
   /** Twitch's OAuth endpoints; Twitch itself when absent. */
   twitchOAuth?: TwitchOAuthClient;
+  /** How long a send to the platform gateway waits for its reply; DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS when absent. */
+  platformGatewayTimeoutMs?: number;
   /** Epoch milliseconds now; `Date.now` when absent. */
   clock?: () => number;
+  /**
+   * How long `setRelayConfig` waits for the connectors host's companion
+   * gateway to store a configuration (`WOOFX3_COMPANION_REQUEST_TIMEOUT_MS`);
+   * DEFAULT_COMPANION_REQUEST_TIMEOUT_MS when absent.
+   */
+  companionRequestTimeoutMs?: number;
 }
 
 async function barkloaderRequestError(response: Response): Promise<Error> {
@@ -117,12 +120,12 @@ export class ApiRouteHost extends RpcTarget {
    * so capnweb never offers it to a client.
    */
   readonly twitchToken: TwitchTokenSource;
-  /** The companion bridge's credential. An instance property for the same reason as `twitchToken`. */
-  readonly relayCredential: RelayCredentialSource;
   /** Twitch device logins in progress. An instance property for the same reason as `twitchToken`. */
   readonly twitchDeviceLogins: TwitchDeviceLogins;
   /** The linked account's Helix profile. An instance property for the same reason as `twitchToken`. */
   readonly twitchProfiles: TwitchProfiles;
+  /** The platform gateway in connectors. An instance property for the same reason as `twitchToken`. */
+  readonly platformGateway: PlatformGatewayClient;
 
   protected db: DbClient;
   protected nats: NATSClient | null;
@@ -138,6 +141,7 @@ export class ApiRouteHost extends RpcTarget {
   protected hosting: EngineHosting | null;
   protected marketplace: MarketplaceClient | null;
   protected readonly clock: () => number;
+  protected readonly companionRequestTimeoutMs: number;
 
   protected getBarkloaderBaseUrl(): string {
     return this.barkloaderUrl.endsWith("/") ? this.barkloaderUrl.slice(0, -1) : this.barkloaderUrl;
@@ -311,31 +315,6 @@ export class ApiRouteHost extends RpcTarget {
     }
   }
 
-  private async writeRelayConfig(config: StoredRelayConfig): Promise<void> {
-    if (!(await this.db.trySetSetting(RELAY_CONFIG_SETTING, JSON.stringify(config)))) {
-      throw new Error(`could not store ${RELAY_CONFIG_SETTING}`);
-    }
-    await this.announceRelayConfig();
-  }
-
-  private async deleteRelayConfig(): Promise<void> {
-    await this.db.deleteSetting(RELAY_CONFIG_SETTING);
-    await this.announceRelayConfig();
-  }
-
-  /**
-   * Engine `settings` writes publish no event of their own. Best effort: the
-   * setting is already written, and sceneManager re-reads it on every connect
-   * attempt, so a missed announcement only delays the switch.
-   */
-  private async announceRelayConfig(): Promise<void> {
-    try {
-      await this.publishEvent(RELAY_CONFIG_UPDATED_SUBJECT, { at: new Date().toISOString() });
-    } catch (err) {
-      this.logger.warn(`Failed to publish ${RELAY_CONFIG_UPDATED_SUBJECT}`, { err });
-    }
-  }
-
   protected async notifyTriggerChange(moduleName: string): Promise<void> {
     type Subscriber = { onTriggerChange(event: { type: string; moduleName: string }): Promise<void> };
     const dead: Subscriber[] = [];
@@ -491,12 +470,10 @@ export class ApiRouteHost extends RpcTarget {
       storeToken: (token) => this.storeTwitchToken(token),
       logger: opts.logger,
     });
-    this.relayCredential = new RelayCredentialSource({
-      dashboard: () => this.webhookClient,
-      readConfig: async () => readStoredRelayConfig(await this.db.getSetting(RELAY_CONFIG_SETTING)),
-      writeConfig: (config) => this.writeRelayConfig(config),
-      clearConfig: () => this.deleteRelayConfig(),
-      now: () => Date.now(),
+    this.platformGateway = new PlatformGatewayClient({
+      nats: opts.nats,
+      logger: opts.logger,
+      timeoutMs: opts.platformGatewayTimeoutMs ?? DEFAULT_PLATFORM_GATEWAY_TIMEOUT_MS,
     });
     this.nats = opts.nats;
     this.functions = opts.functions;
@@ -510,6 +487,7 @@ export class ApiRouteHost extends RpcTarget {
     this.hosting = opts.hosting ?? null;
     this.marketplace = opts.marketplace ?? null;
     this.clock = opts.clock ?? (() => Date.now());
+    this.companionRequestTimeoutMs = opts.companionRequestTimeoutMs ?? DEFAULT_COMPANION_REQUEST_TIMEOUT_MS;
   }
 }
 

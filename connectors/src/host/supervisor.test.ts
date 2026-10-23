@@ -10,6 +10,7 @@ import {
   flush,
   halfRandom,
   linked,
+  noCompanion,
   RecordingLogger,
   unlinked,
 } from "./testing";
@@ -31,6 +32,7 @@ function setup(adapter = new FakeAdapter()) {
   const supervisor = new Supervisor(new Map([["twitch", adapter]]), config, {
     bus,
     dbProxy: { baseURL: "http://db.test" },
+    companion: noCompanion,
     clock,
     random: halfRandom,
     timers: time,

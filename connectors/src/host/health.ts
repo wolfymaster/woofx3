@@ -1,3 +1,6 @@
+import type { ModuleSessionStatus, ModuleSessionsStatus } from "../companion/endpoint-sessions";
+import type { ModuleRequestCounters } from "../companion/module-requests";
+import type { BridgeOpensStatus, CompanionGatewayStatus, EndpointStatus } from "../companion/types";
 import type { GatewayCounters } from "../gateway/platform-gateway";
 import type { AdapterStatus } from "./adapter";
 import type { ChatSnapshot } from "./chat-service";
@@ -18,6 +21,7 @@ export interface HealthSnapshot {
   hostBus: ReturnType<ScopeCounters["snapshot"]>;
   gateway: GatewayCounters;
   chat: ChatSnapshot;
+  companion: CompanionGatewayStatus;
 }
 
 export interface HealthBody {
@@ -25,6 +29,7 @@ export interface HealthBody {
   bus: { connected: boolean };
   loop: { alive: boolean; lastPassAt: string | null };
   adapters: AdapterHealth[];
+  companion: CompanionHealth;
   counters: {
     hostRequests: Record<string, HostRequestCounters>;
     hostBus: ReturnType<ScopeCounters["snapshot"]>;
@@ -44,6 +49,26 @@ export interface AdapterHealth {
   counts: AdapterReport["counts"];
   bus: AdapterReport["bus"];
   detail: Record<string, unknown> | null;
+}
+
+/**
+ * The companion gateway: each claimed local endpoint and where it was last
+ * reached, and the sessions held for module requests.
+ */
+export interface CompanionHealth {
+  hosting: CompanionGatewayStatus["hosting"];
+  endpoints: Array<
+    Omit<EndpointStatus, "lastFailure"> & {
+      lastFailure: { reason: string; message: string; at: string } | null;
+    }
+  >;
+  bridgeOpens: BridgeOpensStatus;
+  modules: {
+    sessions: Omit<ModuleSessionsStatus, "sessions"> & {
+      sessions: Array<Omit<ModuleSessionStatus, "openedAt"> & { openedAt: string }>;
+    };
+    requests: ModuleRequestCounters;
+  };
 }
 
 const REDACTED = "[redacted]";
@@ -76,6 +101,7 @@ export function healthBody(snapshot: HealthSnapshot): HealthBody {
     bus: { connected: snapshot.busConnected },
     loop: { alive, lastPassAt: iso(snapshot.lastPassAt) },
     adapters: snapshot.adapters.map(adapterHealth),
+    companion: companionHealth(snapshot.companion),
     counters: {
       hostRequests: snapshot.hostRequests,
       hostBus: snapshot.hostBus,
@@ -99,6 +125,36 @@ function adapterHealth(report: AdapterReport): AdapterHealth {
     bus: report.bus,
     detail: report.detail === null ? null : (redactDetail(report.detail) as Record<string, unknown>),
   };
+}
+
+/**
+ * The companion gateway never puts a ticket, credential or password in its
+ * status. It is redacted like adapter detail all the same, so a field named
+ * for a secret can never reach the body.
+ */
+function companionHealth(status: CompanionGatewayStatus): CompanionHealth {
+  const body: CompanionHealth = {
+    hosting: status.hosting,
+    endpoints: status.endpoints.map((endpoint) => ({
+      ...endpoint,
+      lastFailure:
+        endpoint.lastFailure === null
+          ? null
+          : { ...endpoint.lastFailure, at: new Date(endpoint.lastFailure.at).toISOString() },
+    })),
+    bridgeOpens: status.bridgeOpens,
+    modules: {
+      sessions: {
+        ...status.modules.sessions,
+        sessions: status.modules.sessions.sessions.map((session) => ({
+          ...session,
+          openedAt: new Date(session.openedAt).toISOString(),
+        })),
+      },
+      requests: status.modules.requests,
+    },
+  };
+  return redactDetail(body) as CompanionHealth;
 }
 
 function iso(ms: number | undefined): string | null {

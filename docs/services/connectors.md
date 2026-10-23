@@ -6,8 +6,8 @@ third-party platforms and local apps. Each connection is an **adapter**. The
 linked and enabled, runs the adapter only while it should run, and answers the
 request subjects adapters serve even while they are down.
 
-It ships with one adapter, `twitch` (see [The Twitch adapter](#the-twitch-adapter)),
-and runs in every packaged engine (`build/config/services.json`), where the
+It ships with two adapters, `twitch` (see [The Twitch adapter](#the-twitch-adapter))
+and `obs` (see [The OBS adapter](#the-obs-adapter)), and runs in every packaged engine (`build/config/services.json`), where the
 orchestrator checks its `/health` before reporting the engine ready.
 
 ```
@@ -29,9 +29,10 @@ for every platform.
 ## Linked and enabled
 
 An adapter decides whether it should run from a **link state**,
-`{connected, enabled}`, which a **link reader** builds from engine settings.
-Every adapter id (`ADAPTER_IDS` in `host/adapter-ids.ts`) must have a reader in
-`LINK_READERS`; a missing one stops startup.
+`{connected, enabled}`, which a **link reader** builds from stored records:
+engine settings and the installed modules, read through db-proxy. Every adapter
+id (`ADAPTER_IDS` in `host/adapter-ids.ts`) must have a reader in
+`linkReaders()` (`host/link-readers.ts`); a missing one stops startup.
 
 Adapter ids are separate from integration ids. An integration
 (`@woofx3/common/integrations/integration-settings`) is an account the api
@@ -51,12 +52,31 @@ The api writes both rows when Twitch is linked or unlinked, then publishes
 `setting.integration.enabled.updated` and `setting.integration.token.updated`
 (see [Twitch channel controls](./twitch-channel.md)).
 
+OBS has no integration and no enabled setting. What makes OBS wanted is a
+module that controls it, so its reader (`adapters/obs/link.ts`) reads the
+installed modules:
+
+| Records | Meaning |
+|---|---|
+| An installed module's manifest lists the `obs.control` permission | connected |
+| One such module's stored state is not `disabled` | enabled |
+| `WOOFX3_OBS_HOST` holds a value | connected and enabled, whatever is installed; no modules are read |
+| A module's stored manifest is not readable JSON with a string list of permissions | that module is left out (logged once at warn) |
+
+With no such module and no `WOOFX3_OBS_HOST`, the `obs` adapter stays stopped
+and dials nothing.
+
 ### When links are read
 
 The settings watcher reads every link when the host starts, re-reads the
-adapters an event names when either settings event arrives, and reads every
-link again on the backstop interval (`WOOFX3_CONNECTORS_RECONCILE_INTERVAL_MS`)
-in case an event was missed. Reads run one pass at a time; events that arrive
+adapters an event names when either settings event arrives, re-reads an
+adapter when an event its reader lists arrives (OBS: `db.module.installed.*`
+and `db.module.deleted.*`, which db-proxy publishes when an install or removal
+finishes), and reads every link again on the backstop interval
+(`WOOFX3_CONNECTORS_RECONCILE_INTERVAL_MS`) in case an event was missed.
+Switching a module on or off publishes no event, so OBS follows that change on
+the next backstop pass. A reader's events count as a settings change for the
+adapter: they unpark it and skip a pending retry's wait. Reads run one pass at a time; events that arrive
 during a pass merge into the next one, so an older read never overrides a newer
 one. A read that fails, or takes longer than
 `WOOFX3_CONNECTORS_DB_PROXY_TIMEOUT_MS`, keeps the adapter on its last link
@@ -335,6 +355,69 @@ connectors pins its `@twurple/*` packages to the release
 copies' classes as one type when name and version match, so upgrade both
 lockfiles together.
 
+## The OBS adapter
+
+`connectors/src/adapters/obs/` holds the engine's one obs-websocket
+connection (see [OBS control](./obs.md)). It claims the OBS module's
+endpoint, `woofx3_obs/obs`, and asks the host's
+[companion gateway](#the-companion-gateway) for a route on every connect
+attempt.
+
+- **When it runs.** While a module that controls OBS is installed and active,
+  or `WOOFX3_OBS_HOST` is set (see [Linked and enabled](#linked-and-enabled)).
+  Installing such a module starts the adapter and removing it stops it, with
+  no restart. While it runs, OBS being closed is not a reason to stop: the
+  connection retries in the background with the shared capped, full-jitter
+  backoff (`createBackoff` from `@woofx3/runtime`), from
+  `WOOFX3_OBS_BACKOFF_INITIAL_MS` up to `WOOFX3_OBS_BACKOFF_MAX_MS`.
+- **Start.** Each start builds a fresh OBS service over `ctx.companion`,
+  registers it with `ctx.companion.onRouteChange(woofx3_obs/obs)`, and starts
+  connecting. A change to the `woofx3_obs` module's settings, or a relay
+  configuration change that moves OBS to another route, reaches the service
+  through the gateway's route watch (see [the companion gateway](./companion-gateway.md))
+  and reconnects at once. Start resolves without waiting for OBS, so the adapter is `connected` while its
+  loop runs, and a request while OBS is closed reaches the handler and is
+  answered `OBS is not connected (retrying)` at once. The host's start signal
+  stays live for the whole run; when it aborts, the connection stops dialing
+  as a stop does.
+- **Stop.** Closes the OBS session, cancels any pending retry and ends the
+  open deadline and OBS connect timer of an attempt in flight, abandoning a
+  route resolution in flight, and a session that opens after the stop is
+  closed at once. The service also removes its route-change listener.
+- **Manifest.** Publishes, subscribes to and requests nothing (the companion gateway
+  asks the api for bridge credentials), claims `woofx3_obs/obs`, and serves:
+
+| Subject | Budget | While the adapter is not running |
+|---|---|---|
+| `engine.obs.command` | 4_500 ms, below barkloader `ctx.obs`'s 5_000 | `{ok: false, error: "OBS is turned off in this engine"}`, or `"OBS is starting"` |
+| `engine.obs.options` | 4_500 ms | `{error: ...}` with the same messages |
+| `engine.obs.status` | 2_500 ms, below the api's 3_000 | `{state: "stopped", failure: null, address: null}` |
+| `engine.obs.browser_source.refresh` | 1_500 ms, below sceneManager's 2_000 request timeout | answered in every state (below) |
+
+- **Overlay refresh.** `engine.obs.browser_source.refresh` has availability
+  `always`. The adapter module's host state is a refresh latch: the newest
+  request and the last 16 boot ids already refreshed. A valid request is
+  latched and accepted at once, whatever the adapter is doing, even while no
+  OBS module is installed; the running adapter, or the next one to start,
+  refreshes on the current or next OBS session, once per boot id. See
+  [Local endpoints → Overlay recovery](./local-endpoints.md#overlay-recovery).
+- **`/health` detail.** `state`, `failure`, `route` and `address`, as in
+  `engine.obs.status`; never the password or a bridge ticket.
+
+## The companion gateway
+
+The host builds one [companion gateway](./companion-gateway.md) before the
+supervisor and stops it after every adapter has stopped. It holds the claims
+every adapter manifest makes (`localEndpoints`), checked at startup, and hands
+each adapter a handle scoped to its own claims as `ctx.companion`. On the
+host's bus scope it subscribes to `db.module.setting.updated.*` for route
+changes, answers `engine.companion.relay_config.set` as the one writer of
+`relay.config`, requests `engine.companion.dashboard_credential` from the api,
+which asks the dashboard for the bridge credential the gateway caches, and
+answers module code's requests to its own endpoints on
+`engine.companion.module.request` (see
+[Companion gateway → Module requests](./companion-gateway.md#module-requests)).
+
 ### The stream session
 
 Every event is stamped with the current stream session, which is held per
@@ -456,6 +539,15 @@ includes `twitchapi` among its requests.
 The platform gateway's own settings (`WOOFX3_CONNECTORS_GATEWAY_*`) are listed
 in [Platform gateway contract](./platform-gateway.md#configuration-and-health).
 
+The companion gateway reads:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WOOFX3_HOSTING` | unset | How the engine is run: `local`, `self` or `managed`. On `local` every endpoint is dialed directly. Any other value stops connectors at startup. |
+| `WOOFX3_COMPANION_MAX_BRIDGE_OPENS` | `8` | Bridge opens in flight at once, 1 to 16 (the relay's own limit). |
+| `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` | `5000` | One ticket exchange with the relay. |
+| `WOOFX3_MODULE_LOCAL_DIRECT` | `false` | `true` lets module requests on a `self` engine dial their endpoint's address directly. |
+
 The Twitch adapter reads:
 
 | Variable | Default | Meaning |
@@ -482,6 +574,24 @@ The chat command dispatcher reads:
 | `WOOFX3_CONNECTORS_DISPATCHER_RELOAD_BACKSTOP_MS` | `300000` | How often the commands reload with no event. |
 | `WOOFX3_CONNECTORS_DISPATCHER_DRAIN_MS` | `2000` | How long shutdown waits for chat lines still being handled before abandoning them. |
 | `WOOFX3_CONNECTORS_DISPATCHER_TWITCH_API_TIMEOUT_MS` | `10000` | How long a built-in Twitch command waits for the Twitch adapter's answer. Must exceed the adapter's 9000 ms served budget, or slow calls are reported as unknown. |
+
+The OBS adapter reads, for whatever the OBS module's settings leave empty:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WOOFX3_OBS_HOST` | `127.0.0.1` | Host running OBS. Set to any value, it also runs the adapter with no OBS module installed. |
+| `WOOFX3_OBS_PORT` | `4455` | OBS WebSocket server port, 1 to 65535. |
+| `WOOFX3_OBS_RPC_TOKEN` | none | OBS WebSocket server password. |
+
+and these tunables:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WOOFX3_OBS_BACKOFF_INITIAL_MS` | `1000` | First retry ceiling after OBS could not be reached. |
+| `WOOFX3_OBS_BACKOFF_MAX_MS` | `30000` | Retry ceiling cap; at least the initial value. |
+| `WOOFX3_OBS_CONNECT_TIMEOUT_MS` | `3000` | One WebSocket connect and sign-in. Below the open timeout. |
+| `WOOFX3_OBS_OPEN_TIMEOUT_MS` | `15000` | One attempt, from dialing to a session ready for requests. Through the companion it must exceed the bridge credential request (6000) plus `WOOFX3_COMPANION_TICKET_TIMEOUT_MS` plus the upgrade; startup refuses one that does not exceed the first two. |
+| `WOOFX3_OBS_COMMAND_TIMEOUT_MS` | `3500` | One command or listing in OBS before the session is recycled. Below the 4500 ms reply budget of `engine.obs.command` and `engine.obs.options`. |
 
 The host also reads the bus settings (`WOOFX3_MESSAGEBUS_URL`, `_JWT`, `_NKEY`,
 `_TOKEN`), `WOOFX3_DATABASE_PROXY_URL` and `WOOFX3_DB_PROXY_TOKEN`, the
@@ -516,6 +626,25 @@ fix what parked it.
       "detail": { "broadcasterId": null, "eventSub": null }
     }
   ],
+  "companion": {
+    "hosting": null,
+    "endpoints": [
+      { "moduleId": "woofx3_obs", "endpointId": "obs", "owner": "obs", "route": "direct", "address": "127.0.0.1:4455", "lastFailure": null }
+    ],
+    "bridgeOpens": { "inUse": 0, "limit": 8, "refused": 0 },
+    "modules": {
+      "sessions": {
+        "sessions": [],
+        "opening": 0,
+        "limit": 32,
+        "opens": 0,
+        "openFailures": {},
+        "closes": { "idle": 0, "route_change": 0, "remote": 0, "stopped": 0 },
+        "frames": { "oversized": 0, "binary": 0, "unmatched": 0 }
+      },
+      "requests": { "send": {}, "request": {} }
+    }
+  },
   "counters": {
     "chat": {
       "commands": { "storedCommands": 12, "builtins": 6, "lastReloadAt": 1792670400000, "reloadFailures": 0 },
@@ -545,6 +674,12 @@ seeing at a glance, and `null` when it has none or it throws (the throw is logge
 once). The host replaces the value of any key whose name contains `password`,
 `token`, `ticket` or `credential` (any case, at any depth) with `"[redacted]"`.
 Adapters must still keep secrets out of `detail()`.
+
+`companion` lists every endpoint an adapter claims, from startup, with where
+its latest route resolution went and its latest failure, and under `modules`
+the sessions held for module requests and the requests answered; see
+[Companion gateway → Health](./companion-gateway.md#health). It is redacted
+the same way.
 
 Any other path or method answers `404` with
 `{"error": {"code": "not_found", "message": "..."}}`.

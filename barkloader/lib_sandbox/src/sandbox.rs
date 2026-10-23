@@ -185,6 +185,8 @@ impl Sandbox {
             }
         }
         let resource_link_settings = self.registry.resource_link_settings(&module_id);
+        let protected_settings = self.registry.protected_settings(&module_id);
+        let local_endpoints = self.registry.local_endpoints(&module_id);
         let invocation = InvocationContext {
             event: request.event,
             user: request.user.unwrap_or(Value::Null),
@@ -193,7 +195,8 @@ impl Sandbox {
             module_name: meta.as_ref().map(|m| m.name.clone()).unwrap_or_default(),
             module_version: meta.as_ref().map(|m| m.version.clone()).unwrap_or_default(),
             permissions,
-            url_settings,
+            protected_settings,
+            local_endpoints,
             resource_link_settings,
             deadline,
         };

@@ -1,5 +1,6 @@
 import type { CallbackEvent, EngineRequest, RequestEnvelope } from "@woofx3/api/webhooks";
 import { makeCallbackEnvelope, makeRequestEnvelope } from "@woofx3/api/webhooks";
+import { RELAY_API_REQUEST_TIMEOUT_MS } from "@woofx3/common/cloudevents/Relay/relay";
 import { isLoopbackHostname } from "@woofx3/common/http/request-guard";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { DbClient } from "./db-client";
@@ -65,8 +66,12 @@ export interface WebhookClientConfig {
 /** A request's answer is a small JSON value; anything bigger is refused rather than buffered. */
 export const MAX_CALLBACK_RESPONSE_BYTES = 64 * 1024;
 
+/**
+ * `timeoutMs` stays below the companion gateway's wait for a dashboard
+ * credential relayed through the api (RELAY_DASHBOARD_REQUEST_TIMEOUT_MS).
+ */
 export const DEFAULT_WEBHOOK_CLIENT_CONFIG: WebhookClientConfig = {
-  timeoutMs: 5_000,
+  timeoutMs: RELAY_API_REQUEST_TIMEOUT_MS,
   retryDelayMs: 1_000,
   maxResponseBytes: MAX_CALLBACK_RESPONSE_BYTES,
 };

@@ -1,4 +1,5 @@
 import { type Backoff, type BackoffConfig, createBackoff } from "@woofx3/common/runtime";
+import type { CompanionGateway } from "../companion/types";
 import type { DbProxyClientConfig } from "../services/db-proxy";
 import type { Adapter, AdapterContext, AdapterStatus } from "./adapter";
 import type { AdapterId } from "./adapter-ids";
@@ -18,6 +19,7 @@ export interface SupervisorConfig {
 export interface SupervisorDeps {
   bus: BusClient;
   dbProxy: DbProxyClientConfig;
+  companion: Pick<CompanionGateway, "forAdapter">;
   clock: Clock;
   random: RandomSource;
   timers: Timers;
@@ -334,6 +336,7 @@ export class Supervisor {
       logger: this.deps.logger.child({ adapter: slot.id }),
       bus: scope,
       dbProxy: this.deps.dbProxy,
+      companion: this.deps.companion.forAdapter(slot.id),
       reportFault: (reason) => this.fault(slot, epoch, reason),
     };
     const { result: started, releaseBy } = await this.settleStart(slot, ctx, abort.signal);

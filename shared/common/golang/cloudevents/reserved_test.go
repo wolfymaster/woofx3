@@ -69,17 +69,19 @@ func TestEverySubjectConstantIsReserved(t *testing.T) {
 // they are listed here; a new one belongs on this list and in reserved.go.
 func TestSubjectsConsumedOutsideGoAreReserved(t *testing.T) {
 	subjects := map[string]string{
-		"ui.notify.alert":                      "sceneManager/src/nats-subscriptions.ts",
-		"widget.queue.skip":                    "sceneManager alert queue controls",
-		"widget.queue.clear":                   "sceneManager alert queue controls",
-		"widget.queue.replay":                  "sceneManager alert queue controls",
-		"widget.queue.state":                   "sceneManager alert queue read",
-		"db.scene.updated.*":                   "sceneManager/src/nats-subscriptions.ts",
-		"db.ack.>":                             "db/app/workers/ack_worker.go",
-		"setting.integration.token.updated":    "api/src/routes/context.ts",
-		"setting.integration.enabled.updated":  "api/src/routes/context.ts",
-		"barkloader.module.field_options":      "barkloader/app/src/services/field_options.rs",
-		"webhook.woofx3_throne.throne_webhook": "webhook trigger events the engine fires",
+		"ui.notify.alert":                       "sceneManager/src/nats-subscriptions.ts",
+		"widget.queue.skip":                     "sceneManager alert queue controls",
+		"widget.queue.clear":                    "sceneManager alert queue controls",
+		"widget.queue.replay":                   "sceneManager alert queue controls",
+		"widget.queue.state":                    "sceneManager alert queue read",
+		"db.scene.updated.*":                    "sceneManager/src/nats-subscriptions.ts",
+		"db.ack.>":                              "db/app/workers/ack_worker.go",
+		"setting.integration.token.updated":     "api/src/routes/context.ts",
+		"setting.integration.enabled.updated":   "api/src/routes/context.ts",
+		"barkloader.module.field_options":       "barkloader/app/src/services/field_options.rs",
+		"webhook.woofx3_throne.throne_webhook":  "webhook trigger events the engine fires",
+		"engine.companion.dashboard_credential": "api/src/relay-dashboard-edge.ts",
+		"engine.companion.relay_config.set":     "connectors/src/companion/relay-config-requests.ts",
 	}
 	for subject, consumer := range subjects {
 		if _, reserved := ReservedSubjectMatch(concreteSubject(subject)); !reserved {

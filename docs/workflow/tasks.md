@@ -134,6 +134,79 @@ Native rather than a module function, so replying in chat needs no module
 installed. This is what a chat command's reply is made of — see
 [Chat commands](../services/commands-ui.md).
 
+#### `chat.announce`
+
+"Send announcement". Posts a highlighted announcement through the
+[platform gateway](../services/platform-gateway.md), to the same targets and
+with the same replies, requests and failures as [`chat.reply`](#chatreply):
+`message` and `platform` mean what they mean there, and the step fails unless
+every platform it sends to announced. A platform with no announcements reports
+that it cannot do this, which fails the step.
+
+```json
+{
+  "id": "announce-raid",
+  "type": "action",
+  "action": "chat.announce",
+  "parameters": {
+    "message": "Raid incoming, say hi!",
+    "platform": "twitch",
+    "twitchColor": "purple"
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | `string` | Yes | Must be `"chat.announce"`. Set at the task top level. |
+| `parameters.message` | `string` | Yes | What to announce, up to 500 characters. Supports expressions. |
+| `parameters.platform` | `string` | No | `origin` (the default), `all`, or a platform id. Supports expressions. An announcement is never a reply, so the trigger's message id is not used. |
+| `parameters.twitchColor` | `string` | No | `primary` (the channel's colour), `blue`, `green`, `orange` or `purple`. Sent to the gateway as Twitch's options, and left out when unset. Other platforms ignore it. Supports expressions. |
+
+The editor shows `twitchColor` while `platform` is `origin`, `all`, `twitch` or
+an expression (a variable has no value to compare until the run), and hides it
+for any other platform id. A stored `twitchColor` applies when the step runs.
+Registration refuses a colour that is not
+one of the five and is not an expression.
+
+Returns the same `message`, `ok` and `results` as `chat.reply`. A dry run
+records `would announce "<message>" in <where>`.
+
+#### `chat.pin`
+
+"Pin message". Posts a message and pins it, through the
+[platform gateway](../services/platform-gateway.md). Only the send-and-pin form
+of the gateway's `chat.pin` is offered: a step has no way to name an existing
+line.
+
+```json
+{
+  "id": "pin-rules",
+  "type": "action",
+  "action": "chat.pin",
+  "parameters": {
+    "message": "Be kind in chat.",
+    "durationSeconds": 300
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | `string` | Yes | Must be `"chat.pin"`. Set at the task top level. |
+| `parameters.message` | `string` | Yes | What to pin, up to 500 characters. Supports expressions. |
+| `parameters.platform` | `string` | No | `origin` (the default), `all`, or a platform id. Supports expressions. |
+| `parameters.durationSeconds` | `number` | No | How long it stays pinned, 30 to 1200. Left out when unset, so the platform uses its own default. A whole number, or text that is one (an expression's result). |
+
+A line that was posted but could not be pinned fails the step, with a reason
+that says it was posted. Registration refuses a duration outside the bounds
+unless it is an expression; a resolved value outside them fails the step before
+anything is sent. A dry run records `would send "<message>" to <where> and pin
+it` with the duration when set.
+
+Returns the same `message`, `ok` and `results` as `chat.reply`; the result's
+`messageId` is the line that was pinned.
+
 #### `function`
 
 Invokes a function registered in the Barkloader module system.

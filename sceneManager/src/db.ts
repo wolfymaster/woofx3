@@ -1,7 +1,7 @@
 import * as alert from "@woofx3/db/alert.pb";
 import type * as common from "@woofx3/db/common.pb";
 import { Ping } from "@woofx3/db/common.pb";
-import { GetModuleByModuleId, GetResourceInstance, ListWidgets, RegisterWidgets } from "@woofx3/db/module.pb";
+import { GetResourceInstance, ListWidgets, RegisterWidgets } from "@woofx3/db/module.pb";
 import type * as module_resource_instance from "@woofx3/db/module_resource_instance.pb";
 import * as module_setting from "@woofx3/db/module_setting.pb";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
@@ -9,7 +9,6 @@ import * as overlay_token from "@woofx3/db/overlay_token.pb";
 import * as scene from "@woofx3/db/scene.pb";
 import * as scene_event from "@woofx3/db/scene_event.pb";
 import type { DbProxyClientConfig } from "@woofx3/db/service-auth";
-import * as setting from "@woofx3/db/setting.pb";
 import * as storage from "@woofx3/db/storage.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
 
@@ -124,39 +123,10 @@ export class DbClient {
     return RegisterWidgets(req, this.config);
   }
 
-  // Resolves a module's current composite module_key from its stable
-  // manifest id — used for built-in widget catalog registration parity
-  // checks. Module-widget frame resolution itself now happens
-  // server-to-server against Barkloader's own endpoint, not here.
-  async getModuleKeyForModuleId(moduleId: string): Promise<string | null> {
-    const resp = await GetModuleByModuleId({ moduleId }, this.config);
-    return resp.module?.moduleKey || null;
-  }
-
-  /** A module's stored manifest JSON (as barkloader re-serialized it at install), or null when it is not installed. */
-  async getModuleManifest(moduleId: string): Promise<string | null> {
-    const resp = await GetModuleByModuleId({ moduleId }, this.config);
-    return resp.module?.manifest || null;
-  }
-
-  // A module's settings, read for the OBS module's connection details
-  // (endpoints/dialer.ts). A secret's value is never in these records.
+  // A module's settings. A secret's value is never in these records.
   async listModuleSettings(moduleId: string): Promise<module_setting.ModuleSettingRecord[]> {
     const resp = await module_setting.ListModuleSettings({ moduleId }, this.config);
     return resp.settings;
-  }
-
-  // Opens a module's secret settings. sceneManager reads only the OBS
-  // module's WebSocket password, and never logs or forwards it.
-  async getModuleSecretValues(moduleId: string): Promise<Record<string, string>> {
-    const resp = await module_setting.GetModuleSecretValues({ moduleId }, this.config);
-    const values: Record<string, string> = {};
-    for (const [key, value] of Object.entries(resp.values)) {
-      if (value !== undefined) {
-        values[key] = value;
-      }
-    }
-    return values;
   }
 
   async upsertWidgetStatus(req: widget_status.UpsertWidgetStatusRequest): Promise<widget_status.WidgetStatusResponse> {
@@ -184,11 +154,6 @@ export class DbClient {
   // `replayed` is the only status UpdateAlertStatus accepts.
   async markAlertReplayed(req: { id: string }): Promise<alert.AlertResponse> {
     return alert.UpdateAlertStatus({ id: req.id, status: "replayed" }, this.config);
-  }
-
-  async getSetting(key: string): Promise<string | null> {
-    const resp = await setting.GetSetting({ key }, this.config);
-    return resp.setting?.value?.stringValue ?? null;
   }
 
   /** One module's stored value, decoded, or `undefined` when the key holds nothing. */

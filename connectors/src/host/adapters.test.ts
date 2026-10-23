@@ -1,19 +1,29 @@
 import { describe, expect, test } from "bun:test";
+import { RefreshLatch } from "../adapters/obs/refresh-latch";
 import { connectorsConfig } from "../config";
-import { adapterRegistry, type AdapterRegistry, loadAdapters } from "./adapters";
-import { systemIds } from "./deps";
-import { FakeAdapter, FakeTime, servedSubject } from "./testing";
+import { type AdapterRegistry, adapterRegistry, loadAdapters } from "./adapters";
+import { systemIds, systemTimers } from "./deps";
+import { FakeAdapter, FakeTime, halfRandom, servedSubject } from "./testing";
 
 describe("loadAdapters", () => {
-  test("ships with the twitch adapter registered, serving twitchapi", async () => {
+  test("ships with the twitch and obs adapters registered, each serving its subjects", async () => {
     const config = connectorsConfig({
       woofx3MessagebusUrl: "ws://127.0.0.1:4225",
       woofx3DatabaseProxyUrl: "http://127.0.0.1:5555",
       woofx3DbProxyToken: "connectors-db-proxy-token-0123456789abcdef",
     });
-    const { adapters } = await loadAdapters(adapterRegistry({ config, clock: new FakeTime(), ids: systemIds }));
-    expect([...adapters.keys()]).toEqual(["twitch"]);
+    const { adapters, hostStates } = await loadAdapters(
+      adapterRegistry({ config, clock: new FakeTime(), ids: systemIds, random: halfRandom, timers: systemTimers })
+    );
+    expect([...adapters.keys()]).toEqual(["twitch", "obs"]);
     expect(adapters.get("twitch")?.manifest.serves.map((served) => served.subject)).toEqual(["twitchapi"]);
+    expect(adapters.get("obs")?.manifest.serves.map((served) => served.subject)).toEqual([
+      "engine.obs.command",
+      "engine.obs.options",
+      "engine.obs.status",
+      "engine.obs.browser_source.refresh",
+    ]);
+    expect(hostStates.get("obs")).toBeInstanceOf(RefreshLatch);
   });
 
   test("builds each registered adapter once", async () => {
