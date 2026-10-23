@@ -18,7 +18,7 @@ func ViewerFactRoutes(mux *http.ServeMux, app *types.App, _ *middleware.CasbinMi
 	viewerFactService := svc.NewViewerFactService(
 		repo.NewViewerFactRepository(app.Db),
 		repo.NewViewerSegmentRepository(app.Db),
-		repo.NewModuleRepository(app.Db),
+		repo.NewModuleRepository(app.Db, app.IDs, app.Now),
 		app.EventPublisher,
 	)
 	viewerFactHandler := client.NewViewerFactServiceServer(viewerFactService)

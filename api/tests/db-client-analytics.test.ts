@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { dbProxyClientConfig } from "@woofx3/db/service-auth";
 import {
   GetStreamSessionEventTotalsResponse,
   ListRecentUserEventsResponse,
@@ -35,7 +36,7 @@ describe("DbClient analytics reads", () => {
     globalThis.fetch = (async () => response()) as unknown as typeof globalThis.fetch;
   }
 
-  const db = () => new DbClient("http://db.test");
+  const db = () => new DbClient(dbProxyClientConfig("http://db.test", "test-token"));
 
   test("returns a session's totals", async () => {
     respondWith(() =>

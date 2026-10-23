@@ -52,6 +52,8 @@ export const FRAME_FETCH_TIMEOUT_MS = 5000;
 export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
   constructor(
     private readonly barkloaderUrl: string,
+    /** The engine secret; the frame route is one of barkloader's authenticated routes. */
+    private readonly barkloaderKey: string,
     private readonly logger: Logger,
     private readonly fetchFn: typeof fetch = fetch,
     private readonly timeoutMs: number = FRAME_FETCH_TIMEOUT_MS
@@ -62,7 +64,10 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
     const url =
       `${this.barkloaderUrl.replace(/\/+$/, "")}/widgets/` +
       `${encodeURIComponent(moduleKey)}/${encodeURIComponent(manifestId)}/frame${query}`;
-    const response = await this.fetchFn(url, { signal: AbortSignal.timeout(this.timeoutMs) });
+    const response = await this.fetchFn(url, {
+      headers: { Authorization: `Bearer ${this.barkloaderKey}` },
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
     if (!response.ok) {
       // A non-OK response is not a transport error (loadFrameInfo's
       // catch never sees it) — log here or this is completely silent.
@@ -352,10 +357,13 @@ export class FrameAssembler {
     timings: StageTimings<FrameStage>
   ): Response {
     const { html, headers } = frameDocument(frameInfo, boot);
-    return new Response(html, {
-      status: 200,
-      headers: { ...headers, "Cache-Control": cacheControl, "Server-Timing": timings.serverTiming() },
-    });
+    // A cached response is replayed unchanged, so its timings would describe
+    // the first miss on every later hit.
+    const responseHeaders: Record<string, string> = { ...headers, "Cache-Control": cacheControl };
+    if (cacheControl !== CACHED_FRAME_CACHE_CONTROL) {
+      responseHeaders["Server-Timing"] = timings.serverTiming();
+    }
+    return new Response(html, { status: 200, headers: responseHeaders });
   }
 
   private async loadFrameInfo(

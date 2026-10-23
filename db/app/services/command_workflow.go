@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	refsvc "github.com/wolfymaster/woofx3/db/app/services/resource_reference"
 	"github.com/wolfymaster/woofx3/db/app/workers"
@@ -225,7 +224,6 @@ func (s *commandService) setCommandSteps(tx *gorm.DB, cmd *models.Command, steps
 	}
 
 	wf := &models.WorkflowDefinition{
-		ID:            uuid.New(),
 		Name:          commandWorkflowName(cmd.Command),
 		Steps:         stepsJSON,
 		Trigger:       trigger,

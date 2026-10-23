@@ -113,8 +113,8 @@ start_engine() {
     --env "PORT=${PORT}" \
     --env "WOOFX3_DATABASE_URL=${CONTAINER_DATABASE_URL}" \
     --env "WOOFX3_SECRETS_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
-    --env "WOOFX3_BARKLOADER_KEY=check-barkloader-key" \
-    --env "WOOFX3_SCENE_MANAGER_TOKEN_SECRET=check-scene-manager-secret" \
+    --env "WOOFX3_BARKLOADER_KEY=check-barkloader-key-0123456789abcdef" \
+    --env "WOOFX3_SCENE_MANAGER_TOKEN_SECRET=check-scene-manager-secret-0123456789abcdef" \
     --env "WOOFX3_REGISTRATION_TOKEN=${REGISTRATION_TOKEN}" \
     --env "WOOFX3_SCENE_MANAGER_URL=${BASE_URL}" \
     --env "WOOFX3_TWITCH_CLIENT_ID=checktwitchclientid" \

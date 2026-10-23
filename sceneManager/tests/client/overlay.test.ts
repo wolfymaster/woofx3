@@ -344,13 +344,13 @@ describe("an overlay page", () => {
     page.fromFrame(frame, { type: "rendered" });
 
     expect(page.marked).toEqual([
-      "woofx3.alert/ev-9/delivered",
-      "woofx3.alert/ev-9/started",
-      "woofx3.alert/ev-9/t1/mounted",
-      "woofx3.alert/ev-9/t1/ready",
-      "woofx3.alert/ev-9/t1/subscribed",
-      "woofx3.alert/ev-9/t1/rendered",
-      "woofx3.alert/ev-9/on-screen",
+      "woofx3.alert/ev-9/a1/delivered",
+      "woofx3.alert/ev-9/a1/started",
+      "woofx3.alert/ev-9/a1/t1/mounted",
+      "woofx3.alert/ev-9/a1/t1/ready",
+      "woofx3.alert/ev-9/a1/t1/subscribed",
+      "woofx3.alert/ev-9/a1/t1/rendered",
+      "woofx3.alert/ev-9/a1/on-screen",
     ]);
   });
 

@@ -161,7 +161,6 @@ Templates use `${...}` syntax for variable substitution:
 
 - `${trigger.data.field}` — Access trigger event fields
 - `${taskId.result}` — Access previous task output
-- `${env.VARIABLE}` — Environment configuration
 - `${user.meta.key}` — User metadata lookup
 
 **Execution Model**:

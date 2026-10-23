@@ -42,6 +42,36 @@ interface HelixOperation {
   broadcasterQuery: readonly string[];
   /** Body fields set to the broadcaster's id. */
   broadcasterBody: readonly string[];
+  /**
+   * The parameter whose text is said in chat as the broadcaster, guarded with
+   * `guardChatLine` before it is sent.
+   */
+  chatLine?: string;
+}
+
+/**
+ * The character a chat line starts with to run a command. Must match
+ * COMMAND_PREFIX in woofwoofwoof/src/sentLines.ts, the commander's prefix.
+ */
+const COMMAND_PREFIX = "!";
+
+/** U+200B ZERO WIDTH SPACE. */
+const ZERO_WIDTH_SPACE = "\u200b";
+
+/**
+ * `text` with a zero-width space in front when it would start with the
+ * command prefix. A line sent here is said as the broadcaster and comes back
+ * on the chat feed as the broadcaster's own, so without the guard any caller
+ * able to send a chat line (a module function, a public command passing its
+ * arguments on) could run a broadcaster-only command such as `!title`. The
+ * line reads the same in chat. Must match guardOutgoingLine in
+ * woofwoofwoof/src/sentLines.ts, which guards the bot's chat-client lines.
+ */
+export function guardChatLine(text: string): string {
+  if (text.startsWith(COMMAND_PREFIX)) {
+    return `${ZERO_WIDTH_SPACE}${text}`;
+  }
+  return text;
 }
 
 /**
@@ -190,6 +220,7 @@ export const HELIX_OPERATIONS: Readonly<Record<HelixOperationName, HelixOperatio
     paramsIn: "body",
     broadcasterQuery: [],
     broadcasterBody: ["broadcaster_id", "sender_id"],
+    chatLine: "message",
   },
   sendChatAnnouncement: {
     method: "POST",
@@ -198,6 +229,7 @@ export const HELIX_OPERATIONS: Readonly<Record<HelixOperationName, HelixOperatio
     paramsIn: "body",
     broadcasterQuery: ["broadcaster_id", "moderator_id"],
     broadcasterBody: [],
+    chatLine: "message",
   },
   sendShoutout: {
     method: "POST",
@@ -347,7 +379,8 @@ export function buildHelixRequest(
   const query: Record<string, string | string[]> = {};
   const body: Record<string, unknown> = {};
   const data: Record<string, unknown> = {};
-  for (const [name, value] of Object.entries(params)) {
+  for (const [name, rawValue] of Object.entries(params)) {
+    const value = name === declared.chatLine && typeof rawValue === "string" ? guardChatLine(rawValue) : rawValue;
     switch (declared.paramsIn) {
       case "query": {
         query[name] = Array.isArray(value) ? value : String(value);
