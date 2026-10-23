@@ -187,6 +187,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
         : null,
       twitchPublicClientId: config.twitchPublicClientId,
       twitchClientId: config.twitchClientId,
+      platformGatewayTimeoutMs: config.platformGatewayTimeoutMs,
     });
     this.api = api;
 

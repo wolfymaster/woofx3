@@ -6,6 +6,21 @@ import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
 import { z } from "zod";
 
+/** How the OBS overlay refresh request is made and retried (obs/refresh-request.ts). */
+export interface ObsRefreshConfig {
+  /** How long one request waits for a reply. */
+  requestTimeoutMs: number;
+  /** The first retry's backoff ceiling; it doubles up to `retryMaxMs`. */
+  retryBaseMs: number;
+  retryMaxMs: number;
+}
+
+export const OBS_REFRESH_DEFAULTS: ObsRefreshConfig = {
+  requestTimeoutMs: 2_000,
+  retryBaseMs: 1_000,
+  retryMaxMs: 30_000,
+};
+
 export const SceneManagerEnvSchema = z.object({
   woofx3SceneManagerPort: z.union([z.number(), z.string()]).default("9101"),
   // sceneManager binds loopback by default: a reverse proxy (or direct
@@ -20,9 +35,6 @@ export const SceneManagerEnvSchema = z.object({
   woofx3MessagebusJwt: z.string().optional(),
   woofx3MessagebusNkey: z.string().optional(),
   woofx3MessagebusToken: z.union([z.string(), z.number()]).optional(),
-  woofx3ObsHost: z.string().default("127.0.0.1"),
-  woofx3ObsPort: z.union([z.number(), z.string()]).default("4455"),
-  woofx3ObsRpcToken: z.string().optional(),
   woofx3DatabaseProxyUrl: z.string().default(""),
   woofx3BarkloaderUrl: z.string().default("http://127.0.0.1:9653"),
   // The engine secret barkloader verifies media proxy URLs with (see
@@ -37,6 +49,11 @@ export const SceneManagerEnvSchema = z.object({
   // True where the edge listens beyond loopback and forwards to sceneManager; the production image sets it.
   woofx3BehindEdge: z.boolean().optional(),
   woofx3DbProxyToken: z.string().optional(),
+  woofx3SceneManagerObsRefreshRequestTimeoutMs: z
+    .union([z.number(), z.string()])
+    .default(OBS_REFRESH_DEFAULTS.requestTimeoutMs),
+  woofx3SceneManagerObsRefreshRetryBaseMs: z.union([z.number(), z.string()]).default(OBS_REFRESH_DEFAULTS.retryBaseMs),
+  woofx3SceneManagerObsRefreshRetryMaxMs: z.union([z.number(), z.string()]).default(OBS_REFRESH_DEFAULTS.retryMaxMs),
 });
 
 export interface SceneManagerRuntimeConfig {
@@ -58,15 +75,7 @@ export interface SceneManagerRuntimeConfig {
   barkloaderKey: string;
   /** Which Host and Origin headers the HTTP server accepts, with their defaults resolved. */
   requestGuard: RequestGuardPolicy;
-  /**
-   * Where OBS is when the OBS module's settings do not say (obs/settings.ts):
-   * the module is not installed, or a setting is empty.
-   */
-  obs: {
-    host: string;
-    port: string;
-    token?: string;
-  };
+  obsRefresh: ObsRefreshConfig;
   nats: {
     url: string;
     name: string;
@@ -98,6 +107,19 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
     new URL(config.barkloaderUrl);
   } catch {
     throw new Error(`sceneManager: barkloaderUrl is not a valid URL: ${config.barkloaderUrl}`);
+  }
+  const refresh = config.obsRefresh;
+  for (const [name, value] of [
+    ["obsRefresh.requestTimeoutMs", refresh.requestTimeoutMs],
+    ["obsRefresh.retryBaseMs", refresh.retryBaseMs],
+    ["obsRefresh.retryMaxMs", refresh.retryMaxMs],
+  ] as const) {
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`sceneManager: ${name} must be a positive whole number of milliseconds, got ${value}`);
+    }
+  }
+  if (refresh.retryMaxMs < refresh.retryBaseMs) {
+    throw new Error("sceneManager: obsRefresh.retryMaxMs must not be below obsRefresh.retryBaseMs");
   }
   if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65535) {
     throw new Error(
@@ -172,10 +194,6 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const nkeySeed = c.woofx3MessagebusNkey ? String(c.woofx3MessagebusNkey) : undefined;
   const token = nonBlank(c.woofx3MessagebusToken);
 
-  const obsHost = String(c.woofx3ObsHost ?? "127.0.0.1");
-  const obsPort = String(c.woofx3ObsPort ?? "4455");
-  const obsToken = c.woofx3ObsRpcToken ? String(c.woofx3ObsRpcToken) : undefined;
-
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? "");
   const dbProxyToken = String(c.woofx3DbProxyToken ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? "http://127.0.0.1:9653");
@@ -203,10 +221,10 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     barkloaderUrl,
     barkloaderKey,
     requestGuard,
-    obs: {
-      host: obsHost,
-      port: obsPort,
-      token: obsToken,
+    obsRefresh: {
+      requestTimeoutMs: Number(c.woofx3SceneManagerObsRefreshRequestTimeoutMs),
+      retryBaseMs: Number(c.woofx3SceneManagerObsRefreshRetryBaseMs),
+      retryMaxMs: Number(c.woofx3SceneManagerObsRefreshRetryMaxMs),
     },
     nats: {
       url: messagebusUrl,

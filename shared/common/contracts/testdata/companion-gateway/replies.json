@@ -1,0 +1,184 @@
+{
+  "cases": [
+    {
+      "name": "ok with a reply",
+      "invalidField": null,
+      "reply": {
+        "status": "ok",
+        "reply": "{\"requestID\":\"r1\",\"data\":{}}",
+        "sessionEpoch": "e-1"
+      }
+    },
+    {
+      "name": "ok without a reply",
+      "invalidField": null,
+      "reply": {
+        "status": "ok",
+        "sessionEpoch": "e-1"
+      }
+    },
+    {
+      "name": "ok with an empty reply",
+      "invalidField": null,
+      "reply": {
+        "status": "ok",
+        "reply": "",
+        "sessionEpoch": "e-1"
+      }
+    },
+    {
+      "name": "ok with a null reply",
+      "invalidField": null,
+      "reply": {
+        "status": "ok",
+        "reply": null,
+        "sessionEpoch": "e-1"
+      }
+    },
+    {
+      "name": "failed with an epoch",
+      "invalidField": null,
+      "reply": {
+        "status": "failed",
+        "code": "timeout",
+        "message": "no reply before the deadline",
+        "sessionEpoch": "e-2"
+      }
+    },
+    {
+      "name": "failed without an epoch",
+      "invalidField": null,
+      "reply": {
+        "status": "failed",
+        "code": "not_declared",
+        "message": "the module declares no endpoint \"vts\""
+      }
+    },
+    {
+      "name": "failed with another code",
+      "invalidField": null,
+      "reply": {
+        "status": "failed",
+        "code": "protocol_unsupported",
+        "message": "http endpoints are not supported yet"
+      }
+    },
+    {
+      "name": "not an object",
+      "invalidField": "reply",
+      "reply": "ok"
+    },
+    {
+      "name": "no status",
+      "invalidField": "status",
+      "reply": {
+        "sessionEpoch": "e-1"
+      }
+    },
+    {
+      "name": "an unknown status",
+      "invalidField": "status",
+      "reply": {
+        "status": "pending",
+        "sessionEpoch": "e-1"
+      }
+    },
+    {
+      "name": "ok without an epoch",
+      "invalidField": "sessionEpoch",
+      "reply": {
+        "status": "ok",
+        "reply": "x"
+      }
+    },
+    {
+      "name": "ok with an empty epoch",
+      "invalidField": "sessionEpoch",
+      "reply": {
+        "status": "ok",
+        "sessionEpoch": ""
+      }
+    },
+    {
+      "name": "ok with an epoch over 100 characters",
+      "invalidField": "sessionEpoch",
+      "reply": {
+        "status": "ok",
+        "sessionEpoch": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    },
+    {
+      "name": "ok with a non-string reply",
+      "invalidField": "reply",
+      "reply": {
+        "status": "ok",
+        "reply": {
+          "requestID": "r1"
+        },
+        "sessionEpoch": "e-1"
+      }
+    },
+    {
+      "name": "ok carrying a code",
+      "invalidField": "code",
+      "reply": {
+        "status": "ok",
+        "code": "busy",
+        "sessionEpoch": "e-1"
+      }
+    },
+    {
+      "name": "an unknown field",
+      "invalidField": "extra",
+      "reply": {
+        "status": "ok",
+        "sessionEpoch": "e-1",
+        "extra": true
+      }
+    },
+    {
+      "name": "failed without a code",
+      "invalidField": "code",
+      "reply": {
+        "status": "failed",
+        "message": "x"
+      }
+    },
+    {
+      "name": "failed with an unknown code",
+      "invalidField": "code",
+      "reply": {
+        "status": "failed",
+        "code": "exploded",
+        "message": "x"
+      }
+    },
+    {
+      "name": "failed without a message",
+      "invalidField": "message",
+      "reply": {
+        "status": "failed",
+        "code": "busy"
+      }
+    },
+    {
+      "name": "failed with a message over 1000 characters",
+      "invalidField": "message",
+      "reply": {
+        "status": "failed",
+        "code": "busy",
+        "message": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+      }
+    },
+    {
+      "name": "failed carrying a reply",
+      "invalidField": "reply",
+      "reply": {
+        "status": "failed",
+        "code": "busy",
+        "message": "x",
+        "reply": "y"
+      }
+    }
+  ]
+}

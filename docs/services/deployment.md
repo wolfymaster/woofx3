@@ -385,6 +385,10 @@ a hash of the secret, so neither a wrong secret nor an earlier success changes
 the answer for another secret. Failed checks are never reused. Deleting a
 client drops its cached checks at once.
 
+`WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` (default `12000`) is how long
+`sendToPlatforms` waits for the platform gateway's reply; it cannot be set below
+`12000`, the gateway's caller window (see [Platform gateway](./platform-gateway.md)).
+
 ### Refusals
 
 capnweb sends a rejected call's error name and message, but the receiving side
@@ -689,9 +693,40 @@ holds only descriptive facts that are safe for anyone to read:
   It includes the hosting ids for `WOOFX3_HOSTING`, as below.
 
 `WOOFX3_HOSTING` declares how the engine is run: `managed`, `self` or `local`.
-`getEngineInfo()` reports it as `hosting`, and `local` adds the
+Both the api and connectors read it, so set it where both read their
+configuration. `getEngineInfo()` reports it as `hosting`, and `local` adds the
 `engine.localMode` capability. Unset, `getEngineInfo()` has no `hosting` field
-and no hosting capability is listed; any other value stops the api at startup.
+and no hosting capability is listed; any other value stops the api and
+connectors at startup.
+
+For connectors it decides how local endpoints such as OBS are reached (see
+[Companion gateway → Routes](./companion-gateway.md#routes)):
+
+| Value | Who runs the engine | Local endpoints |
+|---|---|---|
+| `local` | the desktop app, on the streamer's own PC | always dialed directly; a relay configuration that routes an endpoint through the companion is ignored and logged once |
+| `self` | its owner, on infrastructure they operate | through the companion's bridge when the dashboard routes the endpoint there, otherwise directly |
+| `managed` | the woofx3 cloud | the same as `self` |
+| unset | not declared | the same as `self` |
+
+Development worktrees (`scripts/worktree.sh`) write `local`.
+
+Module code can also reach its own declared endpoints through connectors (see
+[Companion gateway → Module requests](./companion-gateway.md#module-requests)).
+Because module code sends whatever frames it likes, a direct dial for it is
+stricter than for the OBS adapter:
+
+| Value | Module requests to their own endpoints |
+|---|---|
+| `local` | dialed directly, to an address on the streamer's network |
+| `self` | through the companion's bridge when the dashboard routes the endpoint there; directly only when `WOOFX3_MODULE_LOCAL_DIRECT=true` |
+| `managed`, unset | through the companion's bridge only |
+
+`WOOFX3_MODULE_LOCAL_DIRECT` is `false` unless set to `true`; any other value
+stops connectors at startup. Turn it on only for a self-hosted engine on the
+streamer's own network: on a VPS it would let module code reach the
+provider's network. It is the same posture as barkloader's
+`WOOFX3_MODULE_HTTP_ALLOW_PRIVATE`, and the two are set separately.
 
 Readiness is deliberately strict about the message bus. barkloader reports
 ready once its bundled modules are installed, and it can only report anything
@@ -723,3 +758,18 @@ Linking, relinking and unlinking in the UI write the token to engine settings
 and publish `setting.integration.token.updated`. That starts, reloads or stops
 the Twitch adapter, with no restart
 (see [Connectors host](./connectors.md)).
+
+## OBS
+
+connectors holds the engine's OBS connection (its `obs` adapter), not
+sceneManager. Set `WOOFX3_OBS_HOST`, `WOOFX3_OBS_PORT` and
+`WOOFX3_OBS_RPC_TOKEN`, when an engine needs them at all, where connectors
+reads its configuration; the OBS module's own settings take precedence over
+them. connectors connects to OBS only while a module that controls OBS is
+installed and active, or while `WOOFX3_OBS_HOST` is set; an engine with
+neither never dials OBS. With connectors stopped, OBS control fails the same way it did with
+sceneManager stopped: `ctx.obs` reports that nothing answered, and the OBS
+module's page shows the status as unanswered. Overlays still recover after a
+sceneManager restart when connectors starts later, because sceneManager keeps
+asking for the refresh until connectors accepts it (see
+[Local endpoints → Overlay recovery](./local-endpoints.md#overlay-recovery)).

@@ -79,7 +79,7 @@ export const ENGINE_CAPABILITIES = {
   obsStatus: "obs.status",
   /**
    * A manifest's `local[]` endpoints, `setRelayConfig`, the
-   * `relay.credential.requested` callback, and sceneManager's endpoint dialer
+   * `relay.credential.requested` callback, and the connectors host's endpoint dialer
    * reaching OBS through the companion's bridge.
    */
   modulesLocalEndpoints: "modules.localEndpoints",
@@ -156,6 +156,12 @@ export const ENGINE_CAPABILITIES = {
    * `twitchUnpinChatMessage`, and `pin` on `twitchSendChatMessage`.
    */
   twitchPins: "twitch.pins",
+  /**
+   * One platform-neutral send through the platform gateway in connectors,
+   * answered with each platform's own outcome: `sendToPlatforms`. Coexists
+   * with the Twitch-only `twitch*` methods.
+   */
+  platformGateway: "platform.gateway",
   /** The Clip button's Helix call, made and answered like `twitch.streamInfo`'s: `twitchCreateClip`. */
   twitchClips: "twitch.clips",
   /**

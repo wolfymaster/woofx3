@@ -280,6 +280,12 @@ which case Twitch may still have acted.
 | `twitchCreateClip()` | `POST /clips?broadcaster_id` | none | `twitch.clips` |
 | `twitchUpdateChatSettings(params)` | `PATCH /chat/settings?broadcaster_id&moderator_id` | body `{ emote_mode?, subscriber_mode?, follower_mode?, follower_mode_duration?, slow_mode?, slow_mode_wait_time? }` | `twitch.moderation` |
 
+The Helix methods above are Twitch-only. To send a chat line, announcement or
+pin without choosing the platform, the dashboard can use `sendToPlatforms`
+(capability `platform.gateway`), which goes through the platform gateway and
+reports Twitch's outcome with its message id. See
+[Platform gateway → Sending from the dashboard](./platform-gateway.md#sending-from-the-dashboard).
+
 The token is the one the twitch service holds: the linked account's, from the
 dashboard that linked it (see [Who renews the token](#who-renews-the-token)),
 with the scopes that link was granted. The broadcaster is the engine's

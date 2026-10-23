@@ -203,7 +203,8 @@ fn module(
         state: ModuleState::Active,
         event_types: Default::default(),
         permissions: Default::default(),
-        url_settings: Default::default(),
+        protected_settings: Default::default(),
+        local_endpoints: Default::default(),
         resource_link_settings: resource_link_settings
             .iter()
             .map(|s| s.to_string())

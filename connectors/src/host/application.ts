@@ -1,9 +1,11 @@
+import { lookup } from "node:dns/promises";
 import type { IApplication } from "@woofx3/common/runtime";
+import { dbProxyEndpointStore } from "../companion/endpoint-store";
 import type { ConnectorsConfig } from "../config";
 import type DbProxyService from "../services/db-proxy";
 import type MessageBusService from "../services/message-bus";
 import { type AdapterRegistry, type LoadedAdapters, loadAdapters } from "./adapters";
-import { dbProxySettings } from "./db-settings";
+import { dbProxyLinkStore } from "./db-link-store";
 import type { Clock, IdSource, Logger, RandomSource, Timers } from "./deps";
 import { type HealthServer, startHealthServer } from "./health";
 import { Host } from "./host";
@@ -59,10 +61,17 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
       config: this.deps.config.host,
       gateway: this.deps.config.gateway,
       chat: this.deps.config.chat,
+      companion: {
+        config: this.deps.config.companion,
+        store: dbProxyEndpointStore(dbProxy.client),
+        fetch: (url, init) => fetch(url, init),
+        resolver: async (name) => (await lookup(name, { all: true })).map((answer) => answer.address),
+        openSocket: (url) => new WebSocket(url),
+      },
       dbProxy: dbProxy.client,
       bus: messageBus.client,
       busConnected: () => messageBus.isUp(),
-      settings: dbProxySettings(dbProxy.client),
+      linkStore: dbProxyLinkStore(dbProxy.client),
       adapters: this.loaded.adapters,
       hostStates: this.loaded.hostStates,
       readers: assertLinkReaders(this.deps.readers),
