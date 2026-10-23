@@ -22,19 +22,18 @@ export const COMMAND_PERMISSION_ACTION = "read";
 /**
  * Decides who may run a command:
  * - a public command, anyone;
- * - a command with allowRoles, a speaker the platform reported in one of them;
- * - anyone else, a permission grant on the command.
+ * - any other command, only a trusted line, then:
+ *   - a command with allowRoles, a speaker the platform reported in one of them;
+ *   - anyone else, a permission grant on the command.
+ *
+ * An untrusted line names its own id and login, so a grant looked up by that
+ * login would admit anything that can publish on the bus under any granted
+ * login. Such a line is denied before any lookup, the same way built-in
+ * commands refuse it.
  *
  * Grants are read from db-proxy by the speaker's login, which is what
- * permission rows key on. The decision is cached by everything it was read
- * with: whether the line was trusted, the viewer id, the login and the
- * command. An untrusted line names its own id and login, and they need not
- * belong together, so it can never fill in a decision a trusted line reads.
- *
- * An untrusted line's login is still taken at its word for the grant
- * lookup, so a bus publisher naming a granted login runs that command. Bus
- * publishers are not authenticated per identity yet; until they are, a
- * grant only holds as far as the bus is trusted.
+ * permission rows key on. The decision is cached by the viewer id, the login
+ * and the command, so two accounts that show the same name never share one.
  */
 export class CommandPermissions {
   private readonly cache: BoundedMap<string, PermissionDecision>;
@@ -57,6 +56,9 @@ export class CommandPermissions {
     if (definition.visibility === "public") {
       return "granted";
     }
+    if (!line.trusted) {
+      return "denied";
+    }
     if (hasRole(line, definition)) {
       return "granted";
     }
@@ -76,11 +78,9 @@ export class CommandPermissions {
 }
 
 function permissionCacheKey(line: ChatLine, commandName: string): string {
-  const trust = line.trusted ? "trusted" : "untrusted";
-  return `${trust} ${viewerKeyString(line.viewer)} ${line.chatterLogin} ${commandName}`;
+  return `${viewerKeyString(line.viewer)} ${line.chatterLogin} ${commandName}`;
 }
 
-/** Only a trusted line has membership; an untrusted line's badges never pass a role. */
 function hasRole(line: ChatLine, definition: CommandDefinition): boolean {
   const membership = line.membership;
   if (membership === undefined) {

@@ -447,8 +447,8 @@ Each `user.message` goes through these steps in order:
    line is trusted only when its CloudEvent `source` is its platform
    adapter's (`twitch` for Twitch), and a trusted line with no speaker login
    is refused. An untrusted line, such as one the api's event simulator
-   published, still runs commands, but its badges count as
-   unknown: they never satisfy a role, and it writes no groups. A line said
+   published, runs public commands only. Its badges count as unknown, so it
+   writes no groups. A line said
    in a partner channel during a shared chat session never counts as the
    broadcaster or a moderator, and writes no groups either.
 2. **Groups.** A trusted line from the channel itself updates the built-in
@@ -457,14 +457,13 @@ Each `user.message` goes through these steps in order:
 3. **Match.** `!name rest` names a command. Built-in commands win over a
    stored command with the same name, and a built-in can be limited to some
    platforms.
-4. **Authorise.** A public command runs for anyone. A command that allows
-   roles runs for a speaker the platform reported in one. Anyone else needs
-   a grant on `command/<name>`. A refused speaker is told so. The grant is
-   looked up by the login the line names, and an untrusted line's login is
-   whatever its publisher wrote, so anything that can publish on the bus can
-   run a command granted to a login it names. Bus publishers are not yet
-   authenticated per identity; until they are, a grant is only as strong as
-   the bus's own access control.
+4. **Authorise.** A public command runs for anyone. Any other command
+   needs a trusted line: an untrusted line's login and badges are whatever
+   its publisher wrote, so it is refused without a lookup, as built-in
+   commands refuse it. On a trusted line, a command that allows roles runs
+   for a speaker the platform reported in one, and anyone else needs a grant
+   on `command/<name>`, looked up by the line's login. A refused speaker is
+   told so.
 5. **Cooldown.** The cooldown is per command. A line inside it is dropped
    completely and is not announced.
 6. **Handler.** The invocation is announced on `chat.command.<slug>`
@@ -480,9 +479,8 @@ Nothing is retried; an undelivered reply is logged.
 
 **Who a viewer is.** In-memory state is keyed by the platform and that
 platform's user id, never by a display name. The memory of written groups
-is keyed this way, and the permission cache by that, the login and whether
-the line was trusted, so two accounts that show the same name never share a
-decision and an untrusted line never fills in one a trusted line reads.
+is keyed this way, and the permission cache by that and the login, so two
+accounts that show the same name never share a decision.
 Permission and group rows in db-proxy are keyed by the speaker's login,
 lowercased. That is what the database keys on
 today.
