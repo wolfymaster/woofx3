@@ -359,6 +359,25 @@ describe("EndpointSession frames", () => {
     expect(await first).toMatchObject({ ok: true, reply: '{"id":"r1"}' });
   });
 
+  it("hands a frame that fits two pending requests to the earlier one only", async () => {
+    const target = device(() => []);
+    const { sessions } = setup(target);
+    const session = await opened(sessions);
+    const earlier = session.request({ field: "requestID", value: 1 }, "{}", live());
+    const later = session.request({ field: "op", value: "Identify" }, "{}", live());
+    let laterSettled = false;
+    void later.then(() => {
+      laterSettled = true;
+    });
+    target.push('{"requestID":1,"op":"Identify"}');
+    expect(await earlier).toMatchObject({ ok: true, reply: '{"requestID":1,"op":"Identify"}' });
+    expect(session.pending).toBe(1);
+    expect(laterSettled).toBe(false);
+    target.push('{"op":"Identify","data":"own"}');
+    expect(await later).toMatchObject({ ok: true, reply: '{"op":"Identify","data":"own"}' });
+    expect(session.pending).toBe(0);
+  });
+
   it("caps the requests pending on one session", async () => {
     const target = device(() => []);
     const { sessions } = setup(target, { limits: { maxPendingPerSession: 2 } });
