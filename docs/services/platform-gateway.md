@@ -290,6 +290,42 @@ types' `Validate` methods in Go. In Go, `FieldOptionsReply` decodes and
 encodes both wire forms (the bare array and `{ error }`), and both reply types
 write an empty list rather than `null` when there is nothing to list.
 
+### Sending from the dashboard
+
+The api serves one platform-neutral RPC, `sendToPlatforms`, so the dashboard
+sends a chat line without knowing which platform carries it. It is advertised
+by the `platform.gateway` capability and sits beside the `twitch*` methods,
+which stay.
+
+```ts
+sendToPlatforms({
+  action: "chat.send", // or chat.announce, chat.pin; the payload follows the action
+  platforms: ["twitch"],
+  payload: { message: "hello" },
+  options: { twitch: { color: "blue" } }, // optional, per platform
+  idempotencyKey: "a key the dashboard makes up per click",
+}): Promise<PlatformGatewayResult>
+```
+
+The api builds a `platforms` target and sets `requestedBy` to
+`{ kind: "api", ref: <the calling session's client id> }`. A caller cannot name
+who is asking. The answer never rejects for a send that did not happen:
+
+| Result | Meaning | Sent? |
+| --- | --- | --- |
+| `{ ok: true, reply }` | The gateway answered. `reply.ok` and `reply.results` say what each platform did, including a platform that refused. | per outcome |
+| `{ ok: false, code: "invalid" }` | The request broke the contract (for example an unknown platform or an empty line). Nothing was asked. | no |
+| `{ ok: false, code: "unavailable" }` | No message bus, or connectors is not running. | no |
+| `{ ok: false, code: "timeout" }` | The gateway did not answer in time. | maybe |
+| `{ ok: false, code: "failed" }` | The bus failed, or the reply was unreadable. | maybe |
+
+The api waits `WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` (default 12000, the
+callers' window in the table above, and the lowest value accepted) for the
+reply. Retry a `timeout` or `failed` result with the same `idempotencyKey`: the
+gateway replays a reply that reached a platform, or joins a send still running,
+rather than sending twice. A reply where nothing reached a platform is not
+held, so a retry sends again.
+
 ### Adding egress to an adapter
 
 A platform adapter (one whose id is a platform id) declares its handlers in
