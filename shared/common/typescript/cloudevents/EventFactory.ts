@@ -1,6 +1,5 @@
 import TwitchEvents from "./Twitch";
 import TwitchApiEvents from "./Twitch/commands";
-import ChatEvents from "./Chat";
 import ChatCommandEvents from "./Chat/commands";
 import CommandEvents from "./Command";
 import ActionEvents from "./Action";
@@ -29,10 +28,6 @@ export default class EventFactory {
 
   TwitchApi() {
     return new TwitchApiEvents();
-  }
-
-  Chat() {
-    return new ChatEvents(this.source);
   }
 
   ChatCommand() {

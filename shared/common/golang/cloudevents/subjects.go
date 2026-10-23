@@ -26,9 +26,6 @@ const (
 	// Twitch API commands
 	SubjectTwitchApi Subject = "twitchapi"
 
-	// Chat events (platform-agnostic; payload carries `platform` discriminator)
-	SubjectChatSend Subject = "message.send"
-
 	// Platform gateway requests, served by the connectors host. Request/reply
 	// only: the gateway acts on a platform for the caller, so a workflow, an
 	// uploaded module or a test-fire route publishing here would drive the
