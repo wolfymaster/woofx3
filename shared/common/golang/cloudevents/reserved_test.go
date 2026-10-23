@@ -102,6 +102,8 @@ func TestReservedSubjectMatch(t *testing.T) {
 		{"stream.online", "stream.online"},
 		{"channel.cheer", "channel."},
 		{"session.ended", "session."},
+		{"platform.gateway.send", "platform.gateway."},
+		{"platform.gateway.field_options", "platform.gateway."},
 		{"command.created", "command."},
 		// Open: nothing reserves these.
 		{"dbx.thing", ""},
@@ -111,6 +113,9 @@ func TestReservedSubjectMatch(t *testing.T) {
 		{"custom.event", ""},
 		{"message.sent", ""},
 		{"message.send.later", ""},
+		{"platform.gatewayx", ""},
+		{"platform.gateway", ""},
+		{"platform.other", ""},
 	}
 	for _, tc := range cases {
 		match, reserved := ReservedSubjectMatch(tc.subject)

@@ -29,6 +29,15 @@ const (
 	// Chat events (platform-agnostic; payload carries `platform` discriminator)
 	SubjectChatSend Subject = "message.send"
 
+	// Platform gateway requests, served by the connectors host. Request/reply
+	// only: the gateway acts on a platform for the caller, so a workflow, an
+	// uploaded module or a test-fire route publishing here would drive the
+	// platform rather than ask the engine. Must equal the subjects in
+	// shared/common/contracts/platform-gateway.json.
+	SubjectPlatformGatewaySend         Subject = "platform.gateway.send"
+	SubjectPlatformGatewayCapabilities Subject = "platform.gateway.capabilities"
+	SubjectPlatformGatewayFieldOptions Subject = "platform.gateway.field_options"
+
 	// Chat command events — subject pattern `chat.command.<slug>` emitted by
 	// woofwoofwoof when a chat command matches. The wildcard is documentation;
 	// the workflow engine subscribes to concrete subjects via the reactive

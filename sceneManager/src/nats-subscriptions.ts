@@ -1,4 +1,10 @@
-import { OBS_STATUS_SUBJECT } from "@woofx3/common/cloudevents/Obs/commands";
+import {
+  OBS_BROWSER_SOURCE_REFRESH_SUBJECT,
+  OBS_STATUS_SUBJECT,
+  type ObsBrowserSourceRefresh,
+  type ObsBrowserSourceRefreshReply,
+  parseObsBrowserSourceRefresh,
+} from "@woofx3/common/cloudevents/Obs/commands";
 import { RELAY_CONFIG_UPDATED_SUBJECT } from "@woofx3/common/cloudevents/Relay/relay";
 import { SCENE_COMMAND_SUBJECT } from "@woofx3/common/cloudevents/Scene/commands";
 import {
@@ -54,6 +60,8 @@ interface InitArgs {
   moduleState: ModuleStateWatch;
   resolver: OverlayTokenResolver;
   sceneDocuments: SavedScenes;
+  /** Latches a request to refresh the OBS browser sources showing the overlays; see obs/service.ts. */
+  requestOverlayRefresh: (request: ObsBrowserSourceRefresh) => void;
   /** Mints the token that opens a scene's editor socket (see routes/editor.ts). */
   editorToken: (sceneId: string) => Promise<SceneEditorTokenReply>;
   /** Mints the token that opens the composition preview page (see routes/composition-preview.ts). */
@@ -143,6 +151,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     moduleState,
     resolver,
     sceneDocuments,
+    requestOverlayRefresh,
     editorToken,
     previewToken,
     logger,
@@ -254,6 +263,19 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   // or not OBS is up; the api asks it for the OBS module's page.
   await answer(OBS_STATUS_SUBJECT, async () => obsStatus());
   logger.info(`Answering ${OBS_STATUS_SUBJECT}`);
+
+  // sceneManager asks for its overlays' OBS browser sources to be refreshed
+  // once per start, repeating until this accepts. A boot id seen before is
+  // accepted again and changes nothing (see `OverlayRefreshLatch`).
+  await answer(OBS_BROWSER_SOURCE_REFRESH_SUBJECT, async (body): Promise<ObsBrowserSourceRefreshReply> => {
+    const parsed = parseObsBrowserSourceRefresh(body);
+    if (!parsed.ok) {
+      return { status: "invalid", error: parsed.error };
+    }
+    requestOverlayRefresh(parsed.value);
+    return { status: "accepted", bootId: parsed.value.bootId };
+  });
+  logger.info(`Answering ${OBS_BROWSER_SOURCE_REFRESH_SUBJECT}`);
 
   // The api asks for this when a dashboard opens the scene editor; only the
   // api's requests are answered (see `answer`).

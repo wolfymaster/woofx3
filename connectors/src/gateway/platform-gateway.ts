@@ -5,6 +5,7 @@ import {
   type GatewayRequest,
   type GatewayRequestOf,
   type OutcomeStatus,
+  PLATFORM_GATEWAY_REPLY_TYPES,
   PLATFORM_GATEWAY_SUBJECTS,
   type PlatformId,
   type PlatformOutcome,
@@ -31,9 +32,6 @@ import { GatewayDiscovery, type GatewayDiscoveryDeps } from "./discovery";
 import type { EgressRegistry } from "./egress-registry";
 import { fingerprint, IdempotencyCache } from "./idempotency";
 import { resolveTarget, type TargetResolution, type TargetView, withOriginReply } from "./targets";
-
-/** The CloudEvent type of every platform.gateway.send reply. */
-export const GATEWAY_SEND_RESULT_TYPE = "platform.gateway.send.result";
 
 /**
  * The failure code a whole-request refusal carries for each reason the host
@@ -128,7 +126,7 @@ export class PlatformGateway {
       subject: PLATFORM_GATEWAY_SUBJECTS.send,
       budgetMs: this.deps.config.adapterDeadlineMs,
       replyMode: "cloudevent",
-      replyType: GATEWAY_SEND_RESULT_TYPE,
+      replyType: PLATFORM_GATEWAY_REPLY_TYPES.send,
       parse: parseRequest,
       handle: (request, ctx) => this.send(request, ctx),
       errorReply: (code, message) => refusal(REFUSAL_CODES[code], message),

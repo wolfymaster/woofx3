@@ -25,19 +25,33 @@ func targetKinds() []string {
 // field is required; unknown keys are refused so an entry added to the JSON
 // cannot be silently left out of the generated code.
 type platformGateway struct {
-	Subjects           gatewaySubjects `json:"subjects"`
+	Subjects gatewaySubjects `json:"subjects"`
+	// ReplyTypes are the CloudEvent types of each subject's replies, keyed
+	// like Subjects.
+	ReplyTypes         gatewaySubjects `json:"replyTypes"`
 	Platforms          []platform      `json:"platforms"`
 	Requesters         []string        `json:"requesters"`
 	FailureCodes       []string        `json:"failureCodes"`
 	OutcomeStatuses    []string        `json:"outcomeStatuses"`
 	UnavailableReasons []string        `json:"unavailableReasons"`
+	PlatformStates     []string        `json:"platformStates"`
 	Actions            []action        `json:"actions"`
 }
 
+// gatewaySubjects holds one dotted name per gateway subject.
 type gatewaySubjects struct {
 	Send         string `json:"send"`
 	Capabilities string `json:"capabilities"`
 	FieldOptions string `json:"fieldOptions"`
+}
+
+// entries lists the names in a fixed order, each with its contract key.
+func (s gatewaySubjects) entries(prefix string) [][2]string {
+	return [][2]string{
+		{prefix + ".send", s.Send},
+		{prefix + ".capabilities", s.Capabilities},
+		{prefix + ".fieldOptions", s.FieldOptions},
+	}
 }
 
 type platform struct {
@@ -149,21 +163,19 @@ func parsePlatformGateway(raw []byte) (platformGateway, error) {
 }
 
 func (c platformGateway) validate() error {
-	subjects := map[string]string{
-		"subjects.send":         c.Subjects.Send,
-		"subjects.capabilities": c.Subjects.Capabilities,
-		"subjects.fieldOptions": c.Subjects.FieldOptions,
-	}
-	seenSubjects := map[string]string{}
-	for _, key := range []string{"subjects.send", "subjects.capabilities", "subjects.fieldOptions"} {
-		subject := subjects[key]
-		if !subjectPattern.MatchString(subject) {
-			return fmt.Errorf("%s: %q is not a dotted lowercase subject", key, subject)
+	// Subjects and reply types share one namespace of dotted names, so a
+	// reply type that equals a subject is refused as a duplicate.
+	seenNames := map[string]string{}
+	names := append(c.Subjects.entries("subjects"), c.ReplyTypes.entries("replyTypes")...)
+	for _, entry := range names {
+		key, name := entry[0], entry[1]
+		if !subjectPattern.MatchString(name) {
+			return fmt.Errorf("%s: %q is not a dotted lowercase name", key, name)
 		}
-		if other, ok := seenSubjects[subject]; ok {
-			return fmt.Errorf("%s: %q is also %s", key, subject, other)
+		if other, ok := seenNames[name]; ok {
+			return fmt.Errorf("%s: %q is also %s", key, name, other)
 		}
-		seenSubjects[subject] = key
+		seenNames[name] = key
 	}
 
 	if len(c.Platforms) == 0 {
@@ -191,6 +203,7 @@ func (c platformGateway) validate() error {
 		{"failureCodes", c.FailureCodes},
 		{"outcomeStatuses", c.OutcomeStatuses},
 		{"unavailableReasons", c.UnavailableReasons},
+		{"platformStates", c.PlatformStates},
 	} {
 		if err := validateEnum(list.key, list.values); err != nil {
 			return err

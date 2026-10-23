@@ -1,6 +1,7 @@
 // Package platformgateway is the Go side of the platform gateway's wire
-// contract: the subjects it answers on, the action catalog with each action's
-// payload, and the request, outcome and reply shapes with their validators.
+// contract: the subjects it answers on and their reply CloudEvent types, the
+// action catalog with each action's payload, and the request, outcome and
+// reply shapes of send, capabilities and field_options with their validators.
 //
 // catalog_gen.go is generated from
 // shared/common/contracts/platform-gateway.json by

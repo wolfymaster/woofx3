@@ -72,7 +72,14 @@ What a module reaches on the streamer's own network is declared in its
 manifest's `local[]` (see [Module format → Local endpoints](../barkloader/modules.md#local-endpoints-local)),
 shown on the module install page beside its permissions, and fixed at install
 like them. An entry names settings that hold an address; it never carries an
-address the platform dials on the module's say-so.
+address the platform dials on the module's say-so, and module code cannot write
+the settings an entry names (`ctx.module.setSetting` refuses them), so only the
+streamer or the companion decides the address. An upgrade that gives a setting
+that role for the first time resets the value already stored in it.
+
+A module installed from a zip upload or a URL is one the streamer chose and
+supplied themselves. Those install paths show no review of the module's local
+endpoints, just as they show no review of its permissions.
 
 When an endpoint goes through the woofx3 companion, the engine names only
 `(moduleId, endpointId)` on the bridge. The engine never tells the companion an
@@ -90,7 +97,7 @@ A manifest field's `source` and a settings button's `action` (`kind: "internal"`
 
 Workflows are user- and module-authored too, and a `publish_event` step publishes on the subject its `eventType` names. The reserved names live in one place, `shared/common/contracts/reserved-subjects.json`, which the workflow engine (through the generated `shared/common/golang/cloudevents/reserved_data.go`; run `go generate ./...` in that package after editing the JSON), the api and barkloader all read:
 
-- `commandSubjectPrefixes`: subjects the engine treats as commands. Neither a workflow nor an uploaded module may use them.
+- `commandSubjectPrefixes`: subjects the engine treats as commands. Neither a workflow nor an uploaded module may use them. The platform gateway namespace (`platform.gateway.`: send, capabilities, field options) is one of them: those subjects are answered by the connectors host, which posts to a streaming platform for the caller, so a workflow, an uploaded module or the api test-fire routes publishing there would drive a platform instead of asking the engine. It is deliberately absent from the allowlist of form requests an uploaded module may declare; the dashboard reaches the gateway only through the api.
 - `engineAssertedPrefixes`: facts engine services assert (platform events, chat command invocations, command changes, sessions, module and run lifecycle). A workflow may not publish these either.
 - `platformEventEntries`: the engine-asserted entries that hold platform events, which a creator can fire with `simulateTwitchEvent` instead.
 - `uploadReservedPrefixes`: the engine-asserted events an uploaded module may not declare as eventbus triggers, on top of the command subjects. A webhook handler may publish its module's eventbus trigger events verbatim, so declaring one would let the upload forge it. Platform events a platform module brings (`channel.`, `channelpoints.`, `user.message`, `stream.online`, `stream.offline`) are left out. Under `module.` an upload may declare events in `module.<its id>.` only, and only when its id has no `.` and is not one of `engineModuleSegments`, the namespaces the engine publishes module lifecycle events in (`module.change.`, `module.trigger.`, ...). The bundled system module is exempt from everything but the webhook prefix.
