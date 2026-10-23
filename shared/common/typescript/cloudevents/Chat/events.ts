@@ -1,12 +1,3 @@
-export enum EventType {
-  SendMessage = "message.send",
-}
-
-export interface SendMessage {
-  platform: string;
-  message: string;
-}
-
 /**
  * Platform membership for the author of a chat message, as reported by
  * whichever platform delivered it.

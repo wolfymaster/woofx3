@@ -98,6 +98,8 @@ func TestReservedSubjectMatch(t *testing.T) {
 		{"engine.obs.command", "engine."},
 		{"workflow.cancel", "workflow.cancel"},
 		{"workflow.run.cancelled", "workflow.run."},
+		// Retired, no publisher or consumer left; the name stays reserved so
+		// nothing new can claim it.
 		{"message.send", "message.send"},
 		{"stream.online", "stream.online"},
 		{"channel.cheer", "channel."},
