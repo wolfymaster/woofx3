@@ -1,6 +1,6 @@
+import { CALLER_TIMEOUT_MS } from "@woofx3/api/platform-gateway";
 import { TWITCHAPI_SERVED_BUDGET_MS } from "@woofx3/common/cloudevents/Twitch/commands";
 import { z } from "zod";
-import { GATEWAY_CALLER_TIMEOUT_MS } from "./gateway";
 
 /** Defaults for the chat command dispatcher's tunables. */
 export const CHAT_DEFAULTS = {
@@ -70,6 +70,6 @@ export function chatConfig(env: ChatEnv): ChatConfig {
     },
     twitchApi: { timeoutMs: env.woofx3ConnectorsDispatcherTwitchApiTimeoutMs },
     drainMs: env.woofx3ConnectorsDispatcherDrainMs,
-    replyTimeoutMs: GATEWAY_CALLER_TIMEOUT_MS,
+    replyTimeoutMs: CALLER_TIMEOUT_MS,
   };
 }

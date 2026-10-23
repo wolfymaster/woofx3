@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { CALLER_TIMEOUT_MS } from "@woofx3/api/platform-gateway";
 import { connectorsConfig } from "../config";
 import { CHAT_DEFAULTS } from "./chat";
-import { GATEWAY_CALLER_TIMEOUT_MS, GATEWAY_DEFAULTS } from "./gateway";
+import { GATEWAY_DEFAULTS } from "./gateway";
 import { HOST_DEFAULTS } from "./host";
 
 const required = {
@@ -63,7 +64,7 @@ describe("connectorsConfig", () => {
       store: { reloadDebounceMs: 250, reloadBackstopMs: 300_000 },
       twitchApi: { timeoutMs: 10_000 },
       drainMs: CHAT_DEFAULTS.drainMs,
-      replyTimeoutMs: GATEWAY_CALLER_TIMEOUT_MS,
+      replyTimeoutMs: CALLER_TIMEOUT_MS,
     });
   });
 
