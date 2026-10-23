@@ -106,7 +106,7 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
     await host?.stop();
   }
 
-  /** For the bus heartbeat: true while a host is running. */
+  /** For the bus heartbeat: true from when a host finishes starting until it begins to stop. */
   isReady(): boolean {
     return this.host?.isRunning ?? false;
   }

@@ -44,6 +44,13 @@ export const LOOP_STALE_INTERVALS = 2;
  */
 export const DB_PROXY_UNREACHABLE_PASSES = 2;
 
+/**
+ * Where a host is in its one pass through start and stop. A host runs once:
+ * the application builds a fresh one for every run, so a stopped host never
+ * starts again.
+ */
+export type HostState = "idle" | "starting" | "running" | "stopping" | "stopped";
+
 /** What the companion gateway is built with. */
 export interface HostCompanionDeps {
   config: CompanionConfig;
@@ -93,7 +100,7 @@ export class Host {
   private readonly gateway: PlatformGateway;
   private readonly chat: ChatService;
   private readonly companion: EngineCompanionGateway;
-  private running = false;
+  private lifecycle: HostState = "idle";
   /** How long stop gives the adapters and the held requests together: the longest of the stop deadline and the served budgets. */
   private readonly drainMs: number;
 
@@ -212,8 +219,13 @@ export class Host {
     });
   }
 
+  get state(): HostState {
+    return this.lifecycle;
+  }
+
+  /** Started and not yet stopping: what the bus heartbeat reports as ready. */
   get isRunning(): boolean {
-    return this.running;
+    return this.lifecycle === "running";
   }
 
   /**
@@ -222,10 +234,10 @@ export class Host {
    * gateway), then reads the links and starts what is desired.
    */
   async start(): Promise<void> {
-    if (this.running) {
-      throw new Error("the host is already running");
+    if (this.lifecycle !== "idle") {
+      throw new Error(`the host can start only once, from idle; it is ${this.lifecycle}`);
     }
-    this.running = true;
+    this.lifecycle = "starting";
     // The session every event is stamped with is process-wide, so the host
     // follows it rather than each adapter run: an adapter that starts after a
     // session change still stamps the current session.
@@ -237,6 +249,10 @@ export class Host {
     await this.companion.start(this.scope);
     await this.chat.start();
     await this.watcher.start();
+    // A stop that began while starting owns the state from then on.
+    if (this.lifecycle === "starting") {
+      this.lifecycle = "running";
+    }
   }
 
   /**
@@ -248,12 +264,20 @@ export class Host {
    * the longest budget. The constructor checks the shutdown deadline covers
    * all three steps. The companion gateway stops last, once no adapter can
    * ask it for a route.
+   *
+   * A host still starting is stopped as if it were running, so a start that
+   * failed partway is cleaned up. Stopping a host that never started only
+   * retires it, and a second stop returns at once.
    */
   async stop(): Promise<void> {
-    if (!this.running) {
+    if (this.lifecycle === "idle") {
+      this.lifecycle = "stopped";
       return;
     }
-    this.running = false;
+    if (this.lifecycle === "stopping" || this.lifecycle === "stopped") {
+      return;
+    }
+    this.lifecycle = "stopping";
     await this.watcher.stop();
     await this.chat.drain();
     const [, drained] = await Promise.all([
@@ -269,6 +293,7 @@ export class Host {
       this.deps.logger.error("closing the host bus scope failed", { error: errorMessage(drained.error) });
     }
     await this.companion.stop();
+    this.lifecycle = "stopped";
   }
 
   /** Resolves once no settings pass or adapter transition is in progress. For tests. */
