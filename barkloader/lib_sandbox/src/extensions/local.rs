@@ -63,7 +63,8 @@ pub const MAX_BUDGET: Duration = Duration::from_millis(4_500);
 
 /// The shortest budget a request may carry: the contract's lower bound on
 /// `budgetMs`. A call with less time left than this fails without asking.
-pub const MIN_BUDGET: Duration = Duration::from_millis(100);
+pub const MIN_BUDGET: Duration = Duration::from_millis(MIN_BUDGET_MS);
+const MIN_BUDGET_MS: u64 = 100;
 
 /// What a request's budget leaves of the invocation's remaining time, so the
 /// gateway's answer reaches the function before its caller stops waiting.
@@ -121,7 +122,18 @@ impl LocalExtension {
         Self::with_limits(nats, Limits::default())
     }
 
+    /// Panics when `limits` break an invariant every call relies on; the
+    /// extension is built once at startup.
     pub fn with_limits(nats: Arc<dyn NatsRequester>, limits: Limits) -> Self {
+        assert!(
+            limits.request_timeout > MAX_BUDGET,
+            "ctx.local's request timeout ({:?}) must exceed the largest budget ({MAX_BUDGET:?}), so the gateway's answer arrives before barkloader stops waiting",
+            limits.request_timeout
+        );
+        assert!(
+            limits.max_calls_per_invocation > 0,
+            "ctx.local must allow at least one call per invocation"
+        );
         let in_flight = Arc::new(InFlight::new(limits.max_in_flight));
         let functions = FUNCTIONS
             .iter()
@@ -166,7 +178,9 @@ struct LocalCall {
 impl LocalCall {
     /// The request for this call by `module_id`, served for `budget`.
     fn request(&self, module_id: &str, budget: Duration) -> ModuleEndpointRequest {
-        let budget_ms = i64::try_from(budget.as_millis()).expect("a budget fits in i64");
+        // Saturating: a budget past i64 milliseconds is refused by validate()
+        // like any other budget over the contract's bound.
+        let budget_ms = i64::try_from(budget.as_millis()).unwrap_or(i64::MAX);
         match &self.matching {
             None => ModuleEndpointRequest::Send(ModuleEndpointSend {
                 module_id: module_id.to_string(),
@@ -238,8 +252,12 @@ fn call(
     };
     let timeout = limits.request_timeout.min(scope.remaining());
 
-    let request = serde_json::to_value(call.request(scope.module_id(), budget))
-        .expect("a module endpoint request serializes");
+    let request = serde_json::to_value(call.request(scope.module_id(), budget)).map_err(|err| {
+        HostError::with_code(
+            format!("ctx.local.{name}: the request could not be encoded: {err}"),
+            REQUEST_FAILED,
+        )
+    })?;
     let reply = match nats.request(SUBJECT_MODULE_REQUEST, request, timeout) {
         Ok(reply) => reply,
         Err(RequestError::TimedOut) => {
@@ -280,8 +298,9 @@ fn budget(asked: Option<Duration>, remaining: Duration) -> Option<Duration> {
         .unwrap_or(MAX_BUDGET)
         .min(MAX_BUDGET)
         .min(remaining.saturating_sub(DEADLINE_MARGIN));
-    // Whole milliseconds, as the request carries it.
-    let budget = Duration::from_millis(u64::try_from(budget.as_millis()).expect("fits in u64"));
+    // Whole milliseconds, as the request carries it. The budget is at most
+    // MAX_BUDGET here, so the conversion never saturates.
+    let budget = Duration::from_millis(u64::try_from(budget.as_millis()).unwrap_or(u64::MAX));
     (budget >= MIN_BUDGET).then_some(budget)
 }
 
@@ -352,7 +371,12 @@ fn message_text(name: &str, value: Option<&Value>) -> Result<String, HostError> 
     match value {
         Some(Value::String(text)) => Ok(text.clone()),
         Some(value @ (Value::Object(_) | Value::Array(_))) => {
-            Ok(serde_json::to_string(value).expect("a JSON value serializes"))
+            serde_json::to_string(value).map_err(|err| {
+                HostError::with_code(
+                    format!("ctx.local.{name}: message could not be encoded as JSON: {err}"),
+                    INVALID_ARGUMENTS,
+                )
+            })
         }
         other => Err(invalid(
             name,
@@ -407,7 +431,7 @@ fn read_match(name: &str, args: &Map<String, Value>) -> Result<ModuleEndpointMat
 /// `timeoutMs` is how long the call may wait for the device, a whole number
 /// of at least `MIN_BUDGET`. More than `MAX_BUDGET` is read as `MAX_BUDGET`.
 fn read_timeout(name: &str, value: Option<&Value>) -> Result<Option<Duration>, HostError> {
-    let min = u64::try_from(MIN_BUDGET.as_millis()).expect("fits in u64");
+    let min = MIN_BUDGET_MS;
     match value {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Number(number)) => match whole_number(number) {
@@ -1238,5 +1262,39 @@ mod tests {
                 (_, _, outcome) => panic!("{}: unexpected {outcome:?}", case.name),
             }
         }
+    }
+
+    #[test]
+    fn test_local_limits_that_break_an_invariant_are_refused_at_build() {
+        let cases = [
+            (
+                "a request timeout no longer than the largest budget",
+                Limits {
+                    request_timeout: MAX_BUDGET,
+                    ..Limits::default()
+                },
+            ),
+            (
+                "no calls per invocation",
+                Limits {
+                    max_calls_per_invocation: 0,
+                    ..Limits::default()
+                },
+            ),
+            (
+                "no requests in flight",
+                Limits {
+                    max_in_flight: 0,
+                    ..Limits::default()
+                },
+            ),
+        ];
+        for (case, limits) in cases {
+            let built = std::panic::catch_unwind(|| {
+                LocalExtension::with_limits(FakeConnectorsHost::ok(), limits)
+            });
+            assert!(built.is_err(), "{case}");
+        }
+        LocalExtension::with_limits(FakeConnectorsHost::ok(), Limits::default());
     }
 }
