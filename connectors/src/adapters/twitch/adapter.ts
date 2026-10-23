@@ -1,4 +1,8 @@
-import { TWITCHAPI_SERVED_BUDGET_MS, TWITCHAPI_SUBJECT } from "@woofx3/common/cloudevents/Twitch/commands";
+import {
+  SHOUTOUT_ENQUEUE_SUBJECT,
+  TWITCHAPI_SERVED_BUDGET_MS,
+  TWITCHAPI_SUBJECT,
+} from "@woofx3/common/cloudevents/Twitch/commands";
 import { EventType as TwitchEventType } from "@woofx3/common/cloudevents/Twitch/events";
 import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/integration-settings";
 import { TWITCH_TOKEN_SUBJECT } from "@woofx3/twitch/dashboard-auth-provider";
@@ -17,7 +21,6 @@ import TwitchApplication, { type TwitchAppContext, type TwitchReplyDeps, twitchA
 import { type TwitchEgressSession, twitchEgress } from "./egress";
 import { SelfSentRegistry } from "./lib/self-sent";
 import { SendQueue } from "./lib/send-queue";
-import { SHOUTOUT_ENQUEUE_SUBJECT } from "./lib/shoutoutQueue";
 
 /** Every subject the adapter publishes: one per Twitch event type. */
 export const TWITCH_EVENT_SUBJECTS: readonly string[] = Object.values(TwitchEventType);

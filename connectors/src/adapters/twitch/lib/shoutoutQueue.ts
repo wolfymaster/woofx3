@@ -1,18 +1,9 @@
+import {
+  parseShoutoutEnqueueReply,
+  SHOUTOUT_ENQUEUE_SUBJECT,
+  type ShoutoutEnqueueTarget,
+} from "@woofx3/common/cloudevents/Twitch/commands";
 import { requestFailureKind } from "@woofx3/nats/src/errors";
-
-/**
- * NATS subject the api service answers by queueing a shoutout on the
- * dashboard. Must match `SHOUTOUT_ENQUEUE_SUBJECT` in api/src/shoutout-queue.ts.
- */
-export const SHOUTOUT_ENQUEUE_SUBJECT = "engine.shoutout.enqueue";
-
-export interface ShoutoutTarget {
-  twitchUserId: string;
-  login: string;
-  displayName: string;
-  profileImageUrl?: string;
-  broadcasterType?: string;
-}
 
 /**
  * `queued`: the dashboard will send it in turn. `no_queue`: this engine's
@@ -23,7 +14,7 @@ export type EnqueueOutcome =
   | { kind: "queued"; position: number; alreadyQueued: boolean }
   | { kind: "no_queue"; reason: string };
 
-export type EnqueueShoutout = (target: ShoutoutTarget) => Promise<EnqueueOutcome>;
+export type EnqueueShoutout = (target: ShoutoutEnqueueTarget) => Promise<EnqueueOutcome>;
 
 type NatsRequest = (subject: string, data: Uint8Array, opts?: { timeout?: number }) => Promise<{ data: Uint8Array }>;
 
@@ -60,21 +51,16 @@ export function enqueueShoutoutOverNats(request: NatsRequest, timeoutMs: number)
 }
 
 function readReply(body: unknown): EnqueueOutcome {
-  if (typeof body !== "object" || body === null) {
-    throw new Error("shoutout: the api service's queue reply is not an object");
+  const parsed = parseShoutoutEnqueueReply(body);
+  if (!parsed.ok) {
+    throw new Error(`shoutout: the api service's queue reply ${parsed.error}`);
   }
-  const { queued, unavailable, error } = body as Record<string, unknown>;
-  if (typeof error === "string") {
-    throw new Error(`shoutout: could not queue the shoutout: ${error}`);
+  const reply = parsed.value;
+  if ("error" in reply) {
+    throw new Error(`shoutout: could not queue the shoutout: ${reply.error}`);
   }
-  if (typeof unavailable === "string") {
-    return { kind: "no_queue", reason: unavailable };
+  if ("unavailable" in reply) {
+    return { kind: "no_queue", reason: reply.unavailable };
   }
-  if (typeof queued === "object" && queued !== null) {
-    const { position, alreadyQueued } = queued as Record<string, unknown>;
-    if (typeof position === "number") {
-      return { kind: "queued", position, alreadyQueued: alreadyQueued === true };
-    }
-  }
-  throw new Error("shoutout: the api service's queue reply is malformed");
+  return { kind: "queued", position: reply.queued.position, alreadyQueued: reply.queued.alreadyQueued };
 }

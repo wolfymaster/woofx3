@@ -4,6 +4,58 @@ import { encodeCommand } from "../utils";
 export const TWITCHAPI_SUBJECT = "twitchapi";
 
 /**
+ * Request/reply subject the api answers by queueing a shoutout on the
+ * dashboard that holds the Twitch link; the twitch adapter asks on it. The
+ * request is a `ShoutoutEnqueueTarget`, the reply a `ShoutoutEnqueueReply`.
+ */
+export const SHOUTOUT_ENQUEUE_SUBJECT = "engine.shoutout.enqueue";
+
+/** Who to shout out, as a `SHOUTOUT_ENQUEUE_SUBJECT` request. */
+export interface ShoutoutEnqueueTarget {
+  twitchUserId: string;
+  /** Lowercase login. */
+  login: string;
+  displayName: string;
+  profileImageUrl?: string;
+  /** "partner", "affiliate" or "" for neither. */
+  broadcasterType?: string;
+}
+
+/**
+ * `queued`: the dashboard has it. `unavailable`: there is no dashboard queue
+ * for this engine, because its Twitch link is its own, so the caller sends
+ * the shoutout itself. `error`: there is a queue but it could not be reached
+ * or refused, and the shoutout was not sent.
+ */
+export type ShoutoutEnqueueReply =
+  | { queued: { position: number; alreadyQueued: boolean } }
+  | { unavailable: string }
+  | { error: string };
+
+export type ShoutoutEnqueueReplyParse = { ok: true; value: ShoutoutEnqueueReply } | { ok: false; error: string };
+
+/** Reads a `SHOUTOUT_ENQUEUE_SUBJECT` reply, refusing anything that is not one. */
+export function parseShoutoutEnqueueReply(body: unknown): ShoutoutEnqueueReplyParse {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return { ok: false, error: "is not an object" };
+  }
+  const { queued, unavailable, error } = body as Record<string, unknown>;
+  if (typeof error === "string") {
+    return { ok: true, value: { error } };
+  }
+  if (typeof unavailable === "string") {
+    return { ok: true, value: { unavailable } };
+  }
+  if (typeof queued === "object" && queued !== null) {
+    const { position, alreadyQueued } = queued as Record<string, unknown>;
+    if (typeof position === "number") {
+      return { ok: true, value: { queued: { position, alreadyQueued: alreadyQueued === true } } };
+    }
+  }
+  return { ok: false, error: "is malformed" };
+}
+
+/**
  * How long the connectors host holds a `twitchapi` request before it answers
  * for the adapter, time spent held while the adapter starts included. A
  * caller waiting less than this reports "no answer" for calls the adapter

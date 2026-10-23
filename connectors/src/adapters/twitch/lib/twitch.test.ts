@@ -1,10 +1,10 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { ApiClient, HelixUser } from "@twurple/api";
-import { TWITCHAPI_COMMANDS } from "@woofx3/common/cloudevents/Twitch/commands";
+import { type ShoutoutEnqueueTarget, TWITCHAPI_COMMANDS } from "@woofx3/common/cloudevents/Twitch/commands";
 import { FakeTime } from "../../../host/testing";
 import type { HelixAuth } from "./helix";
 import { type SelfSentRecorder, SelfSentRegistry } from "./self-sent";
-import type { EnqueueOutcome, ShoutoutTarget } from "./shoutoutQueue";
+import type { EnqueueOutcome } from "./shoutoutQueue";
 import TwitchApi, {
   isTwitchApiCommand,
   normalizeHelixTime,
@@ -56,7 +56,7 @@ function apiClientWith(overrides: { shoutoutUser?: ReturnType<typeof mock>; getU
 }
 
 function queue(outcome: EnqueueOutcome | Error) {
-  return mock(async (_target: ShoutoutTarget): Promise<EnqueueOutcome> => {
+  return mock(async (_target: ShoutoutEnqueueTarget): Promise<EnqueueOutcome> => {
     if (outcome instanceof Error) {
       throw outcome;
     }
