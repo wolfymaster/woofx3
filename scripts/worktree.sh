@@ -21,6 +21,9 @@
 #
 # Every task also gets a slot number, and with it a block of ports and its own
 # .woofx3.json, so engines started from different worktrees do not collide.
+# That .woofx3.json declares the engine local (woofx3Hosting), as a desktop
+# engine is: it runs on the developer's own machine and dials local endpoints
+# such as OBS directly.
 # Slot 0 is the main clone and keeps the default ports; `config` writes its
 # .woofx3.json.
 #
@@ -162,6 +165,7 @@ write_engine_config() {
   "sceneManagerUrl": "http://127.0.0.1:$SCENE_PORT",
   "sceneManagerTokenSecret": "$(random_hex)",
   "woofx3ConnectorsPort": "$CONNECTORS_PORT",
+  "woofx3Hosting": "local",
   "twitchChannelName": "",
   "twitchClientId": "",
   "twitchClientSecret": ""
