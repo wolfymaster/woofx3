@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.2](https://github.com/wolfymaster/woofx3/compare/v0.42.1...v0.42.2) (2026-10-25)
+
+### Bug Fixes
+
+* **db:** assign UUID primary keys before insert on every model ([bf600af](https://github.com/wolfymaster/woofx3/commit/bf600af2e8c4174895d8ef8586ec653cb2997b97))
+* **db:** return the race winner when a UI user is created twice ([ddf5231](https://github.com/wolfymaster/woofx3/commit/ddf52311604ef3456d66ffd90834cb3dd4581a7e))
+
 ## [0.42.1](https://github.com/wolfymaster/woofx3/compare/v0.42.0...v0.42.1) (2026-10-23)
 
 ### Bug Fixes
