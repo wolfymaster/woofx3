@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.42.3](https://github.com/wolfymaster/woofx3/compare/v0.42.2...v0.42.3) (2026-10-25)
+
+### Bug Fixes
+
+* **db:** stamp module and scene-event writes from an injected clock ([4d4d6c0](https://github.com/wolfymaster/woofx3/commit/4d4d6c06b6d864044232ec11cec91b2a9d6ca5d3))
+* **db:** write module, workflow and scene-event SQL both dialects accept ([b99f3ea](https://github.com/wolfymaster/woofx3/commit/b99f3ea3e423ea08b4035bd4db1a77e2d0d415cc))
+
 ## [0.42.2](https://github.com/wolfymaster/woofx3/compare/v0.42.1...v0.42.2) (2026-10-25)
 
 ### Bug Fixes
