@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.42.1](https://github.com/wolfymaster/woofx3/compare/v0.42.0...v0.42.1) (2026-10-23)
+
+### Bug Fixes
+
+* **api:** advertise the workflow capabilities shipped in v0.4.0 ([6c6e7c8](https://github.com/wolfymaster/woofx3/commit/6c6e7c8a03ff6538b80a42c0658c7152cc11e9fd))
+
 ## [0.42.0](https://github.com/wolfymaster/woofx3/compare/v0.41.0...v0.42.0) (2026-10-22)
 
 ### ⚠ BREAKING CHANGES
