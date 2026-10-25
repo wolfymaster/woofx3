@@ -3,60 +3,20 @@ package services
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
 
-	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
-	"github.com/wolfymaster/woofx3/db/database"
-	"github.com/wolfymaster/woofx3/db/database/migrate/migrations/postgres"
+	"github.com/wolfymaster/woofx3/db/database/dbtest"
 	"github.com/wolfymaster/woofx3/db/database/repository"
-	pgdriver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
-const scenePostgresURLEnv = "WOOFX3_MIGRATION_TEST_POSTGRES_URL"
-
-// A scene service on a migrated, empty postgres named by
-// WOOFX3_MIGRATION_TEST_POSTGRES_URL; skipped when it is not set.
+// A scene service on a migrated, empty Postgres (see dbtest.OpenPostgres).
 func newScenePostgresSvc(t *testing.T) (client.SceneService, *gorm.DB) {
 	t.Helper()
-	url := os.Getenv(scenePostgresURLEnv)
-	if url == "" {
-		t.Skipf("%s not set", scenePostgresURLEnv)
-	}
-	db, err := gorm.Open(pgdriver.Open(url), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open postgres: %v", err)
-	}
-	if err := database.RegisterIDAssignment(db, database.RandomIDs{}); err != nil {
-		t.Fatalf("register id assignment: %v", err)
-	}
-	var tables int64
-	if err := db.Raw(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'`).
-		Scan(&tables).Error; err != nil {
-		t.Fatalf("count tables: %v", err)
-	}
-	if tables > 0 {
-		t.Fatalf("%s points at a database with %d tables; use an empty, throwaway one", scenePostgresURLEnv, tables)
-	}
-	t.Cleanup(func() {
-		db.Exec(`DROP SCHEMA public CASCADE`)
-		db.Exec(`CREATE SCHEMA public`)
-		// Each test opens its own pool; leaving it open runs a full
-		// package run past the server's connection limit.
-		if sqlDB, err := db.DB(); err == nil {
-			_ = sqlDB.Close()
-		}
-	})
-	if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error; err != nil {
-		t.Fatalf("enable uuid-ossp: %v", err)
-	}
-	if err := gormigrate.New(db, gormigrate.DefaultOptions, postgres.All()).Migrate(); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	db := dbtest.OpenPostgres(t)
 	return NewSceneService(repository.NewSceneRepository(db), nil, nil, nil), db
 }
 

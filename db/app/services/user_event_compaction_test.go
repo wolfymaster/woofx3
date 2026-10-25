@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/database/dbtest"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/proto"
@@ -183,7 +184,7 @@ func assertSameReads(t *testing.T, stage, got, want string) {
 }
 
 func TestCompactingAndPruningLeaveEveryReadUnchanged(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newCompactionFixture(t, db)
 		f.seed(t)
 		fromRaw := f.readEverything(t)
@@ -214,7 +215,7 @@ func TestCompactingAndPruningLeaveEveryReadUnchanged(t *testing.T) {
 }
 
 func TestCompactRefusesTheOpenSessionAndUnknownOnes(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newCompactionFixture(t, db)
 		ctx := context.Background()
 		_, err := f.svc.CompactStreamSession(ctx, &client.CompactStreamSessionRequest{StreamSessionId: f.third})
@@ -229,7 +230,7 @@ func TestCompactRefusesTheOpenSessionAndUnknownOnes(t *testing.T) {
 }
 
 func TestSessionsToCompactFindsMissingAndLateCompactions(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newCompactionFixture(t, db)
 		f.seed(t)
 
@@ -277,7 +278,7 @@ func TestSessionsToCompactFindsMissingAndLateCompactions(t *testing.T) {
 }
 
 func TestACompactionIsNotRebuiltOncePruned(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newCompactionFixture(t, db)
 		f.seed(t)
 		f.compact(t, f.first)
@@ -300,7 +301,7 @@ func TestACompactionIsNotRebuiltOncePruned(t *testing.T) {
 }
 
 func TestPruningKeepsWhatNoCompactionCovers(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newCompactionFixture(t, db)
 		f.seed(t)
 		// Only the first session is compacted: the second is closed but not

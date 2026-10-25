@@ -3,87 +3,17 @@ package services
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
-	"github.com/wolfymaster/woofx3/db/database"
-	"github.com/wolfymaster/woofx3/db/database/migrate/migrations"
+	"github.com/wolfymaster/woofx3/db/database/dbtest"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/types/known/timestamppb"
-	pgdriver "gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
-
-// aggregatePostgresURLEnv names an empty, throwaway Postgres database the
-// aggregate tests also run against. The aggregates spell JSON access per
-// dialect, so SQLite passing says nothing about Postgres. Without it only
-// SQLite runs.
-const aggregatePostgresURLEnv = "WOOFX3_MIGRATION_TEST_POSTGRES_URL"
-
-// forEachDialect runs `test` against a fully migrated SQLite database and,
-// when aggregatePostgresURLEnv is set, a fully migrated Postgres one.
-func forEachDialect(t *testing.T, test func(t *testing.T, db *gorm.DB)) {
-	t.Helper()
-	t.Run("sqlite", func(t *testing.T) {
-		db := openEmptySQLite(t)
-		sqlDB, err := db.DB()
-		if err != nil {
-			t.Fatalf("sql db: %v", err)
-		}
-		// Every connection to :memory: is a separate database.
-		sqlDB.SetMaxOpenConns(1)
-		if err := gormigrate.New(db, gormigrate.DefaultOptions, sqliteChain(t)).Migrate(); err != nil {
-			t.Fatalf("migrate: %v", err)
-		}
-		test(t, db)
-	})
-	t.Run("postgres", func(t *testing.T) {
-		url := os.Getenv(aggregatePostgresURLEnv)
-		if url == "" {
-			t.Skipf("%s not set", aggregatePostgresURLEnv)
-		}
-		db, err := gorm.Open(pgdriver.Open(url), &gorm.Config{})
-		if err != nil {
-			t.Fatalf("open postgres: %v", err)
-		}
-		if err := database.RegisterIDAssignment(db, database.RandomIDs{}); err != nil {
-			t.Fatalf("register id assignment: %v", err)
-		}
-		var tables int64
-		if err := db.Raw(`SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'`).
-			Scan(&tables).Error; err != nil {
-			t.Fatalf("count tables: %v", err)
-		}
-		if tables > 0 {
-			t.Fatalf("%s points at a database with %d tables; use an empty, throwaway one", aggregatePostgresURLEnv, tables)
-		}
-		t.Cleanup(func() {
-			db.Exec(`DROP SCHEMA public CASCADE`)
-			db.Exec(`CREATE SCHEMA public`)
-			// Each test opens its own pool; leaving it open runs a full
-			// package run past the server's connection limit.
-			if sqlDB, err := db.DB(); err == nil {
-				_ = sqlDB.Close()
-			}
-		})
-		if err := db.Exec(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`).Error; err != nil {
-			t.Fatalf("enable uuid-ossp: %v", err)
-		}
-		chain, err := migrations.For(database.DialectPostgres)
-		if err != nil {
-			t.Fatalf("migrations.For: %v", err)
-		}
-		if err := gormigrate.New(db, gormigrate.DefaultOptions, chain).Migrate(); err != nil {
-			t.Fatalf("migrate: %v", err)
-		}
-		test(t, db)
-	})
-}
 
 // aggregateFixture is two sessions split at `split`, with the service over
 // both. `split` has a fractional second so the window edges are compared at
@@ -198,7 +128,7 @@ func (f *aggregateFixture) seedTwoSessions(t *testing.T) {
 }
 
 func TestSessionTotalsCountWhatHappenedInTheSessionsTime(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newAggregateFixture(t, db)
 		f.seedTwoSessions(t)
 		ctx := context.Background()
@@ -230,7 +160,7 @@ func assertSessionTotals(t *testing.T, got, want *client.StreamSessionEventTotal
 }
 
 func TestSessionReadsRejectUnknownSessions(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newAggregateFixture(t, db)
 		ctx := context.Background()
 		unknown := "7f0c5a1e-0000-4000-8000-00000000dead"
@@ -253,7 +183,7 @@ func TestSessionReadsRejectUnknownSessions(t *testing.T) {
 }
 
 func TestViewerTotalsForASessionAndForLifetime(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newAggregateFixture(t, db)
 		f.seedTwoSessions(t)
 		ctx := context.Background()
@@ -312,7 +242,7 @@ func TestViewerTotalsForASessionAndForLifetime(t *testing.T) {
 }
 
 func TestLeaderboardsRankNamedViewersAboveTheThreshold(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newAggregateFixture(t, db)
 		f.seedTwoSessions(t)
 		ctx := context.Background()
@@ -361,7 +291,7 @@ func TestLeaderboardsRankNamedViewersAboveTheThreshold(t *testing.T) {
 }
 
 func TestLeaderboardTiesAreOrderedByViewer(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newAggregateFixture(t, db)
 		at := f.started.Add(time.Minute)
 		for _, user := range []string{"30", "10", "20"} {
@@ -378,7 +308,7 @@ func TestLeaderboardTiesAreOrderedByViewer(t *testing.T) {
 }
 
 func TestRecentEventsAreTheNewestInTheSpan(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newAggregateFixture(t, db)
 		f.seedTwoSessions(t)
 		ctx := context.Background()
@@ -420,7 +350,7 @@ func TestRecentEventsAreTheNewestInTheSpan(t *testing.T) {
 }
 
 func TestRecentEventsPageThroughTheWholeLogByType(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newAggregateFixture(t, db)
 		f.seedTwoSessions(t)
 		ctx := context.Background()
@@ -479,7 +409,7 @@ func TestRecentEventsPageThroughTheWholeLogByType(t *testing.T) {
 var recentAll = int32(100)
 
 func TestRecentEventsSkipTheCountWhenAsked(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newAggregateFixture(t, db)
 		f.seedTwoSessions(t)
 		ctx := context.Background()
@@ -506,7 +436,7 @@ func TestRecentEventsSkipTheCountWhenAsked(t *testing.T) {
 // The log records every event an installed trigger fires, so the totals must
 // keep counting only the types they name.
 func TestTotalsIgnoreEventTypesTheyDoNotName(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newAggregateFixture(t, db)
 		f.seedTwoSessions(t)
 		in := f.started.Add(time.Hour)
@@ -533,7 +463,7 @@ func TestTotalsIgnoreEventTypesTheyDoNotName(t *testing.T) {
 }
 
 func TestRecentEventsRejectBadRequests(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newAggregateFixture(t, db)
 		ctx := context.Background()
 		zero := int32(0)
@@ -557,7 +487,7 @@ func TestRecentEventsRejectBadRequests(t *testing.T) {
 }
 
 func TestSessionEventsAreTheCountedOnesInTimeOrder(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newAggregateFixture(t, db)
 		f.seedTwoSessions(t)
 		ctx := context.Background()
@@ -621,7 +551,7 @@ func TestSessionEventsAreTheCountedOnesInTimeOrder(t *testing.T) {
 }
 
 func TestSessionEventsRejectBadRequests(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		f := newAggregateFixture(t, db)
 		ctx := context.Background()
 		zero := int32(0)
