@@ -50,7 +50,7 @@ export function {{.Guard}}(value: unknown): value is {{.Type}} {
 /** Each platform's name as a streamer reads it. */
 export const PLATFORM_DISPLAY_NAMES: Readonly<Record<PlatformId, string>> = {
 {{- range .Platforms}}
-  {{.ID}}: "{{.DisplayName}}",
+  {{.ID}}: {{.DisplayName}},
 {{- end}}
 };
 

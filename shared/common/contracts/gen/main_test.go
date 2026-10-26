@@ -168,6 +168,34 @@ func TestEmitsTheSmallestContract(t *testing.T) {
 	}
 }
 
+// A display name is free text, so it reaches the generated code as an
+// escaped string literal, never spliced between quotes.
+func TestDisplayNameIsQuoted(t *testing.T) {
+	displayName := `Twitch "Live" \ <TV>`
+	quoted := strings.Replace(validContract, `"displayName": "Twitch"`, `"displayName": "Twitch \"Live\" \\ <TV>"`, 1)
+	contract, err := parsePlatformGateway([]byte(quoted))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if contract.Platforms[0].DisplayName != displayName {
+		t.Fatalf("display name = %q, want %q", contract.Platforms[0].DisplayName, displayName)
+	}
+	goSource, err := emitGo(contract)
+	if err != nil {
+		t.Fatalf("emitGo: %v", err)
+	}
+	if want := `return "Twitch \"Live\" \\ <TV>"`; !strings.Contains(string(goSource), want) {
+		t.Errorf("Go output lacks %s", want)
+	}
+	tsSource, err := emitTS(contract)
+	if err != nil {
+		t.Fatalf("emitTS: %v", err)
+	}
+	if want := `twitch: "Twitch \"Live\" \\ <TV>",`; !strings.Contains(string(tsSource), want) {
+		t.Errorf("TypeScript output lacks %s", want)
+	}
+}
+
 func TestParseRefusesBadContracts(t *testing.T) {
 	cases := []struct {
 		name    string
