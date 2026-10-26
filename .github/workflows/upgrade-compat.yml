@@ -211,6 +211,9 @@ jobs:
         with:
           bun-version-file: .bun-version
 
+      # Run from the package rather than the root: a release that predates
+      # the workspace keeps its lockfile there, and in a later one Bun finds
+      # the workspace root from any member and installs all of it.
       - name: Install the previous release's engine client
         run: bun install --frozen-lockfile
         working-directory: previous-release/shared/clients/typescript/api

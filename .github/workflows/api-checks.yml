@@ -12,8 +12,8 @@ name: api checks
 # handler Bun never calls.
 #
 # The api package resolves several workspace packages by relative path, so
-# their dependencies have to be installed too or every `.pb` import fails to
-# resolve `protoscript` and the run reports hundreds of phantom errors.
+# the whole workspace is installed, or every `.pb` import fails to resolve
+# `protoscript` and the run reports hundreds of phantom errors.
 #
 # The scene editor core takes its document model and type registry from
 # shared/clients/typescript/scene by relative path, so that package is
@@ -31,6 +31,9 @@ on:
       - ".github/scripts/capability-since.mts"
       - "docs/services/engine-capabilities.md"
       - ".bun-version"
+      - "package.json"
+      - "bun.lock"
+      - "bunfig.toml"
       - ".github/workflows/api-checks.yml"
   pull_request:
     paths:
@@ -42,6 +45,9 @@ on:
       - ".github/scripts/capability-since.mts"
       - "docs/services/engine-capabilities.md"
       - ".bun-version"
+      - "package.json"
+      - "bun.lock"
+      - "bunfig.toml"
       - ".github/workflows/api-checks.yml"
   workflow_dispatch:
 
@@ -59,19 +65,7 @@ jobs:
           bun-version-file: .bun-version
 
       - name: Install workspace dependencies
-        run: |
-          for dir in \
-            shared/common/typescript \
-            shared/clients/typescript/db \
-            shared/clients/typescript/nats \
-            shared/clients/typescript/api \
-            shared/clients/typescript/scene \
-            api
-          do
-            echo "::group::bun install ($dir)"
-            (cd "$dir" && bun install --frozen-lockfile)
-            echo "::endgroup::"
-          done
+        run: bun install --frozen-lockfile
 
       - name: Type check
         working-directory: api

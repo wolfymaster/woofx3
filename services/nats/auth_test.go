@@ -100,7 +100,7 @@ func TestEveryClientAuthenticates(t *testing.T) {
 		}
 		pkg := filepath.Join(repoRoot(t), "shared/clients/typescript/nats")
 		if _, err := os.Stat(filepath.Join(pkg, "node_modules/@nats-io/nats-core")); err != nil {
-			t.Skipf("%s has no node_modules; run bun install there", pkg)
+			t.Skipf("%s has no node_modules; run bun install at the repo root", pkg)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
