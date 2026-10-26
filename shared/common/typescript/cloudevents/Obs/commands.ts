@@ -5,7 +5,7 @@ import { z } from "zod";
 // names lives in Convex's PlatformActionMap. See woofx3/browser-source-spec.md.
 // Not the payload of `engine.obs.command`, which is ObsControlCommand below.
 
-import { asRecord, type ParseResult } from "../utils";
+import { asRecord, err, ok, type ParseResult } from "../utils";
 
 export type OBSCommandType =
   | "scene_transition"
@@ -171,43 +171,43 @@ export type ObsBrowserSourceRefreshReply =
 
 function parseBootId(value: unknown): ParseResult<string> {
   if (typeof value !== "string" || value.length < 1 || value.length > OBS_REFRESH_BOOT_ID_MAX_LENGTH) {
-    return { ok: false, error: `bootId must be a string of 1 to ${OBS_REFRESH_BOOT_ID_MAX_LENGTH} characters` };
+    return err(`bootId must be a string of 1 to ${OBS_REFRESH_BOOT_ID_MAX_LENGTH} characters`);
   }
-  return { ok: true, value };
+  return ok(value);
 }
 
 export function parseObsBrowserSourceRefresh(value: unknown): ParseResult<ObsBrowserSourceRefresh> {
   const body = asRecord(value);
   if (!body) {
-    return { ok: false, error: "the request must be an object" };
+    return err("the request must be an object");
   }
   const port = body.overlayPort;
   if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
-    return { ok: false, error: "overlayPort must be a whole number from 1 to 65535" };
+    return err("overlayPort must be a whole number from 1 to 65535");
   }
   const bootId = parseBootId(body.bootId);
   if (!bootId.ok) {
     return bootId;
   }
-  return { ok: true, value: { overlayPort: port, bootId: bootId.value } };
+  return ok({ overlayPort: port, bootId: bootId.value });
 }
 
 export function parseObsBrowserSourceRefreshReply(value: unknown): ParseResult<ObsBrowserSourceRefreshReply> {
   const body = asRecord(value);
   if (!body) {
-    return { ok: false, error: "the reply must be an object" };
+    return err("the reply must be an object");
   }
   if (body.status === "accepted") {
     const bootId = parseBootId(body.bootId);
-    return bootId.ok ? { ok: true, value: { status: "accepted", bootId: bootId.value } } : bootId;
+    return bootId.ok ? ok({ status: "accepted", bootId: bootId.value }) : bootId;
   }
   if (body.status === "invalid" || body.status === "unavailable") {
     if (typeof body.error !== "string") {
-      return { ok: false, error: `${body.status} reply must carry an error string` };
+      return err(`${body.status} reply must carry an error string`);
     }
-    return { ok: true, value: { status: body.status, error: body.error } };
+    return ok({ status: body.status, error: body.error });
   }
-  return { ok: false, error: 'status must be "accepted", "invalid" or "unavailable"' };
+  return err('status must be "accepted", "invalid" or "unavailable"');
 }
 
 export enum EventType {
