@@ -30,6 +30,9 @@ export const OBS_NOT_CONNECTED = "OBS is not connected (retrying)";
 /** obs-websocket v5 RequestStatus.ResourceNotFound. */
 const OBS_RESOURCE_NOT_FOUND = 600;
 
+/** obs-websocket v5 RequestStatus.Success; every failure status OBS answers with is above it. */
+const OBS_REQUEST_SUCCESS = 100;
+
 export type ParsedObsCommand = { ok: true; command: ObsControlCommand } | { ok: false; error: string };
 
 /** Validate the `data` of an `engine.obs.command` CloudEvent. */
@@ -70,6 +73,21 @@ export function isNotFound(err: unknown): boolean {
     err !== null &&
     "code" in err &&
     (err as { code: unknown }).code === OBS_RESOURCE_NOT_FOUND
+  );
+}
+
+/**
+ * Whether OBS itself answered the request with a failure status. A failure
+ * that never reached OBS or never came back (obs-websocket-js reports those
+ * as a plain Error or with code -1) is the session's, not the request's.
+ */
+export function isObsRefusal(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    typeof (err as { code: unknown }).code === "number" &&
+    (err as { code: number }).code > OBS_REQUEST_SUCCESS
   );
 }
 

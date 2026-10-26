@@ -19,6 +19,7 @@
 
 import { BROWSER_SOURCE_KIND } from "@woofx3/common/cloudevents/Obs/commands";
 import type { Logger } from "../../host/deps";
+import { isNotFound, isObsRefusal, type ObsControlOptions, ObsTimeoutError, withDeadline } from "./control";
 
 const REFRESH_BUTTON = "refreshnocache";
 
@@ -63,30 +64,40 @@ interface ObsInput {
 
 /**
  * Refreshes every OBS browser source pointing at sceneManager's overlays on `port`.
- * Best-effort throughout: OBS being absent, an input disappearing
- * mid-walk, or a refusal to press the button is logged and never thrown.
- * Returns how many sources were refreshed, or null when OBS could not be
- * asked at all (no session, or its input list unavailable), so a caller can
- * try again on a later session.
+ * Never throws. An input disappearing mid-walk is skipped and a refusal to
+ * press the button is logged. Returns how many sources were refreshed, or
+ * null when OBS could not be asked (no session, the session failed mid-walk,
+ * or a request outlived `options.timeoutMs`), so a caller can try again on a
+ * later session. Each request is bounded because obs-websocket-js never
+ * settles a request whose session closed before the reply arrived; unbounded,
+ * one lost reply would hold the latched request for the life of the process.
  */
 export async function refreshOverlayBrowserSources(
   obs: ObsRequester | null,
   port: number,
-  logger: Logger
+  logger: Logger,
+  options: ObsControlOptions
 ): Promise<number | null> {
   if (!obs) {
     return null;
   }
-
-  let inputs: unknown[];
-  try {
-    const result = await obs.request("GetInputList", {} as Record<string, never>);
-    inputs = Array.isArray(result.inputs) ? result.inputs : [];
-  } catch (err) {
-    logger.warn("OBS input list unavailable; skipping overlay refresh", {
+  const bounded = <T>(work: Promise<T>): Promise<T> => withDeadline(work, options.timeoutMs, options.timers);
+  const notAsked = (step: string, err: unknown): null => {
+    if (err instanceof ObsTimeoutError) {
+      options.onTimeout?.();
+    }
+    logger.warn(`OBS ${step} failed; overlay refresh waits for the next session`, {
       error: err instanceof Error ? err.message : String(err),
     });
     return null;
+  };
+
+  let inputs: unknown[];
+  try {
+    const result = await bounded(obs.request("GetInputList", {} as Record<string, never>));
+    inputs = Array.isArray(result.inputs) ? result.inputs : [];
+  } catch (err) {
+    return notAsked("input list", err);
   }
 
   const names: string[] = [];
@@ -96,26 +107,34 @@ export async function refreshOverlayBrowserSources(
       continue;
     }
     try {
-      const { inputSettings } = await obs.request("GetInputSettings", { inputName: input.inputName });
+      const { inputSettings } = await bounded(obs.request("GetInputSettings", { inputName: input.inputName }));
       if (isOverlayUrl(inputSettings?.url, port)) {
         names.push(input.inputName);
       }
-    } catch {
-      // Input vanished or is unreadable between listing and reading --
-      // it simply isn't a refresh candidate.
+    } catch (err) {
+      // An input removed between listing and reading simply isn't a
+      // refresh candidate; any other failure means the walk saw nothing.
+      if (!isNotFound(err)) {
+        return notAsked("input settings", err);
+      }
     }
   }
 
   let refreshed = 0;
   for (const inputName of names) {
     try {
-      await obs.request("PressInputPropertiesButton", { inputName, propertyName: REFRESH_BUTTON });
+      await bounded(obs.request("PressInputPropertiesButton", { inputName, propertyName: REFRESH_BUTTON }));
       refreshed += 1;
     } catch (err) {
-      logger.warn("OBS browser source refresh failed", {
-        inputName,
-        error: err instanceof Error ? err.message : String(err),
-      });
+      if (!isObsRefusal(err)) {
+        return notAsked("browser source refresh", err);
+      }
+      if (!isNotFound(err)) {
+        logger.warn("OBS browser source refresh failed", {
+          inputName,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
   }
 

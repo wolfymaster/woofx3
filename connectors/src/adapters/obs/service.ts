@@ -9,6 +9,7 @@ import type { EndpointResolution, EndpointRouteFound, RouteChangeListener } from
 import type { ObsConnectionConfig } from "../../config/obs";
 import type { Logger, RandomSource, Timers } from "../../host/deps";
 import { ObsConnection, ObsRouteUnavailable, type ObsSession, obsFailureKind } from "./connection";
+import type { ObsControlOptions } from "./control";
 import type Manager from "./manager";
 import { type ObsConnectLimits, openObsSession } from "./manager";
 import type { RefreshLatch } from "./refresh-latch";
@@ -23,6 +24,8 @@ export interface ObsServiceDeps {
   /** The overlay refresh sceneManager asked for; outlives this service. */
   latch: RefreshLatch;
   connection: ObsConnectionConfig;
+  /** How long one OBS request of the refresh walk may take (WOOFX3_OBS_COMMAND_TIMEOUT_MS). */
+  commandTimeoutMs: number;
   random: RandomSource;
   timers: Timers;
   logger: Logger;
@@ -52,7 +55,11 @@ export function createObsService(deps: ObsServiceDeps): ObsService {
   let stopListening: (() => void) | null = null;
   let stopWatching: (() => void) | null = null;
 
-  const refreshes = new RefreshDrain(latch, () => connection.current(), logger);
+  const refreshes = new RefreshDrain(latch, () => connection.current(), logger, {
+    timeoutMs: deps.commandTimeoutMs,
+    onTimeout: () => connection.recycle("an OBS request timed out"),
+    timers: deps.timers,
+  });
   const connection: ObsConnection<Manager> = new ObsConnection<Manager>({
     open: async (signal) => {
       const resolution = await deps.resolve(signal);
@@ -141,7 +148,8 @@ class RefreshDrain {
   constructor(
     private readonly latch: RefreshLatch,
     private readonly session: () => Manager | null,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly requestOptions: ObsControlOptions
   ) {}
 
   async drain(): Promise<void> {
@@ -171,7 +179,7 @@ class RefreshDrain {
       }
       let refreshed: number | null = null;
       try {
-        refreshed = await refreshOverlayBrowserSources(client, request.overlayPort, this.logger);
+        refreshed = await refreshOverlayBrowserSources(client, request.overlayPort, this.logger, this.requestOptions);
       } finally {
         if (refreshed === null) {
           this.latch.release(request);
