@@ -1,5 +1,5 @@
 // A fake obs-websocket v5 server for tests: just enough of the protocol for
-// `openObsSession` to connect, sign in and load scenes.
+// `openObsSession` to connect and identify.
 //
 // Protocol notes (obs-websocket 5.x, JSON encoding):
 // - The client must offer `obswebsocket.json` or `obswebsocket.msgpack`, and

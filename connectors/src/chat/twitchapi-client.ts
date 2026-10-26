@@ -150,11 +150,13 @@ function requestFailure(error: unknown): TwitchApiFailure {
  */
 export function failureReply(action: string, failure: TwitchApiFailure): string {
   switch (failure.kind) {
-    case "no_answer":
+    case "no_answer": {
       return `No answer from Twitch yet, so it is unknown whether I could ${action}; it may still apply`;
-    case "unreachable":
+    }
+    case "unreachable": {
       return `Could not ${action}: Twitch is not reachable right now`;
-    case "refused":
+    }
+    case "refused": {
       if (failure.code === "integration_unavailable") {
         return `Twitch is not available right now, so I could not ${action}`;
       }
@@ -162,7 +164,9 @@ export function failureReply(action: string, failure: TwitchApiFailure): string 
         return `Twitch is not linked yet, so I could not ${action}`;
       }
       return `Could not ${action}: ${failure.message}`;
-    case "failed":
+    }
+    case "failed": {
       return `Could not ${action}: ${failure.message}`;
+    }
   }
 }

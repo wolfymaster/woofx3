@@ -64,7 +64,7 @@ export interface HostRequestCounters {
   invalid: number;
   internal: number;
   expired: number;
-  no_inbox: number;
+  noInbox: number;
 }
 
 export interface HostRequestsDeps {
@@ -100,7 +100,7 @@ export class HostRequests {
       invalid: 0,
       internal: 0,
       expired: 0,
-      no_inbox: 0,
+      noInbox: 0,
     };
     this.counters.set(spec.subject, counters);
     await scope.subscribe(spec.subject, (msg, delivery) => this.answer(spec, counters, msg, delivery));
@@ -123,7 +123,7 @@ export class HostRequests {
   ): Promise<void> {
     counters.received++;
     if (!msg.reply) {
-      counters.no_inbox++;
+      counters.noInbox++;
       this.deps.logger.warn("request has no reply inbox; not handled", { subject: spec.subject });
       return;
     }

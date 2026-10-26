@@ -182,7 +182,7 @@ await requests.serveRequest<Req, Rep>(scope, {
 });
 ```
 
-- A message without a reply inbox is counted as `no_inbox`, logged and never
+- A message without a reply inbox is counted as `noInbox`, logged and never
   handled, so a stray publish has no effect.
 - A request that does not parse gets `errorReply("invalid", ...)`. A parser or
   handler that throws gets `errorReply("internal", ...)` and is logged.
@@ -195,7 +195,7 @@ await requests.serveRequest<Req, Rep>(scope, {
   is the `data` of a CloudEvent with a fresh `id`, the `replyType`, source
   `connectors` and the current `time`.
 - Each subject keeps `received`, `replied`, `invalid`, `internal`, `expired`
-  and `no_inbox` counts, shown in `/health`. Serving a subject twice is an error.
+  and `noInbox` counts, shown in `/health`. Serving a subject twice is an error.
 
 ## The scoped bus
 
@@ -654,7 +654,7 @@ fix what parked it.
       "replies": { "delivered": 10, "failed": 1 },
       "bus": { "refusals": 0, "subscriptions": {} }
     },
-    "hostRequests": { "twitchapi": { "received": 3, "replied": 3, "invalid": 0, "internal": 0, "expired": 0, "no_inbox": 0 } },
+    "hostRequests": { "twitchapi": { "received": 3, "replied": 3, "invalid": 0, "internal": 0, "expired": 0, "noInbox": 0 } },
     "hostBus": { "refusals": 0, "subscriptions": {} },
     "gateway": {
       "outcomes": { "twitch": { "chat.send": { "delivered": 12, "unavailable": 1 } } },
