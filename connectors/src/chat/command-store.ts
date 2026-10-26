@@ -16,7 +16,7 @@ export interface CommandRunner {
 /**
  * The definition a stored command runs as:
  * - linked to a workflow, it runs that workflow and tells chat when it could not;
- * - with actions, it runs them, and any chat reply is one of those actions;
+ * - with actions, it runs them and tells chat when it could not; any other chat reply is one of those actions;
  * - with neither, it only announces itself on `chat.command.<slug>`.
  */
 export function storedCommandDefinition(
@@ -44,7 +44,7 @@ export function storedCommandDefinition(
             workflowId,
             error: errorMessage(error),
           });
-          return `Could not run !${stored.command} right now`;
+          return couldNotRunReply(stored.command);
         }
         return "";
       },
@@ -61,10 +61,16 @@ export function storedCommandDefinition(
         await runner.runActions(`command:${stored.command}`, actions, event);
       } catch (error) {
         logger.error("could not run a command's actions", { command: stored.command, error: errorMessage(error) });
+        return couldNotRunReply(stored.command);
       }
       return "";
     },
   };
+}
+
+/** What chat hears when a command could not be started; the error's detail stays in the log. */
+function couldNotRunReply(command: string): string {
+  return `Could not run !${command} right now`;
 }
 
 /**

@@ -2034,11 +2034,23 @@ func (e *Engine[TServices]) checkSubWorkflowCompletion(subExecutionID string) {
 
 	// The child is read before its waiters are dropped, while the waiters
 	// lock still pins it against the sweep.
-	subExecution, _, exists := e.runs.get(subExecutionID)
+	subExecution, subControl, exists := e.runs.get(subExecutionID)
 	delete(e.subWorkflowWaiters, subExecutionID)
 	e.subWorkflowWaitersMu.Unlock()
 
 	if !exists {
+		return
+	}
+
+	// A sub-workflow the engine abandoned takes its waiting parents with it:
+	// Stop abandons runs in no set order, so a sub-workflow it reached first
+	// would otherwise fail its parent before Stop got to the parent, and the
+	// parent's recorded outcome would depend on which run Stop happened to
+	// reach first.
+	if subControl != nil && subControl.settledByStop() {
+		for _, waiter := range waiters {
+			e.abandonWaitingParent(waiter)
+		}
 		return
 	}
 
@@ -2049,6 +2061,22 @@ func (e *Engine[TServices]) checkSubWorkflowCompletion(subExecutionID string) {
 			e.resumeSubWorkflowExecution(waiter, subExecution)
 		})
 	}
+}
+
+// abandonWaitingParent settles a parent waiting on a sub-workflow the engine
+// abandoned, as Stop settles any run it abandons. The waiter has already been
+// claimed, so Stop finds nothing to claim for this parent and leaves settling
+// it to whoever did.
+func (e *Engine[TServices]) abandonWaitingParent(waiter *SubWorkflowWaiter) {
+	execution, ctl, _ := e.runs.get(waiter.ParentExecutionID)
+	if execution == nil {
+		return
+	}
+	if ctl != nil {
+		ctl.markStopped()
+	}
+	e.cancelPendingTask(execution, waiter.TaskID, waiter.CurrentIndex)
+	e.settleCancelled(execution)
 }
 
 func (e *Engine[TServices]) resumeSubWorkflowExecution(waiter *SubWorkflowWaiter, subExecution *types.WorkflowExecution) {

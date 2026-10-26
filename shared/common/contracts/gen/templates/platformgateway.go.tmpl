@@ -51,6 +51,10 @@ const CallerTimeout = {{.Limits.CallerTimeoutMs}} * time.Millisecond
 // (Unicode code points): up to MaxWorkflowChainRuns workflow ids of at most
 // MaxRefLength each, joined by commas.
 const MaxWorkflowChainLength = MaxWorkflowChainRuns*MaxRefLength + (MaxWorkflowChainRuns - 1)
+{{range .Bounds}}
+// {{.GoName}} {{.Doc}}
+const {{.GoName}} = {{.Value}}
+{{end}}
 {{range .Enums}}{{$enum := .}}
 // {{.Type}} {{.Doc}}
 type {{.Type}} string

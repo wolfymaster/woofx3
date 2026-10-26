@@ -11,7 +11,7 @@ import type { NameResolver } from "../companion/local-address";
 import type { ChatConfig } from "../config/chat";
 import type { CompanionConfig } from "../config/companion";
 import type { GatewayConfig } from "../config/gateway";
-import type { HostConfig } from "../config/host";
+import { type HostConfig, shutdownDeadlineProblem } from "../config/host";
 import { EgressRegistry } from "../gateway/egress-registry";
 import { PlatformGateway } from "../gateway/platform-gateway";
 import type { DbProxyClientConfig } from "../services/db-proxy";
@@ -144,11 +144,9 @@ export class Host {
     assertNoSecondResponder(deps.adapters, [...this.gateway.served, ...this.companion.served]);
     const longestBudgetMs = Math.max(0, ...this.servedBudgets());
     this.drainMs = Math.max(deps.config.stopDeadlineMs, longestBudgetMs);
-    const stopWorstCaseMs = deps.config.dbProxyTimeoutMs + deps.chat.drainMs + this.drainMs;
-    if (deps.config.shutdownDeadlineMs <= stopWorstCaseMs) {
-      throw new Error(
-        `the shutdown deadline (${deps.config.shutdownDeadlineMs}ms) must exceed the db-proxy timeout plus the chat drain plus the longest of the stop deadline and the served budgets (${stopWorstCaseMs}ms)`
-      );
+    const shutdownProblem = shutdownDeadlineProblem(deps.config, deps.chat.drainMs, this.servedBudgets());
+    if (shutdownProblem !== undefined) {
+      throw new Error(shutdownProblem);
     }
     this.supervisor = new Supervisor(
       deps.adapters,

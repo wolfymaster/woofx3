@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { OBS_BROWSER_SOURCE_REFRESH_SUBJECT } from "@woofx3/common/cloudevents/Obs/commands";
 import { type RefreshRequestTimers, startRefreshRequests } from "../../src/obs/refresh-request";
 
-const config = { requestTimeoutMs: 2_000, retryBaseMs: 1_000, retryMaxMs: 30_000 };
+const config = { requestTimeoutMs: 2_000, retryBaseMs: 1_000, retryMaxMs: 30_000, warnAfterAttempts: 5 };
 const request = { overlayPort: 9101, bootId: "boot-1" };
 
 function recordingLogger() {
@@ -119,7 +119,7 @@ describe("startRefreshRequests", () => {
     const { bus } = fakeBus([]);
     const time = manualTimers();
     const { logger } = recordingLogger();
-    const small = { requestTimeoutMs: 100, retryBaseMs: 10, retryMaxMs: 40 };
+    const small = { requestTimeoutMs: 100, retryBaseMs: 10, retryMaxMs: 40, warnAfterAttempts: 3 };
 
     const requester = startRefreshRequests(request, { bus, config: small, random: half, timers: time.timers, logger });
     await flush();
@@ -132,15 +132,19 @@ describe("startRefreshRequests", () => {
     await requester.stop();
   });
 
-  it("warns once when retrying has reached the cap", async () => {
+  it("warns once, on the configured failed attempt", async () => {
     const { bus } = fakeBus([]);
     const time = manualTimers();
     const { logger, lines } = recordingLogger();
-    const small = { requestTimeoutMs: 100, retryBaseMs: 10, retryMaxMs: 40 };
+    const small = { requestTimeoutMs: 100, retryBaseMs: 10, retryMaxMs: 40, warnAfterAttempts: 3 };
 
     const requester = startRefreshRequests(request, { bus, config: small, random: half, timers: time.timers, logger });
     await flush();
-    for (let i = 0; i < 6; i += 1) {
+    await time.fireNext();
+    expect(lines.filter((l) => l.level === "warn")).toHaveLength(0);
+    await time.fireNext();
+    expect(lines.filter((l) => l.level === "warn")).toHaveLength(1);
+    for (let i = 0; i < 4; i += 1) {
       await time.fireNext();
     }
     expect(lines.filter((l) => l.level === "warn")).toHaveLength(1);

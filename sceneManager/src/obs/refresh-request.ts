@@ -47,7 +47,6 @@ export function startRefreshRequests(request: ObsBrowserSourceRefresh, deps: Ref
   const body = new TextEncoder().encode(JSON.stringify(request));
   let stopped = false;
   let wake: (() => void) | null = null;
-  let warned = false;
 
   const sleep = (ms: number) =>
     new Promise<void>((resolve) => {
@@ -69,13 +68,11 @@ export function startRefreshRequests(request: ObsBrowserSourceRefresh, deps: Ref
         return;
       }
       if (outcome.accepted) {
-        backoff.reset();
         logger.info("OBS overlay refresh requested", { bootId: request.bootId, attempts: attempt });
         return;
       }
       logger.debug("OBS overlay refresh not accepted; retrying", { attempt, reason: outcome.reason });
-      if (!warned && config.retryBaseMs * 2 ** (attempt - 1) >= config.retryMaxMs) {
-        warned = true;
+      if (attempt === config.warnAfterAttempts) {
         logger.warn("OBS overlay refresh still not accepted; retrying in the background", {
           attempts: attempt,
           reason: outcome.reason,

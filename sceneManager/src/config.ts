@@ -13,12 +13,15 @@ export interface ObsRefreshConfig {
   /** The first retry's backoff ceiling; it doubles up to `retryMaxMs`. */
   retryBaseMs: number;
   retryMaxMs: number;
+  /** The failed attempt after which one warning says the retrying goes on in the background. */
+  warnAfterAttempts: number;
 }
 
 export const OBS_REFRESH_DEFAULTS: ObsRefreshConfig = {
   requestTimeoutMs: 2_000,
   retryBaseMs: 1_000,
   retryMaxMs: 30_000,
+  warnAfterAttempts: 5,
 };
 
 export const SceneManagerEnvSchema = z.object({
@@ -113,6 +116,7 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
     ["obsRefresh.requestTimeoutMs", refresh.requestTimeoutMs],
     ["obsRefresh.retryBaseMs", refresh.retryBaseMs],
     ["obsRefresh.retryMaxMs", refresh.retryMaxMs],
+    ["obsRefresh.warnAfterAttempts", refresh.warnAfterAttempts],
   ] as const) {
     if (!Number.isInteger(value) || value <= 0) {
       throw new Error(`sceneManager: ${name} must be a positive whole number of milliseconds, got ${value}`);
@@ -225,6 +229,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
       requestTimeoutMs: Number(c.woofx3SceneManagerObsRefreshRequestTimeoutMs),
       retryBaseMs: Number(c.woofx3SceneManagerObsRefreshRetryBaseMs),
       retryMaxMs: Number(c.woofx3SceneManagerObsRefreshRetryMaxMs),
+      warnAfterAttempts: OBS_REFRESH_DEFAULTS.warnAfterAttempts,
     },
     nats: {
       url: messagebusUrl,

@@ -9,14 +9,14 @@ import {
 } from "./config";
 
 /**
- * Health monitor: runtime calls Liveness periodically, starts via Start(), and drives Heartbeat and HealthCheck on an interval.
- */
-/**
  * How often the runtime runs the health monitor's healthCheck. A service's own
  * health check must settle well inside it, or checks pile up.
  */
 export const HEALTH_CHECK_INTERVAL_MS = 5_000;
 
+/**
+ * Health monitor: runtime calls Liveness periodically, starts via Start(), and drives Heartbeat and HealthCheck on an interval.
+ */
 export interface HealthMonitor {
   liveness(): Promise<void>;
   start(): Promise<void>;

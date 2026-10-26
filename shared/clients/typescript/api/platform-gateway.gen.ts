@@ -39,6 +39,12 @@ export const CALLER_TIMEOUT_MS = 12000;
  */
 export const MAX_WORKFLOW_CHAIN_LENGTH = MAX_WORKFLOW_CHAIN_RUNS * MAX_REF_LENGTH + (MAX_WORKFLOW_CHAIN_RUNS - 1);
 
+/** CHAT_PIN_DURATION_SECONDS_MIN is the min of chat.pin.durationSeconds. */
+export const CHAT_PIN_DURATION_SECONDS_MIN = 30;
+
+/** CHAT_PIN_DURATION_SECONDS_MAX is the max of chat.pin.durationSeconds. */
+export const CHAT_PIN_DURATION_SECONDS_MAX = 1200;
+
 /** A streaming platform the gateway can reach. */
 export const PLATFORM_IDS = ["twitch"] as const;
 export type PlatformId = (typeof PLATFORM_IDS)[number];
@@ -345,7 +351,7 @@ function parseChatPinNewPayload(object: JsonObject): GatewayParseResult<ChatPinN
   if (!message.ok) {
     return message;
   }
-  const durationSeconds = readOptionalInteger(object, "durationSeconds", 30, 1200);
+  const durationSeconds = readOptionalInteger(object, "durationSeconds", CHAT_PIN_DURATION_SECONDS_MIN, CHAT_PIN_DURATION_SECONDS_MAX);
   if (!durationSeconds.ok) {
     return durationSeconds;
   }

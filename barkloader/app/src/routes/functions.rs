@@ -15,7 +15,9 @@ use lib_module::db_proxy;
 use lib_module::db_proxy_client::{HttpDbProxyClient, ModuleDbProxy};
 use lib_module::module_delete::{DeleteError, notify_delete, resolve_module, run_delete_resolved};
 use lib_module::registry_loader;
-use lib_module::{MarketplaceOrigin, ModuleFileKind, ModuleService, ModuleServiceConfig};
+use lib_module::{
+    MarketplaceOrigin, ModuleFileKind, ModuleService, ModuleServiceConfig, SandboxRegistryRefresher,
+};
 
 #[derive(Serialize)]
 struct UploadResponse {
@@ -446,33 +448,17 @@ async fn upload_handler(
             }
         };
 
-        if let Some(db_proxy_url) = ctx.db_proxy_url.as_deref() {
-            if let Err(err) = registry_loader::refresh_module_in_registry(
-                &ctx.registry,
+        if let (Some(db_proxy_url), Some(db_proxy)) = (ctx.db_proxy_url.as_deref(), db_proxy_ref) {
+            let repository = ctx.repository.current();
+            let refresher = SandboxRegistryRefresher {
+                registry: &ctx.registry,
                 db_proxy_url,
-                module_name,
-                &*ctx.repository.current(),
-                &ctx.scheduler,
-            )
-            .await
-            {
-                error!(
-                    "Module installed to repository but sandbox registry refresh failed for {}: {}",
-                    module_name, err
-                );
-            }
-            if let Err(err) = module
-                .reset_relocated_endpoint_settings(db_proxy_url, &outcome)
-                .await
-            {
-                // The reset clears host/port values a module may have planted
-                // before a key became an endpoint address setting, so an
-                // install that skips it must not be reported as completed.
-                let err_msg = format!(
-                    "Module installed but its local endpoint settings could not be reset: {}",
-                    err
-                );
-                error!("Module {}: {}", module_name, err_msg);
+                repository: &*repository,
+                scheduler: &ctx.scheduler,
+            };
+            if let Err(err) = module.finish_install(&refresher, db_proxy, &outcome).await {
+                let err_msg = err.to_string();
+                error!("Module install failed: {}", err_msg);
                 notify_install(
                     db_proxy_ref,
                     module_name,
@@ -1015,24 +1001,18 @@ async fn rollback_handler(
             actix_web::error::ErrorInternalServerError(format!("Rollback install failed: {}", e))
         })?;
 
-    registry_loader::refresh_module_in_registry(
-        &ctx.registry,
+    let repository = ctx.repository.current();
+    let refresher = SandboxRegistryRefresher {
+        registry: &ctx.registry,
         db_proxy_url,
-        &resolved_name,
-        &*ctx.repository.current(),
-        &ctx.scheduler,
-    )
-    .await
-    .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-
+        repository: &*repository,
+        scheduler: &ctx.scheduler,
+    };
     module
-        .reset_relocated_endpoint_settings(db_proxy_url, &outcome)
+        .finish_install(&refresher, &db_proxy, &outcome)
         .await
         .map_err(|e| {
-            actix_web::error::ErrorInternalServerError(format!(
-                "Rollback installed but its local endpoint settings could not be reset: {}",
-                e
-            ))
+            actix_web::error::ErrorInternalServerError(format!("Rollback failed: {}", e))
         })?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({

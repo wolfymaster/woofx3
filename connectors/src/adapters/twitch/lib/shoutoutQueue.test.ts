@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { SHOUTOUT_ENQUEUE_SUBJECT } from "@woofx3/common/cloudevents/Twitch/commands";
-import { NoRespondersError, RequestError, TimeoutError } from "@woofx3/nats/src/errors";
+import { NoRespondersError, RequestError, TimeoutError } from "@woofx3/nats";
 import { enqueueShoutoutOverNats } from "./shoutoutQueue";
 
 const TIMEOUT_MS = 8_000;

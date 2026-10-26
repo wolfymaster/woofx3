@@ -8,6 +8,7 @@ use crate::local_endpoint::LocalProtocol;
 use crate::manifest_validate::{InstallProvenance, SYSTEM_MODULE_ID};
 use crate::module_manifest::{ManifestBackgroundTask, ManifestDeadline, ModuleManifest};
 use crate::reserved_subjects::declared_event_reservation;
+use async_trait::async_trait;
 use lib_repository::Repository;
 use lib_sandbox::models::function::Function;
 use lib_sandbox::protected_settings::{
@@ -150,6 +151,43 @@ pub async fn hydrate_registry_from_db<R: Repository, S: ScheduleRegistrar>(
         loaded
     );
     Ok(())
+}
+
+/// Reloads one module into the sandbox registry. An install finishes through
+/// this rather than the registry itself, so the finishing sequence
+/// (`ModuleService::finish_install`) runs against a fake in tests.
+// async-trait marks each method it rewrites `#[must_use]`, and its boxed
+// future already is; clippy 1.99 flags that pairing in the generated code.
+#[allow(clippy::double_must_use)]
+#[async_trait]
+pub trait RegistryRefresher: Send + Sync {
+    async fn refresh_module(&self, module_name: &str) -> Result<(), String>;
+}
+
+/// The live sandbox registry, refreshed with `refresh_module_in_registry`.
+pub struct SandboxRegistryRefresher<'a, R, S> {
+    pub registry: &'a ModuleRegistry,
+    pub db_proxy_url: &'a str,
+    pub repository: &'a R,
+    pub scheduler: &'a S,
+}
+
+#[async_trait]
+impl<R, S> RegistryRefresher for SandboxRegistryRefresher<'_, R, S>
+where
+    R: Repository + Sync,
+    S: ScheduleRegistrar,
+{
+    async fn refresh_module(&self, module_name: &str) -> Result<(), String> {
+        refresh_module_in_registry(
+            self.registry,
+            self.db_proxy_url,
+            module_name,
+            self.repository,
+            self.scheduler,
+        )
+        .await
+    }
 }
 
 /// Reload one module into the registry after install, register, or rollback.
