@@ -36,6 +36,28 @@ x-dev-messagebus-token: &dev-messagebus-token ${WOOFX3_MESSAGEBUS_TOKEN:-a1a1e55
 # WOOFX3_DB_PROXY_TOKEN in .env (at least 32 bytes) to use your own.
 x-dev-db-proxy-token: &dev-db-proxy-token ${WOOFX3_DB_PROXY_TOKEN:-c4fdfa693dbd3ff5feee0fd342421a1e8d59d0dda8ce1b4d21d58650624caee3}
 
+# The Bun services run from the TypeScript workspace, which installs from the
+# repo root and needs every member present, so they mount the whole checkout.
+# Each node_modules is a volume so installs in a container never write into
+# the host's checkout. Must list every workspace in the root package.json.
+x-bun-workspace-volumes: &bun-workspace-volumes
+  - .:/app
+  - ./.woofx3.json:/app/.woofx3.json:ro
+  - bun-root-modules:/app/node_modules
+  - bun-api-modules:/app/api/node_modules
+  - bun-connectors-modules:/app/connectors/node_modules
+  - bun-db-modules:/app/db/node_modules
+  - bun-scene-manager-modules:/app/sceneManager/node_modules
+  - bun-common-modules:/app/shared/common/typescript/node_modules
+  - bun-api-client-modules:/app/shared/clients/typescript/api/node_modules
+  - bun-db-client-modules:/app/shared/clients/typescript/db/node_modules
+  - bun-module-sdk-modules:/app/shared/clients/typescript/module-sdk/node_modules
+  - bun-nats-modules:/app/shared/clients/typescript/nats/node_modules
+  - bun-scene-modules:/app/shared/clients/typescript/scene/node_modules
+  - bun-servicediscovery-modules:/app/shared/clients/typescript/servicediscovery/node_modules
+  - bun-twitch-client-modules:/app/shared/clients/typescript/twitch/node_modules
+  - bun-widget-host-modules:/app/shared/clients/typescript/widget-host/node_modules
+
 services:
   messagebus:
     image: woofx3-dev
@@ -145,11 +167,19 @@ services:
     networks:
       - woofx3
 
+  # Installs the workspace once, so the Bun services never race to fill the
+  # same volumes.
+  bun-install:
+    image: woofx3-dev
+    working_dir: /app
+    command: bun install --frozen-lockfile
+    volumes: *bun-workspace-volumes
+
   api:
     image: woofx3-dev
     restart: unless-stopped
     working_dir: /app/api
-    command: sh -c "bun install && bun run dev"
+    command: bun run dev
     environment:
       FORCE_COLOR: "1"
       WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
@@ -157,17 +187,17 @@ services:
       WOOFX3_API_HOST: 0.0.0.0
       WOOFX3_BARKLOADER_KEY: *dev-barkloader-key
       WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token
-    volumes:
-      - ./.woofx3.json:/app/.woofx3.json:ro
-      - ./api:/app/api
-      - api-node-modules:/app/api/node_modules
-      - ./shared:/app/shared
+    volumes: *bun-workspace-volumes
     env_file:
       - path: ./.env
         required: false
     depends_on:
-      - messagebus
-      - db
+      bun-install:
+        condition: service_completed_successfully
+      messagebus:
+        condition: service_started
+      db:
+        condition: service_started
     networks:
       - woofx3
 
@@ -175,22 +205,21 @@ services:
     image: woofx3-dev
     restart: unless-stopped
     working_dir: /app/connectors
-    command: sh -c "bun install && bun run src/server.ts"
+    command: bun run src/server.ts
     environment:
       FORCE_COLOR: "1"
       WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
       WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
       WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token
-    volumes:
-      - ./.woofx3.json:/app/.woofx3.json:ro
-      - ./connectors:/app/connectors
-      - connectors-node-modules:/app/connectors/node_modules
-      - ./shared:/app/shared
+    volumes: *bun-workspace-volumes
     env_file:
       - path: ./.env
         required: false
     depends_on:
-      - messagebus
+      bun-install:
+        condition: service_completed_successfully
+      messagebus:
+        condition: service_started
     networks:
       - woofx3
 
@@ -200,8 +229,20 @@ volumes:
   cargo-registry:
   cargo-git:
   barkloader-target:
-  api-node-modules:
-  connectors-node-modules:
+  bun-root-modules:
+  bun-api-modules:
+  bun-connectors-modules:
+  bun-db-modules:
+  bun-scene-manager-modules:
+  bun-common-modules:
+  bun-api-client-modules:
+  bun-db-client-modules:
+  bun-module-sdk-modules:
+  bun-nats-modules:
+  bun-scene-modules:
+  bun-servicediscovery-modules:
+  bun-twitch-client-modules:
+  bun-widget-host-modules:
 
 networks:
   woofx3:
