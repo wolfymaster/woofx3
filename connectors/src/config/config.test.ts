@@ -4,7 +4,7 @@ import { HEALTH_CHECK_INTERVAL_MS } from "@woofx3/common/runtime";
 import { connectorsConfig } from "../config";
 import { CHAT_DEFAULTS } from "./chat";
 import { GATEWAY_DEFAULTS } from "./gateway";
-import { HOST_DEFAULTS } from "./host";
+import { HOST_DEFAULTS, shutdownDeadlineProblem } from "./host";
 
 const required = {
   woofx3MessagebusUrl: "ws://127.0.0.1:4225",
@@ -113,12 +113,17 @@ describe("connectorsConfig", () => {
     [
       "shutdown deadline no longer than an adapter stop",
       { ...required, woofx3ConnectorsShutdownDeadlineMs: 10_000 },
-      "must exceed woofx3ConnectorsDbProxyTimeoutMs plus woofx3ConnectorsStopDeadlineMs",
+      "the shutdown deadline (10000ms) must exceed the db-proxy timeout plus the chat drain",
     ],
     [
       "shutdown deadline that leaves no room for a link read in flight",
       { ...required, woofx3ConnectorsStopDeadlineMs: 10_000, woofx3ConnectorsShutdownDeadlineMs: 11_000 },
-      "must exceed woofx3ConnectorsDbProxyTimeoutMs plus woofx3ConnectorsStopDeadlineMs (12000)",
+      "the shutdown deadline (11000ms) must exceed the db-proxy timeout plus the chat drain plus the longest of the stop deadline and the served budgets (14000ms)",
+    ],
+    [
+      "a chat drain that leaves the shutdown deadline no room",
+      { ...required, woofx3ConnectorsDispatcherDrainMs: 3_001 },
+      "the shutdown deadline (15000ms) must exceed the db-proxy timeout plus the chat drain",
     ],
     ["zero db-proxy timeout", { ...required, woofx3ConnectorsDbProxyTimeoutMs: 0 }, "woofx3ConnectorsDbProxyTimeoutMs"],
     [
@@ -167,4 +172,20 @@ describe("connectorsConfig", () => {
       expect(() => connectorsConfig(env)).toThrow(problem);
     });
   }
+});
+
+describe("shutdownDeadlineProblem", () => {
+  const host = { shutdownDeadlineMs: 15_000, dbProxyTimeoutMs: 2_000, stopDeadlineMs: 10_000 };
+
+  test("accepts a deadline above the whole shutdown sequence", () => {
+    expect(shutdownDeadlineProblem(host, 2_000, [5_000])).toBeUndefined();
+  });
+
+  test("counts a served budget longer than the stop deadline", () => {
+    expect(shutdownDeadlineProblem(host, 2_000, [12_000])).toContain("(16000ms)");
+  });
+
+  test("refuses a deadline equal to the sequence", () => {
+    expect(shutdownDeadlineProblem(host, 3_000, [])).toContain("(15000ms)");
+  });
 });
