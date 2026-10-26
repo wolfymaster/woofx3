@@ -7,7 +7,7 @@ import {
   type TwitchApiCommand,
   type UpdateStreamArgs,
 } from "@woofx3/common/cloudevents/Twitch/commands";
-import type { Clock } from "../../../host/deps";
+import { type Clock, errorMessage } from "../../../host/deps";
 import { HELIX_DEADLINE_MS, type HelixAuth, runHelixOperation } from "./helix";
 import type { SelfSentRecorder } from "./self-sent";
 import type { EnqueueShoutout } from "./shoutoutQueue";
@@ -19,10 +19,8 @@ export {
   twitchApiErrorCodeOf,
 } from "./twitchApiError";
 
-/**
- * Each Twitch API method returns a plain data shape, which the dispatcher in
- * application.ts wraps in the CloudEvent reply to the `twitchapi` request.
- */
+// Twitch serves a clip at its id under this host; createClip returns only the id.
+const CLIP_URL_BASE = "https://clips.twitch.tv/";
 
 export interface ClipResult {
   url: string;
@@ -48,7 +46,7 @@ export interface AdSchedule {
   prerollFreeSeconds: number;
   snoozeCount: number;
   snoozeRefreshAt: string | null;
-  /** This service's clock when it answered, so a client can correct for skew. */
+  /** The engine's clock when it answered, so a client can correct for skew. */
   serverNow: string;
 }
 
@@ -246,7 +244,7 @@ const AD_SCOPE_MESSAGE = "reconnect Twitch to allow ad controls";
  * through with a 401 naming the scope. Both mean the streamer has to relink.
  */
 export function classifyTwitchError(err: unknown, context: string, scope: string): TwitchApiError {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorMessage(err);
   if (/requested scopes|missing scope/i.test(message)) {
     return new TwitchApiError("missing_scope", `${context}: Twitch has not granted ${scope}; ${AD_SCOPE_MESSAGE}`);
   }
@@ -328,12 +326,12 @@ export default class TwitchApi {
    * the dashboard's queue; without it, every shoutout is sent directly.
    */
   constructor(
-    private apiClient: ApiClient,
-    private broadcaster: HelixUser,
-    private helixAuth: HelixAuth,
-    private selfSent: SelfSentRecorder,
-    private clock: Clock,
-    private enqueueShoutout?: EnqueueShoutout
+    private readonly apiClient: ApiClient,
+    private readonly broadcaster: HelixUser,
+    private readonly helixAuth: HelixAuth,
+    private readonly selfSent: SelfSentRecorder,
+    private readonly clock: Clock,
+    private readonly enqueueShoutout?: EnqueueShoutout
   ) {}
 
   async clip(_args: unknown): Promise<ClipResult> {
@@ -342,7 +340,7 @@ export default class TwitchApi {
     });
     return {
       id: clipId,
-      url: `https://clips.twitch.tv/${clipId}`,
+      url: `${CLIP_URL_BASE}${clipId}`,
     };
   }
 

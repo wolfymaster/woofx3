@@ -448,7 +448,7 @@ export default class TwitchApplication {
 
   /**
    * EventSub does not replay a stream.online that happened before this
-   * service connected, so a service started mid-stream asks Helix once.
+   * adapter connected, so an adapter started mid-stream asks Helix once.
    * A failed read leaves the scheduler offline until the next online event:
    * a missed heads-up is better than polling a stream that is not live.
    * Stops waiting, and seeds nothing, once `signal` aborts.
