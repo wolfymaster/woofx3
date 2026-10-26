@@ -91,7 +91,13 @@ const running = new AbortController().signal;
 const CONFIG: TwitchConfig = {
   channel: "mychan",
   app: { clientId: "cid", clientSecret: "sec", redirectUri: "http://localhost/oauth" },
-  membership: { ttlMs: TWITCH_DEFAULTS.membershipTtlMs, deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs },
+  membership: {
+    ttlMs: TWITCH_DEFAULTS.membershipTtlMs,
+    deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs,
+    loadTimeoutMs: TWITCH_DEFAULTS.membershipLoadTimeoutMs,
+    failureTtlMs: TWITCH_DEFAULTS.membershipFailureTtlMs,
+    maxEntries: TWITCH_DEFAULTS.membershipMaxEntries,
+  },
   sendQueueCap: TWITCH_DEFAULTS.sendQueueCap,
   selfSent: { capacity: TWITCH_DEFAULTS.selfSentCapacity, ttlMs: TWITCH_DEFAULTS.selfSentTtlMs },
 };

@@ -20,7 +20,7 @@ import type { DbProxyClientConfig } from "../../services/db-proxy";
 import { TWITCH_EVENT_SOURCE } from "./event-source";
 import { AdBreakScheduler } from "./lib/adBreakScheduler";
 import { AdBreakLeadSetting } from "./lib/adBreakSettings";
-import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
+import { ChatterMembershipEnricher, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
 import { type PublishTarget, publishEvent } from "./lib/publishEvent";
 import type { SelfSentRegistry } from "./lib/self-sent";
@@ -525,11 +525,7 @@ export default class TwitchApplication {
       return undefined;
     }
     const time = { clock: this.deps.clock, timers: this.deps.timers };
-    return new ChatterMembershipEnricher(new TwurpleMembershipLookup(apiClient), ctx.logger, time, {
-      ...DEFAULT_ENRICHER_OPTIONS,
-      ttlMs: membership.ttlMs,
-      deadlineMs: membership.deadlineMs,
-    });
+    return new ChatterMembershipEnricher(new TwurpleMembershipLookup(apiClient), ctx.logger, time, membership);
   }
 
   /**

@@ -11,6 +11,12 @@ export const TWITCH_DEFAULTS = {
   membershipTtlMs: 600_000,
   /** How long a chat message may wait on a cache miss before publishing without the unresolved fields. */
   membershipDeadlineMs: 250,
+  /** How long one membership lookup may run before it counts as failed and frees its in-flight slot. */
+  membershipLoadTimeoutMs: 10_000,
+  /** How long a failed membership lookup is remembered, so a missing scope does not mean one request per chat message. */
+  membershipFailureTtlMs: 60_000,
+  /** Cap on cached chatters, so a raid cannot grow the cache without bound. */
+  membershipMaxEntries: 5000,
   /**
    * How many chat writes from the platform gateway may wait behind the one
    * being sent. One more is refused as rate limited rather than queued, which
@@ -95,7 +101,9 @@ export interface TwitchConfig {
    */
   app: TwitchAppCredentials | undefined;
   /** Undefined when enrichment is switched off. */
-  membership: { ttlMs: number; deadlineMs: number } | undefined;
+  membership:
+    | { ttlMs: number; deadlineMs: number; loadTimeoutMs: number; failureTtlMs: number; maxEntries: number }
+    | undefined;
   /** See TWITCH_DEFAULTS.sendQueueCap. */
   sendQueueCap: number;
   /** See TWITCH_DEFAULTS.selfSentCapacity and selfSentTtlMs. */
@@ -112,7 +120,13 @@ export function twitchConfig(env: TwitchEnv): TwitchConfig {
         ? { clientId, clientSecret, redirectUri: env.woofx3TwitchRedirectUrl }
         : undefined,
     membership: env.woofx3TwitchMembershipEnrichmentEnabled
-      ? { ttlMs: env.woofx3TwitchMembershipTtlMs, deadlineMs: env.woofx3TwitchMembershipDeadlineMs }
+      ? {
+          ttlMs: env.woofx3TwitchMembershipTtlMs,
+          deadlineMs: env.woofx3TwitchMembershipDeadlineMs,
+          loadTimeoutMs: TWITCH_DEFAULTS.membershipLoadTimeoutMs,
+          failureTtlMs: TWITCH_DEFAULTS.membershipFailureTtlMs,
+          maxEntries: TWITCH_DEFAULTS.membershipMaxEntries,
+        }
       : undefined,
     sendQueueCap: env.woofx3TwitchSendQueueCap,
     selfSent: { capacity: env.woofx3TwitchSelfSentCapacity, ttlMs: env.woofx3TwitchSelfSentTtlMs },

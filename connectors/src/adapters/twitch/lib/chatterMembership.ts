@@ -63,18 +63,17 @@ export interface EnricherOptions {
   ttlMs: number;
   /** How long the enricher waits on a cache miss before publishing without the field. */
   deadlineMs: number;
+  /**
+   * How long one lookup may run before it counts as failed. Without it a hung
+   * request would hold its in-flight slot, and so answer every later message
+   * from that chatter with nothing, until restart.
+   */
+  loadTimeoutMs: number;
   /** How long a failed lookup is remembered, so a missing scope does not mean one request per chat message. */
   failureTtlMs: number;
   /** Cap on cached chatters, so a raid cannot grow the cache without bound. */
   maxEntries: number;
 }
-
-export const DEFAULT_ENRICHER_OPTIONS: EnricherOptions = {
-  ttlMs: 10 * 60 * 1000,
-  deadlineMs: 250,
-  failureTtlMs: 60 * 1000,
-  maxEntries: 5000,
-};
 
 /** What expires cached answers and bounds the wait on a miss. */
 export interface EnricherTime {
@@ -124,7 +123,7 @@ class LookupCache<T> {
   }
 
   private start(key: string, broadcasterId: string, userId: string): Promise<T | undefined> {
-    const pending = this.load(broadcasterId, userId)
+    const pending = withLoadTimeout(this.load(broadcasterId, userId), this.options.loadTimeoutMs, this.time.timers)
       .then((value) => {
         this.store(key, value, this.options.ttlMs);
         return value;
@@ -171,6 +170,23 @@ class LookupCache<T> {
   }
 }
 
+/** Rejects if `promise` has not settled within `ms`, so a hung lookup ends as a failed one. */
+function withLoadTimeout<T>(promise: Promise<T>, ms: number, timers: Timers): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = timers.setTimeout(() => reject(new Error(`lookup timed out after ${ms}ms`)), ms);
+    promise.then(
+      (value) => {
+        timers.clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        timers.clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 /** Resolve with undefined if `promise` has not settled within `ms`. */
 function withDeadline<T>(promise: Promise<T | undefined>, ms: number, timers: Timers): Promise<T | undefined> {
   return new Promise((resolve) => {
@@ -203,12 +219,7 @@ export class ChatterMembershipEnricher {
   private readonly followers: LookupCache<boolean>;
   private readonly tiers: LookupCache<string | null>;
 
-  constructor(
-    lookup: MembershipLookup,
-    logger: Pick<Logger, "warn">,
-    time: EnricherTime,
-    options: EnricherOptions = DEFAULT_ENRICHER_OPTIONS
-  ) {
+  constructor(lookup: MembershipLookup, logger: Pick<Logger, "warn">, time: EnricherTime, options: EnricherOptions) {
     this.followers = new LookupCache(
       (broadcasterId, userId) => lookup.isFollower(broadcasterId, userId),
       options,
