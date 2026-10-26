@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.45.0](https://github.com/wolfymaster/woofx3/compare/v0.44.0...v0.45.0) (2026-10-26)
+
+### Features
+
+* **contracts:** declare companion gateway bounds as named limits ([e9103a2](https://github.com/wolfymaster/woofx3/commit/e9103a2d9f00ea7d7aabb3a8ee03beb8fec93f74))
+* **contracts:** emit named constants for integer field bounds ([1e3c3af](https://github.com/wolfymaster/woofx3/commit/1e3c3af89d4e1b1d2874283a20f87c52deeaadb3))
+
+### Bug Fixes
+
+* **barkloader:** fail an upload install when the registry refresh fails ([bc72e32](https://github.com/wolfymaster/woofx3/commit/bc72e322fdaab80e9250a9a0952d33f67d367980))
+* **barkloader:** read the protections lock through poisoning ([ec7841b](https://github.com/wolfymaster/woofx3/commit/ec7841bb4cc4184e62ff85aa4c239fda5873880d))
+* classify NATS request failures with the shared typed classifier ([ec16027](https://github.com/wolfymaster/woofx3/commit/ec160271c2101c775b28be19cfb91cb5b227c738))
+* **connectors:** arm the command backstop only if not stopped ([a1f76d6](https://github.com/wolfymaster/woofx3/commit/a1f76d6f4d4712d71166fa27cb6e2eb2871418b4))
+* **connectors:** bound the OBS overlay refresh walk with a deadline ([7e41902](https://github.com/wolfymaster/woofx3/commit/7e41902d3f002ebbb1776ba74321cd8c7841abe7))
+* **connectors:** bound the Twitch ad schedule read with a deadline ([ab20dbb](https://github.com/wolfymaster/woofx3/commit/ab20dbb54a8d6ff59202201e5e67cd9b59601f44))
+* **connectors:** stop during start tears down what start set up ([fc03e94](https://github.com/wolfymaster/woofx3/commit/fc03e94ced2293fba1fa23d99eb11cdd2af5024a))
+* **connectors:** tell chat when a command's actions could not start ([e3be029](https://github.com/wolfymaster/woofx3/commit/e3be02970d55e040b82be07fae2d90fb143c6e12))
+* **connectors:** time out hung twitch membership lookups ([7836c75](https://github.com/wolfymaster/woofx3/commit/7836c759abd4bf80a4f889d04ed5cdef84cf8cd0))
+* **connectors:** treat a blank Twitch redirect URL as unset ([f820bb1](https://github.com/wolfymaster/woofx3/commit/f820bb16f9aa0fa6a2a4501b305872858a4646d7))
+* **connectors:** validate the full shutdown deadline before starting ([5564b30](https://github.com/wolfymaster/woofx3/commit/5564b30916d5caf65e0c129edef4694fe21a9a8f))
+* **contracts:** quote platform display names in generated code ([aeb2b96](https://github.com/wolfymaster/woofx3/commit/aeb2b96fa7cfa4d97c6cf3b093f36de5e02b5615))
+* **workflow:** abandon a parent whose sub-workflow Stop abandoned ([7cbb3de](https://github.com/wolfymaster/woofx3/commit/7cbb3defa40b9b7ed001a215040b78a487a354db))
+* **workflow:** take the pin duration bounds from the contract ([71129a3](https://github.com/wolfymaster/woofx3/commit/71129a3d9b1909d73ac04b69087b662a29bced82))
+
 ## [0.44.0](https://github.com/wolfymaster/woofx3/compare/v0.43.0...v0.44.0) (2026-10-26)
 
 ### Features
