@@ -49,6 +49,7 @@ describe("validateConfig obsRefresh", () => {
     ["a zero request timeout", { ...OBS_REFRESH_DEFAULTS, requestTimeoutMs: 0 }],
     ["a non-numeric base", { ...OBS_REFRESH_DEFAULTS, retryBaseMs: Number.NaN }],
     ["a fractional max", { ...OBS_REFRESH_DEFAULTS, retryMaxMs: 10.5 }],
+    ["a fractional warning threshold", { ...OBS_REFRESH_DEFAULTS, warnAfterAttempts: 2.5 }],
     ["a max below the base", { ...OBS_REFRESH_DEFAULTS, retryBaseMs: 5_000, retryMaxMs: 1_000 }],
   ] as const) {
     it(`refuses ${name}`, () => {

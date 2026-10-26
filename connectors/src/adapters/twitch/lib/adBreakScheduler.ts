@@ -1,11 +1,17 @@
 import type { AdBreakUpcoming } from "@woofx3/common/cloudevents/Twitch/events";
 import { type Backoff, type BackoffConfig, createBackoff } from "@woofx3/common/runtime";
+import { bounded } from "../../../host/bounded";
 import type { Clock, Logger, RandomSource, TimerHandle, Timers } from "../../../host/deps";
 import { type AdSchedule, TwitchApiError, type TwitchApiErrorCode } from "./twitch";
 
 /** How often the schedule is read, and how long to leave it after a refusal. See TWITCH_DEFAULTS. */
 export interface AdBreakSchedulerOptions {
   pollIntervalMs: number;
+  /**
+   * How long one schedule read may take before it counts as a failed read.
+   * Below `pollIntervalMs`, so a hung read ends before the next poll is due.
+   */
+  readTimeoutMs: number;
   /** A missing scope needs the streamer to relink, so it waits longest. */
   missingScopeBackoffMs: number;
   unauthorizedBackoffMs: number;
@@ -72,6 +78,12 @@ export class AdBreakScheduler {
   private stopped = false;
 
   constructor(private readonly deps: AdBreakSchedulerDeps) {
+    const { readTimeoutMs, pollIntervalMs } = deps.options;
+    if (readTimeoutMs <= 0 || readTimeoutMs >= pollIntervalMs) {
+      throw new Error(
+        `AdBreakScheduler: readTimeoutMs (${readTimeoutMs}) must be positive and below pollIntervalMs (${pollIntervalMs})`
+      );
+    }
     this.clock = deps.clock;
     this.timers = deps.timers;
     this.rateLimitBackoff = createBackoff(deps.options.rateLimitBackoff, deps.random);
@@ -153,13 +165,18 @@ export class AdBreakScheduler {
       return;
     }
 
-    let schedule: AdSchedule;
-    try {
-      schedule = await this.deps.fetchSchedule();
-    } catch (err) {
-      this.recordFailure(err);
+    // A read that never settles would otherwise hold the poll chain, and
+    // with it every later heads-up, for the rest of the stream.
+    const read = await bounded(() => this.deps.fetchSchedule(), this.deps.options.readTimeoutMs, this.timers);
+    if (read.kind === "timeout") {
+      this.recordFailure(new Error(`ad schedule read took longer than ${this.deps.options.readTimeoutMs}ms`));
       return;
     }
+    if (read.kind === "failed") {
+      this.recordFailure(read.error);
+      return;
+    }
+    const schedule = read.value;
     if (this.lastFailureCode !== null) {
       this.deps.logger.info("AdBreakScheduler: ad schedule readable again");
     }

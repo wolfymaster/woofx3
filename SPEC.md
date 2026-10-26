@@ -67,7 +67,7 @@ The system follows a microservices architecture with three primary communication
 | **db** | Go | 26257 (gRPC) | Database proxy for all data access |
 | **wooflow** | Go | 26533 (gRPC) | Workflow orchestration engine |
 | **barkloader** | Rust | 9653 (HTTP/WS) | Module/plugin management and sandbox execution |
-| **connectors** | TypeScript/Bun | - | Platform connectors host (Twitch and OBS adapters) and the platform-neutral chat command dispatcher |
+| **connectors** | TypeScript/Bun | 9102 (HTTP, /health) | Platform connectors host (Twitch and OBS adapters) and the platform-neutral chat command dispatcher |
 | **api** | TypeScript/Bun | 3000 (HTTP) | Public API for UI clients |
 | **messagebus-gateway** | Go | 8080 (WS) | WebSocket-to-NATS bridge |
 
@@ -306,12 +306,15 @@ Events → Fact Updates → Rete Network → Rule Evaluation → Actions/Fire
 
 | Subject | Trigger |
 |---------|---------|
-| `message.user.twitch` | Chat message received |
-| `cheer.channel.twitch` | Bits cheered |
-| `follow.channel.twitch` | New follow |
-| `subscribe.channel.twitch` | Subscription event |
-| `raid.channel.twitch` | Raid incoming |
-| `channel.state.twitch` | Stream state change |
+| `user.message` | Chat message received |
+| `channel.cheer` | Bits cheered |
+| `channel.follow` | New follow |
+| `channel.subscribe` | Subscription event |
+| `channel.raid` | Raid incoming |
+| `stream.online`, `stream.offline` | Stream state change |
+
+The full list lives in `shared/common/typescript/cloudevents/Twitch/events.ts`
+and [CloudEvents](docs/services/cloudevents.md).
 
 #### 3.5.2 Connectors chat dispatcher
 

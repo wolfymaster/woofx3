@@ -407,7 +407,7 @@ describe("ObsAdapter reconnects", () => {
   });
 
   const settingEvent = (moduleId: string) =>
-    bytes(JSON.stringify({ type: "db.module.setting.updated", data: { moduleId, key: "password" } }));
+    bytes(JSON.stringify({ type: "module.setting.updated", data: { moduleId, key: "password" } }));
 
   async function connected(store: EndpointStore = emptyEndpointStore) {
     const fake = startFakeObs();
@@ -421,14 +421,14 @@ describe("ObsAdapter reconnects", () => {
 
   test("when the OBS module's settings change", async () => {
     const { fake, bus } = await connected();
-    bus.deliver("db.module.setting.updated.woofx3_obs", settingEvent("woofx3_obs"));
+    bus.deliver("db.module.setting.updated.system", settingEvent("woofx3_obs"));
     await until(() => fake.upgrades.length === 2);
   });
 
   test("not when another module's settings change", async () => {
     const { fake, bus } = await connected();
-    bus.deliver("db.module.setting.updated.other", settingEvent("other"));
-    bus.deliver("db.module.setting.updated.other", bytes("not json"));
+    bus.deliver("db.module.setting.updated.system", settingEvent("other"));
+    bus.deliver("db.module.setting.updated.system", bytes("not json"));
     await settle();
     expect(fake.upgrades).toHaveLength(1);
   });

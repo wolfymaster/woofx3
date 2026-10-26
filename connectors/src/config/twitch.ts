@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { nonBlank } from "./env";
+import { nonBlank, unsetWhenBlank } from "./env";
 
 /** Defaults for the Twitch adapter's tunables. */
 export const TWITCH_DEFAULTS = {
@@ -11,6 +11,12 @@ export const TWITCH_DEFAULTS = {
   membershipTtlMs: 600_000,
   /** How long a chat message may wait on a cache miss before publishing without the unresolved fields. */
   membershipDeadlineMs: 250,
+  /** How long one membership lookup may run before it counts as failed and frees its in-flight slot. */
+  membershipLoadTimeoutMs: 10_000,
+  /** How long a failed membership lookup is remembered, so a missing scope does not mean one request per chat message. */
+  membershipFailureTtlMs: 60_000,
+  /** Cap on cached chatters, so a raid cannot grow the cache without bound. */
+  membershipMaxEntries: 5000,
   /**
    * How many chat writes from the platform gateway may wait behind the one
    * being sent. One more is refused as rate limited rather than queued, which
@@ -31,6 +37,11 @@ export const TWITCH_DEFAULTS = {
    * a moved ad is noticed, not how late its announcement lands.
    */
   adSchedulePollIntervalMs: 60_000,
+  /**
+   * How long one ad schedule read may take before it counts as failed. Must
+   * stay below `adSchedulePollIntervalMs`; the scheduler refuses to start otherwise.
+   */
+  adScheduleReadTimeoutMs: 15_000,
   /** How long the ad schedule is left alone after a missing scope, which only a relink fixes. */
   adScheduleMissingScopeBackoffMs: 15 * 60_000,
   /** How long the ad schedule is left alone after Twitch refuses the token. */
@@ -62,7 +73,7 @@ export const TwitchEnvSchema = z.object({
   // Twitch token comes from a dashboard, which owns the app and refreshes.
   woofx3TwitchClientId: z.string().optional(),
   woofx3TwitchClientSecret: z.string().optional(),
-  woofx3TwitchRedirectUrl: z.string().default(TWITCH_DEFAULTS.redirectUrl),
+  woofx3TwitchRedirectUrl: z.preprocess(unsetWhenBlank, z.url().default(TWITCH_DEFAULTS.redirectUrl)),
   woofx3TwitchMembershipEnrichmentEnabled: z.boolean().default(TWITCH_DEFAULTS.membershipEnrichmentEnabled),
   woofx3TwitchMembershipTtlMs: z.number().int().positive().default(TWITCH_DEFAULTS.membershipTtlMs),
   woofx3TwitchMembershipDeadlineMs: z.number().int().positive().default(TWITCH_DEFAULTS.membershipDeadlineMs),
@@ -90,7 +101,9 @@ export interface TwitchConfig {
    */
   app: TwitchAppCredentials | undefined;
   /** Undefined when enrichment is switched off. */
-  membership: { ttlMs: number; deadlineMs: number } | undefined;
+  membership:
+    | { ttlMs: number; deadlineMs: number; loadTimeoutMs: number; failureTtlMs: number; maxEntries: number }
+    | undefined;
   /** See TWITCH_DEFAULTS.sendQueueCap. */
   sendQueueCap: number;
   /** See TWITCH_DEFAULTS.selfSentCapacity and selfSentTtlMs. */
@@ -107,7 +120,13 @@ export function twitchConfig(env: TwitchEnv): TwitchConfig {
         ? { clientId, clientSecret, redirectUri: env.woofx3TwitchRedirectUrl }
         : undefined,
     membership: env.woofx3TwitchMembershipEnrichmentEnabled
-      ? { ttlMs: env.woofx3TwitchMembershipTtlMs, deadlineMs: env.woofx3TwitchMembershipDeadlineMs }
+      ? {
+          ttlMs: env.woofx3TwitchMembershipTtlMs,
+          deadlineMs: env.woofx3TwitchMembershipDeadlineMs,
+          loadTimeoutMs: TWITCH_DEFAULTS.membershipLoadTimeoutMs,
+          failureTtlMs: TWITCH_DEFAULTS.membershipFailureTtlMs,
+          maxEntries: TWITCH_DEFAULTS.membershipMaxEntries,
+        }
       : undefined,
     sendQueueCap: env.woofx3TwitchSendQueueCap,
     selfSent: { capacity: env.woofx3TwitchSelfSentCapacity, ttlMs: env.woofx3TwitchSelfSentTtlMs },

@@ -14,7 +14,7 @@ import {
   type ObsOptionsReply,
 } from "@woofx3/common/cloudevents/Obs/commands";
 import { z } from "zod";
-import type { Logger } from "../../host/deps";
+import { errorMessage, type Logger } from "../../host/deps";
 import {
   groupSceneItems,
   isNotFound,
@@ -158,7 +158,7 @@ export async function executeObsOptionsRequest(
       options.onTimeout?.();
       return { error: `OBS did not answer within ${timeoutMs / 1000}s; reconnecting to it` };
     }
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     return { error: `OBS could not list ${list}: ${message}` };
   }
 }

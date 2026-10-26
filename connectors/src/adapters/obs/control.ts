@@ -14,7 +14,7 @@ import {
   type ObsControlReply,
 } from "@woofx3/common/cloudevents/Obs/commands";
 import type { OBSRequestTypes, OBSResponseTypes } from "obs-websocket-js";
-import type { Logger, TimerHandle, Timers } from "../../host/deps";
+import { errorMessage, type Logger, type TimerHandle, type Timers } from "../../host/deps";
 
 /** The slice of `manager.ts` a command needs; structural so tests can fake OBS. */
 export interface ObsControlClient {
@@ -315,7 +315,7 @@ function describeObsError(command: ObsControlCommand, err: unknown): string {
   if (err instanceof ObsControlError) {
     return err.message;
   }
-  const message = err instanceof Error ? err.message : String(err);
+  const message = errorMessage(err);
   if (isNotFound(err)) {
     switch (command.command) {
       case "switch_scene": {
@@ -349,7 +349,7 @@ export async function handleObsControlRequest(
     envelope = JSON.parse(new TextDecoder().decode(raw)) as { data?: unknown };
   } catch (err) {
     logger.warn("engine.obs.command: malformed JSON payload", {
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     });
     return { ok: false, error: "invalid OBS command: payload is not JSON" };
   }

@@ -4,7 +4,7 @@ use crate::protected_settings::{
     LiveProtectedSettings, ProtectedReason, ProtectedSettings, RegisteredLocalEndpoint,
 };
 use std::collections::{HashMap, HashSet};
-use std::sync::RwLock;
+use std::sync::{PoisonError, RwLock};
 
 #[derive(Debug, Clone)]
 pub struct ModuleMetadata {
@@ -116,7 +116,10 @@ impl ModuleRegistry {
     /// of `name` holds. Called with the `modules` write lock held, so a new
     /// invocation never sees the new module with the old protections.
     fn publish_protections(&self, name: &str, module: &RegisteredModule) {
-        let mut protections = self.protections.write().unwrap();
+        let mut protections = self
+            .protections
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
         protections
             .entry(name.to_string())
             .or_default()
@@ -232,7 +235,10 @@ impl ModuleRegistry {
     /// later registrations of the module (`LiveProtectedSettings`); empty for
     /// a module that has never been registered.
     pub fn protected_settings(&self, name: &str) -> LiveProtectedSettings {
-        let protections = self.protections.read().unwrap();
+        let protections = self
+            .protections
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
         protections.get(name).cloned().unwrap_or_default()
     }
 
@@ -314,6 +320,22 @@ mod tests {
 
         registry.unregister_module("example").unwrap();
         assert!(!registry.has_module("example"));
+    }
+
+    #[test]
+    fn test_protections_poisoned_lock_still_reads_and_registers() {
+        let registry = ModuleRegistry::new();
+        let poisoner = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = registry.protections.write().unwrap();
+            panic!("poison the protections lock");
+        }));
+        assert!(poisoner.is_err());
+        assert!(registry.protections.is_poisoned());
+
+        registry
+            .register_module("example".to_string(), test_module("example"))
+            .unwrap();
+        let _ = registry.protected_settings("example");
     }
 
     #[test]

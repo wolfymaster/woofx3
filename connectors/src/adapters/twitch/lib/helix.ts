@@ -444,7 +444,7 @@ function parseHelixArgs(args: unknown): { operation: HelixOperationName; params:
  */
 export const HELIX_DEADLINE_MS = 8_000;
 
-/** What `runHelixOperation` needs of the twitch service's Twurple auth provider. */
+/** What `runHelixOperation` needs of the twitch adapter's Twurple auth provider. */
 export type HelixAuth = Pick<AuthProvider, "clientId" | "getAccessTokenForUser" | "refreshAccessTokenForUser">;
 
 /** How one `runHelixOperation` call is bounded and observed. */

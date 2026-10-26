@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -23,6 +24,8 @@ const repoRoot = ".."
 type manifestField struct {
 	ID           string `json:"id"`
 	DefaultValue any    `json:"defaultValue"`
+	Min          *int   `json:"min"`
+	Max          *int   `json:"max"`
 	Options      []struct {
 		Value string `json:"value"`
 	} `json:"options"`
@@ -91,6 +94,68 @@ func TestDocsListTheContractColours(t *testing.T) {
 			}
 			if !strings.Contains(string(raw), list) {
 				t.Errorf("%s does not list the announcement colours as %q", page, list)
+			}
+		})
+	}
+}
+
+func loadManifestAction(t *testing.T, actionID string) manifestAction {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "modules", "woofx3", "manifest.json"))
+	if err != nil {
+		t.Fatalf("reading the woofx3 manifest: %v", err)
+	}
+	var manifest struct {
+		Actions []manifestAction `json:"actions"`
+	}
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatalf("decoding the woofx3 manifest: %v", err)
+	}
+	for _, action := range manifest.Actions {
+		if action.ID == actionID {
+			return action
+		}
+	}
+	t.Fatalf("the woofx3 manifest has no %s action", actionID)
+	return manifestAction{}
+}
+
+func manifestFieldOf(t *testing.T, action manifestAction, fieldID string) manifestField {
+	t.Helper()
+	for _, field := range action.Schema {
+		if field.ID == fieldID {
+			return field
+		}
+	}
+	t.Fatalf("the %s action has no %s field", action.ID, fieldID)
+	return manifestField{}
+}
+
+func TestChatPinDurationFieldMatchesTheContractBounds(t *testing.T) {
+	field := manifestFieldOf(t, loadManifestAction(t, string(platformgateway.ActionChatPin)), "durationSeconds")
+	if field.Min == nil || *field.Min != platformgateway.ChatPinDurationSecondsMin {
+		t.Errorf("durationSeconds min is %v, want the contract's %d", field.Min, platformgateway.ChatPinDurationSecondsMin)
+	}
+	if field.Max == nil || *field.Max != platformgateway.ChatPinDurationSecondsMax {
+		t.Errorf("durationSeconds max is %v, want the contract's %d", field.Max, platformgateway.ChatPinDurationSecondsMax)
+	}
+}
+
+func TestChatPlatformFieldPinsTheOriginAndAllOptions(t *testing.T) {
+	for _, actionID := range []string{"chat.reply", string(platformgateway.ActionChatAnnounce), string(platformgateway.ActionChatPin)} {
+		t.Run(actionID, func(t *testing.T) {
+			field := manifestFieldOf(t, loadManifestAction(t, actionID), "platform")
+			offered := make([]string, len(field.Options))
+			for i, option := range field.Options {
+				offered[i] = option.Value
+			}
+			for _, want := range []string{chatPlatformOrigin, chatPlatformAll} {
+				if !slices.Contains(offered, want) {
+					t.Errorf("the platform field offers %v, which lacks %q", offered, want)
+				}
+			}
+			if field.DefaultValue != chatPlatformOrigin {
+				t.Errorf("the platform field defaults to %v, want %q", field.DefaultValue, chatPlatformOrigin)
 			}
 		})
 	}

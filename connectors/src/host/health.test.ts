@@ -83,7 +83,7 @@ describe("health", () => {
       invalid: 0,
       internal: 0,
       expired: 0,
-      no_inbox: 0,
+      noInbox: 0,
     });
     expect(body.counters.gateway).toEqual({
       outcomes: {},
