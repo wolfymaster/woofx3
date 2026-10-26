@@ -4,6 +4,7 @@ import {
   createDomRenderer,
   type DelegatedBehavior,
   type DelegateRequest,
+  type HideWith,
   type PatchOp,
   type RenderAnimation,
   type RenderDocument,
@@ -109,7 +110,7 @@ function timingAt(delay: number): AnimationTiming {
   return { duration: 500, easing: "ease-out", delay, fill: "both", iterations: 1 };
 }
 
-function setup(atMs = 0) {
+function setup(atMs = 0, hideWith?: HideWith) {
   const doc = new FakeDocument();
   const root = doc.createElement("div");
   const mounted: Array<{ id: string; widget: string; slot: FakeElement }> = [];
@@ -125,6 +126,7 @@ function setup(atMs = 0) {
       return () => unmounted.push(id);
     },
     onDelegate: (id, request) => delegations.push([id, request]),
+    ...(hideWith === undefined ? {} : { hideWith }),
   });
   return { doc, root, renderer, mounted, unmounted, delegations };
 }
@@ -244,6 +246,26 @@ describe("createDomRenderer writes", () => {
     doc.writes.length = 0;
     renderer.apply([{ op: "setVisible", id: "w1", visible: false }]);
     expect(doc.writes.map((write) => [write.property, write.value])).toEqual([["visibility", "hidden"]]);
+  });
+
+  test("hidden with opacity, a widget keeps its visibility and is shown at its own opacity", () => {
+    const { doc, renderer } = setup(0, "opacity");
+    renderer.apply([{ ...MOUNT, visible: false } as PatchOp]);
+    expect(boxOf(renderer, "w1").style.opacity).toBe("0");
+    expect(doc.writes.filter((write) => write.property === "visibility")).toEqual([]);
+    doc.writes.length = 0;
+    renderer.apply([{ op: "setVisible", id: "w1", visible: true }]);
+    expect(doc.writes.map((write) => [write.property, write.value])).toEqual([["opacity", "0.5"]]);
+  });
+
+  test("hidden with opacity, a box patch to a hidden widget's opacity keeps it hidden until shown", () => {
+    const { renderer } = setup(0, "opacity");
+    renderer.apply([{ ...MOUNT, visible: false } as PatchOp]);
+    const box = MOUNT.op === "mount" ? MOUNT.box : null;
+    renderer.apply([{ op: "setBox", id: "w1", box: { ...(box as NonNullable<typeof box>), opacity: 0.8 } }]);
+    expect(boxOf(renderer, "w1").style.opacity).toBe("0");
+    renderer.apply([{ op: "setVisible", id: "w1", visible: true }]);
+    expect(boxOf(renderer, "w1").style.opacity).toBe("0.8");
   });
 
   test("a box patch writes only the properties that changed", () => {
