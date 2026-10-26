@@ -9,6 +9,21 @@ use serde::{Deserialize, Serialize};
 /// The reply is a [`ModuleEndpointReply`] as raw JSON, with no CloudEvent envelope.
 pub const SUBJECT_MODULE_REQUEST: &str = "engine.companion.module.request";
 
+/// The `min` of `ModuleEndpointSend.budgetMs` and
+/// `ModuleEndpointMatchRequest.budgetMs`.
+pub const MIN_BUDGET_MS: i64 = 100;
+
+/// The `max` of `ModuleEndpointSend.budgetMs` and
+/// `ModuleEndpointMatchRequest.budgetMs`.
+pub const MAX_BUDGET_MS: i64 = 4500;
+
+/// The `maxBytes` of `ModuleEndpointSend.message`,
+/// `ModuleEndpointMatchRequest.message` and `ModuleEndpointOk.reply`.
+pub const MAX_MESSAGE_BYTES: usize = 65536;
+
+/// The `maxLength` of `ModuleEndpointFailed.message`.
+pub const MAX_FAILED_MESSAGE_LENGTH: usize = 1000;
+
 /// A value the contract refuses: the field, as a dotted path, and why.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{field}: {problem}")]
@@ -285,8 +300,14 @@ impl ModuleEndpointSend {
             &FORMAT_ENDPOINT_ID,
             true,
         )?;
-        check_bytes(&self.message, prefix, "message", 65536, true)?;
-        check_integer(self.budget_ms, prefix, "budgetMs", 100, 4500)?;
+        check_bytes(&self.message, prefix, "message", MAX_MESSAGE_BYTES, true)?;
+        check_integer(
+            self.budget_ms,
+            prefix,
+            "budgetMs",
+            MIN_BUDGET_MS,
+            MAX_BUDGET_MS,
+        )?;
         Ok(())
     }
 }
@@ -316,8 +337,14 @@ impl ModuleEndpointMatchRequest {
             &FORMAT_ENDPOINT_ID,
             true,
         )?;
-        check_bytes(&self.message, prefix, "message", 65536, true)?;
-        check_integer(self.budget_ms, prefix, "budgetMs", 100, 4500)?;
+        check_bytes(&self.message, prefix, "message", MAX_MESSAGE_BYTES, true)?;
+        check_integer(
+            self.budget_ms,
+            prefix,
+            "budgetMs",
+            MIN_BUDGET_MS,
+            MAX_BUDGET_MS,
+        )?;
         self.r#match.validate_in(&format!("{prefix}match."))?;
         Ok(())
     }
@@ -339,7 +366,7 @@ impl ModuleEndpointOk {
 
     fn validate_in(&self, prefix: &str) -> Result<(), ValidationError> {
         if let Some(value) = &self.reply {
-            check_bytes(value, prefix, "reply", 65536, false)?;
+            check_bytes(value, prefix, "reply", MAX_MESSAGE_BYTES, false)?;
         }
         check_text(&self.session_epoch, prefix, "sessionEpoch", 100, true)?;
         Ok(())
@@ -362,7 +389,13 @@ impl ModuleEndpointFailed {
     }
 
     fn validate_in(&self, prefix: &str) -> Result<(), ValidationError> {
-        check_text(&self.message, prefix, "message", 1000, true)?;
+        check_text(
+            &self.message,
+            prefix,
+            "message",
+            MAX_FAILED_MESSAGE_LENGTH,
+            true,
+        )?;
         if let Some(value) = &self.session_epoch {
             check_text(value, prefix, "sessionEpoch", 100, false)?;
         }
