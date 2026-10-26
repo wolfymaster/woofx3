@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { NoRespondersError, RequestError, TimeoutError } from "@woofx3/nats/src/errors";
+import { NoRespondersError, RequestError, TimeoutError } from "@woofx3/nats";
 import { bytes, text } from "../host/testing";
 import { failureReply, TwitchApiClient, type TwitchApiFailure } from "./twitchapi-client";
 
