@@ -902,7 +902,7 @@ mod tests {
     }
 
     #[test]
-    fn a_refusal_from_the_scene_manager_is_thrown_unchanged() {
+    fn test_call_connectors_host_refusal_is_thrown_unchanged() {
         let nats = FakeConnectorsHost::answering(Ok(json!({
             "ok": false,
             "error": "OBS has no scene named \"BRB\""
@@ -955,7 +955,7 @@ mod tests {
     }
 
     #[test]
-    fn a_listing_the_scene_manager_cannot_give_throws_its_reason() {
+    fn test_list_scenes_connectors_host_unavailable_throws_its_reason() {
         let ext = ObsExtension::new(FakeConnectorsHost::answering(Ok(json!({
             "error": "OBS is not connected (retrying)"
         }))));
