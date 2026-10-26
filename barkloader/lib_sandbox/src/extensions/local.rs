@@ -24,9 +24,9 @@
 use super::args::describe;
 use super::in_flight::InFlight;
 use crate::contracts::companion_gateway::{
-    ModuleEndpointFailureCode, ModuleEndpointMatch, ModuleEndpointMatchRequest,
-    ModuleEndpointMatchValue, ModuleEndpointReply, ModuleEndpointRequest, ModuleEndpointSend,
-    SUBJECT_MODULE_REQUEST,
+    MAX_BUDGET_MS, MIN_BUDGET_MS, ModuleEndpointFailureCode, ModuleEndpointMatch,
+    ModuleEndpointMatchRequest, ModuleEndpointMatchValue, ModuleEndpointReply,
+    ModuleEndpointRequest, ModuleEndpointSend, SUBJECT_MODULE_REQUEST,
 };
 use crate::host::{CallScope, HostError, HostExtension, HostFunction, NatsRequester, RequestError};
 use crate::protected_settings::LocalEndpointProtocol;
@@ -55,16 +55,18 @@ pub const MAX_IN_FLIGHT: usize = 32;
 pub const IN_FLIGHT_WAIT: Duration = Duration::from_secs(2);
 
 /// The longest a request may be served for, and what a call that sets no
-/// `timeoutMs` asks for. It is the contract's upper bound on `budgetMs`
-/// (shared/common/contracts/companion-gateway.json) and connectors' own
-/// limit on the subject, and stays below `REQUEST_TIMEOUT` so the gateway's
-/// answer always arrives before barkloader stops waiting.
-pub const MAX_BUDGET: Duration = Duration::from_millis(4_500);
+/// `timeoutMs` asks for: the contract's upper bound on `budgetMs`, which is
+/// also connectors' own limit on the subject. It stays below
+/// `REQUEST_TIMEOUT` so the gateway's answer always arrives before
+/// barkloader stops waiting.
+pub const MAX_BUDGET: Duration = Duration::from_millis(MAX_BUDGET_MS as u64);
 
 /// The shortest budget a request may carry: the contract's lower bound on
 /// `budgetMs`. A call with less time left than this fails without asking.
-pub const MIN_BUDGET: Duration = Duration::from_millis(MIN_BUDGET_MS);
-const MIN_BUDGET_MS: u64 = 100;
+pub const MIN_BUDGET: Duration = Duration::from_millis(MIN_BUDGET_MS as u64);
+
+// The budgets above read the contract's bounds as unsigned milliseconds.
+const _: () = assert!(0 < MIN_BUDGET_MS && MIN_BUDGET_MS <= MAX_BUDGET_MS);
 
 /// What a request's budget leaves of the invocation's remaining time, so the
 /// gateway's answer reaches the function before its caller stops waiting.
@@ -435,7 +437,7 @@ fn read_timeout(name: &str, value: Option<&Value>) -> Result<Option<Duration>, H
     match value {
         None | Some(Value::Null) => Ok(None),
         Some(Value::Number(number)) => match whole_number(number) {
-            Some(ms) if ms >= min as i64 => Ok(Some(Duration::from_millis(ms as u64))),
+            Some(ms) if ms >= min => Ok(Some(Duration::from_millis(ms as u64))),
             _ => Err(invalid(
                 name,
                 "timeoutMs",
