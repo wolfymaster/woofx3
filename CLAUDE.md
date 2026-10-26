@@ -25,8 +25,6 @@ cd docs && bun run docs           # VitePress dev
 cd docs && bun run docs:build     # Static site build
 ```
 
-Optional codegen used by that site: `bun run docs:generate` from `docs/` (see `docs/package.json`).
-
 # Dependencies
 This project must run locally when compiled and cannot depend on third-party services. This requires a lot of 'from scratch' development. Libraries that can be included in the compiled binary are allowed. The major targeted platforms are windows and linux.
 
