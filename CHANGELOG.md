@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.47.0](https://github.com/wolfymaster/woofx3/compare/v0.46.0...v0.47.0) (2026-10-26)
+
+### Features
+
+* **common:** match subdomain wildcard origins in the request guard ([65c3cbc](https://github.com/wolfymaster/woofx3/commit/65c3cbcec63edf092146a25d2312231706c4ee54))
+* **common:** parse WOOFX3_UI_URL into dashboard origins ([1349d72](https://github.com/wolfymaster/woofx3/commit/1349d72cd1ef44d803372899c78b1891c7f2cc5c))
+
+### Bug Fixes
+
+* **api,sceneManager:** admit the dashboard's origin from WOOFX3_UI_URL ([553e279](https://github.com/wolfymaster/woofx3/commit/553e2790ef58f56483e85d68b1fecca40510cd9e))
+
 ## [0.46.0](https://github.com/wolfymaster/woofx3/compare/v0.45.0...v0.46.0) (2026-10-26)
 
 ### Features
