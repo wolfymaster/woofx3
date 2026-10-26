@@ -9,6 +9,7 @@ import { type AdSchedule, TwitchApiError } from "./twitch";
 
 const OPTIONS: AdBreakSchedulerOptions = {
   pollIntervalMs: TWITCH_DEFAULTS.adSchedulePollIntervalMs,
+  readTimeoutMs: TWITCH_DEFAULTS.adScheduleReadTimeoutMs,
   missingScopeBackoffMs: TWITCH_DEFAULTS.adScheduleMissingScopeBackoffMs,
   unauthorizedBackoffMs: TWITCH_DEFAULTS.adScheduleUnauthorizedBackoffMs,
   rateLimitBackoff: TWITCH_DEFAULTS.adScheduleRateLimitBackoff,
@@ -310,6 +311,52 @@ describe("AdBreakScheduler", () => {
     scheduler.setLive(false);
     await clock.advanceAsync(10 * 60_000);
     expect(fetches).toBe(2);
+  });
+
+  test("a schedule read that never settles fails at its deadline and the next poll still runs", async () => {
+    const clock = new FakeClock(T0);
+    const warnings: Record<string, unknown>[] = [];
+    let fetches = 0;
+    const scheduler = new AdBreakScheduler({
+      fetchSchedule: () => {
+        fetches += 1;
+        return fetches === 1 ? new Promise<AdSchedule>(() => {}) : Promise.resolve(schedule(null));
+      },
+      publishUpcoming: () => {},
+      logger: { ...silentLogger, warn: (_msg: string, meta: Record<string, unknown>) => warnings.push(meta) } as never,
+      readLeadSeconds: async () => 60,
+      clock,
+      timers: clock,
+      random: halfRandom,
+      options: OPTIONS,
+    });
+
+    scheduler.setLive(true);
+    await clock.advanceAsync(OPTIONS.readTimeoutMs);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ code: "failed" });
+
+    await clock.advanceAsync(OPTIONS.pollIntervalMs);
+    expect(fetches).toBe(2);
+  });
+
+  test("a read timeout that is not below the poll interval is refused", () => {
+    const clock = new FakeClock(T0);
+    for (const readTimeoutMs of [0, OPTIONS.pollIntervalMs]) {
+      expect(
+        () =>
+          new AdBreakScheduler({
+            fetchSchedule: async () => schedule(null),
+            publishUpcoming: () => {},
+            logger: silentLogger,
+            readLeadSeconds: async () => 60,
+            clock,
+            timers: clock,
+            random: halfRandom,
+            options: { ...OPTIONS, readTimeoutMs },
+          })
+      ).toThrow("readTimeoutMs");
+    }
   });
 
   test("the live state read at connect applies until an EventSub event arrives", async () => {

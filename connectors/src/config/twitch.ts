@@ -31,6 +31,11 @@ export const TWITCH_DEFAULTS = {
    * a moved ad is noticed, not how late its announcement lands.
    */
   adSchedulePollIntervalMs: 60_000,
+  /**
+   * How long one ad schedule read may take before it counts as failed. Must
+   * stay below `adSchedulePollIntervalMs`; the scheduler refuses to start otherwise.
+   */
+  adScheduleReadTimeoutMs: 15_000,
   /** How long the ad schedule is left alone after a missing scope, which only a relink fixes. */
   adScheduleMissingScopeBackoffMs: 15 * 60_000,
   /** How long the ad schedule is left alone after Twitch refuses the token. */
