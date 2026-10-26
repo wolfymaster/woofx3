@@ -1,7 +1,12 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
 import { CALLER_TIMEOUT_MS } from "@woofx3/api/platform-gateway";
 import { RELAY_API_REQUEST_TIMEOUT_MS, RELAY_CONFIG_SET_BUDGET_MS } from "@woofx3/common/cloudevents/Relay/relay";
-import { parseRequestGuardPolicy, type RequestGuardPolicy, resolveExposure } from "@woofx3/common/http/request-guard";
+import {
+  parseRequestGuardPolicy,
+  parseUiOrigins,
+  type RequestGuardPolicy,
+  resolveExposure,
+} from "@woofx3/common/http/request-guard";
 import { loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
 import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { z } from "zod";
@@ -167,6 +172,7 @@ export const ApiEnvSchema = z.looseObject({
   woofx3RootPath: z.string().optional(),
   woofx3AllowedHosts: z.union([z.string(), z.number(), z.boolean()]).optional(),
   woofx3AllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  woofx3UiUrl: z.union([z.string(), z.number(), z.boolean()]).optional(),
   woofx3MarketplaceUrl: z.string().optional(),
   marketplaceUrl: z.string().optional(),
   woofx3MarketplaceDownloadHosts: z.string().optional(),
@@ -398,7 +404,8 @@ export function loadConfig(): ApiConfig {
     exposure,
     // barkloader calls the api at apiUrl; behind the edge both apps share sceneManagerUrl's origin.
     ownUrls: [apiUrl, sceneManagerUrl],
-    extraDefaultOrigins: [],
+    // The dashboard holds the api's live WebSocket from its own origin.
+    extraDefaultOrigins: parseUiOrigins(config.woofx3UiUrl),
   });
   const marketplaceUrl = config.woofx3MarketplaceUrl ?? config.marketplaceUrl;
   const marketplaceDownloadHosts = config.woofx3MarketplaceDownloadHosts ?? config.marketplaceDownloadHosts;

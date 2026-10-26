@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { RequestGuard } from "@woofx3/common/http/request-guard";
 import { DEFAULT_COMPANION_REQUEST_TIMEOUT_MS, loadConfig, resolveCompanionRequestTimeoutMs } from "../src/config";
 
 /** The minimum loadConfig requires; each test adds what it is about. */
@@ -32,6 +33,7 @@ function withEnv(vars: Record<string, string>): void {
   delete process.env.WOOFX3_REGISTRATION_TOKEN;
   delete process.env.WOOFX3_ALLOWED_HOSTS;
   delete process.env.WOOFX3_ALLOWED_ORIGINS;
+  delete process.env.WOOFX3_UI_URL;
   Object.assign(process.env, REQUIRED, vars);
 }
 
@@ -100,6 +102,69 @@ describe("secure defaults", () => {
     const { requestGuard } = loadConfig();
     expect(requestGuard.allowedOrigins).not.toBeNull();
     expect(requestGuard.allowedHosts).toBeNull();
+  });
+});
+
+describe("dashboard origin", () => {
+  /** A managed engine as maintenance configures it: behind the edge, at its own public URL. */
+  const HOSTED: Record<string, string> = {
+    WOOFX3_BEHIND_EDGE: "true",
+    WOOFX3_SCENE_MANAGER_URL: "https://streamer.woofx3.tv",
+  };
+
+  /** The dashboard's live WebSocket upgrade to /api, as the browser sends it through the edge. */
+  function liveSocketUpgrade(origin: string): Request {
+    return new Request("http://127.0.0.1:5050/api", {
+      headers: {
+        host: "wx3-prod-iad-eng-b84872e1.fly.dev",
+        origin,
+        upgrade: "websocket",
+        connection: "Upgrade",
+        "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+        "sec-websocket-version": "13",
+      },
+    });
+  }
+
+  test("a hosted engine admits the dashboard WOOFX3_UI_URL names and still refuses others", () => {
+    withEnv({ ...HOSTED, WOOFX3_UI_URL: "https://woofx3.tv" });
+
+    const guard = new RequestGuard(loadConfig().requestGuard);
+    expect(guard.reject(liveSocketUpgrade("https://woofx3.tv"))).toBeNull();
+    expect(guard.reject(liveSocketUpgrade("https://streamer.woofx3.tv"))).toBeNull();
+    expect(guard.reject(liveSocketUpgrade("https://evil.example"))?.status).toBe(403);
+  });
+
+  test("a hosted engine admits every preview dashboard a subdomain wildcard names", () => {
+    withEnv({ ...HOSTED, WOOFX3_UI_URL: "https://woofx3.tv,https://*.woofx3.com" });
+
+    const guard = new RequestGuard(loadConfig().requestGuard);
+    expect(guard.reject(liveSocketUpgrade("https://pr-12-woofx3-ui.woofx3.com"))).toBeNull();
+    expect(guard.reject(liveSocketUpgrade("https://woofx3.com"))?.status).toBe(403);
+  });
+
+  test("unset or blank, only the defaults apply", () => {
+    for (const vars of [HOSTED, { ...HOSTED, WOOFX3_UI_URL: "" }]) {
+      withEnv(vars);
+
+      const guard = new RequestGuard(loadConfig().requestGuard);
+      expect(guard.reject(liveSocketUpgrade("https://woofx3.tv"))?.status).toBe(403);
+      expect(guard.reject(liveSocketUpgrade("http://localhost:5173"))).toBeNull();
+    }
+  });
+
+  test("an explicit WOOFX3_ALLOWED_ORIGINS still replaces the defaults, the dashboard included", () => {
+    withEnv({ ...HOSTED, WOOFX3_UI_URL: "https://woofx3.tv", WOOFX3_ALLOWED_ORIGINS: "https://app.example" });
+
+    const guard = new RequestGuard(loadConfig().requestGuard);
+    expect(guard.reject(liveSocketUpgrade("https://app.example"))).toBeNull();
+    expect(guard.reject(liveSocketUpgrade("https://woofx3.tv"))?.status).toBe(403);
+  });
+
+  test("a malformed WOOFX3_UI_URL stops startup", () => {
+    withEnv({ ...HOSTED, WOOFX3_UI_URL: "woofx3.tv" });
+
+    expect(() => loadConfig()).toThrow("WOOFX3_UI_URL");
   });
 });
 

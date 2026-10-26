@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   OPEN_REQUEST_GUARD_POLICY,
   parseRequestGuardPolicy,
+  parseUiOrigins,
   type RequestGuardPolicy,
 } from "@woofx3/common/http/request-guard";
 import type { SharedLogger } from "@woofx3/common/logging";
@@ -182,5 +183,23 @@ describe("api request guard set", () => {
     const base = start(policy);
     const res = await fetch(`${base}/webhooks/barkloader/processing`, { method: "POST", body: "{}" });
     expect(res.status).toBe(204);
+  });
+});
+
+describe("api request guard on a hosted engine with a dashboard origin", () => {
+  const policy = parseRequestGuardPolicy({
+    exposure: "network",
+    ownUrls: ["http://127.0.0.1:5050", "https://streamer.woofx3.tv"],
+    extraDefaultOrigins: parseUiOrigins("https://woofx3.tv"),
+  });
+
+  test("upgrades the dashboard's live WebSocket", async () => {
+    const base = start(policy);
+    expect(await openSocket(base, "https://woofx3.tv")).toBe(true);
+  });
+
+  test("still refuses a WebSocket upgrade from an unknown origin", async () => {
+    const base = start(policy);
+    expect((await upgradeRequest(base, "https://evil.example")).status).toBe(403);
   });
 });
