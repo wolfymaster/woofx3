@@ -86,16 +86,29 @@ export class SettingsWatcher {
 
   constructor(private readonly deps: SettingsWatcherDeps) {}
 
-  /** Subscribes to the settings and reader events, runs the first pass and arms the backstop. */
+  /**
+   * Subscribes to the settings and reader events, runs the first pass and
+   * arms the backstop. A stop that lands while it subscribes wins: the start
+   * returns without arming the backstop, which that stop could not clear.
+   */
   async start(): Promise<void> {
     for (const subject of SETTINGS_SUBJECTS) {
+      if (this.stopped) {
+        return;
+      }
       await this.deps.scope.subscribe(subject, (msg) => this.onSettingsEvent(msg));
     }
     for (const subject of readerEventSubjects(this.deps.readers)) {
       const named = this.deps.adapters.filter((id) => this.deps.readers[id].events.includes(subject));
       if (named.length > 0) {
+        if (this.stopped) {
+          return;
+        }
         await this.deps.scope.subscribe(subject, () => this.request(named, named));
       }
+    }
+    if (this.stopped) {
+      return;
     }
     this.backstop = this.deps.timers.setInterval(() => {
       this.request(this.deps.adapters, []);

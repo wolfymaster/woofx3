@@ -303,6 +303,19 @@ describe("SettingsWatcher", () => {
     await time.advance(600_000);
     expect(applied).toHaveLength(1);
   });
+
+  test("a stop while start subscribes wins: no backstop is armed and no pass runs", async () => {
+    const { time, bus, settings, applied, watcher } = await setup();
+    const release = bus.holdSubscribe(INTEGRATION_TOKEN_UPDATED_SUBJECT);
+    const starting = watcher.start();
+    await flush();
+    await watcher.stop();
+    release();
+    await starting;
+    expect(time.pending).toBe(0);
+    expect(settings.reads).toBe(0);
+    expect(applied).toHaveLength(0);
+  });
 });
 
 describe("watchedSubjects", () => {

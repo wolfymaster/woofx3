@@ -242,17 +242,20 @@ export class Host {
     // follows it rather than each adapter run: an adapter that starts after a
     // session change still stamps the current session.
     await subscribeToSessionUpdates(sessionBus(this.scope), this.deps.logger);
+    this.assertStillStarting();
     for (const [id, adapter] of this.deps.adapters) {
       await this.served.serveAll(id, adapter.manifest.serves);
+      this.assertStillStarting();
     }
     await this.gateway.serve(this.scope);
+    this.assertStillStarting();
     await this.companion.start(this.scope);
+    this.assertStillStarting();
     await this.chat.start();
+    this.assertStillStarting();
     await this.watcher.start();
-    // A stop that began while starting owns the state from then on.
-    if (this.lifecycle === "starting") {
-      this.lifecycle = "running";
-    }
+    this.assertStillStarting();
+    this.lifecycle = "running";
   }
 
   /**
@@ -317,6 +320,17 @@ export class Host {
       chat: this.chat.snapshot(),
       companion: this.companion.status(),
     };
+  }
+
+  /**
+   * A stop that began while starting owns the state and tears down only
+   * what was set up before it, so the start goes no further: anything set up
+   * after that point would outlive the stop.
+   */
+  private assertStillStarting(): void {
+    if (this.lifecycle !== "starting") {
+      throw new Error(`the host was stopped while starting; it is ${this.lifecycle}`);
+    }
   }
 
   /** Every subject the host answers: each adapter's served subjects, the platform gateway's and the companion gateway's. */

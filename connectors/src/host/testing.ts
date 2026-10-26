@@ -232,12 +232,26 @@ export class FakeBus implements BusClient {
   readonly published: Array<{ subject: string; data: Uint8Array }> = [];
   readonly subscriptions: FakeSubscription[] = [];
   failUnsubscribe = false;
+  private readonly held = new Map<string, Promise<void>>();
 
   async publish(subject: string, data: Uint8Array): Promise<void> {
     this.published.push({ subject, data });
   }
 
+  /** Makes every subscribe to `subject` wait until the returned release is called. */
+  holdSubscribe(subject: string): () => void {
+    let release = () => {};
+    this.held.set(
+      subject,
+      new Promise<void>((resolve) => {
+        release = resolve;
+      })
+    );
+    return release;
+  }
+
   async subscribe(subject: string, handler: BusHandler): Promise<BusSubscription> {
+    await this.held.get(subject);
     const subscription: FakeSubscription = { pattern: subject, handler, active: true };
     this.subscriptions.push(subscription);
     return {
