@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.46.0](https://github.com/wolfymaster/woofx3/compare/v0.45.0...v0.46.0) (2026-10-26)
+
+### Features
+
+* **api:** report the engine's region on GET /health ([bc01c71](https://github.com/wolfymaster/woofx3/commit/bc01c71bfac04b8976c1b2a60fa00f13a20ce1ae))
+
 ## [0.45.0](https://github.com/wolfymaster/woofx3/compare/v0.44.0...v0.45.0) (2026-10-26)
 
 ### Features
