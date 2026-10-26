@@ -269,6 +269,56 @@ describe("parseRequestGuardPolicy defaults", () => {
   });
 });
 
+describe("RequestGuard subdomain wildcard origins", () => {
+  const guard = guardFor("*", "https://*.preview.example");
+
+  test("matches any subdomain at any depth on the listed scheme and port", () => {
+    expect(guard.reject(request({ origin: "https://pr-12-ui.preview.example" }))).toBeNull();
+    expect(guard.reject(request({ origin: "https://a.b.preview.example" }))).toBeNull();
+    expect(guard.reject(request({ origin: "https://PR-12-UI.preview.example:443" }))).toBeNull();
+  });
+
+  test("does not match the domain itself, a lookalike, another scheme or another port", () => {
+    for (const origin of [
+      "https://preview.example",
+      "https://evilpreview.example",
+      "https://preview.example.evil.example",
+      "http://pr-12-ui.preview.example",
+      "https://pr-12-ui.preview.example:8443",
+      "null",
+    ]) {
+      expect(guard.reject(request({ origin }))?.status).toBe(403);
+    }
+  });
+
+  test("a port in the entry matches only that port", () => {
+    const ported = guardFor("*", "http://*.dev.example:5173");
+    expect(ported.reject(request({ origin: "http://ui.dev.example:5173" }))).toBeNull();
+    expect(ported.reject(request({ origin: "http://ui.dev.example" }))?.status).toBe(403);
+  });
+
+  test("is described as written", () => {
+    expect(describeRequestGuardPolicy(policyFor({ allowedOrigins: "https://*.Preview.Example:8443" }))).toEqual({
+      allowedHosts: "*",
+      allowedOrigins: "https://*.preview.example:8443",
+    });
+  });
+
+  test("throws on a wildcard over a top-level domain, an address, a non-web scheme or with :*", () => {
+    for (const entry of [
+      "https://*.example",
+      "https://*.10.0.0.1",
+      "https://*.",
+      "tauri://*.localhost.example",
+      "https://*.preview.example:*",
+      "https://*.preview.example/path",
+      "https://ui.*.example",
+    ]) {
+      expect(() => policyFor({ allowedOrigins: entry })).toThrow("WOOFX3_ALLOWED_ORIGINS");
+    }
+  });
+});
+
 describe("resolveExposure", () => {
   test("loopback binds with no edge are loopback-only", () => {
     expect(resolveExposure("127.0.0.1", false)).toBe("loopback");
