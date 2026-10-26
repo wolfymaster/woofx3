@@ -328,7 +328,10 @@ describe("EngineCompanionGateway route changes", () => {
     const heard: string[] = [];
     const stop = handle.onRouteChange(OBS_ENDPOINT, (why) => heard.push(why));
 
-    scope.deliver("db.module.setting.updated.woofx3_obs", bytes(JSON.stringify({ data: { moduleId: "woofx3_obs" } })));
+    scope.deliver(
+      "db.module.setting.updated.system",
+      bytes(JSON.stringify({ type: "module.setting.updated", data: { moduleId: "woofx3_obs", key: "host" } }))
+    );
     scope.deliver("engine.companion.relay_config.set", bytes(JSON.stringify({ config: null })));
     await flush();
     scope.deliver("engine.companion.relay_config.set", bytes(JSON.stringify({ config: CONFIG })));
@@ -336,7 +339,10 @@ describe("EngineCompanionGateway route changes", () => {
     expect(heard).toEqual(["woofx3_obs settings changed", "Relay configuration changed"]);
 
     stop();
-    scope.deliver("db.module.setting.updated.woofx3_obs", bytes(JSON.stringify({ data: { moduleId: "woofx3_obs" } })));
+    scope.deliver(
+      "db.module.setting.updated.system",
+      bytes(JSON.stringify({ type: "module.setting.updated", data: { moduleId: "woofx3_obs", key: "host" } }))
+    );
     expect(heard).toHaveLength(2);
   });
 });
