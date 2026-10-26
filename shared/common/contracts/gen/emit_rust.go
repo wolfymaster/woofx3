@@ -19,6 +19,14 @@ type rustSubject struct {
 	Reply   string
 }
 
+type rustLimit struct {
+	Const string
+	Type  string
+	Value int64
+	// Doc is the constant's doc comment, one entry per line.
+	Doc []string
+}
+
 type rustFormat struct {
 	Const     string
 	Predicate string
@@ -88,6 +96,7 @@ type rustHelpers struct {
 type rustData struct {
 	Source       string
 	Subjects     []rustSubject
+	Limits       []rustLimit
 	Formats      []rustFormat
 	Enums        []rustEnum
 	ScalarUnions []rustScalarUnion
@@ -101,10 +110,18 @@ func emitRust(c companionGateway) ([]byte, error) {
 	data := rustData{Source: companionGatewaySource}
 	for _, s := range c.Subjects {
 		data.Subjects = append(data.Subjects, rustSubject{
-			Const:   "SUBJECT_" + screamingName(s.Name),
+			Const:   rustSubjectConst(s.Name),
 			Subject: s.Subject,
 			Request: pascalName(s.Request),
 			Reply:   pascalName(s.Reply),
+		})
+	}
+	for _, l := range c.Limits {
+		data.Limits = append(data.Limits, rustLimit{
+			Const: limitConst(l.Name),
+			Type:  rustLimitTypes[c.limitKinds[l.Name]],
+			Value: l.Value,
+			Doc:   c.limitDoc(l.Name),
 		})
 	}
 	for _, f := range c.Formats {
@@ -153,6 +170,14 @@ func emitRust(c companionGateway) ([]byte, error) {
 func rustFormatConst(name string) string {
 	return "FORMAT_" + screamingName(name)
 }
+
+func rustSubjectConst(name string) string {
+	return "SUBJECT_" + screamingName(name)
+}
+
+// rustLimitTypes is the type of a limit's constant: the type of the check
+// argument it is passed as.
+var rustLimitTypes = map[limitKind]string{limitLength: "usize", limitInteger: "i64"}
 
 // snakeName is a contract name in snake_case, for Rust items and fields.
 func snakeName(name string) string {
@@ -259,10 +284,10 @@ func (d *rustData) rustCheck(f companionField, fieldName string) string {
 		if !f.Required {
 			integer = "*value"
 		}
-		call = rustCall(indent, "check_integer", []string{integer, "prefix", name, rustInt(*f.Min), rustInt(*f.Max)})
+		call = rustCall(indent, "check_integer", []string{integer, "prefix", name, boundExpr(f.Min), boundExpr(f.Max)})
 	case companionStringOrInteger:
 		d.Helpers.StringOrInteger, d.Helpers.Text, d.Helpers.Integer = true, true, true
-		call = rustCall(indent, target+".check", []string{"prefix", name, strconv.Itoa(*f.MaxLength), rustInt(*f.Min), rustInt(*f.Max), required})
+		call = rustCall(indent, target+".check", []string{"prefix", name, boundExpr(f.MaxLength), boundExpr(f.Min), boundExpr(f.Max), required})
 	case companionString:
 		switch {
 		case f.Format != "":
@@ -270,10 +295,10 @@ func (d *rustData) rustCheck(f companionField, fieldName string) string {
 			call = rustCall(indent, "check_format", []string{reference, "prefix", name, "&" + rustFormatConst(f.Format), required})
 		case f.MaxBytes != nil:
 			d.Helpers.Bytes = true
-			call = rustCall(indent, "check_bytes", []string{reference, "prefix", name, strconv.Itoa(*f.MaxBytes), required})
+			call = rustCall(indent, "check_bytes", []string{reference, "prefix", name, boundExpr(f.MaxBytes), required})
 		default:
 			d.Helpers.Text = true
-			call = rustCall(indent, "check_text", []string{reference, "prefix", name, strconv.Itoa(*f.MaxLength), required})
+			call = rustCall(indent, "check_text", []string{reference, "prefix", name, boundExpr(f.MaxLength), required})
 		}
 	}
 	if f.Required {
@@ -281,10 +306,6 @@ func (d *rustData) rustCheck(f companionField, fieldName string) string {
 	}
 	pad := strings.Repeat(" ", rustCheckIndent)
 	return fmt.Sprintf("if let Some(value) = &self.%s {\n%s%s\n%s}", fieldName, pad+strings.Repeat(" ", rustIndentWidth), call, pad)
-}
-
-func rustInt(value int64) string {
-	return strconv.FormatInt(value, 10)
 }
 
 // rustfmt's default layout, which the generated file must already have:

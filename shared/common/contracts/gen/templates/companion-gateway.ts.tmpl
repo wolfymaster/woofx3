@@ -10,7 +10,14 @@ export const COMPANION_GATEWAY_SUBJECTS = {
   {{.Key}}: "{{.Subject}}",
 {{- end}}
 } as const;
-{{range .Enums}}
+{{range .Limits}}
+/**
+{{- range .Doc}}
+ * {{.}}
+{{- end}}
+ */
+export const {{.Const}} = {{.Value}};
+{{end}}{{range .Enums}}
 /** {{.Doc}} */
 export const {{.Const}} = [{{.Values}}] as const;
 export type {{.Type}} = (typeof {{.Const}})[number];
