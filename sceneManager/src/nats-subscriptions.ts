@@ -30,6 +30,7 @@ import { closeDeliveriesToRemovedPlacements } from "./events/removed-placements"
 import { errorText } from "./scene/held-scene";
 import type { ModuleStateWatch } from "./scene/module-state";
 import { answerSceneCommand, type SceneCommandDeps } from "./scene/scene-command";
+import type { AlertFraming } from "./scene/frame-catalog";
 import type { OverlayHost } from "./scene/scene-host";
 import type { OverlayTokenResolver } from "./scene/token-resolver";
 
@@ -38,6 +39,8 @@ interface InitArgs {
   db: DbClient;
   host: OverlayHost;
   deliveryStore: DeliveryStore;
+  /** Frames each alert's widgets as it is dispatched. */
+  framing: AlertFraming;
   moduleState: ModuleStateWatch;
   resolver: OverlayTokenResolver;
   sceneDocuments: SavedScenes;
@@ -118,8 +121,19 @@ interface WidgetEventEnvelope {
  *     `db.upsertWidgetStatus`, the built-in alert widget's included.
  */
 export async function initSubscriptions(args: InitArgs): Promise<void> {
-  const { nats, db, host, deliveryStore, moduleState, resolver, sceneDocuments, editorToken, previewToken, logger } =
-    args;
+  const {
+    nats,
+    db,
+    host,
+    deliveryStore,
+    framing,
+    moduleState,
+    resolver,
+    sceneDocuments,
+    editorToken,
+    previewToken,
+    logger,
+  } = args;
 
   if (!nats) {
     logger.warn("NATS unavailable — event subscriptions skipped (scenes will receive no live events)");
@@ -127,7 +141,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   }
 
   await subscribeJson<AlertEnvelope>(nats, logger, "ui.notify.alert", async (raw, msg) => {
-    await dispatchAlert(raw, { db, host, deliveryStore, logger });
+    await dispatchAlert(raw, { db, host, deliveryStore, framing, logger });
   });
 
   // Only the api's requests are acted on. A plain publish has no one to
@@ -160,7 +174,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       msg.respond(new TextEncoder().encode(JSON.stringify(reply)));
     });
 
-  const replays = new AlertReplays({ db, host, deliveryStore, logger });
+  const replays = new AlertReplays({ db, host, deliveryStore, framing, logger });
   await answer(ALERT_SKIP_SUBJECT, () => skipCurrentAlerts({ db, host, deliveryStore, logger }));
   await answer(ALERT_CLEAR_SUBJECT, () => clearQueuedAlerts({ db, host, deliveryStore, logger }));
   await answer(ALERT_REPLAY_SUBJECT, (body) => replays.replay(typeof body.id === "string" ? body.id : ""));

@@ -3,6 +3,7 @@
 
 import { BROWSER_HOST } from "@woofx3/widget-host/page";
 import type { SceneConfig } from "../../contract/scene-config";
+import { BROWSER_MARKS } from "./alert-timing";
 import { createOverlay } from "./overlay";
 import { PAGE_CLOCK } from "./page-clock";
 import { createReconnectCoordinator } from "./reconnect-coordinator";
@@ -49,6 +50,7 @@ function main(): void {
     renderConnected,
     host: BROWSER_HOST,
     clock: PAGE_CLOCK,
+    marks: BROWSER_MARKS,
     coordinator: createReconnectCoordinator(),
   });
 }

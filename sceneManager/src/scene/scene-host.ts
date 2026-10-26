@@ -4,7 +4,6 @@ import type { Logger } from "@woofx3/common/runtime";
 import type { DeclaredBehaviorKinds } from "@woofx3/scene/model";
 import type * as module_widget from "@woofx3/db/module_widget.pb";
 import type * as scene from "@woofx3/db/scene.pb";
-import type * as scene_event from "@woofx3/db/scene_event.pb";
 import type { PlacementFraming } from "./frame-catalog";
 import type { OverlayTokenResolver } from "./token-resolver";
 import { maskToken } from "./token-resolver";
@@ -155,7 +154,6 @@ export interface OverlayWidgetDefinition {
 export interface OverlayHostDb {
   getScene(req: scene.GetSceneRequest): Promise<scene.SceneResponse>;
   listWidgets(req: module_widget.ListWidgetsRequest): Promise<module_widget.ListWidgetsResponse>;
-  getSceneEvent(req: scene_event.GetSceneEventRequest): Promise<scene_event.SceneEventResponse>;
 }
 
 export interface OverlayHostOptions {
@@ -373,37 +371,6 @@ export class OverlayHost {
    */
   async buildConfig(token: string): Promise<Record<string, unknown>> {
     return this.configOf(await this.loadScene(token));
-  }
-
-  /**
-   * A scene event, when it belongs to `sceneId`. Callers hold a session for
-   * one scene; checking ownership here keeps an event id from another scene
-   * from reading across.
-   */
-  async loadSceneEvent(sceneId: string, eventId: string): Promise<{ type: string; value: unknown } | null> {
-    if (!this.db) {
-      return null;
-    }
-    let response: scene_event.SceneEventResponse;
-    try {
-      response = await this.db.getSceneEvent({ id: eventId });
-    } catch (err) {
-      this.logger.warn("scene event fetch failed", {
-        sceneId,
-        eventId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-      return null;
-    }
-    const event = response.status?.code === "OK" ? response.sceneEvent : undefined;
-    if (!event || event.sceneId !== sceneId) {
-      return null;
-    }
-    try {
-      return { type: event.type, value: JSON.parse(event.value) };
-    } catch {
-      return null;
-    }
   }
 }
 

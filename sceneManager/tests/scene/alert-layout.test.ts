@@ -1,11 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import {
-  type AlertLayoutParse,
-  alertTarget,
-  alertWidgetsNamed,
-  parseAlertDelivery,
-  parseAlertLayout,
-} from "../../src/scene/alert-layout";
+import { type AlertLayoutParse, alertTarget, alertWidgetsNamed, parseAlertLayout } from "../../src/scene/alert-layout";
 import type { BehaviorDocument } from "@woofx3/scene/model";
 import type { OverlayWidgetDefinition, OverlayWidgetInstance } from "../../src/scene/scene-host";
 
@@ -322,38 +316,5 @@ describe("alert widget targeting", () => {
     expect(alertWidgetsNamed(instances, "default").map((i) => i.id)).toEqual(["a", "c"]);
     expect(alertWidgetsNamed(instances, "sidebar").map((i) => i.id)).toEqual(["b"]);
     expect(alertWidgetsNamed(instances, "nowhere")).toEqual([]);
-  });
-});
-
-describe("parseAlertDelivery", () => {
-  it("restores a stored delivery and refuses anything else", () => {
-    const delivery = {
-      alertId: "a1",
-      layout: { layout: { width: 10, height: 10 }, widgets: { t1: placementOf("text", "a0") }, behaviors: {} },
-      event: null,
-    };
-    expect(parseAlertDelivery(delivery)).toEqual(delivery);
-    expect(parseAlertDelivery({ layout: delivery.layout })).toBeNull();
-    expect(parseAlertDelivery({ alertId: "a1", layout: { width: 10 } })).toBeNull();
-    expect(parseAlertDelivery("nope")).toBeNull();
-  });
-
-  it("converts a delivery recorded with a list-shaped layout", () => {
-    const stored = {
-      alertId: "a1",
-      layout: {
-        width: 10,
-        height: 10,
-        widgets: [{ ...layoutWidget("t1", "text"), position: { x: 1, y: 2, width: 3, height: 4 } }],
-      },
-      event: null,
-    };
-    expect(parseAlertDelivery(stored)?.layout.widgets.t1).toMatchObject({
-      widget: "woofx3:widget:text",
-      x: 1,
-      y: 2,
-      width: 3,
-      height: 4,
-    });
   });
 });

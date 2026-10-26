@@ -9,11 +9,12 @@ import {
   UNTIMED_ALERT_MS,
 } from "@woofx3/scene/model";
 import type { RenderAnimation, RenderElement, RenderStyle } from "@woofx3/scene/runtime";
-import { type AlertFrameFacts, parseDelivery, playAlert } from "../../public/scene-manager/alert-widget";
+import { type AlertFrameFacts, stageAlert } from "../../public/scene-manager/alert-stage";
 
 class FakeElement implements RenderElement<FakeElement> {
   readonly style = {} as RenderStyle;
   readonly children: FakeElement[] = [];
+  readonly attributes = new Map<string, string>();
   parent: FakeElement | null = null;
 
   appendChild(child: FakeElement): unknown {
@@ -29,7 +30,9 @@ class FakeElement implements RenderElement<FakeElement> {
     }
   }
 
-  setAttribute(): void {}
+  setAttribute(name: string, value: string): void {
+    this.attributes.set(name, value);
+  }
 
   animate(): RenderAnimation {
     return { startTime: null, currentTime: null, pause: () => {}, cancel: () => {} };
@@ -99,7 +102,18 @@ function alertOf(ids: string[], behaviors: Record<string, BehaviorDocument> = {}
   return { layout: { width: 1920, height: 1080 }, widgets, behaviors } satisfies CompositionDocument;
 }
 
-function setup(doc: CompositionDocument) {
+/** The box the renderer made for widget `id` under `root`. */
+function boxOf(root: FakeElement, id: string): FakeElement {
+  const search = (element: FakeElement): FakeElement | undefined =>
+    element.attributes.get("data-scene-widget") === id ? element : element.children.map(search).find(Boolean);
+  const box = search(root);
+  if (box === undefined) {
+    throw new Error(`no box for ${id}`);
+  }
+  return box;
+}
+
+function setup(doc: CompositionDocument, options: { start: boolean } = { start: true }) {
   const clock = new FakeClock();
   const stage = new FakeElement();
   const facts = new Map<string, AlertFrameFacts>();
@@ -107,7 +121,7 @@ function setup(doc: CompositionDocument) {
   const entrances = new Map<string, WidgetBehaviorState | null>();
   const unmounted: string[] = [];
   let finished: number | null = null;
-  const player = playAlert({
+  const player = stageAlert({
     document: {
       createElement: () => new FakeElement(),
       timeline: {
@@ -132,6 +146,9 @@ function setup(doc: CompositionDocument) {
       finished = clock.now();
     },
   });
+  if (options.start) {
+    player.start();
+  }
   const frame = (id: string): AlertFrameFacts => {
     const found = facts.get(id);
     if (found === undefined) {
@@ -142,7 +159,27 @@ function setup(doc: CompositionDocument) {
   return { clock, stage, frame, facts, sent, entrances, unmounted, player, finished: () => finished };
 }
 
-describe("playAlert", () => {
+describe("stageAlert", () => {
+  it("holds a staged alert at its first moment, then plays it from when it starts", () => {
+    const { clock, frame, finished, player } = setup(alertOf(["text"]), { start: false });
+    frame("text").subscribed(false);
+    frame("text").rendered();
+    clock.advanceTo(SUBSCRIBE_TIMEOUT_MS + UNTIMED_ALERT_MS + 1_000);
+    expect(finished()).toBeNull();
+
+    const startedAt = clock.now();
+    player.start();
+    clock.advanceTo(startedAt + UNTIMED_ALERT_MS - 1);
+    expect(finished()).toBeNull();
+    clock.advanceTo(startedAt + UNTIMED_ALERT_MS);
+    expect(finished()).toBe(startedAt + UNTIMED_ALERT_MS);
+  });
+
+  it("starts once", () => {
+    const { player } = setup(alertOf(["text"]));
+    expect(() => player.start()).toThrow();
+  });
+
   it("lasts as long as its longest timed widget, then removes every frame", () => {
     const { clock, frame, finished, unmounted, stage } = setup(alertOf(["audio", "video", "text"]));
     frame("audio").subscribed(true);
@@ -214,6 +251,16 @@ describe("playAlert", () => {
     expect(finished()).toBe(UNTIMED_ALERT_MS + 400);
   });
 
+  it("keeps a widget that has not painted transparent, never visibility-hidden, so its frame can paint", () => {
+    const { stage, frame } = setup(alertOf(["text"]));
+    const box = boxOf(stage, "text");
+    expect(box.style.opacity).toBe("0");
+    expect(box.style.visibility).toBeUndefined();
+    frame("text").subscribed(false);
+    frame("text").rendered();
+    expect(box.style.opacity).toBe("1");
+  });
+
   it("never mounts a hidden widget, and does not wait for it", () => {
     const { clock, frame, facts, finished } = setup(alertOf(["text", "sound"], {}, ["sound"]));
     expect([...facts.keys()]).toEqual(["text"]);
@@ -248,6 +295,26 @@ describe("playAlert", () => {
     expect(sent).toEqual([["text", state]]);
   });
 
+  it("hands a staged widget its own entrance only once the alert starts", () => {
+    const typewriter: BehaviorDocument = {
+      type: "transition",
+      kind: "typewriter",
+      target: "text",
+      order: "a0",
+      timing: { anchor: "enter", offsetMs: 0, durationMs: 800, easing: "ease-out" },
+      params: { phase: "in" },
+    };
+    const { clock, frame, sent, player } = setup(alertOf(["text"], { typewriter }), { start: false });
+    frame("text").subscribed(false);
+    frame("text").rendered();
+    clock.advanceTo(5_000);
+    expect(sent).toEqual([]);
+
+    player.start();
+
+    expect(sent.map(([widgetId, state]) => [widgetId, state?.kind])).toEqual([["text", "typewriter"]]);
+  });
+
   it("stops without reporting the alert finished", () => {
     const { clock, frame, player, finished, unmounted } = setup(alertOf(["text"]));
     player.stop();
@@ -256,25 +323,5 @@ describe("playAlert", () => {
     frame("text").subscribed(false);
     clock.advanceTo(MAX_ALERT_MS);
     expect(finished()).toBeNull();
-  });
-});
-
-describe("parseDelivery", () => {
-  it("reads a composition, converts a list-shaped layout, and refuses one without a usable canvas", () => {
-    const doc = alertOf(["text"]);
-    expect(parseDelivery({ layout: doc, event: null })).toEqual({ layout: doc, event: null });
-    const legacy = parseDelivery({
-      layout: {
-        width: 10,
-        height: 10,
-        widgets: [{ id: "t1", widgetCanonicalId: "woofx3:widget:text", position: { x: 1, y: 2, width: 3, height: 4 } }],
-      },
-      event: { type: "channel.follow", data: {} },
-    });
-    expect(legacy?.layout.widgets.t1).toMatchObject({ x: 1, y: 2, width: 3, height: 4, visible: true });
-    expect(legacy?.event).toEqual({ type: "channel.follow", data: {} });
-    expect(parseDelivery({ layout: { ...doc, layout: { width: 0, height: 10 } } })).toBeNull();
-    expect(parseDelivery({ layout: { width: 10, height: 10 } })).toBeNull();
-    expect(parseDelivery(null)).toBeNull();
   });
 });

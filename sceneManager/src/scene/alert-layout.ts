@@ -1,5 +1,4 @@
 import {
-  alertCompositionOf,
   type BehaviorDocument,
   type BehaviorId,
   CANVAS_TARGET,
@@ -27,26 +26,8 @@ export const ALERT_SURFACE = "alert";
  */
 export const DEFAULT_ALERT_WIDGET_NAME = "default";
 
-/** Layout widget ids end up in the frame URL, so they are held to a URL-safe token. */
+/** Layout widget ids end up in a frame's instance id and the page's timing marks, so they are held to a URL-safe token. */
 const LAYOUT_WIDGET_ID = /^[A-Za-z0-9_-]{1,64}$/;
-
-/** One alert as delivered to a scene, and as stored on its scene event. */
-export interface AlertDelivery {
-  alertId: string;
-  /**
-   * The engine's alert log row for this play, which lifecycle reports name.
-   * Absent when the engine recorded no row, and from deliveries recorded
-   * before deliveries carried it.
-   */
-  rowId?: string;
-  /**
-   * The alert as a composition, every widget one the catalog lets play in an
-   * alert, under its canonical id (`{moduleId}:widget:{manifestId}`).
-   */
-  layout: CompositionDocument;
-  /** The CloudEvent that triggered the workflow; null when nothing did (a manual or scheduled run). */
-  event: { type: string; data: unknown } | null;
-}
 
 export interface RejectedLayoutWidget {
   /** The widget's id in the layout; "" for a list entry with none. */
@@ -249,23 +230,6 @@ function admit(
     behaviors[id] = behavior;
   }
   return { layout: { ...doc, widgets, behaviors }, rejected, rejectedBehaviors };
-}
-
-/**
- * Read back an alert stored on a scene event. It passed `parseAlertLayout`
- * before it was recorded, so this only restores the shape; an alert recorded
- * before deliveries carried compositions holds the list shape, and is
- * converted.
- */
-export function parseAlertDelivery(raw: unknown): AlertDelivery | null {
-  if (!isRecord(raw) || typeof raw.alertId !== "string") {
-    return null;
-  }
-  const layout = alertCompositionOf(raw.layout);
-  if (layout === null) {
-    return null;
-  }
-  return { ...(raw as unknown as AlertDelivery), layout };
 }
 
 /** Whether an alert layout has a widget that will be seen: a hidden one does not play. */
