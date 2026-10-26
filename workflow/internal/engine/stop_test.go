@@ -134,6 +134,69 @@ func TestStopAbandonsAParentAndTheSubWorkflowItWaitsOn(t *testing.T) {
 	}
 }
 
+// Stop abandons runs in no particular order. When it reaches the sub-workflow
+// first, the sub-workflow settles and resumes its parent before Stop gets to
+// the parent; the parent is still a run the engine abandoned, not one its
+// sub-workflow failed.
+func TestStopAbandonsAParentWhoseSubWorkflowWasAbandonedFirst(t *testing.T) {
+	h := newCancelHarness(t)
+	child := &types.WorkflowDefinition{
+		ID:    "wf-child",
+		Name:  "child",
+		Tasks: []types.TaskDefinition{{ID: "child-slow", Type: "action", Action: "block"}},
+	}
+	if err := h.engine.RegisterWorkflow(child); err != nil {
+		t.Fatalf("RegisterWorkflow: %v", err)
+	}
+	parentID := h.start(t, &types.WorkflowDefinition{
+		ID:   "wf-parent",
+		Name: "parent",
+		Tasks: []types.TaskDefinition{
+			{ID: "call", Type: "workflow", Workflow: &types.WorkflowConfig{WorkflowID: "wf-child", WaitUntilCompletion: true}},
+			{ID: "after", Type: "action", Action: "mark", DependsOn: []string{"call"}},
+		},
+	})
+	h.awaitEntered(t)
+	waitUntil(t, func() bool {
+		h.engine.subWorkflowWaitersMu.Lock()
+		defer h.engine.subWorkflowWaitersMu.Unlock()
+		return len(h.engine.subWorkflowWaiters) == 1
+	})
+
+	// Stop's first steps, with only the sub-workflow abandoned.
+	h.engine.cancel()
+	var childRuns []*abandonedRun
+	for _, run := range h.engine.unsettledRuns() {
+		if run.execution.ID != parentID {
+			childRuns = append(childRuns, run)
+		}
+	}
+	if len(childRuns) != 1 {
+		t.Fatalf("found %d sub-workflow runs, want 1", len(childRuns))
+	}
+	h.engine.abandonRuns(childRuns)
+	waitUntil(t, func() bool { return len(h.log.settlements(parentID)) == 1 })
+
+	if got := h.log.settlements(parentID); got[0] != types.ExecutionStatusFailed {
+		t.Fatalf("parent settlements = %v, want [failed]", got)
+	}
+	if execution, _ := h.engine.GetExecution(parentID); execution.Error != "engine stopped" {
+		t.Errorf("parent error = %q, want engine stopped", execution.Error)
+	}
+	step, ok := h.log.step("call")
+	if !ok || step.Status != string(types.TaskStatusCancelled) || step.Error != "engine stopped" {
+		t.Errorf("call step = %+v (recorded %v), want cancelled by the engine stopping", step, ok)
+	}
+
+	stopWithin(t, h, 2*time.Second)
+	if got := h.log.settlements(parentID); len(got) != 1 {
+		t.Errorf("parent settled %d times, want once", len(got))
+	}
+	if h.didMark("after") {
+		t.Error("the parent continued after the engine stopped")
+	}
+}
+
 func TestAStoppedEngineStartsNothing(t *testing.T) {
 	h := newCancelHarness(t)
 	wf := blockThenMark()
