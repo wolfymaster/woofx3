@@ -500,7 +500,7 @@ pub struct InstallOutcome {
     /// (`relocated_endpoint_address_settings`). Until the sandbox registry is
     /// refreshed, code of the previous version can still write them, so the
     /// caller resets them again after the refresh
-    /// (`ModuleService::reset_relocated_endpoint_settings`). From then on the
+    /// (`ModuleService::finish_install`). From then on the
     /// registry refuses those writes, including from invocations already
     /// running.
     pub relocated_endpoint_settings: Vec<String>,
