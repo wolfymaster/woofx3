@@ -38,7 +38,10 @@ export const CALLER_TIMEOUT_MS = {{.Limits.CallerTimeoutMs}};
  * MAX_WORKFLOW_CHAIN_RUNS ids of at most MAX_REF_LENGTH each, joined by commas.
  */
 export const MAX_WORKFLOW_CHAIN_LENGTH = MAX_WORKFLOW_CHAIN_RUNS * MAX_REF_LENGTH + (MAX_WORKFLOW_CHAIN_RUNS - 1);
-{{range .Enums}}
+{{range .Bounds}}
+/** {{.TSName}} {{.Doc}} */
+export const {{.TSName}} = {{.Value}};
+{{end}}{{range .Enums}}
 /** {{.Doc}} */
 export const {{.Const}} = [{{.Values}}] as const;
 export type {{.Type}} = (typeof {{.Const}})[number];

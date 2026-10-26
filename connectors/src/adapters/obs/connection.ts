@@ -41,9 +41,9 @@ export interface ObsConnectionOptions<TClient> {
   logger: Logger;
   /**
    * The retry backoff and `openTimeoutMs`: how long one attempt may take to
-   * open a session. Opening loads the scene list after the socket connects,
-   * and an OBS that accepts the socket and then stops answering would
-   * otherwise hold the attempt open forever, with no retry ever scheduled.
+   * open a session. An OBS that accepts the socket but never completes the
+   * Hello/Identify handshake would otherwise hold the attempt open forever,
+   * with no retry ever scheduled.
    */
   config: Pick<ObsConnectionConfig, "backoff" | "openTimeoutMs">;
   /** Jitter for the backoff, so several engines retrying against one OBS do not stay in step. */
@@ -236,8 +236,6 @@ export class ObsConnection<TClient> {
     return this.state === "connected" ? null : this.lastFailureKind;
   }
 
-  // A method rather than an inline comparison: `stop()` can change the state
-  // across an await, which the compiler's narrowing does not account for.
   /**
    * Closes a session this connection no longer uses. A failure is only
    * logged: the session is already dropped, so nothing reads it again, and
@@ -251,6 +249,8 @@ export class ObsConnection<TClient> {
     }
   }
 
+  // A method rather than an inline comparison: `stop()` can change the state
+  // across an await, which the compiler's narrowing does not account for.
   private isStopped(): boolean {
     return this.state === "stopped";
   }
@@ -352,7 +352,7 @@ export class ObsConnection<TClient> {
         .then(() => hook(session.client))
         .catch((err) => {
           logger.warn("OBS post-connect work failed", {
-            error: err instanceof Error ? err.message : String(err),
+            error: errorMessage(err),
           });
         });
     }
@@ -374,7 +374,7 @@ export class ObsConnection<TClient> {
     if (this.isStopped()) {
       return;
     }
-    const error = err instanceof Error ? err.message : String(err);
+    const error = errorMessage(err);
     const kind = obsFailureKind(err);
     // One line per change in why OBS cannot be reached, then quiet: an
     // evening with OBS closed is one line, but a wrong password after OBS

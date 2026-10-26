@@ -22,5 +22,9 @@ pub use db_proxy::MarketplaceOrigin;
 pub use manifest_validate::{InstallProvenance, SystemOnlyActions};
 pub use module_file::ModuleFileKind;
 pub use module_install::InstallOutcome;
-pub use module_service::{ModuleService, ModuleServiceConfig, manifest_file_rank};
-pub use registry_loader::{ModuleSchedule, ScheduleRegistrar};
+pub use module_service::{
+    FinishInstallError, ModuleService, ModuleServiceConfig, manifest_file_rank,
+};
+pub use registry_loader::{
+    ModuleSchedule, RegistryRefresher, SandboxRegistryRefresher, ScheduleRegistrar,
+};

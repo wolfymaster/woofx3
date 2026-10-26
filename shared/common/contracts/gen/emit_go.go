@@ -72,6 +72,7 @@ type goData struct {
 	Subjects      gatewaySubjects
 	ReplyTypes    gatewaySubjects
 	Limits        limits
+	Bounds        []integerBound
 	Enums         []goEnum
 	Platforms     []goPlatform
 	Actions       []goAction
@@ -80,7 +81,7 @@ type goData struct {
 }
 
 func emitGo(c platformGateway) ([]byte, error) {
-	data := goData{Source: platformGatewaySource, Subjects: c.Subjects, ReplyTypes: c.ReplyTypes, Limits: c.Limits}
+	data := goData{Source: platformGatewaySource, Subjects: c.Subjects, ReplyTypes: c.ReplyTypes, Limits: c.Limits, Bounds: integerBoundsOf(c.Actions)}
 
 	platformValues := make([]goEnumValue, 0, len(c.Platforms))
 	for _, p := range c.Platforms {
@@ -169,7 +170,7 @@ func goActionOf(a action) goAction {
 		keys := make([]string, 0, len(v.Fields))
 		for _, f := range v.Fields {
 			gv.Fields = append(gv.Fields, goFieldOf(f))
-			gv.Checks = append(gv.Checks, goFieldCheck(f))
+			gv.Checks = append(gv.Checks, goFieldCheck(a.ID, f))
 			keys = append(keys, strconv.Quote(f.Name))
 		}
 		gv.Keys = strings.Join(keys, ", ")
@@ -194,10 +195,12 @@ func goFieldOf(f field) goField {
 	return goField{Name: goName(f.Name), Type: goType, Tag: "`json:\"" + tag + "\"`"}
 }
 
-func goFieldCheck(f field) string {
+func goFieldCheck(actionID string, f field) string {
 	switch f.Type {
 	case fieldInteger:
-		return fmt.Sprintf("checkInteger(fields, %q, %t, %d, %d)", f.Name, f.Required, *f.Min, *f.Max)
+		minimum := integerBoundOf(actionID, f.Name, "min", *f.Min)
+		maximum := integerBoundOf(actionID, f.Name, "max", *f.Max)
+		return fmt.Sprintf("checkInteger(fields, %q, %t, %s, %s)", f.Name, f.Required, minimum.GoName, maximum.GoName)
 	default:
 		return fmt.Sprintf("checkString(fields, %q, %t, %d)", f.Name, f.Required, *f.MaxLength)
 	}

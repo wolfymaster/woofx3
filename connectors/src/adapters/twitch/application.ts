@@ -20,7 +20,7 @@ import type { DbProxyClientConfig } from "../../services/db-proxy";
 import { TWITCH_EVENT_SOURCE } from "./event-source";
 import { AdBreakScheduler } from "./lib/adBreakScheduler";
 import { AdBreakLeadSetting } from "./lib/adBreakSettings";
-import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, TwurpleMembershipLookup } from "./lib/chatterMembership";
+import { ChatterMembershipEnricher, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
 import { type PublishTarget, publishEvent } from "./lib/publishEvent";
 import type { SelfSentRegistry } from "./lib/self-sent";
@@ -411,6 +411,7 @@ export default class TwitchApplication {
       random: this.deps.random,
       options: {
         pollIntervalMs: TWITCH_DEFAULTS.adSchedulePollIntervalMs,
+        readTimeoutMs: TWITCH_DEFAULTS.adScheduleReadTimeoutMs,
         missingScopeBackoffMs: TWITCH_DEFAULTS.adScheduleMissingScopeBackoffMs,
         unauthorizedBackoffMs: TWITCH_DEFAULTS.adScheduleUnauthorizedBackoffMs,
         rateLimitBackoff: TWITCH_DEFAULTS.adScheduleRateLimitBackoff,
@@ -448,7 +449,7 @@ export default class TwitchApplication {
 
   /**
    * EventSub does not replay a stream.online that happened before this
-   * service connected, so a service started mid-stream asks Helix once.
+   * adapter connected, so an adapter started mid-stream asks Helix once.
    * A failed read leaves the scheduler offline until the next online event:
    * a missed heads-up is better than polling a stream that is not live.
    * Stops waiting, and seeds nothing, once `signal` aborts.
@@ -524,11 +525,7 @@ export default class TwitchApplication {
       return undefined;
     }
     const time = { clock: this.deps.clock, timers: this.deps.timers };
-    return new ChatterMembershipEnricher(new TwurpleMembershipLookup(apiClient), ctx.logger, time, {
-      ...DEFAULT_ENRICHER_OPTIONS,
-      ttlMs: membership.ttlMs,
-      deadlineMs: membership.deadlineMs,
-    });
+    return new ChatterMembershipEnricher(new TwurpleMembershipLookup(apiClient), ctx.logger, time, membership);
   }
 
   /**

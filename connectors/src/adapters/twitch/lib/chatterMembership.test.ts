@@ -1,7 +1,8 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
+import { TWITCH_DEFAULTS } from "../../../config/twitch";
 import { systemClock, systemTimers } from "../../../host/deps";
-import { ChatterMembershipEnricher, DEFAULT_ENRICHER_OPTIONS, type MembershipLookup } from "./chatterMembership";
+import { ChatterMembershipEnricher, type EnricherOptions, type MembershipLookup } from "./chatterMembership";
 
 const BROADCASTER = "b1";
 const CHATTER = "u1";
@@ -39,12 +40,20 @@ function fakeLookup(overrides: Partial<MembershipLookup> = {}) {
   return lookup;
 }
 
-function newEnricher(lookup: MembershipLookup, options: Partial<typeof DEFAULT_ENRICHER_OPTIONS> = {}) {
+const TEST_OPTIONS: EnricherOptions = {
+  ttlMs: TWITCH_DEFAULTS.membershipTtlMs,
+  deadlineMs: TWITCH_DEFAULTS.membershipDeadlineMs,
+  loadTimeoutMs: TWITCH_DEFAULTS.membershipLoadTimeoutMs,
+  failureTtlMs: TWITCH_DEFAULTS.membershipFailureTtlMs,
+  maxEntries: TWITCH_DEFAULTS.membershipMaxEntries,
+};
+
+function newEnricher(lookup: MembershipLookup, options: Partial<EnricherOptions> = {}) {
   return new ChatterMembershipEnricher(
     lookup,
     fakeLogger(),
     { clock: systemClock, timers: systemTimers },
-    { ...DEFAULT_ENRICHER_OPTIONS, ...options }
+    { ...TEST_OPTIONS, ...options }
   );
 }
 
@@ -111,6 +120,22 @@ describe("ChatterMembershipEnricher", () => {
 
     expect((await enricher.enrich(BROADCASTER, CHATTER, badged())).isFollower).toBe(true);
     expect(lookup.isFollower).toHaveBeenCalledTimes(1);
+  });
+
+  // A lookup that never settles must not hold its in-flight slot forever, or
+  // every later message from that chatter would go unanswered.
+  it("starts a fresh lookup once a hung one has timed out", async () => {
+    const hung = new Promise<boolean>(() => {});
+    const isFollower = mock<MembershipLookup["isFollower"]>()
+      .mockImplementationOnce(() => hung)
+      .mockImplementation(async () => true);
+    const enricher = newEnricher(fakeLookup({ isFollower }), { deadlineMs: 100, loadTimeoutMs: 10, failureTtlMs: 1 });
+
+    expect((await enricher.enrich(BROADCASTER, CHATTER, badged())).isFollower).toBeUndefined();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    expect((await enricher.enrich(BROADCASTER, CHATTER, badged())).isFollower).toBe(true);
+    expect(isFollower).toHaveBeenCalledTimes(2);
   });
 
   it("caches a resolved answer instead of asking once per message", async () => {

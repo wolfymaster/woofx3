@@ -14,8 +14,6 @@ cd docs && bun run docs
 cd docs && bun run docs:build
 ```
 
-Optional: `cd docs && bun run docs:generate` (see `docs/package.json`).
-
 ## Dependencies and targets
 
 Must run **fully locally** — no required third-party SaaS at compile/runtime for the core stack. **Windows and Linux** are primary targets.
