@@ -118,6 +118,24 @@ describe("engine name", () => {
   });
 });
 
+describe("engine region", () => {
+  test("is the region WOOFX3_ENGINE_REGION gives", () => {
+    withEnv({ WOOFX3_ENGINE_REGION: "iad" });
+
+    expect(loadConfig().engineRegion).toBe("iad");
+  });
+
+  test("is null when unset or blank", () => {
+    delete process.env.WOOFX3_ENGINE_REGION;
+    withEnv({});
+    expect(loadConfig().engineRegion).toBeNull();
+
+    withEnv({ WOOFX3_ENGINE_REGION: "  " });
+    expect(loadConfig().engineRegion).toBeNull();
+    delete process.env.WOOFX3_ENGINE_REGION;
+  });
+});
+
 describe("engine hosting", () => {
   test("is null when WOOFX3_HOSTING is unset or blank", () => {
     withEnv({});

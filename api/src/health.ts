@@ -10,6 +10,8 @@ export interface Health {
   status: "ok";
   /** The name the provisioner gave this engine (`WOOFX3_ENGINE_NAME`); null when unset. */
   name: string | null;
+  /** Where the provisioner placed this engine (`WOOFX3_ENGINE_REGION`); null when unset. */
+  region: string | null;
   /** The running release (`WOOFX3_VERSION`); see UNVERSIONED. */
   version: string;
   /**
@@ -35,6 +37,7 @@ export interface HealthCapabilities {
 
 export interface HealthFacts {
   name: string | null;
+  region: string | null;
   version: string;
   /** Wall-clock start of this process, epoch milliseconds. */
   startedAt: number;
@@ -50,6 +53,7 @@ export function describeHealth(facts: HealthFacts, uptimeSeconds: number): Healt
   return {
     status: "ok",
     name: facts.name,
+    region: facts.region,
     version: facts.version,
     startedAt: new Date(facts.startedAt).toISOString(),
     uptimeSeconds: Math.floor(uptimeSeconds),

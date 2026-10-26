@@ -669,6 +669,7 @@ holds only descriptive facts that are safe for anyone to read:
 {
   "status": "ok",
   "name": "eng-0a1b2c3d",
+  "region": "iad",
   "version": "v0.1.0",
   "startedAt": "2026-10-01T12:00:00.000Z",
   "uptimeSeconds": 3725,
@@ -681,6 +682,9 @@ holds only descriptive facts that are safe for anyone to read:
 
 - `name` — `WOOFX3_ENGINE_NAME`, which the provisioner sets to the engine's
   `eng-<id8>` service name; `null` when unset, as on a local engine.
+- `region` — `WOOFX3_ENGINE_REGION`, which the provisioner sets to the region
+  it placed the engine in, in that host's own region code (e.g. `iad`);
+  `null` when unset, as on a local engine.
 - `version` — the same release `/ready` reports.
 - `startedAt` — when the api process started. A deploy starts a new process,
   so this is the last deploy or the last restart, whichever came later.

@@ -317,6 +317,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
         describeHealth(
           {
             name: config.engineName,
+            region: config.engineRegion,
             version: config.version,
             startedAt: performance.timeOrigin,
             capabilities: { schema: ENGINE_CAPABILITIES_SCHEMA, enabled: supportedEngineCapabilities(config.hosting) },
