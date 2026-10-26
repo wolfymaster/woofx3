@@ -1,3 +1,4 @@
+import type { ShoutoutEnqueueRequestedEvent } from "@woofx3/api/webhooks";
 import { encodeCommand } from "../utils";
 
 /** The NATS subject the connectors host's Twitch adapter takes `twitchapi` commands on. */
@@ -11,15 +12,7 @@ export const TWITCHAPI_SUBJECT = "twitchapi";
 export const SHOUTOUT_ENQUEUE_SUBJECT = "engine.shoutout.enqueue";
 
 /** Who to shout out, as a `SHOUTOUT_ENQUEUE_SUBJECT` request. */
-export interface ShoutoutEnqueueTarget {
-  twitchUserId: string;
-  /** Lowercase login. */
-  login: string;
-  displayName: string;
-  profileImageUrl?: string;
-  /** "partner", "affiliate" or "" for neither. */
-  broadcasterType?: string;
-}
+export type ShoutoutEnqueueTarget = Omit<ShoutoutEnqueueRequestedEvent, "type">;
 
 /**
  * `queued`: the dashboard has it. `unavailable`: there is no dashboard queue
