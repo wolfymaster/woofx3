@@ -50,6 +50,12 @@ const CallerTimeout = 12000 * time.Millisecond
 // MaxRefLength each, joined by commas.
 const MaxWorkflowChainLength = MaxWorkflowChainRuns*MaxRefLength + (MaxWorkflowChainRuns - 1)
 
+// ChatPinDurationSecondsMin is the min of chat.pin.durationSeconds.
+const ChatPinDurationSecondsMin = 30
+
+// ChatPinDurationSecondsMax is the max of chat.pin.durationSeconds.
+const ChatPinDurationSecondsMax = 1200
+
 // PlatformID names a streaming platform the gateway can reach.
 type PlatformID string
 
@@ -335,7 +341,7 @@ func checkChatPinNewPayload(fields map[string]json.RawMessage) error {
 	if err := checkString(fields, "message", true, 500); err != nil {
 		return err
 	}
-	if err := checkInteger(fields, "durationSeconds", false, 30, 1200); err != nil {
+	if err := checkInteger(fields, "durationSeconds", false, ChatPinDurationSecondsMin, ChatPinDurationSecondsMax); err != nil {
 		return err
 	}
 	return nil

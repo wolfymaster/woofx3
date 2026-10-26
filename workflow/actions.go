@@ -249,13 +249,6 @@ func describeChatPlatform(platform string) (string, error) {
 	return platform + " chat", nil
 }
 
-// Bounds of a pin's duration in seconds, as the chat.pin contract states them
-// and Twitch enforces them.
-const (
-	pinDurationMinSeconds = 30
-	pinDurationMaxSeconds = 1200
-)
-
 // announcementColorNames are the contract's Twitch announcement colours, the
 // options of the `twitchColor` select in modules/woofx3/manifest.json.
 func announcementColorNames() []string {
@@ -328,8 +321,8 @@ func pinDurationParam(params map[string]any) (*int, error) {
 		if v != math.Trunc(v) {
 			return nil, fmt.Errorf("durationSeconds must be a whole number of seconds, got number %v", v)
 		}
-		if v < pinDurationMinSeconds || v > pinDurationMaxSeconds {
-			return nil, fmt.Errorf("durationSeconds must be between %d and %d, got %v", pinDurationMinSeconds, pinDurationMaxSeconds, v)
+		if v < platformgateway.ChatPinDurationSecondsMin || v > platformgateway.ChatPinDurationSecondsMax {
+			return nil, fmt.Errorf("durationSeconds must be between %d and %d, got %v", platformgateway.ChatPinDurationSecondsMin, platformgateway.ChatPinDurationSecondsMax, v)
 		}
 		seconds = int(v)
 	case string:
@@ -345,8 +338,8 @@ func pinDurationParam(params map[string]any) (*int, error) {
 	default:
 		return nil, fmt.Errorf("durationSeconds must be a number, got %s", describeParam(v))
 	}
-	if seconds < pinDurationMinSeconds || seconds > pinDurationMaxSeconds {
-		return nil, fmt.Errorf("durationSeconds must be between %d and %d, got %d", pinDurationMinSeconds, pinDurationMaxSeconds, seconds)
+	if seconds < platformgateway.ChatPinDurationSecondsMin || seconds > platformgateway.ChatPinDurationSecondsMax {
+		return nil, fmt.Errorf("durationSeconds must be between %d and %d, got %d", platformgateway.ChatPinDurationSecondsMin, platformgateway.ChatPinDurationSecondsMax, seconds)
 	}
 	return &seconds, nil
 }
