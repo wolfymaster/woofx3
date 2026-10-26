@@ -21,6 +21,12 @@ export interface ApiConfig {
    * Reported publicly by `GET /health`.
    */
   engineName: string | null;
+  /**
+   * Where the provisioner placed this engine (`WOOFX3_ENGINE_REGION`), in its
+   * host's own region code (e.g. `iad`), or null when unset, as on a local
+   * engine. Reported publicly by `GET /health`.
+   */
+  engineRegion: string | null;
   /** How this engine is run (`WOOFX3_HOSTING`), or null when the deployment does not say. */
   hosting: EngineHosting | null;
   /**
@@ -130,6 +136,7 @@ export const ApiEnvSchema = z.looseObject({
   apiHost: z.string().optional(),
   woofx3Version: z.union([z.string(), z.number()]).optional(),
   woofx3EngineName: z.string().optional(),
+  woofx3EngineRegion: z.string().optional(),
   woofx3Hosting: z.string().optional(),
   woofx3RegistrationToken: z.union([z.string(), z.number()]).optional(),
   woofx3RegistrationTokenFile: z.string().optional(),
@@ -338,6 +345,7 @@ export function loadConfig(): ApiConfig {
   const host = String(config.woofx3ApiHost || config.apiHost || "127.0.0.1");
   const version = String(config.woofx3Version || UNVERSIONED);
   const engineName = String(config.woofx3EngineName ?? "").trim() || null;
+  const engineRegion = String(config.woofx3EngineRegion ?? "").trim() || null;
   const hosting = resolveHosting(config.woofx3Hosting);
   const optionalString = (value: unknown): string | undefined => (value === undefined ? undefined : String(value));
   const registration = resolveRegistrationPolicy({
@@ -428,6 +436,7 @@ export function loadConfig(): ApiConfig {
   return {
     version,
     engineName,
+    engineRegion,
     hosting,
     registration,
     port,
