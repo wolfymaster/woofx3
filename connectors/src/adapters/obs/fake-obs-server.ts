@@ -33,6 +33,8 @@ export interface FakeObsOptions {
   scenes?: { name: string; items: string[] }[];
   /** Answer the first `times` requests of this type with a failure status. */
   failRequests?: { type: string; times: number };
+  /** Never answer the first `times` requests of this type, as a hung OBS doesn't. */
+  ignoreRequests?: { type: string; times: number };
 }
 
 export interface FakeObsServer {
@@ -78,12 +80,17 @@ export function startFakeObs(options: FakeObsOptions = {}): FakeObsServer {
   const protocols: string[] = [];
   const requests: string[] = [];
   let failuresLeft = options.failRequests?.times ?? 0;
+  let ignoresLeft = options.ignoreRequests?.times ?? 0;
 
   const respond = (
     ws: ServerWebSocket<SocketData>,
     message: { requestType: string; requestId: string; requestData?: Record<string, unknown> }
   ) => {
     requests.push(message.requestType);
+    if (options.ignoreRequests?.type === message.requestType && ignoresLeft > 0) {
+      ignoresLeft -= 1;
+      return;
+    }
     if (options.failRequests?.type === message.requestType && failuresLeft > 0) {
       failuresLeft -= 1;
       send(ws, {

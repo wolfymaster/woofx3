@@ -14,7 +14,8 @@ const OVERLAY_PORT = 9101;
 
 function service(
   fallback: { host: string; port: string } = { host: "127.0.0.1", port: "4455" },
-  latch = new RefreshLatch()
+  latch = new RefreshLatch(),
+  commandTimeoutMs: number = OBS_DEFAULTS.commandTimeoutMs
 ): ObsService {
   const address = `${fallback.host}:${fallback.port}`;
   return createObsService({
@@ -22,6 +23,7 @@ function service(
     watchRoute: () => () => {},
     latch,
     connection: obsConfig(ObsEnvSchema.parse({})).connection,
+    commandTimeoutMs,
     random: systemRandom,
     timers: systemTimers,
     logger,
@@ -77,6 +79,7 @@ describe("routes from the companion gateway", () => {
         latch: new RefreshLatch(),
         connection: obsConfig(ObsEnvSchema.parse({ woofx3ObsBackoffInitialMs: 10, woofx3ObsBackoffMaxMs: 20 }))
           .connection,
+        commandTimeoutMs: OBS_DEFAULTS.commandTimeoutMs,
         random: systemRandom,
         timers: systemTimers,
         logger,
@@ -108,9 +111,9 @@ describe("overlay refresh requests", () => {
     latch = new RefreshLatch();
   });
 
-  function connect(fakeOptions: FakeObsOptions = {}): ObsService {
+  function connect(fakeOptions: FakeObsOptions = {}, commandTimeoutMs?: number): ObsService {
     fake = startFakeObs(fakeOptions);
-    obs = service({ host: "127.0.0.1", port: String(fake.port) }, latch);
+    obs = service({ host: "127.0.0.1", port: String(fake.port) }, latch, commandTimeoutMs);
     return obs;
   }
 
@@ -254,6 +257,22 @@ describe("overlay refresh requests", () => {
     expect(refreshes(fake as FakeObsServer)).toBe(1);
   });
 
+  // obs-websocket-js never settles a request whose reply doesn't come, so
+  // without a deadline the walk would hold the latch for the life of the process.
+  it("hands the request back and reconnects when OBS never answers, then refreshes on the next session", async () => {
+    const svc = connect({ ignoreRequests: { type: "GetInputList", times: 1 } }, 50);
+    svc.start(forever);
+    await until(() => svc.status().state === "connected");
+
+    latch.latch({ overlayPort: OVERLAY_PORT, bootId: "boot-1" });
+    await until(() => refreshes(fake as FakeObsServer) === 2);
+    await settle();
+
+    expect((fake as FakeObsServer).upgrades).toHaveLength(2);
+    expect(refreshes(fake as FakeObsServer)).toBe(2);
+    expect(latch.take()).toBeNull();
+  });
+
   it("stops acting on new requests once stopped", async () => {
     const svc = connect();
     svc.start(forever);
@@ -292,6 +311,7 @@ describe("opening OBS on the route the gateway gave", () => {
       watchRoute,
       latch: new RefreshLatch(),
       connection: quickRetry.connection,
+      commandTimeoutMs: OBS_DEFAULTS.commandTimeoutMs,
       random: systemRandom,
       timers: systemTimers,
       logger,

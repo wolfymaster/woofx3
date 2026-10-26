@@ -168,6 +168,7 @@ export class ObsAdapter implements Adapter<RefreshLatch> {
       watchRoute: (listener) => ctx.companion.onRouteChange(OBS_ENDPOINT, listener),
       latch: this.latch,
       connection: this.deps.config.connection,
+      commandTimeoutMs: this.deps.config.commandTimeoutMs,
       random: this.deps.random,
       timers: this.deps.timers,
       logger: ctx.logger,
