@@ -5,7 +5,7 @@ import TwitchApiEvents, {
   type TwitchApiReplyCode,
   twitchApiResultType,
 } from "@woofx3/common/cloudevents/Twitch/commands";
-import { requestFailureKind } from "@woofx3/nats/src/errors";
+import { requestFailureKind } from "@woofx3/nats";
 import { z } from "zod";
 import { errorMessage } from "../host/deps";
 import type { ScopedBus } from "../host/scoped-bus";

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ENGINE_CAPABILITIES, supportedEngineCapabilities, type TwitchHelixResult } from "@woofx3/api";
+import { NoRespondersError, RequestError, TimeoutError } from "@woofx3/nats";
 import { RPC_METHODS } from "../src/api-session";
 import { TWITCH_HELIX_TIMEOUT_MS, twitchRoutes } from "../src/routes/twitch";
 
@@ -156,8 +157,7 @@ describe("twitch route results", () => {
   });
 
   test("a timeout is a result, not a thrown error", async () => {
-    const timeout = Object.assign(new Error("timeout"), { name: "TimeoutError" });
-    const { nats } = busAnswering(timeout);
+    const { nats } = busAnswering(new TimeoutError());
 
     const result = await call(nats, "twitchCreateStreamMarker", {});
 
@@ -167,11 +167,9 @@ describe("twitch route results", () => {
   });
 
   test("no Twitch adapter listening is unavailable", async () => {
-    const noResponders = Object.assign(new Error("no responders: 'twitchapi'"), {
-      name: "RequestError",
-      cause: Object.assign(new Error("no responders"), { name: "NoResponders" }),
-    });
-    const { nats } = busAnswering(noResponders);
+    const { nats } = busAnswering(
+      new RequestError("no responders: 'twitchapi'", { cause: new NoRespondersError("twitchapi") })
+    );
 
     expect(await call(nats, "twitchGetChannelInformation")).toEqual({
       ok: false,

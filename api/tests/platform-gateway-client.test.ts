@@ -8,6 +8,7 @@ import {
   type PlatformGatewayResult,
 } from "@woofx3/api/platform-gateway";
 import type { SharedLogger } from "@woofx3/common/logging";
+import { NoRespondersError, RequestError, TimeoutError } from "@woofx3/nats";
 import { RPC_METHODS } from "../src/api-session";
 import { PlatformGatewayClient } from "../src/platform-gateway-client";
 import { platformRoutes } from "../src/routes/platform";
@@ -56,12 +57,6 @@ const REQUEST: GatewayRequest = {
 
 const DELIVERED: GatewayReply = { ok: true, results: { twitch: { status: "delivered", messageId: "m1" } } };
 
-function named(message: string, name: string, cause?: string): Error {
-  const err = new Error(message, cause ? { cause: Object.assign(new Error(cause), { name: cause }) } : undefined);
-  err.name = name;
-  return err;
-}
-
 describe("PlatformGatewayClient.send", () => {
   test("sends the bare request on the gateway subject with the configured timeout", async () => {
     const { nats, asked } = busAnswering(gatewayReply(DELIVERED));
@@ -75,12 +70,12 @@ describe("PlatformGatewayClient.send", () => {
   const failures: [string, unknown | Error, PlatformGatewayResult][] = [
     [
       "no responders is unavailable",
-      named("503", "NatsError", "NoResponders"),
+      new RequestError("503", { cause: new NoRespondersError("platform.gateway") }),
       { ok: false, code: "unavailable", error: "The platform gateway is not running" },
     ],
     [
       "a timeout says the message may have been sent",
-      named("timeout", "TimeoutError"),
+      new TimeoutError(),
       {
         ok: false,
         code: "timeout",
@@ -120,8 +115,8 @@ describe("PlatformGatewayClient.send", () => {
   }
 
   const warned: [string, unknown | Error][] = [
-    ["a timeout", named("timeout", "TimeoutError")],
-    ["no responders", named("503", "NatsError", "NoResponders")],
+    ["a timeout", new TimeoutError()],
+    ["no responders", new RequestError("503", { cause: new NoRespondersError("platform.gateway") })],
     ["a reply that breaks the contract", "not json"],
   ];
   for (const [name, reply] of warned) {
