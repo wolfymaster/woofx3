@@ -1,5 +1,5 @@
 import type { ShoutoutEnqueueRequestedEvent } from "@woofx3/api/webhooks";
-import { encodeCommand } from "../utils";
+import { encodeCommand, err, ok, type ParseResult } from "../utils";
 
 /** The NATS subject the connectors host's Twitch adapter takes `twitchapi` commands on. */
 export const TWITCHAPI_SUBJECT = "twitchapi";
@@ -25,27 +25,25 @@ export type ShoutoutEnqueueReply =
   | { unavailable: string }
   | { error: string };
 
-export type ShoutoutEnqueueReplyParse = { ok: true; value: ShoutoutEnqueueReply } | { ok: false; error: string };
-
 /** Reads a `SHOUTOUT_ENQUEUE_SUBJECT` reply, refusing anything that is not one. */
-export function parseShoutoutEnqueueReply(body: unknown): ShoutoutEnqueueReplyParse {
+export function parseShoutoutEnqueueReply(body: unknown): ParseResult<ShoutoutEnqueueReply> {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    return { ok: false, error: "is not an object" };
+    return err("is not an object");
   }
   const { queued, unavailable, error } = body as Record<string, unknown>;
   if (typeof error === "string") {
-    return { ok: true, value: { error } };
+    return ok({ error });
   }
   if (typeof unavailable === "string") {
-    return { ok: true, value: { unavailable } };
+    return ok({ unavailable });
   }
   if (typeof queued === "object" && queued !== null) {
     const { position, alreadyQueued } = queued as Record<string, unknown>;
     if (typeof position === "number") {
-      return { ok: true, value: { queued: { position, alreadyQueued: alreadyQueued === true } } };
+      return ok({ queued: { position, alreadyQueued: alreadyQueued === true } });
     }
   }
-  return { ok: false, error: "is malformed" };
+  return err("is malformed");
 }
 
 /**
