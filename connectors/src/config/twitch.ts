@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { nonBlank } from "./env";
+import { nonBlank, unsetWhenBlank } from "./env";
 
 /** Defaults for the Twitch adapter's tunables. */
 export const TWITCH_DEFAULTS = {
@@ -62,7 +62,7 @@ export const TwitchEnvSchema = z.object({
   // Twitch token comes from a dashboard, which owns the app and refreshes.
   woofx3TwitchClientId: z.string().optional(),
   woofx3TwitchClientSecret: z.string().optional(),
-  woofx3TwitchRedirectUrl: z.string().default(TWITCH_DEFAULTS.redirectUrl),
+  woofx3TwitchRedirectUrl: z.preprocess(unsetWhenBlank, z.url().default(TWITCH_DEFAULTS.redirectUrl)),
   woofx3TwitchMembershipEnrichmentEnabled: z.boolean().default(TWITCH_DEFAULTS.membershipEnrichmentEnabled),
   woofx3TwitchMembershipTtlMs: z.number().int().positive().default(TWITCH_DEFAULTS.membershipTtlMs),
   woofx3TwitchMembershipDeadlineMs: z.number().int().positive().default(TWITCH_DEFAULTS.membershipDeadlineMs),

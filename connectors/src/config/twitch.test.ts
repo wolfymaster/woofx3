@@ -39,6 +39,11 @@ describe("twitchConfig", () => {
       { woofx3TwitchClientId: "cid", woofx3TwitchClientSecret: "sec", woofx3TwitchRedirectUrl: "http://x/cb" },
       { clientId: "cid", clientSecret: "sec", redirectUri: "http://x/cb" },
     ],
+    [
+      "a blank redirect url",
+      { woofx3TwitchClientId: "cid", woofx3TwitchClientSecret: "sec", woofx3TwitchRedirectUrl: "  " },
+      { clientId: "cid", clientSecret: "sec", redirectUri: TWITCH_DEFAULTS.redirectUrl },
+    ],
     ["an id without a secret (the api's own client id)", { woofx3TwitchClientId: "cid" }, undefined],
     ["a blank secret", { woofx3TwitchClientId: "cid", woofx3TwitchClientSecret: "  " }, undefined],
   ];
@@ -64,6 +69,7 @@ describe("twitchConfig", () => {
     ["a negative send queue cap", { woofx3TwitchSendQueueCap: -1 }],
     ["a fractional send queue cap", { woofx3TwitchSendQueueCap: 1.5 }],
     ["a zero own-line capacity", { woofx3TwitchSelfSentCapacity: 0 }],
+    ["a redirect url that is not a URL", { woofx3TwitchRedirectUrl: "not a url" }],
     ["a zero own-line TTL", { woofx3TwitchSelfSentTtlMs: 0 }],
   ];
   for (const [name, env] of invalid) {
