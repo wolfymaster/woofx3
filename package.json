@@ -1,5 +1,19 @@
 {
-  "devDependencies": {
-    "vitepress": "^1.6.4"
-  }
+  "name": "woofx3",
+  "private": true,
+  "workspaces": [
+    "api",
+    "connectors",
+    "db",
+    "sceneManager",
+    "shared/common/typescript",
+    "shared/clients/typescript/api",
+    "shared/clients/typescript/db",
+    "shared/clients/typescript/module-sdk",
+    "shared/clients/typescript/nats",
+    "shared/clients/typescript/scene",
+    "shared/clients/typescript/servicediscovery",
+    "shared/clients/typescript/twitch",
+    "shared/clients/typescript/widget-host"
+  ]
 }

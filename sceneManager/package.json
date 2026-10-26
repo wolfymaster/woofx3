@@ -11,16 +11,17 @@
     "build:shim": "bun run --cwd ../shared/clients/typescript/module-sdk build:shim && cp ../shared/clients/typescript/module-sdk/dist/widget-host-shim.iife.js public/widget-host-shim.js"
   },
   "dependencies": {
-    "@woofx3/api": "file:../shared/clients/typescript/api",
-    "@woofx3/common": "file:../shared/common/typescript",
-    "@woofx3/db": "file:../shared/clients/typescript/db",
-    "@woofx3/module-sdk": "file:../shared/clients/typescript/module-sdk",
-    "@woofx3/nats": "file:../shared/clients/typescript/nats",
+    "@woofx3/api": "workspace:*",
+    "@woofx3/common": "workspace:*",
+    "@woofx3/db": "workspace:*",
+    "@woofx3/module-sdk": "workspace:*",
+    "@woofx3/nats": "workspace:*",
     "jose": "^5.9.6",
     "ot-json0": "1.1.0",
     "zod": "^4.6.6"
   },
   "devDependencies": {
+    "@nats-io/nats-core": "^3.2.0",
     "@types/bun": "1.3.14",
     "typescript": "^5.0.0"
   }

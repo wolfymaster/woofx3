@@ -1,5 +1,5 @@
 {
-  "name": "@woofx3/messagebus",
+  "name": "@woofx3/nats",
   "version": "1.0.0",
   "description": "NATS messagebus Wrapper",
   "main": "dist/index.js",
