@@ -96,14 +96,14 @@ A connect attempt asks the engine's
 to that address, or, when the dashboard routed OBS through the woofx3
 companion on the streamer's PC, through the companion's bridge. A cloud
 engine needs the bridge, because it cannot reach `127.0.0.1` on the
-streamer's PC. An engine running on that PC (`WOOFX3_HOSTING=local`) always
-dials OBS directly. Through the bridge the companion supplies the address, and the
+streamer's PC. Through the bridge the companion supplies the address, and the
 module's `password` still signs in to OBS end to end. See
 [Local endpoints and the companion bridge](./local-endpoints.md). A change to
 the relay configuration that moves OBS to another route makes the adapter
 reconnect at once, like a settings change. The companion gateway stores the
 relay configuration itself and tells the adapter. An engine
-running on the streamer's PC always dials directly, so it ignores relay changes.
+running on the streamer's PC (`WOOFX3_HOSTING=local`) always dials OBS directly, so
+it ignores relay changes.
 
 Saving a module setting publishes `db.module.setting.updated.system` with the
 module id and the key, never the value. The companion gateway watches for one for `woofx3_obs`, and

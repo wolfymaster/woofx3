@@ -210,7 +210,7 @@ platform without forking it. A module is a self-contained ZIP bundle
 (manifest + sandboxed scripts + bundled workflows + widget HTML + overlay
 assets) installed at runtime over an HTTP API and executed on demand over
 WebSocket. Even much of the "built-in" Twitch behavior is delivered as a
-module ([`barkloader/modules/twitch_platform/`](barkloader/modules/twitch_platform)).
+module ([`modules/woofx3/`](modules/woofx3)).
 
 The full reference lives under [`docs/barkloader/`](docs/barkloader/index.md);
 this section is the orientation.
@@ -359,7 +359,7 @@ a DB proxy URL is configured.
 - **[Module Format](docs/barkloader/modules.md)** — every manifest field, supported file types, and the full processing pipeline.
 - **[Sandbox & Runtimes](docs/barkloader/sandbox.md)** — adapter contracts, error categories, JSON ↔ Lua / JS type mappings.
 - **[Barkloader API](docs/barkloader/api.md)** — full HTTP and WebSocket protocol reference.
-- **Example module** — [`barkloader/modules/twitch_platform/`](barkloader/modules/twitch_platform) ships Twitch EventSub subscription types as triggers, end to end.
+- **Example module** — [`modules/woofx3/`](modules/woofx3) is the bundled system module; it declares the engine's built-in actions, triggers and widgets through the same install path as any other module.
 
 ## Repository Layout
 
