@@ -56,7 +56,7 @@ describe("HostRequests", () => {
       invalid: 0,
       internal: 0,
       expired: 0,
-      no_inbox: 0,
+      noInbox: 0,
     });
   });
 
@@ -97,7 +97,7 @@ describe("HostRequests", () => {
     client.deliver("echo.raw", bytes('{"say":"hi"}'));
     await flush();
     expect(handled).toBe(0);
-    expect(requests.snapshot()["echo.raw"]).toMatchObject({ received: 1, replied: 0, no_inbox: 1 });
+    expect(requests.snapshot()["echo.raw"]).toMatchObject({ received: 1, replied: 0, noInbox: 1 });
     expect(logger.at("warn")).toHaveLength(1);
   });
 
