@@ -1,5 +1,6 @@
 import { HEALTH_CHECK_INTERVAL_MS } from "@woofx3/common/runtime";
 import { z } from "zod";
+import type { ChatEnv } from "./chat";
 
 /**
  * Defaults for the host's tunables. Each served subject declares its own reply
@@ -85,7 +86,7 @@ export interface HostConfig {
 }
 
 /** Cross-field rules the per-key schema cannot express. Returns one message per broken rule. */
-export function hostConfigProblems(env: HostEnv): string[] {
+export function hostConfigProblems(env: HostEnv & Pick<ChatEnv, "woofx3ConnectorsDispatcherDrainMs">): string[] {
   const problems: string[] = [];
   if (env.woofx3ConnectorsBackoffBaseMs > env.woofx3ConnectorsBackoffMaxMs) {
     problems.push(
@@ -99,16 +100,40 @@ export function hostConfigProblems(env: HostEnv): string[] {
       `woofx3ConnectorsDbProxyTimeoutMs (${env.woofx3ConnectorsDbProxyTimeoutMs}) must be below the runtime health check interval (${HEALTH_CHECK_INTERVAL_MS}ms)`
     );
   }
-  // Shutdown first waits out a link read in flight, then stops every adapter
-  // in parallel under stopDeadlineMs, so a shutdown deadline at or below the
-  // two together would cut off a stop still in its allowance.
-  const stopWorstCaseMs = env.woofx3ConnectorsDbProxyTimeoutMs + env.woofx3ConnectorsStopDeadlineMs;
-  if (env.woofx3ConnectorsShutdownDeadlineMs <= stopWorstCaseMs) {
-    problems.push(
-      `woofx3ConnectorsShutdownDeadlineMs (${env.woofx3ConnectorsShutdownDeadlineMs}) must exceed woofx3ConnectorsDbProxyTimeoutMs plus woofx3ConnectorsStopDeadlineMs (${stopWorstCaseMs})`
-    );
+  const shutdownProblem = shutdownDeadlineProblem(
+    {
+      shutdownDeadlineMs: env.woofx3ConnectorsShutdownDeadlineMs,
+      dbProxyTimeoutMs: env.woofx3ConnectorsDbProxyTimeoutMs,
+      stopDeadlineMs: env.woofx3ConnectorsStopDeadlineMs,
+    },
+    env.woofx3ConnectorsDispatcherDrainMs,
+    []
+  );
+  if (shutdownProblem !== undefined) {
+    problems.push(shutdownProblem);
   }
   return problems;
+}
+
+/**
+ * Shutdown first waits out a link read in flight, then drains chat lines in
+ * flight, then stops every adapter in parallel under the longer of the stop
+ * deadline and the served budgets, so a shutdown deadline at or below the
+ * sum would cut off a stop still in its allowance. The served budgets are not
+ * known until the adapters are loaded, so config validation passes none and
+ * the host checks again with them.
+ */
+export function shutdownDeadlineProblem(
+  config: Pick<HostConfig, "shutdownDeadlineMs" | "dbProxyTimeoutMs" | "stopDeadlineMs">,
+  chatDrainMs: number,
+  servedBudgetsMs: readonly number[]
+): string | undefined {
+  const drainMs = Math.max(config.stopDeadlineMs, ...servedBudgetsMs);
+  const stopWorstCaseMs = config.dbProxyTimeoutMs + chatDrainMs + drainMs;
+  if (config.shutdownDeadlineMs <= stopWorstCaseMs) {
+    return `the shutdown deadline (${config.shutdownDeadlineMs}ms) must exceed the db-proxy timeout plus the chat drain plus the longest of the stop deadline and the served budgets (${stopWorstCaseMs}ms)`;
+  }
+  return undefined;
 }
 
 export function hostConfig(env: HostEnv): HostConfig {

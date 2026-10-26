@@ -74,4 +74,14 @@ installShutdown({
   timers: systemTimers,
 });
 
+// Loading is idempotent, so the runtime's own init reuses these modules. A
+// deadline the served budgets outgrow would make every host build throw and
+// the runtime retry for ever, so refuse to start instead.
+await application.init();
+const deadlineProblem = application.shutdownDeadlineProblem();
+if (deadlineProblem !== undefined) {
+  logger.error(deadlineProblem);
+  process.exit(1);
+}
+
 runtime.start();
