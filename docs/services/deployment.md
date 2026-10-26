@@ -761,8 +761,7 @@ the Twitch adapter, with no restart
 
 ## OBS
 
-connectors holds the engine's OBS connection (its `obs` adapter), not
-sceneManager. Set `WOOFX3_OBS_HOST`, `WOOFX3_OBS_PORT` and
+connectors holds the engine's OBS connection (its `obs` adapter). Set `WOOFX3_OBS_HOST`, `WOOFX3_OBS_PORT` and
 `WOOFX3_OBS_RPC_TOKEN`, when an engine needs them at all, where connectors
 reads its configuration; the OBS module's own settings take precedence over
 them. connectors connects to OBS only while a module that controls OBS is
