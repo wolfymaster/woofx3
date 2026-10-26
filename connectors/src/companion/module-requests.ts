@@ -6,6 +6,7 @@
 
 import {
   COMPANION_GATEWAY_SUBJECTS,
+  MAX_FAILED_MESSAGE_LENGTH,
   type ModuleEndpointFailed,
   type ModuleEndpointFailureCode,
   type ModuleEndpointReply,
@@ -23,9 +24,6 @@ import {
 } from "../host/host-requests";
 import { type EndpointSessions, failureCodeFor, type SessionFailure } from "./endpoint-sessions";
 import type { ModuleRoutePolicy } from "./module-route-policy";
-
-/** The contract's bound on a failed reply's message, in characters. */
-export const FAILED_MESSAGE_MAX_CHARS = 1_000;
 
 /** How the host's own refusals read to barkloader. */
 const HOST_ERROR_CODES: Record<HostRequestErrorCode, ModuleEndpointFailureCode> = {
@@ -162,7 +160,7 @@ function fromFailure(failure: SessionFailure): ModuleEndpointFailed {
 }
 
 function failedReply(code: ModuleEndpointFailureCode, message: string): ModuleEndpointFailed {
-  const bounded = [...message].slice(0, FAILED_MESSAGE_MAX_CHARS).join("");
+  const bounded = [...message].slice(0, MAX_FAILED_MESSAGE_LENGTH).join("");
   return { status: "failed", code, message: bounded === "" ? code : bounded };
 }
 

@@ -9,6 +9,29 @@ export const COMPANION_GATEWAY_SUBJECTS = {
   moduleRequest: "engine.companion.module.request",
 } as const;
 
+/**
+ * The `min` of `ModuleEndpointSend.budgetMs` and
+ * `ModuleEndpointMatchRequest.budgetMs`.
+ */
+export const MIN_BUDGET_MS = 100;
+
+/**
+ * The `max` of `ModuleEndpointSend.budgetMs` and
+ * `ModuleEndpointMatchRequest.budgetMs`.
+ */
+export const MAX_BUDGET_MS = 4500;
+
+/**
+ * The `maxBytes` of `ModuleEndpointSend.message`,
+ * `ModuleEndpointMatchRequest.message` and `ModuleEndpointOk.reply`.
+ */
+export const MAX_MESSAGE_BYTES = 65536;
+
+/**
+ * The `maxLength` of `ModuleEndpointFailed.message`.
+ */
+export const MAX_FAILED_MESSAGE_LENGTH = 1000;
+
 /** The values of `ModuleEndpointFailureCode`. */
 export const MODULE_ENDPOINT_FAILURE_CODES = ["not_declared", "adapter_owned", "protocol_unsupported", "not_routed", "address_refused", "store_unreadable", "unavailable", "timeout", "busy", "invalid"] as const;
 export type ModuleEndpointFailureCode = (typeof MODULE_ENDPOINT_FAILURE_CODES)[number];
@@ -278,11 +301,11 @@ function parseModuleEndpointSend(object: JsonObject): CompanionGatewayParseResul
   if (!parsedEndpointId.ok) {
     return parsedEndpointId;
   }
-  const parsedMessage = required(readString(object, prefix, "message", { kind: "bytes", max: 65536 }), prefix, "message");
+  const parsedMessage = required(readString(object, prefix, "message", { kind: "bytes", max: MAX_MESSAGE_BYTES }), prefix, "message");
   if (!parsedMessage.ok) {
     return parsedMessage;
   }
-  const parsedBudgetMs = required(readInteger(object, prefix, "budgetMs", 100, 4500), prefix, "budgetMs");
+  const parsedBudgetMs = required(readInteger(object, prefix, "budgetMs", MIN_BUDGET_MS, MAX_BUDGET_MS), prefix, "budgetMs");
   if (!parsedBudgetMs.ok) {
     return parsedBudgetMs;
   }
@@ -303,11 +326,11 @@ function parseModuleEndpointMatchRequest(object: JsonObject): CompanionGatewayPa
   if (!parsedEndpointId.ok) {
     return parsedEndpointId;
   }
-  const parsedMessage = required(readString(object, prefix, "message", { kind: "bytes", max: 65536 }), prefix, "message");
+  const parsedMessage = required(readString(object, prefix, "message", { kind: "bytes", max: MAX_MESSAGE_BYTES }), prefix, "message");
   if (!parsedMessage.ok) {
     return parsedMessage;
   }
-  const parsedBudgetMs = required(readInteger(object, prefix, "budgetMs", 100, 4500), prefix, "budgetMs");
+  const parsedBudgetMs = required(readInteger(object, prefix, "budgetMs", MIN_BUDGET_MS, MAX_BUDGET_MS), prefix, "budgetMs");
   if (!parsedBudgetMs.ok) {
     return parsedBudgetMs;
   }
@@ -324,7 +347,7 @@ function parseModuleEndpointOk(object: JsonObject): CompanionGatewayParseResult<
   if (unknown !== undefined) {
     return fail(unknown, "unknown field");
   }
-  const parsedReply = readString(object, prefix, "reply", { kind: "bytes", max: 65536 });
+  const parsedReply = readString(object, prefix, "reply", { kind: "bytes", max: MAX_MESSAGE_BYTES });
   if (!parsedReply.ok) {
     return parsedReply;
   }
@@ -345,7 +368,7 @@ function parseModuleEndpointFailed(object: JsonObject): CompanionGatewayParseRes
   if (!parsedCode.ok) {
     return parsedCode;
   }
-  const parsedMessage = required(readString(object, prefix, "message", { kind: "characters", max: 1000 }), prefix, "message");
+  const parsedMessage = required(readString(object, prefix, "message", { kind: "characters", max: MAX_FAILED_MESSAGE_LENGTH }), prefix, "message");
   if (!parsedMessage.ok) {
     return parsedMessage;
   }

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
   COMPANION_GATEWAY_SUBJECTS,
+  MAX_FAILED_MESSAGE_LENGTH,
   type ModuleEndpointReply,
   parseModuleEndpointReply,
 } from "@woofx3/common/cloudevents/Companion/module-request";
@@ -15,7 +16,7 @@ import { COMPANION_GATEWAY_GRANTS, EngineCompanionGateway } from "./companion-ga
 import type { Fetch } from "./dialer";
 import type { EndpointStore, StoredModuleSetting } from "./endpoint-store";
 import { type DeviceScript, echo, eventually, FakeDevice } from "./fake-device";
-import { FAILED_MESSAGE_MAX_CHARS } from "./module-requests";
+import { ModuleRequests } from "./module-requests";
 import { MODULE_SETTING_UPDATED_SUBJECT } from "./route-watch";
 
 const SUBJECT = COMPANION_GATEWAY_SUBJECTS.moduleRequest;
@@ -356,10 +357,19 @@ describe("module requests on other hostings", () => {
   });
 });
 
-describe("FAILED_MESSAGE_MAX_CHARS", () => {
-  it("is the contract's failed.message bound", () => {
-    const failed = (chars: number) => ({ status: "failed", code: "unavailable", message: "x".repeat(chars) });
-    expect(parseModuleEndpointReply(failed(FAILED_MESSAGE_MAX_CHARS)).ok).toBe(true);
-    expect(parseModuleEndpointReply(failed(FAILED_MESSAGE_MAX_CHARS + 1)).ok).toBe(false);
+describe("failed replies", () => {
+  it("cut a long reason to what the contract carries", () => {
+    const time = new FakeTime();
+    const requests = new ModuleRequests({
+      policy: { admit: () => Promise.reject(new Error("not reached")) },
+      sessions: { acquire: () => Promise.reject(new Error("not reached")) },
+      budgetMs: 4_500,
+      clock: time,
+      timers: time,
+      logger: new RecordingLogger(),
+    });
+    const raw = requests.spec().errorReply("invalid", "x".repeat(2 * MAX_FAILED_MESSAGE_LENGTH));
+    const reply = parseModuleEndpointReply(JSON.parse(text(raw)));
+    expect(reply.ok && reply.value.status === "failed" && reply.value.message.length).toBe(MAX_FAILED_MESSAGE_LENGTH);
   });
 });

@@ -18,6 +18,13 @@ type companionTSSubject struct {
 	Reply   string
 }
 
+type companionTSLimit struct {
+	Const string
+	Value int64
+	// Doc is the constant's doc comment, one entry per line.
+	Doc []string
+}
+
 type companionTSFormat struct {
 	PatternConst string
 	Const        string
@@ -65,6 +72,7 @@ type companionTSHelpers struct {
 type companionTSData struct {
 	Source   string
 	Subjects []companionTSSubject
+	Limits   []companionTSLimit
 	Formats  []companionTSFormat
 	Enums    []tsEnum
 	Objects  []companionTSStruct
@@ -83,12 +91,15 @@ func emitCompanionTS(c companionGateway) ([]byte, error) {
 			Reply:   pascalName(s.Reply),
 		})
 	}
+	for _, l := range c.Limits {
+		data.Limits = append(data.Limits, companionTSLimit{Const: limitConst(l.Name), Value: l.Value, Doc: c.limitDoc(l.Name)})
+	}
 	for _, f := range c.Formats {
-		data.Formats = append(data.Formats, companionTSFormat{PatternConst: screamingName(f.Name) + "_PATTERN", Const: tsFormatConst(f.Name), Pattern: f.Pattern})
+		data.Formats = append(data.Formats, companionTSFormat{PatternConst: tsPatternConst(f.Name), Const: tsFormatConst(f.Name), Pattern: f.Pattern})
 	}
 	for _, e := range c.Enums {
 		data.Enums = append(data.Enums, tsEnumOf(
-			screamingName(e.Name)+"S",
+			tsEnumConst(e.Name),
 			pascalName(e.Name),
 			"is"+pascalName(e.Name),
 			fmt.Sprintf("The values of `%s`.", pascalName(e.Name)),
@@ -145,6 +156,14 @@ func tsFormatConst(name string) string {
 	return "FORMAT_" + screamingName(name)
 }
 
+func tsPatternConst(name string) string {
+	return screamingName(name) + "_PATTERN"
+}
+
+func tsEnumConst(name string) string {
+	return screamingName(name) + "S"
+}
+
 // tsStruct builds one interface and its parser, noting the helpers its
 // fields read with. discriminant and tag are empty for a nested object.
 func (h *companionTSHelpers) tsStruct(c companionGateway, name, discriminant, tag string, fields []companionField, doc string) companionTSStruct {
@@ -199,13 +218,13 @@ func (h *companionTSHelpers) tsCompanionRead(f companionField) string {
 	switch f.Type {
 	case companionInteger:
 		h.Integer = true
-		return fmt.Sprintf("readInteger(object, prefix, %q, %d, %d)", f.Name, *f.Min, *f.Max)
+		return fmt.Sprintf("readInteger(object, prefix, %q, %s, %s)", f.Name, boundExpr(f.Min), boundExpr(f.Max))
 	case companionStringOrInteger:
 		h.StringOrInteger = true
-		return fmt.Sprintf("readStringOrInteger(object, prefix, %q, %d, %d, %d)", f.Name, *f.MaxLength, *f.Min, *f.Max)
+		return fmt.Sprintf("readStringOrInteger(object, prefix, %q, %s, %s, %s)", f.Name, boundExpr(f.MaxLength), boundExpr(f.Min), boundExpr(f.Max))
 	case companionEnum:
 		h.Enum = true
-		return fmt.Sprintf("readEnum(object, prefix, %q, %s, %s)", f.Name, "is"+pascalName(f.Enum), screamingName(f.Enum)+"S")
+		return fmt.Sprintf("readEnum(object, prefix, %q, %s, %s)", f.Name, "is"+pascalName(f.Enum), tsEnumConst(f.Enum))
 	case companionObject:
 		h.Object = true
 		return fmt.Sprintf("readObject(object, prefix, %q, parse%s)", f.Name, pascalName(f.Object))
@@ -216,9 +235,9 @@ func (h *companionTSHelpers) tsCompanionRead(f companionField) string {
 	case f.Format != "":
 		bound = tsFormatConst(f.Format)
 	case f.MaxBytes != nil:
-		bound = fmt.Sprintf(`{ kind: "bytes", max: %d }`, *f.MaxBytes)
+		bound = fmt.Sprintf(`{ kind: "bytes", max: %s }`, boundExpr(f.MaxBytes))
 	default:
-		bound = fmt.Sprintf(`{ kind: "characters", max: %d }`, *f.MaxLength)
+		bound = fmt.Sprintf(`{ kind: "characters", max: %s }`, boundExpr(f.MaxLength))
 	}
 	return fmt.Sprintf("readString(object, prefix, %q, %s)", f.Name, bound)
 }

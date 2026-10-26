@@ -168,6 +168,34 @@ func TestEmitsTheSmallestContract(t *testing.T) {
 	}
 }
 
+// A display name is free text, so it reaches the generated code as an
+// escaped string literal, never spliced between quotes.
+func TestDisplayNameIsQuoted(t *testing.T) {
+	displayName := `Twitch "Live" \ <TV>`
+	quoted := strings.Replace(validContract, `"displayName": "Twitch"`, `"displayName": "Twitch \"Live\" \\ <TV>"`, 1)
+	contract, err := parsePlatformGateway([]byte(quoted))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if contract.Platforms[0].DisplayName != displayName {
+		t.Fatalf("display name = %q, want %q", contract.Platforms[0].DisplayName, displayName)
+	}
+	goSource, err := emitGo(contract)
+	if err != nil {
+		t.Fatalf("emitGo: %v", err)
+	}
+	if want := `return "Twitch \"Live\" \\ <TV>"`; !strings.Contains(string(goSource), want) {
+		t.Errorf("Go output lacks %s", want)
+	}
+	tsSource, err := emitTS(contract)
+	if err != nil {
+		t.Fatalf("emitTS: %v", err)
+	}
+	if want := `twitch: "Twitch \"Live\" \\ <TV>",`; !strings.Contains(string(tsSource), want) {
+		t.Errorf("TypeScript output lacks %s", want)
+	}
+}
+
 func TestParseRefusesBadContracts(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -250,9 +278,10 @@ func TestRunWritesCompanionOutputs(t *testing.T) {
 // accepts; each case below breaks one rule of it.
 const validCompanionContract = `{
   "subjects": [{"name": "moduleRequest", "subject": "engine.companion.module.request", "request": "req", "reply": "rep"}],
+  "limits": [{"name": "maxPair", "value": 9}],
   "formats": [{"name": "id", "pattern": "^[a-z0-9_-]{1,40}$"}],
   "enums": [{"name": "code", "values": ["busy"]}],
-  "objects": [{"name": "pair", "fields": [{"name": "value", "type": "stringOrInteger", "required": true, "maxLength": 5, "min": 0, "max": 9}]}],
+  "objects": [{"name": "pair", "fields": [{"name": "value", "type": "stringOrInteger", "required": true, "maxLength": 5, "min": 0, "max": "maxPair"}]}],
   "messages": [
     {"name": "req", "discriminant": "op", "variants": [
       {"tag": "send", "name": "sendReq", "fields": [{"name": "id", "type": "string", "required": true, "format": "id"}]},
@@ -270,11 +299,37 @@ func TestParseCompanionAcceptsTheValidContract(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if _, err := emitCompanionTS(contract); err != nil {
+	tsSource, err := emitCompanionTS(contract)
+	if err != nil {
 		t.Fatalf("emitCompanionTS: %v", err)
 	}
-	if _, err := emitRust(contract); err != nil {
+	rustSource, err := emitRust(contract)
+	if err != nil {
 		t.Fatalf("emitRust: %v", err)
+	}
+	// A named limit is exported, and the validator reads the constant, so a
+	// consumer importing it shares the field's own bound.
+	for _, want := range []string{"export const MAX_PAIR = 9;", `readStringOrInteger(object, prefix, "value", 5, 0, MAX_PAIR)`} {
+		if !strings.Contains(string(tsSource), want) {
+			t.Errorf("TypeScript output lacks %q", want)
+		}
+	}
+	for _, want := range []string{"pub const MAX_PAIR: i64 = 9;", `.check(prefix, "value", 5, 0, MAX_PAIR, true)?;`} {
+		if !strings.Contains(string(rustSource), want) {
+			t.Errorf("Rust output lacks %q", want)
+		}
+	}
+}
+
+func TestParseCompanionRefusesALimitNamedLikeAnotherConstant(t *testing.T) {
+	// idPattern's constant ID_PATTERN is format id's pattern constant.
+	broken := strings.ReplaceAll(validCompanionContract, `"maxPair"`, `"idPattern"`)
+	_, err := parseCompanionGateway([]byte(broken))
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	if !strings.Contains(err.Error(), "is also the constant of format id") {
+		t.Fatalf("error %q does not name the clash", err)
 	}
 }
 
@@ -314,7 +369,15 @@ func TestParseCompanionRefusesBadContracts(t *testing.T) {
 		{"stringOrInteger without a length", `"maxLength": 5, "min": 0`, `"min": 0`, "needs maxLength, min and max"},
 		{"undeclared enum", `"enum": "code"}`, `"enum": "nope"}`, "not a declared enum"},
 		{"undeclared object", `"object": "pair"}`, `"object": "nope"}`, "not a declared object"},
-		{"nested object", `{"name": "value", "type": "stringOrInteger", "required": true, "maxLength": 5, "min": 0, "max": 9}`, `{"name": "value", "type": "object", "required": true, "object": "pair"}`, "objects do not nest"},
+		{"nested object", `{"name": "value", "type": "stringOrInteger"`, `{"name": "inner", "type": "object", "required": true, "object": "pair"}, {"name": "value", "type": "stringOrInteger"`, "objects do not nest"},
+		{"undeclared limit", `"max": "maxPair"`, `"max": "nope"`, "not a declared limit"},
+		{"unused limit", `"limits": [{"name": "maxPair", "value": 9}]`, `"limits": [{"name": "maxPair", "value": 9}, {"name": "spare", "value": 1}]`, "used by no field"},
+		{"duplicate limit", `"limits": [{"name": "maxPair", "value": 9}]`, `"limits": [{"name": "maxPair", "value": 9}, {"name": "maxPair", "value": 8}]`, "duplicate limit"},
+		{"badly named limit", `"limits": [{"name": "maxPair"`, `"limits": [{"name": "max_pair"`, "must match"},
+		{"fractional limit", `"value": 9}`, `"value": 9.5}`, "decoding"},
+		{"unsafe limit", `"value": 9}`, `"value": 9007199254740992}`, "TypeScript reads it exactly"},
+		{"limit bounding a length and an integer", `"maxLength": 5`, `"maxLength": "maxPair"`, "not both"},
+		{"limit breaking the field's own rules", `"value": 9}`, `"value": -1}`, "above max"},
 		{"unknown field type", `"type": "integer"`, `"type": "boolean"`, "is not one of"},
 		{"trailing data", "]}\n  ]\n}", "]}\n  ]\n} {}", "trailing data"},
 	}

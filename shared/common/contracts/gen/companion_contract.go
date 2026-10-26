@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"regexp"
 	"slices"
 	"strconv"
@@ -18,10 +19,12 @@ const companionGatewaySource = "shared/common/contracts/companion-gateway.json"
 
 // companionGateway is shared/common/contracts/companion-gateway.json: the
 // subjects the companion gateway answers, and the messages they carry.
-// Unknown keys are refused, and so is any declared format, enum, object or
-// message that nothing uses, so every entry reaches the generated code.
+// Unknown keys are refused, and so is any declared limit, format, enum,
+// object or message that nothing uses, so every entry reaches the generated
+// code.
 type companionGateway struct {
 	Subjects []companionSubject `json:"subjects"`
+	Limits   []namedLimit       `json:"limits"`
 	Formats  []stringFormat     `json:"formats"`
 	Enums    []namedEnum        `json:"enums"`
 	Objects  []objectType       `json:"objects"`
@@ -30,6 +33,9 @@ type companionGateway struct {
 	// formats holds each format's pattern taken apart, filled once the
 	// contract is valid.
 	formats map[string]parsedFormat
+	// limitKinds holds how the fields use each limit, filled once the
+	// contract is valid.
+	limitKinds map[string]limitKind
 }
 
 // companionSubject is one request/reply subject and the messages it carries.
@@ -47,6 +53,42 @@ type companionSubject struct {
 type stringFormat struct {
 	Name    string `json:"name"`
 	Pattern string `json:"pattern"`
+}
+
+// namedLimit is a number fields bound themselves with, by naming it in place
+// of a literal. Each limit becomes an exported constant in every generated
+// file, so code outside the contract that has to agree with a bound imports
+// the constant instead of repeating the number.
+type namedLimit struct {
+	Name  string `json:"name"`
+	Value int64  `json:"value"`
+}
+
+// limitKind is how fields use a limit, which fixes the type its Rust
+// constant takes.
+type limitKind int
+
+const (
+	// limitLength bounds a string's maxLength or maxBytes: a usize in Rust.
+	limitLength limitKind = iota + 1
+	// limitInteger bounds an integer's min or max: an i64 in Rust.
+	limitInteger
+)
+
+// fieldBound is one numeric bound of a field: a number written in place, or
+// the name of a declared limit. The name is resolved to its value before the
+// contract is validated, so every check reads Value either way.
+type fieldBound struct {
+	Value int64
+	// Limit is the declared limit Value comes from, "" for a literal.
+	Limit string
+}
+
+func (b *fieldBound) UnmarshalJSON(raw []byte) error {
+	if bytes.HasPrefix(raw, []byte(`"`)) {
+		return json.Unmarshal(raw, &b.Limit)
+	}
+	return json.Unmarshal(raw, &b.Value)
 }
 
 type namedEnum struct {
@@ -88,16 +130,17 @@ const (
 // companionField is one property. Every value is bounded: a string by
 // exactly one of maxLength (code points), maxBytes (UTF-8) or format; an
 // integer by min and max; a stringOrInteger by all three of maxLength, min
-// and max. An enum or object field names its declaration.
+// and max. Each numeric bound is a number or a declared limit's name. An
+// enum or object field names its declaration.
 type companionField struct {
 	Name      string             `json:"name"`
 	Type      companionFieldType `json:"type"`
 	Required  bool               `json:"required"`
-	MaxLength *int               `json:"maxLength"`
-	MaxBytes  *int               `json:"maxBytes"`
+	MaxLength *fieldBound        `json:"maxLength"`
+	MaxBytes  *fieldBound        `json:"maxBytes"`
 	Format    string             `json:"format"`
-	Min       *int64             `json:"min"`
-	Max       *int64             `json:"max"`
+	Min       *fieldBound        `json:"min"`
+	Max       *fieldBound        `json:"max"`
 	Enum      string             `json:"enum"`
 	Object    string             `json:"object"`
 }
@@ -136,9 +179,14 @@ func parseCompanionGateway(raw []byte) (companionGateway, error) {
 	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
 		return companionGateway{}, errors.New("decoding: trailing data after the contract object")
 	}
+	kinds, err := c.resolveLimits()
+	if err != nil {
+		return companionGateway{}, err
+	}
 	if err := c.validate(); err != nil {
 		return companionGateway{}, err
 	}
+	c.limitKinds = kinds
 	c.formats = map[string]parsedFormat{}
 	for _, f := range c.Formats {
 		parsed, err := parseFormat(f.Pattern)
@@ -273,7 +321,181 @@ func (c companionGateway) validate() error {
 			}
 		}
 	}
+	return c.validateLimitConstants()
+}
+
+// resolveLimits checks the declared limits and fills every bound that names
+// one with its value, so validate checks the value as if it were written in
+// place. It returns how the fields use each limit: lengths or integers, never
+// both, since the limit's Rust constant has one type.
+func (c *companionGateway) resolveLimits() (map[string]limitKind, error) {
+	values := map[string]int64{}
+	for i, l := range c.Limits {
+		key := fmt.Sprintf("limits[%d]", i)
+		if !fieldNamePattern.MatchString(l.Name) {
+			return nil, fmt.Errorf("%s.name: %q must match %s", key, l.Name, fieldNamePattern)
+		}
+		if _, ok := values[l.Name]; ok {
+			return nil, fmt.Errorf("%s.name: duplicate limit %q", key, l.Name)
+		}
+		if l.Value < -maxSafeInteger || l.Value > maxSafeInteger {
+			return nil, fmt.Errorf("%s.value: %d must be within ±%d so TypeScript reads it exactly", key, l.Value, maxSafeInteger)
+		}
+		values[l.Name] = l.Value
+	}
+	kinds := map[string]limitKind{}
+	for site, f := range c.fields() {
+		for _, b := range []struct {
+			name  string
+			bound *fieldBound
+			kind  limitKind
+		}{
+			{"maxLength", f.MaxLength, limitLength},
+			{"maxBytes", f.MaxBytes, limitLength},
+			{"min", f.Min, limitInteger},
+			{"max", f.Max, limitInteger},
+		} {
+			if b.bound == nil || b.bound.Limit == "" {
+				continue
+			}
+			value, ok := values[b.bound.Limit]
+			if !ok {
+				return nil, fmt.Errorf("%s.%s: %q is not a declared limit", site.key, b.name, b.bound.Limit)
+			}
+			if kind, seen := kinds[b.bound.Limit]; seen && kind != b.kind {
+				return nil, fmt.Errorf("%s.%s: limit %q may bound lengths or integers, not both", site.key, b.name, b.bound.Limit)
+			}
+			kinds[b.bound.Limit] = b.kind
+			b.bound.Value = value
+		}
+	}
+	for _, l := range c.Limits {
+		if _, ok := kinds[l.Name]; !ok {
+			return nil, fmt.Errorf("limits: %q is used by no field", l.Name)
+		}
+	}
+	return kinds, nil
+}
+
+// validateLimitConstants refuses a limit whose constant would take the name
+// of another constant the generated files export.
+func (c companionGateway) validateLimitConstants() error {
+	constants := map[string]string{"COMPANION_GATEWAY_SUBJECTS": "the subjects"}
+	for _, s := range c.Subjects {
+		constants[rustSubjectConst(s.Name)] = "subject " + s.Name
+	}
+	for _, f := range c.Formats {
+		constants[tsFormatConst(f.Name)] = "format " + f.Name
+		constants[tsPatternConst(f.Name)] = "format " + f.Name
+	}
+	for _, e := range c.Enums {
+		constants[tsEnumConst(e.Name)] = "enum " + e.Name
+	}
+	for i, l := range c.Limits {
+		name := limitConst(l.Name)
+		if other, ok := constants[name]; ok {
+			return fmt.Errorf("limits[%d].name: its constant %s is also the constant of %s", i, name, other)
+		}
+		constants[name] = "limit " + l.Name
+	}
 	return nil
+}
+
+// limitConst is the constant a limit is exported as, in every language.
+func limitConst(name string) string {
+	return screamingName(name)
+}
+
+// boundExpr is a numeric bound as the generated TypeScript and Rust both
+// spell it: its limit's constant, or the number itself.
+func boundExpr(b *fieldBound) string {
+	if b.Limit != "" {
+		return limitConst(b.Limit)
+	}
+	return strconv.FormatInt(b.Value, 10)
+}
+
+// limitDoc describes a limit by the bounds it sets, such as "The `max` of
+// `ModuleEndpointSend.budgetMs`.", wrapped into lines for the doc comment on
+// its constant.
+func (c companionGateway) limitDoc(name string) []string {
+	roles := []string{"maxLength", "maxBytes", "min", "max"}
+	fieldsByRole := map[string][]string{}
+	for site, f := range c.fields() {
+		for i, b := range []*fieldBound{f.MaxLength, f.MaxBytes, f.Min, f.Max} {
+			if b != nil && b.Limit == name {
+				fieldsByRole[roles[i]] = append(fieldsByRole[roles[i]], "`"+pascalName(site.owner)+"."+f.Name+"`")
+			}
+		}
+	}
+	parts := make([]string, 0, len(roles))
+	for _, role := range roles {
+		if fields := fieldsByRole[role]; len(fields) > 0 {
+			parts = append(parts, fmt.Sprintf("the `%s` of %s", role, englishList(fields)))
+		}
+	}
+	description := strings.Join(parts, "; ")
+	return wrapWords(strings.ToUpper(description[:1])+description[1:]+".", limitDocWidth)
+}
+
+// limitDocWidth is the widest line of a limit's doc comment, leaving room
+// for the comment markers and indent within rustfmt's and Biome's widths.
+const limitDocWidth = 76
+
+// englishList joins items as prose: "a", "a and b", "a, b and c".
+func englishList(items []string) string {
+	if len(items) == 1 {
+		return items[0]
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+}
+
+// wrapWords breaks text at spaces into lines of at most width bytes; a word
+// longer than width gets a line of its own.
+func wrapWords(text string, width int) []string {
+	var lines []string
+	line := ""
+	for _, word := range strings.Fields(text) {
+		if line != "" && len(line)+1+len(word) > width {
+			lines = append(lines, line)
+			line = ""
+		}
+		if line != "" {
+			line += " "
+		}
+		line += word
+	}
+	return append(lines, line)
+}
+
+// fieldSite is where a field is declared: the key it is reported at, and
+// the object or message variant holding it.
+type fieldSite struct {
+	key   string
+	owner string
+}
+
+// fields yields every field of every object and message variant, with where
+// it is declared.
+func (c companionGateway) fields() iter.Seq2[fieldSite, companionField] {
+	return func(yield func(fieldSite, companionField) bool) {
+		for i, o := range c.Objects {
+			for j, f := range o.Fields {
+				if !yield(fieldSite{key: fmt.Sprintf("objects[%d].fields[%d]", i, j), owner: o.Name}, f) {
+					return
+				}
+			}
+		}
+		for i, m := range c.Messages {
+			for k, v := range m.Variants {
+				for j, f := range v.Fields {
+					if !yield(fieldSite{key: fmt.Sprintf("messages[%d].variants[%d].fields[%d]", i, k, j), owner: v.Name}, f) {
+						return
+					}
+				}
+			}
+		}
+	}
 }
 
 // declarations are the names a field may refer to.
@@ -353,21 +575,21 @@ func (f companionField) validate(key string, refs declarations) error {
 			return fmt.Errorf("%s: %s does not apply to a %s field", key, name, f.Type)
 		}
 	}
-	if f.MaxLength != nil && *f.MaxLength < 1 {
+	if f.MaxLength != nil && f.MaxLength.Value < 1 {
 		return fmt.Errorf("%s: maxLength must be positive", key)
 	}
-	if f.MaxBytes != nil && *f.MaxBytes < 1 {
+	if f.MaxBytes != nil && f.MaxBytes.Value < 1 {
 		return fmt.Errorf("%s: maxBytes must be positive", key)
 	}
 	if f.Min != nil || f.Max != nil {
 		if f.Min == nil || f.Max == nil {
 			return fmt.Errorf("%s: an integer needs both min and max", key)
 		}
-		if *f.Min < -maxSafeInteger || *f.Max > maxSafeInteger {
+		if f.Min.Value < -maxSafeInteger || f.Max.Value > maxSafeInteger {
 			return fmt.Errorf("%s: min and max must be within ±%d so TypeScript reads them exactly", key, maxSafeInteger)
 		}
-		if *f.Min > *f.Max {
-			return fmt.Errorf("%s: min %d is above max %d", key, *f.Min, *f.Max)
+		if f.Min.Value > f.Max.Value {
+			return fmt.Errorf("%s: min %d is above max %d", key, f.Min.Value, f.Max.Value)
 		}
 	}
 	switch f.Type {

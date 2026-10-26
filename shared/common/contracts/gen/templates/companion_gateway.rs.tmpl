@@ -33,6 +33,11 @@ use serde::{Deserialize, Serialize};
 /// The companion gateway subject carrying a [`{{.Request}}`], request/reply.
 /// The reply is a [`{{.Reply}}`] as raw JSON, with no CloudEvent envelope.
 pub const {{.Const}}: &str = "{{.Subject}}";
+{{end}}{{range .Limits}}
+{{- range .Doc}}
+/// {{.}}
+{{- end}}
+pub const {{.Const}}: {{.Type}} = {{.Value}};
 {{end}}
 /// A value the contract refuses: the field, as a dotted path, and why.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

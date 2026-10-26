@@ -7,6 +7,12 @@
       "reply": "moduleEndpointReply"
     }
   ],
+  "limits": [
+    { "name": "minBudgetMs", "value": 100 },
+    { "name": "maxBudgetMs", "value": 4500 },
+    { "name": "maxMessageBytes", "value": 65536 },
+    { "name": "maxFailedMessageLength", "value": 1000 }
+  ],
   "formats": [
     { "name": "moduleId", "pattern": "^[A-Za-z0-9._-]{1,100}$" },
     { "name": "endpointId", "pattern": "^[a-z0-9_-]{1,40}$" },
@@ -56,8 +62,8 @@
           "fields": [
             { "name": "moduleId", "type": "string", "required": true, "format": "moduleId" },
             { "name": "endpointId", "type": "string", "required": true, "format": "endpointId" },
-            { "name": "message", "type": "string", "required": true, "maxBytes": 65536 },
-            { "name": "budgetMs", "type": "integer", "required": true, "min": 100, "max": 4500 }
+            { "name": "message", "type": "string", "required": true, "maxBytes": "maxMessageBytes" },
+            { "name": "budgetMs", "type": "integer", "required": true, "min": "minBudgetMs", "max": "maxBudgetMs" }
           ]
         },
         {
@@ -66,8 +72,8 @@
           "fields": [
             { "name": "moduleId", "type": "string", "required": true, "format": "moduleId" },
             { "name": "endpointId", "type": "string", "required": true, "format": "endpointId" },
-            { "name": "message", "type": "string", "required": true, "maxBytes": 65536 },
-            { "name": "budgetMs", "type": "integer", "required": true, "min": 100, "max": 4500 },
+            { "name": "message", "type": "string", "required": true, "maxBytes": "maxMessageBytes" },
+            { "name": "budgetMs", "type": "integer", "required": true, "min": "minBudgetMs", "max": "maxBudgetMs" },
             { "name": "match", "type": "object", "required": true, "object": "moduleEndpointMatch" }
           ]
         }
@@ -81,7 +87,7 @@
           "tag": "ok",
           "name": "moduleEndpointOk",
           "fields": [
-            { "name": "reply", "type": "string", "required": false, "maxBytes": 65536 },
+            { "name": "reply", "type": "string", "required": false, "maxBytes": "maxMessageBytes" },
             { "name": "sessionEpoch", "type": "string", "required": true, "maxLength": 100 }
           ]
         },
@@ -90,7 +96,7 @@
           "name": "moduleEndpointFailed",
           "fields": [
             { "name": "code", "type": "enum", "required": true, "enum": "moduleEndpointFailureCode" },
-            { "name": "message", "type": "string", "required": true, "maxLength": 1000 },
+            { "name": "message", "type": "string", "required": true, "maxLength": "maxFailedMessageLength" },
             { "name": "sessionEpoch", "type": "string", "required": false, "maxLength": 100 }
           ]
         }

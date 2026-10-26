@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -56,7 +57,8 @@ type tsOutcome struct {
 }
 
 type tsPlatform struct {
-	ID          string
+	ID string
+	// DisplayName is the platform's name as a quoted string literal.
 	DisplayName string
 }
 
@@ -88,7 +90,11 @@ func emitTS(c platformGateway) ([]byte, error) {
 	platformIDs := make([]string, 0, len(c.Platforms))
 	for _, p := range c.Platforms {
 		platformIDs = append(platformIDs, p.ID)
-		data.Platforms = append(data.Platforms, tsPlatform{ID: p.ID, DisplayName: p.DisplayName})
+		displayName, err := tsStringLiteral(p.DisplayName)
+		if err != nil {
+			return nil, fmt.Errorf("platforms: %w", err)
+		}
+		data.Platforms = append(data.Platforms, tsPlatform{ID: p.ID, DisplayName: displayName})
 	}
 	data.Enums = []tsEnum{
 		tsEnumOf("PLATFORM_IDS", "PlatformId", "isPlatformId", "A streaming platform the gateway can reach.", platformIDs),
@@ -243,4 +249,17 @@ func tsOutcomeOf(status string, fields []outcomeField) tsOutcome {
 	}
 	out.Branch = "{ " + strings.Join(members, "; ") + " }"
 	return out
+}
+
+// tsStringLiteral quotes text as a TypeScript string literal. JSON's string
+// syntax is a subset of JavaScript's, so every escape it writes means the
+// same there.
+func tsStringLiteral(text string) (string, error) {
+	var out bytes.Buffer
+	encoder := json.NewEncoder(&out)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(text); err != nil {
+		return "", fmt.Errorf("quoting %q: %w", text, err)
+	}
+	return strings.TrimSuffix(out.String(), "\n"), nil
 }

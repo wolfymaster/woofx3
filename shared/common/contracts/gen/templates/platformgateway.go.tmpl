@@ -85,7 +85,7 @@ func (v PlatformID) DisplayName() string {
 	switch v {
 {{- range .Platforms}}
 	case {{.Const}}:
-		return "{{.DisplayName}}"
+		return {{.DisplayName}}
 {{- end}}
 	}
 	return ""

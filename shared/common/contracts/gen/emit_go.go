@@ -58,7 +58,8 @@ type goOutcome struct {
 }
 
 type goPlatform struct {
-	Const       string
+	Const string
+	// DisplayName is the platform's name as a quoted string literal.
 	DisplayName string
 }
 
@@ -86,7 +87,7 @@ func emitGo(c platformGateway) ([]byte, error) {
 	for _, p := range c.Platforms {
 		value := goEnumValue{Const: "Platform" + goName(p.ID), Value: p.ID}
 		platformValues = append(platformValues, value)
-		data.Platforms = append(data.Platforms, goPlatform{Const: value.Const, DisplayName: p.DisplayName})
+		data.Platforms = append(data.Platforms, goPlatform{Const: value.Const, DisplayName: strconv.Quote(p.DisplayName)})
 	}
 	actionIDs := make([]string, 0, len(c.Actions))
 	for _, a := range c.Actions {

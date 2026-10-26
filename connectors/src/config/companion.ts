@@ -1,4 +1,5 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
+import { MAX_BUDGET_MS, MAX_MESSAGE_BYTES } from "@woofx3/common/cloudevents/Companion/module-request";
 import { RELAY_DASHBOARD_REQUEST_TIMEOUT_MS } from "@woofx3/common/cloudevents/Relay/relay";
 import { z } from "zod";
 import { unsetWhenBlank } from "./env";
@@ -44,11 +45,11 @@ export const COMPANION_DEFAULTS = {
 /** Defaults for the websocket sessions the companion gateway holds for module requests. */
 export const MODULE_SESSION_DEFAULTS = {
   /**
-   * The longest a module request is served, from arrival. Below barkloader
-   * ctx.local's 5_000 request timeout, so barkloader always gets an answer,
-   * and the contract's budgetMs maximum.
+   * The longest a module request is served, from arrival: the contract's
+   * budgetMs maximum, which stays below barkloader ctx.local's 5_000 request
+   * timeout, so barkloader always gets an answer.
    */
-  requestBudgetMs: 4_500,
+  requestBudgetMs: MAX_BUDGET_MS,
   /**
    * One session open: resolving the route (with the bridge's credential and
    * ticket exchange) and the upgrade. Independent of any call: a call whose
@@ -70,7 +71,7 @@ export const MODULE_SESSION_DEFAULTS = {
   /** `request`s waiting for their matching frame on one session. */
   maxPendingPerSession: 16,
   /** The largest frame written or read, in UTF-8 bytes: the contract's message and reply bound. */
-  maxMessageBytes: 65_536,
+  maxMessageBytes: MAX_MESSAGE_BYTES,
 } as const;
 
 export interface ModuleSessionLimits {
