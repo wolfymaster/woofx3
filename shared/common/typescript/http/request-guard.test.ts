@@ -5,6 +5,7 @@ import {
   isLoopbackHostname,
   OPEN_REQUEST_GUARD_POLICY,
   parseRequestGuardPolicy,
+  parseUiOrigins,
   RequestGuard,
   type RequestGuardSettings,
   resolveExposure,
@@ -316,6 +317,51 @@ describe("RequestGuard subdomain wildcard origins", () => {
     ]) {
       expect(() => policyFor({ allowedOrigins: entry })).toThrow("WOOFX3_ALLOWED_ORIGINS");
     }
+  });
+});
+
+describe("parseUiOrigins", () => {
+  test("unset or blank is no origin", () => {
+    expect(parseUiOrigins(undefined)).toEqual([]);
+    expect(parseUiOrigins("")).toEqual([]);
+    expect(parseUiOrigins(" , ")).toEqual([]);
+  });
+
+  test("returns each listed origin, trimmed", () => {
+    expect(parseUiOrigins("https://woofx3.tv")).toEqual(["https://woofx3.tv"]);
+    expect(parseUiOrigins(" https://woofx3.tv , https://*.preview.example ")).toEqual([
+      "https://woofx3.tv",
+      "https://*.preview.example",
+    ]);
+  });
+
+  test("a malformed entry, *, null or a non-list stops startup naming the setting", () => {
+    for (const value of [
+      "woofx3.tv",
+      "https://woofx3.tv/dashboard",
+      "https://user@woofx3.tv",
+      "https://*.tv",
+      "*",
+      "null",
+      "https://woofx3.tv,null",
+      true,
+      8080,
+    ]) {
+      expect(() => parseUiOrigins(value)).toThrow("WOOFX3_UI_URL");
+    }
+  });
+
+  test("its origins join the defaults as extra default origins", () => {
+    const guard = new RequestGuard(
+      parseRequestGuardPolicy({
+        exposure: "network",
+        ownUrls: ["https://streamer.woofx3.tv"],
+        extraDefaultOrigins: parseUiOrigins("https://woofx3.tv"),
+      })
+    );
+    expect(guard.reject(request({ origin: "https://woofx3.tv" }))).toBeNull();
+    expect(guard.reject(request({ origin: "http://localhost:5173" }))).toBeNull();
+    expect(guard.reject(request({ origin: "https://evil.example" }))?.status).toBe(403);
   });
 });
 

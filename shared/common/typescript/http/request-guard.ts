@@ -1,14 +1,15 @@
 /**
  * Host and Origin checks shared by the engine's HTTP services (api,
- * sceneManager), configured by `WOOFX3_ALLOWED_HOSTS` and
- * `WOOFX3_ALLOWED_ORIGINS`.
+ * sceneManager), configured by `WOOFX3_ALLOWED_HOSTS`,
+ * `WOOFX3_ALLOWED_ORIGINS` and `WOOFX3_UI_URL`.
  *
  * An unset list does not mean open. Each service resolves its defaults here,
  * once, at startup:
  * - Origins default to the loopback dev servers and the desktop webview
  *   (DEFAULT_ALLOWED_ORIGINS), the origins of the URLs the service is
- *   configured to be reached at, and any origins the service adds (sceneManager
- *   adds `null` for sandboxed widget frames).
+ *   configured to be reached at, the dashboard's origins (`WOOFX3_UI_URL`, see
+ *   parseUiOrigins), and any origins the service adds (sceneManager adds
+ *   `null` for sandboxed widget frames).
  * - Hosts default to the loopback names (LOOPBACK_HOSTS) and the hosts of the
  *   service's configured URLs, but only on a service reachable over loopback
  *   alone. Behind the edge or on a network interface the Host is whatever the
@@ -80,7 +81,11 @@ export interface RequestGuardSettings {
    * their origins the default Origin list.
    */
   ownUrls: readonly string[];
-  /** Origins the service adds to DEFAULT_ALLOWED_ORIGINS when `WOOFX3_ALLOWED_ORIGINS` is unset. */
+  /**
+   * Origins the service adds to DEFAULT_ALLOWED_ORIGINS when
+   * `WOOFX3_ALLOWED_ORIGINS` is unset: its own (sceneManager's `null`) and the
+   * dashboard's (parseUiOrigins).
+   */
   extraDefaultOrigins: readonly string[];
 }
 
@@ -282,6 +287,37 @@ function parseOriginRule(setting: string, entry: string): OriginRule {
     return { kind: "anyPort", protocol: url.protocol, hostname: url.hostname.toLowerCase() };
   }
   return { kind: "exact", origin };
+}
+
+const UI_URL_SETTING = "WOOFX3_UI_URL";
+
+/**
+ * `WOOFX3_UI_URL`: the origins of the dashboards this engine is used from,
+ * comma-separated, each `scheme://host[:port]` or `scheme://*.domain[:port]`.
+ * A deployment the dashboard is not served from the same origin as, such as a
+ * managed engine at `https://<slug>.woofx3.tv` used from `https://woofx3.tv`,
+ * names it here so the default Origin list admits it without the operator
+ * having to restate every other default in `WOOFX3_ALLOWED_ORIGINS`.
+ *
+ * Unset or blank means none. `*` and `null` are refused: neither is a
+ * dashboard, and opening the check belongs to `WOOFX3_ALLOWED_ORIGINS`. Any
+ * other malformed entry throws, so a typo stops the service at startup
+ * instead of disconnecting the dashboard.
+ */
+export function parseUiOrigins(value: string | number | boolean | undefined): readonly string[] {
+  const setting = readList(UI_URL_SETTING, value);
+  if (setting.kind === "default") {
+    return [];
+  }
+  if (setting.kind === "any") {
+    throw new Error(`${UI_URL_SETTING}: ${ALLOW_ANY} is not a dashboard origin; set WOOFX3_ALLOWED_ORIGINS instead`);
+  }
+  for (const entry of setting.entries) {
+    if (parseOriginRule(UI_URL_SETTING, entry).kind === "opaque") {
+      throw new Error(`${UI_URL_SETTING}: ${OPAQUE_ORIGIN} is not a dashboard origin`);
+    }
+  }
+  return setting.entries;
 }
 
 /**
