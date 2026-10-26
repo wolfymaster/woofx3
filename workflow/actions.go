@@ -3,20 +3,30 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"time"
+	"math"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	barkloader "github.com/wolfymaster/woofx3/clients/barkloader"
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/common/platformgateway"
+	"github.com/wolfymaster/woofx3/workflow/internal/expression"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
-// NewChatReplyAction is the engine handler registered as `chat.reply`.
+// NewChatReplyAction is the engine handler registered as `chat.reply`, the
+// "Send chat message" action.
 //
-// Sends one message to chat by publishing `message.send`, consumed by
-// woofwoofwoof, the only process holding the chat client.
+// Sends one message through the platform gateway in connectors, to the
+// platforms the step's `platform` parameter names (see resolveChatTarget), and
+// returns what happened on each. The step fails unless the gateway's reply is
+// ok, with a sentence per platform saying why.
 //
 // Native rather than a module function so that replying in chat needs no
 // module installed: it is what a chat command has always done, and what makes
@@ -26,55 +36,433 @@ import (
 // `woofx3:action:chat.reply`.
 func NewChatReplyAction() tasks.ActionFunc[AppServices] {
 	return func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
-		payload, err := chatReplyMessage(ctx, params)
+		message, target, err := chatStepTarget(ctx, params)
 		if err != nil {
 			return nil, err
 		}
-
-		bus := ctx.Services.MessageBus()
-		if bus == nil {
-			return nil, fmt.Errorf("message bus not available")
+		reply, err := sendThroughGateway(ctx, platformgateway.ActionChatSend, target, platformgateway.ChatSendPayload{Message: message}, nil)
+		if err != nil {
+			return nil, err
 		}
-		if err := bus.Publish("message.send", payload); err != nil {
-			return nil, fmt.Errorf("publish message.send: %w", err)
-		}
-		message, _ := params["message"].(string)
-		return map[string]any{"message": message}, nil
+		return chatStepOutput(message, reply)
 	}
 }
 
-// chatReplyMessage validates the chat.reply parameters and returns the
-// marshalled message.send event the action publishes. Split from the action so
-// the published bytes are testable without a message bus.
-func chatReplyMessage(ctx tasks.ActionContext[AppServices], params map[string]any) ([]byte, error) {
+// NewChatAnnounceAction is the engine handler registered as `chat.announce`,
+// the "Send announcement" action: a highlighted chat line, where the platform
+// has one. The optional `twitchColor` reaches the gateway as Twitch's options
+// and is left out when unset, so Twitch uses the channel's accent colour.
+//
+// Canonical id of the corresponding action declaration row:
+// `woofx3:action:chat.announce`.
+func NewChatAnnounceAction() tasks.ActionFunc[AppServices] {
+	return func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
+		message, target, err := chatStepTarget(ctx, params)
+		if err != nil {
+			return nil, err
+		}
+		color, err := announcementColorParam(params)
+		if err != nil {
+			return nil, err
+		}
+		options, err := announceOptions(color)
+		if err != nil {
+			return nil, err
+		}
+		reply, err := sendThroughGateway(ctx, platformgateway.ActionChatAnnounce, target, platformgateway.ChatAnnouncePayload{Message: message}, options)
+		if err != nil {
+			return nil, err
+		}
+		return chatStepOutput(message, reply)
+	}
+}
+
+// NewChatPinAction is the engine handler registered as `chat.pin`, the "Pin
+// message" action: posts a message and pins it. Only the send-and-pin form of
+// the gateway action is offered; pinning an existing line needs a message id a
+// step has no way to name.
+//
+// Canonical id of the corresponding action declaration row:
+// `woofx3:action:chat.pin`.
+func NewChatPinAction() tasks.ActionFunc[AppServices] {
+	return func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
+		message, target, err := chatStepTarget(ctx, params)
+		if err != nil {
+			return nil, err
+		}
+		duration, err := pinDurationParam(params)
+		if err != nil {
+			return nil, err
+		}
+		reply, err := sendThroughGateway(ctx, platformgateway.ActionChatPin, target, platformgateway.ChatPinNewPayload{Message: message, DurationSeconds: duration}, nil)
+		if err != nil {
+			return nil, err
+		}
+		return chatStepOutput(message, reply)
+	}
+}
+
+// chatStepTarget reads the parameters every chat step shares, `message` and
+// `platform`, and resolves where the step sends.
+func chatStepTarget(ctx tasks.ActionContext[AppServices], params map[string]any) (string, platformgateway.Target, error) {
+	message, err := chatMessageParam(params)
+	if err != nil {
+		return "", platformgateway.Target{}, err
+	}
+	platform, err := chatPlatformParam(params)
+	if err != nil {
+		return "", platformgateway.Target{}, err
+	}
+	target, err := resolveChatTarget(platform, ctx.TriggerEvent)
+	if err != nil {
+		return "", platformgateway.Target{}, err
+	}
+	return message, target, nil
+}
+
+func chatStepOutput(message string, reply platformgateway.GatewayReply) (map[string]any, error) {
+	results, err := gatewayResultsOutput(reply)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"message": message, "ok": reply.OK, "results": results}, nil
+}
+
+// Values of a chat step's `platform` parameter besides a platform id. Must
+// match the pinned options of the platform field in
+// modules/woofx3/manifest.json.
+const (
+	// chatPlatformOrigin answers on the platform the trigger came from, or on
+	// every platform when the trigger came from none (a timer, the
+	// dashboard). An empty parameter means the same, so steps saved before
+	// the parameter existed keep answering where they were asked.
+	chatPlatformOrigin = "origin"
+	// chatPlatformAll sends to every platform that is linked and enabled.
+	chatPlatformAll = "all"
+)
+
+// chatPlatformIDPattern is the shape of a platform id, checked when a workflow
+// is registered. Deliberately not the gateway's own list: a stored workflow
+// naming a platform this engine has no adapter for still loads, and its step
+// says so when it runs.
+var chatPlatformIDPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
+
+// validateChatPlatformParam is the registration check of a chat step's
+// `platform`: empty, origin, all, anything shaped like a platform id, or an
+// expression resolved when the step runs.
+func validateChatPlatformParam(params map[string]any) error {
+	raw, present := params["platform"]
+	if !present || raw == nil {
+		return nil
+	}
+	platform, ok := raw.(string)
+	if !ok {
+		return fmt.Errorf("platform must be text, got %s", describeParam(raw))
+	}
+	if expression.HasExpression(platform) {
+		return nil
+	}
+	if platform == "" || platform == chatPlatformOrigin || platform == chatPlatformAll || chatPlatformIDPattern.MatchString(platform) {
+		return nil
+	}
+	return fmt.Errorf("platform must be %q, %q or a platform id, got %s", chatPlatformOrigin, chatPlatformAll, describeParam(raw))
+}
+
+func chatMessageParam(params map[string]any) (string, error) {
 	message, _ := params["message"].(string)
 	if message == "" {
-		return nil, fmt.Errorf("message parameter is required")
+		return "", fmt.Errorf("message parameter is required")
 	}
-	platform, _ := params["platform"].(string)
-	if platform == "" {
-		platform = "twitch"
-	}
-	payload, err := json.Marshal(newChainedEvent(ctx, "message.send", map[string]any{"platform": platform, "message": message}))
-	if err != nil {
-		return nil, fmt.Errorf("marshal message.send: %w", err)
-	}
-	return payload, nil
+	return message, nil
 }
 
-// newChainedEvent builds an event a native action publishes on behalf of the
-// running workflow. It carries the run's workflowChain (the trigger's chain plus
-// this workflow), which is what lets the loop guard see a workflow whose output
-// re-triggers itself; an event published without it starts a fresh chain.
-func newChainedEvent(ctx tasks.ActionContext[AppServices], eventType string, data map[string]any) types.Event {
-	return types.Event{
-		ID:            uuid.NewString(),
-		Type:          eventType,
-		Source:        "workflow",
-		Time:          time.Now().UTC(),
-		WorkflowChain: ctx.TriggerEvent.ChainThrough(ctx.WorkflowID),
-		Data:          data,
+// chatPlatformParam is the resolved `platform` parameter, "" when absent.
+func chatPlatformParam(params map[string]any) (string, error) {
+	raw, present := params["platform"]
+	if !present || raw == nil {
+		return "", nil
 	}
+	platform, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("platform must be text, got %s", describeParam(raw))
+	}
+	return platform, nil
+}
+
+// resolveChatTarget turns a resolved `platform` parameter into the gateway
+// target it names. Origin answers the trigger event: its platform attribute
+// picks the platform, and its `messageId`, when it has one, is the line the
+// gateway replies to. A trigger from no platform falls back to all.
+func resolveChatTarget(platform string, trigger *types.Event) (platformgateway.Target, error) {
+	switch platform {
+	case "", chatPlatformOrigin:
+		return originTarget(trigger)
+	case chatPlatformAll:
+		return platformgateway.Target{Kind: platformgateway.TargetAll}, nil
+	}
+	id := platformgateway.PlatformID(platform)
+	if !id.Valid() {
+		return platformgateway.Target{}, fmt.Errorf("platform %q is not one this engine can send to; choose %s", platform, chatPlatformChoices())
+	}
+	return platformgateway.Target{Kind: platformgateway.TargetPlatforms, IDs: []platformgateway.PlatformID{id}}, nil
+}
+
+func originTarget(trigger *types.Event) (platformgateway.Target, error) {
+	if trigger == nil || trigger.Platform == "" {
+		return platformgateway.Target{Kind: platformgateway.TargetAll}, nil
+	}
+	id := platformgateway.PlatformID(trigger.Platform)
+	if !id.Valid() {
+		return platformgateway.Target{}, fmt.Errorf("the trigger came from %q, which this engine cannot send to; choose %s", trigger.Platform, chatPlatformChoices())
+	}
+	origin := &platformgateway.OriginRef{Platform: id}
+	if messageID, ok := trigger.Data["messageId"].(string); ok {
+		origin.MessageID = messageID
+	}
+	if channelID, ok := trigger.Data["channelId"].(string); ok {
+		origin.ChannelID = channelID
+	}
+	return platformgateway.Target{Kind: platformgateway.TargetOrigin, Origin: origin}, nil
+}
+
+// chatPlatformChoices lists what a chat step's platform may be, for errors.
+func chatPlatformChoices() string {
+	choices := []string{chatPlatformOrigin, chatPlatformAll}
+	for _, id := range platformgateway.PlatformIDs() {
+		choices = append(choices, string(id))
+	}
+	return strings.Join(choices, ", ")
+}
+
+// describeChatPlatform names where a resolved `platform` parameter sends, for
+// a dry run's sentence, refusing what resolveChatTarget refuses.
+func describeChatPlatform(platform string) (string, error) {
+	switch platform {
+	case "", chatPlatformOrigin:
+		return "the chat the trigger came from", nil
+	case chatPlatformAll:
+		return "every linked platform's chat", nil
+	}
+	if _, err := resolveChatTarget(platform, nil); err != nil {
+		return "", err
+	}
+	return platform + " chat", nil
+}
+
+// Bounds of a pin's duration in seconds, as the chat.pin contract states them
+// and Twitch enforces them.
+const (
+	pinDurationMinSeconds = 30
+	pinDurationMaxSeconds = 1200
+)
+
+// announcementColorNames are the contract's Twitch announcement colours, the
+// options of the `twitchColor` select in modules/woofx3/manifest.json.
+func announcementColorNames() []string {
+	colors := platformgateway.TwitchAnnouncementColors()
+	names := make([]string, len(colors))
+	for i, color := range colors {
+		names[i] = string(color)
+	}
+	return names
+}
+
+// announcementColorParam is the `twitchColor` parameter, "" when unset.
+func announcementColorParam(params map[string]any) (string, error) {
+	raw, present := params["twitchColor"]
+	if !present || raw == nil {
+		return "", nil
+	}
+	color, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("twitchColor must be text, got %s", describeParam(raw))
+	}
+	if color == "" || platformgateway.TwitchAnnouncementColor(color).Valid() {
+		return color, nil
+	}
+	return "", fmt.Errorf("twitchColor must be one of %s, got %s", strings.Join(announcementColorNames(), ", "), describeParam(raw))
+}
+
+// validateAnnouncementParams is the registration check of a chat.announce
+// step: the platform as for any chat step, and a colour that is unset, one of
+// Twitch's, or an expression resolved when the step runs.
+func validateAnnouncementParams(params map[string]any) error {
+	if err := validateChatPlatformParam(params); err != nil {
+		return err
+	}
+	if color, ok := params["twitchColor"].(string); ok && expression.HasExpression(color) {
+		return nil
+	}
+	_, err := announcementColorParam(params)
+	return err
+}
+
+// announceOptions is the request options for a colour: Twitch's, or none when
+// the step sets no colour.
+func announceOptions(color string) (map[platformgateway.PlatformID]json.RawMessage, error) {
+	if color == "" {
+		return nil, nil
+	}
+	encoded, err := json.Marshal(struct {
+		Color string `json:"color"`
+	}{Color: color})
+	if err != nil {
+		return nil, fmt.Errorf("marshal twitch announcement options: %w", err)
+	}
+	return map[platformgateway.PlatformID]json.RawMessage{platformgateway.PlatformTwitch: encoded}, nil
+}
+
+// pinDurationParam is the `durationSeconds` parameter, nil when unset so the
+// platform keeps its own default. Text is accepted because a step reading the
+// number from another step's output resolves to text.
+func pinDurationParam(params map[string]any) (*int, error) {
+	var seconds int
+	switch v := params["durationSeconds"].(type) {
+	case nil:
+		return nil, nil
+	case int:
+		seconds = v
+	case int64:
+		seconds = int(v)
+	case float64:
+		if v != math.Trunc(v) {
+			return nil, fmt.Errorf("durationSeconds must be a whole number of seconds, got number %v", v)
+		}
+		if v < pinDurationMinSeconds || v > pinDurationMaxSeconds {
+			return nil, fmt.Errorf("durationSeconds must be between %d and %d, got %v", pinDurationMinSeconds, pinDurationMaxSeconds, v)
+		}
+		seconds = int(v)
+	case string:
+		trimmed := strings.TrimSpace(v)
+		if trimmed == "" {
+			return nil, nil
+		}
+		parsed, err := strconv.Atoi(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("durationSeconds must be a whole number of seconds, got %s", describeParam(v))
+		}
+		seconds = parsed
+	default:
+		return nil, fmt.Errorf("durationSeconds must be a number, got %s", describeParam(v))
+	}
+	if seconds < pinDurationMinSeconds || seconds > pinDurationMaxSeconds {
+		return nil, fmt.Errorf("durationSeconds must be between %d and %d, got %d", pinDurationMinSeconds, pinDurationMaxSeconds, seconds)
+	}
+	return &seconds, nil
+}
+
+// validatePinParams is the registration check of a chat.pin step: the platform
+// as for any chat step, and a duration that is unset, in bounds, or an
+// expression resolved when the step runs.
+func validatePinParams(params map[string]any) error {
+	if err := validateChatPlatformParam(params); err != nil {
+		return err
+	}
+	if duration, ok := params["durationSeconds"].(string); ok && expression.HasExpression(duration) {
+		return nil
+	}
+	_, err := pinDurationParam(params)
+	return err
+}
+
+// sendThroughGateway performs one gateway action for the running step and
+// returns the reply, or an error unless the reply is ok. Options are the
+// per-platform extras of the request, nil for none.
+//
+// The idempotency key is the run and the step, `ExecutionID:TaskID`. The
+// engine never retries a task (each step's attempt is always 1), so the key is
+// sent once per step of a run; it makes a duplicate of that one request, should
+// one ever reach the gateway, replay the first reply instead of posting twice.
+// A replay of the run is a new execution with a new key, so it posts again, as
+// asked.
+//
+// The request carries the run's workflowChain, so a line it posts comes back
+// on the platform's chat feed carrying the chain, and the loop guard sees a
+// workflow answering its own lines.
+func sendThroughGateway(ctx tasks.ActionContext[AppServices], action platformgateway.ActionID, target platformgateway.Target, payload any, options map[platformgateway.PlatformID]json.RawMessage) (platformgateway.GatewayReply, error) {
+	if ctx.ExecutionID == "" || ctx.TaskID == "" || ctx.WorkflowID == "" {
+		return platformgateway.GatewayReply{}, fmt.Errorf("%s needs the run's execution, task and workflow ids", action)
+	}
+	gateway := ctx.Services.PlatformGateway()
+	if gateway == nil {
+		return platformgateway.GatewayReply{}, fmt.Errorf("platform gateway not available")
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return platformgateway.GatewayReply{}, fmt.Errorf("marshal %s payload: %w", action, err)
+	}
+	reply, err := gateway.Send(ctx.Context, platformgateway.GatewayRequest{
+		Action:         action,
+		Target:         target,
+		Payload:        encoded,
+		Options:        options,
+		IdempotencyKey: ctx.ExecutionID + ":" + ctx.TaskID,
+		RequestedBy:    platformgateway.RequestedBy{Kind: platformgateway.RequesterWorkflow, Ref: ctx.WorkflowID},
+		WorkflowChain:  ctx.TriggerEvent.ChainThrough(ctx.WorkflowID),
+	})
+	if err != nil {
+		return platformgateway.GatewayReply{}, err
+	}
+	if !reply.OK {
+		return reply, errors.New(summarizeGatewayReply(action, reply))
+	}
+	return reply, nil
+}
+
+// summarizeGatewayReply says, one platform at a time in a stable order, why a
+// reply was not ok.
+func summarizeGatewayReply(action platformgateway.ActionID, reply platformgateway.GatewayReply) string {
+	if reply.Error != nil {
+		return fmt.Sprintf("the platform gateway refused %s (%s): %s", action, reply.Error.Code, reply.Error.Message)
+	}
+	if len(reply.Results) == 0 {
+		return "no platform is linked and enabled to send to"
+	}
+	ids := make([]string, 0, len(reply.Results))
+	for id := range reply.Results {
+		ids = append(ids, string(id))
+	}
+	sort.Strings(ids)
+	parts := make([]string, 0, len(ids))
+	for _, id := range ids {
+		parts = append(parts, id+": "+describeOutcome(reply.Results[platformgateway.PlatformID(id)]))
+	}
+	return fmt.Sprintf("%s did not go through: %s", action, strings.Join(parts, "; "))
+}
+
+func describeOutcome(outcome platformgateway.PlatformOutcome) string {
+	switch outcome.Status {
+	case platformgateway.OutcomeDelivered:
+		return "sent"
+	case platformgateway.OutcomeDropped:
+		return fmt.Sprintf("held by the platform (%s)", outcome.Reason)
+	case platformgateway.OutcomeUnsupported:
+		return "cannot do this"
+	case platformgateway.OutcomeUnavailable:
+		return fmt.Sprintf("unavailable (%s)", outcome.Reason)
+	case platformgateway.OutcomeUnconfirmed:
+		return outcome.Message
+	case platformgateway.OutcomeFailed:
+		return fmt.Sprintf("failed (%s): %s", outcome.Code, outcome.Message)
+	default:
+		return string(outcome.Status)
+	}
+}
+
+// gatewayResultsOutput is a reply's per-platform outcomes as the step's
+// `results` output, keyed by platform id with each outcome in its wire shape,
+// so `${steps.<id>.results.twitch.messageId}` reads the same field the
+// gateway sent.
+func gatewayResultsOutput(reply platformgateway.GatewayReply) (map[string]any, error) {
+	encoded, err := json.Marshal(reply.Results)
+	if err != nil {
+		return nil, fmt.Errorf("marshal gateway results: %w", err)
+	}
+	results := map[string]any{}
+	if err := json.Unmarshal(encoded, &results); err != nil {
+		return nil, fmt.Errorf("read gateway results: %w", err)
+	}
+	return results, nil
 }
 
 // NewBarkloaderAction is the engine handler registered as `function`.
@@ -469,17 +857,72 @@ var alertActionSpec = tasks.ActionSpec{
 	},
 }
 
+// chatReplyActionSpec checks the step as the real action would, so a dry run
+// fails on the same message or platform a real run refuses. Whether the
+// platform is linked and running is only known to the gateway, which a dry run
+// does not ask.
 var chatReplyActionSpec = tasks.ActionSpec{
 	SideEffect: true,
+	Validate:   validateChatPlatformParam,
 	DryRun: func(params map[string]any) (string, error) {
-		message, _ := params["message"].(string)
-		if message == "" {
-			return "", fmt.Errorf("message parameter is required")
+		message, where, err := dryRunChatStep(params)
+		if err != nil {
+			return "", err
 		}
-		platform, _ := params["platform"].(string)
-		if platform == "" {
-			platform = "twitch"
-		}
-		return fmt.Sprintf("would send %q to %s chat", message, platform), nil
+		return fmt.Sprintf("would send %q to %s", message, where), nil
 	},
+}
+
+// chatAnnounceActionSpec checks the step as the real action would. A dry run
+// does not ask the gateway whether the platform is linked, or whether it has
+// announcements.
+var chatAnnounceActionSpec = tasks.ActionSpec{
+	SideEffect: true,
+	Validate:   validateAnnouncementParams,
+	DryRun: func(params map[string]any) (string, error) {
+		message, where, err := dryRunChatStep(params)
+		if err != nil {
+			return "", err
+		}
+		if _, err := announcementColorParam(params); err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("would announce %q in %s", message, where), nil
+	},
+}
+
+// chatPinActionSpec checks the step as the real action would.
+var chatPinActionSpec = tasks.ActionSpec{
+	SideEffect: true,
+	Validate:   validatePinParams,
+	DryRun: func(params map[string]any) (string, error) {
+		message, where, err := dryRunChatStep(params)
+		if err != nil {
+			return "", err
+		}
+		duration, err := pinDurationParam(params)
+		if err != nil {
+			return "", err
+		}
+		if duration == nil {
+			return fmt.Sprintf("would send %q to %s and pin it", message, where), nil
+		}
+		return fmt.Sprintf("would send %q to %s and pin it for %d seconds", message, where, *duration), nil
+	},
+}
+
+func dryRunChatStep(params map[string]any) (string, string, error) {
+	message, err := chatMessageParam(params)
+	if err != nil {
+		return "", "", err
+	}
+	platform, err := chatPlatformParam(params)
+	if err != nil {
+		return "", "", err
+	}
+	where, err := describeChatPlatform(platform)
+	if err != nil {
+		return "", "", err
+	}
+	return message, where, nil
 }

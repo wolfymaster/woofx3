@@ -109,7 +109,7 @@ const FORWARDS: [RouteName, unknown[], { operation: string; params?: unknown }][
 
 describe("twitch routes", () => {
   for (const [name, args, expected] of FORWARDS) {
-    test(`${name} asks the twitch service for ${expected.operation} and returns Helix's body`, async () => {
+    test(`${name} asks the Twitch adapter for ${expected.operation} and returns Helix's body`, async () => {
       const body = { data: [{ id: "x" }] };
       const { nats, asked } = busAnswering(helixResult({ ok: true, body }));
 
@@ -125,7 +125,7 @@ describe("twitch routes", () => {
     expect([...covered].sort()).toEqual(Object.keys(twitchRoutes).sort());
   });
 
-  test("waits 10 seconds for the twitch service", () => {
+  test("waits 10 seconds for the Twitch adapter", () => {
     expect(TWITCH_HELIX_TIMEOUT_MS).toBe(10_000);
   });
 });
@@ -166,7 +166,7 @@ describe("twitch route results", () => {
     expect(result.ok === false && result.error).toContain("may still have acted");
   });
 
-  test("no twitch service listening is unavailable", async () => {
+  test("no Twitch adapter listening is unavailable", async () => {
     const noResponders = Object.assign(new Error("no responders: 'twitchapi'"), {
       name: "RequestError",
       cause: Object.assign(new Error("no responders"), { name: "NoResponders" }),
@@ -176,7 +176,7 @@ describe("twitch route results", () => {
     expect(await call(nats, "twitchGetChannelInformation")).toEqual({
       ok: false,
       code: "unavailable",
-      error: "The twitch service is not running",
+      error: "Twitch is not connected in this engine",
     });
   });
 
@@ -194,7 +194,7 @@ describe("twitch route results", () => {
     });
   });
 
-  test("forwards the twitch service's not_linked and invalid_arguments codes", async () => {
+  test("forwards the Twitch adapter's not_linked and invalid_arguments codes", async () => {
     const notLinked = busAnswering(twitchError("Twitch is not linked yet", "not_linked"));
     expect(await call(notLinked.nats, "twitchGetChannelInformation")).toEqual({
       ok: false,
@@ -207,6 +207,24 @@ describe("twitch route results", () => {
       ok: false,
       code: "invalid_arguments",
       error: 'helix getGames: "id" is required',
+    });
+  });
+
+  test("the twitch adapter turned off or not running is unavailable", async () => {
+    const off = busAnswering(
+      twitchError("Twitch is turned off or not running in this engine", "integration_unavailable")
+    );
+    expect(await call(off.nats, "twitchGetChannelInformation")).toEqual({
+      ok: false,
+      code: "unavailable",
+      error: "Twitch is turned off or not running in this engine",
+    });
+
+    const parked = busAnswering(twitchError("it failed repeatedly", "integration_unavailable"));
+    expect(await call(parked.nats, "twitchGetChannelInformation")).toEqual({
+      ok: false,
+      code: "unavailable",
+      error: "Twitch is turned off or not running in this engine",
     });
   });
 

@@ -43,14 +43,32 @@ export enum EventType {
 }
 
 export interface ChatMessage {
+  /** Twitch's id for the line: what a reply or a pin names. */
+  messageId: string;
   amount: number;
   isPaid: boolean;
   channelId: string | null;
   channelName: string | null;
   chatterId: string;
+  /** The chatter's display name. */
   chatterName: string;
+  /** The chatter's login: their account name, lowercase. */
+  chatterLogin: string;
   message: string;
   membership: ChatterMembership;
+  /**
+   * True for a line the engine said itself and Twitch handed back. The engine
+   * speaks with the broadcaster's token, so without it an engine line reads
+   * as the streamer typing. A claimed line's event also carries the
+   * `workflowChain` of the workflow that said it.
+   */
+  fromEngine: boolean;
+}
+
+/** CloudEvent attributes a chat message's event may carry besides its payload. */
+export interface ChatMessageAttributes {
+  /** Set on an engine line a workflow said; see BaseEvent.workflowChain. */
+  workflowChain?: string;
 }
 
 export interface Cheer {
@@ -117,7 +135,7 @@ export interface Redeem {
 }
 
 /**
- * An ad break is scheduled soon. Not a Twitch event: the twitch service
+ * An ad break is scheduled soon. Not a Twitch event: the connectors Twitch adapter
  * reads the ad schedule while the stream is live and publishes this once
  * per scheduled break, `secondsUntil` ahead of it
  * (docs/services/twitch-channel.md).
@@ -140,7 +158,7 @@ export interface AdBreakBegin {
 }
 
 /**
- * An ad break ended. Twitch sends no end event: the twitch service
+ * An ad break ended. Twitch sends no end event: the connectors Twitch adapter
  * publishes this `durationSeconds` after the begin event, so `endedAt` is
  * when the break was due to end, not an observation that it did.
  */

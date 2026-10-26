@@ -1,10 +1,10 @@
-//! `ctx.twitch`: asks the twitch service to act on the linked channel and
+//! `ctx.twitch`: asks the connectors Twitch adapter to act on the linked channel and
 //! returns what it answered.
 //!
 //! Each call is a request/reply on the `twitchapi` subject, made on the
 //! sandbox's blocking thread, so module code gets the result (a clip's url, a
 //! marker's position) or an error it can handle, instead of firing and
-//! hoping. The twitch service owns every Twitch rule and answers a refusal
+//! hoping. The connectors Twitch adapter owns every Twitch rule and answers a refusal
 //! with its own message, which is thrown to the module unchanged.
 //!
 //! A waiting call holds one of the runtime's blocking threads, so every call
@@ -21,11 +21,11 @@ use std::time::Duration;
 const SUBJECT: &str = "twitchapi";
 const NAMESPACE: &str = "twitch";
 
-/// The reply type the twitch service answers a refused request with; must
-/// match `respondError` in twitch/src/application.ts.
+/// The reply type the connectors Twitch adapter answers a refused request with; must
+/// match `TWITCHAPI_ERROR_TYPE` in connectors/src/adapters/twitch/application.ts.
 const ERROR_REPLY_TYPE: &str = "twitchapi.error";
 
-/// The longest one call waits for the twitch service. Twitch itself answers
+/// The longest one call waits for the connectors Twitch adapter. Twitch itself answers
 /// in well under a second; this bounds a hung service. A call never waits
 /// past the invocation's deadline either.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -34,23 +34,23 @@ pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// on the channel does a handful; more is a loop.
 pub const MAX_CALLS_PER_INVOCATION: u32 = 10;
 
-/// How many `ctx.twitch` requests may wait on the twitch service at once,
+/// How many `ctx.twitch` requests may wait on the connectors Twitch adapter at once,
 /// across every invocation. Each holds a blocking thread, so this keeps a
-/// slow twitch service from starving everything else the sandbox runs.
+/// slow Twitch adapter from starving everything else the sandbox runs.
 pub const MAX_IN_FLIGHT: usize = 32;
 
 /// How long a call waits for an in-flight slot before giving up.
 pub const IN_FLIGHT_WAIT: Duration = Duration::from_secs(2);
 
 /// `code`s a module can branch on, besides `PERMISSION_DENIED` and whatever
-/// `code` the twitch service puts on a refusal.
+/// `code` the connectors Twitch adapter puts on a refusal.
 pub const TIMEOUT: &str = "timeout";
 pub const UNAVAILABLE: &str = "unavailable";
 pub const REQUEST_FAILED: &str = "request_failed";
 pub const CALL_LIMIT: &str = "call_limit";
 pub const BUSY: &str = "busy";
 
-/// The commands module code may call, each the twitch service's own command
+/// The commands module code may call, each the connectors Twitch adapter's own command
 /// name, and the manifest permission it needs. Clips, shoutouts and markers
 /// are visible and harmless, and looking a user up reads only what Twitch
 /// shows anyone, so any module may use them. Timing a chatter
@@ -179,13 +179,13 @@ fn request(
         Ok(reply) => read_reply(command, reply),
         Err(RequestError::TimedOut) => Err(HostError::with_code(
             format!(
-                "ctx.twitch.{command}: the twitch service did not answer within {:.1}s; it may still have acted",
+                "ctx.twitch.{command}: the engine's Twitch connection did not answer within {:.1}s; it may still have acted",
                 timeout.as_secs_f64()
             ),
             TIMEOUT,
         )),
         Err(RequestError::NoResponders) => Err(HostError::with_code(
-            format!("ctx.twitch.{command}: the twitch service is not running"),
+            format!("ctx.twitch.{command}: the engine's Twitch connection is not running"),
             UNAVAILABLE,
         )),
         Err(RequestError::Failed(reason)) => Err(HostError::with_code(
@@ -195,7 +195,7 @@ fn request(
     }
 }
 
-/// The twitch service replies with a CloudEvent: `data` is the result, or
+/// The connectors Twitch adapter replies with a CloudEvent: `data` is the result, or
 /// `{ error, code? }` when `type` is `twitchapi.error`.
 fn read_reply(command: &str, reply: Value) -> Result<Value, HostError> {
     let data = reply.get("data").cloned().unwrap_or(Value::Null);

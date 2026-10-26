@@ -209,7 +209,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `name` | string | yes | Display name. Used only for presentation; never used as an identifier. |
 | `description` | string | no | Human-readable summary. |
 | `type` | string | yes | Trigger transport: `eventbus`, `webhook`, `command`, `schedule`. Determines how install wires the trigger up. See [Webhook triggers](#webhook-triggers) for `webhook`. |
-| `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. Must not start with `webhook.`, which is reserved. An uploaded module also may not use a subject the engine treats as a command, because a webhook handler can publish its module's eventbus trigger events verbatim: `db.`, `engine.`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute` and `action.execute` (prefix match). Nor may it claim an event the engine asserts: `command.`, `chat.command.`, `session.`, `setting.`, `viewer.`, `workflow.`, `barkloader.`, `HEARTBEAT`, `MESSAGEBUS_INIT`, or `module.` outside `module.<its id>.`. Platform events such as `channel.*`, `user.message` and `stream.online` stay open to the platform module that brings them. The full list is `shared/common/contracts/reserved-subjects.json` (see [Engine integrity](../services/engine-integrity.md#reserved-subjects)). Rejected on a `webhook` trigger. |
+| `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. Must not start with `webhook.`, which is reserved. An uploaded module also may not use a subject the engine treats as a command, because a webhook handler can publish its module's eventbus trigger events verbatim: `db.`, `engine.`, `twitchapi`, `message.send` (retired, still reserved), `ui.notify.`, `ui.alert.`, `platform.gateway.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute` and `action.execute` (prefix match). Nor may it claim an event the engine asserts: `command.`, `chat.command.`, `session.`, `setting.`, `viewer.`, `workflow.`, `barkloader.`, `HEARTBEAT`, `MESSAGEBUS_INIT`, or `module.` outside `module.<its id>.`. Platform events such as `channel.*`, `user.message` and `stream.online` stay open to the platform module that brings them. The full list is `shared/common/contracts/reserved-subjects.json` (see [Engine integrity](../services/engine-integrity.md#reserved-subjects)). Rejected on a `webhook` trigger. |
 | `handler` | string | yes (for `webhook`) | Manifest-local id of the function that handles inbound HTTP requests for a `webhook` trigger. Rejected on every other type. |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification (e.g. `["platform.twitch.chat", "function.chat"]`). Sent to RegisterTrigger as `taxonomy`. See [Taxonomy](#taxonomy). **Legacy:** superseded by `category`. |
 | `category` | string | no | **Legacy.** UX / registry grouping (e.g. `platform.twitch`). Still accepted; folded into a single-element `taxonomy` at parse time when `taxonomy` is unset, otherwise falls back to `type`. New manifests should use `taxonomy` instead. |
@@ -293,7 +293,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `required` | boolean | no | Marks the field as mandatory in the form. |
 | `placeholder` | string | no | Placeholder shown inside empty inputs. |
 | `unit` | string | no | Suffix shown next to numeric inputs (e.g. `bits`). |
-| `options` | array | no | Static `{ value, label }` choices. Required for `select` unless a `source` supplies them. |
+| `options` | array | no | Static `{ value, label }` choices with distinct values. Required for `select` unless a `source` supplies them; beside a `source` they are pinned ahead of the fetched ones. |
 | `source` | object | no | Dynamic option source; see [dynamic-source select fields](#dynamic-source-select-fields-source-kind). |
 | `defaultValue` | any | no | Initial value used when none is set. |
 | `min`, `max` | number | no | Bounds for `number` / `range`. |
@@ -311,6 +311,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover. An illustration, not a declaration: nothing reads its keys. |
 | `anyText` | string | no | Trigger `schema` only. The words a [trigger sentence](#trigger-sentences) shows in place of this field when it is set to "any". `""` drops that part of the sentence; whitespace alone is rejected. Rejected on an action field, which is never set to "any". |
 | `missingText` | string | no | Trigger and action `schema` only. The words a [trigger sentence](#trigger-sentences) or [action sentence](#action-sentences) shows in place of this field while it has no value: for a required field, until one is set; for an optional action field, whenever the step leaves it empty, so they say what the action does then. Must be non-empty when present. |
+| `visibleWhen` | object | no | `{ "field": "<sibling id>", "oneOf": ["a", "b"] }`. Shows the field only while that sibling holds one of the listed values. A form must drop a hidden field's value on save and skip its `required`. |
 
 The info icon next to a field's label appears if and only if `hint` or `examplePayload` is present. `description` renders independently below the input.
 
@@ -328,7 +329,7 @@ Five of them carry extra requirements, each checked at install:
 
 | Type | Requires | Why |
 |---|---|---|
-| `select` | `options` or a `source` | A select with nothing to select is a dead control. |
+| `select` | `options` or a `source` | A select with nothing to select is a dead control. Without a `source`, also a `defaultValue` that is one of the `options`. |
 | `resource_ref` | `resourceKind` | A picker that does not say what to pick lists nothing. |
 | `button` | `action` | A button with nothing to fire does nothing. |
 | `layout` | `surface` | A canvas that does not say which widgets it may hold can place nothing. |
@@ -449,9 +450,17 @@ The request is sent verbatim, so for an uploaded module barkloader accepts an `i
 
 The bundled system module's forms may also read engine subjects. Engine-held names a platform module offers, such as OBS's scenes, come from one of its own functions calling a host extension (`ctx.obs.listScenes`), through `barkloader.module.field_options`.
 
+A select may carry `options` beside an `internal` source. The options are pinned: the form lists them first, then what the source returns, and a fetched option whose value a pinned one already names is dropped (`mergePinnedOptions` in `shared/clients/typescript/api/ui-schema.ts`). A platform picker can pin `origin` and `all` this way and leave the connected platforms to the source. Barkloader checks option values are distinct; without a `source` the `defaultValue` must be one of the options, and with a `source` it must be a string, since it may name a value only the source knows.
+
+### Conditional fields (`visibleWhen`)
+
+`visibleWhen` hides a field until another field of the same form holds a matching value, such as an announcement colour that only a Twitch target uses. `isFieldVisible(field, values)` in `shared/clients/typescript/api/ui-schema.ts` decides; an unset or non-text sibling hides the field. Barkloader refuses a condition that names the field itself or an id not in the same list, a target that has a `visibleWhen` of its own (one level only), a target that holds no text (`number`, `range`, `toggle`, `button`, `layout`, `list`), an empty `oneOf` or a blank value in it, and any `visibleWhen` inside a `list` field's `itemFields`.
+
+An engine that predates `visibleWhen` refuses a manifest that uses it, because manifest properties are checked strictly. Take care before uploading such a module to a fleet that still runs older engines.
+
 An `internal` source or action is supported on top-level fields only. The api and the UI do not resolve one inside a `list` field's `itemFields`, so barkloader refuses it there, for every module.
 
-A worked example lives at `modules/platform/twitch/manifest.json` in the **woofx3-modules** repository (the `channelpoints.redeem` trigger) and `twitch/src/lib/twitch.ts` `listChannelPointRewards()`.
+A worked example lives at `modules/platform/twitch/manifest.json` in the **woofx3-modules** repository (the `channelpoints.redeem` trigger) and `connectors/src/adapters/twitch/lib/twitch.ts` `listChannelPointRewards()`.
 
 #### Helping users map fields to event payloads
 
@@ -1727,7 +1736,7 @@ through the woofx3 companion on the streamer's PC, is the platform's decision
 | `id` | 1-40 lowercase letters, digits, `_` or `-`; unique within the module |
 | `name` | 1-80 characters. Shown in the companion and on the module install page |
 | `protocol` | `websocket` or `http`. Any other value fails the install, because the platform could not carry it |
-| `hostSetting` | A `text` setting holding the host |
+| `hostSetting` | A `text` setting holding the host. Its `defaultValue`, if any, must be empty, `localhost` or a loopback address (`127.0.0.0/8`, `::1`): the module path dials whatever the setting holds, so a default must not aim it at another device on the network |
 | `portSetting` | A `number` setting holding the port |
 | `passwordSetting` | Optional: a `secret` setting holding the endpoint's own password |
 | `discover` | Optional, with exactly one of `mdns` or `known`. `mdns` is a DNS-SD service type such as `_elg._tcp`, browsed by the companion. `known` names a discoverer built into the companion (`obs-websocket` reads OBS's own WebSocket config file); it is checked for shape only, because which discoverers exist depends on the companion's version, not the engine's |
@@ -1738,10 +1747,109 @@ in, and two endpoints sharing one would overwrite each other's values. Unknown
 fields in an entry also fail the install. The block is stored with the manifest
 in `modules.manifest`, where the dashboard and sceneManager read it.
 
-Module code cannot open a local endpoint yet. Today the one endpoint in use is
-OBS's, and sceneManager holds that connection on the module's behalf
-(`woofx3_obs/obs`, see [OBS](../services/obs.md)); module code reaches OBS
-through `ctx.obs`.
+Module code cannot write an endpoint's host, port or password setting:
+`ctx.module.setSetting` and `compareAndSetSetting` refuse them, because those
+values decide where the engine connects. Only the streamer, in the dashboard,
+or the companion that found the device sets them. The check is made when the
+write is attempted, against the installed version's endpoints, so code of an
+older version that is still running when an upgrade lands is refused too.
+
+An upgrade that makes a setting an endpoint's host or port setting for the
+first time (a new endpoint, or an endpoint whose `hostSetting` or
+`portSetting` now names a different setting) puts that setting back to its
+manifest default once every other install step has succeeded, and again once
+the engine has loaded the new version, which closes the moment in between when
+the old version's code could still write it. Each reset is logged. A fresh
+install does the same for every endpoint. Until
+then the setting was an ordinary one that module code could write, so a value
+already stored there cannot be trusted as an address. A setting that keeps its
+role across the upgrade keeps its value. The cost: a value the streamer typed
+into the setting before it became an endpoint setting is cleared once, and
+has to be set again.
+
+#### Talking to a local endpoint (`ctx.local`)
+
+Module code talks to its own websocket endpoints with `ctx.local`. It names
+the endpoint by its `local[]` id and passes a message; the engine's companion
+gateway (in the connectors host) checks the module may reach it, chooses the
+address from the endpoint's settings or goes through the woofx3 companion,
+keeps the connection open between calls and writes the message. Module code
+never supplies an address, never names a module and never holds a socket.
+The streamer approved the endpoint when they installed the module, so there
+is no permission to declare; an engine with `ctx.local` advertises the
+`modules.localEndpointCalls` capability.
+
+| Call | Returns | Notes |
+|---|---|---|
+| `ctx.local.send({ endpoint, message, timeoutMs? })` | `{ ok: true, sessionEpoch }` | Writes one text frame and does not wait for an answer. |
+| `ctx.local.request({ endpoint, message, match: { field, value }, timeoutMs? })` | `{ reply, sessionEpoch }` | Writes one text frame and waits for the first JSON object the device sends back whose top-level `field` holds `value` exactly (the string `"1"` is not the number 1). `reply` is that object. |
+
+- `endpoint` is one of the module's own `local[]` ids. Only websocket
+  endpoints are reachable.
+- `message` is a string, sent as it is, or an object or list, sent as JSON.
+  At most 65,536 bytes.
+- `match.field` is letters, digits and `_`, at most 40 characters;
+  `match.value` a non-empty string of at most 200 characters, or a whole
+  number. Device protocols carry a request id in each message for this, such
+  as VTube Studio's `requestID`. A second call waiting for the same match on
+  the same endpoint at the same time is refused with `busy`.
+- `timeoutMs` is how long the call may wait, at least 100. It defaults to, and
+  is capped at, 4,500, and never runs past the end of the function's run
+  (less 200 ms, so the answer gets back in time). With less than 100 ms left
+  the call throws `timeout` without asking.
+- A function may make at most 20 `ctx.local` calls per run.
+
+`sessionEpoch` names the connection the gateway used. It changes whenever the
+gateway opens a new one: after the connection was idle for 2 minutes, when
+the device closed it, or when the endpoint's address or the relay
+configuration changed. A device that wants one sign-in per connection
+(VTube Studio, Streamlabs Desktop, Streamer.bot) needs the module to sign in
+again when it changes; keep the last epoch in `ctx.storage` and compare.
+
+```js
+function run(ctx) {
+  const answer = ctx.local.request({
+    endpoint: "vts",
+    message: { apiName: "VTubeStudioPublicAPI", apiVersion: "1.0", requestID: "state", messageType: "APIStateRequest" },
+    match: { field: "requestID", value: "state" },
+  });
+  return ctx.success("VTube Studio answered", { active: answer.reply.data.active });
+}
+```
+
+`local` is a Lua keyword, so Lua code writes `ctx["local"]`:
+
+```lua
+function run(ctx)
+  local answer = ctx["local"].request({
+    endpoint = "vts",
+    message = { apiName = "VTubeStudioPublicAPI", apiVersion = "1.0", requestID = "state", messageType = "APIStateRequest" },
+    match = { field = "requestID", value = "state" },
+  })
+  return ctx.success("VTube Studio answered", { active = answer.reply.data.active })
+end
+```
+
+A refused call throws (Lua raises) an error whose `code` says why:
+
+| `code` | Meaning |
+|---|---|
+| `not_declared` | The module declares no local endpoint with that id. |
+| `protocol_unsupported` | The endpoint is an `http` one. |
+| `adapter_owned` | The engine manages the endpoint itself; OBS's (`woofx3_obs/obs`) belongs to the connectors host's obs adapter, and module code reaches OBS through `ctx.obs` (see [OBS](../services/obs.md)). |
+| `not_routed` | The engine has no way to reach the endpoint: an empty host or port setting, or a cloud engine whose streamer has not turned the companion on for it. |
+| `address_refused` | The address in the endpoint's settings is not on the streamer's own network. |
+| `store_unreadable` | The engine could not read the module's settings. |
+| `unavailable` | The device could not be reached in time, the connection closed while waiting, or no connectors host is running. |
+| `timeout` | No answer before the time ran out, or too little of the run was left to ask. After a `send` times out, the message may still have been sent. |
+| `busy` | Too many requests are waiting, or the same match is already pending. |
+| `call_limit` | The run already made 20 `ctx.local` calls. |
+| `invalid_arguments` | The call was refused before anything was sent; the message names the argument. |
+| `invalid` | The gateway refused the request. |
+| `request_failed` | The request could not be sent, or the answer could not be read. |
+
+How the gateway picks the address, and which addresses it refuses, is
+described in [Companion gateway → Module requests](../services/companion-gateway.md#module-requests).
 
 ## Runtime resource instances
 

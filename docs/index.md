@@ -6,7 +6,6 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 
 - **[Barkloader](/barkloader/)** - Rust-based module and plugin system that manages upload, manifest parsing, storage, and sandboxed execution of user-uploaded modules
 - **[Workflow Engine](/workflow/)** - Event-driven workflow execution engine with triggers, conditional branching, event aggregation, and sub-workflows
-- **[WoofWoofWoof](/woofwoofwoof/)** - A Twitch chatbot service that listens to messages, processes commands, and integrates with external services
 
 ## Cross-cutting
 
@@ -19,6 +18,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 - **[Asset delivery](/services/asset-delivery)** - How module and user assets reach the browser: URL shape, the sceneManager relay, and barkloader's presigned redirects
 - **[Engine settings the UI configures](/services/engine-settings-ui)** - DB-backed settings (asset base URLs, etc.) surfaced through `getEngineInfo()` / `set*()` on `Woofx3EngineApi`
 - **[Chat commands & groups: the UI contract](/services/commands-ui)** - Endpoints and webhook callbacks for managing chat commands and the user groups that gate them
+- **[Platform gateway contract](/services/platform-gateway)** - The action catalog every component uses to post to a streaming platform: subjects, request and reply shapes, validation, and the Go and TypeScript code generated from one contract
 - **[Twitch channel controls](/services/twitch-channel)** - The `twitchapi` commands (title, category, tags, markers, timeouts), what modules reach through `ctx.twitch`, and the chatbot's `!title`, `!category` and `!marker`
 - **[Module settings: the UI contract](/services/module-settings-ui)** - Endpoints for reading and writing a module's engine-typed configuration values (`ctx.module.settings`)
 - **[Config bundles](/services/config-bundles)** - Export, preview and import a creator's workflows, commands, groups and resource instances as one portable file
@@ -26,6 +26,9 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 - **[Stream sessions](/services/stream-sessions)** - The logical span a broadcast belongs to: the partition key every event is stamped with
 - **[Marketplace installs](/services/marketplace-install)** - How the engine installs a marketplace listing by id: the buyer token it forwards, the download host allowlist, size and SHA-256 checks, the consent check and the install key
 - **[Marketplace catalog](/services/marketplace-catalog)** - Catalog reads through the engine: search, counts, a listing, an author page and a quote, answered with the marketplace's JSON unchanged, and the error format a caller parses
+- **[Connectors host](/services/connectors)** - The service that runs platform and local-app adapters while they are linked and enabled: adapter states, served subjects, the scoped bus, configuration and `/health`
+- **[Companion gateway](/services/companion-gateway)** - How the connectors host finds a route to an endpoint on the streamer's network: endpoint claims, route policies, the bridge-open cap, route changes, and the sessions it holds for module code's requests to its own endpoints
+- **[Companion gateway module requests](/services/companion-module-requests)** - The contract module code reaches its own local endpoints through: the `engine.companion.module.request` request and reply, their validation, and the TypeScript and Rust code generated from one contract
 - **[Local endpoints and the companion bridge](/services/local-endpoints)** - How the engine reaches a module's `local[]` endpoints: straight to the address, or through the woofx3 companion's bridge for a cloud engine
 - **[OBS control](/services/obs)** - Connecting OBS, the `ctx.obs` host extension the OBS module calls, and the `engine.obs.command` request/reply contract
 - **[Analytics](/services/analytics)** - Design: turning stream events into per-session and lifetime totals, and why counters are not that

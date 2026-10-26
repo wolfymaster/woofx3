@@ -26,11 +26,17 @@ const (
 	// Twitch API commands
 	SubjectTwitchApi Subject = "twitchapi"
 
-	// Chat events (platform-agnostic; payload carries `platform` discriminator)
-	SubjectChatSend Subject = "message.send"
+	// Platform gateway requests, served by the connectors host. Request/reply
+	// only: the gateway acts on a platform for the caller, so a workflow, an
+	// uploaded module or a test-fire route publishing here would drive the
+	// platform rather than ask the engine. Must equal the subjects in
+	// shared/common/contracts/platform-gateway.json.
+	SubjectPlatformGatewaySend         Subject = "platform.gateway.send"
+	SubjectPlatformGatewayCapabilities Subject = "platform.gateway.capabilities"
+	SubjectPlatformGatewayFieldOptions Subject = "platform.gateway.field_options"
 
 	// Chat command events — subject pattern `chat.command.<slug>` emitted by
-	// woofwoofwoof when a chat command matches. The wildcard is documentation;
+	// the connectors chat dispatcher when a chat command matches. The wildcard is documentation;
 	// the workflow engine subscribes to concrete subjects via the reactive
 	// registrar at workflow-creation time.
 	SubjectChatCommandPattern Subject = "chat.command.*"
@@ -46,7 +52,7 @@ const (
 
 	// Run the workflow a chat command is linked to, from the
 	// `chat.command.<slug>` event of one invocation. Published by whoever
-	// matched the command and checked who may run it (woofwoofwoof, or the api
+	// matched the command and checked who may run it (the connectors chat dispatcher, or the api
 	// running a command for the dashboard); the workflow engine runs that one
 	// workflow (Engine.RunCommand). Its trigger has type "command", so the
 	// event the same invocation announces cannot start it a second time.

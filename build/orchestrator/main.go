@@ -388,7 +388,10 @@ const stopGracePeriod = 25 * time.Second
 // workflow/async_run_recorder.go). What is left of
 // stopGracePeriod must cover db-proxy's final flush of module storage to its
 // replica (closeTimeout in db/app/services/module_storage_service.go); a kill
-// mid-flush loses the writes since the last sync.
+// mid-flush loses the writes since the last sync. The connectors host's
+// default shutdown deadline (shutdownDeadlineMs in
+// connectors/src/config/host.ts) is longer than this: a connectors stop that
+// drags on may find the bus and db-proxy gone.
 const dependentStopPeriod = 8 * time.Second
 
 // exitRecordPeriod bounds how long StopAll waits, once it has killed what was

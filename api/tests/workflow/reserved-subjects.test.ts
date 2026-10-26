@@ -41,6 +41,9 @@ describe("reserved subjects", () => {
     expect(publishedEventTypeProblem("custom.\u0007event")).toContain("control character");
     expect(publishedEventTypeProblem("message.send")).not.toBeNull();
     expect(publishedEventTypeProblem("command.created")).toBe('is reserved for the engine ("command.")');
+    expect(publishedEventTypeProblem("platform.gateway.send")).toBe('is reserved for the engine ("platform.gateway.")');
+    expect(publishedEventTypeProblem("platform.gatewayx")).toBeNull();
+    expect(publishedEventTypeProblem("platform.other")).toBeNull();
     expect(publishedEventTypeProblem("message.sent")).toBeNull();
     expect(publishedEventTypeProblem("badge.awarded")).toBeNull();
     expect(publishedEventTypeProblem("stream.started.notification")).toBeNull();

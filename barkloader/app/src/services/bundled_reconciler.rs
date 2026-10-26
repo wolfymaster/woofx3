@@ -126,6 +126,9 @@ async fn install<R: Repository + Clone>(
     );
     let archive_key = format!("archives/{}.zip", composite_module_key);
 
+    // The returned outcome needs no second reset: reconciliation runs before
+    // the sandbox registry is built, so no module code is running that could
+    // write the reset settings again.
     service
         .install_with_provenance(
             &archive_key,

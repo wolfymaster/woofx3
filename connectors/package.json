@@ -1,0 +1,24 @@
+{
+  "name": "connectors",
+  "private": true,
+  "dependencies": {
+    "@twurple/api": "^8.0.0",
+    "@twurple/api-call": "^8.1.4",
+    "@twurple/auth": "^8.0.0",
+    "@twurple/eventsub-base": "^8.0.0",
+    "@twurple/eventsub-ws": "^8.0.0",
+    "obs-websocket-js": "^5.0.6",
+    "zod": "^4.6.6"
+  },
+  "scripts": {
+    "start": "bun run src/server.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit --noUnusedLocals --noUnusedParameters"
+  },
+  "devDependencies": {
+    "@msgpack/msgpack": "^2.8.0",
+    "@types/bun": "1.4.3",
+    "@types/node": "^26.4.1",
+    "typescript": "5.9.3"
+  }
+}

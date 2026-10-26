@@ -1,0 +1,43 @@
+import { validateSecret } from "@woofx3/common/runtime";
+import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
+import { z } from "zod";
+import { nonBlank } from "./env";
+
+/** The message bus and db-proxy the host connects to. */
+export const BusEnvSchema = z.object({
+  woofx3MessagebusUrl: z.string().min(1, "woofx3MessagebusUrl is required"),
+  woofx3MessagebusJwt: z.string().optional(),
+  woofx3MessagebusNKey: z.string().optional(),
+  // loadRuntimeEnv coerces an all-digit value to a number.
+  woofx3MessagebusToken: z.union([z.string(), z.number()]).optional(),
+  woofx3DatabaseProxyUrl: z.url("woofx3DatabaseProxyUrl must be a URL"),
+  // Defaults to blank so a missing token fails with the secret rule's message.
+  woofx3DbProxyToken: z
+    .string()
+    .default("")
+    .superRefine((value, ctx) => {
+      const check = validateSecret(DB_PROXY_TOKEN_CONFIG_KEY, value);
+      if (!check.ok) {
+        ctx.addIssue({ code: "custom", message: check.error.message });
+      }
+    }),
+});
+
+export type BusEnv = z.infer<typeof BusEnvSchema>;
+
+export interface BusConfig {
+  url: string;
+  jwt?: string;
+  nkeySeed?: string;
+  /** Unset when the bus takes no token. */
+  token?: string;
+}
+
+export function busConfig(env: BusEnv): BusConfig {
+  return {
+    url: env.woofx3MessagebusUrl,
+    jwt: nonBlank(env.woofx3MessagebusJwt),
+    nkeySeed: nonBlank(env.woofx3MessagebusNKey),
+    token: nonBlank(env.woofx3MessagebusToken),
+  };
+}

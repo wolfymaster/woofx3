@@ -149,6 +149,10 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	registerService("alertLog", func() dbv1.AlertService {
 		return alertDbClient
 	})
+	platformGateway := NewNATSPlatformGateway(natsClient, a.logger)
+	registerService("platformGateway", func() PlatformGateway {
+		return platformGateway
+	})
 
 	// Attached before the first load, so a workflow that fails to load at
 	// start-up is announced like one that fails later.
@@ -269,7 +273,10 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 		a.logger.Error("Failed to subscribe to action execute events", "error", err)
 	}
 
-	appServices := buildAppServices()
+	appServices, err := buildAppServices()
+	if err != nil {
+		return fmt.Errorf("resolving app services: %w", err)
+	}
 
 	// Register the engine's built-in action handlers. The handler name
 	// here is what `step.action` carries on workflow steps (see
@@ -279,14 +286,27 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	// point -- declaration and implementation stop living in one file.
 	//
 	// Each declares whether a dry run may call it (see tasks.ActionSpec).
-	a.engine.RegisterActionWithSpec("function", WithServices(appServices, NewBarkloaderAction()), functionActionSpec)
-	a.engine.RegisterActionWithSpec("alert", WithServices(appServices, NewAlertAction()), alertActionSpec)
-	a.engine.RegisterActionWithSpec("chat.reply", WithServices(appServices, NewChatReplyAction()), chatReplyActionSpec)
-	a.engine.RegisterActionWithSpec("scene.widget.visibility", WithServices(appServices, NewWidgetVisibilityAction()), widgetVisibilityActionSpec)
-	a.engine.RegisterActionWithSpec("print", func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
-		a.logger.Info("Action: print", "params", params)
-		return params, nil
-	}, tasks.ActionSpec{SideEffect: false})
+	registrations := []struct {
+		name   string
+		action tasks.ActionFunc[AppServices]
+		spec   tasks.ActionSpec
+	}{
+		{"function", WithServices(appServices, NewBarkloaderAction()), functionActionSpec},
+		{"alert", WithServices(appServices, NewAlertAction()), alertActionSpec},
+		{"chat.reply", WithServices(appServices, NewChatReplyAction()), chatReplyActionSpec},
+		{"chat.announce", WithServices(appServices, NewChatAnnounceAction()), chatAnnounceActionSpec},
+		{"chat.pin", WithServices(appServices, NewChatPinAction()), chatPinActionSpec},
+		{"scene.widget.visibility", WithServices(appServices, NewWidgetVisibilityAction()), widgetVisibilityActionSpec},
+		{"print", func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
+			a.logger.Info("Action: print", "params", params)
+			return params, nil
+		}, tasks.ActionSpec{SideEffect: false}},
+	}
+	for _, registration := range registrations {
+		if err := a.engine.RegisterActionWithSpec(registration.name, registration.action, registration.spec); err != nil {
+			return fmt.Errorf("register action %s: %w", registration.name, err)
+		}
+	}
 
 	return a.engine.Start(ctx)
 }

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { clearCurrentSessionId, setCurrentSessionId } from "../session";
-import TwitchEvents, { assertPlainPayload, type HypeTrainBegin } from "./index";
+import TwitchEvents, { assertPlainPayload, type ChatMessage, type HypeTrainBegin } from "./index";
 
 beforeEach(() => {
   setCurrentSessionId("session-1");
@@ -32,7 +32,38 @@ const HYPE_TRAIN: HypeTrainBegin = {
   expiresAt: "2026-10-21T18:05:00.000Z",
 };
 
+const CHAT_MESSAGE: ChatMessage = {
+  messageId: "msg-1",
+  amount: 0,
+  isPaid: false,
+  channelId: null,
+  channelName: null,
+  chatterId: "broadcaster-1",
+  chatterName: "Wolfy",
+  chatterLogin: "wolfy",
+  message: "hi",
+  membership: { isBroadcaster: true, isModerator: false, isSubscriber: false, isVip: false },
+  fromEngine: true,
+};
+
+function decoded(bytes: Uint8Array): Record<string, unknown> {
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
 describe("TwitchEvents", () => {
+  test("stamps a chat message with the workflow chain that said it", () => {
+    const [topic, bytes] = new TwitchEvents("twitch").chatMessage(CHAT_MESSAGE, { workflowChain: "wf-a,wf-b" });
+
+    expect(topic).toBe("user.message");
+    expect(decoded(bytes)).toMatchObject({ workflowChain: "wf-a,wf-b", platform: "twitch", data: CHAT_MESSAGE });
+  });
+
+  test("leaves the chain off a chat message no workflow said", () => {
+    const [, bytes] = new TwitchEvents("twitch").chatMessage({ ...CHAT_MESSAGE, fromEngine: false });
+
+    expect(decoded(bytes)).not.toHaveProperty("workflowChain");
+  });
+
   test("encodes a plain payload as the event's data", () => {
     const [topic, bytes] = new TwitchEvents("twitch").hypeTrainBegin(HYPE_TRAIN);
     const event = JSON.parse(new TextDecoder().decode(bytes));

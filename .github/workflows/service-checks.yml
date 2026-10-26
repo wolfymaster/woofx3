@@ -1,12 +1,11 @@
 name: service checks
 
-# Type-checks and tests the Bun services that had no gate.
+# Type-checks and tests the Bun services other than api: connectors and
+# sceneManager. A typecheck nobody runs lets drift pile up unnoticed, such as
+# a field the proto stopped accepting, a logger call with the wrong arguments
+# or a stale `@client/*` import.
 #
-# api has its own workflow (api-checks.yml). twitch and woofwoofwoof had no
-# typecheck script at all, and sceneManager had one that nothing ran, which
-# is how a `category` field that the proto stopped accepting, a logger call
-# dropping four of its five arguments, a `disconnect()` calling a method that
-# does not exist, and a stale `@client/*` import all sat unnoticed.
+# api has its own workflow (api-checks.yml).
 #
 # Each service resolves its workspace siblings by relative path, so their
 # dependencies have to be installed too or every shared import fails to
@@ -16,22 +15,22 @@ on:
   push:
     branches: [main, master, release]
     paths:
-      - "twitch/**"
-      - "woofwoofwoof/**"
+      - "connectors/**"
       - "sceneManager/**"
       - "shared/clients/typescript/**"
       - "shared/common/typescript/**"
+      - "shared/common/contracts/**"
       - "services/nats/**"
       - "shared/common/golang/logging/**"
       - ".bun-version"
       - ".github/workflows/service-checks.yml"
   pull_request:
     paths:
-      - "twitch/**"
-      - "woofwoofwoof/**"
+      - "connectors/**"
       - "sceneManager/**"
       - "shared/clients/typescript/**"
       - "shared/common/typescript/**"
+      - "shared/common/contracts/**"
       - "services/nats/**"
       - "shared/common/golang/logging/**"
       - ".bun-version"
@@ -46,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [twitch, woofwoofwoof, sceneManager]
+        service: [connectors, sceneManager]
     steps:
       - uses: actions/checkout@v4
 

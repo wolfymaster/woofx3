@@ -171,11 +171,11 @@ services:
     networks:
       - woofx3
 
-  twitch:
+  connectors:
     image: woofx3-dev
     restart: unless-stopped
-    working_dir: /app/twitch
-    command: sh -c "bun install && bun run src/api.ts"
+    working_dir: /app/connectors
+    command: sh -c "bun install && bun run src/server.ts"
     environment:
       FORCE_COLOR: "1"
       WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
@@ -183,32 +183,8 @@ services:
       WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token
     volumes:
       - ./.woofx3.json:/app/.woofx3.json:ro
-      - ./twitch:/app/twitch
-      - twitch-node-modules:/app/twitch/node_modules
-      - ./shared:/app/shared
-    env_file:
-      - path: ./.env
-        required: false
-    depends_on:
-      - messagebus
-    networks:
-      - woofx3
-
-  woofwoofwoof:
-    image: woofx3-dev
-    restart: unless-stopped
-    working_dir: /app/woofwoofwoof
-    command: sh -c "bun install && bun run src/woofwoofwoof.ts"
-    environment:
-      FORCE_COLOR: "1"
-      WOOFX3_MESSAGEBUS_TOKEN: *dev-messagebus-token
-      WOOFX3_MESSAGEBUS_URL: nats://messagebus:4222
-      WOOFX3_BARKLOADER_KEY: *dev-barkloader-key
-      WOOFX3_DB_PROXY_TOKEN: *dev-db-proxy-token
-    volumes:
-      - ./.woofx3.json:/app/.woofx3.json:ro
-      - ./woofwoofwoof:/app/woofwoofwoof
-      - woofwoofwoof-node-modules:/app/woofwoofwoof/node_modules
+      - ./connectors:/app/connectors
+      - connectors-node-modules:/app/connectors/node_modules
       - ./shared:/app/shared
     env_file:
       - path: ./.env
@@ -225,8 +201,7 @@ volumes:
   cargo-git:
   barkloader-target:
   api-node-modules:
-  twitch-node-modules:
-  woofwoofwoof-node-modules:
+  connectors-node-modules:
 
 networks:
   woofx3:

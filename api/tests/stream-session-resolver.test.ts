@@ -251,7 +251,7 @@ describe("stream.online", () => {
     expect(db.openStreamSessionSegment).toHaveBeenCalledTimes(1);
   });
 
-  test("accepts the snake_case spelling the twitch service may send", async () => {
+  test("accepts the snake_case spelling the Twitch adapter may send", async () => {
     const { db, resolver, handlers } = setup();
     await resolver.start();
 
