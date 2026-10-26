@@ -554,12 +554,26 @@ describe("Host", () => {
   });
 
   test("a stop during start leaves the host stopped, never running", async () => {
-    const { host } = await setup();
+    const { host, time } = await setup();
     // The start may fail on the scope the stop closed under it; either way it must not end running.
     const starting = host.start().catch(() => undefined);
     await host.stop();
     await starting;
     expect(host.state).toBe("stopped");
     expect(host.isRunning).toBe(false);
+    expect(time.pending).toBe(0);
+  });
+
+  test("a stop while the settings watcher subscribes leaves no backstop timer behind", async () => {
+    const bus = new FakeBus();
+    const release = bus.holdSubscribe(INTEGRATION_TOKEN_UPDATED_SUBJECT);
+    const { host, time } = await setup(twitchapi, {}, undefined, undefined, bus);
+    const starting = host.start();
+    await flush();
+    await host.stop();
+    release();
+    await expect(starting).rejects.toThrow("the host was stopped while starting; it is stopped");
+    expect(host.state).toBe("stopped");
+    expect(time.pending).toBe(0);
   });
 });

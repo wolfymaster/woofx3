@@ -237,6 +237,18 @@ describe("CommandStore", () => {
     expect(db.listings).toBe(1);
     expect(time.pending).toBe(0);
   });
+
+  test("a stop during the first load wins: no backstop is armed", async () => {
+    let release = () => {};
+    db.listGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const starting = store.start();
+    await store.stop();
+    release();
+    await starting;
+    expect(time.pending).toBe(0);
+  });
 });
 
 describe("storedCommandDefinition", () => {

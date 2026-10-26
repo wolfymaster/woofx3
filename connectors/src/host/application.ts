@@ -7,7 +7,7 @@ import type DbProxyService from "../services/db-proxy";
 import type MessageBusService from "../services/message-bus";
 import { type AdapterRegistry, type LoadedAdapters, loadAdapters } from "./adapters";
 import { dbProxyLinkStore } from "./db-link-store";
-import type { Clock, IdSource, Logger, RandomSource, Timers } from "./deps";
+import { type Clock, errorMessage, type IdSource, type Logger, type RandomSource, type Timers } from "./deps";
 import { type HealthServer, startHealthServer } from "./health";
 import { Host } from "./host";
 import type { LinkReaderRegistry } from "./link-readers";
@@ -101,8 +101,20 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
     this.host = host;
     try {
       await host.start();
+      if (this.host !== host || !host.isRunning) {
+        // A terminate that ran while the host started has already let go of it; a
+        // health server started now would have no one to stop it.
+        this.deps.logger.info("connectors host stopped while starting");
+        return;
+      }
       this.health = startHealthServer(this.deps.config.host.port, () => host.snapshot());
     } catch (error) {
+      if (this.host !== host) {
+        // The terminate that stopped the host mid-start owns its shutdown, and may
+        // already have handed this.host to a newer run, which must not be stopped.
+        this.deps.logger.info("connectors host stopped while starting", { error: errorMessage(error) });
+        return;
+      }
       await this.terminate();
       throw error;
     }

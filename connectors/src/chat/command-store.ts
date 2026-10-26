@@ -176,12 +176,19 @@ export class CommandStore {
     }
   }
 
-  /** Loads the table once and starts the backstop. Throws when the first load fails. */
+  /**
+   * Loads the table once and starts the backstop. Throws when the first load
+   * fails. A stop that lands during the load wins: the backstop is not armed,
+   * since that stop could not clear it.
+   */
   async start(): Promise<void> {
     if (this.backstop !== undefined || this.stopped) {
       throw new Error("the command store can start once");
     }
     const commands = await this.deps.db.listCommands();
+    if (this.stopped) {
+      return;
+    }
     this.apply(commands);
     this.lastReloadAt = this.deps.clock.now();
     this.backstop = this.deps.timers.setInterval(() => this.trigger(), this.deps.config.reloadBackstopMs);
