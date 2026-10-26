@@ -411,6 +411,7 @@ export default class TwitchApplication {
       random: this.deps.random,
       options: {
         pollIntervalMs: TWITCH_DEFAULTS.adSchedulePollIntervalMs,
+        readTimeoutMs: TWITCH_DEFAULTS.adScheduleReadTimeoutMs,
         missingScopeBackoffMs: TWITCH_DEFAULTS.adScheduleMissingScopeBackoffMs,
         unauthorizedBackoffMs: TWITCH_DEFAULTS.adScheduleUnauthorizedBackoffMs,
         rateLimitBackoff: TWITCH_DEFAULTS.adScheduleRateLimitBackoff,
