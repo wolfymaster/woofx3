@@ -1,14 +1,15 @@
 /**
  * Host and Origin checks shared by the engine's HTTP services (api,
- * sceneManager), configured by `WOOFX3_ALLOWED_HOSTS` and
- * `WOOFX3_ALLOWED_ORIGINS`.
+ * sceneManager), configured by `WOOFX3_ALLOWED_HOSTS`,
+ * `WOOFX3_ALLOWED_ORIGINS` and `WOOFX3_UI_URL`.
  *
  * An unset list does not mean open. Each service resolves its defaults here,
  * once, at startup:
  * - Origins default to the loopback dev servers and the desktop webview
  *   (DEFAULT_ALLOWED_ORIGINS), the origins of the URLs the service is
- *   configured to be reached at, and any origins the service adds (sceneManager
- *   adds `null` for sandboxed widget frames).
+ *   configured to be reached at, the dashboard's origins (`WOOFX3_UI_URL`, see
+ *   parseUiOrigins), and any origins the service adds (sceneManager adds
+ *   `null` for sandboxed widget frames).
  * - Hosts default to the loopback names (LOOPBACK_HOSTS) and the hosts of the
  *   service's configured URLs, but only on a service reachable over loopback
  *   alone. Behind the edge or on a network interface the Host is whatever the
@@ -33,7 +34,8 @@
  *   `[::1]:8080`.
  * - Origin entries are `scheme://host[:port]`, compared as serialized web
  *   origins, so the scheme's default port may be written or left out.
- *   `scheme://host:*` matches the host on any port. A scheme the URL
+ *   `scheme://host:*` matches the host on any port, and `scheme://*.domain`
+ *   any subdomain of `domain` (never `domain` itself). A scheme the URL
  *   standard has no origin for, such as the `tauri://localhost` a desktop
  *   webview sends, is compared as `scheme://host[:port]`, lowercased. The
  *   literal `null` matches the opaque origin that sandboxed frames send;
@@ -56,6 +58,8 @@ export interface HostRule {
 export type OriginRule =
   | { kind: "exact"; origin: string }
   | { kind: "anyPort"; protocol: string; hostname: string }
+  /** Any host below `domain`; `port` is the URL's own port, "" for the scheme's default. */
+  | { kind: "subdomain"; protocol: string; domain: string; port: string }
   | { kind: "opaque" };
 
 /**
@@ -77,7 +81,11 @@ export interface RequestGuardSettings {
    * their origins the default Origin list.
    */
   ownUrls: readonly string[];
-  /** Origins the service adds to DEFAULT_ALLOWED_ORIGINS when `WOOFX3_ALLOWED_ORIGINS` is unset. */
+  /**
+   * Origins the service adds to DEFAULT_ALLOWED_ORIGINS when
+   * `WOOFX3_ALLOWED_ORIGINS` is unset: its own (sceneManager's `null`) and the
+   * dashboard's (parseUiOrigins).
+   */
   extraDefaultOrigins: readonly string[];
 }
 
@@ -167,6 +175,8 @@ function describeOriginRule(rule: OriginRule): string {
       return rule.origin;
     case "anyPort":
       return `${rule.protocol}//${rule.hostname}:*`;
+    case "subdomain":
+      return `${rule.protocol}//*.${rule.domain}${rule.port === "" ? "" : `:${rule.port}`}`;
     case "opaque":
       return OPAQUE_ORIGIN;
   }
@@ -230,30 +240,84 @@ function parseHostRule(entry: string): HostRule {
   return parsed;
 }
 
-function parseOriginRule(entry: string): OriginRule {
+/** `scheme://*.rest`: the scheme and what follows the wildcard label. */
+const SUBDOMAIN_WILDCARD = /^([A-Za-z][A-Za-z0-9+.-]*:)\/\/\*\.(.*)$/;
+
+/**
+ * A wildcard's domain: two or more DNS labels, the last not numeric. That
+ * keeps out a wildcard over a whole top-level domain and an IPv4 address
+ * the URL parser would rewrite.
+ */
+const WILDCARD_DOMAIN = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z](?:[a-z0-9-]*[a-z0-9])?$/;
+
+/** `setting` names the variable the entry came from, for the startup error. */
+function parseOriginRule(setting: string, entry: string): OriginRule {
   if (entry === OPAQUE_ORIGIN) {
     return { kind: "opaque" };
   }
+  const malformed = new Error(`${setting}: "${entry}" is not scheme://host[:port]`);
+  const wildcard = SUBDOMAIN_WILDCARD.exec(entry);
   const anyPort = entry.endsWith(":*");
-  const base = anyPort ? entry.slice(0, -2) : entry;
+  if (wildcard && anyPort) {
+    throw new Error(`${setting}: "${entry}" names both a subdomain wildcard and :*`);
+  }
+  const base = wildcard ? `${wildcard[1]}//${wildcard[2]}` : anyPort ? entry.slice(0, -2) : entry;
   let url: URL;
   try {
     url = new URL(base);
   } catch {
-    throw new Error(`WOOFX3_ALLOWED_ORIGINS: "${entry}" is not scheme://host[:port]`);
+    throw malformed;
   }
   const hasPathOrMore = (url.pathname !== "/" && url.pathname !== "") || url.search !== "" || url.hash !== "";
   const origin = comparableOrigin(url);
-  if (origin === null || hasPathOrMore || url.username !== "" || url.password !== "") {
-    throw new Error(`WOOFX3_ALLOWED_ORIGINS: "${entry}" is not scheme://host[:port]`);
+  // A `*` anywhere but the leading label would be kept as a literal host that no browser sends.
+  if (origin === null || hasPathOrMore || url.username !== "" || url.password !== "" || url.hostname.includes("*")) {
+    throw malformed;
+  }
+  if (wildcard) {
+    if (!TUPLE_ORIGIN_SCHEMES.has(url.protocol) || !WILDCARD_DOMAIN.test(url.hostname)) {
+      throw new Error(`${setting}: "${entry}" is not scheme://*.domain[:port] with a domain of two or more labels`);
+    }
+    return { kind: "subdomain", protocol: url.protocol, domain: url.hostname, port: url.port };
   }
   if (anyPort) {
     if (url.port !== "") {
-      throw new Error(`WOOFX3_ALLOWED_ORIGINS: "${entry}" names both a port and :*`);
+      throw new Error(`${setting}: "${entry}" names both a port and :*`);
     }
     return { kind: "anyPort", protocol: url.protocol, hostname: url.hostname.toLowerCase() };
   }
   return { kind: "exact", origin };
+}
+
+const UI_URL_SETTING = "WOOFX3_UI_URL";
+
+/**
+ * `WOOFX3_UI_URL`: the origins of the dashboards this engine is used from,
+ * comma-separated, each `scheme://host[:port]` or `scheme://*.domain[:port]`.
+ * A deployment the dashboard is not served from the same origin as, such as a
+ * managed engine at `https://<slug>.woofx3.tv` used from `https://woofx3.tv`,
+ * names it here so the default Origin list admits it without the operator
+ * having to restate every other default in `WOOFX3_ALLOWED_ORIGINS`.
+ *
+ * Unset or blank means none. `*` and `null` are refused: neither is a
+ * dashboard, and opening the check belongs to `WOOFX3_ALLOWED_ORIGINS`. Any
+ * other malformed entry throws, so a typo stops the service at startup
+ * instead of disconnecting the dashboard.
+ */
+export function parseUiOrigins(value: string | number | boolean | undefined): readonly string[] {
+  const setting = readList(UI_URL_SETTING, value);
+  if (setting.kind === "default") {
+    return [];
+  }
+  if (setting.kind === "any") {
+    throw new Error(`${UI_URL_SETTING}: ${ALLOW_ANY} is not a dashboard origin; set WOOFX3_ALLOWED_ORIGINS instead`);
+  }
+  for (const entry of setting.entries) {
+    if (parseOriginRule(UI_URL_SETTING, entry).kind === "opaque") {
+      throw new Error(`${UI_URL_SETTING}: ${OPAQUE_ORIGIN} is not a dashboard origin`);
+    }
+  }
+  return setting.entries;
 }
 
 /**
@@ -298,13 +362,16 @@ function resolveOriginRules(
     return null;
   }
   if (setting.kind === "entries") {
-    return setting.entries.map(parseOriginRule);
+    return setting.entries.map((entry) => parseOriginRule("WOOFX3_ALLOWED_ORIGINS", entry));
   }
   const ownOrigins = ownUrls
     .map(comparableOrigin)
     .filter((origin): origin is string => origin !== null)
     .map((origin): OriginRule => ({ kind: "exact", origin }));
-  return [...[...DEFAULT_ALLOWED_ORIGINS, ...extraDefaultOrigins].map(parseOriginRule), ...ownOrigins];
+  return [
+    ...[...DEFAULT_ALLOWED_ORIGINS, ...extraDefaultOrigins].map((entry) => parseOriginRule("default origin", entry)),
+    ...ownOrigins,
+  ];
 }
 
 function hostAllowed(rules: readonly HostRule[], hostHeader: string | null): boolean {
@@ -342,6 +409,13 @@ function originAllowed(rules: readonly OriginRule[], origin: string): boolean {
     }
     if (rule.kind === "anyPort") {
       return rule.protocol === url.protocol && rule.hostname === url.hostname.toLowerCase();
+    }
+    if (rule.kind === "subdomain") {
+      return (
+        rule.protocol === url.protocol &&
+        rule.port === url.port &&
+        url.hostname.toLowerCase().endsWith(`.${rule.domain}`)
+      );
     }
     return false;
   });

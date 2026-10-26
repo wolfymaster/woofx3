@@ -1,6 +1,11 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { parseRequestGuardPolicy, type RequestGuardPolicy, resolveExposure } from "@woofx3/common/http/request-guard";
+import {
+  parseRequestGuardPolicy,
+  parseUiOrigins,
+  type RequestGuardPolicy,
+  resolveExposure,
+} from "@woofx3/common/http/request-guard";
 import { dataDir, loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
 import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
@@ -49,6 +54,8 @@ export const SceneManagerEnvSchema = z.object({
   // The URL OBS and the dashboard reach sceneManager at; its host and origin
   // join the request guard's defaults.
   woofx3SceneManagerUrl: z.string().optional(),
+  // The dashboard's origins (parseUiOrigins); the scene editor's WebSocket comes from there.
+  woofx3UiUrl: z.union([z.string(), z.number(), z.boolean()]).optional(),
   // True where the edge listens beyond loopback and forwards to sceneManager; the production image sets it.
   woofx3BehindEdge: z.boolean().optional(),
   woofx3DbProxyToken: z.string().optional(),
@@ -209,7 +216,7 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     exposure: resolveExposure(bindHost, c.woofx3BehindEdge === true),
     ownUrls: publicUrl === undefined ? [] : [publicUrl],
     // Sandboxed widget frames load fonts and module scripts from sceneManager with `Origin: null`.
-    extraDefaultOrigins: ["null"],
+    extraDefaultOrigins: ["null", ...parseUiOrigins(c.woofx3UiUrl)],
   });
 
   return {

@@ -232,6 +232,7 @@ machine to be protected from other web pages and from DNS rebinding.
 |---|---|
 | `WOOFX3_ALLOWED_HOSTS` | A request whose `Host` is not listed is answered `421 Misdirected Request`. This stops DNS rebinding: a page on a hostile name that resolves to the engine still sends its own name as the Host. |
 | `WOOFX3_ALLOWED_ORIGINS` | A request that sends an `Origin` not listed is answered `403`, WebSocket upgrades and CORS preflights included. A request with no `Origin` is allowed. CORS echoes the request's origin with `Vary: Origin`. |
+| `WOOFX3_UI_URL` | The origins of the dashboards the engine is used from, added to the default Origin list. `uiUrl` in `.woofx3.json`. |
 
 When a setting is unset or blank, a default list applies:
 
@@ -239,8 +240,9 @@ When a setting is unset or blank, a default list applies:
   and `http://tauri.localhost` (local dev servers on any port, and the desktop
   app's webview), plus the origin of each URL the service is configured to be
   reached at: the api adds `WOOFX3_API_URL` and `WOOFX3_SCENE_MANAGER_URL`,
-  sceneManager adds `WOOFX3_SCENE_MANAGER_URL`. sceneManager also adds `null`,
-  for widget frames (see below).
+  sceneManager adds `WOOFX3_SCENE_MANAGER_URL`. Both add the origins in
+  `WOOFX3_UI_URL`, and sceneManager also adds `null`, for widget frames (see
+  below).
 - **Hosts**: only on a service reachable over loopback alone, meaning it binds
   a loopback address and `WOOFX3_BEHIND_EDGE` is not `true`. Then `localhost`,
   `127.0.0.1` and `[::1]` on any port, plus the hosts of the same configured
@@ -261,10 +263,25 @@ Set a list to `*` to turn that check off: every Host, or every Origin with
 CORS `Access-Control-Allow-Origin: *`. `*` must be the only entry.
 
 A dashboard that calls the engine from a browser on any other origin must be
-listed. That includes the hosted dashboard and its PR previews, for managed
+allowed. That includes the hosted dashboard and its PR previews, for managed
 engines and for a local engine opened from the hosted dashboard, and a dev
-dashboard served from a custom name. The dashboard's server-side calls (the
-registration handshake, webhooks) send no `Origin` and need nothing.
+dashboard served from a custom name. Name it in `WOOFX3_UI_URL` to add it to
+the defaults: the dashboard holds the api's live WebSocket and opens the scene
+editor's WebSocket on sceneManager, and both are refused from an origin not
+allowed. The dashboard's server-side calls (the registration handshake,
+webhooks) send no `Origin` and need nothing.
+
+`WOOFX3_UI_URL` is a comma-separated list of `scheme://host[:port]` or
+`scheme://*.domain[:port]` entries, matched like the origins below. Managed
+engines are given it by the service that provisions them: the hosted
+dashboard's origin, and for a preview engine also every subdomain of the
+preview domain, since one preview engine is shared by the previews of every
+pull request on its release. Unset or blank, it adds nothing, which is what an
+engine on your own machine used from a local or desktop dashboard needs. A
+malformed entry stops both services at startup, and so do `*` and `null`,
+which are not dashboards: turning the check off is `WOOFX3_ALLOWED_ORIGINS`'s
+job. An explicit `WOOFX3_ALLOWED_ORIGINS` replaces the whole default list,
+`WOOFX3_UI_URL` included, so list the dashboard there too when you set it.
 
 Each is a comma-separated list, read by both services, and an explicit list
 replaces its default rather than adding to it. A malformed entry stops the
@@ -287,8 +304,11 @@ Matching rules:
   no origin to, such as `tauri://localhost` from the desktop app's webview on
   macOS and Linux, is compared as `scheme://host[:port]`, case-insensitively;
   on Windows the webview sends `http://tauri.localhost`. The literal `null` matches the
-  opaque origin sandboxed frames send, and nothing else matches it. There is
-  no subdomain wildcard.
+  opaque origin sandboxed frames send, and nothing else matches it.
+  `scheme://*.domain[:port]` matches every subdomain of `domain`, at any
+  depth, on that scheme and port, but not `domain` itself. Its domain needs
+  two or more labels (`https://*.example` is refused), and a `*` anywhere
+  else in an origin is refused.
 
 A browser sends no `Origin` on a top-level navigation or a same-origin `GET`,
 which is why an absent Origin is allowed; OBS, the CLI and peer services send
@@ -311,9 +331,18 @@ none either. What an overlay sends to sceneManager:
 - The **scene editor** WebSocket sends the dashboard's origin.
 
 A desktop engine on loopback needs none of this: the defaults are what it
-would list. A managed engine behind the edge, for example, lists the hosted
-dashboard (`https://dashboard.example` stands in for it) next to its own
-public origin, and the names its Host can carry, health checks included:
+would list. A managed engine behind the edge only needs the hosted dashboard
+(`https://dashboard.example` stands in for it), since its own public origin is
+already a default:
+
+```bash
+# both services
+WOOFX3_UI_URL=https://dashboard.example
+```
+
+To check Host as well, or to replace the defaults, list everything
+explicitly: the dashboard next to the engine's own public origin, and the
+names its Host can carry, health checks included:
 
 ```bash
 # both services

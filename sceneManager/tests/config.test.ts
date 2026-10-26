@@ -127,6 +127,7 @@ describe("request guard defaults", () => {
     delete process.env.WOOFX3_ALLOWED_ORIGINS;
     delete process.env.WOOFX3_SCENE_MANAGER_HOST;
     delete process.env.WOOFX3_SCENE_MANAGER_URL;
+    delete process.env.WOOFX3_UI_URL;
     Object.assign(process.env, env);
     return new RequestGuard(loadConfig().requestGuard);
   }
@@ -146,5 +147,37 @@ describe("request guard defaults", () => {
     const g = guard({ WOOFX3_BEHIND_EDGE: "true", WOOFX3_SCENE_MANAGER_URL: "https://streamer.example" });
     expect(g.reject(request({ host: "eng-1.up.railway.app", origin: "https://streamer.example" }))).toBeNull();
     expect(g.reject(request({ host: "eng-1.up.railway.app", origin: "https://evil.example" }))?.status).toBe(403);
+  });
+
+  /** The scene editor's WebSocket upgrade, as the dashboard's browser sends it through the edge. */
+  function editorUpgrade(origin: string): Request {
+    return new Request("http://127.0.0.1:9101/scene/s1/edit?token=t&protocol=2", {
+      headers: {
+        host: "wx3-prod-iad-eng-b84872e1.fly.dev",
+        origin,
+        upgrade: "websocket",
+        connection: "Upgrade",
+        "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+        "sec-websocket-version": "13",
+      },
+    });
+  }
+
+  const hosted = { WOOFX3_BEHIND_EDGE: "true", WOOFX3_SCENE_MANAGER_URL: "https://streamer.woofx3.tv" };
+
+  it("a hosted engine admits the editor from the dashboard WOOFX3_UI_URL names and still refuses others", () => {
+    const g = guard({ ...hosted, WOOFX3_UI_URL: "https://woofx3.tv" });
+    expect(g.reject(editorUpgrade("https://woofx3.tv"))).toBeNull();
+    expect(g.reject(editorUpgrade("null"))).toBeNull();
+    expect(g.reject(editorUpgrade("https://evil.example"))?.status).toBe(403);
+  });
+
+  it("without WOOFX3_UI_URL a hosted engine refuses the dashboard's editor", () => {
+    expect(guard(hosted).reject(editorUpgrade("https://woofx3.tv"))?.status).toBe(403);
+    expect(guard({ ...hosted, WOOFX3_UI_URL: " " }).reject(editorUpgrade("https://woofx3.tv"))?.status).toBe(403);
+  });
+
+  it("a malformed WOOFX3_UI_URL stops startup", () => {
+    expect(() => guard({ ...hosted, WOOFX3_UI_URL: "https://woofx3.tv/editor" })).toThrow("WOOFX3_UI_URL");
   });
 });
