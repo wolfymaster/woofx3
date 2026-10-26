@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.43.0](https://github.com/wolfymaster/woofx3/compare/v0.42.3...v0.43.0) (2026-10-26)
+
+### Features
+
+* **sceneManager:** let a queue's owner see the deliveries still waiting ([2641d80](https://github.com/wolfymaster/woofx3/commit/2641d8039e2ab8e3726d1d3952b1cfe91ba8ccd3))
+* **sceneManager:** load alert frames from the widget's cached document ([460c6c6](https://github.com/wolfymaster/woofx3/commit/460c6c646629ec8087d157338ec9e01ea22c57d2))
+* **sceneManager:** play alerts on frames prepared before they are due ([8968087](https://github.com/wolfymaster/woofx3/commit/8968087469eddf675c1f3b0ce34f1a1dbd1260a7))
+* **sceneManager:** time each step of an alert ([145f7cd](https://github.com/wolfymaster/woofx3/commit/145f7cd09c9bba0ac742c18957c39e38852c447f))
+* **widget-host:** tell the page when a frame's shim is ready ([afb5ae3](https://github.com/wolfymaster/woofx3/commit/afb5ae38c8e44a7b6131a14d1d45c907574a096d))
+
+### Bug Fixes
+
+* **scene-manager:** let a prepared alert's frames paint before it plays ([1d8969b](https://github.com/wolfymaster/woofx3/commit/1d8969b0eb1f67e964474c43891af8947817a972))
+* **scene-manager:** show an alert's widgets as soon as they paint ([c841c62](https://github.com/wolfymaster/woofx3/commit/c841c62d90cc8df0573de76c86f790ce177993c1))
+* **scene:** let the DOM renderer hide widgets with opacity ([d239939](https://github.com/wolfymaster/woofx3/commit/d2399391c341c2809f8ec6924a5b3575311bb81a))
+* **sceneManager:** fit a prepared alert's stage to its area as it is built ([0b31d20](https://github.com/wolfymaster/woofx3/commit/0b31d2028c6c382320d78e6046a2f3dd0e439b3a))
+* **sceneManager:** hand a staged alert's widgets their behaviors at start ([c678685](https://github.com/wolfymaster/woofx3/commit/c678685a32dbc06a3ae91b68c2b14cdae79d3ad6))
+* **sceneManager:** handle a failed delivery presentation like a failed send ([a50aeef](https://github.com/wolfymaster/woofx3/commit/a50aeef654cbb42c6ed2a737e9a86d5c40c93033))
+* **sceneManager:** name alert marks for their area, keep queued alerts' marks ([51d97c0](https://github.com/wolfymaster/woofx3/commit/51d97c04a2e1463c8d59f02bc3def90d5625ec9d))
+* **sceneManager:** omit Server-Timing from cached frame documents ([3c12f47](https://github.com/wolfymaster/woofx3/commit/3c12f4783289b9b986d421ce1dcb5f7bbddd40e0))
+* **sceneManager:** patch a prepared widget's settings only once it paints ([dd1cd25](https://github.com/wolfymaster/woofx3/commit/dd1cd255d800818807d5e4b14ea1d863834143bc))
+* **sceneManager:** patch a prepared widget's settings only once it settles ([1d5f434](https://github.com/wolfymaster/woofx3/commit/1d5f43438c183ca0d730aae5b9dae47c064c36aa))
+* **sceneManager:** prepare alert stages from what the queue will play ([bd3c74e](https://github.com/wolfymaster/woofx3/commit/bd3c74e9d0753fc7881587469e34c55195a689a5))
+* **sceneManager:** read only as much of the alert queue as can be prepared ([b8b076d](https://github.com/wolfymaster/woofx3/commit/b8b076d3a3331c2cfa612ff5cd0b193bf995a26c))
+* **sceneManager:** refuse alerts whose widget frame is unavailable ([7b5f2e1](https://github.com/wolfymaster/woofx3/commit/7b5f2e19d0f79e884f179033c32e79af08f14f72))
+* **sceneManager:** refuse an alert delivery with a non-canonical widget id ([e1ebb62](https://github.com/wolfymaster/woofx3/commit/e1ebb62d3ce02a19ea3c087376750b3b06c5f9e7))
+* **sceneManager:** report a widget's setting reads before it subscribes ([4c417a4](https://github.com/wolfymaster/woofx3/commit/4c417a44b211501f6f3d51d7183561226d66f8fa))
+* **sceneManager:** time the whole layout step of an alert dispatch ([3855c21](https://github.com/wolfymaster/woofx3/commit/3855c2102baa37db4d5e190628de12c888bf2ed5))
+
+### Performance Improvements
+
+* **sceneManager:** present an alert delivery once per send ([408d815](https://github.com/wolfymaster/woofx3/commit/408d8150212a61392b5e7a9d85d6295c6fdeb47e))
+
 ## [0.42.3](https://github.com/wolfymaster/woofx3/compare/v0.42.2...v0.42.3) (2026-10-25)
 
 ### Bug Fixes
