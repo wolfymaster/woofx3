@@ -21,7 +21,11 @@ import {
   HELIX_COMMAND,
   type HelixCommandArgs,
   type HelixOperationName,
+  TWITCHAPI_ERROR_TYPE,
+  TWITCHAPI_REPLY_CODES,
   TWITCHAPI_SUBJECT,
+  type TwitchApiReplyCode,
+  twitchApiResultType,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { requestFailureKind } from "@woofx3/nats";
@@ -31,21 +35,22 @@ import { routeModule } from "./context";
 /** Long enough for a token renewal and the resend after a 401; the same wait `ctx.twitch` gives. */
 export const TWITCH_HELIX_TIMEOUT_MS = 10_000;
 
-/** The codes the connectors host's Twitch adapter sends with a `helix` refusal that a caller can branch on. */
-const FORWARDED_REFUSAL_CODES = new Set(["invalid_arguments", "not_linked"]);
-
 /**
  * The code connectors answers with while the twitch adapter is linked but
  * turned off, starting or parked. Its own message may name host internals,
  * so callers get this one under `unavailable`.
  */
-const INTEGRATION_UNAVAILABLE_CODE = "integration_unavailable";
+const INTEGRATION_UNAVAILABLE_CODE: TwitchApiReplyCode = "integration_unavailable";
 const INTEGRATION_UNAVAILABLE_MESSAGE = "Twitch is turned off or not running in this engine";
 
 type Requester = Pick<NATSClient, "request">;
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function replyCode(value: unknown): TwitchApiReplyCode | null {
+  return TWITCHAPI_REPLY_CODES.find((code) => code === value) ?? null;
 }
 
 /** Twitch's `message` from a Helix error body, or "" when the body has none. */
@@ -63,17 +68,19 @@ export function readHelixReply(operation: HelixOperationName, raw: unknown): Twi
   const envelope = typeof raw === "object" && raw !== null ? (raw as { type?: unknown; data?: unknown }) : {};
   const data =
     typeof envelope.data === "object" && envelope.data !== null ? (envelope.data as Record<string, unknown>) : {};
-  if (envelope.type === "twitchapi.error") {
+  if (envelope.type === TWITCHAPI_ERROR_TYPE) {
     if (data.code === INTEGRATION_UNAVAILABLE_CODE) {
       return { ok: false, code: "unavailable", error: INTEGRATION_UNAVAILABLE_MESSAGE };
     }
     const error = typeof data.error === "string" && data.error !== "" ? data.error : `${operation} was refused`;
-    if (typeof data.code === "string" && FORWARDED_REFUSAL_CODES.has(data.code)) {
-      return { ok: false, code: data.code as "invalid_arguments" | "not_linked", error };
+    // The codes a caller can branch on; any other refusal is reported as `failed`.
+    const code = replyCode(data.code);
+    if (code === "invalid_arguments" || code === "not_linked") {
+      return { ok: false, code, error };
     }
     return { ok: false, code: "failed", error };
   }
-  if (envelope.type !== `twitchapi.${HELIX_COMMAND}.result`) {
+  if (envelope.type !== twitchApiResultType(HELIX_COMMAND)) {
     return { ok: false, code: "failed", error: `${operation}: Twitch sent an unreadable reply` };
   }
   if (data.ok === true) {

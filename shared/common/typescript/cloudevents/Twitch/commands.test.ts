@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { parseShoutoutEnqueueReply, type ShoutoutEnqueueReplyParse } from "./commands";
+import { parseShoutoutEnqueueReply, type ShoutoutEnqueueReply } from "./commands";
+import type { ParseResult } from "../utils";
 
 describe("parseShoutoutEnqueueReply", () => {
-  const cases: [name: string, body: unknown, expected: ShoutoutEnqueueReplyParse][] = [
+  const cases: [name: string, body: unknown, expected: ParseResult<ShoutoutEnqueueReply>][] = [
     [
       "a queued reply",
       { queued: { position: 2, alreadyQueued: true } },
