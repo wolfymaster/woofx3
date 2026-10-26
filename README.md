@@ -459,6 +459,7 @@ and Ubuntu).
 
 ```bash
 mise install          # install the pinned toolchains (once per machine)
+bun install           # install the TypeScript packages
 process-compose up    # start all services defined in process-compose.yml
 ```
 
@@ -518,7 +519,7 @@ cd docs && bun run docs:build  # Static site build
 - **Communication.** Services exchange CloudEvents over NATS. Only `db` may
   touch a database; all other services use generated Twirp clients.
 - **Three-language clients.** Generated `db` clients exist for Go, Rust, and
-  TypeScript and are regenerated from `db/proto/` via `npm run generate` in
+  TypeScript and are regenerated from `db/proto/` via `bun run generate` in
   `db/`. Hand-written clients (barkloader) must be kept in sync across all
   three languages.
 - **Configuration.** A shared `.woofx3.json` at the repo root, overridden by
