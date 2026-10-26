@@ -635,7 +635,7 @@ describe("PlatformGateway requests", () => {
     await flush();
     expect(replies).toHaveLength(0);
     expect(twitch.calls).toHaveLength(0);
-    expect(requests.snapshot()[SEND]?.no_inbox).toBe(1);
+    expect(requests.snapshot()[SEND]?.noInbox).toBe(1);
   });
 
   const invalid: Array<[name: string, body: string, message: string]> = [

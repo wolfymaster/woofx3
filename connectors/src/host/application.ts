@@ -2,6 +2,7 @@ import { lookup } from "node:dns/promises";
 import type { IApplication } from "@woofx3/common/runtime";
 import { dbProxyEndpointStore } from "../companion/endpoint-store";
 import type { ConnectorsConfig } from "../config";
+import { shutdownDeadlineProblem } from "../config/host";
 import type DbProxyService from "../services/db-proxy";
 import type MessageBusService from "../services/message-bus";
 import { type AdapterRegistry, type LoadedAdapters, loadAdapters } from "./adapters";
@@ -49,6 +50,21 @@ export default class ConnectorsApplication implements IApplication<ConnectorsCon
   /** Loads the adapter modules once per process. */
   async init(): Promise<void> {
     this.loaded ??= await loadAdapters(this.deps.adapters);
+  }
+
+  /**
+   * Why the configured shutdown deadline cannot cover the loaded adapters'
+   * served budgets, or undefined when it can. Needs init to have run.
+   */
+  shutdownDeadlineProblem(): string | undefined {
+    if (this.loaded === undefined) {
+      throw new Error("shutdownDeadlineProblem before init: the adapters are not loaded");
+    }
+    const { host, chat } = this.deps.config;
+    const budgets = [...this.loaded.adapters.values()].flatMap((adapter) =>
+      adapter.manifest.serves.map((served) => served.budgetMs)
+    );
+    return shutdownDeadlineProblem(host, chat.drainMs, budgets);
   }
 
   async run(ctx: ConnectorsContext): Promise<void> {

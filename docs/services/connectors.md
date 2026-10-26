@@ -182,7 +182,7 @@ await requests.serveRequest<Req, Rep>(scope, {
 });
 ```
 
-- A message without a reply inbox is counted as `no_inbox`, logged and never
+- A message without a reply inbox is counted as `noInbox`, logged and never
   handled, so a stray publish has no effect.
 - A request that does not parse gets `errorReply("invalid", ...)`. A parser or
   handler that throws gets `errorReply("internal", ...)` and is logged.
@@ -195,7 +195,7 @@ await requests.serveRequest<Req, Rep>(scope, {
   is the `data` of a CloudEvent with a fresh `id`, the `replyType`, source
   `connectors` and the current `time`.
 - Each subject keeps `received`, `replied`, `invalid`, `internal`, `expired`
-  and `no_inbox` counts, shown in `/health`. Serving a subject twice is an error.
+  and `noInbox` counts, shown in `/health`. Serving a subject twice is an error.
 
 ## The scoped bus
 
@@ -291,7 +291,7 @@ through the same `helix` path the dashboard uses:
 Every line goes through `guardChatLine`: a line that starts with the command
 prefix (`!`, from `connectors/src/chat/command-prefix.ts`) gets a zero-width
 space in front, so the engine's own line, which comes back on the chat feed as
-the broadcaster's, never runs a command. The legacy `twitchapi` `helix` chat
+the broadcaster's, never runs a command. The `twitchapi` `helix` chat
 operations get the same guard, since both paths build the request in one place.
 
 Twitch's error statuses map to failure codes in one table:
@@ -325,7 +325,7 @@ lines apart from the streamer typing and marks them on the `user.message`
 event (`lib/self-sent.ts`):
 
 - Every Send Chat Message call is recorded just before the request leaves,
-  whether it comes from the platform gateway or the legacy `twitchapi`
+  whether it comes from the platform gateway or the `twitchapi`
   `helix` command, along with the gateway request's `workflowChain` when
   there is one. Twitch's answer settles the record: a posted line is kept
   under its message id, and a refused or dropped line is forgotten. A call
@@ -340,7 +340,7 @@ event (`lib/self-sent.ts`):
 - A matched message is published with `fromEngine: true`, and its CloudEvent
   carries the sending run's `workflowChain`, which is how the workflow loop
   guard sees a workflow answering its own line. Every other message has
-  `fromEngine: false` and no chain. Lines sent through the legacy `twitchapi`
+  `fromEngine: false` and no chain. Lines sent through the `twitchapi`
   command are marked `fromEngine` but never carry a chain.
 
 Records expire after `WOOFX3_TWITCH_SELF_SENT_TTL_MS`, and at most
@@ -435,8 +435,7 @@ bus scope of its own that holds `CHAT_DISPATCHER_GRANTS` and nothing more. It
 starts once the platform gateway answers, because its replies go through the
 gateway, and before the first link settings are read. If the first command
 listing fails, the host does not start. No other
-service runs chat commands: the standalone chat service is gone, and the
-dispatcher announces `chat.command.<slug>` with the event `source`
+service runs chat commands, and the dispatcher announces `chat.command.<slug>` with the event `source`
 `connectors`.
 
 Each `user.message` goes through these steps in order:
@@ -482,8 +481,7 @@ platform's user id, never by a display name. The memory of written groups
 is keyed this way, and the permission cache by that and the login, so two
 accounts that show the same name never share a decision.
 Permission and group rows in db-proxy are keyed by the speaker's login,
-lowercased. That is what the database keys on
-today.
+lowercased: db-proxy keys permission and group rows by login.
 
 **Stored commands** are read from db-proxy, the owner of the data.
 `command.created`, `command.updated` and `command.deleted` only trigger a
@@ -656,7 +654,7 @@ fix what parked it.
       "replies": { "delivered": 10, "failed": 1 },
       "bus": { "refusals": 0, "subscriptions": {} }
     },
-    "hostRequests": { "twitchapi": { "received": 3, "replied": 3, "invalid": 0, "internal": 0, "expired": 0, "no_inbox": 0 } },
+    "hostRequests": { "twitchapi": { "received": 3, "replied": 3, "invalid": 0, "internal": 0, "expired": 0, "noInbox": 0 } },
     "hostBus": { "refusals": 0, "subscriptions": {} },
     "gateway": {
       "outcomes": { "twitch": { "chat.send": { "delivered": 12, "unavailable": 1 } } },

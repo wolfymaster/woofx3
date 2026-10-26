@@ -28,6 +28,7 @@ import {
   twitchApiResultType,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import type { SharedLogger } from "@woofx3/common/logging";
+import { requestFailureKind } from "@woofx3/nats";
 import type NATSClient from "@woofx3/nats/src/client";
 import { routeModule } from "./context";
 
@@ -46,19 +47,6 @@ type Requester = Pick<NATSClient, "request">;
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-/** Matched by name and message, as the NATS client raises them. */
-function isTimeout(err: unknown): boolean {
-  return err instanceof Error && (err.name === "TimeoutError" || err.message === "timeout");
-}
-
-function isNoResponders(err: unknown): boolean {
-  if (!(err instanceof Error)) {
-    return false;
-  }
-  const cause = err.cause instanceof Error ? err.cause.name : "";
-  return cause === "NoResponders" || err.message.includes("no responders");
 }
 
 function replyCode(value: unknown): TwitchApiReplyCode | null {
@@ -134,14 +122,15 @@ export async function requestHelix(
   try {
     reply = await nats.request(TWITCHAPI_SUBJECT, payload, { timeout: TWITCH_HELIX_TIMEOUT_MS });
   } catch (err) {
-    if (isTimeout(err)) {
+    const failure = requestFailureKind(err);
+    if (failure === "timeout") {
       return {
         ok: false,
         code: "timeout",
         error: `Twitch did not answer within ${TWITCH_HELIX_TIMEOUT_MS / 1000}s; it may still have acted`,
       };
     }
-    if (isNoResponders(err)) {
+    if (failure === "no_responders") {
       return { ok: false, code: "unavailable", error: "Twitch is not connected in this engine" };
     }
     logger.warn("twitch helix request failed", { operation, error: errorMessage(err) });

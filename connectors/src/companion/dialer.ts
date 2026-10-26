@@ -37,6 +37,7 @@ export interface DialerDeps {
   logger: Logger;
 }
 
+// A relay ticket is 43 unpadded base64url characters (32 random bytes); anything else is refused before it reaches a URL.
 const TICKET = /^[A-Za-z0-9_-]{43}$/;
 
 /**

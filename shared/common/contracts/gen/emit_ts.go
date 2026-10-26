@@ -75,6 +75,7 @@ type tsData struct {
 	Subjects   gatewaySubjects
 	ReplyTypes gatewaySubjects
 	Limits     limits
+	Bounds     []integerBound
 	Enums      []tsEnum
 	Platforms  []tsPlatform
 	Actions    []tsAction
@@ -82,7 +83,7 @@ type tsData struct {
 }
 
 func emitTS(c platformGateway) ([]byte, error) {
-	data := tsData{Source: platformGatewaySource, Subjects: c.Subjects, ReplyTypes: c.ReplyTypes, Limits: c.Limits}
+	data := tsData{Source: platformGatewaySource, Subjects: c.Subjects, ReplyTypes: c.ReplyTypes, Limits: c.Limits, Bounds: integerBoundsOf(c.Actions)}
 
 	platformIDs := make([]string, 0, len(c.Platforms))
 	for _, p := range c.Platforms {
@@ -153,7 +154,7 @@ func tsActionOf(a action) tsAction {
 		names := make([]string, 0, len(v.Fields))
 		for _, f := range v.Fields {
 			tv.Fields = append(tv.Fields, tsFieldDeclaration(f))
-			tv.Reads = append(tv.Reads, tsPayloadRead(f))
+			tv.Reads = append(tv.Reads, tsPayloadRead(a.ID, f))
 			names = append(names, f.Name)
 		}
 		tv.Keys = tsStringList(names)
@@ -189,7 +190,7 @@ func tsFieldDeclaration(f field) string {
 	return fmt.Sprintf("%s%s: %s;", f.Name, optional, tsType)
 }
 
-func tsPayloadRead(f field) tsRead {
+func tsPayloadRead(actionID string, f field) tsRead {
 	presence := "Optional"
 	if f.Required {
 		presence = "Required"
@@ -197,7 +198,9 @@ func tsPayloadRead(f field) tsRead {
 	var call string
 	switch f.Type {
 	case fieldInteger:
-		call = fmt.Sprintf("read%sInteger(object, %q, %d, %d)", presence, f.Name, *f.Min, *f.Max)
+		minimum := integerBoundOf(actionID, f.Name, "min", *f.Min)
+		maximum := integerBoundOf(actionID, f.Name, "max", *f.Max)
+		call = fmt.Sprintf("read%sInteger(object, %q, %s, %s)", presence, f.Name, minimum.TSName, maximum.TSName)
 	default:
 		call = fmt.Sprintf("read%sString(object, %q, %d)", presence, f.Name, *f.MaxLength)
 	}

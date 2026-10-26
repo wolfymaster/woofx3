@@ -7,25 +7,13 @@ import {
   parseGatewayRequest,
 } from "@woofx3/api/platform-gateway";
 import type { SharedLogger } from "@woofx3/common/logging";
+import { requestFailureKind } from "@woofx3/nats";
 import type NATSClient from "@woofx3/nats/src/client";
 
 type Requester = Pick<NATSClient, "request">;
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-/** Matched by name and message, as the NATS client raises them. */
-function isTimeout(err: unknown): boolean {
-  return err instanceof Error && (err.name === "TimeoutError" || err.message === "timeout");
-}
-
-function isNoResponders(err: unknown): boolean {
-  if (!(err instanceof Error)) {
-    return false;
-  }
-  const cause = err.cause instanceof Error ? err.cause.name : "";
-  return cause === "NoResponders" || err.message.includes("no responders");
 }
 
 export interface PlatformGatewayClientDeps {
@@ -64,7 +52,8 @@ export class PlatformGatewayClient {
         { timeout: timeoutMs }
       );
     } catch (err) {
-      if (isTimeout(err)) {
+      const failure = requestFailureKind(err);
+      if (failure === "timeout") {
         logger.warn("platform gateway did not answer in time", {
           action: request.action,
           idempotencyKey: request.idempotencyKey,
@@ -76,7 +65,7 @@ export class PlatformGatewayClient {
           error: `The platform gateway did not answer within ${timeoutMs / 1000}s; the message may have been sent`,
         };
       }
-      if (isNoResponders(err)) {
+      if (failure === "no_responders") {
         logger.warn("platform gateway has no responders", {
           action: request.action,
           idempotencyKey: request.idempotencyKey,

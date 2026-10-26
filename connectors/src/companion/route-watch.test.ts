@@ -47,8 +47,8 @@ function watch(options: { hosting?: EngineHosting | null; last?: LastRoute | nul
 }
 
 const settingWritten = (moduleId: string): BusMessage => ({
-  subject: `db.module.setting.updated.${moduleId}`,
-  data: bytes(JSON.stringify({ type: "db.module.setting.updated", data: { moduleId, key: "host" } })),
+  subject: "db.module.setting.updated.system",
+  data: bytes(JSON.stringify({ type: "module.setting.updated", data: { moduleId, key: "host" } })),
   respond: () => false,
 });
 
@@ -107,12 +107,12 @@ describe("RouteWatch", () => {
     const { routeWatch, heard, record, logger } = watch();
     routeWatch.listen(OBS, record("obs"));
     routeWatch.moduleSettingUpdated({
-      subject: "db.module.setting.updated.x",
+      subject: "db.module.setting.updated.system",
       data: bytes("not json"),
       respond: () => false,
     });
     routeWatch.moduleSettingUpdated({
-      subject: "db.module.setting.updated.x",
+      subject: "db.module.setting.updated.system",
       data: bytes("{}"),
       respond: () => false,
     });

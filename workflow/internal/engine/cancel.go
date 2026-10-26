@@ -51,6 +51,7 @@ type runControl struct {
 	mu              sync.Mutex
 	settled         bool
 	finalStatus     types.ExecutionStatus
+	finalErr        error
 	cancelRequested bool
 	reason          string
 	// stopped marks a run the engine abandoned because it was stopping. Such a
@@ -88,7 +89,16 @@ func (c *runControl) claimSettle(status types.ExecutionStatus, err error) (types
 	}
 	c.settled = true
 	c.finalStatus = status
+	c.finalErr = err
 	return status, err, true
+}
+
+// settledByStop reports whether the run ended because the engine stopped:
+// abandoned by Stop, or refused a wait in a stopped engine.
+func (c *runControl) settledByStop() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.settled && errors.Is(c.finalErr, errEngineStopped)
 }
 
 // abandonedBy is what a task the run gave up on reports: the engine stopping,

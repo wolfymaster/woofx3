@@ -3,7 +3,7 @@ import {
   SHOUTOUT_ENQUEUE_SUBJECT,
   type ShoutoutEnqueueTarget,
 } from "@woofx3/common/cloudevents/Twitch/commands";
-import { requestFailureKind } from "@woofx3/nats/src/errors";
+import { requestFailureKind } from "@woofx3/nats";
 
 /**
  * `queued`: the dashboard will send it in turn. `no_queue`: this engine's

@@ -280,6 +280,23 @@ describe("storedCommandDefinition", () => {
     expect(runs).toEqual([{ label: "command:hug", actions }]);
   });
 
+  test("actions that could not be started are told to chat, without the error's detail", async () => {
+    const actions = [{ id: "a", action: "chat.reply", parameters: { message: "hugs" } }];
+    const logger = new RecordingLogger();
+    const definition = storedCommandDefinition(
+      storedCommand({ actionsJson: JSON.stringify(actions) }),
+      {
+        ...noRunner,
+        runActions: async () => {
+          throw new Error("bus down");
+        },
+      },
+      logger
+    );
+    expect(await definition.handler(invocation)).toBe("Could not run !hug right now");
+    expect(logger.at("error").map((entry) => entry.message)).toEqual(["could not run a command's actions"]);
+  });
+
   const unreadableActions = [
     { name: "text that is not JSON", actionsJson: "{not json" },
     { name: "JSON that is not a list", actionsJson: JSON.stringify({ action: "chat.reply" }) },
