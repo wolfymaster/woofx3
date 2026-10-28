@@ -257,6 +257,8 @@ export const RPC_METHODS = [
   "dispatchFieldOptionsRequest",
   "getScenes",
   "getScene",
+  "listSceneSnapshots",
+  "getSceneSnapshot",
   "getAvailableWidgets",
   "createScene",
   "updateScene",

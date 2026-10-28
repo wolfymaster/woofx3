@@ -202,6 +202,12 @@ export const ENGINE_CAPABILITIES = {
    */
   scenesRepair: "scenes.repair",
   /**
+   * Reading scenes as their whole stored record, the `SceneSnapshot` the
+   * `scene.*` webhooks carry, for a client that keeps no mirror of those
+   * webhooks: `listSceneSnapshots`, `getSceneSnapshot`.
+   */
+  scenesSnapshots: "scenes.snapshots",
+  /**
    * Alert compositions stored in the engine: `listAlertCompositions`,
    * `getAlertComposition`, `createAlertComposition`,
    * `updateAlertComposition`, `deleteAlertComposition`, editing one with

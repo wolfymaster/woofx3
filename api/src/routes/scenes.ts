@@ -1,5 +1,5 @@
 import type { Scene, SceneEditorSession, SceneRepairResult } from "@woofx3/api";
-import { EngineEventType, type WidgetBehaviorKinds } from "@woofx3/api/webhooks";
+import { EngineEventType, type SceneSnapshot, type WidgetBehaviorKinds } from "@woofx3/api/webhooks";
 import {
   SCENE_EDITOR_TOKEN_SUBJECT,
   SCENE_REPAIR_SUBJECT,
@@ -15,6 +15,17 @@ import { compositionKindOf, dbSceneToSnapshot, dbSceneToWire } from "./helpers";
 const SCENE_EDITOR_TOKEN_TIMEOUT_MS = 3_000;
 /** Longer: a repair loads the scene, stores its backups and writes it back before it answers. */
 const SCENE_REPAIR_TIMEOUT_MS = 15_000;
+
+/** Orders by UTF-16 code unit, so the order never depends on the host's locale. */
+function compareCodeUnits(a: string, b: string): number {
+  if (a < b) {
+    return -1;
+  }
+  if (a > b) {
+    return 1;
+  }
+  return 0;
+}
 
 export const scenesRoutes = routeModule({
   async getScenes(query?: { page?: number; pageSize?: number }): Promise<{
@@ -44,6 +55,37 @@ export const scenesRoutes = routeModule({
   async getScene(id: string): Promise<Scene | null> {
     const found = await this.db.findComposition(id);
     return found && compositionKindOf(found.kind) === "scene" ? dbSceneToWire(found) : null;
+  },
+
+  /**
+   * Asks db-proxy for every row (`page: 0, pageSize: 0`, as
+   * `listAlertCompositions` does): `ListScenes` answers with the whole kind
+   * in one response and applies neither paging nor sorting, so the order by
+   * name is made here. A response holding fewer rows than its total would
+   * hand the caller a partial list as if it were whole, so it is refused.
+   */
+  async listSceneSnapshots(): Promise<{ scenes: SceneSnapshot[] }> {
+    const response = await this.db.listScenes({
+      page: 0,
+      pageSize: 0,
+      sortBy: "name",
+      sortDesc: false,
+      kind: "scene",
+    });
+    if (response.scenes.length < response.totalCount) {
+      throw new Error(
+        `listSceneSnapshots: db-proxy answered ${response.scenes.length} of ${response.totalCount} scenes`
+      );
+    }
+    const scenes = response.scenes.map((s) => dbSceneToSnapshot(s));
+    scenes.sort((a, b) => compareCodeUnits(a.name, b.name));
+    return { scenes };
+  },
+
+  /** Null for an alert composition as for an unknown id: this surface is scenes only. */
+  async getSceneSnapshot(id: string): Promise<SceneSnapshot | null> {
+    const found = await this.db.findComposition(id);
+    return found && compositionKindOf(found.kind) === "scene" ? dbSceneToSnapshot(found) : null;
   },
 
   async getAvailableWidgets(): Promise<{
