@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.48.0](https://github.com/wolfymaster/woofx3/compare/v0.47.0...v0.48.0) (2026-10-28)
+
+### Features
+
+* **api:** read whole scene snapshots ([f461f31](https://github.com/wolfymaster/woofx3/commit/f461f31dcf7ff7fd52237e1ef4f48045b3238d16))
+
 ## [0.47.0](https://github.com/wolfymaster/woofx3/compare/v0.46.0...v0.47.0) (2026-10-26)
 
 ### Features
