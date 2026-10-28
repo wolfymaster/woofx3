@@ -7,9 +7,9 @@ name: service checks
 #
 # api has its own workflow (api-checks.yml).
 #
-# Each service resolves its workspace siblings by relative path, so their
-# dependencies have to be installed too or every shared import fails to
-# resolve and the run reports hundreds of phantom errors.
+# Each service resolves its workspace siblings by relative path, so the whole
+# workspace is installed, or every shared import fails to resolve and the run
+# reports hundreds of phantom errors.
 
 on:
   push:
@@ -23,6 +23,9 @@ on:
       - "services/nats/**"
       - "shared/common/golang/logging/**"
       - ".bun-version"
+      - "package.json"
+      - "bun.lock"
+      - "bunfig.toml"
       - ".github/workflows/service-checks.yml"
   pull_request:
     paths:
@@ -34,6 +37,9 @@ on:
       - "services/nats/**"
       - "shared/common/golang/logging/**"
       - ".bun-version"
+      - "package.json"
+      - "bun.lock"
+      - "bunfig.toml"
       - ".github/workflows/service-checks.yml"
   workflow_dispatch:
 
@@ -55,22 +61,7 @@ jobs:
           bun-version-file: .bun-version
 
       - name: Install workspace dependencies
-        run: |
-          for dir in \
-            shared/common/typescript \
-            shared/clients/typescript/api \
-            shared/clients/typescript/scene \
-            shared/clients/typescript/db \
-            shared/clients/typescript/nats \
-            shared/clients/typescript/twitch \
-            shared/clients/typescript/module-sdk \
-            shared/clients/typescript/widget-host \
-            ${{ matrix.service }}
-          do
-            echo "::group::bun install ($dir)"
-            (cd "$dir" && bun install --frozen-lockfile)
-            echo "::endgroup::"
-          done
+        run: bun install --frozen-lockfile
 
       # sceneManager imports @woofx3/module-sdk by its built output, not its
       # source, so the package has to be compiled before anything type-checks

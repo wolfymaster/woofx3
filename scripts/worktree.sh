@@ -42,21 +42,6 @@ readonly ENGINE_REPO="$CODE_ROOT/woofx3"
 readonly UI_REPO="$CODE_ROOT/woofx3-ui"
 readonly WORKTREES="${WOOFX3_WORKTREES:-$CODE_ROOT/wt}"
 
-# Engine packages with their own node_modules. Each resolves its siblings by
-# relative path, so all of them must be installed before any one type-checks.
-# Must match the install lists in .github/workflows/{api,service}-checks.yml.
-readonly ENGINE_BUN_DIRS=(
-  shared/common/typescript
-  shared/clients/typescript/api
-  shared/clients/typescript/db
-  shared/clients/typescript/nats
-  shared/clients/typescript/twitch
-  shared/clients/typescript/module-sdk
-  api
-  connectors
-  sceneManager
-)
-
 usage() {
   sed -n '4,8p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit 2
@@ -192,10 +177,7 @@ EOF
 
 install_engine_deps() {
   local engine_dir="$1"
-  local dir
-  for dir in "${ENGINE_BUN_DIRS[@]}"; do
-    (cd "$engine_dir/$dir" && bun install --frozen-lockfile --silent) || fail "bun install failed in $engine_dir/$dir"
-  done
+  (cd "$engine_dir" && bun install --frozen-lockfile --silent) || fail "bun install failed in $engine_dir"
   # sceneManager imports @woofx3/module-sdk by its built output.
   (cd "$engine_dir/shared/clients/typescript/module-sdk" && bun run --silent build >/dev/null) ||
     fail "module-sdk build failed in $engine_dir"
@@ -294,7 +276,7 @@ cmd_new() {
   else
     ln -s "$ENGINE_REPO" "$dir/woofx3"
     echo "  woofx3: symlink to $ENGINE_REPO"
-    [ -d "$ENGINE_REPO/shared/clients/typescript/api/node_modules" ] || install_engine_deps "$ENGINE_REPO"
+    [ -d "$ENGINE_REPO/node_modules" ] || install_engine_deps "$ENGINE_REPO"
   fi
   if $with_ui; then
     add_worktree "$UI_REPO" "$dir/woofx3-ui" "$branch" "$base"

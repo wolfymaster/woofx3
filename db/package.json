@@ -1,4 +1,6 @@
 {
+  "name": "@woofx3/db-proxy",
+  "private": true,
   "scripts": {
     "generate:ts": "bunx twirpscript",
     "generate:go": "buf generate",

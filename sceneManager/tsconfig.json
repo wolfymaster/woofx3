@@ -10,7 +10,7 @@
     },
     "strict": true,
     "target": "es2022",
-    "types": ["bun-types"],
+    "types": ["bun"],
     "skipLibCheck": true
   },
   "include": ["src/**/*.ts", "contract/**/*.ts", "tests/**/*.ts", "public/scene-manager/**/*.ts"]

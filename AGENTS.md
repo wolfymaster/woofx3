@@ -29,7 +29,7 @@ Languages: **TypeScript (Bun)** on edges/integrations; **Rust** and **Go** for h
 
 ### Running, building, and linting
 
-- **TypeScript/Bun projects** (e.g., `sceneManager/`): Run `bun run <script>` or `bun run typecheck` / `bun run lint`
+- **TypeScript/Bun projects** (e.g., `sceneManager/`): Every package belongs to one Bun workspace (the root `package.json`, one `bun.lock`), so install once from the repo root with `bun install`. Then run `bun run <script>` or `bun run typecheck` / `bun run lint` in the package
 - **Go projects** (e.g., `wooflow/`): Run `go run main.go` or `go build`
 - **Rust projects** (e.g., `barkloader/`): Run `cargo build` / `cargo test`
 - **Database migrations**: Use `make migrate-up` / `make migrate-down` (requires Go)
@@ -39,10 +39,10 @@ Languages: **TypeScript (Bun)** on edges/integrations; **Rust** and **Go** for h
 The db module uses **Buf** for protobuf code generation. When adding or modifying proto files, regenerate the Go and TypeScript clients:
 
 ```bash
-cd db && npm run generate    # Generates both Go and TypeScript clients
+cd db && bun run generate    # Generates both Go and TypeScript clients
 # Or individually:
-npm run generate:go          # Generate Go (Twirp + Protobuf)
-npm run generate:ts          # Generate TypeScript
+bun run generate:go          # Generate Go (Twirp + Protobuf)
+bun run generate:ts          # Generate TypeScript
 ```
 
 Always rebuild after regenerating proto code to catch any compile errors:
@@ -56,7 +56,7 @@ cd ../barkloader && cargo build  # Verify Rust build
 
 Clients exist in **three languages**: TypeScript, Go, and Rust. Some are generated from proto files (db module), while others are written by hand (barkloader). When modifying client APIs, ensure consistency across all three implementations:
 
-- **Generated clients** (`shared/clients/{typescript,golang,rust}/db/`): Regenerate via `npm run generate` in `db/`
+- **Generated clients** (`shared/clients/{typescript,golang,rust}/db/`): Regenerate via `bun run generate` in `db/`
 - **Hand-written clients**: Manually update all three language versions to match
 
 Common hand-written clients:

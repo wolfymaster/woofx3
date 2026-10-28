@@ -39,13 +39,6 @@ readonly TS_SERVICES=(api connectors sceneManager)
 # Shared packages with their own type check and tests, as the CI jobs of the
 # services that use them run them.
 readonly TS_PACKAGES=(shared/clients/typescript/widget-host)
-# Installed before any TS check: services resolve these by relative path.
-readonly TS_SHARED_DIRS=(
-  shared/common/typescript
-  shared/clients/typescript/api shared/clients/typescript/db shared/clients/typescript/nats
-  shared/clients/typescript/twitch shared/clients/typescript/module-sdk
-  shared/clients/typescript/widget-host
-)
 
 quick=false
 all=false
@@ -138,6 +131,14 @@ select_for_path() {
       for package in "${TS_PACKAGES[@]}"; do select_target "ts:$package"; done
       return
       ;;
+    # The workspace manifest, lockfile and install settings decide what every
+    # TypeScript package resolves.
+    package.json/ | bun.lock/ | bunfig.toml/)
+      select_target "ts:shared/common/typescript"
+      for service in "${TS_SERVICES[@]}"; do select_target "ts:$service"; done
+      for package in "${TS_PACKAGES[@]}"; do select_target "ts:$package"; done
+      return
+      ;;
   esac
   for module in "${GO_MODULES[@]}"; do
     if [[ "$path" == "$module"/* ]]; then
@@ -194,13 +195,9 @@ ensure_ts_deps() {
   if $ts_deps_ready; then
     return 0
   fi
-  local dir
-  for dir in "${TS_SHARED_DIRS[@]}" "${TS_SERVICES[@]}"; do
-    if [ ! -d "$dir/node_modules" ] || [ "$dir/bun.lockb" -nt "$dir/node_modules" ] ||
-      [ "$dir/bun.lock" -nt "$dir/node_modules" ]; then
-      (cd "$dir" && bun install --frozen-lockfile) || return 1
-    fi
-  done
+  if [ ! -d node_modules ] || [ bun.lock -nt node_modules ]; then
+    bun install --frozen-lockfile || return 1
+  fi
   (cd shared/clients/typescript/module-sdk && bun run build) || return 1
   ts_deps_ready=true
 }
