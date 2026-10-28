@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import type { AlertComposition, Scene } from "@woofx3/api";
+import { type AlertComposition, ENGINE_CAPABILITIES, type Scene, supportedEngineCapabilities } from "@woofx3/api";
+import type { SceneSnapshot } from "@woofx3/api/webhooks";
 import type * as scene from "@woofx3/db/scene.pb";
+import { RPC_METHODS } from "../src/api-session";
 import { compositionsRoutes } from "../src/routes/compositions";
 import { scenesRoutes } from "../src/routes/scenes";
 
@@ -33,6 +35,7 @@ function row(id: string, kind: string, overrides: Partial<scene.Scene> = {}): sc
 function fakeDb(rows: scene.Scene[]) {
   const byId = new Map(rows.map((r) => [r.id, r]));
   const calls = {
+    listed: [] as scene.ListScenesRequest[],
     created: [] as scene.CreateSceneRequest[],
     updated: [] as scene.UpdateSceneRequest[],
     deleted: [] as string[],
@@ -43,6 +46,7 @@ function fakeDb(rows: scene.Scene[]) {
       return byId.get(id) ?? null;
     },
     async listScenes(req: scene.ListScenesRequest) {
+      calls.listed.push(req);
       const scenes = rows.filter((r) => r.kind === (req.kind || "scene"));
       return { scenes, totalCount: scenes.length, page: 1, pageSize: scenes.length };
     },
@@ -133,5 +137,77 @@ describe("alert compositions", () => {
     const db = fakeDb(rows);
     expect(await route(compositionsRoutes, "deleteAlertComposition", db)("alert-1")).toEqual({ success: true });
     expect(db.calls.deleted).toEqual(["alert-1"]);
+  });
+});
+
+describe("scene snapshots", () => {
+  test("list every scene by name, past one page, and no alert", async () => {
+    // More scenes than getScenes' default page of 10, stored out of name order.
+    const scenes = Array.from({ length: 12 }, (_, i) => row(`scene-${String(12 - i).padStart(2, "0")}`, "scene"));
+    const db = fakeDb([...scenes, row("alert-1", "alert")]);
+
+    const listed = await route<{ scenes: SceneSnapshot[] }>(scenesRoutes, "listSceneSnapshots", db)();
+
+    expect(listed.scenes.map((s) => s.name)).toEqual(
+      Array.from({ length: 12 }, (_, i) => `scene-${String(i + 1).padStart(2, "0")}`)
+    );
+    expect(listed.scenes.every((s) => s.kind === "scene")).toBe(true);
+    expect(db.calls.listed).toEqual([{ page: 0, pageSize: 0, sortBy: "name", sortDesc: false, kind: "scene" }]);
+  });
+
+  test("refuse a list db-proxy answered only in part", async () => {
+    const db = fakeDb([row("scene-1", "scene")]);
+    db.listScenes = async () => ({ scenes: [row("scene-1", "scene")], totalCount: 2, page: 1, pageSize: 1 });
+
+    await expect(route(scenesRoutes, "listSceneSnapshots", db)()).rejects.toThrow("1 of 2 scenes");
+  });
+
+  test("read one scene as its whole stored record", async () => {
+    const stored = row("scene-1", "scene", {
+      name: "Starting soon",
+      description: "Before the stream",
+      widgetsJson: '[{"id":"w1"}]',
+      layoutJson: '{"width":1920,"height":1080,"backgroundColor":"#000"}',
+      behaviorsJson: '{"b1":{"kind":"fade"}}',
+      inputsJson: "[]",
+      createdByType: "MODULE",
+      createdByRef: "module-1",
+      createdAt: { seconds: 1_700_000_000n, nanos: 0 },
+      updatedAt: { seconds: 1_700_000_060n, nanos: 0 },
+    });
+    const db = fakeDb([stored]);
+
+    const found = await route<SceneSnapshot | null>(scenesRoutes, "getSceneSnapshot", db)("scene-1");
+
+    expect(found).toEqual({
+      id: "scene-1",
+      kind: "scene",
+      name: "Starting soon",
+      description: "Before the stream",
+      widgetsJson: '[{"id":"w1"}]',
+      layoutJson: '{"width":1920,"height":1080,"backgroundColor":"#000"}',
+      behaviorsJson: '{"b1":{"kind":"fade"}}',
+      inputsJson: "[]",
+      createdByType: "MODULE",
+      createdByRef: "module-1",
+      createdAt: "2023-11-14T22:13:20.000Z",
+      updatedAt: "2023-11-14T22:14:20.000Z",
+    });
+    const listed = await route<{ scenes: SceneSnapshot[] }>(scenesRoutes, "listSceneSnapshots", db)();
+    expect(listed.scenes).toEqual([found as SceneSnapshot]);
+  });
+
+  test("are null for an alert and for an unknown id", async () => {
+    const db = fakeDb([row("scene-1", "scene"), row("alert-1", "alert")]);
+    const get = route<SceneSnapshot | null>(scenesRoutes, "getSceneSnapshot", db);
+
+    expect(await get("alert-1")).toBeNull();
+    expect(await get("missing")).toBeNull();
+  });
+
+  test("are advertised as scenes.snapshots and reachable over RPC", () => {
+    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.scenesSnapshots);
+    expect(RPC_METHODS as readonly string[]).toContain("listSceneSnapshots");
+    expect(RPC_METHODS as readonly string[]).toContain("getSceneSnapshot");
   });
 });

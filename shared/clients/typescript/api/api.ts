@@ -45,6 +45,7 @@ import type {
   AlertSnapshot,
   ModuleResourceUsage,
   ResourceInstanceDefinition,
+  SceneSnapshot,
   TriggerDefinition,
   WidgetBehaviorKinds,
   WorkflowRunSnapshot,
@@ -2269,6 +2270,18 @@ export interface Woofx3EngineApi {
   // SceneSnapshot for reactive UI mirrors to consume.
   getScenes(query?: ScenesQuery): Promise<PaginatedScenes>;
   getScene(id: string): Promise<Scene | null>;
+  /**
+   * Every scene as its whole stored record (the `SceneSnapshot` the
+   * `scene.*` webhooks carry), ordered by name, in one read. Alert
+   * compositions are never listed; `listAlertCompositions` reads those.
+   * Requires the `scenes.snapshots` capability.
+   */
+  listSceneSnapshots(): Promise<{ scenes: SceneSnapshot[] }>;
+  /**
+   * One scene's whole stored record, or null when the id is unknown or names
+   * an alert composition. Requires the `scenes.snapshots` capability.
+   */
+  getSceneSnapshot(id: string): Promise<SceneSnapshot | null>;
 
   /**
    * Get all available widgets registered in the engine.

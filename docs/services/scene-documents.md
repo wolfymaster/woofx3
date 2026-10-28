@@ -420,8 +420,9 @@ Everything that serves or lists scenes reads only `scene` rows:
 
 | Reader | How |
 | --- | --- |
-| `ListScenes` (db) | Lists `scene` rows unless asked for `kind: "alert"`, so every caller that predates alerts sees scenes only. |
+| `ListScenes` (db) | Lists `scene` rows unless asked for `kind: "alert"`, so every caller that predates alerts sees scenes only. It answers with every row of the kind in one response: its page and sort fields are not applied. |
 | `getScenes`, `getScene`, `updateScene`, `deleteScene` (api) | Scenes only: `getScene` is null for an alert, `updateScene` and `deleteScene` refuse one. |
+| `listSceneSnapshots`, `getSceneSnapshot` (api) | Scenes only, each as the whole stored record the `scene.*` webhooks carry: the list is every scene ordered by name, and `getSceneSnapshot` is null for an alert (capability `scenes.snapshots`). |
 | Overlay tokens | `MintOverlayToken` refuses an alert, so no browser-source URL addresses one. |
 | `/scene/{id}?token=…` (sceneManager) | `loadScene` serves no page for a token that resolves to an alert; every other overlay route needs the session that page mints. |
 | `/preview/composition?token=…` (sceneManager) | Not an overlay: opens only with a token the api mints for a dashboard (`getCompositionPreviewUrl`), and plays what the dashboard posts to it, never a stored scene or alert. See [Composition preview](./composition-preview.md). |
