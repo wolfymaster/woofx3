@@ -36,6 +36,10 @@ interface RawSceneRow {
   created_by_type?: unknown;
   CreatedByRef?: unknown;
   created_by_ref?: unknown;
+  CreatedAt?: unknown;
+  created_at?: unknown;
+  UpdatedAt?: unknown;
+  updated_at?: unknown;
 }
 
 function buildSnapshot(ce: Record<string, unknown>): SceneSnapshot | null {
@@ -44,10 +48,8 @@ function buildSnapshot(ce: Record<string, unknown>): SceneSnapshot | null {
   if (id === "") {
     return null;
   }
-  // The `scenes` row carries no createdAt / updatedAt columns on the
-  // typed model today (gorm-managed but unprojected — same gap as
-  // `workflowToProto`). Synthesize ISO timestamps so consumers can
-  // upsert without conditionally sniffing for missing fields.
+  // A row from a db-proxy that predates scene timestamps carries none;
+  // consumers upsert by them, so it is stamped with the time it arrived.
   const now = new Date().toISOString();
   const widgetsJson = pickFirst(row.WidgetsJSON, row.widgets_json) || "[]";
   const layoutJson = pickFirst(row.LayoutJSON, row.layout_json) || "{}";
@@ -62,8 +64,8 @@ function buildSnapshot(ce: Record<string, unknown>): SceneSnapshot | null {
     inputsJson: pickFirst(row.InputsJSON, row.inputs_json) || "[]",
     createdByType: pickFirst(row.CreatedByType, row.created_by_type) || "USER",
     createdByRef: pickFirst(row.CreatedByRef, row.created_by_ref),
-    createdAt: now,
-    updatedAt: now,
+    createdAt: pickFirst(row.CreatedAt, row.created_at) || now,
+    updatedAt: pickFirst(row.UpdatedAt, row.updated_at) || now,
   };
 }
 

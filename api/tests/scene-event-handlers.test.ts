@@ -67,6 +67,28 @@ describe("parseSceneCreated", () => {
   });
 });
 
+describe("scene times", () => {
+  it("carries the times the scene was made and last written", () => {
+    const { event } = parseSceneUpdated(
+      snakeCe({
+        id: SCENE_ID,
+        name: "Main",
+        created_at: "2026-01-02T03:04:05.0000006Z",
+        updated_at: "2026-01-02T04:04:05.0000006Z",
+      })
+    );
+    expect(event?.scene.createdAt).toBe("2026-01-02T03:04:05.0000006Z");
+    expect(event?.scene.updatedAt).toBe("2026-01-02T04:04:05.0000006Z");
+  });
+
+  it("stamps a row that carries no times with when it arrived", () => {
+    const before = Date.now();
+    const { event } = parseSceneUpdated(snakeCe({ id: SCENE_ID, name: "Main" }));
+    expect(Date.parse(event?.scene.updatedAt ?? "")).toBeGreaterThanOrEqual(before);
+    expect(event?.scene.createdAt).toBe(event?.scene.updatedAt);
+  });
+});
+
 describe("parseSceneUpdated", () => {
   it("produces a SCENE_UPDATED event with snapshot fields", () => {
     const ce = snakeCe({
