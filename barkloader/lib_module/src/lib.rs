@@ -18,7 +18,7 @@ pub use reserved_subjects::load_contract as load_reserved_subjects_contract;
 pub mod resource_kind_ref;
 pub mod theme;
 
-pub use db_proxy::MarketplaceOrigin;
+pub use db_proxy::{InstallOrigin, MarketplaceOrigin};
 pub use manifest_validate::{InstallProvenance, SystemOnlyActions};
 pub use module_file::ModuleFileKind;
 pub use module_install::InstallOutcome;

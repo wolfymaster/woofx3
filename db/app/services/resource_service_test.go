@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -48,13 +49,29 @@ func newResourceTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(stmt).Error; err != nil {
 		t.Fatalf("exec ddl: %v", err)
 	}
+	// Only the columns a resource delete reads to find a module installed
+	// from the resource.
+	modules := `CREATE TABLE modules (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		upload_resource_id TEXT NULL
+	)`
+	if err := db.Exec(modules).Error; err != nil {
+		t.Fatalf("exec modules ddl: %v", err)
+	}
 	return db
 }
 
 func newResourceSvc(t *testing.T) client.ResourceService {
 	t.Helper()
+	svc, _ := newResourceSvcWithDB(t)
+	return svc
+}
+
+func newResourceSvcWithDB(t *testing.T) (client.ResourceService, *gorm.DB) {
+	t.Helper()
 	db := newResourceTestDB(t)
-	return NewResourceService(repository.NewResourceRepository(db))
+	return NewResourceService(repository.NewResourceRepository(db)), db
 }
 
 func strptr(s string) *string {
@@ -403,6 +420,47 @@ func TestUpdateResourceRejectsThumbnailOnFolder(t *testing.T) {
 		ThumbnailRepositoryKey: strptr("user/app/folder/thumbnail.jpg"),
 	})
 	assertTwirpCode(t, err, twirp.InvalidArgument)
+}
+
+func TestDeleteResourceIsRefusedWhileAModuleInstalledFromItIsInstalled(t *testing.T) {
+	svc, db := newResourceSvcWithDB(t)
+	ctx := context.Background()
+	archive := createUpload(t, svc, "shoutout.zip", models.ResourceKindCustomModule, nil)
+	folder := createFolder(t, svc, "clips", nil)
+	nested := createUpload(t, svc, "nested.zip", models.ResourceKindCustomModule, &folder.Id)
+	for _, m := range []struct{ id, name, resourceID string }{
+		{"m1", "Shoutout", archive.Id},
+		{"m2", "Nested", nested.Id},
+	} {
+		if err := db.Exec(`INSERT INTO modules (id, name, upload_resource_id) VALUES (?, ?, ?)`,
+			m.id, m.name, m.resourceID).Error; err != nil {
+			t.Fatalf("insert module: %v", err)
+		}
+	}
+
+	_, err := svc.DeleteResource(ctx, &client.DeleteResourceRequest{Id: archive.Id})
+	assertTwirpCode(t, err, twirp.FailedPrecondition)
+	if !strings.Contains(err.Error(), `module "Shoutout"`) || !strings.Contains(err.Error(), "uninstall") {
+		t.Fatalf("refusal = %q, want it to name the module and say to uninstall it", err.Error())
+	}
+	// A folder holding such an archive is refused whole.
+	_, err = svc.DeleteResource(ctx, &client.DeleteResourceRequest{Id: folder.Id})
+	assertTwirpCode(t, err, twirp.FailedPrecondition)
+	if _, err := svc.GetResource(ctx, &client.GetResourceRequest{Id: nested.Id}); err != nil {
+		t.Fatalf("the archive in a refused folder delete is gone: %v", err)
+	}
+
+	// Uninstalling removes the module row; the archive can then go.
+	if err := db.Exec(`DELETE FROM modules WHERE id = 'm1'`).Error; err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	resp, err := svc.DeleteResource(ctx, &client.DeleteResourceRequest{Id: archive.Id})
+	if err != nil {
+		t.Fatalf("DeleteResource after uninstall: %v", err)
+	}
+	if len(resp.RepositoryKeys) != 1 {
+		t.Fatalf("repository keys = %v, want the archive's one key", resp.RepositoryKeys)
+	}
 }
 
 func TestDeleteResourceReturnsSubtreeRepositoryKeys(t *testing.T) {

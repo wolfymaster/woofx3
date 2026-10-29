@@ -84,6 +84,10 @@ message Module {
   // marketplace or was installed before the engine recorded it.
   optional string marketplace_listing_id = 14;
   optional int32 marketplace_edition = 15;
+  // The stored resource (a module archive the user uploaded) this module
+  // was installed from. Unset for any other install. A module records at
+  // most one origin: this or the marketplace listing, never both.
+  optional string upload_resource_id = 16;
 }
 
 message ModuleFunction {
@@ -115,9 +119,13 @@ message CreateModuleRequest {
   // Manifest-local module id (manifest.json `id`). Required on install.
   string module_id = 9;
   // Set together for an install from the marketplace; see Module. A request
-  // that leaves them unset keeps what an existing row of the same name has.
+  // that names no origin keeps what an existing row of the same name has; one
+  // that names an origin replaces the other.
   optional string marketplace_listing_id = 10;
   optional int32 marketplace_edition = 11;
+  // Set for an install from a stored module archive; see Module. Never set
+  // together with the marketplace fields.
+  optional string upload_resource_id = 12;
 }
 
 message CreateModuleFunctionRequest {

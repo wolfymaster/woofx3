@@ -1,3 +1,4 @@
+import type { ModuleInstallSource } from "@woofx3/api";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { WebhookClient } from "./webhook-client";
 
@@ -10,8 +11,21 @@ import type { WebhookClient } from "./webhook-client";
  * webhooks a dashboard sees do not depend on which one it called.
  */
 
-/** Where an install came from, echoed on the install webhooks the engine sends itself. */
-export type ModuleInstallSource = "marketplace";
+/**
+ * Where an install came from, as the install webhooks the engine sends itself
+ * name it. An upload also names the custom module resource it read.
+ */
+export type InstallEventOrigin =
+  | { source: Extract<ModuleInstallSource, "marketplace"> }
+  | { source: Extract<ModuleInstallSource, "upload">; uploadResourceId: string };
+
+/** An RPC argument that must be an array of strings, such as an approval list. */
+export function stringList(caller: string, field: string, value: unknown): string[] {
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
+    throw new Error(`${caller}: ${field} must be an array of strings`);
+  }
+  return value;
+}
 
 /** An installed module, as `getModuleByModuleKey` returns it. */
 export interface InstalledModuleRef {
@@ -30,7 +44,7 @@ export async function sendAlreadyInstalled(
   existing: InstalledModuleRef,
   moduleKey: string,
   clientId: string,
-  source?: ModuleInstallSource
+  origin?: InstallEventOrigin
 ): Promise<void> {
   if (!webhookClient) {
     return;
@@ -43,7 +57,7 @@ export async function sendAlreadyInstalled(
       version: existing.version,
       moduleKey,
       alreadyInstalled: true,
-      ...(source ? { source } : {}),
+      ...origin,
     },
     clientId || undefined
   );
@@ -57,7 +71,7 @@ export async function sendInstallFailed(
   webhookClient: WebhookClient | null,
   install: { moduleKey: string; name: string; version: string; error: string },
   clientId: string,
-  source?: ModuleInstallSource
+  origin?: InstallEventOrigin
 ): Promise<void> {
   if (!webhookClient) {
     return;
@@ -70,17 +84,19 @@ export async function sendInstallFailed(
       version: install.version,
       moduleKey: install.moduleKey,
       error: install.error,
-      ...(source ? { source } : {}),
+      ...origin,
     },
     clientId || undefined
   );
 }
 
-/** The marketplace listing an archive came from, recorded on the module row. */
-export interface MarketplaceOrigin {
-  listingId: string;
-  edition: number;
-}
+/**
+ * Where an archive came from, recorded on the module row: a marketplace
+ * listing and its edition, or the custom module resource it was read from.
+ */
+export type ArchiveOrigin =
+  | { kind: "marketplace"; listingId: string; edition: number }
+  | { kind: "upload"; resourceId: string };
 
 /**
  * Gives barkloader an archive to install under `moduleKey`. Barkloader
@@ -88,8 +104,8 @@ export interface MarketplaceOrigin {
  * `module.install_failed`; the message returned here only says it accepted
  * the upload.
  *
- * `marketplace` travels with the archive because barkloader writes the module
- * row only once the asynchronous install gets that far, so nothing here could
+ * `origin` travels with the archive because barkloader writes the module row
+ * only once the asynchronous install gets that far, so nothing here could
  * update the row afterwards without racing the install.
  */
 export async function handArchiveToBarkloader(
@@ -100,7 +116,7 @@ export async function handArchiveToBarkloader(
     fileName: string;
     clientId: string;
     moduleKey: string;
-    marketplace?: MarketplaceOrigin;
+    origin?: ArchiveOrigin;
   }
 ): Promise<string> {
   const formData = new FormData();
@@ -110,9 +126,12 @@ export async function handArchiveToBarkloader(
   );
   formData.append("client_id", archive.clientId);
   formData.append("module_key", archive.moduleKey);
-  if (archive.marketplace) {
-    formData.append("marketplace_listing_id", archive.marketplace.listingId);
-    formData.append("marketplace_edition", String(archive.marketplace.edition));
+  if (archive.origin?.kind === "marketplace") {
+    formData.append("marketplace_listing_id", archive.origin.listingId);
+    formData.append("marketplace_edition", String(archive.origin.edition));
+  }
+  if (archive.origin?.kind === "upload") {
+    formData.append("upload_resource_id", archive.origin.resourceId);
   }
 
   const response = await barkloaderRequest("/functions", { method: "POST", body: formData });
@@ -121,7 +140,7 @@ export async function handArchiveToBarkloader(
     clientId: archive.clientId,
     moduleKey: archive.moduleKey,
     fileName: archive.fileName,
-    marketplace: archive.marketplace,
+    origin: archive.origin,
     message: json.message,
   });
   return json.message ?? "Module uploaded";

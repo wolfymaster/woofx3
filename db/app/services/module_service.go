@@ -69,6 +69,9 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 	if err := validateMarketplaceProvenance(req); err != nil {
 		return nil, err
 	}
+	if err := validateUploadProvenance(req); err != nil {
+		return nil, err
+	}
 
 	// Idempotency layer 1: same composite module_key already installed → return as-is.
 	if req.ModuleKey != "" {
@@ -124,6 +127,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 
 		MarketplaceListingID: req.MarketplaceListingId,
 		MarketplaceEdition:   req.MarketplaceEdition,
+		UploadResourceID:     req.UploadResourceId,
 	}
 
 	for _, f := range req.Functions {
@@ -183,6 +187,12 @@ func (s *moduleService) replaceModule(existing *models.Module, manifestModuleID 
 	if req.MarketplaceListingId != nil {
 		existing.MarketplaceListingID = req.MarketplaceListingId
 		existing.MarketplaceEdition = req.MarketplaceEdition
+		existing.UploadResourceID = nil
+	}
+	if req.UploadResourceId != nil {
+		existing.UploadResourceID = req.UploadResourceId
+		existing.MarketplaceListingID = nil
+		existing.MarketplaceEdition = nil
 	}
 
 	newManifestIDs := make(map[string]bool, len(req.Functions))
@@ -843,6 +853,22 @@ func validateMarketplaceProvenance(req *client.CreateModuleRequest) error {
 	return nil
 }
 
+// validateUploadProvenance refuses a blank or malformed upload resource id,
+// and one sent together with marketplace provenance: an install comes from
+// one place.
+func validateUploadProvenance(req *client.CreateModuleRequest) error {
+	if req.UploadResourceId == nil {
+		return nil
+	}
+	if req.MarketplaceListingId != nil {
+		return twirp.InvalidArgumentError("upload_resource_id", "is never set together with marketplace_listing_id")
+	}
+	if _, err := uuid.Parse(*req.UploadResourceId); err != nil {
+		return twirp.InvalidArgumentError("upload_resource_id", "invalid UUID format")
+	}
+	return nil
+}
+
 // installedModule finds the row an install replaces. A module's identity is
 // its manifest id, which stays the same across versions and marketplace
 // editions (a later edition may rename the module); the name is display only.
@@ -956,6 +982,7 @@ func moduleToProto(m *models.Module) *client.Module {
 
 		MarketplaceListingId: m.MarketplaceListingID,
 		MarketplaceEdition:   m.MarketplaceEdition,
+		UploadResourceId:     m.UploadResourceID,
 	}
 }
 
@@ -1174,10 +1201,12 @@ func (s *moduleService) CompleteModuleInstall(ctx context.Context, req *client.C
 	author, description := "Unknown", ""
 	taxonomy := []string{}
 	modulePrefix := ""
+	var origin map[string]any
 	if moduleID, err := uuid.Parse(req.ModuleId); err == nil {
 		if m, err := s.repo.GetByID(moduleID); err == nil && m != nil {
 			author, taxonomy, description = moduleCatalogFields(m.Manifest)
 			modulePrefix = m.ModuleID
+			origin = moduleInstallOrigin(m)
 		}
 	}
 	if modulePrefix == "" {
@@ -1185,23 +1214,27 @@ func (s *moduleService) CompleteModuleInstall(ctx context.Context, req *client.C
 	}
 
 	if s.publisher != nil {
+		data := map[string]interface{}{
+			"module_id":     req.ModuleId,
+			"module_prefix": modulePrefix,
+			"module_name":   req.ModuleName,
+			"module_key":    moduleKey,
+			"version":       req.Version,
+			"status":        req.Status,
+			"error":         req.Error,
+			"author":        author,
+			"taxonomy":      taxonomy,
+			"description":   description,
+		}
+		for key, value := range origin {
+			data[key] = value
+		}
 		s.publisher.Publish(workers.PublishOptions{
-			ClientID:   clientID,
-			EntityType: "module",
-			EntityID:   req.ModuleId,
-			Operation:  operation,
-			Data: map[string]interface{}{
-				"module_id":     req.ModuleId,
-				"module_prefix": modulePrefix,
-				"module_name":   req.ModuleName,
-				"module_key":    moduleKey,
-				"version":       req.Version,
-				"status":        req.Status,
-				"error":         req.Error,
-				"author":        author,
-				"taxonomy":      taxonomy,
-				"description":   description,
-			},
+			ClientID:        clientID,
+			EntityType:      "module",
+			EntityID:        req.ModuleId,
+			Operation:       operation,
+			Data:            data,
 			AutoAcknowledge: true,
 		})
 	}
@@ -1210,6 +1243,30 @@ func (s *moduleService) CompleteModuleInstall(ctx context.Context, req *client.C
 		Code:    client.ResponseStatus_OK,
 		Message: fmt.Sprintf("Module install %s notification sent", operation),
 	}, nil
+}
+
+// Install sources an install event names. Must match ModuleInstallSource in
+// shared/clients/typescript/api/webhooks.ts.
+const (
+	moduleInstallSourceMarketplace = "marketplace"
+	moduleInstallSourceUpload      = "upload"
+)
+
+// moduleInstallOrigin is the part of an install event saying where the
+// installed module came from, read off its row: `source`, plus
+// `upload_resource_id` for an upload. Nil for a module with no recorded
+// origin.
+func moduleInstallOrigin(m *models.Module) map[string]any {
+	if m.UploadResourceID != nil {
+		return map[string]any{
+			"source":             moduleInstallSourceUpload,
+			"upload_resource_id": *m.UploadResourceID,
+		}
+	}
+	if m.MarketplaceListingID != nil {
+		return map[string]any{"source": moduleInstallSourceMarketplace}
+	}
+	return nil
 }
 
 // resolveResourceDisplayName looks up the human-readable `name` of an

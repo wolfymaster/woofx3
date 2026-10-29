@@ -8,6 +8,7 @@
 //!   `PUT  /assets/upload/{token}`    send the bytes (relayed grants)
 //!   `POST /assets/process`           derive a thumbnail, asynchronously
 //!   `DELETE /assets/resource`        purge one resource's stored bytes
+//!   `GET  /assets/custom-module`    read back a stored custom module archive
 //!
 //! The upload-url response is deliberately identical whichever storage
 //! backend is live. On S3 the `uploadUrl` is a genuine presigned PUT
@@ -22,8 +23,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use actix_web::error::PayloadError;
 use actix_web::http::header;
-use actix_web::web::{Bytes, Data, Json, Path, Payload, ServiceConfig};
-use actix_web::{HttpRequest, HttpResponse, delete, post, put};
+use actix_web::web::{Bytes, Data, Json, Path, Payload, Query, ServiceConfig};
+use actix_web::{HttpRequest, HttpResponse, delete, get, post, put};
 use futures_util::{Stream, StreamExt};
 use lib_repository::{
     CreateFileRequest, Repository, RepositoryImpl, UploadEndpoint, UploadRequest,
@@ -758,6 +759,61 @@ async fn delete_resource_handler(
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomModuleQuery {
+    /// The module archive resource's `repository_key` exactly as stored.
+    repository_key: String,
+}
+
+/// The bytes of one stored module archive, for the api to install from.
+///
+/// Behind the service key, unlike the public asset route that refuses these
+/// keys, and limited to them: it reads back what was uploaded to be
+/// installed, not any stored object.
+#[get("/assets/custom-module")]
+async fn custom_module_handler(
+    ctx: Data<AppContext>,
+    query: Query<CustomModuleQuery>,
+) -> HttpResponse {
+    read_custom_module(&ctx.repository.current(), &query.repository_key).await
+}
+
+async fn read_custom_module(repository: &RepositoryImpl, repository_key: &str) -> HttpResponse {
+    if !repository_key.starts_with(CUSTOM_MODULE_PREFIX) {
+        return HttpResponse::BadRequest().json(error_body(&format!(
+            "repositoryKey must start with {CUSTOM_MODULE_PREFIX}"
+        )));
+    }
+    if let Err(message) = resource_directory_for_key(repository_key) {
+        return HttpResponse::BadRequest().json(error_body(&message));
+    }
+    match repository.exists(repository_key).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return HttpResponse::NotFound()
+                .json(error_body("no module archive is stored at that key"));
+        }
+        Err(err) => {
+            error!(
+                "Failed to look up module archive {}: {}",
+                repository_key, err
+            );
+            return HttpResponse::InternalServerError()
+                .json(error_body("failed to read module archive"));
+        }
+    }
+    match repository.read_file(repository_key).await {
+        Ok(bytes) => HttpResponse::Ok()
+            .content_type("application/zip")
+            .body(bytes),
+        Err(err) => {
+            error!("Failed to read module archive {}: {}", repository_key, err);
+            HttpResponse::InternalServerError().json(error_body("failed to read module archive"))
+        }
+    }
+}
+
 /// The upload itself, guarded by its grant token rather than the service key:
 /// the browser sends it, through the scene manager's relay.
 pub fn configure_public(cfg: &mut ServiceConfig) {
@@ -769,6 +825,7 @@ pub fn configure(cfg: &mut ServiceConfig) {
     cfg.service(poster_upload_url_handler);
     cfg.service(process_handler);
     cfg.service(delete_resource_handler);
+    cfg.service(custom_module_handler);
 }
 
 #[cfg(test)]
@@ -881,6 +938,42 @@ mod tests {
         use actix_web::test as actix_test;
         use futures_util::stream;
         use lib_repository::{FileRepository, FileRepositoryConfig};
+
+        #[actix_web::test]
+        async fn a_stored_custom_module_reads_back_and_nothing_else_does() {
+            let root = tempfile::tempdir().expect("tempdir");
+            let repo = file_repo(root.path());
+            let archive_key = "user/custom-modules/res-1/shoutout.zip";
+            for key in [archive_key, KEY] {
+                let request = CreateFileRequest {
+                    content: Some(b"PK\x03\x04archive".to_vec()),
+                    extension: Some("zip".to_string()),
+                    file_name: key.to_string(),
+                };
+                let mut failed = Vec::new();
+                repo.create([request], &mut failed).await.expect("seed");
+                assert!(failed.is_empty());
+            }
+
+            let response = read_custom_module(&repo, archive_key).await;
+            assert_eq!(response.status().as_u16(), 200);
+            let body = actix_web::body::to_bytes(response.into_body())
+                .await
+                .expect("body");
+            assert_eq!(&body[..], b"PK\x03\x04archive");
+
+            for (key, status) in [
+                (KEY, 400),
+                ("user/custom-modules/../res-1/clip.png", 400),
+                ("user/custom-modules/res-2/missing.zip", 404),
+            ] {
+                assert_eq!(
+                    read_custom_module(&repo, key).await.status().as_u16(),
+                    status,
+                    "{key:?}"
+                );
+            }
+        }
 
         const SECRET: &str = "upload-test-secret";
         const NOW: i64 = 1_700_000_000;

@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use lib_repository::Repository;
 
-use super::db_proxy::MarketplaceOrigin;
+use super::db_proxy::InstallOrigin;
 use super::db_proxy_client::{HttpDbProxyClient, ModuleDbProxy};
 use super::manifest_validate::{InstallProvenance, SystemOnlyActions};
 use super::module_file::ModuleFile;
@@ -126,8 +126,8 @@ where
     }
 
     /// The provenance-free entry point, because every caller but the
-    /// bundled-module reconciler is a user upload. `marketplace` names the
-    /// listing the upload came from, when it came from the marketplace.
+    /// bundled-module reconciler is a user upload. `origin` names the
+    /// marketplace listing or stored resource the upload came from, if any.
     #[allow(clippy::too_many_arguments)]
     pub async fn install(
         &self,
@@ -135,7 +135,7 @@ where
         db_proxy_url: Option<&str>,
         composite_module_key: &str,
         client_id: &str,
-        marketplace: Option<&MarketplaceOrigin>,
+        origin: Option<&InstallOrigin>,
     ) -> Result<InstallOutcome> {
         self.install_with_provenance(
             archive_key,
@@ -143,7 +143,7 @@ where
             composite_module_key,
             client_id,
             InstallProvenance::User,
-            marketplace,
+            origin,
         )
         .await
     }
@@ -157,7 +157,7 @@ where
         composite_module_key: &str,
         client_id: &str,
         provenance: InstallProvenance,
-        marketplace: Option<&MarketplaceOrigin>,
+        origin: Option<&InstallOrigin>,
     ) -> Result<InstallOutcome> {
         let manifest = self
             .stored_manifest
@@ -175,7 +175,7 @@ where
             composite_module_key,
             client_id,
             provenance,
-            marketplace,
+            origin,
             &self.system_only_actions,
         )
         .await

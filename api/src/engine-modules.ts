@@ -29,32 +29,39 @@ export interface EngineModule {
    * has no manifest field. A consumer that never sees this sees no kinds.
    */
   manifest: Record<string, unknown> | null;
-  /** The marketplace listing the module was installed from; see `MarketplaceProvenance`. */
+  /** Where the module was installed from; see `ModuleProvenance`. */
   marketplaceListingId?: string;
   marketplaceEdition?: number;
+  uploadResourceId?: string;
 }
 
 /**
- * Which marketplace listing, and which edition of it, an installed module came
- * from. Both are absent for a module that did not come from the marketplace
- * or was installed before the engine recorded it.
+ * Where an installed module came from: a marketplace listing and its edition,
+ * or the custom module resource it was installed from. All are absent for a
+ * module installed any other way, or before the engine recorded it; at most
+ * one origin is present.
  */
-export interface MarketplaceProvenance {
+export interface ModuleProvenance {
   marketplaceListingId?: string;
   marketplaceEdition?: number;
+  uploadResourceId?: string;
 }
 
-/** The module row's marketplace provenance, with unset fields left out rather than null. */
-export function marketplaceProvenance(row: {
+/** The module row's provenance, with unset fields left out rather than null. */
+export function moduleProvenance(row: {
   marketplaceListingId?: string | null;
   marketplaceEdition?: number | null;
-}): MarketplaceProvenance {
-  const provenance: MarketplaceProvenance = {};
+  uploadResourceId?: string | null;
+}): ModuleProvenance {
+  const provenance: ModuleProvenance = {};
   if (row.marketplaceListingId) {
     provenance.marketplaceListingId = row.marketplaceListingId;
   }
   if (row.marketplaceEdition !== undefined && row.marketplaceEdition !== null) {
     provenance.marketplaceEdition = row.marketplaceEdition;
+  }
+  if (row.uploadResourceId) {
+    provenance.uploadResourceId = row.uploadResourceId;
   }
   return provenance;
 }
@@ -94,7 +101,7 @@ export async function listEngineModules(db: DbClient, logger: SharedLogger): Pro
       moduleId: m.moduleId ?? "",
       moduleKey: m.moduleKey ?? "",
       manifest: parseManifest(m.manifest),
-      ...marketplaceProvenance(m),
+      ...moduleProvenance(m),
     }));
   logger.info("Listed engine modules", { count: result.length });
   return result;

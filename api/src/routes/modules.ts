@@ -12,12 +12,7 @@ import {
   type WidgetThemes,
 } from "@woofx3/api";
 import type { SharedLogger } from "@woofx3/common/logging";
-import {
-  type EngineModule,
-  listEngineModules,
-  type MarketplaceProvenance,
-  marketplaceProvenance,
-} from "../engine-modules";
+import { type EngineModule, listEngineModules, type ModuleProvenance, moduleProvenance } from "../engine-modules";
 import { isSha256Hex } from "../guarded-download";
 import { handArchiveToBarkloader, sendAlreadyInstalled, sendInstallFailed } from "../module-install";
 import { declaredResourceKinds } from "../resource-kinds";
@@ -329,7 +324,7 @@ export const modulesRoutes = routeModule({
         author: string;
         isInstalled: boolean;
         iconUrl: string;
-      } & MarketplaceProvenance)
+      } & ModuleProvenance)
     | null
   > {
     const found = await this.db.getModuleByName(id);
@@ -344,7 +339,7 @@ export const modulesRoutes = routeModule({
       author,
       isInstalled: true,
       iconUrl: "",
-      ...marketplaceProvenance(found),
+      ...moduleProvenance(found),
     };
   },
 

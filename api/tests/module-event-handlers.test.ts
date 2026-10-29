@@ -593,6 +593,20 @@ describe("parseModuleInstalled", () => {
     const result = parseModuleInstalled({ data: {} });
     expect(result.event.moduleName).toBe("");
     expect(result.event.taxonomy).toEqual([]);
+    expect(result.event).not.toHaveProperty("source");
+  });
+
+  test("carries where the module came from", () => {
+    const upload = parseModuleInstalled({ data: { source: "upload", upload_resource_id: "res-1" } });
+    expect(upload.event).toMatchObject({ source: "upload", uploadResourceId: "res-1" });
+
+    const marketplace = parseModuleInstalled({ data: { source: "marketplace" } });
+    expect(marketplace.event.source).toBe("marketplace");
+    expect(marketplace.event).not.toHaveProperty("uploadResourceId");
+
+    for (const data of [{ source: "upload" }, { source: "somewhere" }]) {
+      expect(parseModuleInstalled({ data }).event).not.toHaveProperty("source");
+    }
   });
 });
 

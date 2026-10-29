@@ -7,7 +7,7 @@ use tracing::{error, info, warn};
 
 use super::canonical_id::CanonicalId;
 use super::db_proxy::{
-    CreateModuleFunctionJson, MarketplaceOrigin, ModuleFunctionRecord,
+    CreateModuleFunctionJson, InstallOrigin, MarketplaceOrigin, ModuleFunctionRecord,
     provenance_from_created_by_type,
 };
 use super::db_proxy_client::ModuleDbProxy;
@@ -254,6 +254,8 @@ struct PreviousInstall {
     #[serde(default)]
     marketplace_edition: Option<i32>,
     #[serde(default)]
+    upload_resource_id: Option<String>,
+    #[serde(default)]
     functions: Vec<ModuleFunctionRecord>,
 }
 
@@ -303,12 +305,19 @@ impl PreviousInstall {
         (self.provenance, client_id)
     }
 
-    fn marketplace(&self) -> Option<MarketplaceOrigin> {
+    fn origin(&self) -> Option<InstallOrigin> {
+        if let Some(resource_id) = &self.upload_resource_id {
+            return Some(InstallOrigin::Upload {
+                resource_id: resource_id.clone(),
+            });
+        }
         match (&self.marketplace_listing_id, self.marketplace_edition) {
-            (Some(listing_id), Some(edition)) => Some(MarketplaceOrigin {
-                listing_id: listing_id.clone(),
-                edition,
-            }),
+            (Some(listing_id), Some(edition)) => {
+                Some(InstallOrigin::Marketplace(MarketplaceOrigin {
+                    listing_id: listing_id.clone(),
+                    edition,
+                }))
+            }
             _ => None,
         }
     }
@@ -634,7 +643,7 @@ async fn restore_previous_install(
             &previous.module_key,
             client_id,
             provenance,
-            previous.marketplace().as_ref(),
+            previous.origin().as_ref(),
         )
         .await
         .map_err(|e| anyhow!("restore {} {}: {}", previous.module_id, previous.version, e))?;
@@ -662,7 +671,7 @@ struct SagaState<'a, R: Repository> {
     client_id: &'a str,
     archive_key: &'a str,
     provenance: InstallProvenance,
-    marketplace: Option<&'a MarketplaceOrigin>,
+    origin: Option<&'a InstallOrigin>,
     fn_rows: Vec<CreateModuleFunctionJson>,
     asset_keys: Vec<String>,
     asset_repo_keys: HashMap<String, String>,
@@ -798,7 +807,7 @@ impl<'a, R: Repository> SagaState<'a, R> {
                 self.composite_module_key,
                 self.client_id,
                 self.provenance,
-                self.marketplace,
+                self.origin,
             )
             .await?;
 
@@ -1520,8 +1529,8 @@ pub async fn run_install<R: Repository>(
 /// pairing every install uses — bundled modules are ordinary modules, and
 /// forking how their resources are keyed would defeat the point.
 ///
-/// `marketplace` is the listing the archive came from, recorded on the module
-/// row; `None` for any other install.
+/// `origin` is the marketplace listing or stored resource the archive came
+/// from, recorded on the module row; `None` for any other install.
 ///
 /// An install never removes anything the installed version registered until
 /// every step has succeeded: resources the new manifest drops are archived
@@ -1541,7 +1550,7 @@ pub async fn run_install_with_provenance<R: Repository>(
     composite_module_key: &str,
     client_id: &str,
     provenance: InstallProvenance,
-    marketplace: Option<&MarketplaceOrigin>,
+    origin: Option<&InstallOrigin>,
     system_only: &SystemOnlyActions,
 ) -> Result<InstallOutcome> {
     // `module_key` here is the manifest id (used for file paths and as the
@@ -1632,7 +1641,7 @@ pub async fn run_install_with_provenance<R: Repository>(
         client_id,
         archive_key,
         provenance,
-        marketplace,
+        origin,
         fn_rows: Vec::with_capacity(manifest.functions.len()),
         asset_keys: Vec::with_capacity(manifest.assets.len()),
         asset_repo_keys: HashMap::new(),
@@ -1805,42 +1814,49 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_marketplace_origin_reaches_the_module_row() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let repo = FileRepository::new(FileRepositoryConfig {
-            destination: dir.path().to_path_buf(),
-        });
-        repo.setup().expect("setup");
+    async fn the_install_origin_reaches_the_module_row() {
+        let origins = [
+            InstallOrigin::Marketplace(MarketplaceOrigin {
+                listing_id: "cozy-v2".to_string(),
+                edition: 2,
+            }),
+            InstallOrigin::Upload {
+                resource_id: "00000000-0000-0000-0000-0000000000a1".to_string(),
+            },
+        ];
+        for origin in origins {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let repo = FileRepository::new(FileRepositoryConfig {
+                destination: dir.path().to_path_buf(),
+            });
+            repo.setup().expect("setup");
 
-        let (manifest, manifest_json) = system_manifest("cozy");
-        let files = vec![ModuleFile::new(
-            "manifest.json".into(),
-            ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
-            manifest_json.clone(),
-        )];
-        let mid = manifest.compute_module_key(&manifest_json);
-        let origin = MarketplaceOrigin {
-            listing_id: "cozy-v2".to_string(),
-            edition: 2,
-        };
+            let (manifest, manifest_json) = system_manifest("cozy");
+            let files = vec![ModuleFile::new(
+                "manifest.json".into(),
+                ModuleFileKind::MANIFEST(ModuleValidManifestKind::Json),
+                manifest_json.clone(),
+            )];
+            let mid = manifest.compute_module_key(&manifest_json);
 
-        let db_proxy = FakeDbProxyClient::new();
-        run_install_with_provenance(
-            &manifest,
-            &files,
-            &repo,
-            "archives/cozy.zip",
-            Some(&db_proxy),
-            &mid,
-            "client-1",
-            InstallProvenance::User,
-            Some(&origin),
-            &SystemOnlyActions::default(),
-        )
-        .await
-        .expect("marketplace install succeeds");
+            let db_proxy = FakeDbProxyClient::new();
+            run_install_with_provenance(
+                &manifest,
+                &files,
+                &repo,
+                "archives/cozy.zip",
+                Some(&db_proxy),
+                &mid,
+                "client-1",
+                InstallProvenance::User,
+                Some(&origin),
+                &SystemOnlyActions::default(),
+            )
+            .await
+            .expect("install succeeds");
 
-        assert_eq!(db_proxy.create_module_marketplace(), Some(origin));
+            assert_eq!(db_proxy.create_module_origin(), Some(origin));
+        }
     }
 
     #[tokio::test]

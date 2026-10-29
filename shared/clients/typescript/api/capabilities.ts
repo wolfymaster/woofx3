@@ -107,6 +107,12 @@ export const ENGINE_CAPABILITIES = {
    */
   modulesMarketplaceInstall: "modules.marketplaceInstall",
   /**
+   * Installing a module from a custom module archive stored as a resource
+   * (`requestUploadUrl` with kind `custom_module`), with the same approval
+   * checks as a marketplace install: `installModuleFromResource`.
+   */
+  modulesResourceInstall: "modules.resourceInstall",
+  /**
    * Marketplace catalog reads through the engine, answered with the
    * marketplace's JSON unchanged: `marketplaceSearch`, `marketplaceCounts`,
    * `marketplaceGetListing`, `marketplaceGetAuthor`, `marketplaceQuote`.

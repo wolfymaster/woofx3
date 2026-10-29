@@ -16,7 +16,8 @@ use lib_module::db_proxy_client::{HttpDbProxyClient, ModuleDbProxy};
 use lib_module::module_delete::{DeleteError, notify_delete, resolve_module, run_delete_resolved};
 use lib_module::registry_loader;
 use lib_module::{
-    MarketplaceOrigin, ModuleFileKind, ModuleService, ModuleServiceConfig, SandboxRegistryRefresher,
+    InstallOrigin, MarketplaceOrigin, ModuleFileKind, ModuleService, ModuleServiceConfig,
+    SandboxRegistryRefresher,
 };
 
 #[derive(Serialize)]
@@ -91,6 +92,41 @@ fn marketplace_origin(
     }))
 }
 
+/// Where an upload says its archive came from: the marketplace fields (see
+/// `marketplace_origin`) or `upload_resource_id`, the stored resource the
+/// engine read the archive from. A blank field counts as absent. Both at
+/// once, or a resource id that is not a plain id, is refused: an install
+/// records one origin, completely.
+fn install_origin(
+    listing_id: Option<&str>,
+    edition: Option<&str>,
+    upload_resource_id: Option<&str>,
+) -> Result<Option<InstallOrigin>, String> {
+    let marketplace = marketplace_origin(listing_id, edition)?;
+    let upload_resource_id = upload_resource_id.map(str::trim).filter(|s| !s.is_empty());
+    match (marketplace, upload_resource_id) {
+        (Some(_), Some(_)) => Err(
+            "upload_resource_id was sent together with marketplace_listing_id; an install has one origin"
+                .to_string(),
+        ),
+        (Some(listing), None) => Ok(Some(InstallOrigin::Marketplace(listing))),
+        (None, Some(resource_id)) => {
+            let plain = resource_id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-');
+            if !plain {
+                return Err(format!(
+                    "upload_resource_id must be a resource id, got '{resource_id}'"
+                ));
+            }
+            Ok(Some(InstallOrigin::Upload {
+                resource_id: resource_id.to_string(),
+            }))
+        }
+        (None, None) => Ok(None),
+    }
+}
+
 #[post("/functions")]
 #[tracing::instrument(name = "POST /functions", skip_all, fields(force = query.force.unwrap_or(false)))]
 async fn upload_handler(
@@ -108,17 +144,18 @@ async fn upload_handler(
     let metadata: FileMetadata = file_service.process_upload(multipart).await?;
 
     let expected_module_key = metadata.module_key.clone().unwrap_or_default();
-    let marketplace = marketplace_origin(
+    let origin = install_origin(
         metadata.marketplace_listing_id.as_deref(),
         metadata.marketplace_edition.as_deref(),
+        metadata.upload_resource_id.as_deref(),
     )
     .map_err(actix_web::error::ErrorBadRequest)?;
 
     let mut request_context = {
         let client_id = metadata.client_id.clone().unwrap_or_default();
         info!(
-            "Upload form fields: client_id={:?} module_key={:?} marketplace={:?}",
-            metadata.client_id, metadata.module_key, marketplace
+            "Upload form fields: client_id={:?} module_key={:?} origin={:?}",
+            metadata.client_id, metadata.module_key, origin
         );
         Some(db_proxy::RequestContext {
             client_id,
@@ -427,7 +464,7 @@ async fn upload_handler(
                 ctx.db_proxy_url.as_deref(),
                 &computed_module_key,
                 &upload_client_id,
-                marketplace.as_ref(),
+                origin.as_ref(),
             )
             .await
         {
@@ -1044,6 +1081,28 @@ mod tests {
             listing_id: listing_id.to_string(),
             edition,
         })
+    }
+
+    #[test]
+    fn an_upload_names_at_most_one_origin() {
+        assert_eq!(install_origin(None, None, None), Ok(None));
+        assert_eq!(install_origin(None, None, Some(" ")), Ok(None));
+        assert_eq!(
+            install_origin(Some("cozy-v2"), Some("2"), None),
+            Ok(Some(InstallOrigin::Marketplace(MarketplaceOrigin {
+                listing_id: "cozy-v2".to_string(),
+                edition: 2,
+            })))
+        );
+        assert_eq!(
+            install_origin(None, None, Some("0b7c-11")),
+            Ok(Some(InstallOrigin::Upload {
+                resource_id: "0b7c-11".to_string(),
+            }))
+        );
+        assert!(install_origin(Some("cozy"), Some("1"), Some("0b7c-11")).is_err());
+        assert!(install_origin(None, None, Some("../x")).is_err());
+        assert!(install_origin(None, Some("2"), Some("0b7c-11")).is_err());
     }
 
     #[test]

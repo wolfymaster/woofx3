@@ -78,6 +78,8 @@ export interface Module {
    */
   marketplaceListingId?: string;
   marketplaceEdition?: number;
+  /** The custom module resource the module was installed from; see `EngineModuleSummary.uploadResourceId`. */
+  uploadResourceId?: string;
 }
 
 export interface ModuleSetting {
@@ -1295,6 +1297,13 @@ export interface EngineModuleSummary {
   /** See `Module.marketplaceListingId`. */
   marketplaceListingId?: string;
   marketplaceEdition?: number;
+  /**
+   * The custom module resource the module was installed from with
+   * `installModuleFromResource`. Absent for any other install. At most one of
+   * this and `marketplaceListingId` is set. The resource cannot be deleted
+   * while the module is installed.
+   */
+  uploadResourceId?: string;
 }
 
 // ==================== Stream / workflow response types ====================
@@ -1880,6 +1889,23 @@ export interface Woofx3EngineApi {
    * Capability `modules.marketplaceInstall`.
    */
   installMarketplaceListing(listingId: string, request: MarketplaceInstallRequest): Promise<MarketplaceInstallResult>;
+
+  /**
+   * Install a module from a custom module archive the caller uploaded with
+   * `requestUploadUrl` (kind `custom_module`) and completed. The engine reads
+   * the archive from its own storage, computes its key
+   * (`{manifest id}:{manifest version}:{first 7 hex of sha256}`), refuses it
+   * when its manifest declares permissions or `local[]` endpoints outside the
+   * approval, and hands it to barkloader. Resolves with the key at once; the
+   * outcome arrives as `module.installed` or `module.install_failed` keyed by
+   * it, with `source: "upload"` and `uploadResourceId`. The resource cannot be
+   * deleted while the module is installed. `clientId` is injected by the
+   * session. Capability `modules.resourceInstall`.
+   */
+  installModuleFromResource(
+    resourceId: string,
+    request: { approvedPermissions: string[]; approvedLocalEndpoints: string[] }
+  ): Promise<{ moduleKey: string }>;
 
   /**
    * A module or theme listing's current build, read from its verified
