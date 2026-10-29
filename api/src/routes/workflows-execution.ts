@@ -5,8 +5,12 @@ import {
   type TriggerWorkflowResponse,
   type UnmetTriggerCondition,
   WORKFLOW_RUN_ALERT_LIMIT,
+  WORKFLOW_RUN_SNAPSHOT_DEFAULT_LIMIT,
+  WORKFLOW_RUN_SNAPSHOT_MAX_LIMIT,
   type WorkflowRunDetail,
+  type WorkflowRunSnapshotsQuery,
 } from "@woofx3/api";
+import type { WorkflowRunSnapshot } from "@woofx3/api/webhooks";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
 import type { DbClient } from "../db-client";
@@ -74,6 +78,17 @@ function validateTriggerData(triggerData: unknown): Record<string, unknown> {
     throw new Error(`options.triggerData is ${bytes} bytes, over the ${MAX_TRIGGER_DATA_BYTES} byte limit`);
   }
   return triggerData as Record<string, unknown>;
+}
+
+/** `query.limit` checked against WORKFLOW_RUN_SNAPSHOT_MAX_LIMIT; a value out of range is a caller bug, not a request to clamp. */
+function runSnapshotLimit(limit: number | undefined): number {
+  if (limit === undefined) {
+    return WORKFLOW_RUN_SNAPSHOT_DEFAULT_LIMIT;
+  }
+  if (!Number.isInteger(limit) || limit < 1 || limit > WORKFLOW_RUN_SNAPSHOT_MAX_LIMIT) {
+    throw new Error(`limit must be a whole number from 1 to ${WORKFLOW_RUN_SNAPSHOT_MAX_LIMIT}`);
+  }
+  return limit;
 }
 
 function describeUnmet(unmet: UnmetTriggerCondition[]): string {
@@ -417,6 +432,28 @@ export const workflowsExecutionRoutes = routeModule({
       steps: (exec.steps ?? []).map((step) => stepSnapshotFromRow(exec.id, step)),
       alerts: alerts.alerts.map(alertSnapshotFromRow),
     };
+  },
+
+  /**
+   * Recorded runs, newest first by start time, each the snapshot its
+   * `workflow.run.*` callback carries. A failed read rejects: unlike the
+   * `getWorkflowRuns` strip, a client merging this with the callbacks must not
+   * mistake an outage for a workflow that never ran.
+   */
+  async listWorkflowRunSnapshots(query: WorkflowRunSnapshotsQuery): Promise<WorkflowRunSnapshot[]> {
+    const limit = runSnapshotLimit(query.limit);
+    const response = await this.db.listWorkflowExecutions({
+      workflowId: query.workflowId ?? "",
+      status: "",
+      startedBy: "",
+      from: protoscript.Timestamp.initialize(),
+      to: protoscript.Timestamp.initialize(),
+      page: 1,
+      pageSize: limit,
+      sortBy: "startedAt",
+      sortDesc: true,
+    });
+    return response.executions.map(runSnapshotFromRow);
   },
 
   /**

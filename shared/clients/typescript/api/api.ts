@@ -304,6 +304,22 @@ export interface WorkflowRunDetail {
 /** Most alerts `getWorkflowRun` returns for one run; a run fires a handful at most. */
 export const WORKFLOW_RUN_ALERT_LIMIT = 50;
 
+/** Arguments to `listWorkflowRunSnapshots`. Every field is optional. */
+export interface WorkflowRunSnapshotsQuery {
+  /** Only this workflow's runs. A workflow with no recorded runs lists none. */
+  workflowId?: string;
+  /** At most this many runs, 1 to WORKFLOW_RUN_SNAPSHOT_MAX_LIMIT. Default WORKFLOW_RUN_SNAPSHOT_DEFAULT_LIMIT. */
+  limit?: number;
+}
+
+export const WORKFLOW_RUN_SNAPSHOT_DEFAULT_LIMIT = 50;
+/**
+ * Most runs one `listWorkflowRunSnapshots` call returns. db-proxy reads every
+ * listed run's steps along with it, so the bound keeps one history read from
+ * costing a query per run without end.
+ */
+export const WORKFLOW_RUN_SNAPSHOT_MAX_LIMIT = 200;
+
 /**
  * Every trigger and action a workflow can use, and the module functions an
  * action can call, as `getWorkflowCatalog` returns them in one read. Triggers
@@ -2075,6 +2091,14 @@ export interface Woofx3EngineApi {
    * that id. Requires the `workflow.runDetail` capability.
    */
   getWorkflowRun(executionId: string): Promise<WorkflowRunDetail | null>;
+  /**
+   * Recorded runs as whole `WorkflowRunSnapshot`s, the shape the
+   * `workflow.run.recorded` and `workflow.run.updated` callbacks carry, newest
+   * first by start time. Rejects a `limit` out of range and a failed read
+   * rather than answering an empty list. Requires the `workflow.runSnapshots`
+   * capability.
+   */
+  listWorkflowRunSnapshots(query: WorkflowRunSnapshotsQuery): Promise<WorkflowRunSnapshot[]>;
   /**
    * Health of every enabled workflow the engine has loaded. Authoritative:
    * a client replaces its whole view with the answer, and any workflow not

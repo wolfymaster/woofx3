@@ -241,6 +241,11 @@ export const ENGINE_CAPABILITIES = {
   workflowViewerFacts: "workflow.viewerFacts",
   /** One recorded run with its steps' inputs, outputs and timings, and the alerts it fired: `getWorkflowRun`. */
   workflowRunDetail: "workflow.runDetail",
+  /**
+   * Recorded runs listed as the whole `WorkflowRunSnapshot` the run callbacks
+   * carry, newest first, by workflow or across all: `listWorkflowRunSnapshots`.
+   */
+  workflowRunSnapshots: "workflow.runSnapshots",
   /** The triggers, actions and module functions a workflow can use, in one read: `getWorkflowCatalog`. */
   workflowCatalog: "workflow.catalog",
   /**
