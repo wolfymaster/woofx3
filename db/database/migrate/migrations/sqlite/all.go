@@ -78,5 +78,6 @@ func All() []*gormigrate.Migration {
 		RevokeUngrantedCommandWildcards(),
 		DeclareSceneDatetimeColumns(),
 		DeclareWorkflowDatetimeColumns(),
+		AllowCustomModuleResourceKind(),
 	}
 }

@@ -55,7 +55,7 @@ func (s *resourceService) CreateResource(ctx context.Context, req *client.Create
 		return nil, twirp.InvalidArgumentError("kind", "use CreateFolder to create a folder")
 	}
 	if !models.ValidResourceKind(kind) {
-		return nil, twirp.InvalidArgumentError("kind", "must be image, video, audio, or other")
+		return nil, twirp.InvalidArgumentError("kind", "must be image, video, audio, other, or custom_module")
 	}
 	status := req.Status
 	if status == "" {

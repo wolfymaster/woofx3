@@ -16,7 +16,8 @@ import (
 // common_service_test.go with the `resources` table. Hand DDL, same
 // reason as the other service tests: the production gorm tags depend on
 // Postgres-only uuid_generate_v4(). The CHECK constraints mirror the
-// 0032_resources migration so the tests exercise the same guard rails
+// 0032_resources migration (with the kinds 0072 admits) so the tests
+// exercise the same guard rails
 // production gets.
 func newResourceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -35,7 +36,7 @@ func newResourceTestDB(t *testing.T) *gorm.DB {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		CONSTRAINT resources_kind_check
-			CHECK (kind IN ('image', 'video', 'audio', 'other', 'folder')),
+			CHECK (kind IN ('image', 'video', 'audio', 'other', 'folder', 'custom_module')),
 		CONSTRAINT resources_status_check
 			CHECK (status IN ('pending', 'ready', 'failed')),
 		CONSTRAINT resources_folder_has_no_bytes
@@ -261,6 +262,37 @@ func TestListResourcesFiltersByKindAndSearch(t *testing.T) {
 	}
 }
 
+func TestListResourcesLeavesModulesOutUnlessAskedFor(t *testing.T) {
+	svc := newResourceSvc(t)
+	ctx := context.Background()
+	createUpload(t, svc, "sunset.png", models.ResourceKindImage, nil)
+	createUpload(t, svc, "shoutout.zip", models.ResourceKindCustomModule, nil)
+
+	library, err := svc.ListResources(ctx, &client.ListResourcesRequest{})
+	if err != nil {
+		t.Fatalf("ListResources: %v", err)
+	}
+	if library.Total != 1 || library.Resources[0].Name != "sunset.png" {
+		t.Fatalf("a listing naming no kind returned %+v, want only sunset.png", library.Resources)
+	}
+
+	searched, err := svc.ListResources(ctx, &client.ListResourcesRequest{Search: "shout"})
+	if err != nil {
+		t.Fatalf("ListResources(search): %v", err)
+	}
+	if searched.Total != 0 {
+		t.Fatalf("a search naming no kind found %d module archives, want 0", searched.Total)
+	}
+
+	modules, err := svc.ListResources(ctx, &client.ListResourcesRequest{Kind: models.ResourceKindCustomModule})
+	if err != nil {
+		t.Fatalf("ListResources(kind custom_module): %v", err)
+	}
+	if modules.Total != 1 || modules.Resources[0].Name != "shoutout.zip" {
+		t.Fatalf("kind custom_module returned %+v, want only shoutout.zip", modules.Resources)
+	}
+}
+
 func TestListResourcesPaginates(t *testing.T) {
 	svc := newResourceSvc(t)
 	for _, name := range []string{"a.png", "b.png", "c.png"} {
@@ -429,6 +461,7 @@ func TestGetResourceUsageCountsEveryFileWhateverItsStatus(t *testing.T) {
 	folder := createFolder(t, svc, "clips", nil)
 	pending := createUpload(t, svc, "one.png", models.ResourceKindImage, &folder.Id)
 	createUpload(t, svc, "two.png", models.ResourceKindImage, nil)
+	createUpload(t, svc, "module.zip", models.ResourceKindCustomModule, nil)
 	ready := models.ResourceStatusReady
 	size := int64(1000)
 	if _, err := svc.UpdateResource(ctx, &client.UpdateResourceRequest{
@@ -443,12 +476,13 @@ func TestGetResourceUsageCountsEveryFileWhateverItsStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetResourceUsage: %v", err)
 	}
-	// One ready file of 1000 bytes and one pending file still holding the
-	// 128 bytes it was created with; the folder adds nothing.
-	if usage.Bytes != 1128 {
-		t.Fatalf("bytes = %d, want 1128", usage.Bytes)
+	// One ready file of 1000 bytes and two pending files, an image and a
+	// module archive, still holding the 128 bytes each was created with;
+	// the folder adds nothing.
+	if usage.Bytes != 1256 {
+		t.Fatalf("bytes = %d, want 1256", usage.Bytes)
 	}
-	if usage.Files != 2 {
-		t.Fatalf("files = %d, want 2", usage.Files)
+	if usage.Files != 3 {
+		t.Fatalf("files = %d, want 3", usage.Files)
 	}
 }
