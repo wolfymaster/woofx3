@@ -645,6 +645,24 @@ interface RawModuleInstalled {
   author?: unknown;
   taxonomy?: unknown;
   description?: unknown;
+  source?: unknown;
+  upload_resource_id?: unknown;
+}
+
+/**
+ * The origin fields of an install event, read from db-proxy's payload. A
+ * source this engine does not know is dropped rather than passed on, and an
+ * upload without its resource id names no origin at all.
+ */
+function installEventOrigin(payload: RawModuleInstalled): Pick<ModuleInstalledEvent, "source" | "uploadResourceId"> {
+  if (payload.source === "marketplace") {
+    return { source: "marketplace" };
+  }
+  const uploadResourceId = asString(payload.upload_resource_id);
+  if (payload.source === "upload" && uploadResourceId !== "") {
+    return { source: "upload", uploadResourceId };
+  }
+  return {};
 }
 
 interface RawModuleDeleted {
@@ -725,6 +743,7 @@ export function parseModuleInstalled(ce: Record<string, unknown>): {
       author: asString(payload.author),
       taxonomy: Array.isArray(taxonomyRaw) ? taxonomyRaw.filter((x): x is string => typeof x === "string") : [],
       description: asString(payload.description),
+      ...installEventOrigin(payload),
     },
   };
 }

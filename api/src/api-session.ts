@@ -61,6 +61,13 @@ export class ApiSession extends RpcTarget {
     return this.api.installMarketplaceListing(listingId, request, { clientId: this.clientId });
   }
 
+  async installModuleFromResource(
+    resourceId: string,
+    request: { approvedPermissions: string[]; approvedLocalEndpoints: string[] }
+  ) {
+    return this.api.installModuleFromResource(resourceId, request, { clientId: this.clientId });
+  }
+
   async setTwitchToken(token: TwitchAccessToken, convexUserId?: string) {
     return this.api.setTwitchToken(token, convexUserId, { clientId: this.clientId });
   }
@@ -162,6 +169,7 @@ export const RPC_METHODS = [
   "installModuleZip",
   "installModuleFromUrl",
   "installMarketplaceListing",
+  "installModuleFromResource",
   "inspectMarketplaceListing",
   "installMarketplaceBundle",
   "marketplaceSearch",

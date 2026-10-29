@@ -192,6 +192,32 @@ export function manifestLocalEndpoints(manifest: Record<string, unknown>): Local
   return endpoints;
 }
 
+/** What a manifest declares that an install approval does not cover. */
+export interface ApprovalShortfall {
+  unapproved: string[];
+  unapprovedLocalEndpoints: string[];
+}
+
+/**
+ * The permissions and `local[]` endpoints a manifest declares beyond what
+ * was approved, or null when the approval covers everything. Every install
+ * that takes an approval refuses an archive this does not answer null for.
+ */
+export function approvalShortfall(
+  manifest: Record<string, unknown>,
+  approval: { approvedPermissions: readonly string[]; approvedLocalEndpoints: readonly string[] }
+): ApprovalShortfall | null {
+  const unapproved = unapprovedIds(manifestPermissions(manifest), approval.approvedPermissions);
+  const unapprovedLocalEndpoints = unapprovedIds(
+    manifestLocalEndpoints(manifest).map((endpoint) => endpoint.id),
+    approval.approvedLocalEndpoints
+  );
+  if (unapproved.length === 0 && unapprovedLocalEndpoints.length === 0) {
+    return null;
+  }
+  return { unapproved, unapprovedLocalEndpoints };
+}
+
 /** The ids in `requested` that `approved` does not contain, in `requested` order. */
 export function unapprovedIds(requested: readonly string[], approved: readonly string[]): string[] {
   const approvedSet = new Set(approved);

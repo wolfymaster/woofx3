@@ -32,6 +32,12 @@ the required `WOOFX3_SCENE_MANAGER_URL` (see
   every key under this directory as it refuses an unknown prefix, and the
   api reports no `url` for them. A media upload cannot take
   `custom-modules` as its resource id.
+  `installModuleFromResource` installs one: the api reads it back through
+  barkloader's service-only `GET /assets/custom-module`, checks the
+  manifest against the caller's approval, and hands it to barkloader like
+  any other install. The installed module records the resource as its
+  `uploadResourceId`, and the resource cannot be deleted while the module
+  is installed.
 
 The api builds resource URLs, the workflow engine builds
 `${woofx3_asset_url:...}` token values (see

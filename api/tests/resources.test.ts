@@ -442,6 +442,19 @@ describe("folders", () => {
 });
 
 describe("deleteResource", () => {
+  test("passes on db-proxy's refusal to delete an archive an installed module came from, purging nothing", async () => {
+    const deleteResource = mock(async (_req: any) => {
+      throw new Error(
+        '"shoutout.zip" is the archive module "Shoutout" was installed from; uninstall the module before deleting it'
+      );
+    });
+    const barkloaderRequest = mock(async (_path: string, _init?: RequestInit) => new Response(null, { status: 204 }));
+    const api = host({ db: { deleteResource }, barkloaderRequest });
+
+    await expect(api.deleteResource("res-1")).rejects.toThrow("uninstall the module before deleting it");
+    expect(barkloaderRequest).not.toHaveBeenCalled();
+  });
+
   test("purges each resource directory once, by a key db-proxy reports", async () => {
     const deleteResource = mock(async (_req: any) => [
       "user/res-1/clip.png",

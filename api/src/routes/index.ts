@@ -18,6 +18,7 @@ import { inboundWebhooksRoutes } from "./inbound-webhooks";
 import { marketplaceRoutes } from "./marketplace";
 import { marketplaceCatalogRoutes } from "./marketplace-catalog";
 import { moduleOAuthRoutes } from "./module-oauth";
+import { moduleUploadsRoutes } from "./module-uploads";
 import { modulesRoutes } from "./modules";
 import { obsRoutes } from "./obs";
 import { overlayTokenRoutes } from "./overlay-tokens";
@@ -55,6 +56,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof accountsRoutes &
   typeof modulesRoutes &
   typeof marketplaceRoutes &
+  typeof moduleUploadsRoutes &
   typeof marketplaceCatalogRoutes &
   typeof workflowsRoutes &
   typeof scenesRoutes &
@@ -123,6 +125,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(accountsRoutes),
     instrumentRoutes(modulesRoutes),
     instrumentRoutes(marketplaceRoutes),
+    instrumentRoutes(moduleUploadsRoutes),
     instrumentRoutes(marketplaceCatalogRoutes),
     instrumentRoutes(workflowsRoutes),
     instrumentRoutes(scenesRoutes),
