@@ -1,3 +1,10 @@
+# Runs every service on the host, each reading the repository's .woofx3.json
+# and .env. Nothing here generates engine secrets the way the orchestrator
+# does: the message bus refuses to start, and its clients are refused,
+# unless messagebusToken in .woofx3.json (or WOOFX3_MESSAGEBUS_TOKEN in .env)
+# holds a random value of at least 32 bytes, for example from
+# `openssl rand -hex 32`.
+
 version: "0.5"
 
 environment:
@@ -22,6 +29,11 @@ processes:
     command: cloudflared tunnel --url http://127.0.0.1:5050 --http-host-header api.dev.woofx3.tv
     disabled: true
 
+  connectors:
+    command: bun run src/server.ts
+    description: Platform and local connections (Twitch)
+    working_dir: connectors
+
   db:
     command: go run .
     description: proxy for accessing databases
@@ -37,17 +49,7 @@ processes:
     description: Overlays & Stream software
     working_dir: sceneManager
 
-  twitch:
-    command: bun run src/api.ts
-    description: Twitch API + Eventbus
-    working_dir: twitch
-
   workflow:
     command: go run .
     description: Workflow Management
     working_dir: workflow
-
-  woofwoofwoof:
-    command: bun run src/woofwoofwoof.ts
-    description: Twitch Chatbot
-    working_dir: woofwoofwoof

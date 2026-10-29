@@ -85,8 +85,8 @@ docker run --detach --name "$CONTAINER_NAME" \
   --env "PORT=${PORT}" \
   --env "WOOFX3_DATABASE_URL=${CONTAINER_DATABASE_URL}" \
   --env "WOOFX3_SECRETS_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" \
-  --env "WOOFX3_BARKLOADER_KEY=check-barkloader-key" \
-  --env "WOOFX3_SCENE_MANAGER_TOKEN_SECRET=check-scene-manager-secret" \
+  --env "WOOFX3_BARKLOADER_KEY=check-barkloader-key-0123456789abcdef" \
+  --env "WOOFX3_SCENE_MANAGER_TOKEN_SECRET=check-scene-manager-secret-0123456789abcdef" \
   --env "WOOFX3_REGISTRATION_TOKEN=${REGISTRATION_TOKEN}" \
   --env "WOOFX3_SCENE_MANAGER_URL=${BASE_URL}" \
   --env "WOOFX3_TWITCH_CLIENT_ID=checktwitchclientid" \
@@ -188,6 +188,16 @@ if [ "$public_listeners" = "$PORT" ]; then
   pass "only the edge listens beyond loopback (port $PORT)"
 else
   fail "only the edge listens beyond loopback" "expected just $PORT, found: ${public_listeners:-none}"
+fi
+
+# The services bind loopback and cannot see the edge, so the image has to tell
+# them it is there: without it they would turn on loopback-only defaults (open
+# registration allowed, Host limited to loopback names) on a public engine.
+behind_edge="$(docker exec "$CONTAINER_NAME" printenv WOOFX3_BEHIND_EDGE 2>/dev/null || true)"
+if [ "$behind_edge" = "true" ]; then
+  pass "the image tells the services they sit behind the edge"
+else
+  fail "the image tells the services they sit behind the edge" "WOOFX3_BEHIND_EDGE is '${behind_edge}', expected 'true'"
 fi
 
 # --- idle memory --------------------------------------------------------

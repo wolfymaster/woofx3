@@ -28,6 +28,18 @@ const ROWS = [
     marketplaceListingId: null,
     marketplaceEdition: null,
   },
+  {
+    name: "Uploaded",
+    moduleId: "uploaded",
+    version: "1.0.0",
+    moduleKey: "uploaded:1.0.0:7654321",
+    state: "active",
+    createdByType: "CLIENT",
+    manifest: "{}",
+    marketplaceListingId: null,
+    marketplaceEdition: null,
+    uploadResourceId: "00000000-0000-0000-0000-0000000000a1",
+  },
 ];
 
 const db = {
@@ -54,6 +66,14 @@ describe("marketplace provenance on installed modules", () => {
     const modules = await listEngineModules(db as never, logger as never);
     expect(modules[1]).not.toHaveProperty("marketplaceListingId");
     expect(modules[1]).not.toHaveProperty("marketplaceEdition");
+  });
+
+  test("listEngineModules and getModule carry the resource an uploaded module came from", async () => {
+    const modules = await listEngineModules(db as never, logger as never);
+    expect(modules[2]).toMatchObject({ uploadResourceId: "00000000-0000-0000-0000-0000000000a1" });
+    expect(modules[2]).not.toHaveProperty("marketplaceListingId");
+    expect(modules[0]).not.toHaveProperty("uploadResourceId");
+    expect(await getModule("Uploaded")).toMatchObject({ uploadResourceId: "00000000-0000-0000-0000-0000000000a1" });
   });
 
   test("getModule carries a module's listing and edition", async () => {

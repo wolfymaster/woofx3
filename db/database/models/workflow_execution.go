@@ -120,10 +120,18 @@ func GetWorkflowExecutionsByStatus(db *gorm.DB, status WorkflowExecutionStatus, 
 	return executions, err
 }
 
-// GetRecentWorkflowExecutions retrieves the most recent workflow executions
-func GetRecentWorkflowExecutions(db *gorm.DB, limit int) ([]WorkflowExecution, error) {
+// GetRecentWorkflowExecutions returns at most limit executions, newest first by
+// start time, of one workflow or, when workflowID is nil, of every workflow. A
+// run with no start time sorts by when it was recorded; COALESCE keeps that
+// order the same on Postgres and SQLite, which place NULLs at opposite ends.
+func GetRecentWorkflowExecutions(db *gorm.DB, workflowID *uuid.UUID, limit int) ([]WorkflowExecution, error) {
+	query := db.Model(&WorkflowExecution{})
+	if workflowID != nil {
+		query = query.Where("workflow_id = ?", *workflowID)
+	}
 	var executions []WorkflowExecution
-	err := db.Order("created_at DESC").
+	err := query.Order("COALESCE(started_at, created_at) DESC").
+		Order("created_at DESC").
 		Limit(limit).
 		Find(&executions).Error
 	return executions, err

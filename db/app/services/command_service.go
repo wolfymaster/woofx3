@@ -20,11 +20,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	commandVisibilityPublic     = "public"
-	commandVisibilityRestricted = "restricted"
-)
-
 type commandService struct {
 	repo       *repo.CommandRepository
 	refRepo    *repo.ResourceReferenceRepository
@@ -63,7 +58,10 @@ func NewCommandService(
 // create/update so the join tables and the policy rows never drift; the
 // caller reloads the enforcer once tx commits, since the enforcer reads the
 // policy outside it. Public commands never get Casbin rows - visibility is
-// checked in application code (woofwoofwoof) before Casbin is ever consulted.
+// checked in application code (the connectors chat dispatcher) before Casbin is ever consulted.
+// A restricted command with no grant gets no rows either, so Casbin denies
+// everyone: restricted means "only those granted", and granting nobody is
+// how the dashboard presents a command no one can use yet.
 func (s *commandService) writeCommandPermissions(tx *gorm.DB, cmd *models.Command, groupIDStrs, usernames []string) error {
 	groupIDs := make([]uuid.UUID, 0, len(groupIDStrs))
 	for _, idStr := range groupIDStrs {
@@ -87,15 +85,8 @@ func (s *commandService) writeCommandPermissions(tx *gorm.DB, cmd *models.Comman
 	if err := casbinRepo.RemoveAllPTypeForObject(object); err != nil {
 		return err
 	}
-	if cmd.Visibility != commandVisibilityRestricted {
+	if cmd.Visibility != models.CommandVisibilityRestricted {
 		return nil
-	}
-	// No group and no user grant means no restriction was configured, not
-	// "deny everyone". Say so positively in the policy data with the
-	// wildcard subject so every enforcement path agrees; leaving the object
-	// with zero rules would deny it everywhere instead.
-	if len(groupIDs) == 0 && len(usernames) == 0 {
-		return casbinRepo.AddPType(models.WildcardSubject, object, "read", "allow")
 	}
 
 	everyoneIDs, err := s.everyoneGroupIDs(tx, groupIDs)
@@ -244,7 +235,7 @@ func (s *commandService) commandProtos(db *gorm.DB, cmds []*models.Command) ([]*
 			Priority:        int32(cmd.Priority),
 			Enabled:         cmd.Enabled,
 			CreatedAt:       timestamppb.New(cmd.CreatedAt),
-			Visibility:      cmd.Visibility,
+			Visibility:      string(cmd.Visibility),
 			GroupIds:        groupIDStrs,
 			Usernames:       usernames[cmd.ID],
 			ArgumentPattern: cmd.ArgumentPattern,
@@ -303,9 +294,13 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 	if createdByType == "" {
 		createdByType = "USER"
 	}
-	visibility := cmd.Visibility
-	if visibility == "" {
-		visibility = commandVisibilityRestricted
+	visibility := models.CommandVisibilityRestricted
+	if cmd.Visibility != "" {
+		parsed, err := models.ParseCommandVisibility(cmd.Visibility)
+		if err != nil {
+			return nil, twirp.InvalidArgumentError("visibility", err.Error())
+		}
+		visibility = parsed
 	}
 
 	// A module declares its commands in its manifest and registers them on
@@ -333,11 +328,7 @@ func (s *commandService) CreateCommand(ctx context.Context, cmd *client.CreateCo
 		}
 	}
 
-	// Assign the id here rather than leaning on the column default: that
-	// default is Postgres-only (uuid_generate_v4()), so on the SQLite backend
-	// every command would otherwise be inserted with the zero UUID and collide.
 	m := models.Command{
-		ID:              uuid.New(),
 		Command:         cmd.Command,
 		Actions:         defaultActionsJSON(cmd.ActionsJson),
 		Cooldown:        int(cmd.Cooldown),
@@ -456,6 +447,14 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 	if err != nil {
 		return nil, err
 	}
+	var visibility *models.CommandVisibility
+	if req.Visibility != "" {
+		parsed, err := models.ParseCommandVisibility(req.Visibility)
+		if err != nil {
+			return nil, twirp.InvalidArgumentError("visibility", err.Error())
+		}
+		visibility = &parsed
+	}
 
 	var m *models.Command
 	var change *commandWorkflowChange
@@ -472,8 +471,8 @@ func (s *commandService) UpdateCommand(ctx context.Context, req *client.UpdateCo
 		m.Cooldown = int(req.Cooldown)
 		m.Priority = int(req.Priority)
 		m.Enabled = req.Enabled
-		if req.Visibility != "" {
-			m.Visibility = req.Visibility
+		if visibility != nil {
+			m.Visibility = *visibility
 		}
 		m.ArgumentPattern = req.ArgumentPattern
 
@@ -756,7 +755,7 @@ func (s *commandService) HasPermission(ctx context.Context, enforcer *casbin.Enf
 		if err != nil {
 			return false, err
 		}
-		if cmd.Visibility == commandVisibilityPublic {
+		if cmd.Visibility == models.CommandVisibilityPublic {
 			return true, nil
 		}
 

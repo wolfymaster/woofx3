@@ -61,9 +61,10 @@ Returns all parameters as-is.
 
 #### `chat.reply`
 
-Sends one message to chat, by publishing `message.send` — the same event the
-sandbox's chat extension publishes, consumed by woofwoofwoof, which holds the
-chat client.
+"Send chat message". Sends one message through the
+[platform gateway](../services/platform-gateway.md) in connectors and waits for
+what happened on each platform. This is how module functions reply: they
+return `ctx.success(message)` and a `chat.reply` step posts it.
 
 ```json
 {
@@ -71,7 +72,8 @@ chat client.
   "type": "action",
   "action": "chat.reply",
   "parameters": {
-    "message": "thanks for the ${trigger.data.amount} bits, ${trigger.data.userName}!"
+    "message": "thanks for the ${trigger.data.amount} bits, ${trigger.data.userName}!",
+    "platform": "origin"
   }
 }
 ```
@@ -79,12 +81,131 @@ chat client.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `action` | `string` | Yes | Must be `"chat.reply"`. Set at the task top level. |
-| `parameters.message` | `string` | Yes | What to say. Supports expressions. |
-| `parameters.platform` | `string` | No | Where to say it. Defaults to `"twitch"`. |
+| `parameters.message` | `string` | Yes | What to say, up to 500 characters. Supports expressions. |
+| `parameters.platform` | `string` | No | Where to say it: `origin` (the default), `all`, or a platform id such as `twitch`. Supports expressions. |
+
+`platform` picks the gateway target:
+
+| Value | Target |
+|-------|--------|
+| empty or `origin` | The platform the trigger event came from (its `platform` attribute). When the event carries a `messageId`, as `user.message` does, the line is posted as a reply to it. A trigger from no platform, such as a timer or the dashboard, sends to `all`. A trigger from a platform the gateway does not know fails the step. |
+| `all` | Every platform that is linked and enabled. |
+| a platform id | That platform alone. An id the gateway does not know fails the step. |
+
+When a workflow is saved, `platform` must be empty, `origin`, `all`, an
+expression, or shaped like a platform id (`^[a-z][a-z0-9_]{0,31}$`). A
+platform this engine has no adapter for is not refused then, so a stored
+workflow still loads; its step fails with the reason when it runs. Steps saved
+before the parameter existed have none, and answer where they were triggered.
+
+The step succeeds only when the gateway's reply is ok (see
+[When a reply is ok](../services/platform-gateway.md#when-a-reply-is-ok)).
+Otherwise it fails with one reason per platform, for example
+`chat.send did not go through: twitch: unavailable (disabled)`, so
+a turned-off or unlinked platform shows in the run history rather than passing
+silently. It also fails when connectors is not running, and when the gateway
+does not answer within its caller timeout of 12 seconds; that error says the platform may have acted,
+since the request was sent.
+
+Returns:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | `string` | The message sent. |
+| `ok` | `boolean` | The gateway's verdict; always `true` on a step that succeeded. |
+| `results` | `object` | One outcome per platform, keyed by platform id, in the gateway's wire shape (`status`, plus `messageId`, `reason`, `code` or `message` as the status has them). |
+
+Each request carries:
+
+- **Idempotency key** `<executionId>:<taskId>`. The engine never retries a
+  step, so the key is used once per step of a run; a duplicate of that request
+  gets the first reply instead of posting twice. A replay is a new run with a
+  new key, so it posts again.
+- **Requested by** `{ kind: "workflow", ref: <workflowId> }`.
+- **Workflow chain** the run's chain plus this workflow. The platform's echo
+  of the posted line carries it back on `user.message`, so a workflow
+  answering chat lines that answers its own is stopped by the
+  [loop guard](./execution.md#loops) after eight runs.
+
+A dry run checks the message and platform the same way, without asking the
+gateway, and records `would send "<message>" to <where>`.
 
 Native rather than a module function, so replying in chat needs no module
 installed. This is what a chat command's reply is made of — see
 [Chat commands](../services/commands-ui.md).
+
+#### `chat.announce`
+
+"Send announcement". Posts a highlighted announcement through the
+[platform gateway](../services/platform-gateway.md), to the same targets and
+with the same replies, requests and failures as [`chat.reply`](#chatreply):
+`message` and `platform` mean what they mean there, and the step fails unless
+every platform it sends to announced. A platform with no announcements reports
+that it cannot do this, which fails the step.
+
+```json
+{
+  "id": "announce-raid",
+  "type": "action",
+  "action": "chat.announce",
+  "parameters": {
+    "message": "Raid incoming, say hi!",
+    "platform": "twitch",
+    "twitchColor": "purple"
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | `string` | Yes | Must be `"chat.announce"`. Set at the task top level. |
+| `parameters.message` | `string` | Yes | What to announce, up to 500 characters. Supports expressions. |
+| `parameters.platform` | `string` | No | `origin` (the default), `all`, or a platform id. Supports expressions. An announcement is never a reply, so the trigger's message id is not used. |
+| `parameters.twitchColor` | `string` | No | One of `primary`, `blue`, `green`, `orange` or `purple`; `primary` is the channel's colour. Sent to the gateway as Twitch's options, and left out when unset. Other platforms ignore it. Supports expressions. |
+
+The editor shows `twitchColor` while `platform` is `origin`, `all`, `twitch` or
+an expression (a variable has no value to compare until the run), and hides it
+for any other platform id. A stored `twitchColor` applies when the step runs.
+Registration refuses a colour that is not
+one of the five and is not an expression.
+
+Returns the same `message`, `ok` and `results` as `chat.reply`. A dry run
+records `would announce "<message>" in <where>`.
+
+#### `chat.pin`
+
+"Pin message". Posts a message and pins it, through the
+[platform gateway](../services/platform-gateway.md). Only the send-and-pin form
+of the gateway's `chat.pin` is offered: a step has no way to name an existing
+line.
+
+```json
+{
+  "id": "pin-rules",
+  "type": "action",
+  "action": "chat.pin",
+  "parameters": {
+    "message": "Be kind in chat.",
+    "durationSeconds": 300
+  }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | `string` | Yes | Must be `"chat.pin"`. Set at the task top level. |
+| `parameters.message` | `string` | Yes | What to pin, up to 500 characters. Supports expressions. |
+| `parameters.platform` | `string` | No | `origin` (the default), `all`, or a platform id. Supports expressions. |
+| `parameters.durationSeconds` | `number` | No | How long it stays pinned, 30 to 1200. Left out when unset, so the platform uses its own default. A whole number, or text that is one (an expression's result). |
+
+A line that was posted but could not be pinned fails the step, with a reason
+that says it was posted. Registration refuses a duration outside the bounds
+unless it is an expression; a resolved value outside them fails the step before
+anything is sent. A dry run records `would send "<message>" to <where> and pin
+it` with the duration when set.
+
+Returns the same `message`, `ok` and `results` as `chat.reply`; the result's
+`messageId` is the line that was pinned.
 
 #### `function`
 
@@ -235,10 +356,10 @@ The event type is the subject the event goes out on, so a workflow could otherwi
 - when the workflow is saved (api) or registered (engine), if `eventType` is written out;
 - when the step runs, once an `eventType` built from an expression has resolved.
 
-Reserved names, defined in `shared/common/golang/cloudevents/reserved.go`. An entry ending in `.` reserves that whole namespace; any other entry reserves exactly that name.
+Reserved names, defined in `shared/common/contracts/reserved-subjects.json`. An entry ending in `.` reserves that whole namespace; any other entry reserves exactly that name.
 
-- **Commands** (also refused as events declared by an uploaded module): `webhook.`, `db.`, `engine.`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute`, `action.execute`.
-- **Engine events**: `HEARTBEAT`, `MESSAGEBUS_INIT`, `barkloader.`, `channel.`, `channelpoints.`, `chat.command.`, `module.`, `session.`, `setting.`, `stream.offline`, `stream.online`, `user.message`, `viewer.`, `widget.event`, `workflow.health.`, `workflow.run.`.
+- **Commands** (also refused as events declared by an uploaded module): `webhook.`, `db.`, `engine.`, `twitchapi`, `message.send` (retired: nothing publishes or consumes it any more, and the name stays reserved), `ui.notify.`, `ui.alert.`, `platform.gateway.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute`, `action.execute`.
+- **Engine events**: `HEARTBEAT`, `MESSAGEBUS_INIT`, `barkloader.`, `channel.`, `channelpoints.`, `chat.command.`, `command.`, `module.`, `session.`, `setting.`, `stream.offline`, `stream.online`, `user.message`, `viewer.`, `widget.event`, `workflow.health.`, `workflow.run.`.
 
 Pick an event name of the workflow's own, such as `badge.awarded`. To test a workflow against a platform event (`channel.*`, `stream.online`, ...), fire it with the api's `simulateTwitchEvent` rather than publishing it.
 

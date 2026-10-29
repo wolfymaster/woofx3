@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { loadConfig } from "../src/config";
+import { RequestGuard } from "@woofx3/common/http/request-guard";
+import { DEFAULT_COMPANION_REQUEST_TIMEOUT_MS, loadConfig, resolveCompanionRequestTimeoutMs } from "../src/config";
 
 /** The minimum loadConfig requires; each test adds what it is about. */
 const REQUIRED: Record<string, string> = {
   WOOFX3_DATABASE_PROXY_URL: "http://127.0.0.1:5555",
   WOOFX3_SCENE_MANAGER_URL: "http://127.0.0.1:9101",
   WOOFX3_BARKLOADER_WS_URL: "ws://127.0.0.1:9653/ws",
-  WOOFX3_BARKLOADER_KEY: "test-key",
+  WOOFX3_BARKLOADER_KEY: "test-barkloader-key-0123456789abcdef",
+  WOOFX3_DB_PROXY_TOKEN: "test-db-proxy-token-0123456789abcdef",
 };
 
 // loadConfig writes the resolved config back into process.env, so every
@@ -25,6 +27,13 @@ afterEach(() => {
 function withEnv(vars: Record<string, string>): void {
   delete process.env.WOOFX3_API_HOST;
   delete process.env.API_HOST;
+  delete process.env.PORT;
+  delete process.env.WOOFX3_BEHIND_EDGE;
+  delete process.env.WOOFX3_REGISTRATION_MODE;
+  delete process.env.WOOFX3_REGISTRATION_TOKEN;
+  delete process.env.WOOFX3_ALLOWED_HOSTS;
+  delete process.env.WOOFX3_ALLOWED_ORIGINS;
+  delete process.env.WOOFX3_UI_URL;
   Object.assign(process.env, REQUIRED, vars);
 }
 
@@ -42,6 +51,123 @@ describe("api listener", () => {
   });
 });
 
+describe("secure defaults", () => {
+  test("registration is first when neither a mode nor a token is set", () => {
+    withEnv({});
+
+    expect(loadConfig().registration).toEqual({ mode: "first", token: null });
+  });
+
+  test("open registration stops startup behind the edge", () => {
+    withEnv({ WOOFX3_REGISTRATION_MODE: "open", WOOFX3_BEHIND_EDGE: "true" });
+
+    expect(() => loadConfig()).toThrow("WOOFX3_REGISTRATION_MODE=open");
+  });
+
+  test("open registration stops startup on a non-loopback bind", () => {
+    withEnv({ WOOFX3_REGISTRATION_MODE: "open", WOOFX3_API_HOST: "0.0.0.0" });
+
+    expect(() => loadConfig()).toThrow("WOOFX3_REGISTRATION_MODE=open");
+  });
+
+  test("open registration is allowed on a loopback-only engine", () => {
+    withEnv({ WOOFX3_REGISTRATION_MODE: "open" });
+
+    expect(loadConfig().registration.mode).toBe("open");
+  });
+
+  test("a PORT exported by the parent shell does not change the exposure", () => {
+    withEnv({ WOOFX3_REGISTRATION_MODE: "open", PORT: "3000" });
+
+    expect(loadConfig().registration.mode).toBe("open");
+  });
+
+  test("a WOOFX3_BEHIND_EDGE that is not true or false stops startup", () => {
+    withEnv({ WOOFX3_BEHIND_EDGE: "yes" });
+
+    expect(() => loadConfig()).toThrow();
+  });
+
+  test("an unset request guard checks Origin, and Host on a loopback-only engine", () => {
+    withEnv({});
+
+    const { requestGuard } = loadConfig();
+    expect(requestGuard.allowedOrigins).not.toBeNull();
+    expect(requestGuard.allowedHosts).not.toBeNull();
+  });
+
+  test("behind the edge an unset request guard still checks Origin but not Host", () => {
+    withEnv({ WOOFX3_BEHIND_EDGE: "true" });
+
+    const { requestGuard } = loadConfig();
+    expect(requestGuard.allowedOrigins).not.toBeNull();
+    expect(requestGuard.allowedHosts).toBeNull();
+  });
+});
+
+describe("dashboard origin", () => {
+  /** A managed engine as maintenance configures it: behind the edge, at its own public URL. */
+  const HOSTED: Record<string, string> = {
+    WOOFX3_BEHIND_EDGE: "true",
+    WOOFX3_SCENE_MANAGER_URL: "https://streamer.woofx3.tv",
+  };
+
+  /** The dashboard's live WebSocket upgrade to /api, as the browser sends it through the edge. */
+  function liveSocketUpgrade(origin: string): Request {
+    return new Request("http://127.0.0.1:5050/api", {
+      headers: {
+        host: "wx3-prod-iad-eng-b84872e1.fly.dev",
+        origin,
+        upgrade: "websocket",
+        connection: "Upgrade",
+        "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+        "sec-websocket-version": "13",
+      },
+    });
+  }
+
+  test("a hosted engine admits the dashboard WOOFX3_UI_URL names and still refuses others", () => {
+    withEnv({ ...HOSTED, WOOFX3_UI_URL: "https://woofx3.tv" });
+
+    const guard = new RequestGuard(loadConfig().requestGuard);
+    expect(guard.reject(liveSocketUpgrade("https://woofx3.tv"))).toBeNull();
+    expect(guard.reject(liveSocketUpgrade("https://streamer.woofx3.tv"))).toBeNull();
+    expect(guard.reject(liveSocketUpgrade("https://evil.example"))?.status).toBe(403);
+  });
+
+  test("a hosted engine admits every preview dashboard a subdomain wildcard names", () => {
+    withEnv({ ...HOSTED, WOOFX3_UI_URL: "https://woofx3.tv,https://*.woofx3.com" });
+
+    const guard = new RequestGuard(loadConfig().requestGuard);
+    expect(guard.reject(liveSocketUpgrade("https://pr-12-woofx3-ui.woofx3.com"))).toBeNull();
+    expect(guard.reject(liveSocketUpgrade("https://woofx3.com"))?.status).toBe(403);
+  });
+
+  test("unset or blank, only the defaults apply", () => {
+    for (const vars of [HOSTED, { ...HOSTED, WOOFX3_UI_URL: "" }]) {
+      withEnv(vars);
+
+      const guard = new RequestGuard(loadConfig().requestGuard);
+      expect(guard.reject(liveSocketUpgrade("https://woofx3.tv"))?.status).toBe(403);
+      expect(guard.reject(liveSocketUpgrade("http://localhost:5173"))).toBeNull();
+    }
+  });
+
+  test("an explicit WOOFX3_ALLOWED_ORIGINS still replaces the defaults, the dashboard included", () => {
+    withEnv({ ...HOSTED, WOOFX3_UI_URL: "https://woofx3.tv", WOOFX3_ALLOWED_ORIGINS: "https://app.example" });
+
+    const guard = new RequestGuard(loadConfig().requestGuard);
+    expect(guard.reject(liveSocketUpgrade("https://app.example"))).toBeNull();
+    expect(guard.reject(liveSocketUpgrade("https://woofx3.tv"))?.status).toBe(403);
+  });
+
+  test("a malformed WOOFX3_UI_URL stops startup", () => {
+    withEnv({ ...HOSTED, WOOFX3_UI_URL: "woofx3.tv" });
+
+    expect(() => loadConfig()).toThrow("WOOFX3_UI_URL");
+  });
+});
+
 describe("engine name", () => {
   test("is the name WOOFX3_ENGINE_NAME gives", () => {
     withEnv({ WOOFX3_ENGINE_NAME: "eng-0a1b2c3d" });
@@ -54,6 +180,24 @@ describe("engine name", () => {
     withEnv({});
 
     expect(loadConfig().engineName).toBeNull();
+  });
+});
+
+describe("engine region", () => {
+  test("is the region WOOFX3_ENGINE_REGION gives", () => {
+    withEnv({ WOOFX3_ENGINE_REGION: "iad" });
+
+    expect(loadConfig().engineRegion).toBe("iad");
+  });
+
+  test("is null when unset or blank", () => {
+    delete process.env.WOOFX3_ENGINE_REGION;
+    withEnv({});
+    expect(loadConfig().engineRegion).toBeNull();
+
+    withEnv({ WOOFX3_ENGINE_REGION: "  " });
+    expect(loadConfig().engineRegion).toBeNull();
+    delete process.env.WOOFX3_ENGINE_REGION;
   });
 });
 
@@ -95,7 +239,6 @@ describe("message bus token", () => {
 
   test("is unset when nothing sets it", () => {
     delete process.env.WOOFX3_MESSAGEBUS_TOKEN;
-    delete process.env.MESSAGEBUS_TOKEN;
     withEnv({});
 
     expect(loadConfig().nats.token).toBeUndefined();
@@ -172,6 +315,62 @@ describe("origin allowlist", () => {
     delete process.env.WOOFX3_ALLOWED_ORIGINS;
     withEnv({ WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS: "http://localhost:*,null" });
 
-    expect(loadConfig().requestGuard.allowedOrigins).toBeNull();
+    const { requestGuard } = loadConfig();
+    expect(requestGuard.listedOrigins).toBeNull();
+    expect(requestGuard.allowedOrigins).not.toContainEqual({ kind: "opaque" });
   });
+});
+
+describe("barkloader key", () => {
+  for (const value of ["", "CHANGE_ME", "short-key"]) {
+    test(`refuses "${value}"`, () => {
+      withEnv({ WOOFX3_BARKLOADER_KEY: value });
+
+      expect(() => loadConfig()).toThrow("barkloaderKey (WOOFX3_BARKLOADER_KEY)");
+    });
+  }
+});
+
+describe("db proxy token", () => {
+  for (const value of ["", "CHANGE_ME", "short-token"]) {
+    test(`refuses "${value}"`, () => {
+      withEnv({ WOOFX3_DB_PROXY_TOKEN: value });
+
+      expect(() => loadConfig()).toThrow("dbProxyToken (WOOFX3_DB_PROXY_TOKEN)");
+    });
+  }
+
+  test("keeps a usable token", () => {
+    withEnv({});
+
+    expect(loadConfig().dbProxyToken).toBe(REQUIRED.WOOFX3_DB_PROXY_TOKEN);
+  });
+});
+
+describe("companion request timeout", () => {
+  test("defaults when unset and reads WOOFX3_COMPANION_REQUEST_TIMEOUT_MS when set", () => {
+    withEnv({});
+    expect(loadConfig().companionRequestTimeoutMs).toBe(DEFAULT_COMPANION_REQUEST_TIMEOUT_MS);
+    withEnv({ WOOFX3_COMPANION_REQUEST_TIMEOUT_MS: "7000" });
+    expect(loadConfig().companionRequestTimeoutMs).toBe(7_000);
+  });
+
+  const valid: [unknown, number][] = [
+    [undefined, DEFAULT_COMPANION_REQUEST_TIMEOUT_MS],
+    ["", DEFAULT_COMPANION_REQUEST_TIMEOUT_MS],
+    ["  ", DEFAULT_COMPANION_REQUEST_TIMEOUT_MS],
+    [6_000, 6_000],
+    ["4501", 4_501],
+  ];
+  for (const [value, expected] of valid) {
+    test(`${JSON.stringify(value)} resolves to ${expected}`, () => {
+      expect(resolveCompanionRequestTimeoutMs(value)).toBe(expected);
+    });
+  }
+
+  for (const value of ["0", "-5", "1.5", "soon", 0, "250", "4500", 4_500]) {
+    test(`${JSON.stringify(value)} stops startup`, () => {
+      expect(() => resolveCompanionRequestTimeoutMs(value)).toThrow("WOOFX3_COMPANION_REQUEST_TIMEOUT_MS");
+    });
+  }
 });

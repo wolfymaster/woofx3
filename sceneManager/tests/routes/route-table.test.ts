@@ -107,6 +107,9 @@ describe("dispatchRoute opaque origin", () => {
       allowedOrigins: "https://app.example,null",
       allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
       opaqueOrigin: "allow",
+      exposure: "network",
+      ownUrls: [],
+      extraDefaultOrigins: [],
     })
   );
 

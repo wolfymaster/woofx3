@@ -40,6 +40,7 @@ use super::module_manifest::{
     ModuleManifest, ModuleWidget, SECRET_SETTING_TYPE, THEME_FIELD_TYPE, URL_SETTING_TYPE,
     WEBHOOK_EVENT_PREFIX, WEBHOOK_TRIGGER_TYPE, WIDGET_BEHAVIOR_LABEL_MAX, WIDGET_SURFACES,
 };
+use super::reserved_subjects::declared_event_reservation;
 use super::resource_kind_ref::parse_kind_ref;
 use super::theme::{self, InstalledModule};
 
@@ -420,7 +421,7 @@ pub fn validate_with_provenance(
         &actions_table,
     )?;
     let widgets = resolve_widgets(&manifest.widgets, &widgets_table)?;
-    validate_trigger_transports(manifest, provenance)?;
+    validate_trigger_transports(manifest, &module_id, provenance)?;
     validate_internal_requests(manifest, &module_id, provenance)?;
     validate_no_ingress_bindings(manifest, &module_id, &workflows)?;
 
@@ -524,67 +525,13 @@ async fn validate_theme_dependencies(
     Ok(())
 }
 
-/// Event prefixes no bus-fired trigger may claim: the webhook placeholder,
-/// and for uploads, every subject the engine or a service treats as a command.
-///
-/// A webhook handler may publish any event type its module declares as an
-/// eventbus trigger, verbatim, so declaring one of these would let an upload
-/// drive the engine directly: forge outbox events (`db.`), change OBS
-/// (`engine.obs.command`), call the Twitch API (`twitchapi`), speak in
-/// chat (`message.send`), play or skip alerts (`ui.notify.`, `ui.alert.`,
-/// `widget.queue.`), or run, replay or stop workflows and actions
-/// (`workflow.execute`, `workflow.replay`, `workflow.cancel`,
-/// `workflow.command.execute`, `action.execute`).
-/// Must match the command prefixes in api/src/workflow/reserved-subjects.ts.
-/// See docs/services/engine-integrity.md.
-///
-/// The outbox stays open to the system module, which owns the `db.workflow.*`
-/// triggers and declares no handlers.
-const USER_RESERVED_EVENT_PREFIXES: [&str; 13] = [
-    WEBHOOK_EVENT_PREFIX,
-    "db.",
-    "engine.",
-    "twitchapi",
-    "message.send",
-    "ui.notify.",
-    "ui.alert.",
-    "widget.queue.",
-    "workflow.execute",
-    "workflow.replay",
-    "workflow.cancel",
-    "workflow.command.execute",
-    "action.execute",
-];
-
-/// Event prefixes only the engine publishes, which uploads may not declare.
-///
-/// Unlike a platform event such as `channel.`, which the module bringing that
-/// platform declares, nothing outside the engine asserts these, so an upload
-/// declaring one could only forge it through its webhook handler: `viewer.`
-/// carries segment entered/left edges computed by the db proxy. The bundled
-/// system module declares triggers on them and stays exempt. Each entry must
-/// also appear in EngineEventSubjectPrefixes in
-/// shared/common/golang/cloudevents/reserved.go.
-const UPLOAD_ENGINE_ONLY_EVENT_PREFIXES: [&str; 1] = ["viewer."];
-
-fn reserved_event_prefixes(provenance: InstallProvenance) -> impl Iterator<Item = &'static str> {
-    let (commands, engine_only): (&[&str], &[&str]) = match provenance {
-        InstallProvenance::User => (
-            &USER_RESERVED_EVENT_PREFIXES,
-            &UPLOAD_ENGINE_ONLY_EVENT_PREFIXES,
-        ),
-        InstallProvenance::System => (&[WEBHOOK_EVENT_PREFIX], &[]),
-    };
-    commands.iter().chain(engine_only).copied()
-}
-
 /// The subject barkloader's field-options responder answers. It runs
 /// `{payload.moduleId}:function:{payload.functionId}` with that module's
 /// permissions, so a form may name only its own module. Must match `SUBJECT`
 /// in barkloader/app/src/services/field_options.rs.
 const FIELD_OPTIONS_SUBJECT: &str = "barkloader.module.field_options";
 
-/// The Twitch service's request subject. It answers any method of its Twitch
+/// The connectors Twitch adapter's request subject. It answers any method of its Twitch
 /// client, writes included (a shoutout, adding a moderator), so a form may
 /// request only the reads listed in `TWITCHAPI_FORM_READS`.
 const TWITCHAPI_SUBJECT: &str = "twitchapi";
@@ -763,6 +710,7 @@ fn is_internal_request(descriptor: &serde_json::Value) -> bool {
 /// mean nothing on it. They are rejected rather than silently ignored.
 fn validate_trigger_transports(
     manifest: &ModuleManifest,
+    module_id: &str,
     provenance: InstallProvenance,
 ) -> Result<()> {
     for (i, trigger) in manifest.triggers.iter().enumerate() {
@@ -778,8 +726,7 @@ fn validate_trigger_transports(
             } else {
                 &trigger.event
             };
-            if let Some(prefix) = reserved_event_prefixes(provenance).find(|p| event.starts_with(p))
-            {
+            if let Some(prefix) = declared_event_reservation(event, module_id, provenance) {
                 return Err(anyhow!(
                     "{label}: event {event:?} uses the reserved prefix {prefix:?}"
                 ));
@@ -1037,6 +984,7 @@ fn validate_local(manifest: &ModuleManifest) -> Result<()> {
             "text",
             &mut named,
         )?;
+        require_loopback_host_default(manifest, &context, &endpoint.host_setting)?;
         require_local_setting(
             manifest,
             &context,
@@ -1085,6 +1033,37 @@ fn validate_local(manifest: &ModuleManifest) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Whether a host setting default can only ever aim at the engine's own
+/// machine: `localhost` or an IP literal in 127/8 or `::1`.
+fn is_loopback_host(value: &str) -> bool {
+    value.eq_ignore_ascii_case("localhost")
+        || value
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
+}
+
+/// A local endpoint's host setting may ship a default only if it is empty or
+/// loopback. On a local or opted-in self engine the module path dials whatever
+/// the setting holds, so a default must never point at another device.
+fn require_loopback_host_default(
+    manifest: &ModuleManifest,
+    context: &str,
+    host_setting: &str,
+) -> Result<()> {
+    let default = manifest
+        .settings
+        .iter()
+        .find(|s| s.id == host_setting)
+        .and_then(|s| s.default_value.as_deref())
+        .unwrap_or("");
+    if default.is_empty() || is_loopback_host(default) {
+        return Ok(());
+    }
+    Err(anyhow!(
+        "{context}: the default for hostSetting must be empty or a loopback address, not {default}"
+    ))
 }
 
 /// A setting a local endpoint field names: declared, of the wanted type, and
@@ -1197,6 +1176,7 @@ pub async fn build_install_plan(
     resolved: &ResolvedManifest,
     db_proxy: &dyn ModuleDbProxy,
 ) -> Result<Vec<InstallStep>> {
+    refuse_cross_module_function_calls(manifest, resolved)?;
     validate_cross_module_refs(resolved, db_proxy).await?;
     validate_cross_module_permissions(manifest, resolved, db_proxy).await?;
     validate_theme_dependencies(manifest, db_proxy).await?;
@@ -1569,6 +1549,201 @@ async fn validate_cross_module_permissions(
     Ok(())
 }
 
+/// Resource id of the bundled native action that invokes a module function
+/// named by the step's `parameters.function`. Must match the `function`
+/// action in modules/woofx3/manifest.json.
+const FUNCTION_ACTION_ID: &str = "function";
+
+/// Where the manifest invokes a function: a step that uses the bundled
+/// function action, or an action this manifest declares with `type: "function"`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum InvocationSite {
+    Workflow { workflow: String, index: usize },
+    Command { command: String, index: usize },
+    Action { action: String },
+}
+
+impl std::fmt::Display for InvocationSite {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Workflow { workflow, index } => write!(f, "workflow '{workflow}' step #{index}"),
+            Self::Command { command, index } => write!(f, "command '{command}' action #{index}"),
+            Self::Action { action } => write!(f, "action '{action}'"),
+        }
+    }
+}
+
+/// The function an invocation site names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FunctionTarget {
+    /// A canonical function id, fixed in the manifest.
+    Static(CanonicalId),
+    /// A `${...}` template, filled in only when the step runs.
+    Expression(String),
+    /// Missing, not a string, or not a canonical function id; carries why.
+    Invalid(String),
+}
+
+/// Every place the manifest invokes a function, paired with the function it
+/// invokes: workflow steps and command actions that use the bundled function
+/// action, and the manifest's own `type: "function"` actions.
+fn function_action_targets(
+    manifest: &ModuleManifest,
+    resolved: &ResolvedManifest,
+) -> Vec<(InvocationSite, FunctionTarget)> {
+    let workflow_steps =
+        manifest
+            .workflows
+            .iter()
+            .zip(&resolved.workflows)
+            .flat_map(|(wf, resolved_wf)| {
+                let workflow = resolved_wf.canonical_id.resource_id().to_string();
+                wf.steps
+                    .iter()
+                    .zip(&resolved_wf.step_actions)
+                    .enumerate()
+                    .map(move |(index, (step, action))| {
+                        let at = InvocationSite::Workflow {
+                            workflow: workflow.clone(),
+                            index,
+                        };
+                        (at, step, action)
+                    })
+            });
+    let command_steps =
+        manifest
+            .commands
+            .iter()
+            .zip(&resolved.commands)
+            .flat_map(|(cmd, resolved_cmd)| {
+                let command = resolved_cmd.canonical_id.resource_id().to_string();
+                cmd.actions
+                    .iter()
+                    .zip(&resolved_cmd.step_actions)
+                    .enumerate()
+                    .map(move |(index, (step, action))| {
+                        let at = InvocationSite::Command {
+                            command: command.clone(),
+                            index,
+                        };
+                        (at, step, action)
+                    })
+            });
+    let step_targets = workflow_steps
+        .chain(command_steps)
+        // Step actions are resolved as action ids, so module and resource id
+        // identify the bundled function action.
+        .filter(|(_, _, action)| {
+            action.module_id() == SYSTEM_MODULE_ID && action.resource_id() == FUNCTION_ACTION_ID
+        })
+        .map(|(at, step, _)| (at, parse_function_target(&step.parameters)));
+    let declared_targets =
+        resolved
+            .actions
+            .iter()
+            .filter_map(|action| match &action.implementation {
+                ResolvedActionImpl::Function {
+                    canonical_function_id,
+                } => Some((
+                    InvocationSite::Action {
+                        action: action.canonical_id.resource_id().to_string(),
+                    },
+                    FunctionTarget::Static(canonical_function_id.clone()),
+                )),
+                ResolvedActionImpl::Native { .. } => None,
+            });
+    step_targets.chain(declared_targets).collect()
+}
+
+/// Read a step's `parameters.function`. The engine invokes the value verbatim
+/// and only understands a canonical id, so a bare local id or one with
+/// surrounding whitespace is invalid here rather than normalised: it would
+/// install a step that can never run.
+fn parse_function_target(parameters: &serde_json::Value) -> FunctionTarget {
+    let Some(value) = parameters.get("function") else {
+        return FunctionTarget::Invalid(
+            "has no `function` parameter naming the function to invoke".to_string(),
+        );
+    };
+    let Some(raw) = value.as_str() else {
+        return FunctionTarget::Invalid(format!(
+            "`function` must be a canonical function id string, got {value}"
+        ));
+    };
+    if raw.contains("${") {
+        return FunctionTarget::Expression(raw.to_string());
+    }
+    if raw.trim() != raw {
+        return FunctionTarget::Invalid(format!(
+            "`function` {raw:?} has surrounding whitespace, which the engine would pass on verbatim"
+        ));
+    }
+    let parts: Vec<&str> = raw.split(CANONICAL_ID_SEPARATOR).collect();
+    if !looks_like_canonical_id(raw) || parts[1] != ResourceKind::Function.as_str() {
+        return FunctionTarget::Invalid(format!(
+            "`function` {raw:?} is not a canonical function id (`<moduleId>:function:<functionId>`)"
+        ));
+    }
+    match CanonicalId::new(parts[0], ResourceKind::Function, parts[2]) {
+        Ok(id) => FunctionTarget::Static(id),
+        Err(e) => FunctionTarget::Invalid(format!("`function` {raw:?}: {e}")),
+    }
+}
+
+/// Refuse an upload that invokes a function this module does not declare,
+/// whether through the bundled function action or through a
+/// `type: "function"` action of its own.
+///
+/// The sandbox runs an invoked function with its owner's permissions and
+/// OAuth tokens, yet `validate_cross_module_permissions` passes both routes:
+/// the function action is owned by the system module, which declares no
+/// permissions, and a module's own actions are not checked at all. Without
+/// this check an upload could run another module's function with that
+/// module's grants just by naming it, so an upload may invoke only its own
+/// functions, by a literal id install can check.
+///
+/// Bundled system modules are exempt: their steps are the engine's own wiring.
+fn refuse_cross_module_function_calls(
+    manifest: &ModuleManifest,
+    resolved: &ResolvedManifest,
+) -> Result<()> {
+    if resolved.provenance == InstallProvenance::System {
+        return Ok(());
+    }
+    let mut refused: Vec<String> = Vec::new();
+    for (at, target) in function_action_targets(manifest, resolved) {
+        match target {
+            FunctionTarget::Static(id) if id.module_id() != resolved.module_id => {
+                refused.push(format!(
+                    "{at} invokes '{id}', which belongs to another module"
+                ));
+            }
+            FunctionTarget::Static(id) => {
+                if !resolved.functions.iter().any(|f| f.canonical_id == id) {
+                    refused.push(format!(
+                        "{at} invokes '{id}', which this manifest does not declare"
+                    ));
+                }
+            }
+            FunctionTarget::Expression(raw) => {
+                refused.push(format!(
+                    "{at} computes the function to invoke from {raw:?}; name one of this module's functions directly so install can check it"
+                ));
+            }
+            FunctionTarget::Invalid(reason) => {
+                refused.push(format!("{at}: {reason}"));
+            }
+        }
+    }
+    if !refused.is_empty() {
+        return Err(anyhow!(
+            "Module invokes functions an upload may not invoke:\n  - {}",
+            refused.join("\n  - ")
+        ));
+    }
+    Ok(())
+}
+
 /// Validate `manifest.resources[]`: every kind must be non-empty,
 /// well-formed per [`validate_segment`], and unique within this manifest.
 /// Resource kinds are not canonical-id'd themselves (instances are), so
@@ -1843,6 +2018,89 @@ fn refuse_any_text(fields: &[ManifestConfigField], context: &str) -> Result<()> 
     Ok(())
 }
 
+/// A select's `options` are distinct values. Without a `source` they are the
+/// whole list, so the default must be one of them. With a `source` they are
+/// pinned entries the form lists ahead of the fetched ones, and the default
+/// may name a fetched value the manifest cannot know, so it is only required
+/// to be text.
+fn validate_select_options(field: &ManifestConfigField, context: &str) -> Result<()> {
+    let options = field.options.as_deref().unwrap_or_default();
+    let mut seen: HashSet<&str> = HashSet::with_capacity(options.len());
+    for option in options {
+        if !seen.insert(option.value.as_str()) {
+            return Err(anyhow!(
+                "{context}: option value {:?} is listed twice",
+                option.value
+            ));
+        }
+    }
+    if field.source.is_some() {
+        if let Some(default) = &field.default_value
+            && !default.is_string()
+        {
+            return Err(anyhow!(
+                "{context}: `defaultValue` {default} must be a string; a select's values are text"
+            ));
+        }
+        return Ok(());
+    }
+    match field.default_value.as_ref().and_then(|d| d.as_str()) {
+        Some(default) if seen.contains(default) => Ok(()),
+        Some(default) => Err(anyhow!(
+            "{context}: `defaultValue` {default:?} is not one of the `options`"
+        )),
+        None => Err(anyhow!(
+            "{context}: a `select` without a `source` needs a `defaultValue` that is one of its `options`"
+        )),
+    }
+}
+
+/// Field types whose value is never a string; a `visibleWhen` on one of them
+/// can never match.
+const NON_TEXT_FIELD_TYPES: [&str; 6] = ["number", "range", "toggle", "button", "layout", "list"];
+
+/// `visibleWhen` names another field of the same top-level list, one that is
+/// itself always shown, and the values that reveal this one.
+fn validate_visible_when(
+    field: &ManifestConfigField,
+    siblings: &[ManifestConfigField],
+    context: &str,
+) -> Result<()> {
+    let Some(condition) = &field.visible_when else {
+        return Ok(());
+    };
+    if condition.field == field.id {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` cannot name the field itself"
+        ));
+    }
+    let Some(target) = siblings.iter().find(|s| s.id == condition.field) else {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` {:?} is not a field of this list",
+            condition.field
+        ));
+    };
+    if target.visible_when.is_some() {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` {:?} has a `visibleWhen` of its own; conditions go one level only",
+            condition.field
+        ));
+    }
+    if NON_TEXT_FIELD_TYPES.contains(&target.field_type.as_str()) {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.field` {:?} is a `{}` field, which never holds text, so the condition could not match",
+            condition.field,
+            target.field_type
+        ));
+    }
+    if condition.one_of.is_empty() || condition.one_of.iter().any(|v| v.trim().is_empty()) {
+        return Err(anyhow!(
+            "{context}: `visibleWhen.oneOf` must list at least one non-empty value"
+        ));
+    }
+    Ok(())
+}
+
 fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<()> {
     let mut seen: HashSet<&str> = HashSet::with_capacity(fields.len());
     for (i, field) in fields.iter().enumerate() {
@@ -1870,6 +2128,9 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
                 "{context} field #{i} ({id}): `select` needs `options` or a `source`"
             ));
         }
+        if field.field_type == "select" {
+            validate_select_options(field, &format!("{context} field #{i} ({id})"))?;
+        }
         if field.field_type == "resource_ref" {
             let Some(kind) = field.resource_kind.as_deref() else {
                 return Err(anyhow!(
@@ -1893,6 +2154,7 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
             )?;
         }
         validate_item_fields(field, &format!("{context} field #{i} ({id})"))?;
+        validate_visible_when(field, fields, &format!("{context} field #{i} ({id})"))?;
         validate_operators(field, &format!("{context} field #{i} ({id})"))?;
         // An empty `anyText` is meaningful - it drops the part of the sentence -
         // but whitespace alone is neither that nor words, so it is a slip.
@@ -1985,6 +2247,12 @@ fn validate_list_rows(
         ));
     }
     for (i, item) in item_fields.iter().enumerate() {
+        if item.visible_when.is_some() {
+            return Err(anyhow!(
+                "{context}: item field #{i} ({}) has `visibleWhen`, which a list row does not take",
+                item.id
+            ));
+        }
         if !LIST_ITEM_FIELD_TYPES.contains(&item.field_type.as_str()) {
             return Err(anyhow!(
                 "{context}: item field #{i} ({}) has type {:?}; a list row takes only: {}",
@@ -2960,6 +3228,10 @@ fn resolve_local_or_canonical(
 }
 
 #[cfg(test)]
+#[path = "manifest_validate_function_refs_test.rs"]
+mod function_refs_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -3237,6 +3509,9 @@ mod tests {
             "workflow.cancel",
             "workflow.command.execute",
             "action.execute",
+            "platform.gateway.send",
+            "platform.gateway.capabilities",
+            "platform.gateway.field_options",
             "viewer.segment.entered",
             "viewer.segment.left",
         ] {
@@ -3262,6 +3537,90 @@ mod tests {
             .expect_err("an upload may not declare viewer.* triggers")
             .to_string();
         assert!(err.contains("reserved prefix \"viewer.\""), "{err}");
+    }
+
+    fn module_with_trigger_event(module_id: &str, event: &str) -> ModuleManifest {
+        parse(&format!(
+            r#"{{"id": "{module_id}", "name": "Mod", "version": "1.0.0",
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "{event}" }}]}}"#
+        ))
+    }
+
+    // Engine-asserted events an upload could otherwise forge through its
+    // webhook handler: a chat command invocation or command change, a session
+    // or setting change, a heartbeat, a workflow lifecycle event, another
+    // module's lifecycle. The bundled module binds some of them and stays
+    // exempt.
+    #[test]
+    fn test_validate_engine_asserted_events_are_reserved_for_uploads() {
+        for (event, reservation) in [
+            ("command.created", "command."),
+            ("command.deleted", "command."),
+            ("chat.command.sr", "chat.command."),
+            ("session.started", "session."),
+            ("setting.integration.token.updated", "setting."),
+            ("HEARTBEAT", "HEARTBEAT"),
+            ("MESSAGEBUS_INIT", "MESSAGEBUS_INIT"),
+            ("barkloader.module.field_options", "barkloader."),
+            ("workflow.run.completed", "workflow."),
+            ("workflow.health.ping", "workflow."),
+            ("workflow.anything", "workflow."),
+            ("module.change.add", "module."),
+            ("module.other_mod.order", "module."),
+            ("viewer.segment.entered", "viewer."),
+        ] {
+            let manifest = module_with_trigger_event("store", event);
+            let err = validate(&manifest)
+                .expect_err("an upload may not declare an engine-asserted event")
+                .to_string();
+            assert!(
+                err.contains(&format!("reserved prefix {reservation:?}")),
+                "{event}: {err}"
+            );
+            validate_with_provenance(&manifest, InstallProvenance::System)
+                .unwrap_or_else(|e| panic!("{event}: a system module may declare it: {e}"));
+        }
+    }
+
+    // Platform modules bring the platform's events, so those stay declarable.
+    #[test]
+    fn test_validate_platform_events_stay_open_to_uploads() {
+        for event in [
+            "channel.follow",
+            "channelpoints.redeem",
+            "user.message",
+            "stream.online",
+            "stream.offline",
+            "store.order.created",
+        ] {
+            validate(&module_with_trigger_event("store", event))
+                .unwrap_or_else(|e| panic!("{event}: {e}"));
+        }
+    }
+
+    #[test]
+    fn test_validate_module_namespace_is_open_only_under_the_own_id() {
+        validate(&module_with_trigger_event(
+            "store",
+            "module.store.order.created",
+        ))
+        .expect("a module may declare events under module.<its id>.");
+        for (module_id, event) in [
+            ("store", "module.other.order"),
+            ("store", "module.storefront.order"),
+            ("store", "module.store"),
+            ("a.b", "module.a.b.order"),
+            ("change", "module.change.add"),
+            ("storage", "module.storage.store.changed"),
+        ] {
+            let err = validate(&module_with_trigger_event(module_id, event))
+                .expect_err("outside the module's own namespace")
+                .to_string();
+            assert!(
+                err.contains("reserved prefix \"module.\""),
+                "{module_id} {event}: {err}"
+            );
+        }
     }
 
     // A trigger with no `event` fires on its id, so the id is checked too.
@@ -3291,6 +3650,8 @@ mod tests {
             "engine.obs.options",
             "message.send",
             "workflow.execute",
+            "platform.gateway.send",
+            "platform.gateway.field_options",
             "some.service.command",
         ] {
             let err = validate(&action_with_field_source(event, "{}"))
@@ -3389,6 +3750,106 @@ mod tests {
         ))
     }
 
+    fn action_with_select(select_extras: &str) -> ModuleManifest {
+        parse(&format!(
+            r#"{{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "actions": [{{ "id": "a", "name": "A", "type": "function", "function": "f",
+                "schema": [{{ "id": "platform", "label": "Platform", "type": "select", {select_extras} }}] }}],
+            "functions": [{{ "id": "f", "name": "F", "runtime": "js", "path": "f.js" }}]}}"#
+        ))
+    }
+
+    const PINNED_PLATFORM_OPTIONS: &str = r#""options": [
+        { "value": "origin", "label": "Where it came from" },
+        { "value": "all", "label": "Everywhere" }]"#;
+    const OWN_FIELD_OPTIONS_SOURCE: &str = r#""source": { "kind": "internal", "request": {
+        "event": "barkloader.module.field_options",
+        "payload": { "moduleId": "mod", "functionId": "f" } } }"#;
+
+    #[test]
+    fn test_select_options_pinned_beside_an_internal_source_validate() {
+        validate(&action_with_select(&format!(
+            r#""defaultValue": "origin", {PINNED_PLATFORM_OPTIONS}, {OWN_FIELD_OPTIONS_SOURCE}"#
+        )))
+        .expect("pinned origin and all may sit beside a source");
+    }
+
+    #[test]
+    fn test_select_options_duplicate_values_are_refused() {
+        for extras in [
+            r#""defaultValue": "a", "options": [
+                { "value": "a", "label": "A" }, { "value": "a", "label": "Again" }]"#
+                .to_string(),
+            format!(
+                r#""defaultValue": "a", "options": [
+                    {{ "value": "a", "label": "A" }}, {{ "value": "a", "label": "Again" }}], {OWN_FIELD_OPTIONS_SOURCE}"#
+            ),
+        ] {
+            let err = validate(&action_with_select(&extras))
+                .expect_err("a value listed twice is ambiguous")
+                .to_string();
+            assert!(err.contains("is listed twice"), "{extras}: {err}");
+        }
+    }
+
+    #[test]
+    fn test_select_default_without_a_source_must_be_an_option() {
+        for (extras, expected) in [
+            (
+                format!(r#""defaultValue": "nowhere", {PINNED_PLATFORM_OPTIONS}"#),
+                "is not one of the `options`",
+            ),
+            (
+                format!(r#""defaultValue": 3, {PINNED_PLATFORM_OPTIONS}"#),
+                "needs a `defaultValue`",
+            ),
+            (
+                PINNED_PLATFORM_OPTIONS.to_string(),
+                "needs a `defaultValue`",
+            ),
+        ] {
+            let err = validate(&action_with_select(&extras))
+                .expect_err("a static select needs a default it can show")
+                .to_string();
+            assert!(err.contains(expected), "{extras}: {err}");
+        }
+        validate(&action_with_select(&format!(
+            r#""defaultValue": "all", {PINNED_PLATFORM_OPTIONS}"#
+        )))
+        .expect("a default among the options is fine");
+    }
+
+    #[test]
+    fn test_select_default_with_a_source_must_be_a_string() {
+        let err = validate(&action_with_select(&format!(
+            r#""defaultValue": 7, {OWN_FIELD_OPTIONS_SOURCE}"#
+        )))
+        .expect_err("select values are text")
+        .to_string();
+        assert!(err.contains("must be a string"), "{err}");
+        validate(&action_with_select(&format!(
+            r#""defaultValue": "fetched-later", {OWN_FIELD_OPTIONS_SOURCE}"#
+        )))
+        .expect("a sourced default may name a value only the source knows");
+        validate(&action_with_select(OWN_FIELD_OPTIONS_SOURCE))
+            .expect("a sourced select may leave the default out");
+    }
+
+    #[test]
+    fn test_select_source_inside_a_list_row_stays_refused_with_pinned_options() {
+        let m = action_with_list_row(&format!(
+            r#"{{ "id": "pick", "label": "Pick", "type": "select", "defaultValue": "origin",
+                {PINNED_PLATFORM_OPTIONS}, {OWN_FIELD_OPTIONS_SOURCE} }}"#
+        ));
+        let err = validate(&m)
+            .expect_err("pinned options do not make a nested source resolvable")
+            .to_string();
+        assert!(
+            err.contains("internal sources are only supported on top-level fields"),
+            "{err}"
+        );
+    }
+
     fn action_with_list_row(row_field: &str) -> ModuleManifest {
         parse(&format!(
             r#"{{"id": "mod", "name": "Mod", "version": "1.0.0",
@@ -3436,6 +3897,31 @@ mod tests {
             r#"{ "id": "cmd", "label": "Command", "type": "select", "source": { "kind": "commands" } }"#,
         ))
         .expect("only bus requests are limited to top-level fields");
+    }
+
+    // `ctx.local` asks on this subject on module code's behalf, stamping the
+    // module's id from the invocation. A form or button sends the payload
+    // its manifest declares, moduleId included, so an upload must never
+    // reach it there.
+    #[test]
+    fn test_validate_refuses_an_upload_form_request_to_the_companion_gateway() {
+        let subject = lib_sandbox::contracts::companion_gateway::SUBJECT_MODULE_REQUEST;
+        let payload = r#"{ "op": "send", "moduleId": "woofx3_obs", "endpointId": "obs", "message": "x", "budgetMs": 4500 }"#;
+        let err = validate(&action_with_field_source(subject, payload))
+            .expect_err("a field source may not request the companion gateway")
+            .to_string();
+        assert!(err.contains("may request only"), "{err}");
+        assert!(err.contains("`source`"), "{err}");
+
+        let button = parse(&format!(
+            r#"{{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "settings": [{{ "id": "go", "label": "Go", "type": "button",
+                "action": {{ "kind": "internal", "request": {{ "event": "{subject}", "payload": {payload} }} }} }}]}}"#
+        ));
+        let err = validate(&button)
+            .expect_err("a settings button may not request the companion gateway")
+            .to_string();
+        assert!(err.contains("setting #0 (go): `action`"), "{err}");
     }
 
     #[test]
@@ -3862,9 +4348,13 @@ mod tests {
     }
 
     fn resource_with_field(field: &str) -> ModuleManifest {
+        resource_with_fields(&format!("[{field}]"))
+    }
+
+    fn resource_with_fields(fields: &str) -> ModuleManifest {
         minimal(&format!(
             r#",
-            "resources": [{{ "kind": "counter", "name": "Counter", "schema": [{field}] }}]"#
+            "resources": [{{ "kind": "counter", "name": "Counter", "schema": {fields} }}]"#
         ))
     }
 
@@ -3893,6 +4383,77 @@ mod tests {
         );
         let err = validate(&empty).expect_err("list with an empty row");
         assert!(err.to_string().contains("at least one field"), "{err}");
+    }
+
+    #[test]
+    fn test_visible_when_accepts_a_sibling() {
+        let both = resource_with_fields(
+            r#"[{ "id": "mode", "label": "Mode", "type": "text" },
+                { "id": "color", "label": "Colour", "type": "text",
+                  "visibleWhen": { "field": "mode", "oneOf": ["a", "b"] } }]"#,
+        );
+        validate(&both).expect("visibleWhen on a sibling validates");
+    }
+
+    #[test]
+    fn test_visible_when_rejects_misuse() {
+        let cases = [
+            (
+                r#"[{ "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "x", "oneOf": ["a"] } }]"#,
+                "cannot name the field itself",
+            ),
+            (
+                r#"[{ "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "ghost", "oneOf": ["a"] } }]"#,
+                "is not a field of this list",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": [] } }]"#,
+                "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": [""] } }]"#,
+                "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": [" "] } }]"#,
+                "at least one non-empty value",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "toggle" },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": ["a"] } }]"#,
+                "never holds text",
+            ),
+            (
+                r#"[{ "id": "m", "label": "M", "type": "text" },
+                   { "id": "n", "label": "N", "type": "text",
+                    "visibleWhen": { "field": "m", "oneOf": ["a"] } },
+                   { "id": "x", "label": "X", "type": "text",
+                    "visibleWhen": { "field": "n", "oneOf": ["a"] } }]"#,
+                "one level only",
+            ),
+            (
+                r#"[{ "id": "goals", "label": "Goals", "type": "list", "itemFields": [
+                    { "id": "a", "label": "A", "type": "text" },
+                    { "id": "b", "label": "B", "type": "text",
+                      "visibleWhen": { "field": "a", "oneOf": ["x"] } }] }]"#,
+                "a list row does not take",
+            ),
+        ];
+        for (fields, expected) in cases {
+            let err = validate(&resource_with_fields(fields))
+                .expect_err("invalid visibleWhen")
+                .to_string();
+            assert!(err.contains(expected), "{expected}: {err}");
+        }
     }
 
     #[test]
@@ -4414,6 +4975,22 @@ mod tests {
             ));
             assert!(msg.contains("listed twice"), "{first} and {second}: {msg}");
         }
+    }
+
+    #[test]
+    fn rejects_an_unknown_command_role() {
+        let json = r#"{
+            "id": "test_mod", "name": "Test Mod", "version": "1.0.0",
+            "commands": [{ "id": "c1", "name": "C1", "pattern": "!c1", "type": "prefix",
+                "requiredRole": "admin" }]
+        }"#;
+        let err = serde_json::from_str::<ModuleManifest>(json)
+            .expect_err("an unknown requiredRole must not parse")
+            .to_string();
+        assert!(
+            err.contains("admin") && err.contains("moderator") && err.contains("everyone"),
+            "the refusal names the bad role and the roles it accepts: {err}"
+        );
     }
 
     #[test]
@@ -5128,7 +5705,7 @@ mod tests {
                 "id": "w1", "name": "W1", "trigger": "t1",
                 "steps": [{ "id": "s1", "action": "builtin:action:alert" }]
             }],
-            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#,
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created" }]"#,
         );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::failing_on(["get_action_ref_by_canonical_id"]);
@@ -5150,7 +5727,7 @@ mod tests {
                 "id": "w1", "name": "W1", "trigger": "t1",
                 "steps": [{ "id": "s1", "action": "woofx3:action:doesnotexist" }]
             }],
-            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#,
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created" }]"#,
         );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::failing_on(["get_action_ref_by_canonical_id"]);
@@ -5174,7 +5751,7 @@ mod tests {
                 "id": "w1", "name": "W1", "trigger": "t1",
                 "steps": [{ "id": "s1", "action": "woofx3:action:alert" }]
             }],
-            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }]"#,
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created" }]"#,
         );
         let resolved = validate(&m).expect("validate ok");
         let db_proxy = FakeDbProxyClient::new().with_installed([installed_module("woofx3", &[])]);
@@ -5212,7 +5789,7 @@ mod tests {
                 "steps": [{{ "id": "s1", "action": "{action}" }}]
             }}],
             "commands": [{{ "id": "c1", "name": "C1", "pattern": "!x", "type": "prefix", "actions": [{{ "action": "woofx3:action:open" }}] }}],
-            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }}]"#
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created" }}]"#
         ));
         validate(&m).expect("validate ok")
     }
@@ -5308,7 +5885,7 @@ mod tests {
         minimal(&format!(
             r#",
             "permissions": {permissions},
-            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }}],
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created" }}],
             "workflows": [{{
                 "id": "w1", "name": "W1", "trigger": "t1",
                 "steps": [{{ "id": "s1", "action": "woofx3_twitch:action:twitch.timeout" }}]
@@ -5371,7 +5948,7 @@ mod tests {
     async fn a_step_calling_its_own_action_needs_no_extra_permissions() {
         let m = minimal(
             r#",
-            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "chat.command.x" }],
+            "triggers": [{ "id": "t1", "name": "T1", "type": "eventbus", "event": "store.order.created" }],
             "functions": [{ "id": "f1", "name": "F1", "runtime": "js", "path": "f.js" }],
             "actions": [{ "id": "a1", "name": "A1", "type": "function", "function": "f1" }],
             "workflows": [{ "id": "w1", "name": "W1", "trigger": "t1", "steps": [{ "action": "a1" }] }]"#,
@@ -5664,6 +6241,50 @@ mod tests {
         validate(&with_local(&none)).expect("no discovery installs");
         let no_password = OBS_LOCAL.replace(r#", "passwordSetting": "password""#, "");
         validate(&with_local(&no_password)).expect("no password installs");
+    }
+
+    #[test]
+    fn test_validate_local_host_default_cases() {
+        let with_default = |default: Option<&str>| {
+            let settings = match default {
+                Some(v) => OBS_SETTINGS.replace(
+                    r#""id": "host", "label": "Host", "type": "text""#,
+                    &format!(
+                        r#""id": "host", "label": "Host", "type": "text", "defaultValue": "{v}""#
+                    ),
+                ),
+                None => OBS_SETTINGS.to_string(),
+            };
+            validate(&minimal(&format!("{settings}, {OBS_LOCAL}")))
+        };
+        for accepted in [
+            None,
+            Some(""),
+            Some("localhost"),
+            Some("LocalHost"),
+            Some("127.0.0.1"),
+            Some("127.1.2.3"),
+            Some("::1"),
+        ] {
+            with_default(accepted).unwrap_or_else(|e| panic!("{accepted:?} should install: {e}"));
+        }
+        for refused in [
+            "192.168.1.1",
+            "10.0.0.2",
+            "obs-pc.lan",
+            "0.0.0.0",
+            "example.com",
+            "::ffff:127.0.0.1",
+            "[::1]",
+            "localhost.",
+        ] {
+            let err = with_default(Some(refused)).unwrap_err().to_string();
+            assert!(
+                err.contains("local[0] (obs): the default for hostSetting must be empty or a loopback address")
+                    && err.contains(refused),
+                "{refused}: {err}"
+            );
+        }
     }
 
     #[test]

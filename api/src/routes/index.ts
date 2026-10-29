@@ -18,10 +18,12 @@ import { inboundWebhooksRoutes } from "./inbound-webhooks";
 import { marketplaceRoutes } from "./marketplace";
 import { marketplaceCatalogRoutes } from "./marketplace-catalog";
 import { moduleOAuthRoutes } from "./module-oauth";
+import { moduleUploadsRoutes } from "./module-uploads";
 import { modulesRoutes } from "./modules";
 import { obsRoutes } from "./obs";
 import { overlayTokenRoutes } from "./overlay-tokens";
 import { pairingRoutes } from "./pairing";
+import { platformRoutes } from "./platform";
 import { relayRoutes } from "./relay";
 import { resourcesRoutes } from "./resources";
 import { scenesRoutes } from "./scenes";
@@ -55,6 +57,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof accountsRoutes &
   typeof modulesRoutes &
   typeof marketplaceRoutes &
+  typeof moduleUploadsRoutes &
   typeof marketplaceCatalogRoutes &
   typeof workflowsRoutes &
   typeof scenesRoutes &
@@ -71,6 +74,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof configBundlesRoutes &
   typeof moduleOAuthRoutes &
   typeof relayRoutes &
+  typeof platformRoutes &
   typeof viewerFactsRoutes &
   typeof twitchRoutes &
   typeof uiSettingsRoutes &
@@ -124,6 +128,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(accountsRoutes),
     instrumentRoutes(modulesRoutes),
     instrumentRoutes(marketplaceRoutes),
+    instrumentRoutes(moduleUploadsRoutes),
     instrumentRoutes(marketplaceCatalogRoutes),
     instrumentRoutes(workflowsRoutes),
     instrumentRoutes(scenesRoutes),
@@ -140,6 +145,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(configBundlesRoutes),
     instrumentRoutes(moduleOAuthRoutes),
     instrumentRoutes(relayRoutes),
+    instrumentRoutes(platformRoutes),
     instrumentRoutes(viewerFactsRoutes),
     instrumentRoutes(twitchRoutes),
     instrumentRoutes(uiSettingsRoutes),

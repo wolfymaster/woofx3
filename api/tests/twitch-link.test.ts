@@ -26,7 +26,7 @@ const HELIX_USER = {
   profile_image_url: "https://static-cdn.example/streamer.png",
 };
 
-/** The twitch service's reply to a `helix` request, or an Error the bus throws. */
+/** The Twitch adapter's reply to a `helix` request, or an Error the bus throws. */
 type HelixReply = { ok: true; body: unknown } | Error;
 
 function engine(opts: {
@@ -38,6 +38,10 @@ function engine(opts: {
     getSetting: mock(async (key: string) => settings.get(key) ?? null),
     setSetting: mock(async (key: string, value: string) => {
       settings.set(key, value);
+    }),
+    trySetSetting: mock(async (key: string, value: string) => {
+      settings.set(key, value);
+      return true;
     }),
     findOrCreateByWoofx3UIUserId: mock(async () => ({ id: "engine-user" })),
   };
@@ -59,6 +63,7 @@ function engine(opts: {
     nats: nats as unknown as ApiOptions["nats"],
     functions: null,
     barkloaderUrl: "http://barkloader.local",
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger: { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never,
@@ -127,7 +132,7 @@ describe("getTwitchLink", () => {
     expect(helixAsked).toHaveLength(1);
   });
 
-  test("still describes the link without a profile when the twitch service cannot be asked, and asks again next time", async () => {
+  test("still describes the link without a profile when the Twitch adapter cannot be asked, and asks again next time", async () => {
     const { rpc, helixAsked, setHelix } = engine({ helix: new Error("timeout") });
     await rpc.setTwitchToken(TOKEN);
 

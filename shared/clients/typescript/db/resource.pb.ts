@@ -35,9 +35,10 @@ export interface Resource {
   isFolder: boolean;
   name: string;
   /**
-   * "image" | "video" | "audio" | "other" | "folder". Derived from
-   * `content_type` at create time by the api gateway, stored so
-   * listing can filter without re-parsing MIME types.
+   * "image" | "video" | "audio" | "other" | "folder" | "custom_module". Derived
+   * from `content_type` at create time by the api gateway, stored so
+   * listing can filter without re-parsing MIME types. "custom_module" is never
+   * derived: the uploader declares a module archive as one.
    */
   kind: string;
   /**
@@ -103,7 +104,8 @@ export interface ListResourcesRequest {
    */
   parentId?: string | null | undefined;
   /**
-   * Optional filters. Empty means "no filter".
+   * Optional filters. An empty `kind` lists every kind except "custom_module":
+   * module archives are listed only when asked for by kind.
    */
   kind: string;
   /**

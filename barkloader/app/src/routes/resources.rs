@@ -8,6 +8,7 @@
 //!   `PUT  /assets/upload/{token}`    send the bytes (relayed grants)
 //!   `POST /assets/process`           derive a thumbnail, asynchronously
 //!   `DELETE /assets/resource`        purge one resource's stored bytes
+//!   `GET  /assets/custom-module`    read back a stored custom module archive
 //!
 //! The upload-url response is deliberately identical whichever storage
 //! backend is live. On S3 the `uploadUrl` is a genuine presigned PUT
@@ -22,8 +23,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use actix_web::error::PayloadError;
 use actix_web::http::header;
-use actix_web::web::{Bytes, Data, Json, Path, Payload, ServiceConfig};
-use actix_web::{HttpRequest, HttpResponse, delete, post, put};
+use actix_web::web::{Bytes, Data, Json, Path, Payload, Query, ServiceConfig};
+use actix_web::{HttpRequest, HttpResponse, delete, get, post, put};
 use futures_util::{Stream, StreamExt};
 use lib_repository::{
     CreateFileRequest, Repository, RepositoryImpl, UploadEndpoint, UploadRequest,
@@ -56,6 +57,26 @@ const MAX_PRESIGNED_UPLOAD_BYTES: u64 = 5 * 1024 * 1024 * 1024 - 5 * 1024 * 1024
 /// implied so adding a second one is an additive change.
 const UTILITY_THUMBNAIL: &str = "thumbnail";
 
+/// The directory below `user/` holding module archives uploaded for the
+/// engine to install. They stay under `user/` so they are stored, counted
+/// and purged like every other upload, but `routes::assets` never serves
+/// them: an archive is installable code, not a public asset.
+const CUSTOM_MODULE_SEGMENT: &str = "custom-modules";
+
+/// Every module archive key starts with this.
+pub const CUSTOM_MODULE_PREFIX: &str = "user/custom-modules/";
+
+/// What an upload is for, which decides where under `user/` it is stored.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum UploadArea {
+    /// A file for overlays and widgets, served publicly.
+    #[default]
+    Media,
+    /// A module archive, stored under `CUSTOM_MODULE_PREFIX` and never served.
+    CustomModule,
+}
+
 /// Where the browser is told to send the bytes: `relay` (default) or `direct`.
 ///
 /// A presigned PUT straight at the bucket is only usable from a browser if
@@ -79,6 +100,8 @@ struct UploadUrlRequest {
     /// Exact byte length of the upload; the grant is bound to it.
     content_length: u64,
     ttl_seconds: Option<u64>,
+    #[serde(default)]
+    area: UploadArea,
 }
 
 /// The provider-agnostic upload contract. `headers` must be sent
@@ -158,7 +181,7 @@ async fn direct_upload_enabled(ctx: &AppContext) -> bool {
 async fn upload_url_handler(ctx: Data<AppContext>, body: Json<UploadUrlRequest>) -> HttpResponse {
     let request = body.into_inner();
 
-    let key = match user_resource_key(&request.resource_id, &request.file_name) {
+    let key = match user_resource_key(request.area, &request.resource_id, &request.file_name) {
         Ok(key) => key,
         Err(message) => {
             return HttpResponse::BadRequest().json(error_body(&message));
@@ -598,13 +621,25 @@ async fn process_handler(
     HttpResponse::Accepted().json(accepted)
 }
 
-/// Build `user/{resource_id}/{file_name}`, rejecting anything that
-/// would escape that shape. The id must be a plain segment and the file
-/// name is sanitized -- the resulting key is then re-checked by
-/// `routes::assets::sanitize_asset_key` on read.
-fn user_resource_key(resource_id: &str, file_name: &str) -> Result<String, String> {
+/// Build `user/{resource_id}/{file_name}`, or
+/// `user/custom-modules/{resource_id}/{file_name}` for a module archive,
+/// rejecting anything that would escape that shape. The id must be a plain
+/// segment and the file name is sanitized -- the resulting key is then
+/// re-checked by `routes::assets::sanitize_asset_key` on read.
+///
+/// A media upload may not take the module archive directory's name as its
+/// id: its directory would then be the one holding every archive, which a
+/// delete purges whole.
+fn user_resource_key(
+    area: UploadArea,
+    resource_id: &str,
+    file_name: &str,
+) -> Result<String, String> {
     if !is_safe_segment(resource_id) {
         return Err("resource_id must be a plain path segment".to_string());
+    }
+    if resource_id == CUSTOM_MODULE_SEGMENT {
+        return Err(format!("resource_id {CUSTOM_MODULE_SEGMENT} is reserved"));
     }
     // `sanitize` strips separators but preserves dots, so "../../etc/passwd"
     // arrives here as "....etcpasswd". That cannot escape the prefix once the
@@ -616,7 +651,13 @@ fn user_resource_key(resource_id: &str, file_name: &str) -> Result<String, Strin
     if sanitized.is_empty() {
         return Err("file_name is not a usable file name".to_string());
     }
-    Ok(format!("user/{}/{}", resource_id, sanitized))
+    match area {
+        UploadArea::Media => Ok(format!("user/{}/{}", resource_id, sanitized)),
+        UploadArea::CustomModule => Ok(format!(
+            "{}{}/{}",
+            CUSTOM_MODULE_PREFIX, resource_id, sanitized
+        )),
+    }
 }
 
 /// The directory holding every object stored for the resource whose
@@ -718,12 +759,73 @@ async fn delete_resource_handler(
     }
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CustomModuleQuery {
+    /// The module archive resource's `repository_key` exactly as stored.
+    repository_key: String,
+}
+
+/// The bytes of one stored module archive, for the api to install from.
+///
+/// Behind the service key, unlike the public asset route that refuses these
+/// keys, and limited to them: it reads back what was uploaded to be
+/// installed, not any stored object.
+#[get("/assets/custom-module")]
+async fn custom_module_handler(
+    ctx: Data<AppContext>,
+    query: Query<CustomModuleQuery>,
+) -> HttpResponse {
+    read_custom_module(&ctx.repository.current(), &query.repository_key).await
+}
+
+async fn read_custom_module(repository: &RepositoryImpl, repository_key: &str) -> HttpResponse {
+    if !repository_key.starts_with(CUSTOM_MODULE_PREFIX) {
+        return HttpResponse::BadRequest().json(error_body(&format!(
+            "repositoryKey must start with {CUSTOM_MODULE_PREFIX}"
+        )));
+    }
+    if let Err(message) = resource_directory_for_key(repository_key) {
+        return HttpResponse::BadRequest().json(error_body(&message));
+    }
+    match repository.exists(repository_key).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return HttpResponse::NotFound()
+                .json(error_body("no module archive is stored at that key"));
+        }
+        Err(err) => {
+            error!(
+                "Failed to look up module archive {}: {}",
+                repository_key, err
+            );
+            return HttpResponse::InternalServerError()
+                .json(error_body("failed to read module archive"));
+        }
+    }
+    match repository.read_file(repository_key).await {
+        Ok(bytes) => HttpResponse::Ok()
+            .content_type("application/zip")
+            .body(bytes),
+        Err(err) => {
+            error!("Failed to read module archive {}: {}", repository_key, err);
+            HttpResponse::InternalServerError().json(error_body("failed to read module archive"))
+        }
+    }
+}
+
+/// The upload itself, guarded by its grant token rather than the service key:
+/// the browser sends it, through the scene manager's relay.
+pub fn configure_public(cfg: &mut ServiceConfig) {
+    cfg.service(upload_handler);
+}
+
 pub fn configure(cfg: &mut ServiceConfig) {
     cfg.service(upload_url_handler);
     cfg.service(poster_upload_url_handler);
-    cfg.service(upload_handler);
     cfg.service(process_handler);
     cfg.service(delete_resource_handler);
+    cfg.service(custom_module_handler);
 }
 
 #[cfg(test)]
@@ -733,16 +835,53 @@ mod tests {
     #[test]
     fn builds_the_documented_key_shape() {
         assert_eq!(
-            user_resource_key("res-1", "photo.png").unwrap(),
+            user_resource_key(UploadArea::Media, "res-1", "photo.png").unwrap(),
             "user/res-1/photo.png"
         );
+    }
+
+    #[test]
+    fn custom_modules_live_in_their_own_directory() {
+        let key = user_resource_key(UploadArea::CustomModule, "res-1", "shoutout.zip").unwrap();
+        assert_eq!(key, "user/custom-modules/res-1/shoutout.zip");
+        assert!(key.starts_with(CUSTOM_MODULE_PREFIX));
+        assert_eq!(
+            resource_directory_for_key(&key).unwrap(),
+            "user/custom-modules/res-1/"
+        );
+    }
+
+    #[test]
+    fn the_custom_module_directory_name_is_not_a_resource_id() {
+        for area in [UploadArea::Media, UploadArea::CustomModule] {
+            assert!(user_resource_key(area, CUSTOM_MODULE_SEGMENT, "photo.png").is_err());
+        }
+    }
+
+    #[test]
+    fn upload_area_defaults_to_media() {
+        let request: UploadUrlRequest = serde_json::from_value(serde_json::json!({
+            "resource_id": "res-1",
+            "file_name": "photo.png",
+            "content_length": 8,
+        }))
+        .unwrap();
+        assert_eq!(request.area, UploadArea::Media);
+        let request: UploadUrlRequest = serde_json::from_value(serde_json::json!({
+            "resource_id": "res-1",
+            "file_name": "m.zip",
+            "content_length": 8,
+            "area": "custom_module",
+        }))
+        .unwrap();
+        assert_eq!(request.area, UploadArea::CustomModule);
     }
 
     #[test]
     fn rejects_ids_that_would_escape_the_user_prefix() {
         for bad in ["..", ".", "", "a/b", "a\\b", "a b", "../etc"] {
             assert!(
-                user_resource_key(bad, "photo.png").is_err(),
+                user_resource_key(UploadArea::Media, bad, "photo.png").is_err(),
                 "resource_id {bad:?} should be rejected"
             );
         }
@@ -751,7 +890,7 @@ mod tests {
     #[test]
     fn sanitizes_the_file_name_rather_than_rejecting_it() {
         // Traversal in the file name is stripped, not honored.
-        let key = user_resource_key("res-1", "../../etc/passwd").unwrap();
+        let key = user_resource_key(UploadArea::Media, "res-1", "../../etc/passwd").unwrap();
         assert_eq!(key, "user/res-1/etcpasswd");
         assert!(!key.contains(".."));
     }
@@ -799,6 +938,42 @@ mod tests {
         use actix_web::test as actix_test;
         use futures_util::stream;
         use lib_repository::{FileRepository, FileRepositoryConfig};
+
+        #[actix_web::test]
+        async fn a_stored_custom_module_reads_back_and_nothing_else_does() {
+            let root = tempfile::tempdir().expect("tempdir");
+            let repo = file_repo(root.path());
+            let archive_key = "user/custom-modules/res-1/shoutout.zip";
+            for key in [archive_key, KEY] {
+                let request = CreateFileRequest {
+                    content: Some(b"PK\x03\x04archive".to_vec()),
+                    extension: Some("zip".to_string()),
+                    file_name: key.to_string(),
+                };
+                let mut failed = Vec::new();
+                repo.create([request], &mut failed).await.expect("seed");
+                assert!(failed.is_empty());
+            }
+
+            let response = read_custom_module(&repo, archive_key).await;
+            assert_eq!(response.status().as_u16(), 200);
+            let body = actix_web::body::to_bytes(response.into_body())
+                .await
+                .expect("body");
+            assert_eq!(&body[..], b"PK\x03\x04archive");
+
+            for (key, status) in [
+                (KEY, 400),
+                ("user/custom-modules/../res-1/clip.png", 400),
+                ("user/custom-modules/res-2/missing.zip", 404),
+            ] {
+                assert_eq!(
+                    read_custom_module(&repo, key).await.status().as_u16(),
+                    status,
+                    "{key:?}"
+                );
+            }
+        }
 
         const SECRET: &str = "upload-test-secret";
         const NOW: i64 = 1_700_000_000;
@@ -1183,7 +1358,7 @@ mod tests {
 
     #[test]
     fn rejects_file_names_that_sanitize_to_nothing() {
-        assert!(user_resource_key("res-1", "").is_err());
-        assert!(user_resource_key("res-1", "..").is_err());
+        assert!(user_resource_key(UploadArea::Media, "res-1", "").is_err());
+        assert!(user_resource_key(UploadArea::Media, "res-1", "..").is_err());
     }
 }

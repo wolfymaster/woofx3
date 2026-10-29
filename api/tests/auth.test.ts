@@ -1,132 +1,348 @@
 import { describe, expect, mock, test } from "bun:test";
-import { CLIENT_AUTH_CACHE_TTL_MS, ClientAuth } from "../src/auth";
+import { AUTH_UNAVAILABLE, isAuthenticationRefused, refusalReason } from "@woofx3/api/rpc";
+import { type AuthResult, ClientAuth, DEFAULT_AUTH_CACHE_TTL_MS } from "../src/auth";
+import { ClientSessions } from "../src/client-sessions";
+import { resolveAuthCacheTtlMs, resolvePlatformGatewayTimeoutMs } from "../src/config";
+import { ApiGateway } from "../src/gateway";
+import type { ConnectionInfo } from "../src/gateway-connection";
+import { resolveRegistrationPolicy } from "../src/registration";
 
-const LOGGER = { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never;
+const RIGHT = "right-secret";
+const WRONG = "wrong-secret";
+const TTL_MS = 1_000;
+const BATCH: ConnectionInfo = { origin: null, remoteAddress: "127.0.0.1", close: null, onEnd() {} };
 
-/** A db-proxy that knows one client, `c1` with secret `right`. */
-function db() {
-  const validateClient = mock(async (clientId: string, clientSecret: string) => {
-    if (clientId === "c1" && clientSecret === "right") {
-      return {
-        status: { code: "OK" as const },
-        client: { description: "desktop", kind: "CLIENT_KIND_REGISTERED", origin: "" },
-      };
-    }
-    return { status: { code: "NOT_FOUND" as const, message: "Invalid credentials" } };
-  });
-  return { validateClient } as unknown as ConstructorParameters<typeof ClientAuth>[0] & {
-    validateClient: typeof validateClient;
-  };
+function fakeLogger() {
+  return {
+    debug: mock(() => {}),
+    info: mock(() => {}),
+    warn: mock(() => {}),
+    error: mock(() => {}),
+  } as never as ConstructorParameters<typeof ClientAuth>[1];
 }
 
+/**
+ * A db proxy that knows every client id with RIGHT as its secret. Setting
+ * `down` makes the next calls throw, as an unreachable proxy does.
+ */
+function fakeDb() {
+  const state = { down: false, deleted: new Set<string>() };
+  const validateClient = mock(async (clientId: string, clientSecret: string) => {
+    if (state.down) {
+      throw new Error("connect ECONNREFUSED");
+    }
+    if (clientSecret !== RIGHT || state.deleted.has(clientId)) {
+      return { status: { code: "NOT_FOUND", message: "Invalid credentials" } };
+    }
+    return {
+      status: { code: "OK" },
+      client: {
+        clientId,
+        description: `client ${clientId}`,
+        callbackUrl: "",
+        callbackToken: "",
+        kind: "CLIENT_KIND_REGISTERED",
+        origin: "",
+      },
+    };
+  });
+  return { state, validateClient, db: { validateClient } as never };
+}
+
+function harness() {
+  const clock = { now: 0 };
+  const { state, validateClient, db } = fakeDb();
+  const auth = new ClientAuth(db, fakeLogger(), { ttlMs: TTL_MS, now: () => clock.now });
+  return { auth, clock, state, validateClient };
+}
+
+type Harness = ReturnType<typeof harness>;
+type Outcome = "valid" | "invalid_credentials" | "auth_unavailable";
+
+function outcome(result: AuthResult): Outcome {
+  return result.ok ? "valid" : result.error.kind;
+}
+
+interface Case {
+  name: string;
+  /** Run before the checked call; may itself validate. */
+  arrange: (h: Harness) => Promise<void>;
+  secret: string;
+  expected: Outcome;
+  /** Total db proxy calls once the checked call has returned. */
+  dbCalls: number;
+}
+
+const cases: Case[] = [
+  {
+    name: "a wrong secret after a right one is invalid",
+    arrange: async ({ auth }) => {
+      expect(outcome(await auth.validate("c1", RIGHT))).toBe("valid");
+    },
+    secret: WRONG,
+    expected: "invalid_credentials",
+    dbCalls: 2,
+  },
+  {
+    name: "a right secret after a wrong one is valid",
+    arrange: async ({ auth }) => {
+      expect(outcome(await auth.validate("c1", WRONG))).toBe("invalid_credentials");
+    },
+    secret: RIGHT,
+    expected: "valid",
+    dbCalls: 2,
+  },
+  {
+    name: "a repeated right secret is served from the cache",
+    arrange: async ({ auth }) => {
+      await auth.validate("c1", RIGHT);
+    },
+    secret: RIGHT,
+    expected: "valid",
+    dbCalls: 1,
+  },
+  {
+    name: "an unreachable db proxy is auth_unavailable and not cached",
+    arrange: async ({ auth, state }) => {
+      state.down = true;
+      expect(outcome(await auth.validate("c1", RIGHT))).toBe("auth_unavailable");
+      state.down = false;
+    },
+    secret: RIGHT,
+    expected: "valid",
+    dbCalls: 2,
+  },
+  {
+    name: "invalidateCache drops the client's cached success",
+    arrange: async ({ auth, state }) => {
+      await auth.validate("c1", RIGHT);
+      state.deleted.add("c1");
+      auth.invalidateCache("c1");
+    },
+    secret: RIGHT,
+    expected: "invalid_credentials",
+    dbCalls: 2,
+  },
+  {
+    name: "a cached success expires after the TTL",
+    arrange: async ({ auth, state, clock }) => {
+      await auth.validate("c1", RIGHT);
+      state.deleted.add("c1");
+      clock.now += TTL_MS;
+    },
+    secret: RIGHT,
+    expected: "invalid_credentials",
+    dbCalls: 2,
+  },
+  {
+    name: "a cached success holds until the TTL",
+    arrange: async ({ auth, state, clock }) => {
+      await auth.validate("c1", RIGHT);
+      state.deleted.add("c1");
+      clock.now += TTL_MS - 1;
+    },
+    secret: RIGHT,
+    expected: "valid",
+    dbCalls: 1,
+  },
+  {
+    name: "an empty secret is invalid without asking the db proxy",
+    arrange: async () => {},
+    secret: "",
+    expected: "invalid_credentials",
+    dbCalls: 0,
+  },
+];
+
 describe("ClientAuth.validate", () => {
-  test("accepts known credentials and refuses unknown ones", async () => {
-    const auth = new ClientAuth(db(), LOGGER);
+  for (const c of cases) {
+    test(c.name, async () => {
+      const h = harness();
+      await c.arrange(h);
 
-    expect(await auth.validate("c1", "right")).toEqual({ kind: "accepted", description: "desktop", boundOrigin: null });
-    expect(await auth.validate("c1", "wrong")).toEqual({ kind: "refused" });
-    expect(await auth.validate("c2", "right")).toEqual({ kind: "refused" });
-  });
-
-  test.each([
-    ["no client id", "", "right"],
-    ["no secret", "c1", ""],
-  ])("refuses %s without asking db-proxy", async (_, clientId, clientSecret) => {
-    const proxy = db();
-
-    expect(await new ClientAuth(proxy, LOGGER).validate(clientId, clientSecret)).toEqual({ kind: "refused" });
-    expect(proxy.validateClient).not.toHaveBeenCalled();
-  });
-
-  test("a wrong secret does not refuse the right one afterwards", async () => {
-    const auth = new ClientAuth(db(), LOGGER);
-
-    await auth.validate("c1", "wrong");
-
-    expect((await auth.validate("c1", "right")).kind).toBe("accepted");
-  });
-
-  test("a cached success does not admit another secret", async () => {
-    const auth = new ClientAuth(db(), LOGGER);
-
-    await auth.validate("c1", "right");
-
-    expect(await auth.validate("c1", "wrong")).toEqual({ kind: "refused" });
-  });
-
-  test("keeps an accepted pair until its time is up", async () => {
-    let now = 0;
-    const proxy = db();
-    const auth = new ClientAuth(proxy, LOGGER, () => now);
-
-    await auth.validate("c1", "right");
-    now = CLIENT_AUTH_CACHE_TTL_MS - 1;
-    await auth.validate("c1", "right");
-    expect(proxy.validateClient).toHaveBeenCalledTimes(1);
-
-    now = CLIENT_AUTH_CACHE_TTL_MS;
-    await auth.validate("c1", "right");
-    expect(proxy.validateClient).toHaveBeenCalledTimes(2);
-  });
-
-  test("a db-proxy that cannot be reached is an error, not a refusal, and is not cached", async () => {
-    let reachable = false;
-    const proxy = db();
-    const real = proxy.validateClient.getMockImplementation();
-    proxy.validateClient.mockImplementation(async (clientId: string, clientSecret: string) => {
-      if (!reachable) {
-        throw new Error("fetch failed");
-      }
-      return real!(clientId, clientSecret);
+      expect(outcome(await h.auth.validate("c1", c.secret))).toBe(c.expected);
+      expect(h.validateClient).toHaveBeenCalledTimes(c.dbCalls);
     });
-    const auth = new ClientAuth(proxy, LOGGER);
+  }
 
-    await expect(auth.validate("c1", "right")).rejects.toThrow("fetch failed");
+  test("invalidateCache leaves other clients cached", async () => {
+    const h = harness();
+    await h.auth.validate("c1", RIGHT);
+    await h.auth.validate("c2", RIGHT);
 
-    reachable = true;
-    expect((await auth.validate("c1", "right")).kind).toBe("accepted");
+    h.auth.invalidateCache("c1");
+    h.state.down = true;
+
+    expect(outcome(await h.auth.validate("c1", RIGHT))).toBe("auth_unavailable");
+    expect(outcome(await h.auth.validate("c2", RIGHT))).toBe("valid");
   });
 
-  test("an acceptance still in flight when the cache is cleared is not cached", async () => {
-    const proxy = db();
-    const real = proxy.validateClient.getMockImplementation()!;
-    let answer = () => {};
-    const answered = new Promise<void>((resolve) => {
-      answer = resolve;
+  test("invalidateCache during an in-flight check keeps its success out of the cache", async () => {
+    const h = harness();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
     });
-    proxy.validateClient.mockImplementationOnce(async (clientId: string, clientSecret: string) => {
-      const verdict = await real(clientId, clientSecret);
-      await answered;
-      return verdict;
+    const answer = h.validateClient.getMockImplementation();
+    if (!answer) {
+      throw new Error("fake db has no implementation");
+    }
+    h.validateClient.mockImplementationOnce(async (clientId: string, clientSecret: string) => {
+      const response = await answer(clientId, clientSecret);
+      await gate;
+      return response;
     });
-    const auth = new ClientAuth(proxy, LOGGER);
 
-    const inFlight = auth.validate("c1", "right");
-    auth.invalidateCache();
-    answer();
+    const pending = h.auth.validate("c1", RIGHT);
+    h.state.deleted.add("c1");
+    h.auth.invalidateCache("c1");
+    release();
+    // The db proxy answered before the delete, so this one check still passes.
+    expect(outcome(await pending)).toBe("valid");
 
-    expect((await inFlight).kind).toBe("accepted");
-    await auth.validate("c1", "right");
-    expect(proxy.validateClient).toHaveBeenCalledTimes(2);
+    expect(outcome(await h.auth.validate("c1", RIGHT))).toBe("invalid_credentials");
+    expect(h.validateClient).toHaveBeenCalledTimes(2);
   });
 
-  test("a db-proxy answer that is not a verdict is an error", async () => {
-    const proxy = {
-      validateClient: mock(async () => ({ status: { code: "INTERNAL", message: "database is locked" } })),
-    } as unknown as ConstructorParameters<typeof ClientAuth>[0];
+  test("caching a success drops the client's expired entries", async () => {
+    const h = harness();
+    const other = "other-secret";
+    const answer = h.validateClient.getMockImplementation();
+    if (!answer) {
+      throw new Error("fake db has no implementation");
+    }
+    h.validateClient.mockImplementationOnce(async (clientId: string) => answer(clientId, RIGHT));
+    await h.auth.validate("c1", other);
+    h.clock.now += TTL_MS;
 
-    await expect(new ClientAuth(proxy, LOGGER).validate("c1", "right")).rejects.toThrow("INTERNAL");
+    await h.auth.validate("c1", RIGHT);
+
+    expect(h.auth["cache"].size).toBe(1);
+    expect(h.auth["keysByClient"].get("c1")?.size).toBe(1);
   });
+
+  test("a db proxy answer that is not a verdict is auth_unavailable and not cached", async () => {
+    const h = harness();
+    h.validateClient.mockImplementationOnce(async () => ({
+      status: { code: "INTERNAL", message: "database is locked" },
+    }));
+
+    expect(outcome(await h.auth.validate("c1", RIGHT))).toBe("auth_unavailable");
+    expect(outcome(await h.auth.validate("c1", RIGHT))).toBe("valid");
+    expect(h.validateClient).toHaveBeenCalledTimes(2);
+  });
+
+  test("refuses a TTL that is not a positive integer", () => {
+    const { db } = fakeDb();
+    for (const ttlMs of [0, -1, 1.5, Number.NaN]) {
+      expect(() => new ClientAuth(db, fakeLogger(), { ttlMs })).toThrow("ttlMs must be a positive integer");
+    }
+  });
+});
+
+describe("ApiGateway.authenticate", () => {
+  function gateway(down: boolean) {
+    const { state, db } = fakeDb();
+    state.down = down;
+    const logger = fakeLogger();
+    const auth = new ClientAuth(db, logger, { ttlMs: TTL_MS });
+    return new ApiGateway(
+      {} as never,
+      auth,
+      db,
+      logger,
+      resolveRegistrationPolicy({ mode: "first" }),
+      new ClientSessions(logger),
+      null
+    );
+  }
+
+  async function rejection(promise: Promise<unknown>): Promise<Error> {
+    try {
+      await promise;
+    } catch (err) {
+      return err as Error;
+    }
+    throw new Error("expected authenticate to reject");
+  }
+
+  test("rejects a wrong secret as invalid credentials", async () => {
+    const err = await rejection(gateway(false).authenticate("c1", WRONG, BATCH));
+
+    expect(isAuthenticationRefused(err)).toBe(true);
+    expect(refusalReason(err)).toBe("Invalid client credentials");
+  });
+
+  test("rejects with a retryable AuthUnavailable when the db proxy is down", async () => {
+    const err = await rejection(gateway(true).authenticate("c1", RIGHT, BATCH));
+
+    expect(err.name).toBe(AUTH_UNAVAILABLE);
+    expect(isAuthenticationRefused(err)).toBe(false);
+    expect(err.message).not.toContain("Invalid client credentials");
+  });
+});
+
+describe("resolveAuthCacheTtlMs", () => {
+  const valid: [unknown, number][] = [
+    [undefined, DEFAULT_AUTH_CACHE_TTL_MS],
+    ["", DEFAULT_AUTH_CACHE_TTL_MS],
+    ["  ", DEFAULT_AUTH_CACHE_TTL_MS],
+    [5_000, 5_000],
+    ["250", 250],
+  ];
+  for (const [value, expected] of valid) {
+    test(`${JSON.stringify(value)} resolves to ${expected}`, () => {
+      expect(resolveAuthCacheTtlMs(value)).toBe(expected);
+    });
+  }
+
+  for (const value of ["0", "-5", "1.5", "soon", 0]) {
+    test(`${JSON.stringify(value)} stops startup`, () => {
+      expect(() => resolveAuthCacheTtlMs(value)).toThrow("WOOFX3_AUTH_CACHE_TTL_MS");
+    });
+  }
+});
+
+describe("resolvePlatformGatewayTimeoutMs", () => {
+  const valid: [unknown, number][] = [
+    [undefined, 12_000],
+    ["", 12_000],
+    ["  ", 12_000],
+    [20_000, 20_000],
+    ["15000", 15_000],
+  ];
+  for (const [value, expected] of valid) {
+    test(`${JSON.stringify(value)} resolves to ${expected}`, () => {
+      expect(resolvePlatformGatewayTimeoutMs(value)).toBe(expected);
+    });
+  }
+
+  for (const value of ["0", "-5", "1.5", "soon", 0, "11999", 3000]) {
+    test(`${JSON.stringify(value)} stops startup`, () => {
+      expect(() => resolvePlatformGatewayTimeoutMs(value)).toThrow("WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS");
+    });
+  }
+});
+
+describe("ClientAuth origin binding", () => {
+  function proxyAnswering(client: { kind: string; origin: string }) {
+    return {
+      validateClient: async () => ({
+        status: { code: "OK" },
+        client: { description: "d", callbackUrl: "", callbackToken: "", ...client },
+      }),
+    } as never;
+  }
 
   test.each([
     ["a registered client", { kind: "CLIENT_KIND_REGISTERED", origin: "" }, null],
     ["a paired client", { kind: "CLIENT_KIND_PAIRED", origin: "HTTP://LocalHost:5173" }, "http://localhost:5173"],
   ])("binds %s to its origin", async (_, client, boundOrigin) => {
-    const proxy = { validateClient: async () => ({ status: { code: "OK" }, client: { description: "d", ...client } }) };
+    const auth = new ClientAuth(proxyAnswering(client), fakeLogger(), { ttlMs: TTL_MS });
 
-    const verdict = await new ClientAuth(proxy as never, LOGGER).validate("c1", "s");
+    const result = await auth.validate("c1", RIGHT);
 
-    expect(verdict).toEqual({ kind: "accepted", description: "d", boundOrigin });
+    expect(result).toMatchObject({ ok: true, value: { boundOrigin } });
   });
 
   test.each([
@@ -134,8 +350,8 @@ describe("ClientAuth.validate", () => {
     ["a paired client without an origin", { kind: "CLIENT_KIND_PAIRED", origin: "" }],
     ["a paired client with an opaque origin", { kind: "CLIENT_KIND_PAIRED", origin: "null" }],
   ])("is an error, not an unbound acceptance, for %s", async (_, client) => {
-    const proxy = { validateClient: async () => ({ status: { code: "OK" }, client: { description: "d", ...client } }) };
+    const auth = new ClientAuth(proxyAnswering(client), fakeLogger(), { ttlMs: TTL_MS });
 
-    await expect(new ClientAuth(proxy as never, LOGGER).validate("c1", "s")).rejects.toThrow();
+    await expect(auth.validate("c1", RIGHT)).rejects.toThrow();
   });
 });

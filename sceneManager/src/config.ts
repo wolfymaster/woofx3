@@ -4,11 +4,32 @@ import {
   ALLOWED_ORIGINS_SETTING,
   type OriginListSetting,
   parseRequestGuardPolicy,
+  parseUiOrigins,
   type RequestGuardPolicy,
+  resolveExposure,
 } from "@woofx3/common/http/request-guard";
-import { dataDir, loadRuntimeEnv } from "@woofx3/common/runtime";
+import { dataDir, loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
+import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { WIDGET_HOST_SHIM_FILE } from "@woofx3/widget-host/frame";
 import { z } from "zod";
+
+/** How the OBS overlay refresh request is made and retried (obs/refresh-request.ts). */
+export interface ObsRefreshConfig {
+  /** How long one request waits for a reply. */
+  requestTimeoutMs: number;
+  /** The first retry's backoff ceiling; it doubles up to `retryMaxMs`. */
+  retryBaseMs: number;
+  retryMaxMs: number;
+  /** The failed attempt after which one warning says the retrying goes on in the background. */
+  warnAfterAttempts: number;
+}
+
+export const OBS_REFRESH_DEFAULTS: ObsRefreshConfig = {
+  requestTimeoutMs: 2_000,
+  retryBaseMs: 1_000,
+  retryMaxMs: 30_000,
+  warnAfterAttempts: 5,
+};
 
 export const SceneManagerEnvSchema = z.object({
   woofx3SceneManagerPort: z.union([z.number(), z.string()]).default("9101"),
@@ -16,17 +37,14 @@ export const SceneManagerEnvSchema = z.object({
   // exposure in dev) is the public surface, never assumed here.
   woofx3SceneManagerHost: z.string().default("127.0.0.1"),
   // HS256 signing secret for the short-lived session JWT minted at
-  // `GET /scene/{sceneId}`. Required — fail fast rather than run with
-  // an absent/guessable secret.
+  // `GET /scene/{sceneId}`. Required and checked by validateConfig: fail
+  // fast rather than run with an absent or guessable secret.
   woofx3SceneManagerTokenSecret: z.string().optional(),
   woofx3RootPath: z.string().optional(),
   woofx3MessagebusUrl: z.string().default("ws://localhost:4225"),
   woofx3MessagebusJwt: z.string().optional(),
   woofx3MessagebusNkey: z.string().optional(),
   woofx3MessagebusToken: z.union([z.string(), z.number()]).optional(),
-  woofx3ObsHost: z.string().default("127.0.0.1"),
-  woofx3ObsPort: z.union([z.number(), z.string()]).default("4455"),
-  woofx3ObsRpcToken: z.string().optional(),
   woofx3DatabaseProxyUrl: z.string().default(""),
   woofx3BarkloaderUrl: z.string().default("http://127.0.0.1:9653"),
   // The engine secret barkloader verifies media proxy URLs with (see
@@ -38,6 +56,19 @@ export const SceneManagerEnvSchema = z.object({
   // sceneManager's own origin list, used instead of woofx3AllowedOrigins when
   // set: widget frames need `null`, which the api must never accept.
   woofx3SceneManagerAllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  // The URL OBS and the dashboard reach sceneManager at; its host and origin
+  // join the request guard's defaults.
+  woofx3SceneManagerUrl: z.string().optional(),
+  // The dashboard's origins (parseUiOrigins); the scene editor's WebSocket comes from there.
+  woofx3UiUrl: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  // True where the edge listens beyond loopback and forwards to sceneManager; the production image sets it.
+  woofx3BehindEdge: z.boolean().optional(),
+  woofx3DbProxyToken: z.string().optional(),
+  woofx3SceneManagerObsRefreshRequestTimeoutMs: z
+    .union([z.number(), z.string()])
+    .default(OBS_REFRESH_DEFAULTS.requestTimeoutMs),
+  woofx3SceneManagerObsRefreshRetryBaseMs: z.union([z.number(), z.string()]).default(OBS_REFRESH_DEFAULTS.retryBaseMs),
+  woofx3SceneManagerObsRefreshRetryMaxMs: z.union([z.number(), z.string()]).default(OBS_REFRESH_DEFAULTS.retryMaxMs),
 });
 
 export const SCENE_MANAGER_ALLOWED_ORIGINS_SETTING: OriginListSetting = "WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS";
@@ -51,20 +82,17 @@ export interface SceneManagerRuntimeConfig {
   /** Where Google Fonts families are kept once fetched (see google-font-cache.ts). */
   fontCacheDir: string;
   databaseProxyUrl: string;
+  /** Service token db-proxy requires of every caller. */
+  dbProxyToken: string;
   barkloaderUrl: string;
-  /** Signs the media proxy URLs barkloader verifies (scene/media-proxy.ts). */
-  mediaProxySecret: string;
-  /** Which Host and Origin headers the HTTP server accepts; open unless set. */
-  requestGuard: RequestGuardPolicy;
   /**
-   * Where OBS is when the OBS module's settings do not say (obs/settings.ts):
-   * the module is not installed, or a setting is empty.
+   * The engine secret: signs the media proxy URLs barkloader verifies
+   * (scene/media-proxy.ts) and authenticates to barkloader's management routes.
    */
-  obs: {
-    host: string;
-    port: string;
-    token?: string;
-  };
+  barkloaderKey: string;
+  /** Which Host and Origin headers the HTTP server accepts, with their defaults resolved. */
+  requestGuard: RequestGuardPolicy;
+  obsRefresh: ObsRefreshConfig;
   nats: {
     url: string;
     name: string;
@@ -83,23 +111,33 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
   if (!config.bindHost) {
     throw new Error("sceneManager: bindHost must not be empty (WOOFX3_SCENE_MANAGER_HOST)");
   }
-  if (!config.tokenSecret) {
-    throw new Error(
-      "sceneManager: tokenSecret is required (WOOFX3_SCENE_MANAGER_TOKEN_SECRET) — refusing to mint session tokens with no secret"
-    );
-  }
+  // Session and editor tokens are signed with tokenSecret, and media proxy
+  // URLs and barkloader requests with barkloaderKey: a guessable secret lets
+  // anyone forge any of them.
+  assertSecret("sceneManagerTokenSecret", config.tokenSecret);
+  assertSecret("barkloaderKey", config.barkloaderKey);
+  assertSecret(DB_PROXY_TOKEN_CONFIG_KEY, config.dbProxyToken);
   if (!config.barkloaderUrl) {
     throw new Error("sceneManager: barkloaderUrl must not be empty (WOOFX3_BARKLOADER_URL)");
-  }
-  if (!config.mediaProxySecret) {
-    throw new Error(
-      "sceneManager: barkloaderKey is required (WOOFX3_BARKLOADER_KEY) — external media in widget settings is signed with it"
-    );
   }
   try {
     new URL(config.barkloaderUrl);
   } catch {
     throw new Error(`sceneManager: barkloaderUrl is not a valid URL: ${config.barkloaderUrl}`);
+  }
+  const refresh = config.obsRefresh;
+  for (const [name, value] of [
+    ["obsRefresh.requestTimeoutMs", refresh.requestTimeoutMs],
+    ["obsRefresh.retryBaseMs", refresh.retryBaseMs],
+    ["obsRefresh.retryMaxMs", refresh.retryMaxMs],
+    ["obsRefresh.warnAfterAttempts", refresh.warnAfterAttempts],
+  ] as const) {
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`sceneManager: ${name} must be a positive whole number of milliseconds, got ${value}`);
+    }
+  }
+  if (refresh.retryMaxMs < refresh.retryBaseMs) {
+    throw new Error("sceneManager: obsRefresh.retryMaxMs must not be below obsRefresh.retryBaseMs");
   }
   if (!Number.isInteger(config.port) || config.port < 0 || config.port > 65535) {
     throw new Error(
@@ -121,6 +159,13 @@ export function validateConfig(config: SceneManagerRuntimeConfig): void {
   const shimPath = join(config.publicDir, WIDGET_HOST_SHIM_FILE);
   if (!existsSync(shimPath)) {
     throw new Error(`sceneManager: widget host shim not found at ${shimPath} -- run \`bun run build:shim\``);
+  }
+}
+
+function assertSecret(name: string, value: string): void {
+  const result = validateSecret(name, value);
+  if (!result.ok) {
+    throw new Error(`sceneManager: ${result.error.message}`);
   }
 }
 
@@ -160,8 +205,8 @@ function nonBlank(value: unknown): string | undefined {
  * api. The own list replaces the shared one rather than adding to it, from
  * whichever source each comes: an own list in `.woofx3.json` wins over a
  * shared one in the environment. A blank own list falls back, as a blank
- * value never overrides another setting; one that is set but lists nothing
- * is refused when it is parsed.
+ * value never overrides another setting. With neither set, the request
+ * guard's defaults apply, `null` among them.
  *
  * sceneManager may list `null`, which sandboxed widget frames send, and the
  * api may not. Which routes admit it is the route table's call (`opaqueOrigin`
@@ -191,17 +236,19 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const nkeySeed = c.woofx3MessagebusNkey ? String(c.woofx3MessagebusNkey) : undefined;
   const token = nonBlank(c.woofx3MessagebusToken);
 
-  const obsHost = String(c.woofx3ObsHost ?? "127.0.0.1");
-  const obsPort = String(c.woofx3ObsPort ?? "4455");
-  const obsToken = c.woofx3ObsRpcToken ? String(c.woofx3ObsRpcToken) : undefined;
-
   const databaseProxyUrl = String(c.woofx3DatabaseProxyUrl ?? "");
+  const dbProxyToken = String(c.woofx3DbProxyToken ?? "");
   const barkloaderUrl = String(c.woofx3BarkloaderUrl ?? "http://127.0.0.1:9653");
-  const mediaProxySecret = String(c.woofx3BarkloaderKey ?? "");
+  const barkloaderKey = String(c.woofx3BarkloaderKey ?? "");
+  const publicUrl = nonBlank(c.woofx3SceneManagerUrl);
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: c.woofx3AllowedHosts,
     ...sceneManagerAllowedOrigins(c.woofx3SceneManagerAllowedOrigins, c.woofx3AllowedOrigins),
     opaqueOrigin: "allow",
+    exposure: resolveExposure(bindHost, c.woofx3BehindEdge === true),
+    ownUrls: publicUrl === undefined ? [] : [publicUrl],
+    // Sandboxed widget frames load fonts and module scripts from sceneManager with `Origin: null`.
+    extraDefaultOrigins: ["null", ...parseUiOrigins(c.woofx3UiUrl)],
   });
 
   return {
@@ -213,13 +260,15 @@ export function loadConfig(): SceneManagerRuntimeConfig {
     // The cache is written at runtime, so it follows the data directory when there is one.
     fontCacheDir: join(dataDir() ?? rootDir, "cache", "fonts"),
     databaseProxyUrl,
+    dbProxyToken,
     barkloaderUrl,
-    mediaProxySecret,
+    barkloaderKey,
     requestGuard,
-    obs: {
-      host: obsHost,
-      port: obsPort,
-      token: obsToken,
+    obsRefresh: {
+      requestTimeoutMs: Number(c.woofx3SceneManagerObsRefreshRequestTimeoutMs),
+      retryBaseMs: Number(c.woofx3SceneManagerObsRefreshRetryBaseMs),
+      retryMaxMs: Number(c.woofx3SceneManagerObsRefreshRetryMaxMs),
+      warnAfterAttempts: OBS_REFRESH_DEFAULTS.warnAfterAttempts,
     },
     nats: {
       url: messagebusUrl,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
@@ -115,10 +116,7 @@ func (s *sceneService) CreateScene(ctx context.Context, req *client.CreateSceneR
 		return nil, err
 	}
 
-	// The id is assigned here: the column default is Postgres-only
-	// (uuid_generate_v4()), and on SQLite every row would get the zero UUID.
 	scene := &models.Scene{
-		ID:            uuid.New(),
 		Kind:          kind,
 		BehaviorsJSON: behaviorsJSON,
 		InputsJSON:    inputsJSON,
@@ -455,10 +453,6 @@ func (s *sceneService) ListScenes(ctx context.Context, req *client.ListScenesReq
 }
 
 func (s *sceneService) sceneToProto(m *models.Scene) *client.Scene {
-	// gorm doesn't surface the auto-managed `created_at` / `updated_at`
-	// columns on the typed model today (same gap as `workflowToProto`);
-	// leave them as nil-typed timestamps until a follow-up exposes them.
-	var createdAt, updatedAt *timestamppb.Timestamp
 	scene := &client.Scene{
 		Id:            m.ID.String(),
 		Kind:          m.Kind,
@@ -470,8 +464,8 @@ func (s *sceneService) sceneToProto(m *models.Scene) *client.Scene {
 		LayoutJson:    m.LayoutJSON,
 		CreatedByType: m.CreatedByType,
 		CreatedByRef:  m.CreatedByRef,
-		CreatedAt:     createdAt,
-		UpdatedAt:     updatedAt,
+		CreatedAt:     timestamppb.New(m.CreatedAt),
+		UpdatedAt:     timestamppb.New(m.UpdatedAt),
 	}
 	if m.DraftWidgetsJSON != nil && m.DraftLayoutJSON != nil {
 		scene.DraftWidgetsJson = *m.DraftWidgetsJSON
@@ -513,6 +507,8 @@ func buildSceneChangeData(scene *models.Scene) map[string]interface{} {
 		"inputs_json":     scene.InputsJSON,
 		"created_by_type": scene.CreatedByType,
 		"created_by_ref":  scene.CreatedByRef,
+		"created_at":      scene.CreatedAt.UTC().Format(time.RFC3339Nano),
+		"updated_at":      scene.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
 
@@ -547,7 +543,6 @@ func (s *sceneService) CreateSceneBackups(ctx context.Context, req *client.Creat
 			return nil, twirp.InvalidArgumentError(fmt.Sprintf("backups[%d].reason", i), "must be unreadable_column or unreadable_placements")
 		}
 		rows = append(rows, &models.SceneBackup{
-			ID:           uuid.New(),
 			SceneID:      sceneID,
 			Version:      backup.Version,
 			SourceColumn: backup.Column,

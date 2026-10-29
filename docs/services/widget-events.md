@@ -146,17 +146,85 @@ converted on the way in). For each alert, the page plays it with the scene runti
 (`@woofx3/scene/runtime`) inside the alert widget's area, scaled from the layout's
 canvas: each widget is placed, rotated, faded and stacked as its placement says, and
 its transitions and effects play around it. A widget whose placement is hidden does not
-play at all. Each frame loads from `/scene/{sceneId}/alert/{eventId}/widget/{widgetId}`.
-That frame is assembled only from the stored scene event, so it can show nothing the
-scene manager did not validate and deliver to that scene. Each layout widget boots with
-`surface: "alert"` and receives one `alert` event whose `data` is the triggering
-CloudEvent (`{ type, data }`, or `null` when nothing triggered the workflow).
+play at all. The scene manager frames each layout widget as it dispatches the alert,
+the same way it frames a scene placement, and records where it loads from with the
+delivery (`frames`, see `sceneManager/contract/alert-delivery.ts`). Each frame loads
+the widget's own document, `/frames/{moduleId}/{manifestId}?theme={id}&v={version}`,
+which every placement and alert showing that widget shares and the browser caches, so
+an alert's frames need no request to the scene manager once the widget has been shown.
+The alert's half of the boot (instance id, settings, linked resources, entrance) rides in
+the frame URL's fragment and never reaches the server. External media in the settings
+of a widget under the theme policy is signed each time the delivery is sent to a page,
+never when it is stored. Each layout widget boots with `surface: "alert"` and receives
+one `alert` event whose `data` is the triggering CloudEvent (`{ type, data }`, or
+`null` when nothing triggered the workflow).
+
+The page plays alerts on **prepared** stages, so a widget's frame has usually loaded
+before its alert is due. A prepared stage is built transparent and already fitted
+to the area, with its frames booting and painting and its time held at its first
+moment. (Transparent rather than `visibility: hidden`, and fitted rather than left at
+its canvas size, because Chromium stops rendering a cross-origin frame that is hidden
+or clipped out of view, so a widget could not paint before it is shown.) An alert area keeps up to four prepared stages,
+one per shape (the same layout, behaviors and frames, whatever the settings), and
+decides which from its queue each time the queue changes: first the shapes of the
+alerts waiting in it, in the order they will play, so an alert's frames boot while it
+waits its turn; then, only while no alert is on screen, the shapes it played most
+recently, each prepared from the last alert of that shape, so preparing for an alert
+nobody is waiting on never competes with one on screen. When more shapes are wanted
+than it keeps, the stages due soonest stay and a shape due later than all of them is
+not prepared. An alert delivered to an idle area with nothing of its shape prepared
+plays at once on frames made for it. An alert takes over the prepared stage of its
+shape. Its settings are handed to the running widgets as a settings change, and only
+then is the alert's event sent. If a widget read a setting the alert changes while it
+booted, or has not painted yet (so what it read is not known yet), its
+frame might not show the new value, so the alert gets fresh frames instead. Each stage plays one
+alert and is then removed. A widget in a prepared stage boots with an instance id of
+its stage's (`prepared-{n}.{widgetId}`), not the alert's; its status reports are
+recorded under `{eventId}.{widgetId}` once its alert is known. Widget code therefore
+runs well before its alert, sometimes for an alert that never comes; see
+[Playing in an alert](../barkloader/sdk.md#playing-in-an-alert).
 
 A layout widget that subscribes with `autoComplete: false` has a length of its own and
 holds the alert until it calls `complete()`; one that completes on handler return has
 none. Once every timed widget is done, or after 5 seconds when none is timed, the
 widgets play their exits; once those are over the page removes the frames, acks the
 scene event, and plays the alert widget's next alert.
+
+#### Measuring an alert's latency
+
+Where an alert's time goes is recorded at both ends, so a slow alert can be traced
+without adding logging:
+
+- **Dispatch.** The scene manager logs `ui.notify.alert: dispatched` once per alert it
+  delivers, with `layoutMs` (reading the layout and checking it against the widget catalog),
+  `framesMs` (framing its widgets), `scenesMs` (finding each running scene's alert widgets),
+  `recordMs` (recording and pushing each scene's delivery) and `totalMs`, timed from when
+  the scene manager starts dispatching the alert.
+- **Frame documents.** Every widget frame document that is built per request carries a
+  `Server-Timing` header: `frame` (barkloader's widget entry) and `total`. Browser
+  devtools show it on the frame's request. A frame document the browser caches for good,
+  which is what alerts load, carries none, since a cached response would replay the first
+  miss's numbers.
+- **The page.** One alert is delivered to every alert area on a scene, and each area
+  plays it on its own, so the overlay's User Timing marks are named for the area
+  (`areaId`, the alert area's placement id) as well as the alert:
+  `woofx3.alert/{eventId}/{areaId}/{stage}` for `delivered`, `prepared` (it played on a
+  stage built before its turn came; an alert that played on frames made for it has no
+  such mark), `started` and `finished` (the alert is off the stage: played out, skipped,
+  or torn down with its area), and
+  `woofx3.alert/{eventId}/{areaId}/{widgetId}/{stage}` for each frame's `mounted`,
+  `ready` (the frame's shim is running: its response arrived and its head was parsed up
+  to the shim script, while the body and the widget's own scripts are still to load),
+  `subscribed` (the widget's own script has run) and `rendered`. On a prepared stage,
+  the steps its frames reached before the alert are marked, under the area the alert
+  plays in, as it starts. The measure
+  `woofx3.alert/{eventId}/{areaId}/on-screen` spans from delivery to the area's first
+  widget paint; its `detail.from` is `delivered`, or `started` for an alert delivered
+  before the page loaded. They appear in the devtools Performance panel, and
+  `performance.getEntriesByType("mark")` reads them from a script. Entries are cleared
+  once more than 20 later alerts have finished, so a burst's queued alerts keep theirs
+  until they have played, and at most 200 alerts are tracked, since an overlay can stay
+  open for a whole stream.
 
 #### Skip, clear and replay
 

@@ -21,17 +21,27 @@ import {
   HELIX_COMMAND,
   type HelixCommandArgs,
   type HelixOperationName,
+  TWITCHAPI_ERROR_TYPE,
+  TWITCHAPI_REPLY_CODES,
   TWITCHAPI_SUBJECT,
+  type TwitchApiReplyCode,
+  twitchApiResultType,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import type { SharedLogger } from "@woofx3/common/logging";
+import { requestFailureKind } from "@woofx3/nats";
 import type NATSClient from "@woofx3/nats/src/client";
 import { routeModule } from "./context";
 
 /** Long enough for a token renewal and the resend after a 401; the same wait `ctx.twitch` gives. */
 export const TWITCH_HELIX_TIMEOUT_MS = 10_000;
 
-/** The codes the twitch service sends with a `helix` refusal that a caller can branch on. */
-const FORWARDED_REFUSAL_CODES = new Set(["invalid_arguments", "not_linked"]);
+/**
+ * The code connectors answers with while the twitch adapter is linked but
+ * turned off, starting or parked. Its own message may name host internals,
+ * so callers get this one under `unavailable`.
+ */
+const INTEGRATION_UNAVAILABLE_CODE: TwitchApiReplyCode = "integration_unavailable";
+const INTEGRATION_UNAVAILABLE_MESSAGE = "Twitch is turned off or not running in this engine";
 
 type Requester = Pick<NATSClient, "request">;
 
@@ -39,17 +49,8 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** Matched by name and message, as the NATS client raises them. */
-function isTimeout(err: unknown): boolean {
-  return err instanceof Error && (err.name === "TimeoutError" || err.message === "timeout");
-}
-
-function isNoResponders(err: unknown): boolean {
-  if (!(err instanceof Error)) {
-    return false;
-  }
-  const cause = err.cause instanceof Error ? err.cause.name : "";
-  return cause === "NoResponders" || err.message.includes("no responders");
+function replyCode(value: unknown): TwitchApiReplyCode | null {
+  return TWITCHAPI_REPLY_CODES.find((code) => code === value) ?? null;
 }
 
 /** Twitch's `message` from a Helix error body, or "" when the body has none. */
@@ -62,20 +63,25 @@ function helixMessage(body: string): string {
   }
 }
 
-/** The twitch service's CloudEvent reply to a `helix` request, as a result. */
+/** The CloudEvent reply from the connectors host's Twitch adapter to a `helix` request, as a result. */
 export function readHelixReply(operation: HelixOperationName, raw: unknown): TwitchHelixResult {
   const envelope = typeof raw === "object" && raw !== null ? (raw as { type?: unknown; data?: unknown }) : {};
   const data =
     typeof envelope.data === "object" && envelope.data !== null ? (envelope.data as Record<string, unknown>) : {};
-  if (envelope.type === "twitchapi.error") {
+  if (envelope.type === TWITCHAPI_ERROR_TYPE) {
+    if (data.code === INTEGRATION_UNAVAILABLE_CODE) {
+      return { ok: false, code: "unavailable", error: INTEGRATION_UNAVAILABLE_MESSAGE };
+    }
     const error = typeof data.error === "string" && data.error !== "" ? data.error : `${operation} was refused`;
-    if (typeof data.code === "string" && FORWARDED_REFUSAL_CODES.has(data.code)) {
-      return { ok: false, code: data.code as "invalid_arguments" | "not_linked", error };
+    // The codes a caller can branch on; any other refusal is reported as `failed`.
+    const code = replyCode(data.code);
+    if (code === "invalid_arguments" || code === "not_linked") {
+      return { ok: false, code, error };
     }
     return { ok: false, code: "failed", error };
   }
-  if (envelope.type !== `twitchapi.${HELIX_COMMAND}.result`) {
-    return { ok: false, code: "failed", error: `${operation}: the twitch service sent an unreadable reply` };
+  if (envelope.type !== twitchApiResultType(HELIX_COMMAND)) {
+    return { ok: false, code: "failed", error: `${operation}: Twitch sent an unreadable reply` };
   }
   if (data.ok === true) {
     return { ok: true, body: data.body ?? null };
@@ -90,11 +96,11 @@ export function readHelixReply(operation: HelixOperationName, raw: unknown): Twi
       body: data.body,
     };
   }
-  return { ok: false, code: "failed", error: `${operation}: the twitch service sent an unreadable reply` };
+  return { ok: false, code: "failed", error: `${operation}: Twitch sent an unreadable reply` };
 }
 
 /**
- * Ask the twitch service to perform one Helix operation and wait for its
+ * Ask the connectors host's Twitch adapter to perform one Helix operation and wait for its
  * answer. Never throws: every way of not getting Twitch's answer is a
  * result with its own code, since an RPC error would lose the code.
  */
@@ -108,7 +114,7 @@ export async function requestHelix(
     return { ok: false, code: "invalid_arguments", error: `${operation}: params must be an object` };
   }
   if (!nats) {
-    return { ok: false, code: "unavailable", error: "The twitch service cannot be reached: no message bus" };
+    return { ok: false, code: "unavailable", error: "Twitch cannot be reached right now" };
   }
   const args: HelixCommandArgs = { operation, params: params as Record<string, unknown> | undefined };
   const payload = new TextEncoder().encode(JSON.stringify({ command: HELIX_COMMAND, args }));
@@ -116,15 +122,16 @@ export async function requestHelix(
   try {
     reply = await nats.request(TWITCHAPI_SUBJECT, payload, { timeout: TWITCH_HELIX_TIMEOUT_MS });
   } catch (err) {
-    if (isTimeout(err)) {
+    const failure = requestFailureKind(err);
+    if (failure === "timeout") {
       return {
         ok: false,
         code: "timeout",
-        error: `The twitch service did not answer within ${TWITCH_HELIX_TIMEOUT_MS / 1000}s; Twitch may still have acted`,
+        error: `Twitch did not answer within ${TWITCH_HELIX_TIMEOUT_MS / 1000}s; it may still have acted`,
       };
     }
-    if (isNoResponders(err)) {
-      return { ok: false, code: "unavailable", error: "The twitch service is not running" };
+    if (failure === "no_responders") {
+      return { ok: false, code: "unavailable", error: "Twitch is not connected in this engine" };
     }
     logger.warn("twitch helix request failed", { operation, error: errorMessage(err) });
     return { ok: false, code: "failed", error: `${operation}: ${errorMessage(err)}` };
@@ -133,7 +140,7 @@ export async function requestHelix(
   try {
     decoded = JSON.parse(new TextDecoder().decode(reply.data));
   } catch {
-    return { ok: false, code: "failed", error: `${operation}: the twitch service sent an unreadable reply` };
+    return { ok: false, code: "failed", error: `${operation}: Twitch sent an unreadable reply` };
   }
   return readHelixReply(operation, decoded);
 }

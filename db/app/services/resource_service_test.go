@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -16,7 +17,8 @@ import (
 // common_service_test.go with the `resources` table. Hand DDL, same
 // reason as the other service tests: the production gorm tags depend on
 // Postgres-only uuid_generate_v4(). The CHECK constraints mirror the
-// 0032_resources migration so the tests exercise the same guard rails
+// 0032_resources migration (with the kinds 0072 admits) so the tests
+// exercise the same guard rails
 // production gets.
 func newResourceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -35,7 +37,7 @@ func newResourceTestDB(t *testing.T) *gorm.DB {
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		CONSTRAINT resources_kind_check
-			CHECK (kind IN ('image', 'video', 'audio', 'other', 'folder')),
+			CHECK (kind IN ('image', 'video', 'audio', 'other', 'folder', 'custom_module')),
 		CONSTRAINT resources_status_check
 			CHECK (status IN ('pending', 'ready', 'failed')),
 		CONSTRAINT resources_folder_has_no_bytes
@@ -47,13 +49,29 @@ func newResourceTestDB(t *testing.T) *gorm.DB {
 	if err := db.Exec(stmt).Error; err != nil {
 		t.Fatalf("exec ddl: %v", err)
 	}
+	// Only the columns a resource delete reads to find a module installed
+	// from the resource.
+	modules := `CREATE TABLE modules (
+		id TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		upload_resource_id TEXT NULL
+	)`
+	if err := db.Exec(modules).Error; err != nil {
+		t.Fatalf("exec modules ddl: %v", err)
+	}
 	return db
 }
 
 func newResourceSvc(t *testing.T) client.ResourceService {
 	t.Helper()
+	svc, _ := newResourceSvcWithDB(t)
+	return svc
+}
+
+func newResourceSvcWithDB(t *testing.T) (client.ResourceService, *gorm.DB) {
+	t.Helper()
 	db := newResourceTestDB(t)
-	return NewResourceService(repository.NewResourceRepository(db))
+	return NewResourceService(repository.NewResourceRepository(db)), db
 }
 
 func strptr(s string) *string {
@@ -261,6 +279,37 @@ func TestListResourcesFiltersByKindAndSearch(t *testing.T) {
 	}
 }
 
+func TestListResourcesLeavesModulesOutUnlessAskedFor(t *testing.T) {
+	svc := newResourceSvc(t)
+	ctx := context.Background()
+	createUpload(t, svc, "sunset.png", models.ResourceKindImage, nil)
+	createUpload(t, svc, "shoutout.zip", models.ResourceKindCustomModule, nil)
+
+	library, err := svc.ListResources(ctx, &client.ListResourcesRequest{})
+	if err != nil {
+		t.Fatalf("ListResources: %v", err)
+	}
+	if library.Total != 1 || library.Resources[0].Name != "sunset.png" {
+		t.Fatalf("a listing naming no kind returned %+v, want only sunset.png", library.Resources)
+	}
+
+	searched, err := svc.ListResources(ctx, &client.ListResourcesRequest{Search: "shout"})
+	if err != nil {
+		t.Fatalf("ListResources(search): %v", err)
+	}
+	if searched.Total != 0 {
+		t.Fatalf("a search naming no kind found %d module archives, want 0", searched.Total)
+	}
+
+	modules, err := svc.ListResources(ctx, &client.ListResourcesRequest{Kind: models.ResourceKindCustomModule})
+	if err != nil {
+		t.Fatalf("ListResources(kind custom_module): %v", err)
+	}
+	if modules.Total != 1 || modules.Resources[0].Name != "shoutout.zip" {
+		t.Fatalf("kind custom_module returned %+v, want only shoutout.zip", modules.Resources)
+	}
+}
+
 func TestListResourcesPaginates(t *testing.T) {
 	svc := newResourceSvc(t)
 	for _, name := range []string{"a.png", "b.png", "c.png"} {
@@ -373,6 +422,47 @@ func TestUpdateResourceRejectsThumbnailOnFolder(t *testing.T) {
 	assertTwirpCode(t, err, twirp.InvalidArgument)
 }
 
+func TestDeleteResourceIsRefusedWhileAModuleInstalledFromItIsInstalled(t *testing.T) {
+	svc, db := newResourceSvcWithDB(t)
+	ctx := context.Background()
+	archive := createUpload(t, svc, "shoutout.zip", models.ResourceKindCustomModule, nil)
+	folder := createFolder(t, svc, "clips", nil)
+	nested := createUpload(t, svc, "nested.zip", models.ResourceKindCustomModule, &folder.Id)
+	for _, m := range []struct{ id, name, resourceID string }{
+		{"m1", "Shoutout", archive.Id},
+		{"m2", "Nested", nested.Id},
+	} {
+		if err := db.Exec(`INSERT INTO modules (id, name, upload_resource_id) VALUES (?, ?, ?)`,
+			m.id, m.name, m.resourceID).Error; err != nil {
+			t.Fatalf("insert module: %v", err)
+		}
+	}
+
+	_, err := svc.DeleteResource(ctx, &client.DeleteResourceRequest{Id: archive.Id})
+	assertTwirpCode(t, err, twirp.FailedPrecondition)
+	if !strings.Contains(err.Error(), `module "Shoutout"`) || !strings.Contains(err.Error(), "uninstall") {
+		t.Fatalf("refusal = %q, want it to name the module and say to uninstall it", err.Error())
+	}
+	// A folder holding such an archive is refused whole.
+	_, err = svc.DeleteResource(ctx, &client.DeleteResourceRequest{Id: folder.Id})
+	assertTwirpCode(t, err, twirp.FailedPrecondition)
+	if _, err := svc.GetResource(ctx, &client.GetResourceRequest{Id: nested.Id}); err != nil {
+		t.Fatalf("the archive in a refused folder delete is gone: %v", err)
+	}
+
+	// Uninstalling removes the module row; the archive can then go.
+	if err := db.Exec(`DELETE FROM modules WHERE id = 'm1'`).Error; err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	resp, err := svc.DeleteResource(ctx, &client.DeleteResourceRequest{Id: archive.Id})
+	if err != nil {
+		t.Fatalf("DeleteResource after uninstall: %v", err)
+	}
+	if len(resp.RepositoryKeys) != 1 {
+		t.Fatalf("repository keys = %v, want the archive's one key", resp.RepositoryKeys)
+	}
+}
+
 func TestDeleteResourceReturnsSubtreeRepositoryKeys(t *testing.T) {
 	svc := newResourceSvc(t)
 	folder := createFolder(t, svc, "clips", nil)
@@ -429,6 +519,7 @@ func TestGetResourceUsageCountsEveryFileWhateverItsStatus(t *testing.T) {
 	folder := createFolder(t, svc, "clips", nil)
 	pending := createUpload(t, svc, "one.png", models.ResourceKindImage, &folder.Id)
 	createUpload(t, svc, "two.png", models.ResourceKindImage, nil)
+	createUpload(t, svc, "module.zip", models.ResourceKindCustomModule, nil)
 	ready := models.ResourceStatusReady
 	size := int64(1000)
 	if _, err := svc.UpdateResource(ctx, &client.UpdateResourceRequest{
@@ -443,12 +534,13 @@ func TestGetResourceUsageCountsEveryFileWhateverItsStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetResourceUsage: %v", err)
 	}
-	// One ready file of 1000 bytes and one pending file still holding the
-	// 128 bytes it was created with; the folder adds nothing.
-	if usage.Bytes != 1128 {
-		t.Fatalf("bytes = %d, want 1128", usage.Bytes)
+	// One ready file of 1000 bytes and two pending files, an image and a
+	// module archive, still holding the 128 bytes each was created with;
+	// the folder adds nothing.
+	if usage.Bytes != 1256 {
+		t.Fatalf("bytes = %d, want 1256", usage.Bytes)
 	}
-	if usage.Files != 2 {
-		t.Fatalf("files = %d, want 2", usage.Files)
+	if usage.Files != 3 {
+		t.Fatalf("files = %d, want 3", usage.Files)
 	}
 }

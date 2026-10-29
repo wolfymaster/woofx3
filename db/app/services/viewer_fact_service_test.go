@@ -13,6 +13,8 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/workers"
+	"github.com/wolfymaster/woofx3/db/database"
+	"github.com/wolfymaster/woofx3/db/database/dbtest"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -41,7 +43,7 @@ func newFactSvc(t *testing.T, db *gorm.DB) *viewerFactService {
 	svc := NewViewerFactService(
 		repo.NewViewerFactRepository(db),
 		repo.NewViewerSegmentRepository(db),
-		repo.NewModuleRepository(db),
+		repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }),
 		workers.NewEventPublisher(repo.NewDbEventRepository(db), logger),
 	).(*viewerFactService)
 	svc.now = func() time.Time { return factNow.Add(time.Hour) }
@@ -70,7 +72,7 @@ func registerTrigger(t *testing.T, db *gorm.DB, moduleID, manifestID, event, emi
 
 func forEachFactDialect(t *testing.T, test func(t *testing.T, svc *viewerFactService, db *gorm.DB)) {
 	t.Helper()
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		registerTrigger(t, db, "twitch", "user_message", "chat.message.>", chatEmits)
 		test(t, newFactSvc(t, db), db)
 	})

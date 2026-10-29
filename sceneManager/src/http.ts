@@ -20,7 +20,7 @@ import {
   handleCompositionPreviewRoute,
 } from "./routes/composition-preview";
 import { COMPOSITION_PREVIEW_PATH } from "@woofx3/common/cloudevents/Scene/composition-preview";
-import { handleAlertWidgetFrameRoute, handleFrameDocumentRoute } from "./routes/widget";
+import { handleFrameDocumentRoute } from "./routes/widget";
 import { type EditorSocketData, editorSocketHandlers, handleEditorUpgrade } from "./routes/editor";
 import { handleStaticAssetRoute } from "./routes/assets";
 import { handleAssetReadRoute } from "./routes/asset-read";
@@ -211,14 +211,6 @@ const ROUTES = routeTable<HttpDeps>([
     handle: (req, { params, deps }) => handleSessionRefreshRoute(req, params.sceneId!, deps),
   },
   {
-    path: "/scene/:sceneId/alert/:eventId/widget/:widgetId",
-    methods: ["GET"],
-    cors: "open",
-    opaqueOrigin: "refuse",
-    handle: (req, { params, deps }) =>
-      handleAlertWidgetFrameRoute(req, params.sceneId!, params.eventId!, params.widgetId!, deps),
-  },
-  {
     path: "/scene/:sceneId/widget/:instanceId/status",
     methods: ["POST"],
     cors: "open",
@@ -270,8 +262,8 @@ export function routeOf(pathname: string): string | null {
 
 /**
  * The CORS headers the route answering `pathname` grants: its preflight
- * answer and its responses, to a request from `origin` (every origin unless
- * sceneManager's origin list is set; see config.ts).
+ * answer and its responses, to a request from `origin` (every origin when
+ * sceneManager's origin list is `*`; see config.ts).
  */
 export function corsHeadersFor(pathname: string, origin: CorsOrigin = ANY_ORIGIN): Record<string, string> {
   return corsHeadersForPath(ROUTES, pathname, origin);

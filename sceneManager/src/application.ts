@@ -1,3 +1,4 @@
+import { describeRequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import type {
   ApplicationContext,
   IApplication,
@@ -7,12 +8,13 @@ import type {
 import { createMessageBus } from "@woofx3/nats";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { SceneManagerRuntimeConfig } from "./config";
+import { presentAlertDeliveries } from "./events/alert-dispatch";
 import { DeliveryStore } from "./events/delivery-store";
 import { closeDeliveriesToRemovedPlacements } from "./events/removed-placements";
 import { GoogleFontCache } from "./fonts/google-font-cache";
 import { createHttpServer } from "./http";
 import { initSubscriptions } from "./nats-subscriptions";
-import { createObsService, type ObsService } from "./obs/service";
+import { type RefreshRequester, startRefreshRequests, systemRefreshTimers } from "./obs/refresh-request";
 import { FrameAssembler, HttpBarkloaderFrameClient } from "./scene/frame-assembler";
 import { FrameCatalog } from "./scene/frame-catalog";
 import { MediaProxy } from "./scene/media-proxy";
@@ -48,9 +50,10 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
   readonly __finalContextType!: SceneManagerContext;
   private server: ReturnType<typeof Bun.serve> | null = null;
   private deliveryStore: DeliveryStore | null = null;
-  private obs: ObsService | null = null;
+  private framing: FrameCatalog | null = null;
   private sceneDocuments: SceneDocuments | null = null;
   private nats: NATSClient | null = null;
+  private refreshRequester: RefreshRequester | null = null;
 
   constructor(runtimeConfig: SceneManagerRuntimeConfig) {
     this.context = { runtimeConfig };
@@ -80,13 +83,16 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
 
     const db = ctx.services.db.client;
     const resolver = new OverlayTokenResolver(db, logger);
-    const barkloader = new HttpBarkloaderFrameClient(runtimeConfig.barkloaderUrl, logger);
-    const framing = new FrameCatalog(barkloader, logger, (moduleId) => linkedResources(db, moduleId));
+    const barkloader = new HttpBarkloaderFrameClient(runtimeConfig.barkloaderUrl, runtimeConfig.barkloaderKey, logger);
+    const framing = new FrameCatalog(barkloader, logger, {
+      linkedResources: (moduleId) => linkedResources(db, moduleId),
+    });
+    this.framing = framing;
     const host = new OverlayHost(resolver, db, logger, { framing });
-    const mediaProxy = new MediaProxy(runtimeConfig.mediaProxySecret);
+    const mediaProxy = new MediaProxy(runtimeConfig.barkloaderKey);
     const sessionTokens = new SessionTokenService(runtimeConfig.tokenSecret);
 
-    const deliveryStore = new DeliveryStore(db, logger);
+    const deliveryStore = new DeliveryStore(db, logger, presentAlertDeliveries(mediaProxy));
     // Edits are written back here, so the database stays each scene's record.
     const sceneDocuments = new SceneDocuments(host, deliveryStore, logger, {
       mediaProxy,
@@ -94,11 +100,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       backups: dbSceneBackupStore(db),
     });
     this.sceneDocuments = sceneDocuments;
-    const frameAssembler = new FrameAssembler(host, logger, {
-      barkloader,
-      linkedResources: (moduleId) => linkedResources(db, moduleId),
-      mediaProxy,
-    });
+    const frameAssembler = new FrameAssembler(logger, { barkloader });
     // Held before hydrating, so a start that fails after this still stops
     // the store's timers.
     this.deliveryStore = deliveryStore;
@@ -109,25 +111,19 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     deliveryStore.startSweep();
     const moduleState = new ModuleStateWatch(db, deliveryStore, logger);
 
-    // NATS and OBS are both best-effort, non-blocking dependencies: scenes
-    // are served without them, so neither goes through the shared runtime's
+    // NATS is a best-effort, non-blocking dependency: scenes are served
+    // without it, so it does not go through the shared runtime's
     // health-monitor-gated startup, which would hold scene serving back.
     const nats = await connectBus(runtimeConfig, logger);
     this.nats = nats;
-    // Started only once the server is listening (below), so the first
-    // session's overlay refresh can never land before /scene is served.
-    const obs = createObsService({ db, nats, obs: runtimeConfig.obs, overlayPort: runtimeConfig.port, logger });
-    this.obs = obs;
     const tokens = sceneTokenIssuer(sessionTokens, async (sceneId) => (await host.loadSceneById(sceneId)) !== null);
 
     await initSubscriptions({
       nats,
-      obs: obs.connection,
-      obsStatus: () => obs.status(),
-      relayConfigMovesObs: () => obs.relayConfigMovesObs(),
       db,
       host,
       deliveryStore,
+      framing,
       moduleState,
       resolver,
       sceneDocuments,
@@ -149,9 +145,34 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       mediaProxy,
       bootId,
     });
-    logger.info("sceneManager listening", { port: this.server.port, bindHost: runtimeConfig.bindHost, bootId });
+    logger.info("sceneManager listening", {
+      port: this.server.port,
+      bindHost: runtimeConfig.bindHost,
+      bootId,
+      ...describeRequestGuardPolicy(runtimeConfig.requestGuard),
+    });
 
-    obs.start();
+    // Requested only now the server is listening, so a refreshed overlay can
+    // never land before /scene is served. The connectors host holds the OBS
+    // connection and answers.
+    const overlayPort = this.listeningPort();
+    if (overlayPort === null) {
+      throw new Error("sceneManager: the HTTP server reports no listening port");
+    }
+    if (nats === null) {
+      logger.warn("NATS unavailable; the OBS overlay refresh cannot be requested", { bootId });
+    } else {
+      this.refreshRequester = startRefreshRequests(
+        { overlayPort, bootId },
+        {
+          bus: nats,
+          config: runtimeConfig.obsRefresh,
+          random: { next: Math.random },
+          timers: systemRefreshTimers,
+          logger,
+        }
+      );
+    }
 
     // Placements removed while this process was down left deliveries no page
     // will queue; checked once the server is up, so it never holds serving back.
@@ -177,12 +198,14 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     this.sceneDocuments = null;
     this.deliveryStore?.stopSweep();
     this.deliveryStore = null;
+    this.framing?.stop();
+    this.framing = null;
     // Forced: open event streams would otherwise hold the server, and their
     // heartbeats, past shutdown.
     await this.server?.stop(true);
     this.server = null;
-    await this.obs?.stop();
-    this.obs = null;
+    await this.refreshRequester?.stop();
+    this.refreshRequester = null;
     // Last, so nothing above is left publishing onto a closed connection.
     await this.nats?.close();
     this.nats = null;

@@ -73,7 +73,8 @@ export interface PairingRegistryOptions {
   newId?: () => string;
   /**
    * Whether an origin is on the engine's own origin list
-   * (`WOOFX3_ALLOWED_ORIGINS`); false for every origin when none is set.
+   * (`WOOFX3_ALLOWED_ORIGINS`); false for every origin when none is set, as the
+   * request guard's defaults are not a list the operator named, or it is `*`.
    * See `admitPairingOrigin`.
    */
   isListedOrigin: (origin: string) => boolean;

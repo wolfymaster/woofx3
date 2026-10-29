@@ -1,10 +1,11 @@
 use std::time::Duration;
 
 use actix_web::web::{Data, Path, ServiceConfig};
-use actix_web::{HttpResponse, get};
+use actix_web::{HttpResponse, HttpResponseBuilder, get};
 use lib_repository::{ReadEndpoint, Repository, RepositoryImpl};
 use tracing::warn;
 
+use crate::routes::resources::CUSTOM_MODULE_PREFIX;
 use crate::types::SharedRepository;
 
 /// Sized for an overlay holding one URL for a whole stream, not for
@@ -19,8 +20,51 @@ const REDIRECT_CACHE_CONTROL: &str = "public, max-age=3600";
 /// `modules/` holds files unpacked from an installed module bundle;
 /// `user/` holds generic user uploads written through
 /// `routes::resources` (`user/{resource_id}/...`),
-/// including the thumbnails derived from them.
+/// including the thumbnails derived from them, except the module archives
+/// under `CUSTOM_MODULE_PREFIX`, which are never served.
 const ALLOWED_TOP_LEVEL_PREFIXES: &[&str] = &["modules/", "user/"];
+
+/// Sent with every html, svg and xml asset: `sandbox` gives the document an
+/// opaque origin with scripts, forms and navigation off, and `default-src
+/// 'none'` blocks anything it would load.
+const INERT_DOCUMENT_CSP: &str = "sandbox; default-src 'none'";
+
+/// Content types a browser renders as a document that can run script.
+const DOCUMENT_CONTENT_TYPES: &[&str] =
+    &["text/html", "image/svg+xml", "application/xml", "text/xml"];
+
+/// The only content types this route emits, keyed by lowercase extension.
+/// Anything absent is served as an opaque download, so a new extension is a
+/// deliberate addition here rather than a guess.
+const SERVABLE_CONTENT_TYPES: &[(&str, &str)] = &[
+    ("html", "text/html; charset=utf-8"),
+    ("js", "application/javascript; charset=utf-8"),
+    ("mjs", "application/javascript; charset=utf-8"),
+    ("css", "text/css; charset=utf-8"),
+    ("json", "application/json"),
+    ("xml", "application/xml"),
+    ("txt", "text/plain; charset=utf-8"),
+    ("png", "image/png"),
+    ("jpg", "image/jpeg"),
+    ("jpeg", "image/jpeg"),
+    ("gif", "image/gif"),
+    ("svg", "image/svg+xml"),
+    ("webp", "image/webp"),
+    ("avif", "image/avif"),
+    ("ico", "image/x-icon"),
+    ("mp3", "audio/mpeg"),
+    ("ogg", "audio/ogg"),
+    ("wav", "audio/wav"),
+    ("mp4", "video/mp4"),
+    ("webm", "video/webm"),
+    ("woff", "font/woff"),
+    ("woff2", "font/woff2"),
+    ("ttf", "font/ttf"),
+    ("otf", "font/otf"),
+    ("wasm", "application/wasm"),
+];
+
+const FALLBACK_CONTENT_TYPE: &str = "application/octet-stream";
 
 /// Every rejection — traversal attempt, bad prefix, missing file — is a
 /// uniform 404 with no detail, so callers cannot probe the key space.
@@ -45,12 +89,40 @@ async fn assets_handler(repository: Data<SharedRepository>, path: Path<String>) 
         }
     }
     match repository.read_file(&key).await {
-        Ok(bytes) => HttpResponse::Ok()
-            .content_type(content_type_for_key(&key))
-            .insert_header(("Cache-Control", cache_control_for_key(&key)))
-            .body(bytes),
+        Ok(bytes) => {
+            let content_type = content_type_for_key(&key);
+            let mut response = HttpResponse::Ok();
+            response
+                .content_type(content_type)
+                .insert_header(("Cache-Control", cache_control_for_key(&key)));
+            apply_inert_headers(&mut response, &key, content_type);
+            response.body(bytes)
+        }
         Err(_) => not_found(),
     }
+}
+
+/// Decorates a served asset so a stored document can never run as a page on
+/// this origin: types are never sniffed, and anything a browser would treat
+/// as a document (html, svg, xml) is sandboxed with nothing allowed. User
+/// uploads of those types are additionally forced to download, since their
+/// content is untrusted; module bundles are the module's own code and are
+/// only sandboxed.
+fn apply_inert_headers(response: &mut HttpResponseBuilder, key: &str, content_type: &str) {
+    response.insert_header(("X-Content-Type-Options", "nosniff"));
+    if !is_document_type(content_type) {
+        return;
+    }
+    response.insert_header(("Content-Security-Policy", INERT_DOCUMENT_CSP));
+    if key.starts_with("user/") {
+        response.insert_header(("Content-Disposition", "attachment"));
+    }
+}
+
+fn is_document_type(content_type: &str) -> bool {
+    DOCUMENT_CONTENT_TYPES
+        .iter()
+        .any(|document| content_type.starts_with(document))
 }
 
 /// Checked first so a missing key stays a uniform 404 rather than a
@@ -60,6 +132,7 @@ async fn redirect_if_present(repository: &RepositoryImpl, key: &str, url: String
         Ok(true) => HttpResponse::Found()
             .insert_header(("Location", url))
             .insert_header(("Cache-Control", REDIRECT_CACHE_CONTROL))
+            .insert_header(("X-Content-Type-Options", "nosniff"))
             .finish(),
         Ok(false) => not_found(),
         Err(e) => {
@@ -125,7 +198,27 @@ fn sanitize_asset_key(raw: &str) -> Option<String> {
     {
         return None;
     }
+    if is_custom_module_key(&key) {
+        return None;
+    }
     Some(key)
+}
+
+/// Whether a canonical key names something in the module archive directory.
+/// Compared the way a Windows filesystem resolves a name -- ignoring case and
+/// trailing dots and spaces -- so a local store there cannot be reached
+/// through a spelling of the directory that differs only in those.
+fn is_custom_module_key(key: &str) -> bool {
+    let mut segments = key.split('/');
+    let (Some(top), Some(directory)) = (segments.next(), segments.next()) else {
+        return false;
+    };
+    let archive_top = CUSTOM_MODULE_PREFIX.split('/').next().unwrap_or_default();
+    let archive_directory = CUSTOM_MODULE_PREFIX.split('/').nth(1).unwrap_or_default();
+    top == archive_top
+        && directory
+            .trim_end_matches(['.', ' '])
+            .eq_ignore_ascii_case(archive_directory)
 }
 
 /// Strict percent-decoding: `%` must be followed by exactly two hex
@@ -165,23 +258,10 @@ fn content_type_for_key(key: &str) -> &'static str {
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase())
         .unwrap_or_default();
-    match extension.as_str() {
-        "html" => "text/html; charset=utf-8",
-        "js" => "application/javascript; charset=utf-8",
-        "css" => "text/css; charset=utf-8",
-        "json" => "application/json",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "svg" => "image/svg+xml",
-        "webp" => "image/webp",
-        "mp3" => "audio/mpeg",
-        "mp4" => "video/mp4",
-        "woff" => "font/woff",
-        "woff2" => "font/woff2",
-        "wasm" => "application/wasm",
-        _ => "application/octet-stream",
-    }
+    SERVABLE_CONTENT_TYPES
+        .iter()
+        .find(|(servable, _)| *servable == extension)
+        .map_or(FALLBACK_CONTENT_TYPE, |(_, content_type)| content_type)
 }
 
 pub fn configure(cfg: &mut ServiceConfig) {
@@ -246,6 +326,26 @@ mod tests {
     }
 
     #[test]
+    fn sanitize_refuses_custom_modules() {
+        for key in [
+            "user/custom-modules/res-1/shoutout.zip",
+            "user//custom-modules/res-1/shoutout.zip",
+            "user/custom-modules%2Fres-1/shoutout.zip",
+            "user/%63ustom-modules/res-1/shoutout.zip",
+            "user/CUSTOM-MODULES/res-1/shoutout.zip",
+            "user/custom-modules./res-1/shoutout.zip",
+            "user/custom-modules /res-1/shoutout.zip",
+        ] {
+            assert_eq!(sanitize_asset_key(key), None, "{key:?} should be refused");
+        }
+        // Only the directory itself is held back.
+        assert_eq!(
+            sanitize_asset_key("user/custom-modules-of-mine/photo.png").as_deref(),
+            Some("user/custom-modules-of-mine/photo.png")
+        );
+    }
+
+    #[test]
     fn sanitize_canonicalizes_valid_keys() {
         assert_eq!(
             sanitize_asset_key("modules/m1/widgets/w1/index.html").as_deref(),
@@ -298,6 +398,7 @@ mod tests {
         let cases = [
             ("a.html", "text/html; charset=utf-8"),
             ("a.js", "application/javascript; charset=utf-8"),
+            ("a.mjs", "application/javascript; charset=utf-8"),
             ("a.css", "text/css; charset=utf-8"),
             ("a.json", "application/json"),
             ("a.png", "image/png"),
@@ -305,6 +406,9 @@ mod tests {
             ("a.JPEG", "image/jpeg"),
             ("a.gif", "image/gif"),
             ("a.svg", "image/svg+xml"),
+            ("a.xml", "application/xml"),
+            ("a.webm", "video/webm"),
+            ("a.exe", "application/octet-stream"),
             ("a.webp", "image/webp"),
             ("a.mp3", "audio/mpeg"),
             ("a.mp4", "video/mp4"),
@@ -317,6 +421,71 @@ mod tests {
         for (name, expected) in cases {
             assert_eq!(content_type_for_key(name), expected, "extension of {name}");
         }
+    }
+
+    async fn get_asset(repo: RepositoryImpl, uri: &str) -> actix_web::dev::ServiceResponse {
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(Data::new(SharedRepository::new(repo)))
+                .configure(configure),
+        )
+        .await;
+        let req = actix_test::TestRequest::get().uri(uri).to_request();
+        actix_test::call_service(&app, req).await
+    }
+
+    #[actix_web::test]
+    async fn html_assets_are_sandboxed_and_never_sniffed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = file_backed_repo(dir.path()).await;
+        seed(&repo, "user/res-1/page.html", b"<script>1</script>").await;
+
+        let resp = get_asset(repo, "/assets/user/res-1/page.html").await;
+        assert_eq!(resp.status(), 200);
+        assert_eq!(
+            resp.headers().get("content-security-policy").unwrap(),
+            "sandbox; default-src 'none'"
+        );
+        assert_eq!(
+            resp.headers().get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
+        assert_eq!(
+            resp.headers().get("content-disposition").unwrap(),
+            "attachment"
+        );
+    }
+
+    #[actix_web::test]
+    async fn user_svg_is_an_attachment_but_module_html_is_not() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = file_backed_repo(dir.path()).await;
+        seed(&repo, "user/res-1/pic.svg", b"<svg onload=\"1\"/>").await;
+        seed(&repo, "modules/m1/abc/doc.html", b"<p>hi</p>").await;
+        seed(&repo, "user/res-1/photo.png", b"\x89PNG").await;
+
+        let svg = get_asset(repo.clone(), "/assets/user/res-1/pic.svg").await;
+        assert_eq!(
+            svg.headers().get("content-disposition").unwrap(),
+            "attachment"
+        );
+        assert!(svg.headers().contains_key("content-security-policy"));
+
+        let module_html = get_asset(repo.clone(), "/assets/modules/m1/abc/doc.html").await;
+        assert!(
+            module_html
+                .headers()
+                .contains_key("content-security-policy")
+        );
+        assert!(!module_html.headers().contains_key("content-disposition"));
+
+        let png = get_asset(repo, "/assets/user/res-1/photo.png").await;
+        assert_eq!(
+            png.headers().get("x-content-type-options").unwrap(),
+            "nosniff"
+        );
+        assert!(!png.headers().contains_key("content-security-policy"));
+        assert!(!png.headers().contains_key("content-disposition"));
     }
 
     async fn file_backed_repo(dir: &std::path::Path) -> RepositoryImpl {

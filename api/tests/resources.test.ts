@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
-import { resourcePublicUrl, resourceToItem, resourcesRoutes } from "../src/routes/resources";
 import { registerAllRoutes } from "../src/routes/index";
+import { resourcePublicUrl, resourcesRoutes, resourceToItem } from "../src/routes/resources";
 
 const BASE_URL = "http://127.0.0.1:9100";
 
@@ -82,6 +82,23 @@ describe("resource wire mapping", () => {
     expect(item.url).toBeNull();
   });
 
+  test("a module archive carries no url even once ready", () => {
+    const item = resourceToItem(
+      BASE_URL,
+      readyRow({
+        kind: "custom_module",
+        contentType: "application/zip",
+        repositoryKey: "user/custom-modules/res-1/shoutout.zip",
+        thumbnailRepositoryKey: "user/custom-modules/res-1/thumbnail.png",
+      }) as never
+    );
+
+    expect(item.kind).toBe("custom_module");
+    expect(item.status).toBe("ready");
+    expect(item.url).toBeNull();
+    expect(item.thumbnailUrl).toBeNull();
+  });
+
   test("a trailing slash on the public base does not double up", () => {
     expect(resourcePublicUrl("http://example.test/", "user/a/b/c.png")).toBe(
       "http://example.test/assets/user/a/b/c.png"
@@ -115,6 +132,17 @@ describe("listResources", () => {
     expect(result.resources[0]?.thumbnailUrl).toContain("thumbnail.png");
   });
 
+  test("passes no kind through when none is asked for, which db-proxy reads as everything but modules", async () => {
+    const listResources = mock(async (_req: any) => ({ resources: [], total: 0, page: 1, pageSize: 50 }));
+    const api = host({ db: { listResources } });
+
+    await api.listResources();
+    await api.listResources({ kind: "custom_module" });
+
+    expect(listResources.mock.calls[0]?.[0]).toMatchObject({ kind: "" });
+    expect(listResources.mock.calls[1]?.[0]).toMatchObject({ kind: "custom_module" });
+  });
+
   test("scopes to a folder when one is given", async () => {
     const listResources = mock(async (_req: any) => ({ resources: [], total: 0, page: 1, pageSize: 50 }));
     const api = host({ db: { listResources } });
@@ -146,10 +174,11 @@ type CreateResourceArgs = { id: string; kind: string; repositoryKey: string };
  */
 function grantingBarkloader() {
   return mock(async (_path: string, init?: RequestInit) => {
-    const body = JSON.parse(String(init?.body)) as { resource_id: string; file_name: string };
+    const body = JSON.parse(String(init?.body)) as { resource_id: string; file_name: string; area: string };
+    const directory = body.area === "custom_module" ? "user/custom-modules" : "user";
     return new Response(
       JSON.stringify({
-        repositoryKey: `user/${body.resource_id}/${body.file_name}`,
+        repositoryKey: `${directory}/${body.resource_id}/${body.file_name}`,
         uploadUrl: "http://storage.test/put",
         method: "PUT",
         headers: [{ name: "Content-Type", value: "image/png" }],
@@ -173,8 +202,13 @@ describe("requestUploadUrl", () => {
     const [path, init] = barkloaderRequest.mock.calls[0];
     expect(path).toBe("/assets/upload-url");
     const sent = JSON.parse(String(init?.body)) as Record<string, unknown> & { resource_id: string };
-    expect(sent).toMatchObject({ file_name: "clip.png", content_type: "image/png", content_length: 2048 });
-    expect(Object.keys(sent).sort()).toEqual(["content_length", "content_type", "file_name", "resource_id"]);
+    expect(sent).toMatchObject({
+      file_name: "clip.png",
+      content_type: "image/png",
+      content_length: 2048,
+      area: "media",
+    });
+    expect(Object.keys(sent).sort()).toEqual(["area", "content_length", "content_type", "file_name", "resource_id"]);
     expect(sent.resource_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
 
     // db-proxy refuses a file row without its key, so the row must be
@@ -224,6 +258,90 @@ describe("requestUploadUrl", () => {
 
     const kinds = createResource.mock.calls.map((call) => call[0].kind);
     expect(kinds).toEqual(["video", "audio", "other"]);
+  });
+
+  test("a declared module archive is kind custom_module, stored in the archive directory", async () => {
+    const createResource = mock(async (req: CreateResourceArgs) =>
+      readyRow({ id: req.id, status: "pending", kind: req.kind, repositoryKey: req.repositoryKey })
+    );
+    const barkloaderRequest = grantingBarkloader();
+    const api = host({ db: { createResource }, barkloaderRequest });
+
+    const grant = await api.requestUploadUrl({
+      name: "shoutout.zip",
+      contentType: "application/zip",
+      size: 4096,
+      kind: "custom_module",
+    });
+
+    const sent = JSON.parse(String(barkloaderRequest.mock.calls[0]?.[1]?.body)) as {
+      resource_id: string;
+      area: string;
+    };
+    expect(sent.area).toBe("custom_module");
+    expect(createResource).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "custom_module",
+        repositoryKey: `user/custom-modules/${sent.resource_id}/shoutout.zip`,
+      })
+    );
+    expect(grant.resource.kind).toBe("custom_module");
+    expect(grant.resource.url).toBeNull();
+  });
+
+  test("a zip not declared a module archive stays an ordinary upload", async () => {
+    const createResource = mock(async (req: CreateResourceArgs) => readyRow({ repositoryKey: req.repositoryKey }));
+    const api = host({ db: { createResource }, barkloaderRequest: grantingBarkloader() });
+
+    await api.requestUploadUrl({ name: "pack.zip", contentType: "application/zip", size: 1024 });
+
+    expect(createResource.mock.calls[0]?.[0].kind).toBe("other");
+  });
+
+  test("refuses a module archive that is not a zip, or that names a folder", async () => {
+    const createResource = mock(async (_req: unknown) => readyRow());
+    const barkloaderRequest = grantingBarkloader();
+    const api = host({ db: { createResource }, barkloaderRequest });
+
+    await expect(
+      api.requestUploadUrl({ name: "m.tar", contentType: "application/x-tar", size: 1024, kind: "custom_module" })
+    ).rejects.toThrow("A module archive must be uploaded as application/zip");
+    await expect(
+      api.requestUploadUrl({
+        name: "m.zip",
+        contentType: "application/zip",
+        size: 1024,
+        kind: "custom_module",
+        parentId: "folder-1",
+      })
+    ).rejects.toThrow("A module archive is stored at the root");
+    await expect(
+      api.requestUploadUrl({ name: "a.png", contentType: "image/png", size: 1024, kind: "image" as never })
+    ).rejects.toThrow('kind may only be "custom_module"');
+    expect(barkloaderRequest).not.toHaveBeenCalled();
+    expect(createResource).not.toHaveBeenCalled();
+  });
+
+  test("refuses a module archive grant keyed outside the archive directory", async () => {
+    const createResource = mock(async (_req: unknown) => readyRow());
+    const barkloaderRequest = mock(async (_path: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { resource_id: string };
+      return new Response(
+        JSON.stringify({
+          repositoryKey: `user/${body.resource_id}/m.zip`,
+          uploadUrl: "u",
+          method: "PUT",
+          headers: [],
+          expiresAt: 0,
+        })
+      );
+    });
+    const api = host({ db: { createResource }, barkloaderRequest });
+
+    await expect(
+      api.requestUploadUrl({ name: "m.zip", contentType: "application/zip", size: 1024, kind: "custom_module" })
+    ).rejects.toThrow("Upload grant repository key is not under user/custom-modules/");
+    expect(createResource).not.toHaveBeenCalled();
   });
 
   test("refuses a grant whose key is not under the minted resource id", async () => {
@@ -300,6 +418,17 @@ describe("folders", () => {
     expect(updateResource).toHaveBeenCalledWith(expect.objectContaining({ id: "res-1", parentId: "" }));
   });
 
+  test("a module archive cannot be moved into a folder", async () => {
+    const updateResource = mock(async (_req: any) => readyRow());
+    const getResource = mock(async (_req: any) => readyRow({ kind: "custom_module" }));
+    const api = host({ db: { updateResource, getResource } });
+
+    await expect(api.updateResource("res-1", { parentId: "folder-1" })).rejects.toThrow(
+      "A module archive is stored at the root"
+    );
+    expect(updateResource).not.toHaveBeenCalled();
+  });
+
   test("a rename leaves the parent untouched", async () => {
     const updateResource = mock(async (_req: any) => readyRow());
     const api = host({ db: { updateResource } });
@@ -313,6 +442,19 @@ describe("folders", () => {
 });
 
 describe("deleteResource", () => {
+  test("passes on db-proxy's refusal to delete an archive an installed module came from, purging nothing", async () => {
+    const deleteResource = mock(async (_req: any) => {
+      throw new Error(
+        '"shoutout.zip" is the archive module "Shoutout" was installed from; uninstall the module before deleting it'
+      );
+    });
+    const barkloaderRequest = mock(async (_path: string, _init?: RequestInit) => new Response(null, { status: 204 }));
+    const api = host({ db: { deleteResource }, barkloaderRequest });
+
+    await expect(api.deleteResource("res-1")).rejects.toThrow("uninstall the module before deleting it");
+    expect(barkloaderRequest).not.toHaveBeenCalled();
+  });
+
   test("purges each resource directory once, by a key db-proxy reports", async () => {
     const deleteResource = mock(async (_req: any) => [
       "user/res-1/clip.png",

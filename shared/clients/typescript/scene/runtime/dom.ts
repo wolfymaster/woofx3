@@ -7,6 +7,14 @@
 //     > effect         effects that play while the widget is shown
 //       > slot         the widget's content, mounted by the caller
 //
+// A widget the plan does not show is hidden on its box, in one of two ways
+// (`HideWith`), because Chromium stops rendering a cross-origin frame under
+// `visibility: hidden`: it runs no animation frames and paints nothing until
+// shown. That is what a scene wants of a widget the streamer hid, and wrong
+// for one waiting to enter, which has to paint first: the timeline holds an
+// entrance until the widget has painted, so a frame that cannot paint while
+// hidden is shown only once RENDER_WAIT_MS gives up on it.
+//
 // The box is written only when the plan changes. It is placed with
 // `transform` rather than `left`/`top`, so moving a widget never triggers
 // layout and a rotation turns it about its centre. Animations never touch the
@@ -71,6 +79,16 @@ export interface RenderDocument<TElement extends RenderElement<TElement>> {
   readonly timeline: { readonly currentTime: CSSNumberish | null };
 }
 
+/**
+ * How a widget the plan does not show is hidden:
+ *
+ * - `"visibility"`: `visibility: hidden`. Its frame stops rendering (no
+ *   animation frames, no paint) until it is shown; its scripts keep running.
+ * - `"opacity"`: opacity 0. Its frame keeps rendering unseen, so a widget can
+ *   paint before it enters and enter as soon as it is due.
+ */
+export type HideWith = "visibility" | "opacity";
+
 /** What a delegation op asks of the widget; the caller sends it over the widget protocol. */
 export type DelegateRequest = { kind: "start"; delegated: DelegatedBehavior } | { kind: "cancel"; behavior: string };
 
@@ -87,6 +105,8 @@ export interface DomRendererOptions<TElement extends RenderElement<TElement>> {
   onDelegate?(widgetId: NodeId, request: DelegateRequest): void;
   /** The composition time at creation; the renderer starts playing from it. */
   atMs?: number;
+  /** See `HideWith`. Defaults to `"visibility"`. */
+  hideWith?: HideWith;
 }
 
 export interface DomRenderer<TElement> {
@@ -113,6 +133,8 @@ interface Wrappers<TElement> {
 
 interface MountedWidget<TElement> extends Wrappers<TElement> {
   box: TElement;
+  /** The plan's opacity for the box and whether it shows the widget; both decide the written opacity. */
+  shown: { opacity: number; visible: boolean };
   unmountContent: () => void;
   /** The last value written to each box property, so an unchanged one is not written again. */
   written: Partial<Record<keyof RenderStyle, string>>;
@@ -122,6 +144,7 @@ export function createDomRenderer<TElement extends RenderElement<TElement>>(
   options: DomRendererOptions<TElement>
 ): DomRenderer<TElement> {
   const doc = options.document;
+  const hideWith = options.hideWith ?? "visibility";
   const widgets = new Map<NodeId, MountedWidget<TElement>>();
 
   // While playing, the document-timeline time at which the composition was
@@ -183,7 +206,18 @@ export function createDomRenderer<TElement extends RenderElement<TElement>>(
     writeStyle(widget, "transform", `translate(${box.x}px, ${box.y}px) rotate(${box.rotation}deg)`);
     writeStyle(widget, "width", `${box.width}px`);
     writeStyle(widget, "height", `${box.height}px`);
-    writeStyle(widget, "opacity", String(box.opacity));
+    widget.shown.opacity = box.opacity;
+    writeShown(widget);
+  }
+
+  function writeShown(widget: MountedWidget<TElement>): void {
+    const { opacity, visible } = widget.shown;
+    if (hideWith === "visibility") {
+      writeStyle(widget, "visibility", visible ? "" : "hidden");
+      writeStyle(widget, "opacity", String(opacity));
+    } else {
+      writeStyle(widget, "opacity", visible ? String(opacity) : "0");
+    }
   }
 
   function mount(op: Extract<PatchOp, { op: "mount" }>): void {
@@ -206,13 +240,13 @@ export function createDomRenderer<TElement extends RenderElement<TElement>>(
       box,
       transition,
       effect,
+      shown: { opacity: op.box.opacity, visible: op.visible },
       animations: new Map(),
       unmountContent: () => {},
       written: {},
     };
     writeBox(widget, op.box);
     writeStyle(widget, "zIndex", String(op.z));
-    writeStyle(widget, "visibility", op.visible ? "" : "hidden");
     // In the page before its content mounts: a frame loads only once attached.
     layer.appendChild(box);
     widgets.set(op.id, widget);
@@ -273,9 +307,12 @@ export function createDomRenderer<TElement extends RenderElement<TElement>>(
           case "setStack":
             writeStyle(mustGet(op.id), "zIndex", String(op.z));
             break;
-          case "setVisible":
-            writeStyle(mustGet(op.id), "visibility", op.visible ? "" : "hidden");
+          case "setVisible": {
+            const widget = mustGet(op.id);
+            widget.shown.visible = op.visible;
+            writeShown(widget);
             break;
+          }
           case "startAnimation":
             startAnimation(op);
             break;

@@ -19,9 +19,10 @@ pub struct Resource {
     pub is_folder: bool,
     #[prost(string, tag="5")]
     pub name: ::prost::alloc::string::String,
-    /// "image" | "video" | "audio" | "other" | "folder". Derived from
-    /// `content_type` at create time by the api gateway, stored so
-    /// listing can filter without re-parsing MIME types.
+    /// "image" | "video" | "audio" | "other" | "folder" | "custom_module". Derived
+    /// from `content_type` at create time by the api gateway, stored so
+    /// listing can filter without re-parsing MIME types. "custom_module" is never
+    /// derived: the uploader declares a module archive as one.
     #[prost(string, tag="6")]
     pub kind: ::prost::alloc::string::String,
     /// Empty for folders.
@@ -97,7 +98,8 @@ pub struct ListResourcesRequest {
     /// Unset lists the root. Set lists that folder's direct children.
     #[prost(string, optional, tag="2")]
     pub parent_id: ::core::option::Option<::prost::alloc::string::String>,
-    /// Optional filters. Empty means "no filter".
+    /// Optional filters. An empty `kind` lists every kind except "custom_module":
+    /// module archives are listed only when asked for by kind.
     #[prost(string, tag="3")]
     pub kind: ::prost::alloc::string::String,
     /// Case-insensitive substring match against `name`.

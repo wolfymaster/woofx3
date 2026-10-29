@@ -6,8 +6,8 @@ import type {
   TwitchAccessToken,
   UpdateCommandInput,
 } from "@woofx3/api";
-import { TRIGGER_TYPE_COMMAND, type TaskDefinition } from "@woofx3/api/workflow-definition";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import { type TaskDefinition, TRIGGER_TYPE_COMMAND } from "@woofx3/api/workflow-definition";
 import ActionEvents from "@woofx3/common/cloudevents/Action";
 import ChatCommandEvents from "@woofx3/common/cloudevents/Chat/commands";
 import CommandEvents from "@woofx3/common/cloudevents/Command";
@@ -167,7 +167,7 @@ export const commandsRoutes = routeModule({
    * chat message is, so the command's actions and any workflow triggered by it
    * cannot tell the two apart.
    *
-   * Mirrors woofwoofwoof's dispatch on a chat match: the `chat.command.<slug>`
+   * Mirrors the connectors chat dispatcher's dispatch on a chat match: the `chat.command.<slug>`
    * event always, and the command's workflow, run by id, or the actions of a
    * command that has none, both reading that same event. Cooldown is not
    * applied -- it throttles chat, and a caller of this API is already
@@ -192,7 +192,7 @@ export const commandsRoutes = routeModule({
     // the command's group/user grants through Casbin inside GetCommand and
     // rejects the call outright when `username` is not permitted, so a denial
     // can never reach the publish below. Enforcement deliberately lives there
-    // rather than here - woofwoofwoof's chat path checks the same policy rows,
+    // rather than here - the connectors chat dispatcher's path checks the same policy rows,
     // and duplicating the decision in this service would let the two drift.
     const cmdReq: command.GetCommandRequest = {
       command: commandName,
@@ -259,7 +259,7 @@ export const commandsRoutes = routeModule({
 
   /**
    * Create a chat command. Persists via dbproxy, publishes an internal
-   * `command.created` bus event so consumers (e.g. woofwoofwoof) refresh
+   * `command.created` bus event so consumers (e.g. the connectors chat dispatcher) refresh
    * their in-memory command list without restarting, and fires the
    * external `command.created` webhook so a registered UI callback can
    * observe the change without polling `listCommands()`.
@@ -339,7 +339,7 @@ export const commandsRoutes = routeModule({
 
   /**
    * Persist the broadcaster's Twitch OAuth token in the engine's
-   * settings table. The Twitch service reads this on bootstrap (see
+   * settings table. The connectors Twitch adapter reads this on bootstrap (see
    * `shared/clients/typescript/twitch/index.ts`).
    *
    * A token carrying the Twitch app's `clientId` comes from a dashboard that
@@ -387,16 +387,8 @@ export const commandsRoutes = routeModule({
     await this.twitchToken.clear();
     this.logger.info("Twitch token cleared from settings");
 
-    // Same notification as setTwitchToken — the row changed, downstream
-    // consumers should re-read. Their reload path will see an empty
-    // setting and back off (twitchBootstrap already throws on empty).
-    try {
-      await this.publishEvent("setting.integration.token.updated", {
-        integration: "twitch",
-      });
-    } catch (err) {
-      this.logger.warn("Failed to publish setting.integration.token.updated", { err });
-    }
+    await this.writeIntegrationEnabled("twitch", false);
+    await this.announceIntegrationChanged("twitch", false);
 
     return { ok: true };
   },

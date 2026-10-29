@@ -27,6 +27,7 @@ import { ackPath, type DeliveryFrame } from "../../contract/overlay-stream";
 import { type SceneConfig, themeOf, type WidgetPlacementConfig } from "../../contract/scene-config";
 import { AckBatcher, DEFAULT_ACK_RETRY, postAck } from "./ack-batcher";
 import { AlertAreas } from "./alert-areas";
+import { AlertTimings, type PageMarks } from "./alert-timing";
 import { ConnectionStatus } from "./connection-status";
 import { DraftPreview } from "./draft-preview";
 import { SceneEventSource } from "./event-source";
@@ -67,6 +68,8 @@ export interface OverlayEnv {
   host: PageHost;
   /** What the scene's timeline plays on: the document timeline's clock (page-clock.ts). */
   clock: SchedulerClock<unknown>;
+  /** Where alerts' steps are marked (alert-timing.ts): the browser's User Timing. */
+  marks: PageMarks;
   /** How the overlays of this browser share reconnects and restarts (reconnect-coordinator.ts). */
   coordinator: ReconnectCoordinator;
 }
@@ -177,7 +180,6 @@ export function createOverlay(env: OverlayEnv): void {
 
   const alertAreas = new AlertAreas({
     document: env.document,
-    sceneBase,
     bridges,
     queues: queueManager,
     assets,
@@ -187,6 +189,7 @@ export function createOverlay(env: OverlayEnv): void {
     rendered: (instanceId) => playing().widgetRendered(instanceId),
     clock: env.clock,
     host,
+    timings: new AlertTimings(env.marks),
   });
 
   const draft = new DraftPreview({
@@ -552,7 +555,7 @@ export function createOverlay(env: OverlayEnv): void {
   });
   eventSource.start({
     onFrame: (frame: DeliveryFrame) => {
-      alertAreas.readAhead(frame.instanceId, frame.value);
+      alertAreas.delivered(frame.instanceId, frame.eventId, frame.value);
       const queued = queueManager.enqueue(frame.instanceId, {
         eventId: frame.eventId,
         type: frame.type,

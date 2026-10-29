@@ -16,6 +16,7 @@ function session() {
     nats: null,
     functions: null,
     barkloaderUrl: "http://barkloader.local/",
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger: { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never,
@@ -39,6 +40,9 @@ describe("completeModuleOAuth", () => {
     const [url, init] = fetchMock.mock.calls[0] ?? [];
     expect(url).toBe("http://barkloader.local/modules/spotify/oauth/spotify/complete");
     expect(JSON.parse(String(init?.body))).toEqual(AUTHORIZATION);
+    const headers = new Headers(init?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer test-barkloader-key-0123456789abcdef");
+    expect(headers.get("Content-Type")).toBe("application/json");
   });
 
   test("rejects with barkloader's reason", async () => {

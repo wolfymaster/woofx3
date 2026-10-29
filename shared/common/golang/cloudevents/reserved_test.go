@@ -2,13 +2,12 @@ package cloudevents
 
 import (
 	"bytes"
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
 	"os"
-	"path/filepath"
-	"regexp"
-	"sort"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -70,16 +69,19 @@ func TestEverySubjectConstantIsReserved(t *testing.T) {
 // they are listed here; a new one belongs on this list and in reserved.go.
 func TestSubjectsConsumedOutsideGoAreReserved(t *testing.T) {
 	subjects := map[string]string{
-		"ui.notify.alert":                      "sceneManager/src/nats-subscriptions.ts",
-		"widget.queue.skip":                    "sceneManager alert queue controls",
-		"widget.queue.clear":                   "sceneManager alert queue controls",
-		"widget.queue.replay":                  "sceneManager alert queue controls",
-		"widget.queue.state":                   "sceneManager alert queue read",
-		"db.scene.updated.*":                   "sceneManager/src/nats-subscriptions.ts",
-		"db.ack.>":                             "db/app/workers/ack_worker.go",
-		"setting.integration.token.updated":    "api/src/routes/commands.ts",
-		"barkloader.module.field_options":      "barkloader/app/src/services/field_options.rs",
-		"webhook.woofx3_throne.throne_webhook": "webhook trigger events the engine fires",
+		"ui.notify.alert":                       "sceneManager/src/nats-subscriptions.ts",
+		"widget.queue.skip":                     "sceneManager alert queue controls",
+		"widget.queue.clear":                    "sceneManager alert queue controls",
+		"widget.queue.replay":                   "sceneManager alert queue controls",
+		"widget.queue.state":                    "sceneManager alert queue read",
+		"db.scene.updated.*":                    "sceneManager/src/nats-subscriptions.ts",
+		"db.ack.>":                              "db/app/workers/ack_worker.go",
+		"setting.integration.token.updated":     "api/src/routes/context.ts",
+		"setting.integration.enabled.updated":   "api/src/routes/context.ts",
+		"barkloader.module.field_options":       "barkloader/app/src/services/field_options.rs",
+		"webhook.woofx3_throne.throne_webhook":  "webhook trigger events the engine fires",
+		"engine.companion.dashboard_credential": "api/src/relay-dashboard-edge.ts",
+		"engine.companion.relay_config.set":     "connectors/src/companion/relay-config-requests.ts",
 	}
 	for subject, consumer := range subjects {
 		if _, reserved := ReservedSubjectMatch(concreteSubject(subject)); !reserved {
@@ -98,10 +100,15 @@ func TestReservedSubjectMatch(t *testing.T) {
 		{"engine.obs.command", "engine."},
 		{"workflow.cancel", "workflow.cancel"},
 		{"workflow.run.cancelled", "workflow.run."},
+		// Retired, no publisher or consumer left; the name stays reserved so
+		// nothing new can claim it.
 		{"message.send", "message.send"},
 		{"stream.online", "stream.online"},
 		{"channel.cheer", "channel."},
 		{"session.ended", "session."},
+		{"platform.gateway.send", "platform.gateway."},
+		{"platform.gateway.field_options", "platform.gateway."},
+		{"command.created", "command."},
 		// Open: nothing reserves these.
 		{"dbx.thing", ""},
 		{"badge.awarded", ""},
@@ -110,6 +117,9 @@ func TestReservedSubjectMatch(t *testing.T) {
 		{"custom.event", ""},
 		{"message.sent", ""},
 		{"message.send.later", ""},
+		{"platform.gatewayx", ""},
+		{"platform.gateway", ""},
+		{"platform.other", ""},
 	}
 	for _, tc := range cases {
 		match, reserved := ReservedSubjectMatch(tc.subject)
@@ -119,69 +129,97 @@ func TestReservedSubjectMatch(t *testing.T) {
 	}
 }
 
-const barkloaderManifestValidate = "../../../../barkloader/lib_module/src/manifest_validate.rs"
+const reservedSubjectsContractPath = "../../contracts/reserved-subjects.json"
 
-var (
-	rustReservedList = regexp.MustCompile(`(?s)const USER_RESERVED_EVENT_PREFIXES: \[&str; \d+\] = \[(.*?)\];`)
-	rustStringConst  = regexp.MustCompile(`const (\w+): &str = "([^"]*)";`)
-)
-
-// Barkloader refuses uploaded modules that declare a command subject as an
-// event; the workflow engine refuses workflows that publish one. Both read the
-// same list or one of them has a hole the other closed.
-func TestBarkloaderRefusesTheSameCommandSubjects(t *testing.T) {
-	source, err := os.ReadFile(barkloaderManifestValidate)
+func loadReservedSubjectsContract(t *testing.T) reservedSubjectsContract {
+	t.Helper()
+	raw, err := os.ReadFile(reservedSubjectsContractPath)
 	if err != nil {
-		t.Fatalf("read %s: %v", barkloaderManifestValidate, err)
+		t.Fatalf("read %s: %v", reservedSubjectsContractPath, err)
 	}
-	list := rustReservedList.FindSubmatch(source)
-	if list == nil {
-		if bytes.Contains(source, []byte("USER_RESERVED_EVENT_PREFIXES")) {
-			t.Fatalf("%s declares USER_RESERVED_EVENT_PREFIXES in a form this test cannot read; update rustReservedList", barkloaderManifestValidate)
-		}
-		t.Skipf("%s declares no USER_RESERVED_EVENT_PREFIXES yet", barkloaderManifestValidate)
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var contract reservedSubjectsContract
+	if err := decoder.Decode(&contract); err != nil {
+		t.Fatalf("decode %s: %v", reservedSubjectsContractPath, err)
 	}
+	return contract
+}
 
-	consts := map[string]string{}
-	dir := filepath.Dir(barkloaderManifestValidate)
-	entries, err := os.ReadDir(dir)
+// reserved_data.go is generated from the contract the api and barkloader read
+// directly; a contract edit without `go generate` would leave the engine
+// enforcing a different list from the services around it.
+func TestReservedDataMatchesContract(t *testing.T) {
+	contract := loadReservedSubjectsContract(t)
+	if !reflect.DeepEqual(contract, reservedSubjects) {
+		t.Fatalf("reserved_data.go is stale; run `go generate ./...` in shared/common/golang/cloudevents\ncontract: %+v\ngenerated: %+v", contract, reservedSubjects)
+	}
+}
+
+func TestReservedSubjectsContractInvariants(t *testing.T) {
+	contract := loadReservedSubjectsContract(t)
+	lists := map[string][]string{
+		"commandSubjectPrefixes": contract.CommandSubjectPrefixes,
+		"engineAssertedPrefixes": contract.EngineAssertedPrefixes,
+		"platformEventEntries":   contract.PlatformEventEntries,
+		"uploadReservedPrefixes": contract.UploadReservedPrefixes,
+		"engineModuleSegments":   contract.EngineModuleSegments,
+	}
+	for name, entries := range lists {
+		if len(entries) == 0 {
+			t.Errorf("%s is empty", name)
+		}
+		seen := map[string]bool{}
+		for _, entry := range entries {
+			if entry == "" || strings.TrimSpace(entry) != entry {
+				t.Errorf("%s holds a blank or padded entry %q", name, entry)
+			}
+			if seen[entry] {
+				t.Errorf("%s lists %q twice", name, entry)
+			}
+			seen[entry] = true
+		}
+	}
+	engineAsserted := setOf(contract.EngineAssertedPrefixes)
+	for _, entry := range contract.PlatformEventEntries {
+		if !engineAsserted[entry] {
+			t.Errorf("platform event entry %q is not in engineAssertedPrefixes", entry)
+		}
+	}
+	for _, segment := range contract.EngineModuleSegments {
+		if strings.Contains(segment, ".") {
+			t.Errorf("engine module segment %q must be a single subject token", segment)
+		}
+	}
+}
+
+// Barkloader lets an upload declare events under module.<its id>. but never
+// under a namespace the engine publishes module lifecycle events in, so every
+// module.* Subject constant must have its second token listed.
+func TestEngineModuleSubjectsAreListedSegments(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "subjects.go", nil, 0)
 	if err != nil {
-		t.Fatalf("read %s: %v", dir, err)
+		t.Fatalf("parse subjects.go: %v", err)
 	}
-	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".rs") {
-			continue
+	segments := setOf(reservedSubjects.EngineModuleSegments)
+	checked := 0
+	ast.Inspect(file, func(n ast.Node) bool {
+		lit, ok := n.(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			return true
 		}
-		body, err := os.ReadFile(filepath.Join(dir, entry.Name()))
-		if err != nil {
-			t.Fatalf("read %s: %v", entry.Name(), err)
+		subject, err := strconv.Unquote(lit.Value)
+		if err != nil || !strings.HasPrefix(subject, "module.") {
+			return true
 		}
-		for _, m := range rustStringConst.FindAllSubmatch(body, -1) {
-			consts[string(m[1])] = string(m[2])
+		checked++
+		segment := strings.SplitN(strings.TrimPrefix(subject, "module."), ".", 2)[0]
+		if !segments[segment] {
+			t.Errorf("%q publishes under module.%s., which engineModuleSegments does not list", subject, segment)
 		}
-	}
-
-	var rust []string
-	for _, item := range strings.Split(string(list[1]), ",") {
-		item = strings.TrimSpace(item)
-		if item == "" {
-			continue
-		}
-		if unquoted, err := strconv.Unquote(item); err == nil {
-			rust = append(rust, unquoted)
-			continue
-		}
-		value, ok := consts[item]
-		if !ok {
-			t.Fatalf("USER_RESERVED_EVENT_PREFIXES entry %s is neither a string nor a known &str const", item)
-		}
-		rust = append(rust, value)
-	}
-
-	want := append([]string{}, CommandSubjectPrefixes...)
-	sort.Strings(want)
-	sort.Strings(rust)
-	if strings.Join(rust, "|") != strings.Join(want, "|") {
-		t.Errorf("barkloader reserves %q, CommandSubjectPrefixes is %q", rust, want)
+		return true
+	})
+	if checked == 0 {
+		t.Fatal("found no module.* subjects in subjects.go; is it still parsed right?")
 	}
 }

@@ -2,11 +2,11 @@ import { afterEach, describe, expect, mock, test } from "bun:test";
 import { EngineRequestType } from "@woofx3/api/webhooks";
 import { Api } from "../src/api";
 import { ClientSessions } from "../src/client-sessions";
+import { EngineEventStream } from "../src/engine-event-stream";
 import { ApiGateway } from "../src/gateway";
 import { resolveRegistrationPolicy } from "../src/registration";
 import { TwitchTokenSource } from "../src/twitch-token-source";
-import { EngineEventStream } from "../src/engine-event-stream";
-import { WebhookClient } from "../src/webhook-client";
+import { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient } from "../src/webhook-client";
 
 /*
  * A desktop shell registers with its local engine as a dashboard client whose
@@ -75,6 +75,7 @@ async function registerShell(callbackUrl: string) {
     nats: null,
     functions: null,
     barkloaderUrl: "http://b",
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger,
@@ -88,7 +89,7 @@ async function registerShell(callbackUrl: string) {
     new ClientSessions(logger),
     null
   );
-  const webhooks = new WebhookClient(db as never, logger, new EngineEventStream(logger));
+  const webhooks = new WebhookClient(db as never, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
   gateway.setWebhookClient(webhooks);
   const registered = await gateway.registerClient("desktop shell", { callbackUrl, callbackToken: "shell-token" });
   return { db, webhooks, registered };

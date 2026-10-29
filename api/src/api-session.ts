@@ -11,6 +11,7 @@ import type {
   Woofx3EngineApi,
 } from "@woofx3/api";
 import type { DecidePairingRequest } from "@woofx3/api/pairing";
+import type { SendToPlatformsParams } from "@woofx3/api/platform-gateway";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 import type { SessionLease } from "./client-sessions";
@@ -85,6 +86,13 @@ export class ApiSession extends RpcTarget {
     return this.api.installMarketplaceListing(listingId, request, { clientId: this.clientId });
   }
 
+  async installModuleFromResource(
+    resourceId: string,
+    request: { approvedPermissions: string[]; approvedLocalEndpoints: string[] }
+  ) {
+    return this.api.installModuleFromResource(resourceId, request, { clientId: this.clientId });
+  }
+
   async setTwitchToken(token: TwitchAccessToken, convexUserId?: string) {
     return this.api.setTwitchToken(token, convexUserId, { clientId: this.clientId });
   }
@@ -118,6 +126,11 @@ export class ApiSession extends RpcTarget {
 
   async setRelayConfig(config: RelayConfig | null) {
     return this.api.setRelayConfig(config, { clientId: this.clientId });
+  }
+
+  /** Who is asking comes from the session, not the caller. */
+  async sendToPlatforms(params: SendToPlatformsParams) {
+    return this.api.sendToPlatforms(params, { clientId: this.clientId });
   }
 
   async uninstallModule(moduleKey: string) {
@@ -193,6 +206,7 @@ export const RPC_METHODS = [
   "installModuleZip",
   "installModuleFromUrl",
   "installMarketplaceListing",
+  "installModuleFromResource",
   "inspectMarketplaceListing",
   "installMarketplaceBundle",
   "marketplaceSearch",
@@ -229,6 +243,7 @@ export const RPC_METHODS = [
   "setWorkflowEnabled",
   "getWorkflowRuns",
   "getWorkflowRun",
+  "listWorkflowRunSnapshots",
   "getWorkflowHealth",
   "createCommand",
   "updateCommand",
@@ -256,6 +271,7 @@ export const RPC_METHODS = [
   "requestProcessing",
   "setTwitchToken",
   "setRelayConfig",
+  "sendToPlatforms",
   "deleteTwitchToken",
   "getTwitchLink",
   "startTwitchDeviceLogin",
@@ -290,6 +306,8 @@ export const RPC_METHODS = [
   "dispatchFieldOptionsRequest",
   "getScenes",
   "getScene",
+  "listSceneSnapshots",
+  "getSceneSnapshot",
   "getAvailableWidgets",
   "createScene",
   "updateScene",

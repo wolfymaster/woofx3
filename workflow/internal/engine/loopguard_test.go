@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wolfymaster/woofx3/common/platformgateway"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
@@ -18,7 +19,7 @@ func chainOf(ids ...string) *types.Event {
 func sameName(id string) string { return id }
 
 func TestAChainShorterThanTheLimitRuns(t *testing.T) {
-	ids := make([]string, MaxWorkflowChain-1)
+	ids := make([]string, platformgateway.MaxWorkflowChainRuns-1)
 	for i := range ids {
 		ids[i] = "wf-a"
 	}
@@ -33,7 +34,7 @@ func TestAChainShorterThanTheLimitRuns(t *testing.T) {
 // The error names the loop, so the run history says which workflows to fix.
 func TestAChainAtTheLimitIsRefusedAndItsCycleNamed(t *testing.T) {
 	var ids []string
-	for len(ids) < MaxWorkflowChain {
+	for len(ids) < platformgateway.MaxWorkflowChainRuns {
 		ids = append(ids, "wf-a", "wf-b")
 	}
 	err := checkWorkflowChain(chainOf(ids...), "wf-a", sameName)
@@ -45,7 +46,7 @@ func TestAChainAtTheLimitIsRefusedAndItsCycleNamed(t *testing.T) {
 	if got := strings.Join(loop.Cycle, " → "); got != "wf-a → wf-b → wf-a" {
 		t.Errorf("cycle = %q", got)
 	}
-	if len(loop.Path) != MaxWorkflowChain+1 {
+	if len(loop.Path) != platformgateway.MaxWorkflowChainRuns+1 {
 		t.Errorf("path has %d links, want the chain plus the refused run", len(loop.Path))
 	}
 	if !strings.Contains(err.Error(), "wf-a keeps triggering itself") {
@@ -54,7 +55,7 @@ func TestAChainAtTheLimitIsRefusedAndItsCycleNamed(t *testing.T) {
 }
 
 func TestALongChainWithNoRepeatIsStillRefused(t *testing.T) {
-	ids := make([]string, MaxWorkflowChain)
+	ids := make([]string, platformgateway.MaxWorkflowChainRuns)
 	for i := range ids {
 		ids[i] = "wf-" + string(rune('a'+i))
 	}
@@ -145,7 +146,7 @@ func TestAWorkflowThatTriggersItselfIsStoppedAtTheLimit(t *testing.T) {
 	}
 	// The refused run can settle before the run whose event it refused has
 	// finished returning from its last task.
-	waitUntil(t, func() bool { return len(recorder.snapshot()) == MaxWorkflowChain+1 })
+	waitUntil(t, func() bool { return len(recorder.snapshot()) == platformgateway.MaxWorkflowChainRuns+1 })
 
 	var completed, failed []types.WorkflowExecution
 	for _, run := range recorder.snapshot() {
@@ -155,8 +156,8 @@ func TestAWorkflowThatTriggersItselfIsStoppedAtTheLimit(t *testing.T) {
 			completed = append(completed, run)
 		}
 	}
-	if len(completed) != MaxWorkflowChain || len(failed) != 1 {
-		t.Fatalf("completed %d and failed %d runs, want %d and 1", len(completed), len(failed), MaxWorkflowChain)
+	if len(completed) != platformgateway.MaxWorkflowChainRuns || len(failed) != 1 {
+		t.Fatalf("completed %d and failed %d runs, want %d and 1", len(completed), len(failed), platformgateway.MaxWorkflowChainRuns)
 	}
 	if !strings.Contains(failed[0].Error, "Echo keeps triggering itself") {
 		t.Errorf("refusal = %q", failed[0].Error)
@@ -206,7 +207,7 @@ func TestEventsARunCausesCarryItsChain(t *testing.T) {
 	}
 
 	rootEvent := &types.Event{ID: "e1", Type: "parent.run", Source: "test", Time: time.Now(), WorkflowChain: "wf-root"}
-	engine.executeWorkflow(parent, rootEvent, engine.newViewerLoader(viewerTrigger(parent), rootEvent))
+	engine.startRun(parent, rootEvent, engine.newViewerLoader(viewerTrigger(parent), rootEvent))
 	select {
 	case <-subRan:
 	case <-time.After(5 * time.Second):

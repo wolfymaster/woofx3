@@ -59,6 +59,9 @@ func (r *ResourceRepository) Usage() (bytes int64, files int64, err error) {
 // ListFilter selects the direct children of one folder. A nil ParentID
 // with ParentSet true means "the root"; ParentSet false means "do not
 // filter on parent at all".
+//
+// An empty Kind lists every kind except module archives, which only a
+// listing asking for them by kind returns.
 type ListFilter struct {
 	ParentID  *uuid.UUID
 	ParentSet bool
@@ -82,6 +85,8 @@ func (r *ResourceRepository) List(filter ListFilter) ([]*models.Resource, int64,
 	}
 	if filter.Kind != "" {
 		query = query.Where("kind = ?", filter.Kind)
+	} else {
+		query = query.Where("kind <> ?", models.ResourceKindCustomModule)
 	}
 	if filter.Search != "" {
 		// LOWER(...) LIKE keeps the match case-insensitive on both
@@ -143,10 +148,27 @@ func (r *ResourceRepository) NameExists(parentID *uuid.UUID, name string, exclud
 	return count > 0, nil
 }
 
+// ResourceInstalledError refuses deleting a resource that an installed
+// module was installed from (`modules.upload_resource_id`).
+type ResourceInstalledError struct {
+	ResourceName string
+	ModuleName   string
+}
+
+func (e *ResourceInstalledError) Error() string {
+	return fmt.Sprintf("%q is the archive module %q was installed from; uninstall the module before deleting it",
+		e.ResourceName, e.ModuleName)
+}
+
 // DeleteSubtree removes a resource and, when it is a folder, everything
 // beneath it — returning every repository key in the subtree (uploads
 // and thumbnails alike) so the caller can delete those bytes from object
 // storage. db-proxy never talks to the object store itself.
+//
+// Nothing is deleted when an installed module was installed from any
+// resource in the subtree: that returns a *ResourceInstalledError. The check
+// shares the delete's transaction so a module recorded meanwhile cannot be
+// left naming a deleted resource.
 //
 // The walk is explicit rather than relying on ON DELETE CASCADE because
 // the keys have to be collected before the rows disappear, and because
@@ -188,8 +210,12 @@ func (r *ResourceRepository) DeleteSubtree(id uuid.UUID) ([]string, error) {
 		}
 
 		ids := make([]uuid.UUID, 0, len(collected))
+		idStrings := make([]string, 0, len(collected))
+		byID := make(map[string]*models.Resource, len(collected))
 		for _, resource := range collected {
 			ids = append(ids, resource.ID)
+			idStrings = append(idStrings, resource.ID.String())
+			byID[resource.ID.String()] = resource
 			if resource.RepositoryKey != "" {
 				keys = append(keys, resource.RepositoryKey)
 			}
@@ -197,6 +223,23 @@ func (r *ResourceRepository) DeleteSubtree(id uuid.UUID) ([]string, error) {
 				keys = append(keys, resource.ThumbnailRepositoryKey)
 			}
 		}
+
+		var installed []models.Module
+		if err := tx.Select("name", "upload_resource_id").
+			Where("upload_resource_id IN ?", idStrings).
+			Limit(1).
+			Find(&installed).Error; err != nil {
+			return err
+		}
+		if len(installed) > 0 {
+			resource := byID[*installed[0].UploadResourceID]
+			if resource == nil {
+				return fmt.Errorf("module %q names upload resource %s outside the subtree it was found in",
+					installed[0].Name, *installed[0].UploadResourceID)
+			}
+			return &ResourceInstalledError{ResourceName: resource.Name, ModuleName: installed[0].Name}
+		}
+
 		return tx.Where("id IN ?", ids).
 			Delete(&models.Resource{}).Error
 	})

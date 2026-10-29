@@ -13,7 +13,13 @@ export interface Service<T> {
    */
   disconnect(): Promise<void>;
 
-  healthcheck: boolean;
+  /**
+   * How the health monitor checks this service. The NATS monitor calls a
+   * function on every health check, so it must settle within its own bound.
+   * createNATSHealthCheck instead waits for a ready heartbeat from a service
+   * set to `true`. `false` is never checked.
+   */
+  healthcheck: boolean | (() => Promise<boolean>);
 
   name: string;
 

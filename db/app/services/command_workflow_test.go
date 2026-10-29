@@ -11,6 +11,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/workers"
+	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"gorm.io/gorm"
@@ -504,7 +505,7 @@ func TestLinkCommandWorkflows_AnnouncesTheLinkedCommand(t *testing.T) {
 func TestWorkflowService_RefusesToChangeACommandsWorkflow(t *testing.T) {
 	f := newCommandPermFixture(t)
 	cmd := createWithActions(t, f, "hello", helloActions)
-	workflows := NewWorkflowService(repo.NewWorkflowRepository(f.db), repo.NewCommandRepository(f.db), f.db, nil, nil)
+	workflows := NewWorkflowService(repo.NewWorkflowRepository(f.db, database.RandomIDs{}), repo.NewCommandRepository(f.db), f.db, nil, nil)
 	ctx := context.Background()
 	disabled := false
 

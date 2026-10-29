@@ -1,15 +1,23 @@
 /**
  * Host and Origin checks shared by the engine's HTTP services (api,
- * sceneManager), configured by `WOOFX3_ALLOWED_HOSTS` and
- * `WOOFX3_ALLOWED_ORIGINS`, or an origin list a service names itself.
+ * sceneManager), configured by `WOOFX3_ALLOWED_HOSTS`,
+ * `WOOFX3_ALLOWED_ORIGINS` (or an origin list a service names itself, such
+ * as `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS`) and `WOOFX3_UI_URL`.
  *
- * Both lists are off unless set: unset, or blank. A list that is set but
- * names nothing (`","`) is refused at startup rather than read as unset, so
- * a stray comma or an empty template cannot quietly turn a check off. The hosted dashboard reaches engines
- * directly from several origins, so an engine that sets neither accepts
- * every Host and Origin and answers CORS with `*`.
+ * An unset list does not mean open. Each service resolves its defaults here,
+ * once, at startup:
+ * - Origins default to the loopback dev servers and the desktop webview
+ *   (DEFAULT_ALLOWED_ORIGINS), the origins of the URLs the service is
+ *   configured to be reached at, the dashboard's origins (`WOOFX3_UI_URL`, see
+ *   parseUiOrigins), and any origins the service adds (sceneManager adds
+ *   `null` for sandboxed widget frames).
+ * - Hosts default to the loopback names (LOOPBACK_HOSTS) and the hosts of the
+ *   service's configured URLs, but only on a service reachable over loopback
+ *   alone. Behind the edge or on a network interface the Host is whatever the
+ *   proxy in front sends, which only the operator knows, so it stays unchecked.
+ * - The value `*` turns a check off: every Host, or every Origin with CORS `*`.
  *
- * When a list is set:
+ * When a check is on:
  * - an unknown `Host` is answered 421 Misdirected Request. That is the DNS
  *   rebinding defence: a page on a hostile name that resolves to the engine
  *   still sends its own name as the Host.
@@ -18,7 +26,7 @@
  *   send none, and neither does a browser for a same-origin GET or a
  *   top-level navigation.
  * - CORS echoes the matched origin with `Vary: Origin` instead of `*`.
- * - a listed `null` is admitted service-wide by `reject`; a route that
+ * - an admitted `null` is admitted service-wide by `reject`; a route that
  *   sandboxed frames never call narrows that back with
  *   `rejectOpaqueOrigin`.
  *
@@ -30,7 +38,8 @@
  *   `[::1]:8080`.
  * - Origin entries are `scheme://host[:port]`, compared as serialized web
  *   origins, so the scheme's default port may be written or left out.
- *   `scheme://host:*` matches the host on any port. A scheme the URL
+ *   `scheme://host:*` matches the host on any port, and `scheme://*.domain`
+ *   any subdomain of `domain` (never `domain` itself). A scheme the URL
  *   standard has no origin for, such as the `tauri://localhost` a desktop
  *   webview sends, is compared as `scheme://host[:port]`, lowercased. The
  *   literal `null` matches the opaque origin that sandboxed frames send;
@@ -38,10 +47,15 @@
  */
 
 export interface RequestGuardPolicy {
-  /** Null when Host is not checked. */
+  /** Null when Host is not checked (`*`, or the default on a network-exposed service). */
   allowedHosts: readonly HostRule[] | null;
-  /** Null when Origin is not checked and CORS allows any origin. */
+  /** Null when Origin is not checked (`*`) and CORS allows any origin. */
   allowedOrigins: readonly OriginRule[] | null;
+  /**
+   * The origins the operator named in the origin list setting; null when it
+   * is unset (the defaults apply) or `*`. See RequestGuard.listsOrigin.
+   */
+  listedOrigins: readonly OriginRule[] | null;
 }
 
 export interface HostRule {
@@ -53,7 +67,15 @@ export interface HostRule {
 export type OriginRule =
   | { kind: "exact"; origin: string }
   | { kind: "anyPort"; protocol: string; hostname: string }
+  /** Any host below `domain`; `port` is the URL's own port, "" for the scheme's default. */
+  | { kind: "subdomain"; protocol: string; domain: string; port: string }
   | { kind: "opaque" };
+
+/**
+ * How far a service's listener can be reached: `loopback` when it binds a
+ * loopback interface and no edge listener fronts it, `network` otherwise.
+ */
+export type Exposure = "loopback" | "network";
 
 /**
  * Whether the opaque origin `null`, which every sandboxed page sends, is
@@ -66,18 +88,66 @@ export type OpaqueOriginPolicy = "allow" | "refuse";
 /** The name of a setting that holds an origin list, as errors name it. */
 export type OriginListSetting = `WOOFX3_${string}ALLOWED_ORIGINS`;
 
+export const ALLOWED_ORIGINS_SETTING: OriginListSetting = "WOOFX3_ALLOWED_ORIGINS";
+
 export interface RequestGuardSettings {
-  /** Comma-separated `WOOFX3_ALLOWED_HOSTS`; blank or undefined disables the check. */
+  /** Comma-separated `WOOFX3_ALLOWED_HOSTS`; `*` turns the check off, blank or undefined means the default. */
   allowedHosts?: string | number | boolean;
-  /** Comma-separated origins; blank or undefined disables the check. */
+  /** Comma-separated origins; `*` turns the check off, blank or undefined means the default. */
   allowedOrigins?: string | number | boolean;
   /** The setting allowedOrigins was read from, named in errors. */
   allowedOriginsSetting: OriginListSetting;
-  /** Whether the list may name `null`; "refuse" fails startup when it does. */
+  /** Whether the origins may include `null`; "refuse" fails startup when they do. */
   opaqueOrigin: OpaqueOriginPolicy;
+  /** Decides whether Host is checked by default; see resolveExposure. */
+  exposure: Exposure;
+  /**
+   * Absolute URLs the service is configured to be reached at (its public URL,
+   * the URL peers call it by). Their hosts join the default Host list and
+   * their origins the default Origin list.
+   */
+  ownUrls: readonly string[];
+  /**
+   * Origins the service adds to DEFAULT_ALLOWED_ORIGINS when its origin list
+   * is unset: its own (sceneManager's `null`) and the dashboard's
+   * (parseUiOrigins).
+   */
+  extraDefaultOrigins: readonly string[];
 }
 
-export const ALLOWED_ORIGINS_SETTING: OriginListSetting = "WOOFX3_ALLOWED_ORIGINS";
+/** The list value that turns a check off. */
+export const ALLOW_ANY = "*";
+
+/**
+ * The origins a service accepts when `WOOFX3_ALLOWED_ORIGINS` is unset: local
+ * dev servers on any port, and the desktop app's webview (`tauri://localhost`
+ * on macOS and Linux, `http://tauri.localhost` on Windows).
+ */
+export const DEFAULT_ALLOWED_ORIGINS: readonly string[] = [
+  "http://localhost:*",
+  "http://127.0.0.1:*",
+  "tauri://localhost",
+  "http://tauri.localhost",
+];
+
+/** The names a loopback-only service is reached by when `WOOFX3_ALLOWED_HOSTS` is unset, on any port. */
+export const LOOPBACK_HOSTS: readonly string[] = ["localhost", "127.0.0.1", "[::1]"];
+
+/** Whether `hostname` (a bind address or URL host, IPv6 bracketed or not) names the loopback interface. */
+export function isLoopbackHostname(hostname: string): boolean {
+  const name = hostname.trim().toLowerCase().replace(/\.$/, "");
+  return name === "localhost" || name === "::1" || name === "[::1]" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(name);
+}
+
+/**
+ * The exposure of a service that binds `bindHost`. `behindEdge` is
+ * `WOOFX3_BEHIND_EDGE`, which the production image sets: there the edge
+ * listens beyond loopback and forwards to the service, so the service is
+ * reachable from the network whatever it binds.
+ */
+export function resolveExposure(bindHost: string, behindEdge: boolean): Exposure {
+  return behindEdge || !isLoopbackHostname(bindHost) ? "network" : "loopback";
+}
 
 const OPAQUE_ORIGIN = "null";
 
@@ -121,27 +191,78 @@ export function comparableOriginOf(origin: string): string | null {
   return comparableOrigin(url);
 }
 
-/** Allows every Host and Origin, with CORS `*`. */
-export const OPEN_REQUEST_GUARD_POLICY: RequestGuardPolicy = { allowedHosts: null, allowedOrigins: null };
+/**
+ * The policy as two log-friendly strings, `*` for an unchecked list, so an
+ * operator can see at startup which Hosts and Origins the defaults resolved to.
+ */
+export function describeRequestGuardPolicy(policy: RequestGuardPolicy): {
+  allowedHosts: string;
+  allowedOrigins: string;
+} {
+  return {
+    allowedHosts:
+      policy.allowedHosts === null
+        ? ALLOW_ANY
+        : policy.allowedHosts
+            .map((rule) => (rule.port === null ? rule.hostname : `${rule.hostname}:${rule.port}`))
+            .join(","),
+    allowedOrigins:
+      policy.allowedOrigins === null ? ALLOW_ANY : policy.allowedOrigins.map(describeOriginRule).join(","),
+  };
+}
 
-function splitList(name: string, value: string | number | boolean | undefined): string[] | null {
+function describeOriginRule(rule: OriginRule): string {
+  switch (rule.kind) {
+    case "exact":
+      return rule.origin;
+    case "anyPort":
+      return `${rule.protocol}//${rule.hostname}:*`;
+    case "subdomain":
+      return `${rule.protocol}//*.${rule.domain}${rule.port === "" ? "" : `:${rule.port}`}`;
+    case "opaque":
+      return OPAQUE_ORIGIN;
+  }
+}
+
+/** Allows every Host and Origin, with CORS `*`. */
+export const OPEN_REQUEST_GUARD_POLICY: RequestGuardPolicy = {
+  allowedHosts: null,
+  allowedOrigins: null,
+  listedOrigins: null,
+};
+
+type ListSetting = { kind: "default" } | { kind: "any" } | { kind: "entries"; entries: string[] };
+
+function readList(name: string, value: string | number | boolean | undefined): ListSetting {
   if (value === undefined) {
-    return null;
+    return { kind: "default" };
   }
   if (typeof value !== "string") {
     throw new Error(`${name}: ${String(value)} is not a comma-separated list`);
-  }
-  if (value.trim() === "") {
-    return null;
   }
   const entries = value
     .split(",")
     .map((entry) => entry.trim())
     .filter((entry) => entry !== "");
   if (entries.length === 0) {
-    throw new Error(`${name}: "${value}" is set but lists nothing; leave it unset or blank to turn the check off`);
+    return { kind: "default" };
   }
-  return entries;
+  if (entries.includes(ALLOW_ANY)) {
+    if (entries.length > 1) {
+      throw new Error(`${name}: ${ALLOW_ANY} allows everything, so it must be the only entry`);
+    }
+    return { kind: "any" };
+  }
+  return { kind: "entries", entries };
+}
+
+/** A configured URL of the service itself; a malformed one is a startup error. */
+function parseOwnUrl(value: string): URL {
+  try {
+    return new URL(value);
+  } catch {
+    throw new Error(`request guard: the service's own URL "${value}" is not an absolute URL`);
+  }
 }
 
 /** Splits `name`, `name:port`, `[v6]` or `[v6]:port`; null when malformed. */
@@ -165,25 +286,48 @@ function parseHostRule(entry: string): HostRule {
   return parsed;
 }
 
-function parseOriginRule(setting: OriginListSetting, opaqueOrigin: OpaqueOriginPolicy, entry: string): OriginRule {
+/** `scheme://*.rest`: the scheme and what follows the wildcard label. */
+const SUBDOMAIN_WILDCARD = /^([A-Za-z][A-Za-z0-9+.-]*:)\/\/\*\.(.*)$/;
+
+/**
+ * A wildcard's domain: two or more DNS labels, the last not numeric. That
+ * keeps out a wildcard over a whole top-level domain and an IPv4 address
+ * the URL parser would rewrite.
+ */
+const WILDCARD_DOMAIN = /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z](?:[a-z0-9-]*[a-z0-9])?$/;
+
+/** `setting` names the variable the entry came from, for the startup error. */
+function parseOriginRule(setting: string, opaqueOrigin: OpaqueOriginPolicy, entry: string): OriginRule {
   if (entry === OPAQUE_ORIGIN) {
     if (opaqueOrigin === "refuse") {
       throw new Error(`${setting}: "null" is not allowed: this service refuses the opaque origin sandboxed pages send`);
     }
     return { kind: "opaque" };
   }
+  const malformed = new Error(`${setting}: "${entry}" is not scheme://host[:port]`);
+  const wildcard = SUBDOMAIN_WILDCARD.exec(entry);
   const anyPort = entry.endsWith(":*");
-  const base = anyPort ? entry.slice(0, -2) : entry;
+  if (wildcard && anyPort) {
+    throw new Error(`${setting}: "${entry}" names both a subdomain wildcard and :*`);
+  }
+  const base = wildcard ? `${wildcard[1]}//${wildcard[2]}` : anyPort ? entry.slice(0, -2) : entry;
   let url: URL;
   try {
     url = new URL(base);
   } catch {
-    throw new Error(`${setting}: "${entry}" is not scheme://host[:port]`);
+    throw malformed;
   }
   const hasPathOrMore = (url.pathname !== "/" && url.pathname !== "") || url.search !== "" || url.hash !== "";
   const origin = comparableOrigin(url);
-  if (origin === null || hasPathOrMore || url.username !== "" || url.password !== "") {
-    throw new Error(`${setting}: "${entry}" is not scheme://host[:port]`);
+  // A `*` anywhere but the leading label would be kept as a literal host that no browser sends.
+  if (origin === null || hasPathOrMore || url.username !== "" || url.password !== "" || url.hostname.includes("*")) {
+    throw malformed;
+  }
+  if (wildcard) {
+    if (!TUPLE_ORIGIN_SCHEMES.has(url.protocol) || !WILDCARD_DOMAIN.test(url.hostname)) {
+      throw new Error(`${setting}: "${entry}" is not scheme://*.domain[:port] with a domain of two or more labels`);
+    }
+    return { kind: "subdomain", protocol: url.protocol, domain: url.hostname, port: url.port };
   }
   if (anyPort) {
     if (url.port !== "") {
@@ -194,19 +338,84 @@ function parseOriginRule(setting: OriginListSetting, opaqueOrigin: OpaqueOriginP
   return { kind: "exact", origin };
 }
 
+const UI_URL_SETTING = "WOOFX3_UI_URL";
+
 /**
- * Parses the two settings, throwing on a malformed entry so a typo fails
- * the service at startup rather than locking every client out at runtime.
+ * `WOOFX3_UI_URL`: the origins of the dashboards this engine is used from,
+ * comma-separated, each `scheme://host[:port]` or `scheme://*.domain[:port]`.
+ * A deployment the dashboard is not served from the same origin as, such as a
+ * managed engine at `https://<slug>.woofx3.tv` used from `https://woofx3.tv`,
+ * names it here so the default Origin list admits it without the operator
+ * having to restate every other default in `WOOFX3_ALLOWED_ORIGINS`.
+ *
+ * Unset or blank means none. `*` and `null` are refused: neither is a
+ * dashboard, and opening the check belongs to `WOOFX3_ALLOWED_ORIGINS`. Any
+ * other malformed entry throws, so a typo stops the service at startup
+ * instead of disconnecting the dashboard.
+ */
+export function parseUiOrigins(value: string | number | boolean | undefined): readonly string[] {
+  const setting = readList(UI_URL_SETTING, value);
+  if (setting.kind === "default") {
+    return [];
+  }
+  if (setting.kind === "any") {
+    throw new Error(`${UI_URL_SETTING}: ${ALLOW_ANY} is not a dashboard origin; set WOOFX3_ALLOWED_ORIGINS instead`);
+  }
+  for (const entry of setting.entries) {
+    if (entry === OPAQUE_ORIGIN) {
+      throw new Error(`${UI_URL_SETTING}: ${OPAQUE_ORIGIN} is not a dashboard origin`);
+    }
+    parseOriginRule(UI_URL_SETTING, "refuse", entry);
+  }
+  return setting.entries;
+}
+
+/**
+ * Parses the two settings and resolves their defaults, throwing on a
+ * malformed entry so a typo fails the service at startup rather than locking
+ * every client out at runtime.
  */
 export function parseRequestGuardPolicy(settings: RequestGuardSettings): RequestGuardPolicy {
-  const hosts = splitList("WOOFX3_ALLOWED_HOSTS", settings.allowedHosts);
-  const origins = splitList(settings.allowedOriginsSetting, settings.allowedOrigins);
+  const ownUrls = settings.ownUrls.map(parseOwnUrl);
+  const origins = readList(settings.allowedOriginsSetting, settings.allowedOrigins);
+  const listedOrigins =
+    origins.kind === "entries"
+      ? origins.entries.map((entry) => parseOriginRule(settings.allowedOriginsSetting, settings.opaqueOrigin, entry))
+      : null;
   return {
-    allowedHosts: hosts ? hosts.map(parseHostRule) : null,
-    allowedOrigins: origins
-      ? origins.map((entry) => parseOriginRule(settings.allowedOriginsSetting, settings.opaqueOrigin, entry))
-      : null,
+    allowedHosts: resolveHostRules(readList("WOOFX3_ALLOWED_HOSTS", settings.allowedHosts), settings.exposure, ownUrls),
+    allowedOrigins: origins.kind === "any" ? null : (listedOrigins ?? defaultOriginRules(settings, ownUrls)),
+    listedOrigins,
   };
+}
+
+function resolveHostRules(setting: ListSetting, exposure: Exposure, ownUrls: readonly URL[]): HostRule[] | null {
+  if (setting.kind === "any") {
+    return null;
+  }
+  if (setting.kind === "entries") {
+    return setting.entries.map(parseHostRule);
+  }
+  if (exposure !== "loopback") {
+    return null;
+  }
+  return [
+    ...LOOPBACK_HOSTS.map(parseHostRule),
+    ...ownUrls.map((url) => ({ hostname: url.hostname.toLowerCase(), port: null })),
+  ];
+}
+
+function defaultOriginRules(settings: RequestGuardSettings, ownUrls: readonly URL[]): OriginRule[] {
+  const ownOrigins = ownUrls
+    .map(comparableOrigin)
+    .filter((origin): origin is string => origin !== null)
+    .map((origin): OriginRule => ({ kind: "exact", origin }));
+  return [
+    ...[...DEFAULT_ALLOWED_ORIGINS, ...settings.extraDefaultOrigins].map((entry) =>
+      parseOriginRule("default origin", settings.opaqueOrigin, entry)
+    ),
+    ...ownOrigins,
+  ];
 }
 
 function hostAllowed(rules: readonly HostRule[], hostHeader: string | null): boolean {
@@ -245,6 +454,13 @@ function originAllowed(rules: readonly OriginRule[], origin: string): boolean {
     if (rule.kind === "anyPort") {
       return rule.protocol === url.protocol && rule.hostname === url.hostname.toLowerCase();
     }
+    if (rule.kind === "subdomain") {
+      return (
+        rule.protocol === url.protocol &&
+        rule.port === url.port &&
+        url.hostname.toLowerCase().endsWith(`.${rule.domain}`)
+      );
+    }
     return false;
   });
 }
@@ -272,8 +488,8 @@ export class RequestGuard {
    * The response that refuses `req` on a route that does not admit the
    * opaque origin, or null when it may proceed. Call it once `reject` has let
    * the request through and the route is known. Only a request that sends
-   * `Origin: null` to a service with an origin list is refused: with no list
-   * every origin is admitted, `null` included.
+   * `Origin: null` to a service that checks origins is refused: with the
+   * check off every origin is admitted, `null` included.
    */
   rejectOpaqueOrigin(req: Request): Response | null {
     if (this.policy.allowedOrigins && req.headers.get("origin") === OPAQUE_ORIGIN) {
@@ -283,14 +499,15 @@ export class RequestGuard {
   }
 
   /**
-   * Whether `origin` is on the origin list itself. Unlike `reject`, which
-   * lets every origin through when there is no list, this is false for every
-   * origin then: it answers "did the operator name this origin", for a
-   * feature that must be granted origin by origin. `null` is never listed.
+   * Whether the operator named `origin` in the origin list setting. Unlike
+   * `reject`, which admits the defaults when the setting is unset and every
+   * origin when it is `*`, this is false for every origin then: it answers
+   * "did the operator name this origin", for a feature that must be granted
+   * origin by origin. `null` is never listed.
    */
   listsOrigin(origin: string): boolean {
-    const { allowedOrigins } = this.policy;
-    return allowedOrigins !== null && origin !== OPAQUE_ORIGIN && originAllowed(allowedOrigins, origin);
+    const { listedOrigins } = this.policy;
+    return listedOrigins !== null && origin !== OPAQUE_ORIGIN && originAllowed(listedOrigins, origin);
   }
 
   /**

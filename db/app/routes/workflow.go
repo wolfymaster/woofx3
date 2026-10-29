@@ -12,7 +12,7 @@ import (
 )
 
 func WorkflowRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middleware.CasbinMiddleware) {
-	workflowRepository := repo.NewWorkflowRepository(app.Db)
+	workflowRepository := repo.NewWorkflowRepository(app.Db, app.IDs)
 	refRepository := repo.NewResourceReferenceRepository(app.Db)
 	workflowService := svc.NewWorkflowService(workflowRepository, repo.NewCommandRepository(app.Db), app.Db, app.EventPublisher, refRepository)
 	workflowHandler := client.NewWorkflowServiceServer(

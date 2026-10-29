@@ -1,0 +1,606 @@
+{
+  "cases": [
+    {
+      "name": "chat.send to every platform",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "chat.send to named platforms, replying in thread",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "platforms", "ids": ["twitch"] },
+        "payload": { "message": "hi", "replyToMessageId": "msg-1" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "chat.send to the origin, carrying the workflow chain",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "origin", "origin": { "platform": "twitch", "messageId": "msg-1", "channelId": "chan-1" } },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" },
+        "workflowChain": "workflow-a,workflow-b"
+      }
+    },
+    {
+      "name": "chat.send from the dispatcher",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "dispatcher", "ref": "builtin:title" }
+      }
+    },
+    {
+      "name": "chat.announce with Twitch options",
+      "invalidField": null,
+      "request": {
+        "action": "chat.announce",
+        "target": { "kind": "all" },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "api", "ref": "client-1" },
+        "options": { "twitch": { "color": "blue" } }
+      }
+    },
+    {
+      "name": "chat.pin an existing message",
+      "invalidField": null,
+      "request": {
+        "action": "chat.pin",
+        "target": { "kind": "all" },
+        "payload": { "messageId": "msg-1" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "chat.pin a new message for a duration",
+      "invalidField": null,
+      "request": {
+        "action": "chat.pin",
+        "target": { "kind": "all" },
+        "payload": { "message": "pinned", "durationSeconds": 120 },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "chat.pin a new message with no duration",
+      "invalidField": null,
+      "request": {
+        "action": "chat.pin",
+        "target": { "kind": "all" },
+        "payload": { "message": "pinned" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "chat.pin duration at its bounds",
+      "invalidField": null,
+      "request": {
+        "action": "chat.pin",
+        "target": { "kind": "all" },
+        "payload": { "message": "pinned", "durationSeconds": 1200 },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "chat.pin duration written as a whole float",
+      "invalidField": null,
+      "request": {
+        "action": "chat.pin",
+        "target": { "kind": "all" },
+        "payload": { "message": "pinned", "durationSeconds": 30.0 },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "an empty optional string counts as absent",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hi", "replyToMessageId": "" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "a 500 character message",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": {
+          "message": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "a 500 character message counted in code points",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": {
+          "message": "🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶"
+        },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "a 200 character idempotency key",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "an unknown action",
+      "invalidField": "action",
+      "request": {
+        "action": "chat.delete",
+        "target": { "kind": "all" },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "an unknown target kind",
+      "invalidField": "target.kind",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "everywhere" },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "platforms with no ids",
+      "invalidField": "target.ids",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "platforms", "ids": [] },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "platforms naming an unknown platform",
+      "invalidField": "target.ids[0]",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "platforms", "ids": ["kick"] },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "platforms naming a platform twice",
+      "invalidField": "target.ids[1]",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "platforms", "ids": ["twitch", "twitch"] },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "origin without an origin",
+      "invalidField": "target.origin",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "origin" },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "origin on an unknown platform",
+      "invalidField": "target.origin.platform",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "origin", "origin": { "platform": "kick" } },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "origin message id over 200 characters",
+      "invalidField": "target.origin.messageId",
+      "request": {
+        "action": "chat.send",
+        "target": {
+          "kind": "origin",
+          "origin": {
+            "platform": "twitch",
+            "messageId": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+          }
+        },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "all with ids",
+      "invalidField": "target.ids",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all", "ids": ["twitch"] },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "a 501 character message",
+      "invalidField": "payload.message",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": {
+          "message": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "a 501 code point message",
+      "invalidField": "payload.message",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": {
+          "message": "🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶🐶"
+        },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "a missing message",
+      "invalidField": "payload.message",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "replyToMessageId": "msg-1" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "an empty message",
+      "invalidField": "payload.message",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "a message that is not a string",
+      "invalidField": "payload.message",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": 42 },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "a null message",
+      "invalidField": "payload.message",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": null },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "an unknown payload field",
+      "invalidField": "payload.colour",
+      "request": {
+        "action": "chat.announce",
+        "target": { "kind": "all" },
+        "payload": { "message": "hi", "colour": "blue" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "a null payload",
+      "invalidField": "payload",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": null,
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "a missing payload",
+      "invalidField": "payload",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "a payload that is an array",
+      "invalidField": "payload",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": ["hello"],
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "chat.pin mixing both forms",
+      "invalidField": "payload",
+      "request": {
+        "action": "chat.pin",
+        "target": { "kind": "all" },
+        "payload": { "messageId": "msg-1", "message": "pinned" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "chat.pin with neither form",
+      "invalidField": "payload",
+      "request": {
+        "action": "chat.pin",
+        "target": { "kind": "all" },
+        "payload": {},
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "chat.pin duration below 30",
+      "invalidField": "payload.durationSeconds",
+      "request": {
+        "action": "chat.pin",
+        "target": { "kind": "all" },
+        "payload": { "message": "pinned", "durationSeconds": 29 },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "chat.pin duration above 1200",
+      "invalidField": "payload.durationSeconds",
+      "request": {
+        "action": "chat.pin",
+        "target": { "kind": "all" },
+        "payload": { "message": "pinned", "durationSeconds": 1201 },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "chat.pin duration with a fraction",
+      "invalidField": "payload.durationSeconds",
+      "request": {
+        "action": "chat.pin",
+        "target": { "kind": "all" },
+        "payload": { "message": "pinned", "durationSeconds": 30.5 },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "chat.pin duration as a string",
+      "invalidField": "payload.durationSeconds",
+      "request": {
+        "action": "chat.pin",
+        "target": { "kind": "all" },
+        "payload": { "message": "pinned", "durationSeconds": "60" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "chat.pin existing form missing its id",
+      "invalidField": "payload.messageId",
+      "request": {
+        "action": "chat.pin",
+        "target": { "kind": "all" },
+        "payload": { "messageId": "" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "options for an unknown platform",
+      "invalidField": "options.kick",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" },
+        "options": { "kick": {} }
+      }
+    },
+    {
+      "name": "a missing idempotency key",
+      "invalidField": "idempotencyKey",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hello chat" },
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "an empty idempotency key",
+      "invalidField": "idempotencyKey",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "a 201 character idempotency key",
+      "invalidField": "idempotencyKey",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk",
+        "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
+      }
+    },
+    {
+      "name": "an unknown requester",
+      "invalidField": "requestedBy.kind",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "module", "ref": "spotify" }
+      }
+    },
+    {
+      "name": "an empty requester ref",
+      "invalidField": "requestedBy.ref",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hello chat" },
+        "idempotencyKey": "exec-1:task-1",
+        "requestedBy": { "kind": "api", "ref": "" }
+      }
+    },
+    {
+      "name": "null workflowChain counts as absent",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hi" },
+        "idempotencyKey": "k",
+        "requestedBy": { "kind": "api", "ref": "c" },
+        "workflowChain": null
+      }
+    },
+    {
+      "name": "null options counts as absent",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hi" },
+        "idempotencyKey": "k",
+        "requestedBy": { "kind": "api", "ref": "c" },
+        "options": null
+      }
+    },
+    {
+      "name": "an empty ids list on an all target counts as absent",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all", "ids": [] },
+        "payload": { "message": "hi" },
+        "idempotencyKey": "k",
+        "requestedBy": { "kind": "api", "ref": "c" }
+      }
+    },
+    {
+      "name": "a null origin on a platforms target counts as absent",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "platforms", "ids": ["twitch"], "origin": null },
+        "payload": { "message": "hi" },
+        "idempotencyKey": "k",
+        "requestedBy": { "kind": "api", "ref": "c" }
+      }
+    },
+    {
+      "name": "a null origin messageId counts as absent",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "origin", "origin": { "platform": "twitch", "messageId": null } },
+        "payload": { "message": "hi" },
+        "idempotencyKey": "k",
+        "requestedBy": { "kind": "api", "ref": "c" }
+      }
+    },
+    {
+      "name": "workflowChain at the length limit",
+      "invalidField": null,
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hi" },
+        "idempotencyKey": "k",
+        "requestedBy": { "kind": "api", "ref": "c" },
+        "workflowChain": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "workflowChain over the length limit",
+      "invalidField": "workflowChain",
+      "request": {
+        "action": "chat.send",
+        "target": { "kind": "all" },
+        "payload": { "message": "hi" },
+        "idempotencyKey": "k",
+        "requestedBy": { "kind": "api", "ref": "c" },
+        "workflowChain": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  ]
+}

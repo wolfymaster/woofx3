@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"github.com/wolfymaster/woofx3/db/database/repository"
 	"gorm.io/gorm"
@@ -130,10 +129,7 @@ func (p *EventPublisher) publishWith(repo *repository.DbEventRepository, opts Pu
 		ackSubject = &ack
 	}
 
-	// The id is set here rather than left to the column default, which only
-	// the Postgres schema has: on SQLite an outbox row without one is refused.
 	event := &models.WorkerEvent{
-		ID:              uuid.NewString(),
 		EventType:       eventType,
 		ClientID:        opts.ClientID,
 		EntityType:      opts.EntityType,

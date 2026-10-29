@@ -3208,6 +3208,9 @@ impl serde::Serialize for CreateModuleRequest {
         if self.marketplace_edition.is_some() {
             len += 1;
         }
+        if self.upload_resource_id.is_some() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.CreateModuleRequest", len)?;
         if !self.name.is_empty() {
             struct_ser.serialize_field("name", &self.name)?;
@@ -3242,6 +3245,9 @@ impl serde::Serialize for CreateModuleRequest {
         if let Some(v) = self.marketplace_edition.as_ref() {
             struct_ser.serialize_field("marketplaceEdition", v)?;
         }
+        if let Some(v) = self.upload_resource_id.as_ref() {
+            struct_ser.serialize_field("uploadResourceId", v)?;
+        }
         struct_ser.end()
     }
 }
@@ -3270,6 +3276,8 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
             "marketplaceListingId",
             "marketplace_edition",
             "marketplaceEdition",
+            "upload_resource_id",
+            "uploadResourceId",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -3285,6 +3293,7 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
             ModuleId,
             MarketplaceListingId,
             MarketplaceEdition,
+            UploadResourceId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -3317,6 +3326,7 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
                             "moduleId" | "module_id" => Ok(GeneratedField::ModuleId),
                             "marketplaceListingId" | "marketplace_listing_id" => Ok(GeneratedField::MarketplaceListingId),
                             "marketplaceEdition" | "marketplace_edition" => Ok(GeneratedField::MarketplaceEdition),
+                            "uploadResourceId" | "upload_resource_id" => Ok(GeneratedField::UploadResourceId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -3347,6 +3357,7 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
                 let mut module_id__ = None;
                 let mut marketplace_listing_id__ = None;
                 let mut marketplace_edition__ = None;
+                let mut upload_resource_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Name => {
@@ -3417,6 +3428,12 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
                                 map_.next_value::<::std::option::Option<::pbjson::private::NumberDeserialize<_>>>()?.map(|x| x.0)
                             ;
                         }
+                        GeneratedField::UploadResourceId => {
+                            if upload_resource_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("uploadResourceId"));
+                            }
+                            upload_resource_id__ = map_.next_value()?;
+                        }
                     }
                 }
                 Ok(CreateModuleRequest {
@@ -3431,6 +3448,7 @@ impl<'de> serde::Deserialize<'de> for CreateModuleRequest {
                     module_id: module_id__.unwrap_or_default(),
                     marketplace_listing_id: marketplace_listing_id__,
                     marketplace_edition: marketplace_edition__,
+                    upload_resource_id: upload_resource_id__,
                 })
             }
         }
@@ -6966,6 +6984,9 @@ impl serde::Serialize for Module {
         if self.marketplace_edition.is_some() {
             len += 1;
         }
+        if self.upload_resource_id.is_some() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("module.Module", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -7012,6 +7033,9 @@ impl serde::Serialize for Module {
         if let Some(v) = self.marketplace_edition.as_ref() {
             struct_ser.serialize_field("marketplaceEdition", v)?;
         }
+        if let Some(v) = self.upload_resource_id.as_ref() {
+            struct_ser.serialize_field("uploadResourceId", v)?;
+        }
         struct_ser.end()
     }
 }
@@ -7046,6 +7070,8 @@ impl<'de> serde::Deserialize<'de> for Module {
             "marketplaceListingId",
             "marketplace_edition",
             "marketplaceEdition",
+            "upload_resource_id",
+            "uploadResourceId",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -7065,6 +7091,7 @@ impl<'de> serde::Deserialize<'de> for Module {
             ModuleKey,
             MarketplaceListingId,
             MarketplaceEdition,
+            UploadResourceId,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -7101,6 +7128,7 @@ impl<'de> serde::Deserialize<'de> for Module {
                             "moduleKey" | "module_key" => Ok(GeneratedField::ModuleKey),
                             "marketplaceListingId" | "marketplace_listing_id" => Ok(GeneratedField::MarketplaceListingId),
                             "marketplaceEdition" | "marketplace_edition" => Ok(GeneratedField::MarketplaceEdition),
+                            "uploadResourceId" | "upload_resource_id" => Ok(GeneratedField::UploadResourceId),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -7135,6 +7163,7 @@ impl<'de> serde::Deserialize<'de> for Module {
                 let mut module_key__ = None;
                 let mut marketplace_listing_id__ = None;
                 let mut marketplace_edition__ = None;
+                let mut upload_resource_id__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -7229,6 +7258,12 @@ impl<'de> serde::Deserialize<'de> for Module {
                                 map_.next_value::<::std::option::Option<::pbjson::private::NumberDeserialize<_>>>()?.map(|x| x.0)
                             ;
                         }
+                        GeneratedField::UploadResourceId => {
+                            if upload_resource_id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("uploadResourceId"));
+                            }
+                            upload_resource_id__ = map_.next_value()?;
+                        }
                     }
                 }
                 Ok(Module {
@@ -7247,6 +7282,7 @@ impl<'de> serde::Deserialize<'de> for Module {
                     module_key: module_key__.unwrap_or_default(),
                     marketplace_listing_id: marketplace_listing_id__,
                     marketplace_edition: marketplace_edition__,
+                    upload_resource_id: upload_resource_id__,
                 })
             }
         }

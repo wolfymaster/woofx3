@@ -96,22 +96,6 @@ item into a real issue (e.g. via `gh issue create --title ... --body ...`).
 - **Size:** medium
 - **Description:** Worth an audit pass to remove truly-dead code vs. add `#[cfg(test)]` or find proper usage.
 
-## twitch (legacy)
-
-### Rewrite or delete `twitch/src/api.ts` (mostly dead commented code)
-
-- **Files:** `twitch/src/api.ts` (~459 lines, roughly 30-435 are inert commented EventSub handler code)
-- **Category:** tech-debt
-- **Size:** medium
-- **Description:** This file doesn't reflect the current architecture (NATS bus / db-proxy) and needs a real rewrite or deletion. Also contains stray `// TODO: Is there a better name?` comments at lines 49, 58, 116, 166, 216.
-
-### Missing gift-subscription EventSub handler
-
-- **Files:** `twitch/src/api.ts:94`
-- **Category:** enhancement
-- **Size:** medium
-- **Description:** `// TODO: Add gift subscription event` sits inside dead/commented code, so gift subs aren't handled at all even though regular subs are. Only relevant if Twitch integration is revived (depends on the item above).
-
 ## docs / roadmap
 
 ### SPEC.md future consideration: multi-engine federation

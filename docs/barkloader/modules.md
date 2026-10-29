@@ -75,7 +75,7 @@ The manifest uses **camelCase** JSON keys. All top-level sections are optional *
       "pattern": "!clip",
       "type": "prefix",
       "workflow": "create_clip_workflow",
-      "requiredRole": "public"
+      "requiredRole": "everyone"
     }
   ],
   "workflows": [
@@ -209,7 +209,7 @@ After install, every persisted reference — entries in `module_resources`, edge
 | `name` | string | yes | Display name. Used only for presentation; never used as an identifier. |
 | `description` | string | no | Human-readable summary. |
 | `type` | string | yes | Trigger transport: `eventbus`, `webhook`, `command`, `schedule`. Determines how install wires the trigger up. See [Webhook triggers](#webhook-triggers) for `webhook`. |
-| `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. Must not start with `webhook.`, which is reserved. An uploaded module also may not use a subject the engine treats as a command, because a webhook handler can publish its module's eventbus trigger events verbatim: `db.`, `engine.`, `twitchapi`, `message.send`, `ui.notify.`, `ui.alert.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute` and `action.execute` (prefix match). Rejected on a `webhook` trigger. |
+| `event` | string | yes (for `eventbus`) | The NATS subject this trigger fires on (e.g. `channel.subscribe`). Stored on the trigger row as `event`. The trigger's `id` is the manifest-local identifier and is **not** the same as `event` — earlier versions conflated them. Must not start with `webhook.`, which is reserved. An uploaded module also may not use a subject the engine treats as a command, because a webhook handler can publish its module's eventbus trigger events verbatim: `db.`, `engine.`, `twitchapi`, `message.send` (retired, still reserved), `ui.notify.`, `ui.alert.`, `platform.gateway.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute` and `action.execute` (prefix match). Nor may it claim an event the engine asserts: `command.`, `chat.command.`, `session.`, `setting.`, `viewer.`, `workflow.`, `barkloader.`, `HEARTBEAT`, `MESSAGEBUS_INIT`, or `module.` outside `module.<its id>.`. Platform events such as `channel.*`, `user.message` and `stream.online` stay open to the platform module that brings them. The full list is `shared/common/contracts/reserved-subjects.json` (see [Engine integrity](../services/engine-integrity.md#reserved-subjects)). Rejected on a `webhook` trigger. |
 | `handler` | string | yes (for `webhook`) | Manifest-local id of the function that handles inbound HTTP requests for a `webhook` trigger. Rejected on every other type. |
 | `taxonomy` | array of string | no | Open, multi-valued UI classification (e.g. `["platform.twitch.chat", "function.chat"]`). Sent to RegisterTrigger as `taxonomy`. See [Taxonomy](#taxonomy). **Legacy:** superseded by `category`. |
 | `category` | string | no | **Legacy.** UX / registry grouping (e.g. `platform.twitch`). Still accepted; folded into a single-element `taxonomy` at parse time when `taxonomy` is unset, otherwise falls back to `type`. New manifests should use `taxonomy` instead. |
@@ -293,7 +293,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `required` | boolean | no | Marks the field as mandatory in the form. |
 | `placeholder` | string | no | Placeholder shown inside empty inputs. |
 | `unit` | string | no | Suffix shown next to numeric inputs (e.g. `bits`). |
-| `options` | array | no | Static `{ value, label }` choices. Required for `select` unless a `source` supplies them. |
+| `options` | array | no | Static `{ value, label }` choices with distinct values. Required for `select` unless a `source` supplies them; beside a `source` they are pinned ahead of the fetched ones. |
 | `source` | object | no | Dynamic option source; see [dynamic-source select fields](#dynamic-source-select-fields-source-kind). |
 | `defaultValue` | any | no | Initial value used when none is set. |
 | `min`, `max` | number | no | Bounds for `number` / `range`. |
@@ -311,6 +311,7 @@ What legitimately differs per surface is where the *value* is stored — module 
 | `examplePayload` | string | no | JSON-encoded **example** of the event payload this field reads from, rendered with syntax highlighting in the info-icon popover. An illustration, not a declaration: nothing reads its keys. |
 | `anyText` | string | no | Trigger `schema` only. The words a [trigger sentence](#trigger-sentences) shows in place of this field when it is set to "any". `""` drops that part of the sentence; whitespace alone is rejected. Rejected on an action field, which is never set to "any". |
 | `missingText` | string | no | Trigger and action `schema` only. The words a [trigger sentence](#trigger-sentences) or [action sentence](#action-sentences) shows in place of this field while it has no value: for a required field, until one is set; for an optional action field, whenever the step leaves it empty, so they say what the action does then. Must be non-empty when present. |
+| `visibleWhen` | object | no | `{ "field": "<sibling id>", "oneOf": ["a", "b"] }`. Shows the field only while that sibling holds one of the listed values. A form must drop a hidden field's value on save and skip its `required`. |
 
 The info icon next to a field's label appears if and only if `hint` or `examplePayload` is present. `description` renders independently below the input.
 
@@ -328,7 +329,7 @@ Five of them carry extra requirements, each checked at install:
 
 | Type | Requires | Why |
 |---|---|---|
-| `select` | `options` or a `source` | A select with nothing to select is a dead control. |
+| `select` | `options` or a `source` | A select with nothing to select is a dead control. Without a `source`, also a `defaultValue` that is one of the `options`. |
 | `resource_ref` | `resourceKind` | A picker that does not say what to pick lists nothing. |
 | `button` | `action` | A button with nothing to fire does nothing. |
 | `layout` | `surface` | A canvas that does not say which widgets it may hold can place nothing. |
@@ -449,9 +450,17 @@ The request is sent verbatim, so for an uploaded module barkloader accepts an `i
 
 The bundled system module's forms may also read engine subjects. Engine-held names a platform module offers, such as OBS's scenes, come from one of its own functions calling a host extension (`ctx.obs.listScenes`), through `barkloader.module.field_options`.
 
+A select may carry `options` beside an `internal` source. The options are pinned: the form lists them first, then what the source returns, and a fetched option whose value a pinned one already names is dropped (`mergePinnedOptions` in `shared/clients/typescript/api/ui-schema.ts`). A platform picker can pin `origin` and `all` this way and leave the connected platforms to the source. Barkloader checks option values are distinct; without a `source` the `defaultValue` must be one of the options, and with a `source` it must be a string, since it may name a value only the source knows.
+
+### Conditional fields (`visibleWhen`)
+
+`visibleWhen` hides a field until another field of the same form holds a matching value, such as an announcement colour that only a Twitch target uses. `isFieldVisible(field, values)` in `shared/clients/typescript/api/ui-schema.ts` decides; an unset or non-text sibling hides the field. Barkloader refuses a condition that names the field itself or an id not in the same list, a target that has a `visibleWhen` of its own (one level only), a target that holds no text (`number`, `range`, `toggle`, `button`, `layout`, `list`), an empty `oneOf` or a blank value in it, and any `visibleWhen` inside a `list` field's `itemFields`.
+
+An engine that predates `visibleWhen` refuses a manifest that uses it, because manifest properties are checked strictly. Take care before uploading such a module to a fleet that still runs older engines.
+
 An `internal` source or action is supported on top-level fields only. The api and the UI do not resolve one inside a `list` field's `itemFields`, so barkloader refuses it there, for every module.
 
-A worked example lives at `modules/platform/twitch/manifest.json` in the **woofx3-modules** repository (the `channelpoints.redeem` trigger) and `twitch/src/lib/twitch.ts` `listChannelPointRewards()`.
+A worked example lives at `modules/platform/twitch/manifest.json` in the **woofx3-modules** repository (the `channelpoints.redeem` trigger) and `connectors/src/adapters/twitch/lib/twitch.ts` `listChannelPointRewards()`.
 
 #### Helping users map fields to event payloads
 
@@ -807,7 +816,15 @@ A module's `actions[]` list is not "things modules add to the engine." It's "con
 | `type` | string | yes | One of `prefix`, `exact`, `regex`. |
 | `actions` | array | no | The actions the command runs, in order. Each entry has the same shape as a workflow step (`id`, `action`, `parameters`, `dependsOn`); `action` names an action in the same manifest by `id`, or another module's by canonical id. Stored as the command's actions exactly as declared. Mutually exclusive with `workflow`. |
 | `workflow` | string | no | Reference to a workflow the command runs as its one action (use the workflow's `id`; resolved to its canonical id at install). Mutually exclusive with `actions`. |
-| `requiredRole` | string | no | Minimum role required to invoke (e.g. `public`, `subscriber`, `mod`). |
+| `requiredRole` | string | no | The least chat role that may invoke the command: `broadcaster`, `moderator`, `vip`, `subscriber`, `follower` or `everyone` (`mod` and `public` are accepted as spellings of `moderator` and `everyone`). Any other value refuses the manifest. Without it the command is open to everyone. |
+
+`requiredRole` sets who may use the command when it is first registered.
+Roles form a ladder, highest first, and a role admits itself and every role
+above it: a `subscriber` command is open to subscribers, VIPs, moderators and
+the broadcaster. The command is registered restricted to those built-in
+groups; `everyone` registers it public. Once registered the command belongs to
+the streamer, who may change who can use it, and reinstalling the module keeps
+their choice.
 
 A command declaring neither `actions` nor `workflow` runs nothing itself; it
 still matches and still publishes `chat.command.<slug>` for workflows listening
@@ -870,10 +887,21 @@ manifest's `commands[]` entry above). Dotted variable names (`"{user.name}"`) bu
 nested objects. See `modules/platform/spotify/functions/song_request.js` (**woofx3-modules**) for a
 worked example.
 
-To reply to the chat command, `return ctx.response(success, message)` and put a
-`chat.reply` action after the function's step that reads `${<id>.message}`, rather
-than calling `ctx.chat.sendMessage(...)` directly — see
-[`ctx.response`](./sandbox.md#ctxresponse).
+To reply to the chat command, `return ctx.success(message)` and put a "Send chat
+message" (`chat.reply`) action after the function's step that reads
+`${<id>.message}` — see [`ctx.success` and `ctx.failure`](./sandbox.md#ctxsuccess-and-ctxfailure).
+
+**Migrating from `ctx.chat`.** Functions can no longer post to chat themselves:
+`ctx.chat.sendMessage(text)` no longer exists, and calling it throws because
+`ctx.chat` is undefined. Replace the call with `return ctx.success(text)` and add
+a "Send chat message" step after the function's step that posts
+`${<stepId>.message}`. The streamer can then reword, condition or remove the
+reply in the workflow. Guard the step on `${<stepId>.success}` if failures should
+stay silent, otherwise a `ctx.failure(message)` posts its text to chat. Modules that
+must also run on older engines, where `ctx.success` is missing, use the feature-detect
+fallback in [`ctx.success` and `ctx.failure`](./sandbox.md#ctxsuccess-and-ctxfailure).
+Publish the migrated module releases before upgrading the engine: a published module
+that still calls `ctx.chat.sendMessage` throws a TypeError at runtime.
 
 ### Workflow entry (`workflows[]`)
 
@@ -1543,6 +1571,13 @@ except `net:`, which names a host: an exact lowercase DNS name with no IP
 address, port or wildcard. Declaring a host does not declare its subdomains,
 so a module that calls `api.spotify.com` and `accounts.spotify.com` lists both.
 
+An unknown id or one listed twice fails the install. At runtime barkloader
+reads the permissions from the installed manifest, and a call to a function
+whose permission the invoking module did not declare throws before anything is
+sent, with `code` `permission_denied`. Permissions are declared by the module
+and enforced by the engine, and shown on the module install page (woofx3-ui
+feat/module-permissions-review).
+
 #### Where `ctx.http` may connect
 
 Module code reaches only the destinations its module was granted
@@ -1554,19 +1589,44 @@ Module code reaches only the destinations its module was granted
   `url` setting (`ctx.module.setSetting` refuses it), and a manifest cannot
   give one a default.
 
-Every redirect is checked like the first request, and every address a host
-name resolves to must not be loopback, private, link-local or otherwise local
-unless the engine sets `WOOFX3_MODULE_HTTP_ALLOW_PRIVATE=true` (a self-hosted
-engine whose modules talk to its own network). `WOOFX3_MODULE_HTTP` decides
-what happens to anything else: `log` (the default) logs it and sends the
-request, so modules written before host permissions can be found and updated;
-`enforce` refuses it with `permission_denied`.
-An unknown id or one listed twice fails the install. At runtime barkloader
-reads the permissions from the installed manifest, and a call to a function
-whose permission the invoking module did not declare throws before anything is
-sent, with `code` `permission_denied`. Permissions are declared by the module
-and enforced by the engine, and shown on the module install page (woofx3-ui
-feat/module-permissions-review).
+Every redirect is checked like the first request. By default a request to
+anything else throws with `code` `permission_denied` before it is sent (see
+the settings below).
+
+Two engine settings shape this, and are read once at startup; any value other
+than the ones listed stops barkloader from starting:
+
+| Setting | Values | Effect |
+|---|---|---|
+| `WOOFX3_MODULE_HTTP` | `enforce` (default), `log` | What happens to a destination the module was not granted. `log` writes a warning and sends the request anyway: a migration opt-in for finding modules written before host permissions, logged as a warning at startup |
+| `WOOFX3_MODULE_HTTP_ALLOW_PRIVATE` | `false` (default), `true` | Whether module code may reach loopback, private, link-local (cloud metadata), multicast and other non-routable addresses, as an IP literal or as any address a host name resolves to. Only for a self-hosted engine whose modules talk to its own network. When `false` these addresses are refused in both modes |
+
+Requests that carry credentials ([`ctx.oauth.request`](#oauth-integrations-oauth)
+and its token refreshes) always enforce the grant rule, even under
+`WOOFX3_MODULE_HTTP=log`, and are never followed across a redirect to another
+origin. On any other request, a redirect to another origin (scheme, host or
+port) drops the `Authorization`, `Proxy-Authorization` and `Cookie` headers
+before the next hop, as browsers do.
+
+#### Time and size limits on `ctx.http`
+
+A request is abandoned, with a `deadline_exceeded` error, when the invocation
+that made it runs out of time or after 25 seconds, whichever comes first;
+opening the connection has its own 5 second limit. The 25 seconds cover
+redirects and reading the response. A response body over 4 MiB fails with
+`response_too_large`, checked against `Content-Length` first and then as the
+body arrives, so a module cannot download more than that in one request. More
+than 5 redirects fails with `too_many_redirects`. `ctx.oauth.request` and its
+token refreshes follow the same limits. An operator can change them at
+startup; any value that is not a whole number above zero, or a time above
+30 seconds (the longest an invocation may take), stops barkloader from starting:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `WOOFX3_MODULE_HTTP_CONNECT_TIMEOUT_MS` | `5000` | Time allowed to open the connection |
+| `WOOFX3_MODULE_HTTP_REQUEST_TIMEOUT_MS` | `25000` | Ceiling on one request, redirects and body included |
+| `WOOFX3_MODULE_HTTP_MAX_RESPONSE_BYTES` | `4194304` | Largest response body |
+| `WOOFX3_MODULE_HTTP_MAX_REDIRECTS` | `5` | Redirects followed |
 
 ### OAuth integrations (`oauth[]`)
 
@@ -1611,7 +1671,9 @@ starting with `oauth.`. Module code then calls the provider with
 `ctx.oauth.request({ integration, url, method?, headers?, query?, body? })`:
 the engine attaches the access token, refreshes it when it is about to expire
 or the provider answers 401, and sends it only to `hosts`, through the same
-checks as `ctx.http` ([Where `ctx.http` may connect](#where-ctx-http-may-connect)).
+checks as `ctx.http` ([Where `ctx.http` may connect](#where-ctx-http-may-connect)),
+which these requests always enforce whatever `WOOFX3_MODULE_HTTP` says. A
+redirect to another origin is refused rather than followed.
 It throws while the integration is not connected. A token is used only with the `tokenUrl` and `hosts` it was issued under: once an update moves the `tokenUrl` or adds a host, `ctx.oauth.request` throws without sending anything until the streamer connects again, so an update cannot redirect the refresh token or the access token. Dropping a host needs no reconnect.
 
 A workflow step or command action that names another module's action runs that
@@ -1621,6 +1683,27 @@ every permission that module declares; otherwise the install fails, naming the
 reference and the missing permissions. The other module must be installed with
 a readable manifest. Bundled system modules are exempt, and references to the
 module's own actions need nothing beyond its own `permissions`.
+
+The built-in `woofx3:action:function` action invokes whichever function its
+`parameters.function` names, and that function runs with its own module's
+permissions and OAuth tokens. An uploaded module may therefore use it only to
+invoke a function it declares itself, named by its full canonical id
+(`my_module:function:greet`). The install fails when a workflow step or command
+action uses it with another module's function, with a `${...}` template (the
+target would only be known at run time), or with no literal canonical function
+id at all (including one with surrounding spaces). The same rule covers the
+module's own `type: "function"` actions: each must point at one of the module's
+own functions, so an action like
+`{ "id": "x", "type": "function", "function": "other_module:function:timeout" }`
+fails the install. Bundled system modules are exempt.
+
+```json
+{
+  "id": "greet",
+  "action": "woofx3:action:function",
+  "parameters": { "function": "my_module:function:greet", "name": "${trigger.data.user}" }
+}
+```
 
 ### Local endpoints (`local[]`)
 
@@ -1653,7 +1736,7 @@ through the woofx3 companion on the streamer's PC, is the platform's decision
 | `id` | 1-40 lowercase letters, digits, `_` or `-`; unique within the module |
 | `name` | 1-80 characters. Shown in the companion and on the module install page |
 | `protocol` | `websocket` or `http`. Any other value fails the install, because the platform could not carry it |
-| `hostSetting` | A `text` setting holding the host |
+| `hostSetting` | A `text` setting holding the host. Its `defaultValue`, if any, must be empty, `localhost` or a loopback address (`127.0.0.0/8`, `::1`): the module path dials whatever the setting holds, so a default must not aim it at another device on the network |
 | `portSetting` | A `number` setting holding the port |
 | `passwordSetting` | Optional: a `secret` setting holding the endpoint's own password |
 | `discover` | Optional, with exactly one of `mdns` or `known`. `mdns` is a DNS-SD service type such as `_elg._tcp`, browsed by the companion. `known` names a discoverer built into the companion (`obs-websocket` reads OBS's own WebSocket config file); it is checked for shape only, because which discoverers exist depends on the companion's version, not the engine's |
@@ -1664,10 +1747,109 @@ in, and two endpoints sharing one would overwrite each other's values. Unknown
 fields in an entry also fail the install. The block is stored with the manifest
 in `modules.manifest`, where the dashboard and sceneManager read it.
 
-Module code cannot open a local endpoint yet. Today the one endpoint in use is
-OBS's, and sceneManager holds that connection on the module's behalf
-(`woofx3_obs/obs`, see [OBS](../services/obs.md)); module code reaches OBS
-through `ctx.obs`.
+Module code cannot write an endpoint's host, port or password setting:
+`ctx.module.setSetting` and `compareAndSetSetting` refuse them, because those
+values decide where the engine connects. Only the streamer, in the dashboard,
+or the companion that found the device sets them. The check is made when the
+write is attempted, against the installed version's endpoints, so code of an
+older version that is still running when an upgrade lands is refused too.
+
+An upgrade that makes a setting an endpoint's host or port setting for the
+first time (a new endpoint, or an endpoint whose `hostSetting` or
+`portSetting` now names a different setting) puts that setting back to its
+manifest default once every other install step has succeeded, and again once
+the engine has loaded the new version, which closes the moment in between when
+the old version's code could still write it. Each reset is logged. A fresh
+install does the same for every endpoint. Until
+then the setting was an ordinary one that module code could write, so a value
+already stored there cannot be trusted as an address. A setting that keeps its
+role across the upgrade keeps its value. The cost: a value the streamer typed
+into the setting before it became an endpoint setting is cleared once, and
+has to be set again.
+
+#### Talking to a local endpoint (`ctx.local`)
+
+Module code talks to its own websocket endpoints with `ctx.local`. It names
+the endpoint by its `local[]` id and passes a message; the engine's companion
+gateway (in the connectors host) checks the module may reach it, chooses the
+address from the endpoint's settings or goes through the woofx3 companion,
+keeps the connection open between calls and writes the message. Module code
+never supplies an address, never names a module and never holds a socket.
+The streamer approved the endpoint when they installed the module, so there
+is no permission to declare; an engine with `ctx.local` advertises the
+`modules.localEndpointCalls` capability.
+
+| Call | Returns | Notes |
+|---|---|---|
+| `ctx.local.send({ endpoint, message, timeoutMs? })` | `{ ok: true, sessionEpoch }` | Writes one text frame and does not wait for an answer. |
+| `ctx.local.request({ endpoint, message, match: { field, value }, timeoutMs? })` | `{ reply, sessionEpoch }` | Writes one text frame and waits for the first JSON object the device sends back whose top-level `field` holds `value` exactly (the string `"1"` is not the number 1). `reply` is that object. |
+
+- `endpoint` is one of the module's own `local[]` ids. Only websocket
+  endpoints are reachable.
+- `message` is a string, sent as it is, or an object or list, sent as JSON.
+  At most 65,536 bytes.
+- `match.field` is letters, digits and `_`, at most 40 characters;
+  `match.value` a non-empty string of at most 200 characters, or a whole
+  number. Device protocols carry a request id in each message for this, such
+  as VTube Studio's `requestID`. A second call waiting for the same match on
+  the same endpoint at the same time is refused with `busy`.
+- `timeoutMs` is how long the call may wait, at least 100. It defaults to, and
+  is capped at, 4,500, and never runs past the end of the function's run
+  (less 200 ms, so the answer gets back in time). With less than 100 ms left
+  the call throws `timeout` without asking.
+- A function may make at most 20 `ctx.local` calls per run.
+
+`sessionEpoch` names the connection the gateway used. It changes whenever the
+gateway opens a new one: after the connection was idle for 2 minutes, when
+the device closed it, or when the endpoint's address or the relay
+configuration changed. A device that wants one sign-in per connection
+(VTube Studio, Streamlabs Desktop, Streamer.bot) needs the module to sign in
+again when it changes; keep the last epoch in `ctx.storage` and compare.
+
+```js
+function run(ctx) {
+  const answer = ctx.local.request({
+    endpoint: "vts",
+    message: { apiName: "VTubeStudioPublicAPI", apiVersion: "1.0", requestID: "state", messageType: "APIStateRequest" },
+    match: { field: "requestID", value: "state" },
+  });
+  return ctx.success("VTube Studio answered", { active: answer.reply.data.active });
+}
+```
+
+`local` is a Lua keyword, so Lua code writes `ctx["local"]`:
+
+```lua
+function run(ctx)
+  local answer = ctx["local"].request({
+    endpoint = "vts",
+    message = { apiName = "VTubeStudioPublicAPI", apiVersion = "1.0", requestID = "state", messageType = "APIStateRequest" },
+    match = { field = "requestID", value = "state" },
+  })
+  return ctx.success("VTube Studio answered", { active = answer.reply.data.active })
+end
+```
+
+A refused call throws (Lua raises) an error whose `code` says why:
+
+| `code` | Meaning |
+|---|---|
+| `not_declared` | The module declares no local endpoint with that id. |
+| `protocol_unsupported` | The endpoint is an `http` one. |
+| `adapter_owned` | The engine manages the endpoint itself; OBS's (`woofx3_obs/obs`) belongs to the connectors host's obs adapter, and module code reaches OBS through `ctx.obs` (see [OBS](../services/obs.md)). |
+| `not_routed` | The engine has no way to reach the endpoint: an empty host or port setting, or a cloud engine whose streamer has not turned the companion on for it. |
+| `address_refused` | The address in the endpoint's settings is not on the streamer's own network. |
+| `store_unreadable` | The engine could not read the module's settings. |
+| `unavailable` | The device could not be reached in time, the connection closed while waiting, or no connectors host is running. |
+| `timeout` | No answer before the time ran out, or too little of the run was left to ask. After a `send` times out, the message may still have been sent. |
+| `busy` | Too many requests are waiting, or the same match is already pending. |
+| `call_limit` | The run already made 20 `ctx.local` calls. |
+| `invalid_arguments` | The call was refused before anything was sent; the message names the argument. |
+| `invalid` | The gateway refused the request. |
+| `request_failed` | The request could not be sent, or the answer could not be read. |
+
+How the gateway picks the address, and which addresses it refuses, is
+described in [Companion gateway → Module requests](../services/companion-gateway.md#module-requests).
 
 ## Runtime resource instances
 
@@ -1698,11 +1880,24 @@ Available in both QuickJS and Lua function runtimes:
 | Call | Returns | Notes |
 |------|---------|-------|
 | `ctx.resources.create(kind, instanceId, displayName?, settings?)` | `{ canonical_id, module_name, kind, instance_id, display_name, settings }` | The owning module is implicit (taken from the function's canonical path). `settings` must be an object. |
-| `ctx.resources.get(canonicalId)` | the same shape, or `null` | How a function reads the settings of the instance it was asked to act on. `null` when nothing has the id — a workflow can name an instance deleted after it was configured. |
-| `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. Also cancels every [deadline](#deadlines-deadlines) entry keyed by `canonicalId`. |
-| `ctx.resources.list(kind)` | an array of the same shape | A bare `kind` returns every instance of that name across every installed module; `module:kind` returns only that module's. |
+| `ctx.resources.get(canonicalId)` | the same shape, or `null` | How a function reads the settings of the instance it was asked to act on. `null` when nothing has the id — a workflow can name an instance deleted after it was configured. Throws for an instance another module owns, unless the streamer linked it to this module (see [Which instances a module reaches](#which-instances-a-module-reaches)). |
+| `ctx.resources.delete(canonicalId)` | `void` | Idempotent from the caller's perspective when the row exists; surfaces an error if it doesn't. Also cancels every [deadline](#deadlines-deadlines) entry keyed by `canonicalId`. Throws for an instance another module owns, linked or not. |
+| `ctx.resources.list(kind)` | an array of the same shape | A bare `kind` returns the calling module's own instances of that kind; `module:kind` returns that module's instances the calling module may read: all of them for its own module, only the linked ones for another. |
 | `ctx.resources.run(canonicalId, verb, params?)` | what the action returns | Runs the providing module's `{kind}.{verb}` action on the instance — `ctx.resources.run(timer, "add", { seconds: 60 })` runs `woofx3:action:timer.add` with `target` set to `timer`. See below. |
 | `ctx.resources.compareAndSetSetting(canonicalId, key, expected, value)` | `{ swapped, current }` | Writes `settings[key] = value` on an instance this module owns, only while `settings[key]` still holds `expected`, compared by meaning (key order, `1` vs `1.0`, `[]` vs `{}`). `null`/`undefined` (`nil` in Lua) matches a key the instance does not hold, which is how a schema field the streamer never saved reads. `current` is the setting as it reads now, `null` when absent. A swap is announced as an instance update (`db.module.resource.instance.updated`), the same as a streamer's edit, so the dashboard and `resource:<canonicalId>` readers refresh. Throws for an instance another module owns, one that does not exist, or a value JSON cannot hold. See [List settings](#list-settings). |
+
+#### Which instances a module reaches
+
+A module **writes** only the instances it owns: `delete` and
+`compareAndSetSetting` need the first segment of the canonical id to be the
+calling module. It **reads** (`get`, `list`, `run`) the instances it owns, and the
+ones the streamer linked to it: the value of one of its
+[`resource_ref` settings](#linking-a-resource). Module code cannot write a
+`resource_ref` setting (`ctx.module.setSetting` and `compareAndSetSetting` refuse
+it), and a canonical id held in any other setting is not a link, so at run time a
+link is either the streamer's pick or what the module's manifest `create` set at
+install (which can reuse an instance that already exists). The rule lives in
+`barkloader/lib_sandbox/src/resource_access.rs`.
 
 `ctx.resources.run` is how a module drives a resource another module provides. The
 action runs as the providing module — its function, its storage, the events it
@@ -1710,8 +1905,8 @@ announces — on the caller's thread, within the caller's time. Before running i
 engine checks that:
 
 - the instance belongs to the calling module, or one of the calling module's
-  settings holds its canonical id: the streamer chose it, typically through a
-  [linked `resource_ref` setting](#linking-a-resource);
+  `resource_ref` settings holds its canonical id: the streamer
+  [linked it](#linking-a-resource);
 - it exists and is of the kind its id names;
 - the providing module declares `{kind}.{verb}` as a `type: "function"` action;
 - the calling module declares every permission the providing module does, since the
@@ -1819,10 +2014,10 @@ When a ZIP is uploaded to `POST /functions`:
 Multipart upload → temp dir
     → extract ZIP
     → classify each file by extension (program / manifest / asset)
-    → ModuleService.create_plan()
+    → ModuleService.load_manifest()
          → pick manifest file
          → parse ModuleManifest
-    → ModuleService.execute_plan(archive_key, db_proxy_url?)
+    → ModuleService.install(archive_key, db_proxy_url?)
          → run_install():
               → upload each function path to modules/{id}/functions/…
               → upload widget entry + assets
@@ -1834,6 +2029,51 @@ Multipart upload → temp dir
 ```
 
 The HTTP **200** response is returned when the upload is accepted; install runs in a **background task**. If install fails, the error is logged (check server logs).
+
+### Upgrades and failed installs
+
+A module is identified by its manifest `id`. Installing an archive whose `id` is
+already installed upgrades that module in place; its `name` is display only and
+may change between versions. A `name` another installed module already uses is
+refused (`AlreadyExists` from the db proxy), so an upload cannot take over
+another module's row, and with it that module's functions, settings, secrets and
+storage. A `name` equal to another installed module's `id` is refused the same
+way, because the db proxy resolves a module name against both. A row written
+before module ids were recorded (empty `module_id`) is adopted by the first
+install whose `name` matches it.
+
+An upgrade never removes anything the installed version registered until every
+install step has succeeded:
+
+1. Before any database write, the installer reads the installed version (its
+   manifest, module key, version, functions and provenance): the row holding
+   the manifest `id`, or else a row with no module id that the install will
+   adopt by `name`. If it cannot be read, or its provenance is not one an
+   install writes, the install fails without writing anything.
+2. The steps run in order. `CreateModule` rewrites the module row and its
+   functions in one database transaction, so it lands whole or not at all.
+3. On success, resources the installed version declared and the new manifest
+   does not are archived (background tasks are deleted), and commands the new
+   manifest dropped are deleted.
+4. On failure after `CreateModule`:
+   - an **upgrade** is restored: the commands the install created and the
+     resources only the new manifest declares are removed, then the module row
+     and its functions are rewritten to the installed version. Resources both
+     versions declare keep the definitions the failed install registered.
+     If the restore itself fails, the install error says so.
+   - a **fresh install** is removed: its triggers, actions, widgets, background
+     tasks, workflows, the commands it created and its module row. The row is
+     deleted only when its name resolves to the row this install created;
+     otherwise it is left in place and the rollback logs why.
+
+   A failure at or before `CreateModule` has written nothing and compensates
+   nothing.
+
+Uploading with `force=true` only allows overwriting a version whose archive
+already exists; the install itself follows the same steps.
+
+A bundled module whose upgrade fails at boot therefore stays installed at its
+previous version.
 
 ### SafeTempDir
 

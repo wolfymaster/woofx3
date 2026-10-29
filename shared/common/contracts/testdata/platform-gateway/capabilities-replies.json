@@ -1,0 +1,182 @@
+{
+  "cases": [
+    {
+      "name": "a platform without connected or enabled reads as not linked",
+      "invalidField": null,
+      "reply": {
+        "platforms": [{ "id": "twitch", "displayName": "Twitch", "state": "stopped", "actions": [] }]
+      }
+    },
+    {
+      "name": "one platform with every action",
+      "invalidField": null,
+      "reply": {
+        "platforms": [
+          {
+            "id": "twitch",
+            "displayName": "Twitch",
+            "state": "connected",
+            "connected": true,
+            "enabled": true,
+            "actions": ["chat.send", "chat.announce", "chat.pin"]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a stopped platform that cannot act yet",
+      "invalidField": null,
+      "reply": {
+        "platforms": [
+          {
+            "id": "twitch",
+            "displayName": "Twitch",
+            "state": "stopped",
+            "connected": false,
+            "enabled": false,
+            "actions": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "no platforms",
+      "invalidField": null,
+      "reply": { "platforms": [] }
+    },
+    {
+      "name": "an error",
+      "invalidField": null,
+      "reply": { "error": "the gateway is shutting down" }
+    },
+    {
+      "name": "an unknown key is ignored",
+      "invalidField": null,
+      "reply": { "platforms": [], "generatedAt": 1 }
+    },
+    {
+      "name": "neither platforms nor error",
+      "invalidField": "platforms",
+      "reply": {}
+    },
+    {
+      "name": "null platforms",
+      "invalidField": "platforms",
+      "reply": { "platforms": null }
+    },
+    {
+      "name": "an empty error counts as absent",
+      "invalidField": "platforms",
+      "reply": { "error": "" }
+    },
+    {
+      "name": "error with platforms",
+      "invalidField": "platforms",
+      "reply": { "error": "boom", "platforms": [] }
+    },
+    {
+      "name": "an unknown platform",
+      "invalidField": "platforms[0].id",
+      "reply": {
+        "platforms": [
+          {
+            "id": "kick",
+            "displayName": "Kick",
+            "state": "connected",
+            "connected": true,
+            "enabled": true,
+            "actions": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "a platform listed twice",
+      "invalidField": "platforms[1].id",
+      "reply": {
+        "platforms": [
+          {
+            "id": "twitch",
+            "displayName": "Twitch",
+            "state": "connected",
+            "connected": true,
+            "enabled": true,
+            "actions": []
+          },
+          {
+            "id": "twitch",
+            "displayName": "Twitch",
+            "state": "connected",
+            "connected": true,
+            "enabled": true,
+            "actions": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "no display name",
+      "invalidField": "platforms[0].displayName",
+      "reply": {
+        "platforms": [{ "id": "twitch", "state": "connected", "connected": true, "enabled": true, "actions": [] }]
+      }
+    },
+    {
+      "name": "an unknown state",
+      "invalidField": "platforms[0].state",
+      "reply": {
+        "platforms": [
+          {
+            "id": "twitch",
+            "displayName": "Twitch",
+            "state": "sleeping",
+            "connected": true,
+            "enabled": true,
+            "actions": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "no actions",
+      "invalidField": "platforms[0].actions",
+      "reply": {
+        "platforms": [
+          { "id": "twitch", "displayName": "Twitch", "state": "connected", "connected": true, "enabled": true }
+        ]
+      }
+    },
+    {
+      "name": "an unknown action",
+      "invalidField": "platforms[0].actions[1]",
+      "reply": {
+        "platforms": [
+          {
+            "id": "twitch",
+            "displayName": "Twitch",
+            "state": "connected",
+            "connected": true,
+            "enabled": true,
+            "actions": ["chat.send", "chat.shout"]
+          }
+        ]
+      }
+    },
+    {
+      "name": "an action listed twice",
+      "invalidField": "platforms[0].actions[1]",
+      "reply": {
+        "platforms": [
+          {
+            "id": "twitch",
+            "displayName": "Twitch",
+            "state": "connected",
+            "connected": true,
+            "enabled": true,
+            "actions": ["chat.send", "chat.send"]
+          }
+        ]
+      }
+    }
+  ]
+}

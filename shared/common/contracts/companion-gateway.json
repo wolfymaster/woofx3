@@ -1,0 +1,106 @@
+{
+  "subjects": [
+    {
+      "name": "moduleRequest",
+      "subject": "engine.companion.module.request",
+      "request": "moduleEndpointRequest",
+      "reply": "moduleEndpointReply"
+    }
+  ],
+  "limits": [
+    { "name": "minBudgetMs", "value": 100 },
+    { "name": "maxBudgetMs", "value": 4500 },
+    { "name": "maxMessageBytes", "value": 65536 },
+    { "name": "maxFailedMessageLength", "value": 1000 }
+  ],
+  "formats": [
+    { "name": "moduleId", "pattern": "^[A-Za-z0-9._-]{1,100}$" },
+    { "name": "endpointId", "pattern": "^[a-z0-9_-]{1,40}$" },
+    { "name": "matchField", "pattern": "^[A-Za-z0-9_]{1,40}$" }
+  ],
+  "enums": [
+    {
+      "name": "moduleEndpointFailureCode",
+      "values": [
+        "not_declared",
+        "adapter_owned",
+        "protocol_unsupported",
+        "not_routed",
+        "address_refused",
+        "store_unreadable",
+        "unavailable",
+        "timeout",
+        "busy",
+        "invalid"
+      ]
+    }
+  ],
+  "objects": [
+    {
+      "name": "moduleEndpointMatch",
+      "fields": [
+        { "name": "field", "type": "string", "required": true, "format": "matchField" },
+        {
+          "name": "value",
+          "type": "stringOrInteger",
+          "required": true,
+          "maxLength": 200,
+          "min": -9007199254740991,
+          "max": 9007199254740991
+        }
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "name": "moduleEndpointRequest",
+      "discriminant": "op",
+      "variants": [
+        {
+          "tag": "send",
+          "name": "moduleEndpointSend",
+          "fields": [
+            { "name": "moduleId", "type": "string", "required": true, "format": "moduleId" },
+            { "name": "endpointId", "type": "string", "required": true, "format": "endpointId" },
+            { "name": "message", "type": "string", "required": true, "maxBytes": "maxMessageBytes" },
+            { "name": "budgetMs", "type": "integer", "required": true, "min": "minBudgetMs", "max": "maxBudgetMs" }
+          ]
+        },
+        {
+          "tag": "request",
+          "name": "moduleEndpointMatchRequest",
+          "fields": [
+            { "name": "moduleId", "type": "string", "required": true, "format": "moduleId" },
+            { "name": "endpointId", "type": "string", "required": true, "format": "endpointId" },
+            { "name": "message", "type": "string", "required": true, "maxBytes": "maxMessageBytes" },
+            { "name": "budgetMs", "type": "integer", "required": true, "min": "minBudgetMs", "max": "maxBudgetMs" },
+            { "name": "match", "type": "object", "required": true, "object": "moduleEndpointMatch" }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "moduleEndpointReply",
+      "discriminant": "status",
+      "variants": [
+        {
+          "tag": "ok",
+          "name": "moduleEndpointOk",
+          "fields": [
+            { "name": "reply", "type": "string", "required": false, "maxBytes": "maxMessageBytes" },
+            { "name": "sessionEpoch", "type": "string", "required": true, "maxLength": 100 }
+          ]
+        },
+        {
+          "tag": "failed",
+          "name": "moduleEndpointFailed",
+          "fields": [
+            { "name": "code", "type": "enum", "required": true, "enum": "moduleEndpointFailureCode" },
+            { "name": "message", "type": "string", "required": true, "maxLength": "maxFailedMessageLength" },
+            { "name": "sessionEpoch", "type": "string", "required": false, "maxLength": 100 }
+          ]
+        }
+      ]
+    }
+  ]
+}

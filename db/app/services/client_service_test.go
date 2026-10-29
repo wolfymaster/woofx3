@@ -13,6 +13,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/workers"
+	"github.com/wolfymaster/woofx3/db/database/dbtest"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"gorm.io/gorm"
@@ -51,7 +52,7 @@ func createClient(t *testing.T, svc client.ClientService, req *client.CreateClie
 }
 
 func TestClientServiceCreatesEachKind(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 
 		registered := createClient(t, svc, &client.CreateClientRequest{
@@ -103,7 +104,7 @@ func TestClientServiceRefusesAKindThatDoesNotMatchItsOrigin(t *testing.T) {
 		{"a paired client without an origin", client.ClientKind_CLIENT_KIND_PAIRED, ""},
 		{"a registered client with an origin", client.ClientKind_CLIENT_KIND_REGISTERED, pairedOrigin},
 	}
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 		for _, tc := range cases {
 			t.Run(tc.name, func(t *testing.T) {
@@ -127,7 +128,7 @@ func TestClientServiceRefusesAKindThatDoesNotMatchItsOrigin(t *testing.T) {
 }
 
 func TestClientServiceWritesOutboxEventsWithoutSecrets(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 		created := createClient(t, svc, &client.CreateClientRequest{
 			Description: "Chrome on Windows", Kind: client.ClientKind_CLIENT_KIND_PAIRED, Origin: pairedOrigin,
@@ -165,7 +166,7 @@ func TestClientServiceWritesOutboxEventsWithoutSecrets(t *testing.T) {
 }
 
 func TestClientServiceDeletingAMissingClientRecordsNothing(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 
 		status, err := svc.DeleteClient(context.Background(), &client.DeleteClientRequest{Id: "999"})
@@ -179,7 +180,7 @@ func TestClientServiceDeletingAMissingClientRecordsNothing(t *testing.T) {
 }
 
 func TestClientServiceRecordsAuthentication(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 		ctx := context.Background()
 		created := createClient(t, svc, &client.CreateClientRequest{
@@ -221,7 +222,7 @@ func TestNewClientServiceNeedsItsDependencies(t *testing.T) {
 }
 
 func TestClientServiceConcurrentDeletesOfOneClientBothSucceedAndRecordOnce(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 		created := createClient(t, svc, &client.CreateClientRequest{
 			Description: "desktop", Kind: client.ClientKind_CLIENT_KIND_REGISTERED,

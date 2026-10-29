@@ -1,14 +1,14 @@
 import { describe, expect, it, mock } from "bun:test";
-import { AUTHENTICATION_REFUSED, type ApiGatewayContract, isAuthenticationRefused } from "@woofx3/api/rpc";
+import { type ApiGatewayContract, AUTHENTICATION_REFUSED, isAuthenticationRefused } from "@woofx3/api/rpc";
 import { newMessagePortRpcSession } from "capnweb";
 import { Api } from "../src/api";
 import { ApiSession } from "../src/api-session";
-import { ClientAuth } from "../src/auth";
+import { ClientAuth, DEFAULT_AUTH_CACHE_TTL_MS } from "../src/auth";
 import { ClientSessions } from "../src/client-sessions";
-import { ApiGateway, AuthenticationRefused } from "../src/gateway";
-import { type ConnectionInfo, GatewayConnection } from "../src/gateway-connection";
 import { EngineEventStream } from "../src/engine-event-stream";
-import { WebhookClient } from "../src/webhook-client";
+import { ApiGateway, AuthenticationRefused, AuthUnavailable } from "../src/gateway";
+import { type ConnectionInfo, GatewayConnection } from "../src/gateway-connection";
+import { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient } from "../src/webhook-client";
 
 const OPEN = { mode: "open", token: null } as const;
 
@@ -32,6 +32,7 @@ function newApi(
     nats: null,
     functions: null,
     barkloaderUrl: "http://b",
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger,
@@ -42,12 +43,12 @@ describe("ApiGateway.registerClient", () => {
   it("creates a client with the callback and returns its credentials", async () => {
     const createClient = mock(async () => ({ client: { clientId: "c1", clientSecret: "s1" } }));
     const listClients = mock(async () => ({
-      clients: [{ clientId: "c1", description: "test-ui", callbackUrl: "http://cb", callbackToken: "tok" }],
+      clients: [{ clientId: "c1", description: "test-ui", callbackUrl: "https://cb.example", callbackToken: "tok" }],
     }));
     const db = { createClient, listClients } as any;
     const logger = fakeLogger();
     const api = newApi(db, logger);
-    const webhook = new WebhookClient(db, logger, new EngineEventStream(logger));
+    const webhook = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
     api.setWebhookClient(webhook);
     const auth = {
       validate: mock(async () => ({ kind: "accepted", description: "test-ui", boundOrigin: null })),
@@ -56,14 +57,14 @@ describe("ApiGateway.registerClient", () => {
     gateway.setWebhookClient(webhook);
 
     const res = await gateway.registerClient("test-ui", {
-      callbackUrl: "http://cb",
+      callbackUrl: "https://cb.example",
       callbackToken: "tok",
     });
 
     expect(res).toEqual({ clientId: "c1", clientSecret: "s1" });
     expect(createClient).toHaveBeenCalledWith({
       description: "test-ui",
-      callbackUrl: "http://cb",
+      callbackUrl: "https://cb.example",
       callbackToken: "tok",
       kind: "CLIENT_KIND_REGISTERED",
       origin: "",
@@ -80,7 +81,7 @@ describe("ApiGateway.registerClient", () => {
     } as any;
     const logger = fakeLogger();
     const api = newApi(db, logger);
-    const webhook = new WebhookClient(db, logger, new EngineEventStream(logger));
+    const webhook = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
     api.setWebhookClient(webhook);
     const gateway = new ApiGateway(
       api,
@@ -131,7 +132,7 @@ describe("ApiGateway.authenticate", () => {
     const logger = fakeLogger();
     return new ApiGateway(
       newApi(db, logger),
-      new ClientAuth(db, logger),
+      new ClientAuth(db, logger, { ttlMs: DEFAULT_AUTH_CACHE_TTL_MS }),
       db,
       logger,
       OPEN,
@@ -166,9 +167,23 @@ describe("ApiGateway.authenticate", () => {
       }).authenticate("c1", "s1", BATCH)
     );
 
-    expect(err).toBeInstanceOf(Error);
+    expect(err).toBeInstanceOf(AuthUnavailable);
     expect(isAuthenticationRefused(err)).toBe(false);
-    expect((err as Error).message).toContain("fetch failed");
+    // The cause stays in the engine's log; the caller only learns to retry.
+    expect((err as Error).message).not.toContain("fetch failed");
+  });
+
+  it("does not report a db-proxy answer without a verdict as a refusal", async () => {
+    const err = await rejectionOf(
+      gatewayOver(async () => ({ status: { code: "INTERNAL", message: "database is locked" } })).authenticate(
+        "c1",
+        "s1",
+        BATCH
+      )
+    );
+
+    expect(err).toBeInstanceOf(AuthUnavailable);
+    expect(isAuthenticationRefused(err)).toBe(false);
   });
 
   it("keeps the refusal recognisable across a capnweb session", async () => {

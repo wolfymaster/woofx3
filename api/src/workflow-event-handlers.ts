@@ -38,6 +38,10 @@ interface RawWorkflowRow {
   projectionKey?: unknown;
   Taxonomy?: unknown;
   taxonomy?: unknown;
+  CreatedAt?: unknown;
+  created_at?: unknown;
+  UpdatedAt?: unknown;
+  updated_at?: unknown;
 }
 
 // Taxonomy arrives either as a real array (the snake_case map built by
@@ -92,20 +96,18 @@ function buildSnapshot(ce: Record<string, unknown>): WorkflowSnapshot | null {
     tasks,
   };
 
-  // The persisted `workflow_definitions` row carries no createdAt /
-  // updatedAt columns today, so we synthesize ISO timestamps here.
-  // `enabled` is published in the event payload by
-  // db/app/services/module_event_payload.go `buildWorkflowChangeData`;
-  // when missing (older publishers) we default to false to match the
-  // "inert on create" contract.
+  // A row from a db-proxy that predates workflow timestamps carries none;
+  // consumers upsert by them, so it is stamped with the time it arrived.
+  // A row without `enabled` defaults to false, matching the "inert on
+  // create" contract.
   const now = new Date().toISOString();
   const isEnabled = typeof row.Enabled === "boolean" ? row.Enabled : row.enabled === true;
   const snapshot: WorkflowSnapshot = {
     id,
     definition,
     isEnabled,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: pickFirst(row.CreatedAt, row.created_at) || now,
+    updatedAt: pickFirst(row.UpdatedAt, row.updated_at) || now,
     taxonomy: asTaxonomy(row.Taxonomy, row.taxonomy),
   };
   const projectionKey = pickFirst(row.projection_key, row.projectionKey);

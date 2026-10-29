@@ -14,8 +14,8 @@
  * - `invalid_arguments`: the engine refused the arguments before calling
  *   Twitch (an unknown or misshapen parameter).
  * - `not_linked`: no Twitch account is linked to the engine.
- * - `unavailable`: the engine's twitch service is not running.
- * - `timeout`: the twitch service did not answer within 10 seconds. Twitch
+ * - `unavailable`: Twitch is turned off in this engine, or not running.
+ * - `timeout`: the engine's Twitch connection did not answer within 10 seconds. Twitch
  *   may still have acted.
  * - `failed`: anything else; `error` says what.
  */
@@ -106,7 +106,7 @@ export interface TwitchSendChatMessageParams {
 /** `POST /helix/chat/announcements`. */
 export interface TwitchSendChatAnnouncementParams {
   message: string;
-  /** `primary`, `blue`, `green`, `orange` or `purple`; Twitch's default when absent. */
+  /** One of TWITCH_ANNOUNCEMENT_COLORS in `platform-gateway.gen.ts`; Twitch's default when absent. */
   color?: string;
 }
 

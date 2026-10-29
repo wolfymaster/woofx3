@@ -1,3 +1,4 @@
+import { describeRequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { ApplicationContext, IApplication, Application as RuntimeApplication } from "@woofx3/common/runtime";
 import type { Msg } from "@woofx3/nats/src/types";
@@ -77,10 +78,10 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { StreamGaugeSampler },
       { TwitchHelixGauges },
       { serveTwitchToken },
-      { serveRelayCredential },
+      { serveDashboardRelayCredential },
       { serveShoutoutQueue },
       { UserEventRecorder },
-      { WebhookClient },
+      { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
       { WorkflowHealthEmitter },
@@ -119,7 +120,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./stream-gauge-sampler"),
       import("./twitch-helix-gauges"),
       import("./twitch-token-source"),
-      import("./relay-credential-source"),
+      import("./relay-dashboard-edge"),
       import("./shoutout-queue"),
       import("./user-event-recorder"),
       import("./webhook-client"),
@@ -139,7 +140,10 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     const logger = ctx.logger as SharedLogger;
     const db = ctx.services.db.client;
 
-    logger.info("Starting API server", { port: config.port || 8080 });
+    logger.info("Starting API server", {
+      port: config.port || 8080,
+      ...describeRequestGuardPolicy(config.requestGuard),
+    });
 
     // NATS is best-effort and non-blocking — kept outside the runtime's
     // health-monitor-gated service connect so the API still serves traffic
@@ -164,7 +168,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     // Runs module functions and waits for their result. It reconnects on its
     // own; until it is up, a webhook handler request answers 503.
     const functions = new BarkloaderClient({
-      wsUrl: `${config.barkloaderWsUrl}?token=${encodeURIComponent(config.barkloaderKey)}`,
+      wsUrl: config.barkloaderWsUrl,
+      key: config.barkloaderKey,
       onOpen: () => logger.info("Connected to barkloader"),
       onClose: () => logger.warn("Barkloader connection closed"),
       onError: () => logger.warn("Barkloader connection error"),
@@ -178,6 +183,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       nats: natsClient,
       functions,
       barkloaderUrl: config.barkloaderUrl,
+      barkloaderKey: config.barkloaderKey,
       streamwareUrl: config.streamwareUrl,
       sceneManagerUrl: config.sceneManagerUrl,
       apiUrl: config.apiUrl,
@@ -189,6 +195,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
         : null,
       twitchPublicClientId: config.twitchPublicClientId,
       twitchClientId: config.twitchClientId,
+      companionRequestTimeoutMs: config.companionRequestTimeoutMs,
+      platformGatewayTimeoutMs: config.platformGatewayTimeoutMs,
     });
     this.api = api;
 
@@ -208,7 +216,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     const engineEventStream = new EngineEventStream(logger);
     this.engineEventStream = engineEventStream;
     api.setEngineEventStream(engineEventStream);
-    const webhookClient = new WebhookClient(db, logger, engineEventStream);
+    const webhookClient = new WebhookClient(db, logger, engineEventStream, DEFAULT_WEBHOOK_CLIENT_CONFIG);
     api.setWebhookClient(webhookClient);
     try {
       await webhookClient.refreshCallbackUrls();
@@ -272,7 +280,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
       await initOverlayTokenHandlers(natsClient, webhookClient, logger);
       await serveTwitchToken(natsClient, api.twitchToken, logger);
-      await serveRelayCredential(natsClient, api.relayCredential, logger);
+      await serveDashboardRelayCredential(natsClient, () => webhookClient, logger);
       await serveShoutoutQueue(
         natsClient,
         { linkedDashboardClientId: () => api.twitchToken.linkedDashboardClientId(), dashboard: () => webhookClient },
@@ -296,7 +304,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       await workflowHealthEmitter.start();
     }
 
-    const auth = new ClientAuth(db, logger);
+    const auth = new ClientAuth(db, logger, { ttlMs: config.authCacheTtlMs });
     const sessions = new ClientSessions(logger);
     api.setClientRevocation(new ClientRevoker(auth, sessions, engineEventStream, webhookClient, api));
     // Browser pairing only where the operator's own browser talks to the
@@ -341,6 +349,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
         describeHealth(
           {
             name: config.engineName,
+            region: config.engineRegion,
             version: config.version,
             startedAt: performance.timeOrigin,
             capabilities: { schema: ENGINE_CAPABILITIES_SCHEMA, enabled: supportedEngineCapabilities(config.hosting) },

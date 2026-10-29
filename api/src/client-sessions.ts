@@ -1,5 +1,5 @@
-import type { SharedLogger } from "@woofx3/common/logging";
 import { CLIENT_REVOKED_CLOSE_CODE } from "@woofx3/api/rpc";
+import type { SharedLogger } from "@woofx3/common/logging";
 import type { Api } from "./api";
 import type { ClientAuth } from "./auth";
 import type { EngineEventStream } from "./engine-event-stream";
@@ -236,7 +236,7 @@ export class ClientRevoker implements ClientRevocation {
   ) {}
 
   revoke(clientId: string): void {
-    this.auth.invalidateCache();
+    this.auth.invalidateCache(clientId);
     this.sessions.revoke(clientId);
     this.eventStream.dropClient(clientId);
     this.webhooks.dropClient(clientId);

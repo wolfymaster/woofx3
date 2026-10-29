@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/wolfymaster/woofx3/db/database/models"
 )
@@ -351,6 +352,8 @@ func buildWorkflowChangeData(wf *models.WorkflowDefinition) map[string]any {
 		"created_by_ref":  wf.CreatedByRef,
 		"manifest_id":     wf.ManifestID,
 		"taxonomy":        parseTaxonomy(wf.Taxonomy),
+		"created_at":      wf.CreatedAt.UTC().Format(time.RFC3339Nano),
+		"updated_at":      wf.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 	if pk := projectionKeyFor(wf.CreatedByType, wf.CreatedByRef, "workflow", wf.ManifestID); pk != "" {
 		row["projection_key"] = pk

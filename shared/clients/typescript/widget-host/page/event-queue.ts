@@ -186,6 +186,11 @@ class InstanceQueue {
     return [...this.pending.map((item) => item.eventId), ...this.inFlight.keys()];
   }
 
+  /** The deliveries waiting their turn, in the order they will be dispatched. */
+  waiting(): QueuedEvent[] {
+    return this.pending.map(({ priority: _priority, ...item }) => item);
+  }
+
   /** Number of items neither dispatched nor completed — diagnostic use. */
   size(): number {
     return this.pending.length + this.inFlight.size;
@@ -336,6 +341,14 @@ export class EventQueueManager {
         }
       }
     }
+  }
+
+  /**
+   * The deliveries `registration` has not dispatched yet, next first. Empty
+   * once it is unregistered or replaced, since a replacement takes them over.
+   */
+  pending(registration: QueueRegistration): QueuedEvent[] {
+    return (registration as Registration).queue.waiting();
   }
 
   /** The widget behind `registration` finished `eventId`. */

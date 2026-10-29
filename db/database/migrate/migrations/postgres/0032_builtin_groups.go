@@ -20,7 +20,7 @@ import (
 // which is the opposite of the intended "no restriction configured" meaning.
 // The fix is to represent "unrestricted" positively in the policy data as a
 // wildcard subject row, so both enforcement paths (db-proxy's GetCommand hook
-// and woofwoofwoof's canUse -> HasPermission) agree without either of them
+// and the connectors chat dispatcher's HasPermission check) agree without either of them
 // needing a special case. This backfills that row for existing commands.
 func AddBuiltInGroups() *gormigrate.Migration {
 	return &gormigrate.Migration{

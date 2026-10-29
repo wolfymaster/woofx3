@@ -2,6 +2,8 @@ package nats
 
 import (
 	"bufio"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +14,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/nats-io/nats.go"
 )
 
 // echoServer speaks just enough of the NATS protocol for request/reply: every
@@ -183,4 +187,107 @@ func TestRequestsDuringReconnectDoNotDialAgain(t *testing.T) {
 	if got := server.accepted.Load(); got != 2 {
 		t.Errorf("server accepted %d connections, want 2", got)
 	}
+}
+
+// The client keeps reconnecting for as long as the process runs, starting
+// with the first dial, at the pace its reconnect policy sets, and logs every
+// change of connection state.
+func TestTheClientReconnectsForever(t *testing.T) {
+	client := newTestClient("nats://127.0.0.1:4222")
+	opts := nats.GetDefaultOptions()
+	for _, apply := range client.options() {
+		if err := apply(&opts); err != nil {
+			t.Fatalf("apply option: %v", err)
+		}
+	}
+
+	checks := []struct {
+		name string
+		ok   bool
+	}{
+		{"MaxReconnect is unlimited", opts.MaxReconnect == -1},
+		{"the first dial is retried", opts.RetryOnFailedConnect},
+		{"ReconnectWait is the default", opts.ReconnectWait == DefaultReconnectWait},
+		{"ReconnectJitter is the default", opts.ReconnectJitter == DefaultReconnectJitter},
+		{"ReconnectJitterTLS is the default", opts.ReconnectJitterTLS == DefaultReconnectJitter},
+		{"connects are logged", opts.ConnectedCB != nil},
+		{"disconnects are logged", opts.DisconnectedErrCB != nil},
+		{"reconnects are logged", opts.ReconnectedCB != nil},
+		{"a close is logged", opts.ClosedCB != nil},
+		{"async errors are logged", opts.AsyncErrorCB != nil},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if !check.ok {
+				t.Fail()
+			}
+		})
+	}
+}
+
+// After Close the client is done: it reports itself unhealthy and refuses
+// every call rather than dialling a fresh connection that would carry none
+// of the old one's subscriptions.
+func TestAClosedClientStaysClosed(t *testing.T) {
+	server := startEchoServer(t)
+	client := newTestClient(server.url())
+
+	requestConcurrently(t, client, 1)
+	if !client.Healthy() {
+		t.Fatal("a connected client reports itself unhealthy")
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	if client.Healthy() {
+		t.Error("a closed client reports itself healthy")
+	}
+	if err := client.Publish("echo", []byte("late")); !errors.Is(err, ErrConnectionClosed) {
+		t.Errorf("publish after close: %v, want ErrConnectionClosed", err)
+	}
+	if _, err := client.Request("echo", []byte("late"), time.Second); !errors.Is(err, ErrConnectionClosed) {
+		t.Errorf("request after close: %v, want ErrConnectionClosed", err)
+	}
+	if got := server.accepted.Load(); got != 1 {
+		t.Errorf("server accepted %d connections, want 1", got)
+	}
+}
+
+// A client that has never dialled has nothing to be healthy about.
+func TestAnUndialledClientIsUnhealthy(t *testing.T) {
+	if newTestClient("nats://127.0.0.1:4222").Healthy() {
+		t.Fatal("an undialled client reports itself healthy")
+	}
+}
+
+func TestRequestWithContext(t *testing.T) {
+	server := startEchoServer(t)
+	client := newTestClient(server.url())
+	t.Cleanup(func() { _ = client.Close() })
+
+	t.Run("a reply within the context comes back", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		reply, err := client.RequestWithContext(ctx, "echo", []byte("hello"))
+		if err != nil || string(reply) != "hello" {
+			t.Fatalf("reply = %q, err = %v", reply, err)
+		}
+	})
+	t.Run("a context already done fails with its error", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if _, err := client.RequestWithContext(ctx, "echo", []byte("late")); !errors.Is(err, context.Canceled) {
+			t.Fatalf("error = %v, want context.Canceled", err)
+		}
+	})
+	t.Run("a closed client fails with ErrConnectionClosed", func(t *testing.T) {
+		closed := newTestClient(server.url())
+		if err := closed.Close(); err != nil {
+			t.Fatalf("close: %v", err)
+		}
+		if _, err := closed.RequestWithContext(context.Background(), "echo", []byte("late")); !errors.Is(err, ErrConnectionClosed) {
+			t.Fatalf("error = %v, want ErrConnectionClosed", err)
+		}
+	})
 }

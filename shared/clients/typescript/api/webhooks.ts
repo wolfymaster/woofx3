@@ -680,6 +680,9 @@ export interface EngineResponseReceivedEvent {
   error?: string;
 }
 
+/** Where an installed module came from. Must match the sources in db/app/services/module_service.go. */
+export type ModuleInstallSource = "marketplace" | "upload";
+
 export interface ModuleInstalledEvent {
   type: typeof EngineEventType.MODULE_INSTALLED;
   /**
@@ -693,11 +696,13 @@ export interface ModuleInstalledEvent {
   moduleKey: string;
   alreadyInstalled?: boolean;
   /**
-   * Where the install came from. Set only on the events the api sends
-   * itself (an already-installed answer); barkloader's own completion event
-   * carries none.
+   * Where the installed module came from, when the engine recorded it: a
+   * marketplace listing, or an uploaded custom module resource. Absent for
+   * any other install.
    */
-  source?: "marketplace";
+  source?: ModuleInstallSource;
+  /** The custom module resource the module was installed from, with `source: "upload"`. */
+  uploadResourceId?: string;
   /**
    * Catalog metadata extracted from the stored manifest at install
    * completion. `author` is guaranteed non-empty by the engine —
@@ -730,7 +735,9 @@ export interface ModuleInstallFailedEvent {
    * before barkloader has the archive; barkloader's own failure event
    * carries none.
    */
-  source?: "marketplace";
+  source?: ModuleInstallSource;
+  /** The custom module resource the install read, with `source: "upload"`. */
+  uploadResourceId?: string;
 }
 
 export interface ModuleDeletedEvent {
@@ -1715,7 +1722,7 @@ export interface RelayCredentialRequestedEvent {
 }
 
 /**
- * Who to shout out, already looked up by the twitch service so the dashboard
+ * Who to shout out, already looked up by the engine's Twitch connection so the dashboard
  * can queue them without asking Twitch again.
  */
 export interface ShoutoutEnqueueRequestedEvent {

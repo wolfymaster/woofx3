@@ -11,14 +11,20 @@ pub mod module_delete;
 mod module_file;
 mod module_install;
 pub mod module_manifest;
-mod module_plan;
 mod module_service;
 pub mod registry_loader;
+mod reserved_subjects;
+pub use reserved_subjects::load_contract as load_reserved_subjects_contract;
 pub mod resource_kind_ref;
 pub mod theme;
 
-pub use db_proxy::MarketplaceOrigin;
+pub use db_proxy::{InstallOrigin, MarketplaceOrigin};
 pub use manifest_validate::{InstallProvenance, SystemOnlyActions};
 pub use module_file::ModuleFileKind;
-pub use module_service::{ModuleService, ModuleServiceConfig, manifest_file_rank};
-pub use registry_loader::{ModuleSchedule, ScheduleRegistrar};
+pub use module_install::InstallOutcome;
+pub use module_service::{
+    FinishInstallError, ModuleService, ModuleServiceConfig, manifest_file_rank,
+};
+pub use registry_loader::{
+    ModuleSchedule, RegistryRefresher, SandboxRegistryRefresher, ScheduleRegistrar,
+};

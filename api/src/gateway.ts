@@ -7,9 +7,10 @@ import type {
   StartPairingResponse,
 } from "@woofx3/api/pairing";
 import {
+  AUTH_UNAVAILABLE,
   AUTHENTICATION_REFUSED,
-  type GatewayPingResponse,
   authenticationRefusedMessage,
+  type GatewayPingResponse,
   REGISTRATION_REFUSED,
   type RegisterClientOptions,
   registrationRefusedMessage,
@@ -25,7 +26,7 @@ import type { DbClient } from "./db-client";
 import type { ConnectionInfo } from "./gateway-connection";
 import type { PairingRegistry } from "./pairing";
 import type { RegistrationPolicy } from "./registration";
-import type { WebhookClient } from "./webhook-client";
+import { callbackUrlRefusal, type WebhookClient } from "./webhook-client";
 
 /**
  * A registration the engine will not accept. Its message carries the
@@ -48,6 +49,18 @@ export class AuthenticationRefused extends Error {
   constructor(reason: string) {
     super(authenticationRefusedMessage(reason));
     this.name = AUTHENTICATION_REFUSED;
+  }
+}
+
+/**
+ * Credentials the engine could not check because the db proxy gave no
+ * verdict. Its message carries no refusal marker, so a capnweb client sees a
+ * transient failure and may retry; see AUTH_UNAVAILABLE.
+ */
+export class AuthUnavailable extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = AUTH_UNAVAILABLE;
   }
 }
 
@@ -88,7 +101,7 @@ export class ApiGateway {
   ) {
     if (registration.mode === "open") {
       logger.warn(
-        "WOOFX3_REGISTRATION_TOKEN is not set: any caller that reaches this engine can register a client. Set it on any engine reachable from the internet."
+        "WOOFX3_REGISTRATION_MODE=open: any caller that reaches this engine over loopback can register a client."
       );
     }
     if (registration.mode === "first") {
@@ -115,11 +128,16 @@ export class ApiGateway {
    */
   async authenticate(clientId: string, clientSecret: string, connection: ConnectionInfo): Promise<ApiSession> {
     const generation = this.sessions.generation(clientId);
-    const verdict = await this.auth.validate(clientId, clientSecret);
-    if (verdict.kind === "refused") {
+    const result = await this.auth.validate(clientId, clientSecret);
+    if (!result.ok) {
+      if (result.error.kind === "auth_unavailable") {
+        throw new AuthUnavailable("The engine could not check client credentials right now; try again.");
+      }
+      // woofx3-ui matches this text inside the message to tell a rejected client from a failed call.
       throw new AuthenticationRefused("Invalid client credentials");
     }
-    if (verdict.boundOrigin !== null && !fromOrigin(connection, verdict.boundOrigin)) {
+    const client = result.value;
+    if (client.boundOrigin !== null && !fromOrigin(connection, client.boundOrigin)) {
       this.logger.warn("Refused a paired client from another origin", {
         clientId,
         origin: connection.origin,
@@ -132,9 +150,9 @@ export class ApiGateway {
       this.logger.warn("Refused a client deleted while it authenticated", { clientId });
       throw new AuthenticationRefused("Invalid client credentials");
     }
-    this.logger.info("Authenticated client", {
+    this.logger.debug("Authenticated client", {
       clientId,
-      description: verdict.description,
+      description: client.description,
       origin: connection.origin,
       remoteAddress: connection.remoteAddress,
     });
@@ -145,6 +163,12 @@ export class ApiGateway {
     description: string,
     options: RegisterClientOptions
   ): Promise<{ clientId: string; clientSecret: string }> {
+    if (options.callbackUrl) {
+      const refusal = callbackUrlRefusal(options.callbackUrl);
+      if (refusal !== null) {
+        throw new RegistrationRefused(`The callback URL is refused: ${refusal}.`);
+      }
+    }
     if (this.registration.mode !== "first") {
       this.admit(options.registrationToken, this.registration.mode === "token");
       return this.createClient(description, options);

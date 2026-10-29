@@ -168,6 +168,18 @@ makes around it; the engine checks those edits again. `compositionJsonSchema`
 emits the registry's rules as a JSON Schema (draft 2020-12) for checking a
 composition without this code, such as one a module ships.
 
+Whatever the registry, the keys an op names are checked before anything is
+applied (`invalidOps` in `@woofx3/api/scene-editor/document`). A layout key
+or an entry id is 1 to 128 letters, digits, `_`, `.`, `:` or `-`
+(`isSafeKey`); a key in a freeform or keyed field is 1 to 128 characters of
+any kind, since widget manifests choose their settings keys. No path
+segment, and no key at any depth of an inserted value, may be `__proto__`,
+`prototype` or `constructor`: json0 follows paths with plain property
+reads, so such a key would reach a prototype the whole process shares.
+`applyOps` also walks each component's path against the document before
+applying it and throws when a step is not a property the document owns, so
+an inherited name only the document reveals is refused too.
+
 ## Sequencing
 
 Every change to a scene goes through one serial queue per scene and the
@@ -408,8 +420,9 @@ Everything that serves or lists scenes reads only `scene` rows:
 
 | Reader | How |
 | --- | --- |
-| `ListScenes` (db) | Lists `scene` rows unless asked for `kind: "alert"`, so every caller that predates alerts sees scenes only. |
+| `ListScenes` (db) | Lists `scene` rows unless asked for `kind: "alert"`, so every caller that predates alerts sees scenes only. It answers with every row of the kind in one response: its page and sort fields are not applied. |
 | `getScenes`, `getScene`, `updateScene`, `deleteScene` (api) | Scenes only: `getScene` is null for an alert, `updateScene` and `deleteScene` refuse one. |
+| `listSceneSnapshots`, `getSceneSnapshot` (api) | Scenes only, each as the whole stored record the `scene.*` webhooks carry: the list is every scene ordered by name, and `getSceneSnapshot` is null for an alert (capability `scenes.snapshots`). |
 | Overlay tokens | `MintOverlayToken` refuses an alert, so no browser-source URL addresses one. |
 | `/scene/{id}?token=…` (sceneManager) | `loadScene` serves no page for a token that resolves to an alert; every other overlay route needs the session that page mints. |
 | `/preview/composition?token=…` (sceneManager) | Not an overlay: opens only with a token the api mints for a dashboard (`getCompositionPreviewUrl`), and plays what the dashboard posts to it, never a stored scene or alert. See [Composition preview](./composition-preview.md). |

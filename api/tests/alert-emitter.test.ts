@@ -1,5 +1,6 @@
-import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import { describe, expect, it, mock } from "bun:test";
+import { EventType, type HypeTrainBegin } from "@woofx3/common/cloudevents/Twitch/events";
+import type { Msg } from "@woofx3/nats/src/types";
 import {
   AlertEmitter,
   mapCheer,
@@ -10,7 +11,6 @@ import {
   mapSubGift,
   mapSubscribe,
 } from "../src/alert-emitter";
-import type { Msg } from "@woofx3/nats/src/types";
 
 function fakeLogger() {
   return {
@@ -103,7 +103,19 @@ describe("Alert mappers", () => {
   });
 
   it("maps hypetrain with no user", () => {
-    expect(mapHypeTrain({})).toEqual({ type: "hypetrain", user: "" });
+    const train: HypeTrainBegin = {
+      id: "train-1",
+      broadcasterId: "broadcaster-1",
+      broadcasterName: "Wolfy",
+      level: 1,
+      total: 300,
+      progress: 300,
+      goal: 1600,
+      topContributions: [],
+      startedAt: "2026-10-21T18:00:00.000Z",
+      expiresAt: "2026-10-21T18:05:00.000Z",
+    };
+    expect(mapHypeTrain(train)).toEqual({ type: "hypetrain", user: "" });
   });
 
   it("maps raid with viewers as amount", () => {

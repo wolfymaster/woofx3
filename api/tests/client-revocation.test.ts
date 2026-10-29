@@ -1,19 +1,19 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { Woofx3EngineApi } from "@woofx3/api";
 import { type ApiGatewayContract, CLIENT_REVOKED_CLOSE_CODE, isAuthenticationRefused } from "@woofx3/api/rpc";
-import type { SharedLogger } from "@woofx3/common/logging";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import type { SharedLogger } from "@woofx3/common/logging";
 import { newMessagePortRpcSession, newWebSocketRpcSession, RpcTarget } from "capnweb";
 import { Api } from "../src/api";
-import { ClientAuth } from "../src/auth";
+import { ApiSession } from "../src/api-session";
+import { ClientAuth, DEFAULT_AUTH_CACHE_TTL_MS } from "../src/auth";
 import { ClientRevoker, ClientSessions, SessionLease } from "../src/client-sessions";
 import { EngineEventStream } from "../src/engine-event-stream";
-import { ApiSession } from "../src/api-session";
 import { ApiGateway } from "../src/gateway";
 import { GatewayConnection } from "../src/gateway-connection";
 import { createHttpServer } from "../src/http";
-import { WebhookClient } from "../src/webhook-client";
 import { resolveRegistrationPolicy } from "../src/registration";
+import { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient } from "../src/webhook-client";
 
 /*
  * Deleting a client ends the sessions it already holds: an open WebSocket is
@@ -99,14 +99,15 @@ function engine() {
     nats: null,
     functions: null,
     barkloaderUrl: "http://b",
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger,
   });
-  const auth = new ClientAuth(db as never, logger);
+  const auth = new ClientAuth(db as never, logger, { ttlMs: DEFAULT_AUTH_CACHE_TTL_MS });
   const sessions = new ClientSessions(logger);
   const stream = new EngineEventStream(logger);
-  const webhooks = new WebhookClient(db as never, logger, stream);
+  const webhooks = new WebhookClient(db as never, logger, stream, DEFAULT_WEBHOOK_CLIENT_CONFIG);
   api.setWebhookClient(webhooks);
   api.setClientRevocation(new ClientRevoker(auth, sessions, stream, webhooks, api));
   const gateway = new ApiGateway(api, auth, db as never, logger, resolveRegistrationPolicy({}), sessions, null);
@@ -147,7 +148,7 @@ function serve(gateway: ApiGateway): string {
     health: () => ({}) as never,
     logger,
     gateway,
-    requestGuard: { allowedHosts: null, allowedOrigins: null },
+    requestGuard: { allowedHosts: null, allowedOrigins: null, listedOrigins: null },
     onProcessingCallback: async () => {},
     barkloaderWebhookSecret: null,
   });
@@ -422,6 +423,7 @@ describe("a revoked client's subscriptions", () => {
       nats: null,
       functions: null,
       barkloaderUrl: "http://b",
+      barkloaderKey: "test-barkloader-key-0123456789abcdef",
       sceneManagerUrl: "http://scene.test",
       apiUrl: "http://api.test",
       logger,
@@ -452,6 +454,7 @@ describe("a revoked client's subscriptions", () => {
       nats: null,
       functions: null,
       barkloaderUrl: "http://b",
+      barkloaderKey: "test-barkloader-key-0123456789abcdef",
       sceneManagerUrl: "http://scene.test",
       apiUrl: "http://api.test",
       logger,

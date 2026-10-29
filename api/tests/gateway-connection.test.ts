@@ -36,7 +36,7 @@ function startRecordingEngine() {
     health: () => ({}) as never,
     logger,
     gateway,
-    requestGuard: { allowedHosts: null, allowedOrigins: null },
+    requestGuard: { allowedHosts: null, allowedOrigins: null, listedOrigins: null },
     onProcessingCallback: async () => {},
     barkloaderWebhookSecret: null,
   });

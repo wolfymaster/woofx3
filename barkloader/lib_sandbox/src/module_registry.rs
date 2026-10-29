@@ -1,7 +1,10 @@
 use crate::error::Error;
 use crate::models::function::Function;
+use crate::protected_settings::{
+    LiveProtectedSettings, ProtectedReason, ProtectedSettings, RegisteredLocalEndpoint,
+};
 use std::collections::{HashMap, HashSet};
-use std::sync::RwLock;
+use std::sync::{PoisonError, RwLock};
 
 #[derive(Debug, Clone)]
 pub struct ModuleMetadata {
@@ -28,9 +31,16 @@ pub struct RegisteredModule {
     /// The manifest's `permissions`: the privileged host functions this
     /// module's code may call. See `crate::permissions`.
     pub permissions: HashSet<String>,
-    /// The ids of the module's `url` settings, whose values' origins
-    /// `ctx.http` may reach. See `crate::net`.
-    pub url_settings: HashSet<String>,
+    /// The settings module code may not write, with the reason: its `url`
+    /// settings, whose values' origins `ctx.http` may reach (`crate::net`),
+    /// and the host, port and password settings of its `local_endpoints`.
+    pub protected_settings: ProtectedSettings,
+    /// The module's `local[]` endpoints, in manifest order.
+    pub local_endpoints: Vec<RegisteredLocalEndpoint>,
+    /// The ids of the module's resource-link (`resource_ref`) settings, whose
+    /// values name the instances the streamer linked to the module. See
+    /// `crate::resource_access`.
+    pub resource_link_settings: HashSet<String>,
     /// The OAuth providers the module's code calls through `ctx.oauth`.
     pub oauth: Vec<crate::oauth::OAuthIntegration>,
     /// Manifest-local action id to the manifest-local id of the function it
@@ -41,6 +51,12 @@ pub struct RegisteredModule {
 
 pub struct ModuleRegistry {
     modules: RwLock<HashMap<String, RegisteredModule>>,
+    /// Each module's protected settings as invocations see them. Kept apart
+    /// from `modules` and never removed, so the handle a running invocation
+    /// holds stays the one a later registration updates: a module that is
+    /// unregistered keeps its last protections until it is registered again.
+    /// Lock order: `modules` before `protections`.
+    protections: RwLock<HashMap<String, LiveProtectedSettings>>,
 }
 
 impl Default for ModuleRegistry {
@@ -53,6 +69,7 @@ impl ModuleRegistry {
     pub fn new() -> Self {
         Self {
             modules: RwLock::new(HashMap::new()),
+            protections: RwLock::new(HashMap::new()),
         }
     }
 
@@ -90,8 +107,23 @@ impl ModuleRegistry {
 
     pub fn register_module(&self, name: String, module: RegisteredModule) -> Result<(), Error> {
         let mut modules = self.modules.write().unwrap();
+        self.publish_protections(&name, &module);
         modules.insert(name, module);
         Ok(())
+    }
+
+    /// Swaps `module`'s protected settings into the handle every invocation
+    /// of `name` holds. Called with the `modules` write lock held, so a new
+    /// invocation never sees the new module with the old protections.
+    fn publish_protections(&self, name: &str, module: &RegisteredModule) {
+        let mut protections = self
+            .protections
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        protections
+            .entry(name.to_string())
+            .or_default()
+            .replace(module.protected_settings.clone());
     }
 
     pub fn unregister_module(&self, name: &str) -> Result<(), Error> {
@@ -107,6 +139,7 @@ impl ModuleRegistry {
         if !modules.contains_key(&name) {
             return Err(Error::ModuleNotFound(name));
         }
+        self.publish_protections(&name, &module);
         modules.insert(name, module);
         Ok(())
     }
@@ -175,8 +208,6 @@ impl ModuleRegistry {
         })
     }
 
-    /// The ids of the module's `url` settings; none for a module that is not
-    /// registered.
     /// The function a module's action runs, as a manifest-local function id;
     /// `None` for an unknown module or action, or one that is not a function.
     pub fn action_function(&self, module: &str, action: &str) -> Option<String> {
@@ -184,11 +215,50 @@ impl ModuleRegistry {
         modules.get(module)?.actions.get(action).cloned()
     }
 
+    /// The ids of the module's `url` settings; none for a module that is not
+    /// registered.
     pub fn url_settings(&self, name: &str) -> HashSet<String> {
         let modules = self.modules.read().unwrap();
         modules
             .get(name)
-            .map(|m| m.url_settings.clone())
+            .map(|m| {
+                m.protected_settings
+                    .iter()
+                    .filter(|(_, reason)| matches!(reason, ProtectedReason::Url))
+                    .map(|(id, _)| id.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The settings the module's code may not write, as a handle that follows
+    /// later registrations of the module (`LiveProtectedSettings`); empty for
+    /// a module that has never been registered.
+    pub fn protected_settings(&self, name: &str) -> LiveProtectedSettings {
+        let protections = self
+            .protections
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
+        protections.get(name).cloned().unwrap_or_default()
+    }
+
+    /// The module's `local[]` endpoints; none for a module that is not
+    /// registered.
+    pub fn local_endpoints(&self, name: &str) -> Vec<RegisteredLocalEndpoint> {
+        let modules = self.modules.read().unwrap();
+        modules
+            .get(name)
+            .map(|m| m.local_endpoints.clone())
+            .unwrap_or_default()
+    }
+
+    /// The ids of the module's resource-link settings; none for a module that
+    /// is not registered.
+    pub fn resource_link_settings(&self, name: &str) -> HashSet<String> {
+        let modules = self.modules.read().unwrap();
+        modules
+            .get(name)
+            .map(|m| m.resource_link_settings.clone())
             .unwrap_or_default()
     }
 }
@@ -222,7 +292,9 @@ mod tests {
             state: ModuleState::Active,
             event_types: Default::default(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
+            resource_link_settings: Default::default(),
             oauth: Default::default(),
         }
     }
@@ -248,6 +320,22 @@ mod tests {
 
         registry.unregister_module("example").unwrap();
         assert!(!registry.has_module("example"));
+    }
+
+    #[test]
+    fn test_protections_poisoned_lock_still_reads_and_registers() {
+        let registry = ModuleRegistry::new();
+        let poisoner = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = registry.protections.write().unwrap();
+            panic!("poison the protections lock");
+        }));
+        assert!(poisoner.is_err());
+        assert!(registry.protections.is_poisoned());
+
+        registry
+            .register_module("example".to_string(), test_module("example"))
+            .unwrap();
+        let _ = registry.protected_settings("example");
     }
 
     #[test]
@@ -308,5 +396,71 @@ mod tests {
         let registry = ModuleRegistry::new();
         let result = registry.get_function("invalid_path");
         assert!(matches!(result, Err(Error::InvalidFunctionPath(_))));
+    }
+    #[test]
+    fn test_registry_carries_local_endpoints_and_protected_settings() {
+        use crate::protected_settings::LocalEndpointProtocol;
+        let registry = ModuleRegistry::new();
+        let mut module = test_module("obs");
+        module.protected_settings = [
+            ("server".to_string(), ProtectedReason::Url),
+            (
+                "obs_host".to_string(),
+                ProtectedReason::LocalEndpointAddress {
+                    endpoint_id: "obs".into(),
+                },
+            ),
+        ]
+        .into();
+        module.local_endpoints = vec![RegisteredLocalEndpoint {
+            id: "obs".into(),
+            protocol: LocalEndpointProtocol::Websocket,
+        }];
+        registry.register_module("obs".to_string(), module).unwrap();
+
+        assert_eq!(
+            registry.local_endpoints("obs"),
+            vec![RegisteredLocalEndpoint {
+                id: "obs".into(),
+                protocol: LocalEndpointProtocol::Websocket,
+            }]
+        );
+        assert_eq!(registry.protected_settings("obs").snapshot().len(), 2);
+        assert_eq!(registry.url_settings("obs"), ["server".to_string()].into());
+        assert!(registry.local_endpoints("missing").is_empty());
+        assert!(registry.protected_settings("missing").snapshot().is_empty());
+    }
+
+    #[test]
+    fn test_reregistering_a_module_protects_keys_for_running_invocations() {
+        let registry = ModuleRegistry::new();
+        registry
+            .register_module("obs".to_string(), test_module("obs"))
+            .unwrap();
+        // Taken when an invocation of the installed version starts.
+        let held_by_invocation = registry.protected_settings("obs");
+        assert_eq!(held_by_invocation.get("obs_address"), None);
+
+        let mut upgraded = test_module("obs");
+        upgraded.protected_settings = [(
+            "obs_address".to_string(),
+            ProtectedReason::LocalEndpointAddress {
+                endpoint_id: "obs".into(),
+            },
+        )]
+        .into();
+        registry
+            .register_module("obs".to_string(), upgraded)
+            .unwrap();
+
+        assert_eq!(
+            held_by_invocation.get("obs_address"),
+            Some(ProtectedReason::LocalEndpointAddress {
+                endpoint_id: "obs".into(),
+            })
+        );
+
+        registry.unregister_module("obs").unwrap();
+        assert!(held_by_invocation.get("obs_address").is_some());
     }
 }

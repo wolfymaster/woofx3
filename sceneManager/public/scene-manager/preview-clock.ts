@@ -1,4 +1,6 @@
-// The composition preview's clock: composition time that can pause and jump.
+// A composition clock: composition time that can pause and jump. The editor's
+// composition preview plays and scrubs on it, and an alert staged ahead of
+// time (alert-stage.ts) holds on it at 0 ms until the alert starts.
 //
 // The scheduler reads every fact time from its clock and sleeps on its
 // timers (see @woofx3/scene's runtime/scheduler.ts). Here that clock reads

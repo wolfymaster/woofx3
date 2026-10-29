@@ -36,7 +36,7 @@ The user code is a correlation id, not a credential. Approving needs a client of
 - Plain http from another computer is refused even when listed: it would carry the secret across the network in clear.
 - The desktop app's own window (`tauri://localhost`, `tauri.localhost`) is refused: the desktop shell registers with the registration token instead.
 
-The request guard runs first. With `WOOFX3_ALLOWED_ORIGINS` set, only listed origins reach `startPairing` at all; the desktop app sets it to the loopback origins and its own window, so the hosted web app cannot reach a desktop engine. Pairing never admits more than the list does.
+The request guard runs first, so only origins it admits reach `startPairing` at all. Unset, `WOOFX3_ALLOWED_ORIGINS` defaults to the loopback origins and the desktop app's window (plus any dashboard `WOOFX3_UI_URL` names), so the hosted web app cannot reach a desktop engine. Those defaults are not a list the operator named: they let a browser reach the engine, but only the loopback rule above lets one pair. Pairing never admits more than the request guard does.
 
 A paired client stays bound to its origin. `authenticate` refuses its credentials from any other origin, or from a request with no `Origin`, with the same refusal as wrong credentials. That stops the secret being used from another web page, because a browser always sends the page's real `Origin`. It is not a defence against a stolen secret: any client outside a browser, on any machine that can reach the engine, can send the paired origin. Treat a paired secret like any other client secret, and delete the client if it is exposed.
 

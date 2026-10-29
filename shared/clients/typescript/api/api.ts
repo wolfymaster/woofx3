@@ -1,6 +1,7 @@
 // Shared API Types for woofx3 UI and Backend
 
 import type { EngineCapabilities } from "./capabilities";
+import type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
 import type {
   ConfigBundle,
   ConfigExportOptions,
@@ -10,7 +11,23 @@ import type {
 } from "./config-bundle";
 import type { EngineEventSubscribeOptions, EngineEventSubscriber, EngineRequestAnswer } from "./engine-events";
 import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "./marketplace-catalog";
+import type {
+  DecidePairingRequest,
+  DecidePairingResponse,
+  ListPendingPairingsResponse,
+  LookupPairingRequest,
+  LookupPairingResponse,
+} from "./pairing";
+import type { PlatformGatewayResult, SendToPlatformsParams } from "./platform-gateway";
 import type { RegisterClientOptions } from "./rpc";
+import type {
+  EventLogPage,
+  EventLogQuery,
+  EventLogSelection,
+  EventLogSettings,
+  StreamEventSubscriber,
+} from "./stream-events";
+import type { TwitchDeviceLoginStartResult, TwitchDeviceLoginStateResult } from "./twitch-device-login";
 import type {
   TwitchAddBlockedTermParams,
   TwitchBanUserParams,
@@ -31,31 +48,16 @@ import type {
   TwitchUpdateChatSettingsParams,
 } from "./twitch-helix";
 import type {
-  DecidePairingRequest,
-  DecidePairingResponse,
-  ListPendingPairingsResponse,
-  LookupPairingRequest,
-  LookupPairingResponse,
-} from "./pairing";
-import type { TwitchDeviceLoginStartResult, TwitchDeviceLoginStateResult } from "./twitch-device-login";
-import type {
-  EventLogPage,
-  EventLogQuery,
-  EventLogSelection,
-  EventLogSettings,
-  StreamEventSubscriber,
-} from "./stream-events";
-import type {
   ActionDefinition,
   AlertSnapshot,
   ModuleResourceUsage,
   ResourceInstanceDefinition,
+  SceneSnapshot,
   TriggerDefinition,
   WidgetBehaviorKinds,
   WorkflowRunSnapshot,
   WorkflowRunStepSnapshot,
 } from "./webhooks";
-import type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
 import type { TaskDefinition, WorkflowDefinition } from "./workflow-definition";
 
 export type { ActionStep, CommandSnapshot, CommandVisibility } from "./command";
@@ -83,6 +85,8 @@ export interface Module {
    */
   marketplaceListingId?: string;
   marketplaceEdition?: number;
+  /** The custom module resource the module was installed from; see `EngineModuleSummary.uploadResourceId`. */
+  uploadResourceId?: string;
 }
 
 export interface ModuleSetting {
@@ -309,6 +313,22 @@ export interface WorkflowRunDetail {
 /** Most alerts `getWorkflowRun` returns for one run; a run fires a handful at most. */
 export const WORKFLOW_RUN_ALERT_LIMIT = 50;
 
+/** Arguments to `listWorkflowRunSnapshots`. Every field is optional. */
+export interface WorkflowRunSnapshotsQuery {
+  /** Only this workflow's runs. A workflow with no recorded runs lists none. */
+  workflowId?: string;
+  /** At most this many runs, 1 to WORKFLOW_RUN_SNAPSHOT_MAX_LIMIT. Default WORKFLOW_RUN_SNAPSHOT_DEFAULT_LIMIT. */
+  limit?: number;
+}
+
+export const WORKFLOW_RUN_SNAPSHOT_DEFAULT_LIMIT = 50;
+/**
+ * Most runs one `listWorkflowRunSnapshots` call returns. db-proxy reads every
+ * listed run's steps along with it, so the bound keeps one history read from
+ * costing a query per run without end.
+ */
+export const WORKFLOW_RUN_SNAPSHOT_MAX_LIMIT = 200;
+
 /**
  * Every trigger and action a workflow can use, and the module functions an
  * action can call, as `getWorkflowCatalog` returns them in one read. Triggers
@@ -382,7 +402,7 @@ export interface TwitchLinkedAccount {
   userId: string;
   /**
    * The account's login, display name and avatar (an `https:` URL), from
-   * Helix. Null when the engine could not ask Twitch (the twitch service is
+   * Helix. Null when the engine could not ask Twitch (the engine's Twitch connection is
    * not running, or Twitch refused); the link itself is still there.
    */
   login: string | null;
@@ -657,8 +677,9 @@ export interface ListPermissionsQuery {
  *
  * `url` and `thumbnailUrl` are derived rather than stored: the engine
  * keeps repository keys, and the public URL they map to depends on where
- * the overlay gateway is reachable. Both are null for a folder and for a
- * resource whose bytes have not landed yet.
+ * the overlay gateway is reachable. Both are null for a folder, for a
+ * resource whose bytes have not landed yet, and for a module archive, which
+ * is never served publicly.
  *
  * A thumbnail never appears as a resource of its own -- it is a field on
  * the resource it was derived from.
@@ -669,7 +690,7 @@ export interface Resource {
   /** Containing folder, or null at the root of the tree. */
   parentId: string | null;
   isFolder: boolean;
-  /** "image" | "video" | "audio" | "other" | "folder". */
+  /** "image" | "video" | "audio" | "other" | "folder" | "custom_module". */
   kind: string;
   /** Empty for folders. */
   contentType: string;
@@ -685,6 +706,7 @@ export interface Resource {
 export interface ResourcesQuery {
   /** Unset lists the root; set lists that folder's direct children. */
   folderId?: string | null;
+  /** Unset lists every kind except "custom_module"; module archives are listed only when asked for. */
   kind?: string;
   search?: string;
   page?: number;
@@ -728,6 +750,14 @@ export interface RequestUploadUrlInput {
    */
   size: number;
   ttlSeconds?: number;
+  /**
+   * Declares the upload a module archive for the engine to install. It must
+   * be `application/zip` and sit at the root. A module archive is counted in
+   * `getResourceUsage` like any upload, but has no public URL and is left out
+   * of a listing that does not ask for kind "custom_module". Every other kind
+   * follows from `contentType`.
+   */
+  kind?: "custom_module";
 }
 
 /** What the engine's user assets hold: every file resource, pending or ready. */
@@ -847,7 +877,7 @@ export interface RecentActivity {
 
 // ==================== OBS ====================
 
-/** The scene manager's connection to OBS. Mirrors ObsConnectionState in sceneManager/src/obs/connection.ts. */
+/** The connectors host's connection to OBS. Mirrors ObsConnectionState in connectors/src/adapters/obs/connection.ts. */
 export type ObsConnectionState = "connecting" | "connected" | "retrying" | "stopped";
 
 /** What the dashboard collected when the streamer approved a module's OAuth integration. */
@@ -1281,6 +1311,13 @@ export interface EngineModuleSummary {
   /** See `Module.marketplaceListingId`. */
   marketplaceListingId?: string;
   marketplaceEdition?: number;
+  /**
+   * The custom module resource the module was installed from with
+   * `installModuleFromResource`. Absent for any other install. At most one of
+   * this and `marketplaceListingId` is set. The resource cannot be deleted
+   * while the module is installed.
+   */
+  uploadResourceId?: string;
 }
 
 // ==================== Stream / workflow response types ====================
@@ -1825,7 +1862,11 @@ export interface Woofx3EngineApi {
   /**
    * Install a module by URL. The engine fetches the archive server-side from
    * `downloadUrl` (a short-lived presigned URL produced by an upstream
-   * marketplace), then hands the bytes to barkloader. Install is asynchronous;
+   * marketplace), then hands the bytes to barkloader. The URL must be on one
+   * of the engine's marketplace download hosts; it is fetched without
+   * following redirects and capped in size, and refused when it does not
+   * match `ctx.sha256` (checked when given). With the marketplace turned off
+   * the call is refused. Install is asynchronous;
    * `module.installed` or `module.install_failed` is dispatched via webhook
    * once barkloader finishes, correlated by `moduleKey`.
    *
@@ -1845,6 +1886,8 @@ export interface Woofx3EngineApi {
       version: string;
       source: "marketplace";
       marketplaceModuleId: string;
+      /** Lowercase hex SHA-256 of the archive, as the marketplace's download answer gives it. */
+      sha256?: string;
     }
   ): Promise<ModuleInstallZipResponse>;
 
@@ -1860,6 +1903,23 @@ export interface Woofx3EngineApi {
    * Capability `modules.marketplaceInstall`.
    */
   installMarketplaceListing(listingId: string, request: MarketplaceInstallRequest): Promise<MarketplaceInstallResult>;
+
+  /**
+   * Install a module from a custom module archive the caller uploaded with
+   * `requestUploadUrl` (kind `custom_module`) and completed. The engine reads
+   * the archive from its own storage, computes its key
+   * (`{manifest id}:{manifest version}:{first 7 hex of sha256}`), refuses it
+   * when its manifest declares permissions or `local[]` endpoints outside the
+   * approval, and hands it to barkloader. Resolves with the key at once; the
+   * outcome arrives as `module.installed` or `module.install_failed` keyed by
+   * it, with `source: "upload"` and `uploadResourceId`. The resource cannot be
+   * deleted while the module is installed. `clientId` is injected by the
+   * session. Capability `modules.resourceInstall`.
+   */
+  installModuleFromResource(
+    resourceId: string,
+    request: { approvedPermissions: string[]; approvedLocalEndpoints: string[] }
+  ): Promise<{ moduleKey: string }>;
 
   /**
    * A module or theme listing's current build, read from its verified
@@ -2082,6 +2142,14 @@ export interface Woofx3EngineApi {
    */
   getWorkflowRun(executionId: string): Promise<WorkflowRunDetail | null>;
   /**
+   * Recorded runs as whole `WorkflowRunSnapshot`s, the shape the
+   * `workflow.run.recorded` and `workflow.run.updated` callbacks carry, newest
+   * first by start time. Rejects a `limit` out of range and a failed read
+   * rather than answering an empty list. Requires the `workflow.runSnapshots`
+   * capability.
+   */
+  listWorkflowRunSnapshots(query: WorkflowRunSnapshotsQuery): Promise<WorkflowRunSnapshot[]>;
+  /**
    * Health of every enabled workflow the engine has loaded. Authoritative:
    * a client replaces its whole view with the answer, and any workflow not
    * listed with `"error"` is ok. Answered live by the workflow service, so it
@@ -2287,6 +2355,18 @@ export interface Woofx3EngineApi {
   // SceneSnapshot for reactive UI mirrors to consume.
   getScenes(query?: ScenesQuery): Promise<PaginatedScenes>;
   getScene(id: string): Promise<Scene | null>;
+  /**
+   * Every scene as its whole stored record (the `SceneSnapshot` the
+   * `scene.*` webhooks carry), ordered by name, in one read. Alert
+   * compositions are never listed; `listAlertCompositions` reads those.
+   * Requires the `scenes.snapshots` capability.
+   */
+  listSceneSnapshots(): Promise<{ scenes: SceneSnapshot[] }>;
+  /**
+   * One scene's whole stored record, or null when the id is unknown or names
+   * an alert composition. Requires the `scenes.snapshots` capability.
+   */
+  getSceneSnapshot(id: string): Promise<SceneSnapshot | null>;
 
   /**
    * Get all available widgets registered in the engine.
@@ -2546,7 +2626,7 @@ export interface Woofx3EngineApi {
   getAlertQueue(): Promise<AlertQueueState>;
 
   /**
-   * How the scene manager's connection to OBS is doing, for the OBS module's
+   * How the connectors host's connection to OBS is doing, for the OBS module's
    * page. Requires the `obs.status` capability.
    */
   getObsStatus(): Promise<ObsStatus>;
@@ -2589,6 +2669,19 @@ export interface Woofx3EngineApi {
    * `modules.localEndpoints` capability.
    */
   setRelayConfig(config: RelayConfig | null): Promise<{ ok: true }>;
+
+  /**
+   * Send one chat action (`chat.send`, `chat.announce`, `chat.pin`) to the
+   * named platforms through the platform gateway. Never rejects for a send
+   * that did not happen: `ok: false` carries `unavailable` or `invalid` (not
+   * sent), or `timeout` or `failed` (may have been sent). With `ok: true`,
+   * `reply.results` holds each platform's own outcome. Repeating an
+   * `idempotencyKey` within the gateway's idempotency window replays a reply
+   * that reached a platform (or joins a send still running); a reply where
+   * nothing reached a platform is not held, so a retry sends again.
+   * Requires the `platform.gateway` capability.
+   */
+  sendToPlatforms(params: SendToPlatformsParams): Promise<PlatformGatewayResult>;
 
   // Overlay Tokens
   //

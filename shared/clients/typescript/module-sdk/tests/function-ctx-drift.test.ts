@@ -106,7 +106,7 @@ const KNOWN_EXTENSIONS: Record<string, string[]> = {
     "listSources",
     "listInputs",
   ],
-  chat: ["sendMessage"],
+  local: ["send", "request"],
   oauth: ["request"],
 };
 
@@ -239,6 +239,21 @@ describe("function ctx drift guard", () => {
         throw new Error(`function-ctx.lua is missing obs.${m}`);
       }
     }
+  });
+
+  it("ctx.local declares exactly the functions the local extension binds", () => {
+    const local = readRust("barkloader/lib_sandbox/src/extensions/local.rs");
+    const table = local.slice(local.indexOf("const FUNCTIONS"), local.indexOf("];", local.indexOf("const FUNCTIONS")));
+    const bound = [...table.matchAll(/\(\s*"([a-zA-Z]+)",\s*Operation::/g)].map((m) => m[1]);
+    expect(bound).toEqual(KNOWN_EXTENSIONS.local!);
+    for (const m of bound) {
+      if (!lua.includes(`@field ${m} fun(`)) {
+        throw new Error(`function-ctx.lua is missing local.${m}`);
+      }
+    }
+    // Optional on both sides, so module code on an older engine sees it absent.
+    expect(dts).toContain("local?: CtxLocalExtension;");
+    expect(lua).toContain("---@field local? CtxLocalExtension");
   });
 
   it("Rust runtime adapters share the same registered namespaces", () => {
