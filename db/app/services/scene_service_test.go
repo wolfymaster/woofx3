@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
@@ -467,5 +468,53 @@ func TestSceneService_CreateSceneBackups_NeedsASceneAndABackup(t *testing.T) {
 	}
 	if _, err := svc.CreateSceneBackups(context.Background(), &client.CreateSceneBackupsRequest{SceneId: uuid.NewString()}); err == nil {
 		t.Error("a request with no backups was accepted")
+	}
+}
+
+// A scene reports when it was made and last written, and a write moves only
+// the second, so a reader can tell a newer copy of a scene from an older one.
+func TestSceneService_ReportsWhenASceneWasMadeAndLastWritten(t *testing.T) {
+	sceneSvc, _, _, db := newSceneSvc(t)
+	sceneID := seedScene(t, db, "main")
+	ctx := context.Background()
+	earlier := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	err := db.Model(&models.Scene{}).
+		Where("id = ?", sceneID).
+		UpdateColumns(map[string]any{"created_at": earlier, "updated_at": earlier}).Error
+	if err != nil {
+		t.Fatalf("backdate scene: %v", err)
+	}
+	get := func() *client.Scene {
+		t.Helper()
+		resp, err := sceneSvc.GetScene(ctx, &client.GetSceneRequest{Id: sceneID.String()})
+		if err != nil {
+			t.Fatalf("get scene: %v", err)
+		}
+		return resp.Scene
+	}
+
+	before := get()
+	if !before.CreatedAt.AsTime().Equal(earlier) || !before.UpdatedAt.AsTime().Equal(earlier) {
+		t.Fatalf("times not reported: created %v, updated %v", before.CreatedAt.AsTime(), before.UpdatedAt.AsTime())
+	}
+
+	if _, err := sceneSvc.UpdateScene(ctx, &client.UpdateSceneRequest{Id: sceneID.String(), Name: "renamed"}); err != nil {
+		t.Fatalf("update scene: %v", err)
+	}
+	after := get()
+	if !after.CreatedAt.AsTime().Equal(earlier) {
+		t.Fatalf("a write moved the creation time to %v", after.CreatedAt.AsTime())
+	}
+	if !after.UpdatedAt.AsTime().After(earlier) {
+		t.Fatalf("a write left the update time at %v", after.UpdatedAt.AsTime())
+	}
+}
+
+func TestBuildSceneChangeData_CarriesTheScenesTimes(t *testing.T) {
+	created := time.Date(2026, 1, 2, 3, 4, 5, 600, time.UTC)
+	updated := created.Add(time.Hour)
+	data := buildSceneChangeData(&models.Scene{ID: uuid.New(), CreatedAt: created, UpdatedAt: updated})
+	if data["created_at"] != "2026-01-02T03:04:05.0000006Z" || data["updated_at"] != "2026-01-02T04:04:05.0000006Z" {
+		t.Fatalf("times not carried: %v, %v", data["created_at"], data["updated_at"])
 	}
 }
