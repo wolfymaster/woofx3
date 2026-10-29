@@ -5,6 +5,7 @@ use actix_web::{HttpResponse, HttpResponseBuilder, get};
 use lib_repository::{ReadEndpoint, Repository, RepositoryImpl};
 use tracing::warn;
 
+use crate::routes::resources::CUSTOM_MODULE_PREFIX;
 use crate::types::SharedRepository;
 
 /// Sized for an overlay holding one URL for a whole stream, not for
@@ -19,7 +20,8 @@ const REDIRECT_CACHE_CONTROL: &str = "public, max-age=3600";
 /// `modules/` holds files unpacked from an installed module bundle;
 /// `user/` holds generic user uploads written through
 /// `routes::resources` (`user/{resource_id}/...`),
-/// including the thumbnails derived from them.
+/// including the thumbnails derived from them, except the module archives
+/// under `CUSTOM_MODULE_PREFIX`, which are never served.
 const ALLOWED_TOP_LEVEL_PREFIXES: &[&str] = &["modules/", "user/"];
 
 /// Sent with every html, svg and xml asset: `sandbox` gives the document an
@@ -196,7 +198,27 @@ fn sanitize_asset_key(raw: &str) -> Option<String> {
     {
         return None;
     }
+    if is_custom_module_key(&key) {
+        return None;
+    }
     Some(key)
+}
+
+/// Whether a canonical key names something in the module archive directory.
+/// Compared the way a Windows filesystem resolves a name -- ignoring case and
+/// trailing dots and spaces -- so a local store there cannot be reached
+/// through a spelling of the directory that differs only in those.
+fn is_custom_module_key(key: &str) -> bool {
+    let mut segments = key.split('/');
+    let (Some(top), Some(directory)) = (segments.next(), segments.next()) else {
+        return false;
+    };
+    let archive_top = CUSTOM_MODULE_PREFIX.split('/').next().unwrap_or_default();
+    let archive_directory = CUSTOM_MODULE_PREFIX.split('/').nth(1).unwrap_or_default();
+    top == archive_top
+        && directory
+            .trim_end_matches(['.', ' '])
+            .eq_ignore_ascii_case(archive_directory)
 }
 
 /// Strict percent-decoding: `%` must be followed by exactly two hex
@@ -301,6 +323,26 @@ mod tests {
         // Traversal is rejected under user/ exactly as under modules/.
         assert_eq!(sanitize_asset_key("user/../../etc/passwd"), None);
         assert_eq!(sanitize_asset_key("user/%2e%2e/secret"), None);
+    }
+
+    #[test]
+    fn sanitize_refuses_custom_modules() {
+        for key in [
+            "user/custom-modules/res-1/shoutout.zip",
+            "user//custom-modules/res-1/shoutout.zip",
+            "user/custom-modules%2Fres-1/shoutout.zip",
+            "user/%63ustom-modules/res-1/shoutout.zip",
+            "user/CUSTOM-MODULES/res-1/shoutout.zip",
+            "user/custom-modules./res-1/shoutout.zip",
+            "user/custom-modules /res-1/shoutout.zip",
+        ] {
+            assert_eq!(sanitize_asset_key(key), None, "{key:?} should be refused");
+        }
+        // Only the directory itself is held back.
+        assert_eq!(
+            sanitize_asset_key("user/custom-modules-of-mine/photo.png").as_deref(),
+            Some("user/custom-modules-of-mine/photo.png")
+        );
     }
 
     #[test]
