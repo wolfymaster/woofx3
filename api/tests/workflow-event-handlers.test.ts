@@ -184,6 +184,32 @@ describe("parseWorkflowUpdated", () => {
   });
 });
 
+describe("workflow times", () => {
+  test("carries the times the workflow was made and last written", () => {
+    const { event } = parseWorkflowUpdated({
+      data: {
+        id: "wf-times",
+        name: "timed",
+        steps_json: sampleSteps,
+        trigger_json: sampleTrigger,
+        created_at: "2026-01-02T03:04:05.0000006Z",
+        updated_at: "2026-01-02T04:04:05.0000006Z",
+      },
+    });
+    expect(event?.workflow.createdAt).toBe("2026-01-02T03:04:05.0000006Z");
+    expect(event?.workflow.updatedAt).toBe("2026-01-02T04:04:05.0000006Z");
+  });
+
+  test("stamps a row that carries no times with when it arrived", () => {
+    const before = Date.now();
+    const { event } = parseWorkflowUpdated({
+      data: { id: "wf-untimed", name: "untimed", steps_json: sampleSteps, trigger_json: sampleTrigger },
+    });
+    expect(Date.parse(event?.workflow.updatedAt ?? "")).toBeGreaterThanOrEqual(before);
+    expect(event?.workflow.createdAt).toBe(event?.workflow.updatedAt);
+  });
+});
+
 describe("parseWorkflowDeleted", () => {
   test("reads lowercase id from delete payload", () => {
     const ce = {
