@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.49.0](https://github.com/wolfymaster/woofx3/compare/v0.48.0...v0.49.0) (2026-10-29)
+
+### Features
+
+* **api:** list whole workflow run snapshots ([77e09b3](https://github.com/wolfymaster/woofx3/commit/77e09b3950b6609ace39b3555637f64b868378e9))
+
+### Bug Fixes
+
+* **api:** pass a scene's times through its events ([317d89a](https://github.com/wolfymaster/woofx3/commit/317d89a4c8cd13474fdd3c64da8b88126925545c))
+* **api:** pass a workflow's times through its events ([f3ababa](https://github.com/wolfymaster/woofx3/commit/f3ababac9bc3f8d9ca17ffcf147503dd8c4a156e))
+* **db:** declare the scenes table's timestamps DATETIME on SQLite ([b7b694d](https://github.com/wolfymaster/woofx3/commit/b7b694dadbb5ff6086956d0251d07ccea370fcd9))
+* **db:** declare the workflow_definitions table's timestamps DATETIME on SQLite ([add1878](https://github.com/wolfymaster/woofx3/commit/add1878d7476f18c83ad5c4b591bf8beb9f60b02))
+* **db:** filter workflow executions by workflow id, newest start first ([1deaa02](https://github.com/wolfymaster/woofx3/commit/1deaa02a0494660b98a600fc1f2f2d2dd6f1ed6e))
+* **db:** report when a scene was made and last written ([246af41](https://github.com/wolfymaster/woofx3/commit/246af4195e89a92e8a92785bbcc02f3cf37e6dbb))
+* **db:** report when a workflow was made and last written ([822b8b2](https://github.com/wolfymaster/woofx3/commit/822b8b2d24873ebd6c5d6446ec2af7033020bb42))
+
 ## [0.48.0](https://github.com/wolfymaster/woofx3/compare/v0.47.0...v0.48.0) (2026-10-28)
 
 ### Features
