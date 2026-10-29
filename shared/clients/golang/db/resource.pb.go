@@ -39,9 +39,10 @@ type Resource struct {
 	ParentId *string `protobuf:"bytes,3,opt,name=parent_id,json=parentId,proto3,oneof" json:"parent_id,omitempty"`
 	IsFolder bool    `protobuf:"varint,4,opt,name=is_folder,json=isFolder,proto3" json:"is_folder,omitempty"`
 	Name     string  `protobuf:"bytes,5,opt,name=name,proto3" json:"name,omitempty"`
-	// "image" | "video" | "audio" | "other" | "folder". Derived from
-	// `content_type` at create time by the api gateway, stored so
-	// listing can filter without re-parsing MIME types.
+	// "image" | "video" | "audio" | "other" | "folder" | "custom_module". Derived
+	// from `content_type` at create time by the api gateway, stored so
+	// listing can filter without re-parsing MIME types. "custom_module" is never
+	// derived: the uploader declares a module archive as one.
 	Kind string `protobuf:"bytes,6,opt,name=kind,proto3" json:"kind,omitempty"`
 	// Empty for folders.
 	ContentType   string `protobuf:"bytes,7,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
@@ -474,7 +475,8 @@ type ListResourcesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Unset lists the root. Set lists that folder's direct children.
 	ParentId *string `protobuf:"bytes,2,opt,name=parent_id,json=parentId,proto3,oneof" json:"parent_id,omitempty"`
-	// Optional filters. Empty means "no filter".
+	// Optional filters. An empty `kind` lists every kind except "custom_module":
+	// module archives are listed only when asked for by kind.
 	Kind string `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
 	// Case-insensitive substring match against `name`.
 	Search string `protobuf:"bytes,4,opt,name=search,proto3" json:"search,omitempty"`
