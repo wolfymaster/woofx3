@@ -25,6 +25,13 @@ the required `WOOFX3_SCENE_MANAGER_URL` (see
   own directory, so a derived thumbnail (`.../{resourceId}/thumbnail.png`)
   sits beside the upload it came from and is removed with it. These keys
   carry no version: replacing an upload means creating a new resource.
+- **`user/custom-modules/`** holds module archives uploaded for the engine
+  to install (resources of kind `module`, declared with
+  `requestUploadUrl({ kind: "custom_module", ... })`). They are stored, counted and
+  purged like any other upload, but are never served: barkloader refuses
+  every key under this directory as it refuses an unknown prefix, and the
+  api reports no `url` for them. A media upload cannot take
+  `custom-modules` as its resource id.
 
 The api builds resource URLs, the workflow engine builds
 `${woofx3_asset_url:...}` token values (see

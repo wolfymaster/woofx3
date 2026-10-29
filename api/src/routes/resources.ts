@@ -67,8 +67,29 @@ interface ProcessingCallbackBody {
 const UTILITY_THUMBNAIL = "thumbnail";
 
 /**
+ * A module archive uploaded for the engine to install. Unlike every other
+ * kind it is declared by the uploader, never derived from the content type,
+ * and it is private: it has no public URL and the asset route refuses its
+ * key, but it is stored and counted like any other upload.
+ */
+export const RESOURCE_KIND_CUSTOM_MODULE = "custom_module";
+
+/** The only content type a module archive is accepted as. */
+const CUSTOM_MODULE_CONTENT_TYPE = "application/zip";
+
+/**
+ * Where barkloader stores an upload. Must match `UploadArea` and
+ * `CUSTOM_MODULE_PREFIX` in barkloader/app/src/routes/resources.rs.
+ */
+const UPLOAD_AREAS = {
+  media: { area: "media", keyPrefix: (resourceId: string) => `user/${resourceId}/` },
+  customModule: { area: "custom_module", keyPrefix: (resourceId: string) => `user/custom-modules/${resourceId}/` },
+} as const;
+
+/**
  * Map a MIME type onto the coarse `kind` the UI groups and filters by.
- * Stored at create time so listing never has to re-parse MIME types.
+ * Stored at create time so listing never has to re-parse MIME types. A
+ * module archive is the exception: see `RESOURCE_KIND_CUSTOM_MODULE`.
  */
 function kindForContentType(contentType: string): string {
   const type = contentType.toLowerCase();
@@ -105,8 +126,9 @@ export function resourceToItem(sceneManagerUrl: string, row: resource.Resource):
   const thumbnailKey = row.thumbnailRepositoryKey ?? "";
   const isFolder = row.isFolder ?? false;
   // A pending row has no bytes at its key yet, so publishing a URL for
-  // it would hand out a link that 404s until the upload lands.
-  const servable = !isFolder && row.status === "ready";
+  // it would hand out a link that 404s until the upload lands. A module
+  // archive is never served at all.
+  const servable = !isFolder && row.status === "ready" && row.kind !== RESOURCE_KIND_CUSTOM_MODULE;
   return {
     id: row.id ?? "",
     name: row.name ?? "",
@@ -142,6 +164,10 @@ export const resourcesRoutes = routeModule({
    * The grant admits exactly `size` bytes and the row records that size,
    * so the row accounts for what the grant can store before anything is
    * sent.
+   *
+   * `kind: "custom_module"` declares a module archive. It must be a zip and sits at
+   * the root: a folder delete takes its whole subtree, and an archive the
+   * engine installed from has to stay put while its module is installed.
    */
   async requestUploadUrl(input: {
     name: string;
@@ -149,6 +175,7 @@ export const resourcesRoutes = routeModule({
     parentId?: string | null;
     size: number;
     ttlSeconds?: number;
+    kind?: typeof RESOURCE_KIND_CUSTOM_MODULE;
   }): Promise<UploadGrant> {
     if (input.name.length === 0) {
       throw new Error("name is required");
@@ -157,6 +184,17 @@ export const resourcesRoutes = routeModule({
       throw new Error("contentType is required");
     }
     requireUploadSize(input.size);
+    if (input.kind !== undefined && input.kind !== RESOURCE_KIND_CUSTOM_MODULE) {
+      throw new Error(`kind may only be "${RESOURCE_KIND_CUSTOM_MODULE}"; other kinds follow from contentType`);
+    }
+    const isCustomModule = input.kind === RESOURCE_KIND_CUSTOM_MODULE;
+    if (isCustomModule && input.contentType.toLowerCase() !== CUSTOM_MODULE_CONTENT_TYPE) {
+      throw new Error(`A module archive must be uploaded as ${CUSTOM_MODULE_CONTENT_TYPE}, not ${input.contentType}`);
+    }
+    if (isCustomModule && input.parentId) {
+      throw new Error("A module archive is stored at the root, not in a folder");
+    }
+    const uploadArea = isCustomModule ? UPLOAD_AREAS.customModule : UPLOAD_AREAS.media;
 
     const resourceId = crypto.randomUUID();
     const response = await this.barkloaderRequest("/assets/upload-url", {
@@ -168,6 +206,7 @@ export const resourcesRoutes = routeModule({
         content_type: input.contentType,
         content_length: input.size,
         ttl_seconds: input.ttlSeconds,
+        area: uploadArea.area,
       }),
     });
     const grant = (await response.json()) as {
@@ -181,7 +220,7 @@ export const resourcesRoutes = routeModule({
     // deleteResource purges storage by the directory holding the stored key,
     // so a key outside this resource's own directory would take other
     // resources' bytes with it on delete.
-    const expectedPrefix = `user/${resourceId}/`;
+    const expectedPrefix = uploadArea.keyPrefix(resourceId);
     if (typeof grant.repositoryKey !== "string" || !grant.repositoryKey.startsWith(expectedPrefix)) {
       throw new Error(`Upload grant repository key is not under ${expectedPrefix}: ${String(grant.repositoryKey)}`);
     }
@@ -190,7 +229,7 @@ export const resourcesRoutes = routeModule({
       id: resourceId,
       parentId: input.parentId ?? undefined,
       name: input.name,
-      kind: kindForContentType(input.contentType),
+      kind: isCustomModule ? RESOURCE_KIND_CUSTOM_MODULE : kindForContentType(input.contentType),
       contentType: input.contentType,
       repositoryKey: grant.repositoryKey,
       size: BigInt(input.size),
@@ -304,7 +343,8 @@ export const resourcesRoutes = routeModule({
    * List one folder's direct children, or the root when no folder is
    * given. Thumbnails never appear here: a thumbnail is a column on the
    * row it belongs to, not a row of its own, so there is nothing to
-   * filter out.
+   * filter out. Module archives appear only when `kind` asks for them,
+   * since a media library and an asset picker have no use for one.
    */
   async listResources(query?: {
     folderId?: string | null;
@@ -329,8 +369,17 @@ export const resourcesRoutes = routeModule({
     };
   },
 
-  /** Rename, or move by supplying a new parent. Null moves to the root. */
+  /**
+   * Rename, or move by supplying a new parent. Null moves to the root. A
+   * module archive stays at the root (see `requestUploadUrl`).
+   */
   async updateResource(id: string, changes: { name?: string; parentId?: string | null }): Promise<ResourceItem> {
+    if (changes.parentId) {
+      const existing = await this.db.getResource({ id });
+      if (existing.kind === RESOURCE_KIND_CUSTOM_MODULE) {
+        throw new Error("A module archive is stored at the root, not in a folder");
+      }
+    }
     const request: resource.UpdateResourceRequest = {
       id,
       name: changes.name,
