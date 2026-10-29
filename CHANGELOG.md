@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.50.0](https://github.com/wolfymaster/woofx3/compare/v0.49.0...v0.50.0) (2026-10-29)
+
+### Features
+
+* **api:** install a module from a stored custom module archive ([d058ca7](https://github.com/wolfymaster/woofx3/commit/d058ca709b684c02ea5242fb4aeb9fb5027d4d07))
+* **api:** keep custom module archives private and out of the library ([43ed309](https://github.com/wolfymaster/woofx3/commit/43ed309a7ad1b00fae9c281e51a6ef13aaade5e9))
+* **barkloader:** keep custom modules in a directory assets never serve ([444d426](https://github.com/wolfymaster/woofx3/commit/444d426d91721459e91c4b02b764535316501faf))
+* **barkloader:** read back stored custom modules and record upload origin ([7fbb307](https://github.com/wolfymaster/woofx3/commit/7fbb307ade721ec69bf876961bd3f8fced201874))
+* **db:** admit the custom_module resource kind and keep it out of listings ([c450037](https://github.com/wolfymaster/woofx3/commit/c450037fd02972d6a6cd27efdb8b784df0b05488))
+* **db:** record the uploaded archive a module was installed from ([280ac4b](https://github.com/wolfymaster/woofx3/commit/280ac4b4347e9a041f25dad83679a8e6110a2278))
+
 ## [0.49.0](https://github.com/wolfymaster/woofx3/compare/v0.48.0...v0.49.0) (2026-10-29)
 
 ### Features
