@@ -37,6 +37,9 @@ pub struct FileMetadata {
     /// uploader sent them. Read, not validated: see `marketplace_origin`.
     pub marketplace_listing_id: Option<String>,
     pub marketplace_edition: Option<String>,
+    /// The stored resource the archive was read from, as the uploader sent
+    /// it. Read, not validated: see `install_origin`.
+    pub upload_resource_id: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -202,6 +205,7 @@ impl FileService {
                 meta.module_key = fields.module_key;
                 meta.marketplace_listing_id = fields.marketplace_listing_id;
                 meta.marketplace_edition = fields.marketplace_edition;
+                meta.upload_resource_id = fields.upload_resource_id;
                 Ok(meta)
             }
             Err(err) => {
@@ -260,7 +264,8 @@ impl FileService {
                 | "client_id"
                 | "module_key"
                 | "marketplace_listing_id"
-                | "marketplace_edition" => {
+                | "marketplace_edition"
+                | "upload_resource_id" => {
                     let value = read_text_field(&mut field, &field_name, &mut extras_left).await?;
                     match field_name.as_str() {
                         "callback_url" => callback_url = Some(value),
@@ -268,6 +273,7 @@ impl FileService {
                         "module_key" => fields.module_key = Some(value),
                         "marketplace_listing_id" => fields.marketplace_listing_id = Some(value),
                         "marketplace_edition" => fields.marketplace_edition = Some(value),
+                        "upload_resource_id" => fields.upload_resource_id = Some(value),
                         _ => {}
                     }
                 }
@@ -342,6 +348,7 @@ impl FileService {
                         module_key: metadata.module_key.clone(),
                         marketplace_listing_id: metadata.marketplace_listing_id.clone(),
                         marketplace_edition: metadata.marketplace_edition.clone(),
+                        upload_resource_id: metadata.upload_resource_id.clone(),
                     });
                 }
             }
@@ -424,6 +431,7 @@ impl FileService {
             module_key: None,
             marketplace_listing_id: None,
             marketplace_edition: None,
+            upload_resource_id: None,
         })
     }
 
@@ -471,6 +479,7 @@ struct TextFields {
     module_key: Option<String>,
     marketplace_listing_id: Option<String>,
     marketplace_edition: Option<String>,
+    upload_resource_id: Option<String>,
 }
 
 fn spend_extras(left: &mut u64, bytes: usize) -> Result<(), Error> {
@@ -929,6 +938,7 @@ mod tests {
             module_key: None,
             marketplace_listing_id: None,
             marketplace_edition: None,
+            upload_resource_id: None,
         };
 
         let files = service.process_uploaded_file(meta).await.unwrap();

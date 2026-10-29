@@ -656,6 +656,19 @@ pub struct MarketplaceOrigin {
     pub edition: i32,
 }
 
+/// Where an install's archive came from, recorded on the module row. An
+/// install has at most one origin; one with none (a direct upload, a
+/// bundled module) keeps whatever the row already records.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InstallOrigin {
+    Marketplace(MarketplaceOrigin),
+    /// A module archive the user stored as an engine resource, by the
+    /// resource's id.
+    Upload {
+        resource_id: String,
+    },
+}
+
 /// `created_by_type` of a module row a bundled module installed.
 pub const CREATED_BY_SYSTEM: &str = "SYSTEM";
 /// `created_by_type` of a module row a client installed.
@@ -686,8 +699,9 @@ pub fn provenance_from_created_by_type(created_by_type: &str) -> Result<InstallP
 /// can always trace a module back to the caller that installed it. A module
 /// is owned by the client that installed it, not by another module.
 ///
-/// `marketplace` is sent only when the install came from the marketplace;
-/// without it the db keeps whatever an existing row of the same name holds.
+/// `origin` is sent only when the install came from the marketplace or a
+/// stored upload; without it the db keeps whatever an existing row of the
+/// same name holds.
 #[allow(clippy::too_many_arguments)]
 pub async fn create_module(
     db_proxy_url: &str,
@@ -700,7 +714,7 @@ pub async fn create_module(
     module_key: &str,
     client_id: &str,
     provenance: InstallProvenance,
-    marketplace: Option<&MarketplaceOrigin>,
+    origin: Option<&InstallOrigin>,
 ) -> Result<String> {
     let url = format!("{}/twirp/module.ModuleService/CreateModule", db_proxy_url);
     // A bundled module has no installing client to attribute to, and the
@@ -721,9 +735,15 @@ pub async fn create_module(
         "created_by_ref": created_by_ref,
         "module_key": module_key,
     });
-    if let Some(origin) = marketplace {
-        body["marketplace_listing_id"] = serde_json::json!(origin.listing_id);
-        body["marketplace_edition"] = serde_json::json!(origin.edition);
+    match origin {
+        Some(InstallOrigin::Marketplace(listing)) => {
+            body["marketplace_listing_id"] = serde_json::json!(listing.listing_id);
+            body["marketplace_edition"] = serde_json::json!(listing.edition);
+        }
+        Some(InstallOrigin::Upload { resource_id }) => {
+            body["upload_resource_id"] = serde_json::json!(resource_id);
+        }
+        None => {}
     }
 
     let client = http_client()?;
