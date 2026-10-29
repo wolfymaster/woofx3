@@ -4,9 +4,16 @@
 use crate::db_proxy::{
     BackgroundTaskJson, ModuleRecord, fetch_module_by_name, list_background_tasks, list_modules,
 };
+use crate::local_endpoint::LocalProtocol;
+use crate::manifest_validate::{InstallProvenance, SYSTEM_MODULE_ID};
 use crate::module_manifest::{ManifestBackgroundTask, ManifestDeadline, ModuleManifest};
+use crate::reserved_subjects::declared_event_reservation;
+use async_trait::async_trait;
 use lib_repository::Repository;
 use lib_sandbox::models::function::Function;
+use lib_sandbox::protected_settings::{
+    LocalEndpointProtocol, ProtectedReason, ProtectedSettings, RegisteredLocalEndpoint,
+};
 use lib_sandbox::{ModuleMetadata, ModuleRegistry, ModuleState, RegisteredModule};
 use std::collections::{HashMap, HashSet};
 use tracing::{error, info, warn};
@@ -144,6 +151,43 @@ pub async fn hydrate_registry_from_db<R: Repository, S: ScheduleRegistrar>(
         loaded
     );
     Ok(())
+}
+
+/// Reloads one module into the sandbox registry. An install finishes through
+/// this rather than the registry itself, so the finishing sequence
+/// (`ModuleService::finish_install`) runs against a fake in tests.
+// async-trait marks each method it rewrites `#[must_use]`, and its boxed
+// future already is; clippy 1.99 flags that pairing in the generated code.
+#[allow(clippy::double_must_use)]
+#[async_trait]
+pub trait RegistryRefresher: Send + Sync {
+    async fn refresh_module(&self, module_name: &str) -> Result<(), String>;
+}
+
+/// The live sandbox registry, refreshed with `refresh_module_in_registry`.
+pub struct SandboxRegistryRefresher<'a, R, S> {
+    pub registry: &'a ModuleRegistry,
+    pub db_proxy_url: &'a str,
+    pub repository: &'a R,
+    pub scheduler: &'a S,
+}
+
+#[async_trait]
+impl<R, S> RegistryRefresher for SandboxRegistryRefresher<'_, R, S>
+where
+    R: Repository + Sync,
+    S: ScheduleRegistrar,
+{
+    async fn refresh_module(&self, module_name: &str) -> Result<(), String> {
+        refresh_module_in_registry(
+            self.registry,
+            self.db_proxy_url,
+            module_name,
+            self.repository,
+            self.scheduler,
+        )
+        .await
+    }
 }
 
 /// Reload one module into the registry after install, register, or rollback.
@@ -344,7 +388,9 @@ async fn build_registered_module<R: Repository>(
         state: registry_state_from_db(&module.state),
         event_types: eventbus_event_types(module),
         permissions: declared_permissions(module),
-        url_settings: url_setting_ids(module),
+        protected_settings: protected_settings(module),
+        local_endpoints: local_endpoints(module),
+        resource_link_settings: resource_link_setting_ids(module),
         oauth: stored_manifest(module)
             .map(|manifest| manifest.oauth)
             .unwrap_or_default(),
@@ -380,14 +426,36 @@ fn function_actions(module: &ModuleRecord) -> HashMap<String, String> {
 /// The events of the module's eventbus triggers, read from its stored
 /// manifest. A manifest that is missing or unreadable yields none, so the
 /// module's functions can publish nothing rather than anything.
+///
+/// The stored manifest is held to the current reserved-subjects contract, not
+/// the one in force when it was installed: an event it declares that the
+/// contract now reserves is left out, so a module installed before a subject
+/// was reserved cannot publish it. Only the bundled system module, the one
+/// manifest whose id is `SYSTEM_MODULE_ID` (uploads cannot claim it), is held
+/// to the system rules.
 fn eventbus_event_types(module: &ModuleRecord) -> HashSet<String> {
     let Some(manifest) = stored_manifest(module) else {
         return HashSet::new();
+    };
+    let provenance = if manifest.id == SYSTEM_MODULE_ID {
+        InstallProvenance::System
+    } else {
+        InstallProvenance::User
     };
     manifest
         .triggers
         .into_iter()
         .filter(|trigger| trigger.trigger_type == "eventbus" && !trigger.event.is_empty())
+        .filter(|trigger| {
+            let reservation = declared_event_reservation(&trigger.event, &manifest.id, provenance);
+            if let Some(prefix) = reservation {
+                warn!(
+                    "Module {} declares event {:?} under reserved subject {:?}; its functions may not publish it",
+                    module.name, trigger.event, prefix
+                );
+            }
+            reservation.is_none()
+        })
         .map(|trigger| trigger.event)
         .collect()
 }
@@ -400,15 +468,79 @@ fn declared_permissions(module: &ModuleRecord) -> HashSet<String> {
         .unwrap_or_default()
 }
 
-/// The ids of the module's `url` settings, whose values' origins its
-/// `ctx.http` may reach.
-fn url_setting_ids(module: &ModuleRecord) -> HashSet<String> {
+/// The settings the module's code may not write, read from its stored
+/// manifest: its `url` settings, whose values' origins its `ctx.http` may
+/// reach, and the host, port and password settings of its `local[]`
+/// endpoints, which decide where the engine connects. A manifest that is
+/// missing or unreadable declares neither, so there is nothing to protect.
+fn protected_settings(module: &ModuleRecord) -> ProtectedSettings {
+    stored_manifest(module)
+        .map(|manifest| manifest_protected_settings(&manifest))
+        .unwrap_or_default()
+}
+
+fn manifest_protected_settings(manifest: &ModuleManifest) -> ProtectedSettings {
+    let mut protected: ProtectedSettings = manifest
+        .settings
+        .iter()
+        .filter(|setting| setting.setting_type == crate::module_manifest::URL_SETTING_TYPE)
+        .map(|setting| (setting.id.clone(), ProtectedReason::Url))
+        .collect();
+    for endpoint in &manifest.local {
+        let address = ProtectedReason::LocalEndpointAddress {
+            endpoint_id: endpoint.id.clone(),
+        };
+        protected.insert(endpoint.host_setting.clone(), address.clone());
+        protected.insert(endpoint.port_setting.clone(), address);
+        if let Some(password) = &endpoint.password_setting {
+            protected.insert(
+                password.clone(),
+                ProtectedReason::LocalEndpointSecret {
+                    endpoint_id: endpoint.id.clone(),
+                },
+            );
+        }
+    }
+    protected
+}
+
+/// The module's `local[]` endpoints, read from its stored manifest; none for
+/// a manifest that is missing or unreadable.
+fn local_endpoints(module: &ModuleRecord) -> Vec<RegisteredLocalEndpoint> {
+    stored_manifest(module)
+        .map(|manifest| {
+            manifest
+                .local
+                .iter()
+                .map(|endpoint| RegisteredLocalEndpoint {
+                    id: endpoint.id.clone(),
+                    protocol: registered_protocol(endpoint.protocol),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn registered_protocol(protocol: LocalProtocol) -> LocalEndpointProtocol {
+    match protocol {
+        LocalProtocol::Websocket => LocalEndpointProtocol::Websocket,
+        LocalProtocol::Http => LocalEndpointProtocol::Http,
+    }
+}
+
+/// The ids of the module's `resource_ref` settings, whose values are the
+/// resource instances the streamer linked to it.
+fn resource_link_setting_ids(module: &ModuleRecord) -> HashSet<String> {
+    setting_ids_of_type(module, crate::module_manifest::RESOURCE_REF_SETTING_TYPE)
+}
+
+fn setting_ids_of_type(module: &ModuleRecord, setting_type: &str) -> HashSet<String> {
     stored_manifest(module)
         .map(|manifest| {
             manifest
                 .settings
                 .into_iter()
-                .filter(|setting| setting.setting_type == crate::module_manifest::URL_SETTING_TYPE)
+                .filter(|setting| setting.setting_type == setting_type)
                 .map(|setting| setting.id)
                 .collect()
         })
@@ -483,7 +615,11 @@ pub fn unregister_schedule<S: ScheduleRegistrar>(scheduler: &S, module_key: &str
 mod tests {
     use super::{
         BackgroundTaskJson, ModuleRecord, declared_permissions, eventbus_event_types,
-        function_actions, functions_failed_to_load, module_schedule,
+        function_actions, functions_failed_to_load, local_endpoints, module_schedule,
+        protected_settings, resource_link_setting_ids,
+    };
+    use lib_sandbox::protected_settings::{
+        LocalEndpointProtocol, ProtectedReason, RegisteredLocalEndpoint,
     };
 
     fn module_with_manifest(manifest_json: Option<&str>) -> ModuleRecord {
@@ -534,6 +670,33 @@ mod tests {
     }
 
     #[test]
+    fn a_stored_manifest_is_held_to_the_current_reserved_subjects() {
+        let manifest = r#"{ "id": "mymod", "name": "mymod", "triggers": [
+            { "id": "a", "name": "A", "type": "eventbus", "event": "command.created" },
+            { "id": "b", "name": "B", "type": "eventbus", "event": "session.started" },
+            { "id": "c", "name": "C", "type": "eventbus", "event": "module.other.x" },
+            { "id": "d", "name": "D", "type": "eventbus", "event": "module.mymod.x" },
+            { "id": "e", "name": "E", "type": "eventbus", "event": "counter.changed" }
+        ] }"#;
+        let events = eventbus_event_types(&module_with_manifest(Some(manifest)));
+        assert_eq!(
+            events,
+            ["module.mymod.x".to_string(), "counter.changed".to_string()]
+                .into_iter()
+                .collect()
+        );
+    }
+
+    #[test]
+    fn the_system_module_keeps_the_triggers_it_binds() {
+        let manifest = r#"{ "id": "woofx3", "name": "woofx3", "triggers": [
+            { "id": "a", "name": "A", "type": "eventbus", "event": "chat.command.sr" }
+        ] }"#;
+        let events = eventbus_event_types(&module_with_manifest(Some(manifest)));
+        assert!(events.contains("chat.command.sr"));
+    }
+
+    #[test]
     fn a_missing_or_unreadable_manifest_allows_no_events() {
         assert!(eventbus_event_types(&module_with_manifest(None)).is_empty());
         assert!(eventbus_event_types(&module_with_manifest(Some("not json"))).is_empty());
@@ -548,6 +711,69 @@ mod tests {
             ["twitch.moderation".to_string()].into_iter().collect()
         );
         assert!(declared_permissions(&module_with_manifest(None)).is_empty());
+    }
+
+    #[test]
+    fn link_and_url_settings_are_read_by_their_declared_type() {
+        let manifest = r#"{ "id": "woofx3", "name": "woofx3", "settings": [
+            { "id": "timer", "label": "Timer", "type": "resource_ref", "resourceKind": "woofx3:timer" },
+            { "id": "server", "label": "Server", "type": "url" },
+            { "id": "note", "label": "Note", "type": "text" }
+        ] }"#;
+        let module = module_with_manifest(Some(manifest));
+        assert_eq!(
+            resource_link_setting_ids(&module),
+            ["timer".to_string()].into_iter().collect()
+        );
+        assert_eq!(
+            protected_settings(&module),
+            [("server".to_string(), ProtectedReason::Url)].into()
+        );
+        assert!(resource_link_setting_ids(&module_with_manifest(None)).is_empty());
+    }
+
+    #[test]
+    fn test_protected_settings_cover_local_endpoint_settings() {
+        let manifest = r#"{ "id": "obs", "name": "obs",
+            "settings": [
+                { "id": "server", "label": "Server", "type": "url" },
+                { "id": "obs_host", "label": "Host", "type": "text" },
+                { "id": "obs_port", "label": "Port", "type": "number" },
+                { "id": "obs_password", "label": "Password", "type": "secret" },
+                { "id": "scene", "label": "Scene", "type": "text" }
+            ],
+            "local": [{ "id": "obs", "name": "OBS", "protocol": "websocket",
+                "hostSetting": "obs_host", "portSetting": "obs_port",
+                "passwordSetting": "obs_password" }]
+        }"#;
+        let module = module_with_manifest(Some(manifest));
+        let address = || ProtectedReason::LocalEndpointAddress {
+            endpoint_id: "obs".into(),
+        };
+        assert_eq!(
+            protected_settings(&module),
+            [
+                ("server".to_string(), ProtectedReason::Url),
+                ("obs_host".to_string(), address()),
+                ("obs_port".to_string(), address()),
+                (
+                    "obs_password".to_string(),
+                    ProtectedReason::LocalEndpointSecret {
+                        endpoint_id: "obs".into()
+                    }
+                ),
+            ]
+            .into()
+        );
+        assert_eq!(
+            local_endpoints(&module),
+            vec![RegisteredLocalEndpoint {
+                id: "obs".into(),
+                protocol: LocalEndpointProtocol::Websocket,
+            }]
+        );
+        assert!(protected_settings(&module_with_manifest(None)).is_empty());
+        assert!(local_endpoints(&module_with_manifest(Some("not json"))).is_empty());
     }
 
     fn task_row(manifest_id: &str) -> BackgroundTaskJson {

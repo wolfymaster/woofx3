@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
+import type { ApiGatewayContract } from "@woofx3/api/rpc";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { newHttpBatchRpcSession, newWebSocketRpcSession } from "capnweb";
-import type { ApiGatewayContract } from "@woofx3/api/rpc";
 import { Api } from "../src/api";
-import { ClientAuth } from "../src/auth";
+import { ClientAuth, DEFAULT_AUTH_CACHE_TTL_MS } from "../src/auth";
 import { ClientSessions } from "../src/client-sessions";
 import { ApiGateway } from "../src/gateway";
 import { createHttpServer } from "../src/http";
@@ -51,13 +51,14 @@ function startEngine(logger: SharedLogger) {
     nats: null,
     functions: null,
     barkloaderUrl: "http://b",
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger,
   });
   const gateway = new ApiGateway(
     api,
-    new ClientAuth(db as never, logger),
+    new ClientAuth(db as never, logger, { ttlMs: DEFAULT_AUTH_CACHE_TTL_MS }),
     db as never,
     logger,
     resolveRegistrationPolicy({ token: REGISTRATION_TOKEN }),
@@ -71,7 +72,7 @@ function startEngine(logger: SharedLogger) {
     health: () => ({}) as never,
     logger,
     gateway,
-    requestGuard: { allowedHosts: null, allowedOrigins: null },
+    requestGuard: { allowedHosts: null, allowedOrigins: null, listedOrigins: null },
     onProcessingCallback: async () => {},
     barkloaderWebhookSecret: null,
   });

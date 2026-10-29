@@ -141,7 +141,6 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 	// whatever the streamer has since switched it to.
 	moduleOwned := createdByType == "MODULE" && req.ManifestId != ""
 	wf := &models.WorkflowDefinition{
-		ID:            uuid.New(),
 		Name:          req.Name,
 		Steps:         stepsJSON,
 		Trigger:       triggerJSON,
@@ -388,7 +387,6 @@ func (s *workflowService) ExecuteWorkflow(ctx context.Context, req *client.Execu
 	}
 
 	exec := &models.WorkflowExecution{
-		ID:         uuid.New(),
 		WorkflowID: workflowID,
 		UserID:     startedByID,
 		Status:     models.WorkflowStatusPending,
@@ -447,8 +445,17 @@ func (s *workflowService) GetWorkflowExecution(ctx context.Context, req *client.
 }
 
 func (s *workflowService) ListWorkflowExecutions(ctx context.Context, req *client.ListWorkflowExecutionsRequest) (*client.ListWorkflowExecutionsResponse, error) {
-	// TODO: Implement filtering logic based on request parameters
-	executions, err := models.GetRecentWorkflowExecutions(s.executionRepo, int(req.PageSize))
+	// TODO: honor status, startedBy, from/to and page; no caller filters or
+	// pages by them yet, so only workflowId and pageSize are applied.
+	var workflowID *uuid.UUID
+	if req.WorkflowId != "" {
+		id, err := uuid.Parse(req.WorkflowId)
+		if err != nil {
+			return nil, twirp.InvalidArgumentError("workflow_id", "invalid UUID format")
+		}
+		workflowID = &id
+	}
+	executions, err := models.GetRecentWorkflowExecutions(s.executionRepo, workflowID, int(req.PageSize))
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list executions: %w", err))
 	}
@@ -663,7 +670,6 @@ func (s *workflowService) RecordWorkflowRunStep(ctx context.Context, req *client
 	}
 
 	step := &models.WorkflowExecutionStep{
-		ID:          uuid.New(),
 		ExecutionID: executionID,
 		TaskID:      req.TaskId,
 		Name:        req.Name,
@@ -730,8 +736,6 @@ func jsonOrEmptyObject(raw string) string {
 // Helper functions to convert between database models and protobuf messages
 
 func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client.Workflow {
-	var createdAt, updatedAt *timestamppb.Timestamp
-
 	var taxonomy []string
 	if wf.Taxonomy != "" {
 		json.Unmarshal([]byte(wf.Taxonomy), &taxonomy)
@@ -747,8 +751,8 @@ func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client
 		Id:            wf.ID.String(),
 		Name:          wf.Name,
 		Enabled:       wf.Enabled,
-		CreatedAt:     createdAt,
-		UpdatedAt:     updatedAt,
+		CreatedAt:     timestamppb.New(wf.CreatedAt),
+		UpdatedAt:     timestamppb.New(wf.UpdatedAt),
 		StepsJson:     wf.Steps,
 		TriggerJson:   wf.Trigger,
 		CreatedByType: wf.CreatedByType,

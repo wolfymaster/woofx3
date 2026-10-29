@@ -15,6 +15,7 @@ import * as overlay_token from "@woofx3/db/overlay_token.pb";
 import * as permission from "@woofx3/db/permission.pb";
 import * as resource from "@woofx3/db/resource.pb";
 import * as scene from "@woofx3/db/scene.pb";
+import type { DbProxyClientConfig } from "@woofx3/db/service-auth";
 import * as setting from "@woofx3/db/setting.pb";
 import * as storage from "@woofx3/db/storage.pb";
 import * as stream_gauge from "@woofx3/db/stream_gauge.pb";
@@ -25,7 +26,6 @@ import * as user_event from "@woofx3/db/user_event.pb";
 import * as viewer_fact from "@woofx3/db/viewer_fact.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
 import * as workflow from "@woofx3/db/workflow.pb";
-import type { ClientConfiguration } from "twirpscript";
 
 /**
  * A failure from db-proxy, carrying the reason as data.
@@ -135,12 +135,10 @@ async function nullWhenMissing<T>(op: string, read: () => Promise<T>): Promise<T
 }
 
 export class DbClient {
-  private config: ClientConfiguration;
+  private config: DbProxyClientConfig;
 
-  constructor(baseUrl: string) {
-    this.config = {
-      baseURL: baseUrl,
-    };
+  constructor(config: DbProxyClientConfig) {
+    this.config = config;
     return new Proxy(this, {
       get(target, prop, receiver) {
         const value = Reflect.get(target, prop, receiver);

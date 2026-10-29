@@ -1015,6 +1015,11 @@ pub struct Module {
     pub marketplace_listing_id: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(int32, optional, tag="15")]
     pub marketplace_edition: ::core::option::Option<i32>,
+    /// The stored resource (a module archive the user uploaded) this module
+    /// was installed from. Unset for any other install. A module records at
+    /// most one origin: this or the marketplace listing, never both.
+    #[prost(string, optional, tag="16")]
+    pub upload_resource_id: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ModuleFunction {
@@ -1063,11 +1068,16 @@ pub struct CreateModuleRequest {
     #[prost(string, tag="9")]
     pub module_id: ::prost::alloc::string::String,
     /// Set together for an install from the marketplace; see Module. A request
-    /// that leaves them unset keeps what an existing row of the same name has.
+    /// that names no origin keeps what an existing row of the same name has; one
+    /// that names an origin replaces the other.
     #[prost(string, optional, tag="10")]
     pub marketplace_listing_id: ::core::option::Option<::prost::alloc::string::String>,
     #[prost(int32, optional, tag="11")]
     pub marketplace_edition: ::core::option::Option<i32>,
+    /// Set for an install from a stored module archive; see Module. Never set
+    /// together with the marketplace fields.
+    #[prost(string, optional, tag="12")]
+    pub upload_resource_id: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateModuleFunctionRequest {

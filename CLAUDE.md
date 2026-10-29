@@ -18,14 +18,12 @@ Woofx3 consists of the following tools:
 Subsystem behavior, public APIs, module formats, and workflow design are documented under **`docs/`** as a **VitePress** site (see `docs/package.json`). Use it together with this file when you need service-level depth beyond the mono-repo overview.
 
 - **Entry:** `docs/index.md`
-- **Major sections:** `docs/workflow/` (engine schema, execution, API), `docs/barkloader/` (modules, sandbox, API), `docs/woofwoofwoof/` (application and services), `docs/services/` (shared runtime, CloudEvents)
+- **Major sections:** `docs/workflow/` (engine schema, execution, API), `docs/barkloader/` (modules, sandbox, API), `docs/services/` (shared runtime, CloudEvents)
 
 ```bash
 cd docs && bun run docs           # VitePress dev
 cd docs && bun run docs:build     # Static site build
 ```
-
-Optional codegen used by that site: `bun run docs:generate` from `docs/` (see `docs/package.json`).
 
 # Dependencies
 This project must run locally when compiled and cannot depend on third-party services. This requires a lot of 'from scratch' development. Libraries that can be included in the compiled binary are allowed. The major targeted platforms are windows and linux.
@@ -58,7 +56,7 @@ This project makes heavy use of Typescript (Bun), Rust, and Golang. Core service
 
 ### Running, building, and linting
 
-- **TypeScript/Bun projects** (e.g., `sceneManager/`): Run `bun run <script>` or `bun run typecheck` / `bun run lint`
+- **TypeScript/Bun projects** (e.g., `sceneManager/`): Every package belongs to one Bun workspace (the root `package.json`, one `bun.lock`), so install once from the repo root with `bun install`. Then run `bun run <script>` or `bun run typecheck` / `bun run lint` in the package
 - **Go projects** (e.g., `wooflow/`): Run `go run main.go` or `go build`
 - **Rust projects** (e.g., `barkloader/`): Run `cargo build` / `cargo test`
 - **Database migrations**: Use `make migrate-up` / `make migrate-down` (requires Go) 
@@ -68,10 +66,10 @@ This project makes heavy use of Typescript (Bun), Rust, and Golang. Core service
 The db module uses **Buf** for protobuf code generation. When adding or modifying proto files, regenerate the Go and TypeScript clients:
 
 ```bash
-cd db && npm run generate    # Generates both Go and TypeScript clients
+cd db && bun run generate    # Generates both Go and TypeScript clients
 # Or individually:
-npm run generate:go          # Generate Go (Twirp + Protobuf)
-npm run generate:ts          # Generate TypeScript
+bun run generate:go          # Generate Go (Twirp + Protobuf)
+bun run generate:ts          # Generate TypeScript
 ```
 
 Always rebuild after regenerating proto code to catch any compile errors:
@@ -85,7 +83,7 @@ cd ../barkloader && cargo build
 
 Clients exist in **three languages**: TypeScript, Go, and Rust. Some are generated from proto files (db module), while others are written by hand (barkloader). When modifying client APIs, ensure consistency across all three implementations:
 
-- **Generated clients** (`shared/clients/{typescript,golang,rust}/db/`): Regenerate via `npm run generate` in `db/`
+- **Generated clients** (`shared/clients/{typescript,golang,rust}/db/`): Regenerate via `bun run generate` in `db/`
 - **Hand-written clients**: Manually update all three language versions to match
 
 Common hand-written clients:
@@ -206,6 +204,6 @@ The project backlog is tracked in Notion in the **Backlog** database (ID: `272a5
 
 **Important notes:**
 - UI and Website project tasks are **not** in this repository -- they live in a separate codebase. Filter them out when looking for work to do here.
-- Projects that map to this repo: API, Barkloader, Db, Module, Shared, Wooflow, WoofWoofWoof, Treats, Twitch, Tauri.
+- Projects that map to this repo: API, Barkloader, Db, Module, Shared, Wooflow, Connectors, Treats, Twitch, Tauri.
 - When picking up a task, update its Status to "In progress" in Notion.
 - When completing a task, update its Status to "Done" in Notion.

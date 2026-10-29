@@ -83,6 +83,29 @@ describe("the RPC surface a client sees", () => {
     expect(received).toMatchObject({ clientId: "client-42" });
   });
 
+  test("injects the session clientId into sendToPlatforms, whatever the caller passes", async () => {
+    const received: unknown[][] = [];
+    const api = new Proxy({} as Api, {
+      get() {
+        return (...args: unknown[]) => {
+          received.push(args);
+          return Promise.resolve(undefined);
+        };
+      },
+    });
+    const session = new ApiSession(api, "client-42", new SessionLease(() => {}));
+    const params = {
+      action: "chat.send" as const,
+      platforms: ["twitch" as const],
+      payload: { message: "hi" },
+      idempotencyKey: "k",
+    };
+
+    await session.sendToPlatforms(params);
+
+    expect(received).toEqual([[params, { clientId: "client-42" }]]);
+  });
+
   test("keys a stream-event subscription on the session, so a second call replaces the first", async () => {
     const received: unknown[][] = [];
     const api = new Proxy({} as Api, {

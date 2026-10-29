@@ -1,14 +1,21 @@
 import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3/api";
+import { CALLER_TIMEOUT_MS } from "@woofx3/api/platform-gateway";
+import { RELAY_API_REQUEST_TIMEOUT_MS, RELAY_CONFIG_SET_BUDGET_MS } from "@woofx3/common/cloudevents/Relay/relay";
 import {
   ALLOWED_ORIGINS_SETTING,
   parseRequestGuardPolicy,
+  parseUiOrigins,
   type RequestGuardPolicy,
+  resolveExposure,
 } from "@woofx3/common/http/request-guard";
-import { loadRuntimeEnv } from "@woofx3/common/runtime";
+import { loadRuntimeEnv, validateSecret } from "@woofx3/common/runtime";
+import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { z } from "zod";
+import { DEFAULT_AUTH_CACHE_TTL_MS } from "./auth";
 import { type BarkloaderWebhookAuth, parseBarkloaderWebhookAuth } from "./barkloader-webhook-auth";
-import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL, downloadOrigin } from "./marketplace-client";
-import { type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
+import { downloadOrigin } from "./guarded-download";
+import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL } from "./marketplace-client";
+import { assertRegistrationExposure, type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
 import { UNVERSIONED } from "./version";
 
 export interface ApiConfig {
@@ -20,6 +27,12 @@ export interface ApiConfig {
    * Reported publicly by `GET /health`.
    */
   engineName: string | null;
+  /**
+   * Where the provisioner placed this engine (`WOOFX3_ENGINE_REGION`), in its
+   * host's own region code (e.g. `iad`), or null when unset, as on a local
+   * engine. Reported publicly by `GET /health`.
+   */
+  engineRegion: string | null;
   /** How this engine is run (`WOOFX3_HOSTING`), or null when the deployment does not say. */
   hosting: EngineHosting | null;
   /**
@@ -37,6 +50,8 @@ export interface ApiConfig {
   host: string;
   rootDir: string;
   databaseProxyUrl: string;
+  /** Service token db-proxy requires of every caller (`WOOFX3_DB_PROXY_TOKEN`). */
+  dbProxyToken: string;
   barkloaderUrl: string;
   /**
    * Barkloader's WebSocket endpoint. The api runs module functions over it
@@ -62,8 +77,8 @@ export interface ApiConfig {
   apiUrl: string;
   /**
    * Hosts and origins the HTTP server accepts (`WOOFX3_ALLOWED_HOSTS`,
-   * `WOOFX3_ALLOWED_ORIGINS`); both open unless set. `null` is refused: no
-   * sandboxed frame calls the api. See
+   * `WOOFX3_ALLOWED_ORIGINS`), with their defaults resolved. `null` is
+   * refused: no sandboxed frame calls the api. See
    * shared/common/typescript/http/request-guard.ts.
    */
   requestGuard: RequestGuardPolicy;
@@ -80,10 +95,27 @@ export interface ApiConfig {
   twitchPublicClientId: string | null;
   /**
    * The engine's confidential Twitch app (`WOOFX3_TWITCH_CLIENT_ID`), or null
-   * when it has none. The twitch service refreshes a token issued to it; the
+   * when it has none. The connectors host's Twitch adapter refreshes a token issued to it; the
    * api only names it on Helix calls.
    */
   twitchClientId: string | null;
+  /**
+   * How long a successful client credential check is reused, in milliseconds
+   * (`WOOFX3_AUTH_CACHE_TTL_MS`); DEFAULT_AUTH_CACHE_TTL_MS when unset.
+   */
+  authCacheTtlMs: number;
+  /**
+   * How long `setRelayConfig` waits for the connectors host's companion
+   * gateway to store a relay configuration, in milliseconds
+   * (`WOOFX3_COMPANION_REQUEST_TIMEOUT_MS`); DEFAULT_COMPANION_REQUEST_TIMEOUT_MS when unset.
+   */
+  companionRequestTimeoutMs: number;
+  /**
+   * How long a send to the platform gateway waits for its reply, in
+   * milliseconds (`WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS`); the contract's
+   * CALLER_TIMEOUT_MS when unset.
+   */
+  platformGatewayTimeoutMs: number;
   nats: {
     url: string;
     name: string;
@@ -111,6 +143,7 @@ export const ApiEnvSchema = z.looseObject({
   apiHost: z.string().optional(),
   woofx3Version: z.union([z.string(), z.number()]).optional(),
   woofx3EngineName: z.string().optional(),
+  woofx3EngineRegion: z.string().optional(),
   woofx3Hosting: z.string().optional(),
   woofx3RegistrationToken: z.union([z.string(), z.number()]).optional(),
   woofx3RegistrationTokenFile: z.string().optional(),
@@ -141,6 +174,7 @@ export const ApiEnvSchema = z.looseObject({
   woofx3RootPath: z.string().optional(),
   woofx3AllowedHosts: z.union([z.string(), z.number(), z.boolean()]).optional(),
   woofx3AllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  woofx3UiUrl: z.union([z.string(), z.number(), z.boolean()]).optional(),
   woofx3MarketplaceUrl: z.string().optional(),
   marketplaceUrl: z.string().optional(),
   woofx3MarketplaceDownloadHosts: z.string().optional(),
@@ -148,6 +182,12 @@ export const ApiEnvSchema = z.looseObject({
   // loadRuntimeEnv coerces an all-digit value to a number.
   woofx3TwitchPublicClientId: z.union([z.string(), z.number()]).optional(),
   woofx3TwitchClientId: z.union([z.string(), z.number()]).optional(),
+  woofx3AuthCacheTtlMs: z.union([z.number(), z.string()]).optional(),
+  woofx3CompanionRequestTimeoutMs: z.union([z.number(), z.string()]).optional(),
+  woofx3PlatformGatewayTimeoutMs: z.union([z.number(), z.string()]).optional(),
+  // True where the edge listens beyond loopback and forwards to the api; the production image sets it.
+  woofx3BehindEdge: z.boolean().optional(),
+  woofx3DbProxyToken: z.string().optional(),
 });
 
 /**
@@ -242,6 +282,69 @@ function resolveTwitchClientId(value: unknown, setting: string): string | null {
   return clientId;
 }
 
+/**
+ * `WOOFX3_AUTH_CACHE_TTL_MS` as a positive whole number of milliseconds, or
+ * DEFAULT_AUTH_CACHE_TTL_MS when unset or blank. Anything else stops startup.
+ */
+export function resolveAuthCacheTtlMs(value: unknown): number {
+  const text = nonBlank(value);
+  if (text === undefined) {
+    return DEFAULT_AUTH_CACHE_TTL_MS;
+  }
+  const ttlMs = Number(text);
+  if (!Number.isInteger(ttlMs) || ttlMs <= 0) {
+    throw new Error(
+      `Config error: woofx3AuthCacheTtlMs (WOOFX3_AUTH_CACHE_TTL_MS) must be a positive integer, got ${text}`
+    );
+  }
+  return ttlMs;
+}
+
+/**
+ * Above the companion gateway's budget for storing a relay configuration, so
+ * its answer, a failure included, arrives before the api gives up.
+ */
+export const DEFAULT_COMPANION_REQUEST_TIMEOUT_MS = RELAY_API_REQUEST_TIMEOUT_MS;
+
+/**
+ * `WOOFX3_COMPANION_REQUEST_TIMEOUT_MS` as a whole number of milliseconds
+ * above RELAY_CONFIG_SET_BUDGET_MS, or DEFAULT_COMPANION_REQUEST_TIMEOUT_MS
+ * when unset or blank. Anything else stops startup.
+ */
+export function resolveCompanionRequestTimeoutMs(value: unknown): number {
+  const text = nonBlank(value);
+  if (text === undefined) {
+    return DEFAULT_COMPANION_REQUEST_TIMEOUT_MS;
+  }
+  const timeoutMs = Number(text);
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= RELAY_CONFIG_SET_BUDGET_MS) {
+    throw new Error(
+      `Config error: woofx3CompanionRequestTimeoutMs (WOOFX3_COMPANION_REQUEST_TIMEOUT_MS) must be an integer above the companion gateway's ${RELAY_CONFIG_SET_BUDGET_MS}ms budget, got ${text}`
+    );
+  }
+  return timeoutMs;
+}
+
+/**
+ * `WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS` as a whole number of milliseconds no
+ * lower than the contract's CALLER_TIMEOUT_MS, or that default when unset
+ * or blank. A lower wait would report a timeout for sends the gateway still
+ * answers normally. Anything else stops startup.
+ */
+export function resolvePlatformGatewayTimeoutMs(value: unknown): number {
+  const text = nonBlank(value);
+  if (text === undefined) {
+    return CALLER_TIMEOUT_MS;
+  }
+  const timeoutMs = Number(text);
+  if (!Number.isInteger(timeoutMs) || timeoutMs < CALLER_TIMEOUT_MS) {
+    throw new Error(
+      `Config error: woofx3PlatformGatewayTimeoutMs (WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS) must be a whole number of at least ${CALLER_TIMEOUT_MS} (the gateway's caller window), got ${text}`
+    );
+  }
+  return timeoutMs;
+}
+
 export function loadConfig(): ApiConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: ApiEnvSchema });
   const config = result.config;
@@ -250,6 +353,7 @@ export function loadConfig(): ApiConfig {
   const host = String(config.woofx3ApiHost || config.apiHost || "127.0.0.1");
   const version = String(config.woofx3Version || UNVERSIONED);
   const engineName = String(config.woofx3EngineName ?? "").trim() || null;
+  const engineRegion = String(config.woofx3EngineRegion ?? "").trim() || null;
   const hosting = resolveHosting(config.woofx3Hosting);
   const optionalString = (value: unknown): string | undefined => (value === undefined ? undefined : String(value));
   const registration = resolveRegistrationPolicy({
@@ -279,8 +383,13 @@ export function loadConfig(): ApiConfig {
   if (!barkloaderWsUrl) {
     throw new Error("barkloaderWsUrl (or WOOFX3_BARKLOADER_WS_URL) is required");
   }
-  if (!barkloaderKey) {
-    throw new Error("barkloaderKey (or WOOFX3_BARKLOADER_KEY) is required");
+  const barkloaderKeyCheck = validateSecret("barkloaderKey", barkloaderKey);
+  if (!barkloaderKeyCheck.ok) {
+    throw new Error(barkloaderKeyCheck.error.message);
+  }
+  const dbProxyTokenCheck = validateSecret(DB_PROXY_TOKEN_CONFIG_KEY, String(config.woofx3DbProxyToken ?? ""));
+  if (!dbProxyTokenCheck.ok) {
+    throw new Error(dbProxyTokenCheck.error.message);
   }
 
   // Tiger Style: fail fast at startup on malformed URLs rather than
@@ -289,11 +398,18 @@ export function loadConfig(): ApiConfig {
   assertValidHttpUrl("sceneManagerUrl (WOOFX3_SCENE_MANAGER_URL)", sceneManagerUrl);
   assertValidHttpUrl("apiUrl (WOOFX3_API_URL)", apiUrl);
 
+  const exposure = resolveExposure(host, config.woofx3BehindEdge === true);
+  assertRegistrationExposure(registration, exposure);
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: config.woofx3AllowedHosts,
     allowedOrigins: config.woofx3AllowedOrigins,
     allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
     opaqueOrigin: "refuse",
+    exposure,
+    // barkloader calls the api at apiUrl; behind the edge both apps share sceneManagerUrl's origin.
+    ownUrls: [apiUrl, sceneManagerUrl],
+    // The dashboard holds the api's live WebSocket from its own origin.
+    extraDefaultOrigins: parseUiOrigins(config.woofx3UiUrl),
   });
   const marketplaceUrl = config.woofx3MarketplaceUrl ?? config.marketplaceUrl;
   const marketplaceDownloadHosts = config.woofx3MarketplaceDownloadHosts ?? config.marketplaceDownloadHosts;
@@ -324,15 +440,20 @@ export function loadConfig(): ApiConfig {
     "woofx3TwitchClientId (WOOFX3_TWITCH_CLIENT_ID)"
   );
   const messageBusToken = nonBlank(config.woofx3MessagebusToken) ?? nonBlank(config.messagebusToken);
+  const authCacheTtlMs = resolveAuthCacheTtlMs(config.woofx3AuthCacheTtlMs);
+  const companionRequestTimeoutMs = resolveCompanionRequestTimeoutMs(config.woofx3CompanionRequestTimeoutMs);
+  const platformGatewayTimeoutMs = resolvePlatformGatewayTimeoutMs(config.woofx3PlatformGatewayTimeoutMs);
 
   return {
     version,
     engineName,
+    engineRegion,
     hosting,
     registration,
     port,
     host,
     databaseProxyUrl,
+    dbProxyToken: dbProxyTokenCheck.value,
     barkloaderUrl,
     barkloaderWsUrl,
     barkloaderKey,
@@ -345,6 +466,9 @@ export function loadConfig(): ApiConfig {
     twitchClientId,
     rootDir,
     requestGuard,
+    authCacheTtlMs,
+    companionRequestTimeoutMs,
+    platformGatewayTimeoutMs,
     nats: {
       url: messageBusUrl,
       name: "woofx3-api",

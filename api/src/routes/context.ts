@@ -1,4 +1,5 @@
 import type { EngineHosting, UISetting } from "@woofx3/api";
+import { CALLER_TIMEOUT_MS } from "@woofx3/api/platform-gateway";
 import type {
   CallbackEvent,
   CommandCreatedEvent,
@@ -18,25 +19,27 @@ import type {
 } from "@woofx3/api/webhooks";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
-import {
-  RELAY_CONFIG_SETTING,
-  RELAY_CONFIG_UPDATED_SUBJECT,
-  readStoredRelayConfig,
-  type StoredRelayConfig,
-} from "@woofx3/common/cloudevents/Relay/relay";
 import { encode } from "@woofx3/common/cloudevents/utils";
+import {
+  INTEGRATION_ENABLED_UPDATED_SUBJECT,
+  INTEGRATION_TOKEN_UPDATED_SUBJECT,
+  type IntegrationEventPayloads,
+  type IntegrationId,
+  integrationEnabledSettingKey,
+} from "@woofx3/common/integrations/integration-settings";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
 import { RpcTarget } from "capnweb";
 import type { ClientRevocation } from "../client-sessions";
+import { DEFAULT_COMPANION_REQUEST_TIMEOUT_MS } from "../config";
 import type { DbClient } from "../db-client";
-import type { PairingRegistry } from "../pairing";
 import type { EngineEventStream } from "../engine-event-stream";
 import type { EventLogSelectionSource } from "../event-log-selection";
 import { releaseStub } from "../held-stub";
 import type { MarketplaceClient } from "../marketplace-client";
-import { RelayCredentialSource } from "../relay-credential-source";
+import type { PairingRegistry } from "../pairing";
+import { PlatformGatewayClient } from "../platform-gateway-client";
 import type { StreamEventBroadcaster } from "../stream-event-broadcaster";
 import { TwitchDeviceLogins } from "../twitch-device-login";
 import { TwitchProfiles } from "../twitch-profiles";
@@ -68,6 +71,8 @@ export interface ApiOptions {
   nats: NATSClient | null;
   functions: FunctionInvoker | null;
   barkloaderUrl: string;
+  /** The engine secret barkloader authenticates its management routes with. */
+  barkloaderKey: string;
   streamwareUrl?: string;
   sceneManagerUrl: string;
   apiUrl: string;
@@ -84,8 +89,16 @@ export interface ApiOptions {
   twitchClientId?: string | null;
   /** Twitch's OAuth endpoints; Twitch itself when absent. */
   twitchOAuth?: TwitchOAuthClient;
+  /** How long a send to the platform gateway waits for its reply; the contract's CALLER_TIMEOUT_MS when absent. */
+  platformGatewayTimeoutMs?: number;
   /** Epoch milliseconds now; `Date.now` when absent. */
   clock?: () => number;
+  /**
+   * How long `setRelayConfig` waits for the connectors host's companion
+   * gateway to store a configuration (`WOOFX3_COMPANION_REQUEST_TIMEOUT_MS`);
+   * DEFAULT_COMPANION_REQUEST_TIMEOUT_MS when absent.
+   */
+  companionRequestTimeoutMs?: number;
 }
 
 async function barkloaderRequestError(response: Response): Promise<Error> {
@@ -120,17 +133,19 @@ export class ApiRouteHost extends RpcTarget {
    * so capnweb never offers it to a client.
    */
   readonly twitchToken: TwitchTokenSource;
-  /** The companion bridge's credential. An instance property for the same reason as `twitchToken`. */
-  readonly relayCredential: RelayCredentialSource;
   /** Twitch device logins in progress. An instance property for the same reason as `twitchToken`. */
   readonly twitchDeviceLogins: TwitchDeviceLogins;
   /** The linked account's Helix profile. An instance property for the same reason as `twitchToken`. */
   readonly twitchProfiles: TwitchProfiles;
+  /** The platform gateway in connectors. An instance property for the same reason as `twitchToken`. */
+  readonly platformGateway: PlatformGatewayClient;
 
   protected db: DbClient;
   protected nats: NATSClient | null;
   protected functions: FunctionInvoker | null;
   protected barkloaderUrl: string;
+  /** An instance property for the same reason as `twitchToken`. */
+  protected readonly barkloaderKey: string;
   protected streamwareUrl: string;
   protected sceneManagerUrl: string;
   protected apiUrl: string;
@@ -139,13 +154,21 @@ export class ApiRouteHost extends RpcTarget {
   protected hosting: EngineHosting | null;
   protected marketplace: MarketplaceClient | null;
   protected readonly clock: () => number;
+  protected readonly companionRequestTimeoutMs: number;
 
   protected getBarkloaderBaseUrl(): string {
     return this.barkloaderUrl.endsWith("/") ? this.barkloaderUrl.slice(0, -1) : this.barkloaderUrl;
   }
 
+  /** The one way to reach barkloader's HTTP routes: every one but public asset reads needs the bearer. */
+  protected barkloaderFetch(path: string, init?: RequestInit): Promise<Response> {
+    const headers = new Headers(init?.headers);
+    headers.set("Authorization", `Bearer ${this.barkloaderKey}`);
+    return fetch(`${this.getBarkloaderBaseUrl()}${path}`, { ...init, headers });
+  }
+
   protected async barkloaderRequest(path: string, init?: RequestInit): Promise<Response> {
-    const response = await fetch(`${this.getBarkloaderBaseUrl()}${path}`, init);
+    const response = await this.barkloaderFetch(path, init);
     if (!response.ok) {
       throw await barkloaderRequestError(response);
     }
@@ -158,7 +181,7 @@ export class ApiRouteHost extends RpcTarget {
    * still throws.
    */
   protected async barkloaderRequestOrNull(path: string, init?: RequestInit): Promise<Response | null> {
-    const response = await fetch(`${this.getBarkloaderBaseUrl()}${path}`, init);
+    const response = await this.barkloaderFetch(path, init);
     if (response.status === 404) {
       await response.body?.cancel();
       return null;
@@ -275,43 +298,52 @@ export class ApiRouteHost extends RpcTarget {
   }
 
   /**
-   * Write the linked Twitch account's token and tell the services that hold
-   * one to reload it (`setting.integration.token.updated`). `engineUserId`
-   * scopes the row to the engine user who linked it, when known.
+   * Write the linked Twitch account's token, mark the integration enabled and
+   * tell the services that hold one to reload it. `engineUserId` scopes the
+   * row to the engine user who linked it, when known.
+   *
+   * Linking again re-enables, so a Convex re-registration (which calls
+   * setTwitchToken) switches a disabled integration back on.
    */
   protected async storeTwitchToken<T extends { userId: string }>(stored: T, engineUserId?: string): Promise<void> {
     await this.twitchToken.store(stored, engineUserId);
-    // Best effort: the row is already written, so a missed event only delays
-    // the pickup until the services next read it.
-    try {
-      await this.publishEvent("setting.integration.token.updated", { integration: "twitch" });
-    } catch (err) {
-      this.logger.warn("Failed to publish setting.integration.token.updated", { err });
-    }
-  }
-
-  private async writeRelayConfig(config: StoredRelayConfig): Promise<void> {
-    if (!(await this.db.trySetSetting(RELAY_CONFIG_SETTING, JSON.stringify(config)))) {
-      throw new Error(`could not store ${RELAY_CONFIG_SETTING}`);
-    }
-    await this.announceRelayConfig();
-  }
-
-  private async deleteRelayConfig(): Promise<void> {
-    await this.db.deleteSetting(RELAY_CONFIG_SETTING);
-    await this.announceRelayConfig();
+    await this.writeIntegrationEnabled("twitch", true);
+    await this.announceIntegrationChanged("twitch", true);
   }
 
   /**
-   * Engine `settings` writes publish no event of their own. Best effort: the
-   * setting is already written, and sceneManager re-reads it on every connect
-   * attempt, so a missed announcement only delays the switch.
+   * Record whether an integration should run. The token and this row are two
+   * writes, not one transaction: an adapter runs while it is connected AND
+   * enabled, and the host's 60 s reconcile heals a missed event or a crash
+   * between the writes. Throws when the row is not stored, so the RPC fails
+   * rather than reporting a link the host will not act on.
    */
-  private async announceRelayConfig(): Promise<void> {
+  protected async writeIntegrationEnabled(id: IntegrationId, enabled: boolean): Promise<void> {
+    const key = integrationEnabledSettingKey(id);
+    if (!(await this.db.trySetSetting(key, String(enabled)))) {
+      throw new Error(`could not store ${key}`);
+    }
+  }
+
+  /**
+   * Engine `settings` writes publish no event of their own. The enabled event
+   * goes first so a listener that reacts to the token event already sees the
+   * new flag. Each publish is best effort: the rows are written, so a missed
+   * event only delays the pickup until the next reconcile.
+   */
+  protected async announceIntegrationChanged(id: IntegrationId, enabled: boolean): Promise<void> {
+    await this.publishBestEffort(INTEGRATION_ENABLED_UPDATED_SUBJECT, { integration: id, enabled });
+    await this.publishBestEffort(INTEGRATION_TOKEN_UPDATED_SUBJECT, { integration: id });
+  }
+
+  private async publishBestEffort<S extends keyof IntegrationEventPayloads>(
+    subject: S,
+    payload: IntegrationEventPayloads[S]
+  ): Promise<void> {
     try {
-      await this.publishEvent(RELAY_CONFIG_UPDATED_SUBJECT, { at: new Date().toISOString() });
+      await this.publishEvent(subject, payload);
     } catch (err) {
-      this.logger.warn(`Failed to publish ${RELAY_CONFIG_UPDATED_SUBJECT}`, { err });
+      this.logger.warn(`Failed to publish ${subject}`, { err });
     }
   }
 
@@ -456,6 +488,9 @@ export class ApiRouteHost extends RpcTarget {
     if (!opts.barkloaderUrl) {
       throw new Error("ApiOptions.barkloaderUrl is required");
     }
+    if (!opts.barkloaderKey) {
+      throw new Error("ApiOptions.barkloaderKey is required");
+    }
     if (!opts.sceneManagerUrl) {
       throw new Error("ApiOptions.sceneManagerUrl is required");
     }
@@ -476,16 +511,15 @@ export class ApiRouteHost extends RpcTarget {
       storeToken: (token) => this.storeTwitchToken(token),
       logger: opts.logger,
     });
-    this.relayCredential = new RelayCredentialSource({
-      dashboard: () => this.webhookClient,
-      readConfig: async () => readStoredRelayConfig(await this.db.getSetting(RELAY_CONFIG_SETTING)),
-      writeConfig: (config) => this.writeRelayConfig(config),
-      clearConfig: () => this.deleteRelayConfig(),
-      now: () => Date.now(),
+    this.platformGateway = new PlatformGatewayClient({
+      nats: opts.nats,
+      logger: opts.logger,
+      timeoutMs: opts.platformGatewayTimeoutMs ?? CALLER_TIMEOUT_MS,
     });
     this.nats = opts.nats;
     this.functions = opts.functions;
     this.barkloaderUrl = opts.barkloaderUrl;
+    this.barkloaderKey = opts.barkloaderKey;
     this.streamwareUrl = opts.streamwareUrl ?? "";
     this.sceneManagerUrl = opts.sceneManagerUrl;
     this.apiUrl = opts.apiUrl;
@@ -494,6 +528,7 @@ export class ApiRouteHost extends RpcTarget {
     this.hosting = opts.hosting ?? null;
     this.marketplace = opts.marketplace ?? null;
     this.clock = opts.clock ?? (() => Date.now());
+    this.companionRequestTimeoutMs = opts.companionRequestTimeoutMs ?? DEFAULT_COMPANION_REQUEST_TIMEOUT_MS;
   }
 }
 

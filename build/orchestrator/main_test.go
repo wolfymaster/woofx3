@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	woofx3config "github.com/wolfymaster/woofx3/common/config"
 	"github.com/wolfymaster/woofx3/common/logging"
 )
 
@@ -804,21 +805,28 @@ func TestShippedServicesJSONChecksWhereEachServiceListens(t *testing.T) {
 		want map[string]string
 	}{
 		// The defaults must match apiPort in build/config/.woofx3.json, the
-		// default port in sceneManager/src/config.ts, and the edge's in
+		// default port in sceneManager/src/config.ts, HOST_DEFAULTS.port in
+		// connectors/src/config/host.ts, and the edge's in
 		// build/config/Caddyfile.edge.
 		{
 			name: "defaults",
 			want: map[string]string{
 				"api":          "http://127.0.0.1:5050/ready",
 				"sceneManager": "http://127.0.0.1:9101/health",
+				"connectors":   "http://127.0.0.1:9102/health",
 			},
 		},
 		{
 			name: "ports set",
-			env:  map[string]string{"WOOFX3_API_PORT": "7070", "WOOFX3_SCENE_MANAGER_PORT": "7171"},
+			env: map[string]string{
+				"WOOFX3_API_PORT":           "7070",
+				"WOOFX3_SCENE_MANAGER_PORT": "7171",
+				"WOOFX3_CONNECTORS_PORT":    "7272",
+			},
 			want: map[string]string{
 				"api":          "http://127.0.0.1:7070/ready",
 				"sceneManager": "http://127.0.0.1:7171/health",
+				"connectors":   "http://127.0.0.1:7272/health",
 			},
 		},
 	}
@@ -1096,11 +1104,11 @@ func TestTheAPIsHealthCheckFollowsItsPortFromTheRuntimeConfig(t *testing.T) {
 			t.Setenv("WOOFX3_CONFIG", "")
 			t.Setenv("WOOFX3_API_PORT", tc.envPort)
 
-			getenv, err := runtimeGetenv()
+			sources, err := woofx3config.LoadSources(woofx3config.ResolveLocation(""))
 			if err != nil {
-				t.Fatalf("runtimeGetenv: %v", err)
+				t.Fatalf("LoadSources: %v", err)
 			}
-			config, err := loadConfig(filepath.Join("..", "config", "services.json"), getenv)
+			config, err := loadConfig(filepath.Join("..", "config", "services.json"), runtimeGetenv(sources))
 			if err != nil {
 				t.Fatalf("load services.json: %v", err)
 			}

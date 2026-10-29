@@ -149,12 +149,10 @@ describe("alert queue control subjects", () => {
     const { handlers, nats } = fakeNats();
     await initSubscriptions({
       nats: nats as any,
-      obs: { current: () => null, recycle: () => {}, reconnectNow: () => {} },
-      obsStatus: () => ({ state: "connected", failure: null, address: "127.0.0.1:4455" }),
-      relayConfigMovesObs: async () => false,
       db: db as any,
       host: {} as any,
       deliveryStore: deliveryStore as any,
+      framing: { frameAlert: async () => ({}) },
       moduleState: {} as any,
       resolver: {} as any,
       sceneDocuments: {
@@ -274,9 +272,8 @@ describe("alert queue control subjects", () => {
 });
 
 describe("module setting changes", () => {
-  async function wire(relayConfigMovesObs: () => Promise<boolean> = async () => false) {
+  async function wire() {
     const handlers = new Map<string, (msg: any) => unknown>();
-    const reconnects: string[] = [];
     const settingsUpdated: string[] = [];
     await initSubscriptions({
       nats: {
@@ -285,12 +282,10 @@ describe("module setting changes", () => {
           return {};
         },
       } as any,
-      obs: { current: () => null, recycle: () => {}, reconnectNow: (reason: string) => reconnects.push(reason) },
-      obsStatus: () => ({ state: "retrying", failure: "authentication", address: "obs.lan:4455" }),
-      relayConfigMovesObs,
       db: {} as any,
       host: {} as any,
       deliveryStore: {} as any,
+      framing: { frameAlert: async () => ({}) },
       moduleState: {
         settingUpdated: async (moduleId: string, key: string) => {
           settingsUpdated.push(`${moduleId}/${key}`);
@@ -314,42 +309,8 @@ describe("module setting changes", () => {
       }
       return handler({ subject: "db.module.setting.updated.system", json: () => ({ data }) });
     };
-    const relayChanged = () =>
-      handlers.get("engine.relay.config.updated")?.({ subject: "engine.relay.config.updated" });
-    return { deliver, relayChanged, reconnects, settingsUpdated };
+    return { deliver, settingsUpdated };
   }
-
-  it("reconnects to OBS when a relay configuration change moves it to another route", async () => {
-    const { relayChanged, reconnects } = await wire(async () => true);
-    await relayChanged();
-    expect(reconnects).toEqual(["Relay configuration changed"]);
-  });
-
-  it("keeps the OBS session when a relay configuration change leaves its route alone", async () => {
-    const { relayChanged, reconnects } = await wire(async () => false);
-    await relayChanged();
-    expect(reconnects).toEqual([]);
-  });
-
-  it("reconnects when the relay configuration cannot be read", async () => {
-    const { relayChanged, reconnects } = await wire(async () => {
-      throw new Error("db down");
-    });
-    await relayChanged();
-    expect(reconnects).toEqual(["Relay configuration changed"]);
-  });
-
-  it("reconnects to OBS when the OBS module's settings change", async () => {
-    const { deliver, reconnects } = await wire();
-    await deliver({ moduleId: "woofx3_obs", key: "password" });
-    expect(reconnects).toEqual(["OBS module settings changed"]);
-  });
-
-  it("ignores other modules' settings", async () => {
-    const { deliver, reconnects } = await wire();
-    await deliver({ moduleId: "woofx3_spotify", key: "clientId" });
-    expect(reconnects).toEqual([]);
-  });
 
   it("hands every module's changed setting to the widgets reading it", async () => {
     const { deliver, settingsUpdated } = await wire();
@@ -357,22 +318,23 @@ describe("module setting changes", () => {
     await deliver({ moduleId: "woofx3_wheel_spin" });
     expect(settingsUpdated).toEqual(["woofx3_wheel_spin/items"]);
   });
+});
 
-  it("answers engine.obs.status with the connection's state", async () => {
-    const handlers = new Map<string, (msg: unknown) => unknown>();
+describe("OBS subjects", () => {
+  // The connectors host answers these; a second responder here would race it.
+  it("subscribes to none of the subjects the connectors host's obs adapter answers or hears", async () => {
+    const subjects: string[] = [];
     await initSubscriptions({
       nats: {
-        subscribe: async (subject: string, handler: (msg: unknown) => unknown) => {
-          handlers.set(subject, handler);
+        subscribe: async (subject: string) => {
+          subjects.push(subject);
           return {};
         },
       } as never,
-      obs: { current: () => null, recycle: () => {}, reconnectNow: () => {} },
-      obsStatus: () => ({ state: "retrying", failure: "authentication", address: "obs.lan:4455" }),
-      relayConfigMovesObs: async () => false,
       db: {} as never,
       host: {} as never,
       deliveryStore: {} as never,
+      framing: { frameAlert: async () => ({}) },
       moduleState: {} as never,
       resolver: {} as never,
       sceneDocuments: {
@@ -385,20 +347,9 @@ describe("module setting changes", () => {
       previewToken: async () => ({ ok: false, reason: "unused" }),
       logger: fakeLogger(),
     });
-    const handler = handlers.get("engine.obs.status");
-    if (!handler) {
-      throw new Error("engine.obs.status is not answered");
-    }
-    let reply: unknown = null;
-    await handler({
-      subject: "engine.obs.status",
-      reply: "_INBOX.test",
-      json: () => ({}),
-      respond: (data: Uint8Array) => {
-        reply = JSON.parse(new TextDecoder().decode(data));
-        return true;
-      },
-    });
-    expect(reply).toEqual({ state: "retrying", failure: "authentication", address: "obs.lan:4455" });
+    expect(subjects.length).toBeGreaterThan(0);
+    expect(
+      subjects.filter((subject) => subject.startsWith("engine.obs.") || subject.startsWith("engine.relay."))
+    ).toEqual([]);
   });
 });

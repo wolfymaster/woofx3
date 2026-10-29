@@ -18,7 +18,8 @@ import (
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
 )
 
-const testToken = "integration-s3cret"
+// testToken passes config.ValidateSecret, as the server requires at startup.
+const testToken = "integration-s3cret-0123456789abcdef"
 
 // freePort returns a loopback port nothing is listening on.
 func freePort(t *testing.T) int {
@@ -39,9 +40,9 @@ func startHardenedServer(t *testing.T) string {
 	cfg.Token = testToken
 	cfg.TCPDisabled = true
 	cfg.WebSocketSameOrigin = true
-	wsPort := freePort(t)
+	cfg.WebSocketPort = freePort(t)
 
-	ns, err := createServer(cfg, slog.Default(), cfg.Host, wsPort)
+	ns, err := createServer(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("createServer: %v", err)
 	}
@@ -50,7 +51,7 @@ func startHardenedServer(t *testing.T) string {
 	if ns.Addr() != nil {
 		t.Fatalf("TCP listener on %v, want none", ns.Addr())
 	}
-	return fmt.Sprintf("ws://%s:%d", cfg.Host, wsPort)
+	return fmt.Sprintf("ws://%s:%d", cfg.Host, cfg.WebSocketPort)
 }
 
 func repoRoot(t *testing.T) string {
@@ -99,7 +100,7 @@ func TestEveryClientAuthenticates(t *testing.T) {
 		}
 		pkg := filepath.Join(repoRoot(t), "shared/clients/typescript/nats")
 		if _, err := os.Stat(filepath.Join(pkg, "node_modules/@nats-io/nats-core")); err != nil {
-			t.Skipf("%s has no node_modules; run bun install there", pkg)
+			t.Skipf("%s has no node_modules; run bun install at the repo root", pkg)
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
@@ -188,11 +189,41 @@ func TestSameOriginTurnsAwayOtherPages(t *testing.T) {
 	}
 }
 
-func TestAnOpenServerAdmitsAnyone(t *testing.T) {
+// TestTheDefaultConfigurationTurnsAwayOtherPages runs the configuration a
+// deployment gets when it sets nothing: the origin check must already be on.
+func TestTheDefaultConfigurationTurnsAwayOtherPages(t *testing.T) {
 	cfg := DefaultConfiguration()
 	cfg.Port = -1
-	wsPort := freePort(t)
-	ns, err := createServer(cfg, slog.Default(), cfg.Host, wsPort)
+	cfg.WebSocketPort = freePort(t)
+	ns, err := createServer(cfg, slog.Default())
+	if err != nil {
+		t.Fatalf("createServer: %v", err)
+	}
+	defer ns.Shutdown()
+	url := fmt.Sprintf("ws://%s:%d", cfg.Host, cfg.WebSocketPort)
+
+	cases := []struct {
+		origin string
+		want   int
+	}{
+		{origin: "", want: http.StatusSwitchingProtocols},
+		{origin: "https://attacker.example", want: http.StatusForbidden},
+		{origin: "http://localhost:5173", want: http.StatusForbidden},
+	}
+	for _, c := range cases {
+		if got := upgradeStatus(t, url, c.origin); got != c.want {
+			t.Errorf("Origin %q: status %d, want %d", c.origin, got, c.want)
+		}
+	}
+}
+
+func TestAnOpenServerAdmitsAnyone(t *testing.T) {
+	cfg := DefaultConfiguration()
+	cfg.WebSocketSameOrigin = false
+	cfg.Port = -1
+	cfg.WebSocketPort = freePort(t)
+	wsPort := cfg.WebSocketPort
+	ns, err := createServer(cfg, slog.Default())
 	if err != nil {
 		t.Fatalf("createServer: %v", err)
 	}

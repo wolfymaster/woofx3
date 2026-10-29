@@ -191,7 +191,7 @@
 ---@field message string
 ---@field code? string
 
----`ctx.twitch.*`: each call asks the twitch service to act, waits up to 10
+---`ctx.twitch.*`: each call asks the engine's Twitch connection to act, waits up to 10
 ---seconds (never past the end of the function's run) and returns its result,
 ---or raises a `CtxHostError`. At most 10 calls per run. `timeout`
 ---needs the manifest permission `twitch.moderation`, `updateStream` needs
@@ -204,7 +204,7 @@
 ---@field timeout fun(args: { userId?: string, userName?: string, durationSeconds: number, reason?: string }): { ok: boolean, userId: string, durationSeconds: number }
 ---@field updateStream fun(args: { title?: string, category?: string, categoryId?: string, tags?: string[] }): { ok: boolean, title?: string, categoryId?: string, categoryName?: string, tags?: string[] }
 
----`ctx.obs.*`: each call asks the scene manager to change OBS or list its
+---`ctx.obs.*`: each call asks the engine's OBS connection to change OBS or list its
 ---names, waits up to 5 seconds (never past the end of the function's run) and
 ---returns its answer, or raises a `CtxHostError` carrying OBS's reason. At most
 ---10 calls per run. `switchScene`, `setSourceVisibility`, `setInputMute` and
@@ -219,8 +219,30 @@
 ---@field listSources fun(): { value: string, label: string, group?: string }[]
 ---@field listInputs fun(): { value: string, label: string, group?: string }[]
 
----@class CtxChatExtension
----@field sendMessage fun(text: string): nil
+---How `ctx.local.request` recognises the device's answer: the first JSON
+---object the device sends back whose top-level `field` holds `value`
+---exactly.
+---@class LocalEndpointMatch
+---@field field string          letters, digits and `_`, at most 40 characters
+---@field value string|integer  a non-empty string, or a whole number
+
+---`ctx.local.*`: talk to a device on the streamer's own network that your
+---manifest declares in `local[]`. Only your module's own websocket endpoints
+---are reachable, never another module's, and never one the engine manages
+---itself (OBS: use `ctx.obs`). `local` is a Lua keyword, so write
+---`ctx["local"].send(...)`.
+---
+---`message` is a string, or a table sent as JSON. Each call waits up to
+---`timeoutMs` (default and most 4500, at least 100), never past the end of
+---the function's run, and raises a `CtxHostError` with a `code` when
+---refused. At most 20 calls per run.
+---
+---`sessionEpoch` names the connection the engine used, and changes whenever
+---it opens a new one. A device that wants a sign-in per connection needs you
+---to sign in again when it changes.
+---@class CtxLocalExtension
+---@field send fun(args: { endpoint: string, message: string|table, timeoutMs?: integer }): { ok: boolean, sessionEpoch: string }
+---@field request fun(args: { endpoint: string, message: string|table, match: LocalEndpointMatch, timeoutMs?: integer }): { reply: table, sessionEpoch: string }
 
 ---The `ctx` object passed to every function invocation. Combines the
 ---built-in surface with extension namespaces the host registered. Each
@@ -239,7 +261,9 @@
 ---@field module CtxModule
 ---@field log CtxLog
 ---@field response fun(success: boolean, message: string): CtxResponse
+---@field success fun(message: string, fields?: table): CtxResponse  response with success = true plus extra fields (may not set proto, v, success or message; errors if it does)
+---@field failure fun(message: string, fields?: table): CtxResponse  response with success = false plus extra fields (same rules as success)
 ---@field result fun(value: any, events?: CtxResultEvent[]): CtxResult
 ---@field twitch? CtxTwitchExtension
 ---@field obs? CtxObsExtension
----@field chat? CtxChatExtension
+---@field local? CtxLocalExtension  absent on engines that predate it

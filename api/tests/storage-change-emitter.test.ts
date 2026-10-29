@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
-import { mapStorageChanged, StorageChangeEmitter } from "../src/storage-change-emitter";
-import type { Msg } from "@woofx3/nats/src/types";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import type { Msg } from "@woofx3/nats/src/types";
+import { mapStorageChanged, StorageChangeEmitter } from "../src/storage-change-emitter";
 
 function fakeLogger() {
   return {

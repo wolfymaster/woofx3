@@ -7,8 +7,14 @@ import type {
 } from "@woofx3/api";
 import { manifestLocalEndpoints, manifestPermissions } from "@woofx3/api/module-manifest";
 import type { MarketplaceClient, MarketplaceDownload, MarketplaceListing } from "../marketplace-client";
-import { type ModuleArchiveContents, readModuleArchive, unapprovedIds } from "../module-archive";
-import { handArchiveToBarkloader, sendAlreadyInstalled, sendInstallFailed } from "../module-install";
+import { approvalShortfall, type ModuleArchiveContents, readModuleArchive } from "../module-archive";
+import {
+  handArchiveToBarkloader,
+  type InstallEventOrigin,
+  sendAlreadyInstalled,
+  sendInstallFailed,
+  stringList,
+} from "../module-install";
 import { compositionsRoutes } from "./compositions";
 import { routeModule } from "./context";
 import { scenesRoutes } from "./scenes";
@@ -53,6 +59,8 @@ function requireManifestMatchesListing(listing: MarketplaceListing, manifest: Re
   }
 }
 
+const MARKETPLACE_EVENT_ORIGIN: InstallEventOrigin = { source: "marketplace" };
+
 function requireMarketplace(marketplace: MarketplaceClient | null): MarketplaceClient {
   if (!marketplace) {
     throw new Error("Marketplace installs are turned off on this engine (marketplaceUrl is blank)");
@@ -72,13 +80,6 @@ function requireModuleListing(listing: MarketplaceListing): asserts listing is M
   if (listing.type !== "module" && listing.type !== "theme") {
     throw new Error(`${listing.name} is a ${listing.type} listing and does not install as a module`);
   }
-}
-
-function stringList(caller: string, field: string, value: unknown): string[] {
-  if (!Array.isArray(value) || !value.every((entry) => typeof entry === "string")) {
-    throw new Error(`${caller}: ${field} must be an array of strings`);
-  }
-  return value;
 }
 
 /**
@@ -136,7 +137,7 @@ export const marketplaceRoutes = routeModule({
         this.webhookClient,
         { moduleKey, name, version, error: `Failed to fetch marketplace archive: ${message}` },
         clientId,
-        "marketplace"
+        MARKETPLACE_EVENT_ORIGIN
       );
     });
     try {
@@ -148,25 +149,21 @@ export const marketplaceRoutes = routeModule({
         this.webhookClient,
         { moduleKey, name, version, error: message },
         clientId,
-        "marketplace"
+        MARKETPLACE_EVENT_ORIGIN
       );
       throw err;
     }
 
-    const unapproved = unapprovedIds(manifestPermissions(contents.manifest), approvedPermissions);
-    const unapprovedLocalEndpoints = unapprovedIds(
-      manifestLocalEndpoints(contents.manifest).map((endpoint) => endpoint.id),
-      approvedLocalEndpoints
-    );
-    if (unapproved.length > 0 || unapprovedLocalEndpoints.length > 0) {
-      this.logger.info("Marketplace listing needs approval", { listingId, unapproved, unapprovedLocalEndpoints });
-      return { status: "needs_approval", name, version, unapproved, unapprovedLocalEndpoints };
+    const shortfall = approvalShortfall(contents.manifest, { approvedPermissions, approvedLocalEndpoints });
+    if (shortfall !== null) {
+      this.logger.info("Marketplace listing needs approval", { listingId, ...shortfall });
+      return { status: "needs_approval", name, version, ...shortfall };
     }
 
     const existing = await this.db.getModuleByModuleKey(moduleKey);
     if (existing) {
       this.logger.info("Module already installed, skipping upload", { clientId, moduleKey });
-      await sendAlreadyInstalled(this.webhookClient, existing, moduleKey, clientId, "marketplace");
+      await sendAlreadyInstalled(this.webhookClient, existing, moduleKey, clientId, MARKETPLACE_EVENT_ORIGIN);
       return { status: "installed", moduleKey, alreadyInstalled: true };
     }
 
@@ -175,7 +172,7 @@ export const marketplaceRoutes = routeModule({
       fileName: `${name}-${version}.zip`,
       clientId,
       moduleKey,
-      marketplace: { listingId, edition: listing.edition },
+      origin: { kind: "marketplace", listingId, edition: listing.edition },
     });
     return { status: "installed", moduleKey };
   },

@@ -376,6 +376,8 @@ export function createCompositionPreview<TElement extends RenderElement<TElement
       document: options.document,
       root: options.stage,
       atMs: 0,
+      // Frames paint while held, before their widgets enter.
+      hideWith: "opacity",
       mountContent: (slot, widgetId) => {
         slots.set(widgetId, slot);
         frames.set(widgetId, mountInto(slot, widgetId, false));

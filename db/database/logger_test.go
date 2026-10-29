@@ -42,3 +42,26 @@ func TestSystemDatabaseLogsNoBoundValues(t *testing.T) {
 		t.Errorf("a bound value reached the log:\n%s", out)
 	}
 }
+
+func TestSlogAdapter_TracedQueryOmitsBoundValues(t *testing.T) {
+	var buf bytes.Buffer
+	slogger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	db, err := InitializeDB("sqlite:///:memory:", slogger, RandomIDs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The table does not exist, so the statement errors and Trace logs its SQL.
+	if err := db.Exec("DELETE FROM clients WHERE client_secret = ?", "topsecret").Error; err == nil {
+		t.Fatal("expected the statement to fail")
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, "client_secret") {
+		t.Fatalf("expected the traced SQL in the log, got %q", out)
+	}
+	if strings.Contains(out, "topsecret") {
+		t.Fatalf("bound value leaked into the log: %q", out)
+	}
+}

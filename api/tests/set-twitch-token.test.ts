@@ -12,6 +12,10 @@ function session(clientId: string, twitch: Partial<Pick<ApiOptions, "twitchPubli
     setSetting: mock(async (key: string, value: string) => {
       settings.set(key, value);
     }),
+    trySetSetting: mock(async (key: string, value: string) => {
+      settings.set(key, value);
+      return true;
+    }),
     findOrCreateByWoofx3UIUserId: mock(async () => ({ id: "engine-user" })),
   };
   const api = new Api({
@@ -19,6 +23,7 @@ function session(clientId: string, twitch: Partial<Pick<ApiOptions, "twitchPubli
     nats: { publish: mock(() => {}) } as unknown as ApiOptions["nats"],
     functions: null,
     barkloaderUrl: "http://barkloader.local",
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger: { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never,
@@ -100,5 +105,6 @@ describe("Twitch device login over RPC", () => {
     expect(stored).toMatchObject({ accessToken: "a1", refreshToken: "r1", userId: "42", publicClientId: "public-app" });
     expect(stored.clientId).toBeUndefined();
     expect(selectStrategy(stored)).toBe("engineRefresh");
+    expect(settings.get("integration.twitch.enabled")).toBe("true");
   });
 });

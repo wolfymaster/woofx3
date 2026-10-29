@@ -567,6 +567,42 @@ is kept as long as [getWorkflowHistory](#getworkflowhistory) keeps it.
 }
 ```
 
+#### listWorkflowRunSnapshots
+
+Lists recorded runs, newest first by start time, each as the `WorkflowRunSnapshot` the
+`workflow.run.recorded` and `workflow.run.updated` callbacks carry: the fields of `run` in
+[getWorkflowRun](#getworkflowrun) without `workflowName`, and without steps or alerts. A
+field the run never recorded is left out, so a run with no `triggerEvent` has no stored
+trigger event to replay. Requires the `workflow.runSnapshots` capability.
+
+A workflow with no recorded runs lists none. A `limit` that is not a whole number from 1
+to 200 is refused, and a failed read rejects instead of answering an empty list.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `workflowId` | string | no | Only this workflow's runs |
+| `limit` | number | no | At most this many runs, 1 to 200. Default 50 |
+
+**Response:**
+
+```json
+[
+  {
+    "id": "exec-001",
+    "workflowId": "wf-789",
+    "status": "completed",
+    "triggeredBy": "twitch",
+    "triggerEvent": "{\"type\":\"channel.follow\",...}",
+    "startedAt": "2026-01-15T10:30:00.000000000Z",
+    "completedAt": "2026-01-15T10:30:06.000000000Z",
+    "createdAt": "2026-01-15T10:30:00.000000000Z",
+    "updatedAt": "2026-01-15T10:30:06.000000000Z"
+  }
+]
+```
+
 #### getWorkflowCatalog
 
 Returns what the workflow builder composes from, in one read: `triggers` as

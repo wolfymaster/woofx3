@@ -106,4 +106,9 @@ USER 65532:65532
 # hosts set PORT, and it defaults to 8080.
 EXPOSE 8080
 
+# The services bind loopback and are reached only through the edge, which is
+# public whether or not PORT is set. This tells them so: the api refuses open
+# registration and the request guard leaves Host to WOOFX3_ALLOWED_HOSTS.
+ENV WOOFX3_BEHIND_EDGE=true
+
 ENTRYPOINT ["/usr/bin/tini", "--", "/app/entrypoint.sh"]

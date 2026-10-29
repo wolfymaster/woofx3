@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/nats-io/nats.go"
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
@@ -13,6 +14,9 @@ import (
 type NATSService struct {
 	*runtime.BaseService[*natsclient.Client]
 	logger *slog.Logger
+	// mu guards client and conn, which health checks read from their own
+	// goroutine while the runtime connects and disconnects the service.
+	mu     sync.RWMutex
 	client *natsclient.Client
 	conn   *nats.Conn
 }
@@ -31,6 +35,8 @@ func NewNATS(logger *slog.Logger, name, serviceType string) *NATSService {
 }
 
 func (s *NATSService) Connect(ctx context.Context, appCtx *runtime.ApplicationContext) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.client != nil && s.conn != nil {
 		return nil
 	}
@@ -54,16 +60,22 @@ func (s *NATSService) Connect(ctx context.Context, appCtx *runtime.ApplicationCo
 }
 
 func (s *NATSService) Disconnect(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.logger.Info("Disconnecting from NATS")
-	if s.conn != nil {
-		s.conn.Close()
-		s.conn = nil
+	if s.client != nil {
+		if err := s.client.Close(); err != nil {
+			return fmt.Errorf("closing NATS client: %w", err)
+		}
 	}
+	s.conn = nil
 	s.client = nil
 	s.SetClient(nil)
 	return s.BaseService.Disconnect(ctx)
 }
 
 func (s *NATSService) Connection() *nats.Conn {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.conn
 }

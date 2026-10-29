@@ -13,6 +13,7 @@
     "./engine-events": "./engine-events.ts",
     "./overlay-events": "./overlay-events.ts",
     "./pairing": "./pairing.ts",
+    "./platform-gateway": "./platform-gateway.ts",
     "./rpc": "./rpc.ts",
     "./stream-events": "./stream-events.ts",
     "./twitch-helix": "./twitch-helix.ts",

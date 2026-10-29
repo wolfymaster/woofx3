@@ -4,7 +4,7 @@ This spec covers everything a UI needs to manage Twitch chat commands and the
 "user groups" (roles) that gate them: which `Woofx3EngineApi` methods to
 call, the request/response shapes, and the webhook callbacks to handle so the
 UI can stay in sync without polling. It does not cover the chat-runtime side
-(parsing, cooldown, templating) — see `woofwoofwoof/src/commands.ts` and
+(parsing, cooldown, templating) — see `connectors/src/chat/commands.ts` and
 `docs/workflow/expressions.md` for that.
 
 All endpoints below are methods on `Woofx3EngineApi`
@@ -31,7 +31,9 @@ same file; webhook event types live in `shared/clients/typescript/api/webhooks.t
   belong to one of the command's `groupIds` or be listed in its
   `usernames`). A restricted command with empty `groupIds`/`usernames`
   is invocable by no one — the UI should warn on save if that combination
-  is reached, since it's very likely a mistake.
+  is reached, since it's very likely a mistake. A command created without a
+  visibility is restricted, and any other value is refused with
+  `invalid_argument`.
 - **Cooldown**: seconds between invocations of a command, enforced
   per-command (not per-user). `0` means never throttle. A throttled
   invocation is dropped silently in chat — there's nothing for the UI to
@@ -411,10 +413,10 @@ workflow.
 
 ### How a command runs its steps
 
-woofwoofwoof's commander handles a chat message in this order
-(`Commands.process` in `woofwoofwoof/src/commands.ts`):
+The chat dispatcher in the connectors service handles a chat message in this
+order (`ChatDispatcher.handleLine` in `connectors/src/chat/dispatcher.ts`):
 
-1. It matches the command word. A disabled command is not on the commander,
+1. It matches the command word. A disabled command is not in the table,
    so it never matches.
 2. It checks who may run the command (visibility, roles, groups and users).
    A refusal stops here, and does not spend the cooldown.
@@ -431,8 +433,8 @@ woofwoofwoof's commander handles a chat message in this order
 Every check comes before step 4, so a refused or throttled invocation does
 neither. Steps 4 and 5 are two separate publishes, though, not one: if the
 run's publish fails, workflows listening for the command have still run. The
-commander logs that and tells the chatter it could not run the command; a
-failed announcement is logged through the commander's publish-error hook.
+dispatcher logs that and tells the chatter it could not run the command; a
+failed announcement is logged.
 The command's workflow has a trigger of type
 `"command"` (`{"type": "command", "event": "chat.command.<slug>"}`), which no
 trigger registrar subscribes to anything, so the event of step 4 cannot start
@@ -449,13 +451,53 @@ Each conversion reads the command again, locked, inside its transaction, and
 links the workflow only if the command still links to none, so two db-proxies
 or two writers cannot give one command two workflows. A command it cannot
 convert, such as one whose action list is unreadable, is left as it was, with
-the reason in its `workflowError`: woofwoofwoof keeps running its actions
+the reason in its `workflowError`: the dispatcher keeps running its actions
 without a workflow by publishing `action.execute` (`Engine.RunActions`),
 which records no run history, and the next start tries again. Saving the
 command's steps also links it, and clears `workflowError`.
 
 Anything else holding actions and no workflow can run them the same way,
 through the `runActions(input)` engine RPC.
+
+### What the dispatcher trusts from the bus
+
+Anything connected to the message bus can publish the subjects the dispatcher
+reads, so it decides for itself what to believe. The full order of steps is in
+[Chat command dispatcher](./connectors.md#chat-command-dispatcher).
+
+- **Its own lines are not commands.** The engine speaks with the broadcaster's
+  token, so Twitch hands its lines back on `user.message` as the
+  broadcaster's, with broadcaster badges. The Twitch adapter recognises the
+  lines the engine said and marks them `fromEngine`
+  ([Own lines on the chat feed](./connectors.md#own-lines-on-the-chat-feed));
+  the dispatcher drops such a line before group membership is synced and
+  before any command is matched. Each recorded line answers for one echo, so
+  the streamer typing a command from the broadcaster account is still read.
+- **A reply never starts with `!`.** A line the engine says that would start
+  with the command prefix gets a zero-width space in front, so it reads the
+  same in chat but cannot run a command. The guard sits in the Twitch
+  adapter's send path, so replies, workflow messages, announcements and module
+  functions all pass it.
+- **Only the platform's word changes derived groups.** The subscriber, VIP,
+  moderator and broadcaster groups are written only from chat messages whose
+  CloudEvent `source` is the platform adapter's (`twitch` for Twitch). A
+  simulated chat message (the api publishes them with source `api`) still
+  runs commands, but never writes membership, its badges never satisfy a role,
+  and the built-in commands ignore it. `source` is declared by the publisher,
+  not proven: this check keeps the api's simulated messages out of the groups,
+  but it is not authentication. Telling the adapter apart from anything else
+  on the bus needs per-service bus credentials.
+- **Command events are reload signals.** `command.created`,
+  `command.updated` and `command.deleted` only name a command id. The
+  dispatcher lists the stored commands from db-proxy and applies what is
+  stored, or removes the command when db-proxy no longer holds it; the
+  snapshot an event carries is never applied. Reloads run one at a time, in
+  the order their events arrive.
+
+Other readers of `user.message`, such as workflows triggered on it, see the
+engine's own lines too. They carry `fromEngine`, and a line a workflow sent
+carries that run's `workflowChain`, which is how the workflow engine stops a
+workflow that replies in chat to every message from triggering itself.
 
 ## Out of scope
 
@@ -468,7 +510,7 @@ through the `runActions(input)` engine RPC.
   both return the full list for the current application; filter
   client-side.
 - No endpoint to check "which commands can user X currently invoke" —
-  that's evaluated at chat-message time in `woofwoofwoof`, not exposed as a
+  that's evaluated at chat-message time in the connectors service, not exposed as a
   standalone permission-check RPC. If you need to preview this in the UI,
   compute it client-side from `CommandSnapshot.visibility` /
   `.groupIds` / `.usernames` and `listGroupMembers()`.

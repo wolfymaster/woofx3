@@ -84,6 +84,9 @@ export async function startMessageBus(): Promise<MessageBusStart> {
         // WebSocket only, as the scene manager connects; no TCP port to collide on.
         WOOFX3_MESSAGEBUS_TCP_DISABLED: "true",
         WOOFX3_MESSAGEBUS_WEBSOCKET_PORT: String(wsPort),
+        // A loopback bus that lives for one test run; the suite tests the
+        // scene manager, not bus authentication.
+        WOOFX3_MESSAGEBUS_ALLOW_UNAUTHENTICATED: "true",
       },
       stdout: "ignore",
       stderr: "pipe",

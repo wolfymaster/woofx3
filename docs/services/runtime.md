@@ -25,7 +25,7 @@ Both runtimes implement the `Service` interface:
 interface Service<T> {
   connect(): Promise<void>;
   disconnect(): Promise<void>;
-  healthcheck: boolean;
+  healthcheck: boolean | (() => Promise<boolean>);
   name: string;
   type: string;
   readonly client: T;
@@ -46,6 +46,8 @@ type Service interface {
 ```
 
 :::
+
+In TypeScript, the NATS health monitor calls a function-valued `healthcheck` on every health check; the function must settle within its own bound, and a `false` result fails the check like any other, so the runtime reconnects its services. `createNATSHealthCheck` instead waits for a ready heartbeat from each service whose `healthcheck` is `true`. A service set to `false` is not checked.
 
 ### Application Interface
 
@@ -124,7 +126,7 @@ type RuntimeConfig struct {
 ::: code-group
 
 ```typescript [TypeScript]
-// woofwoofwoof/src/woofwoofwoof.ts
+// src/server.ts
 import { createRuntime, createApplication } from "@woofx3/common/runtime";
 
 const app = new MyApplication({ /* initial context */ });
@@ -199,7 +201,7 @@ The runtime includes a health monitoring system that:
 
 1. Checks liveness every 3 seconds
 2. Sends heartbeat every 5 seconds  
-3. Performs health checks on all registered services every 5 seconds
+3. Performs health checks on all registered services every 5 seconds (`HEALTH_CHECK_INTERVAL_MS`)
 4. Automatically retries failed services with exponential backoff
 
 ::: code-group
@@ -336,7 +338,7 @@ The runtime validates configuration against a Zod schema (TypeScript) or schema 
 ::: code-group
 
 ```typescript [TypeScript]
-// woofwoofwoof/src/config.ts
+// src/config.ts
 import { z } from "zod";
 
 export const WoofEnvSchema = z.object({
@@ -361,10 +363,42 @@ var EnvSchema = schema.NewSchema(map[string]*schema.Field{
 
 :::
 
-Every service's message bus client reads `messagebusUrl` and, when the bus
-requires one, `messagebusToken` (`WOOFX3_MESSAGEBUS_TOKEN`). A blank token sends
-none. See [Message bus hardening](./deployment.md#message-bus-hardening) for the
+Every service's message bus client reads `messagebusUrl` and
+`messagebusToken` (`WOOFX3_MESSAGEBUS_TOKEN`), which the bus requires unless it
+was started without authentication. A blank token sends none. See [Message bus hardening](./deployment.md#message-bus-hardening) for the
 server side and which key each client reads.
+
+### Staying connected to the message bus
+
+The shared message bus clients (Go and TypeScript) own one connection each,
+for the life of the process, and never give up on it:
+
+- **Reconnects are unlimited.** When the bus goes away the connection retries
+  every second plus up to half a second of random jitter, so a fleet of
+  services does not reconnect in lockstep. Messages published meanwhile are
+  buffered, and every subscription is restored on reconnect. Messages the bus
+  sent while a subscriber was away are not replayed; a TypeScript consumer that
+  mirrors state uses `onReconnect` to resynchronise.
+- **The first connect waits for the bus.** The Go client returns at once and
+  keeps dialling in the background. The TypeScript client retries its first
+  dial 30 times, a second apart, then rejects, so a service that can run
+  without the bus (the scene manager, the API's offline mode) is not held back
+  forever. Both paces are named defaults: `DefaultReconnectWait` and `DefaultReconnectJitter` in Go,
+  `DEFAULT_RECONNECT_POLICY` (overridable per client through
+  `NATSConfig.reconnect`) in TypeScript.
+- **Closed is final.** A connection closes only after an explicit close (or a
+  failure the library gives up on, such as a revoked credential). The client
+  does not dial a replacement, which would silently carry none of the old
+  subscriptions: every later call fails with "NATS connection is closed", the
+  Go client's `Healthy()` reports false, and the TypeScript client's
+  `isClosed()` reports true. The runtime notices a closed Go connection
+  because the NATS health monitor's liveness publish then fails with the
+  closed error.
+- **Connection events are logged.** Connect, disconnect, reconnect and close
+  are logged through the injected logger. In Go, asynchronous errors are too:
+  a slow consumer that is dropping messages logs its subject, the error, and
+  its pending message and byte counts and dropped total. The TypeScript client
+  requires a logger; there is no console fallback.
 
 ## Graceful Shutdown
 
@@ -378,7 +412,7 @@ The runtime handles graceful shutdown on:
 ::: code-group
 
 ```typescript [TypeScript]
-// woofwoofwoof/src/woofwoofwoof.ts
+// src/server.ts
 async function gracefulShutdown(signal: string): Promise<void> {
   console.log(`Received ${signal}, starting graceful shutdown...`);
   try {
@@ -442,3 +476,39 @@ func CalculateNextBackoffDelay(currentDelay time.Duration) time.Duration {
 ```
 
 :::
+
+## Signal-driven shutdown helper
+
+TypeScript entrypoints call `installShutdown` from `@woofx3/common/runtime` instead of hand-rolling signal handlers. Everything it touches is injected, so tests drive it with a fake process and fake timers.
+
+```typescript
+import { installShutdown } from "@woofx3/common/runtime";
+
+installShutdown({
+  stop: () => runtime.stop(), // the runtime's own stop()
+  logger,
+  deadlineMs: config.shutdownDeadlineMs,
+  exit: (code) => process.exit(code),
+  process,
+  timers: { setTimeout, clearTimeout },
+});
+```
+
+- `SIGTERM`, `SIGINT` and `SIGBREAK` (the orchestrator's stop request on Windows) are trapped. The first one calls `stop`.
+- A second signal, or `deadlineMs` elapsing before `stop` settles, exits with code 1 and logs which of the two happened.
+- A clean stop exits 0; a `stop` that throws exits 1.
+- `uncaughtException` is logged and then shuts down like a signal, but always exits 1. `unhandledRejection` is logged and the process keeps running.
+- `deadlineMs` must be greater than 0; there is no default, the caller names its own.
+- `dispose()` removes the listeners, cancels a pending deadline, and stops an in-flight stop from exiting the process.
+
+## Capped backoff helper
+
+`createBackoff({ baseMs, maxMs }, random)` from `@woofx3/common/runtime` returns `{ next(), reset() }` for retry loops (connection re-dials, refresh retries).
+
+- Exponential with full jitter: the nth failure waits a random time between 0 and `min(maxMs, baseMs * 2^n)`.
+- At the cap the ceiling stays put, so a long outage neither overflows nor waits longer than `maxMs`.
+- `reset()` starts over after a success.
+- The configuration must satisfy `0 < baseMs <= maxMs < Infinity`, otherwise construction throws. The `RandomSource` must return values in `[0, 1)`; `next()` throws otherwise. There are no default values; callers pass their own named constants.
+- `RandomSource` and `Clock` are small interfaces so tests use a seeded source instead of `Math.random`.
+
+This is separate from the service-retry strategy above, which keeps its own fixed doubling schedule.

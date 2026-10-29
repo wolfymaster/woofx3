@@ -42,6 +42,9 @@ const (
 	ResourceKindAudio  = "audio"
 	ResourceKindOther  = "other"
 	ResourceKindFolder = "folder"
+	// A module archive uploaded to be installed. Kept out of a listing that
+	// names no kind, since a media library has nothing to show for one.
+	ResourceKindCustomModule = "custom_module"
 
 	// A row exists and an upload URL was issued, but the bytes are not
 	// confirmed present yet. Not servable.
@@ -57,11 +60,13 @@ func (Resource) TableName() string {
 }
 
 // ValidResourceKind reports whether kind is one of the values the
-// engine assigns. Callers upstream derive kind from a MIME type; this
-// is the fail-fast check that a bad value never reaches the table.
+// engine assigns. Callers upstream derive kind from a MIME type, or
+// declare a module archive; this is the fail-fast check that a bad value
+// never reaches the table.
 func ValidResourceKind(kind string) bool {
 	switch kind {
-	case ResourceKindImage, ResourceKindVideo, ResourceKindAudio, ResourceKindOther, ResourceKindFolder:
+	case ResourceKindImage, ResourceKindVideo, ResourceKindAudio, ResourceKindOther, ResourceKindFolder,
+		ResourceKindCustomModule:
 		return true
 	default:
 		return false

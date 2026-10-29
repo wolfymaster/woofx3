@@ -55,7 +55,7 @@ func (s *resourceService) CreateResource(ctx context.Context, req *client.Create
 		return nil, twirp.InvalidArgumentError("kind", "use CreateFolder to create a folder")
 	}
 	if !models.ValidResourceKind(kind) {
-		return nil, twirp.InvalidArgumentError("kind", "must be image, video, audio, or other")
+		return nil, twirp.InvalidArgumentError("kind", "must be image, video, audio, other, or custom_module")
 	}
 	status := req.Status
 	if status == "" {
@@ -67,7 +67,7 @@ func (s *resourceService) CreateResource(ctx context.Context, req *client.Create
 	if req.Size < 0 {
 		return nil, twirp.InvalidArgumentError("size", "must not be negative")
 	}
-	id := uuid.New()
+	id := uuid.Nil
 	if req.Id != nil {
 		parsed, err := uuid.Parse(*req.Id)
 		if err != nil {
@@ -128,7 +128,6 @@ func (s *resourceService) CreateFolder(ctx context.Context, req *client.CreateFo
 
 	now := time.Now().UTC()
 	row := &models.Resource{
-		ID:        uuid.New(),
 		ParentID:  parentID,
 		IsFolder:  true,
 		Name:      name,
@@ -291,6 +290,10 @@ func (s *resourceService) DeleteResource(ctx context.Context, req *client.Delete
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("resource not found")
+		}
+		var installed *repo.ResourceInstalledError
+		if errors.As(err, &installed) {
+			return nil, twirp.NewError(twirp.FailedPrecondition, installed.Error())
 		}
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete resource: %w", err))
 	}

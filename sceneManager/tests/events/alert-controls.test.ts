@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import type { AlertQueueState } from "@woofx3/api";
 import {
   AlertReplays,
@@ -9,12 +9,26 @@ import {
   replayAlert,
   skipCurrentAlerts,
 } from "../../src/events/alert-controls";
-import { dispatchAlert } from "../../src/events/alert-dispatch";
+import { dispatchAlert, presentAlertDeliveries } from "../../src/events/alert-dispatch";
 import { DeliveryStore } from "../../src/events/delivery-store";
+import { AlertFrameUnavailableError, type AlertFraming } from "../../src/scene/frame-catalog";
 import type { OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function fakeLogger() {
   return { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
+}
+
+/** Frames every layout widget at a frame URL named after its widget. */
+function fakeFraming(): AlertFraming {
+  return {
+    frameAlert: async (layout) =>
+      Object.fromEntries(
+        Object.entries(layout.widgets).map(([id, placement]) => [
+          id,
+          { frameUrl: `/frames/${placement.widget}?v=1`, linkedResources: {} },
+        ])
+      ),
+  };
 }
 
 /** The db proxy as the controls and the delivery store see it, recording every write. */
@@ -172,7 +186,13 @@ const sceneWidgets: Record<string, OverlayWidgetInstance[]> = {
 };
 
 function queueDeps(db: ReturnType<typeof fakeDb>["db"], store: DeliveryStore) {
-  return { db, host: fakeHost(sceneWidgets) as any, deliveryStore: store, logger: fakeLogger() };
+  return {
+    db,
+    host: fakeHost(sceneWidgets) as any,
+    deliveryStore: store,
+    framing: fakeFraming(),
+    logger: fakeLogger(),
+  };
 }
 
 /** What each alert widget still has open, by instance, as event ids. */
@@ -521,6 +541,7 @@ describe("replayAlert", () => {
       db,
       host: fakeHost(scenes) as any,
       deliveryStore: store,
+      framing: fakeFraming(),
       logger: fakeLogger(),
       newEnvelopeId: () => "env-replay",
     };
@@ -603,7 +624,13 @@ describe("dispatchAlert", () => {
     return {
       writes,
       overlays,
-      deps: { db, host: fakeHost(scenes, alerts) as any, deliveryStore: store, logger: fakeLogger() },
+      deps: {
+        db,
+        host: fakeHost(scenes, alerts) as any,
+        deliveryStore: store,
+        framing: fakeFraming(),
+        logger: fakeLogger(),
+      },
     };
   }
 
@@ -620,6 +647,52 @@ describe("dispatchAlert", () => {
 
     expect(overlays[0]!.deliveries()).toHaveLength(1);
     expect(overlays[1]!.deliveries()).toEqual([]);
+  });
+
+  it("logs where the dispatch's time went, read from the injected clock", async () => {
+    const { deps } = setup({ "scene-1": [alertInstance("inst-1", "default")] });
+    const logged: Array<{ message: string; fields: Record<string, unknown> }> = [];
+    let time = 0;
+
+    await dispatchAlert(
+      { ...JSON.parse(envelope()), rowId: "row-9" },
+      {
+        ...deps,
+        logger: {
+          ...fakeLogger(),
+          info: (message: string, fields: Record<string, unknown>) => logged.push({ message, fields }),
+        },
+        now: () => {
+          time += 5;
+          return time;
+        },
+      }
+    );
+
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toEqual({
+      message: "ui.notify.alert: dispatched",
+      fields: { alertId: "env-original", scenes: 1, layoutMs: 5, framesMs: 5, scenesMs: 5, recordMs: 5, totalMs: 45 },
+    });
+  });
+
+  it("records where each layout widget's frame loads from", async () => {
+    const { overlays, deps } = setup({ "scene-1": [alertInstance("inst-1", "default")] });
+
+    await dispatchAlert({ ...JSON.parse(envelope()), rowId: "row-9" }, deps);
+
+    const value = overlays[0]!.deliveries()[0].value as {
+      layout: { widgets: Record<string, { widget: string }> };
+      frames: unknown;
+    };
+    const expected = Object.fromEntries(
+      Object.entries(value.layout.widgets).map(([id, placement]) => [
+        id,
+        { frameUrl: `/frames/${placement.widget}?v=1`, linkedResources: {} },
+      ])
+    );
+    expect(Object.keys(expected).length).toBeGreaterThan(0);
+    expect(value.frames).toEqual(expected);
   });
 
   it("carries the engine's row id into the delivery", async () => {
@@ -643,6 +716,37 @@ describe("dispatchAlert", () => {
         error: 'no alert widget named "sidebar" on a running scene',
       },
     ]);
+  });
+
+  it("reports an alert as not played when a widget's frame is unavailable", async () => {
+    const { overlays, writes, deps } = setup({ "scene-1": [alertInstance("inst-1", "default")] });
+    const framing: AlertFraming = {
+      frameAlert: async () => {
+        throw new AlertFrameUnavailableError("t1", "woofx3:widget:text");
+      },
+    };
+
+    const outcome = await dispatchAlert({ ...JSON.parse(envelope()), rowId: "row-9" }, { ...deps, framing });
+
+    expect(outcome.ok).toBe(false);
+    expect(overlays[0]!.deliveries()).toEqual([]);
+    expect(writes.lifecycle).toEqual([
+      {
+        id: "row-9",
+        envelopeId: "env-original",
+        status: "failed",
+        error: "widget woofx3:widget:text's frame is unavailable",
+      },
+    ]);
+  });
+
+  it("does not frame an alert that reaches no scene", async () => {
+    const { deps } = setup({ "scene-1": [alertInstance("inst-1", "default")] });
+    const frameAlert = mock(async () => ({}));
+
+    await dispatchAlert(JSON.parse(envelope("sidebar")), { ...deps, framing: { frameAlert } });
+
+    expect(frameAlert).not.toHaveBeenCalled();
   });
 
   it("delivers a composition, converting a list-shaped layout", async () => {
@@ -713,6 +817,7 @@ describe("AlertReplays", () => {
       db,
       host: fakeHost({ "scene-1": [alertInstance("inst-1", "default")] }) as any,
       deliveryStore: store,
+      framing: fakeFraming(),
       logger: fakeLogger(),
       newEnvelopeId: () => `env-${calls}`,
     };
@@ -750,5 +855,15 @@ describe("AlertReplays", () => {
     await replays.replay("row-1");
 
     expect(calls()).toBe(2);
+  });
+});
+
+describe("presentAlertDeliveries", () => {
+  it("presents only alert deliveries through the media proxy", () => {
+    const present = presentAlertDeliveries({ alertDelivery: (value) => ({ signed: value }) });
+    const base = { eventId: "e1", instanceId: "i1", key: "k" };
+
+    expect(present({ ...base, type: "alert", value: 1 }).value).toEqual({ signed: 1 });
+    expect(present({ ...base, type: "widget.event", value: 1 }).value).toBe(1);
   });
 });

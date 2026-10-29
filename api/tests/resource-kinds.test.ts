@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { DeclaredResourceKind } from "@woofx3/api";
-import { declaredResourceKinds, attributedResourceKinds } from "../src/resource-kinds";
+import { attributedResourceKinds, declaredResourceKinds } from "../src/resource-kinds";
 import { parseStoredManifest } from "../src/stored-manifest";
 
 const silent = { debug() {}, info() {}, warn() {}, error() {} } as any;

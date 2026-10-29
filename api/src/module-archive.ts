@@ -1,4 +1,5 @@
 import type { ModuleFileEntry } from "@woofx3/api";
+import { manifestLocalEndpoints, manifestPermissions } from "@woofx3/api/module-manifest";
 import { strFromU8, type UnzipFileInfo, unzipSync } from "fflate";
 
 /**
@@ -135,6 +136,32 @@ export function readModuleArchive(archive: Uint8Array): ModuleArchiveContents {
   }
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { manifest: manifest as Record<string, unknown>, files };
+}
+
+/** What a manifest declares that an install approval does not cover. */
+export interface ApprovalShortfall {
+  unapproved: string[];
+  unapprovedLocalEndpoints: string[];
+}
+
+/**
+ * The permissions and `local[]` endpoints a manifest declares beyond what
+ * was approved, or null when the approval covers everything. Every install
+ * that takes an approval refuses an archive this does not answer null for.
+ */
+export function approvalShortfall(
+  manifest: Record<string, unknown>,
+  approval: { approvedPermissions: readonly string[]; approvedLocalEndpoints: readonly string[] }
+): ApprovalShortfall | null {
+  const unapproved = unapprovedIds(manifestPermissions(manifest), approval.approvedPermissions);
+  const unapprovedLocalEndpoints = unapprovedIds(
+    manifestLocalEndpoints(manifest).map((endpoint) => endpoint.id),
+    approval.approvedLocalEndpoints
+  );
+  if (unapproved.length === 0 && unapprovedLocalEndpoints.length === 0) {
+    return null;
+  }
+  return { unapproved, unapprovedLocalEndpoints };
 }
 
 /** The ids in `requested` that `approved` does not contain, in `requested` order. */

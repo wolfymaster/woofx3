@@ -4,13 +4,13 @@ import { EngineEventType, EngineRequestType } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { newWebSocketRpcSession, RpcTarget } from "capnweb";
 import { Api } from "../src/api";
-import { EngineEventStream } from "../src/engine-event-stream";
 import { ClientSessions } from "../src/client-sessions";
+import { EngineEventStream } from "../src/engine-event-stream";
 import { ApiGateway } from "../src/gateway";
 import { createHttpServer } from "../src/http";
 import { resolveRegistrationPolicy } from "../src/registration";
 import { TwitchTokenSource } from "../src/twitch-token-source";
-import { WebhookClient } from "../src/webhook-client";
+import { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient } from "../src/webhook-client";
 
 /*
  * The event stream end to end, over a real capnweb WebSocket session: what a
@@ -48,16 +48,17 @@ async function startEngine() {
     nats: null,
     functions: null,
     barkloaderUrl: "http://b",
+    barkloaderKey: "test-barkloader-key-0123456789abcdef",
     sceneManagerUrl: "http://scene.test",
     apiUrl: "http://api.test",
     logger,
   });
   const stream = new EngineEventStream(logger);
   api.setEngineEventStream(stream);
-  const webhooks = new WebhookClient(db as never, logger, stream);
+  const webhooks = new WebhookClient(db as never, logger, stream, DEFAULT_WEBHOOK_CLIENT_CONFIG);
   api.setWebhookClient(webhooks);
   await webhooks.refreshCallbackUrls();
-  const auth = { validate: async () => ({ kind: "accepted", description: "desktop", boundOrigin: null }) };
+  const auth = { validate: async () => ({ ok: true, value: { description: "desktop", boundOrigin: null } }) };
   const gateway = new ApiGateway(
     api,
     auth as never,
@@ -74,7 +75,7 @@ async function startEngine() {
     health: () => ({}) as never,
     logger,
     gateway,
-    requestGuard: { allowedHosts: null, allowedOrigins: null },
+    requestGuard: { allowedHosts: null, allowedOrigins: null, listedOrigins: null },
     onProcessingCallback: async () => {},
     barkloaderWebhookSecret: null,
   });

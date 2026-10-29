@@ -431,6 +431,20 @@ describe("installWidgetHostShim — settings", () => {
     expect(h.sent("settings.reads").length).toBe(1);
   });
 
+  it("reports the settings read before a subscription ahead of it", () => {
+    const h = makeHarness(makeBoot());
+    const host = install(h)!;
+    h.deliver(initMsg());
+    void host.settings.label;
+    host.onEvent(() => {});
+
+    const types = h.parent.messages.map((m) => (m.data as { type: string }).type);
+    expect(types.filter((type) => type === "settings.reads" || type === "events.subscribe")).toEqual([
+      "settings.reads",
+      "events.subscribe",
+    ]);
+  });
+
   it("reports every setting read when the script spreads them", async () => {
     const h = makeHarness(makeBoot());
     const host = install(h)!;

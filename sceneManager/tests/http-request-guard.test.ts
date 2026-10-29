@@ -60,6 +60,9 @@ describe("sceneManager request guard set", () => {
     allowedOrigins: "http://127.0.0.1:*,null",
     allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
     opaqueOrigin: "allow",
+    exposure: "loopback",
+    ownUrls: [],
+    extraDefaultOrigins: [],
   });
 
   test("an unknown Host is 421", async () => {

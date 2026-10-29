@@ -88,10 +88,16 @@ export const ENGINE_CAPABILITIES = {
   obsStatus: "obs.status",
   /**
    * A manifest's `local[]` endpoints, `setRelayConfig`, the
-   * `relay.credential.requested` callback, and sceneManager's endpoint dialer
+   * `relay.credential.requested` callback, and the connectors host's endpoint dialer
    * reaching OBS through the companion's bridge.
    */
   modulesLocalEndpoints: "modules.localEndpoints",
+  /**
+   * The `ctx.local` host extension: module code sends to, and requests from,
+   * its own declared websocket `local[]` endpoints through the connectors
+   * host's companion gateway.
+   */
+  modulesLocalEndpointCalls: "modules.localEndpointCalls",
   /**
    * A manifest's `oauth[]` integrations, `ctx.oauth.request`, and finishing a
    * connect with `completeModuleOAuth`.
@@ -109,6 +115,12 @@ export const ENGINE_CAPABILITIES = {
    * `inspectMarketplaceListing`, `installMarketplaceBundle`.
    */
   modulesMarketplaceInstall: "modules.marketplaceInstall",
+  /**
+   * Installing a module from a custom module archive stored as a resource
+   * (`requestUploadUrl` with kind `custom_module`), with the same approval
+   * checks as a marketplace install: `installModuleFromResource`.
+   */
+  modulesResourceInstall: "modules.resourceInstall",
   /**
    * Marketplace catalog reads through the engine, answered with the
    * marketplace's JSON unchanged: `marketplaceSearch`, `marketplaceCounts`,
@@ -165,6 +177,12 @@ export const ENGINE_CAPABILITIES = {
    * `twitchUnpinChatMessage`, and `pin` on `twitchSendChatMessage`.
    */
   twitchPins: "twitch.pins",
+  /**
+   * One platform-neutral send through the platform gateway in connectors,
+   * answered with each platform's own outcome: `sendToPlatforms`. Coexists
+   * with the Twitch-only `twitch*` methods.
+   */
+  platformGateway: "platform.gateway",
   /** The Clip button's Helix call, made and answered like `twitch.streamInfo`'s: `twitchCreateClip`. */
   twitchClips: "twitch.clips",
   /**
@@ -199,6 +217,12 @@ export const ENGINE_CAPABILITIES = {
    */
   scenesRepair: "scenes.repair",
   /**
+   * Reading scenes as their whole stored record, the `SceneSnapshot` the
+   * `scene.*` webhooks carry, for a client that keeps no mirror of those
+   * webhooks: `listSceneSnapshots`, `getSceneSnapshot`.
+   */
+  scenesSnapshots: "scenes.snapshots",
+  /**
    * Alert compositions stored in the engine: `listAlertCompositions`,
    * `getAlertComposition`, `createAlertComposition`,
    * `updateAlertComposition`, `deleteAlertComposition`, editing one with
@@ -232,6 +256,11 @@ export const ENGINE_CAPABILITIES = {
   workflowViewerFacts: "workflow.viewerFacts",
   /** One recorded run with its steps' inputs, outputs and timings, and the alerts it fired: `getWorkflowRun`. */
   workflowRunDetail: "workflow.runDetail",
+  /**
+   * Recorded runs listed as the whole `WorkflowRunSnapshot` the run callbacks
+   * carry, newest first, by workflow or across all: `listWorkflowRunSnapshots`.
+   */
+  workflowRunSnapshots: "workflow.runSnapshots",
   /** The triggers, actions and module functions a workflow can use, in one read: `getWorkflowCatalog`. */
   workflowCatalog: "workflow.catalog",
   /**
@@ -239,6 +268,22 @@ export const ENGINE_CAPABILITIES = {
    * `between` bound) is resolved, so it may be a `${...}` reference.
    */
   workflowConditionListReferences: "workflow.conditionListReferences",
+  /**
+   * A `wait` task of type `delay` pausing the run for `durationMs`, and a
+   * wait's `timeout` fired by a timer rather than only by the next event.
+   */
+  workflowDelayWait: "workflow.delayWait",
+  /**
+   * `triggerWorkflowByName` options: sample `triggerData`, `platform` and
+   * `skipConditions`, answered with the started run or the unmet conditions.
+   */
+  workflowTestRunOptions: "workflow.testRunOptions",
+  /** `triggerWorkflowByName` with `dryRun`: steps with side effects record what they would do instead. */
+  workflowDryRun: "workflow.dryRun",
+  /** `cancelWorkflow` stops a running run and answers with an `outcome`, not only a history mark. */
+  workflowRealCancel: "workflow.realCancel",
+  /** `getWorkflowHealth`, and the `workflow.health.changed` and `workflow.health.snapshot` webhooks. */
+  workflowHealth: "workflow.health",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];

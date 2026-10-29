@@ -59,7 +59,7 @@ export const subscriptionsRoutes = routeModule({
       }
     });
 
-    // Twitch stream lifecycle. The twitch service publishes
+    // Twitch stream lifecycle. The connectors host's Twitch adapter publishes
     // `stream.online` / `stream.offline` cloudevents from
     // its EventSub listener; we translate them to the webhook
     // `stream.online` / `stream.offline` events the UI subscribes to.

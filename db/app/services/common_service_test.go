@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/libtnb/sqlite"
+	"github.com/wolfymaster/woofx3/db/database"
 	"gorm.io/gorm"
 )
 
@@ -16,6 +17,9 @@ func newTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := database.RegisterIDAssignment(db, database.RandomIDs{}); err != nil {
+		t.Fatalf("register id assignment: %v", err)
 	}
 	// One connection: each new :memory: connection is a separate database,
 	// and a transaction would otherwise see none of the tables below.
@@ -73,7 +77,9 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_by_ref TEXT NOT NULL DEFAULT '',
 			manifest_id TEXT NOT NULL DEFAULT '',
 			taxonomy TEXT NOT NULL DEFAULT '[]',
-			enabled BOOLEAN NOT NULL DEFAULT 0
+			enabled BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE command_groups (
 			command_id TEXT NOT NULL,

@@ -163,10 +163,12 @@ impl Harness {
             module_name: "woofx3".to_string(),
             module_version: "0.7.0".to_string(),
             permissions: Default::default(),
-            url_settings: Default::default(),
+            protected_settings: Default::default(),
+            local_endpoints: Default::default(),
+            resource_link_settings: Default::default(),
             deadline: std::time::Instant::now() + crate::host::MAX_INVOCATION_TIMEOUT,
         };
-        let returned = QuickJSAdapter::new()
+        let returned = QuickJSAdapter::new(crate::runtime::limits::SandboxLimits::default())
             .unwrap()
             .execute(self.source, entry_point, &invocation)
             .map_err(|err| err.to_string())?;

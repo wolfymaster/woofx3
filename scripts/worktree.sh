@@ -21,6 +21,9 @@
 #
 # Every task also gets a slot number, and with it a block of ports and its own
 # .woofx3.json, so engines started from different worktrees do not collide.
+# That .woofx3.json declares the engine local (woofx3Hosting), as a desktop
+# engine is: it runs on the developer's own machine and dials local endpoints
+# such as OBS directly.
 # Slot 0 is the main clone and keeps the default ports; `config` writes its
 # .woofx3.json.
 #
@@ -38,22 +41,6 @@ readonly CODE_ROOT="${WOOFX3_CODE_ROOT:-$HOME/code}"
 readonly ENGINE_REPO="$CODE_ROOT/woofx3"
 readonly UI_REPO="$CODE_ROOT/woofx3-ui"
 readonly WORKTREES="${WOOFX3_WORKTREES:-$CODE_ROOT/wt}"
-
-# Engine packages with their own node_modules. Each resolves its siblings by
-# relative path, so all of them must be installed before any one type-checks.
-# Must match the install lists in .github/workflows/{api,service}-checks.yml.
-readonly ENGINE_BUN_DIRS=(
-  shared/common/typescript
-  shared/clients/typescript/api
-  shared/clients/typescript/db
-  shared/clients/typescript/nats
-  shared/clients/typescript/twitch
-  shared/clients/typescript/module-sdk
-  api
-  twitch
-  woofwoofwoof
-  sceneManager
-)
 
 usage() {
   sed -n '4,8p' "$0" | sed 's/^# \{0,1\}//' >&2
@@ -107,7 +94,7 @@ task_dir() {
 ports_for_slot() {
   local slot="$1"
   if [ "$slot" -eq 0 ]; then
-    API_PORT=5050 DB_PORT=5555 BARKLOADER_PORT=9653 NATS_PORT=4222 NATS_WS_PORT=4225 SCENE_PORT=9101 UI_PORT=5173
+    API_PORT=5050 DB_PORT=5555 BARKLOADER_PORT=9653 NATS_PORT=4222 NATS_WS_PORT=4225 SCENE_PORT=9101 CONNECTORS_PORT=9102 UI_PORT=5173
     return
   fi
   local base=$((20000 + 100 * slot))
@@ -117,6 +104,7 @@ ports_for_slot() {
   NATS_PORT=$((base + 3))
   NATS_WS_PORT=$((base + 4))
   SCENE_PORT=$((base + 5))
+  CONNECTORS_PORT=$((base + 6))
   UI_PORT=$((base + 10))
 }
 
@@ -144,6 +132,7 @@ write_engine_config() {
   "storagePath": "./data/module-storage.db",
   "databaseProxyUrl": "http://127.0.0.1:$DB_PORT",
   "databaseProxyPort": "$DB_PORT",
+  "dbProxyToken": "$(random_hex)",
   "databaseUrl": "sqlite://./data/woofx3.db",
   "secretsKey": "$(head -c 32 /dev/urandom | base64)",
   "logLevel": "info",
@@ -152,12 +141,15 @@ write_engine_config() {
   "messagebusServerListeningPort": $NATS_PORT,
   "messagebusWebSocketPort": $NATS_WS_PORT,
   "messagebusUrl": "ws://127.0.0.1:$NATS_WS_PORT",
+  "messagebusToken": "$(random_hex)",
   "messagebusJwt": "",
   "messagebusNKey": "",
   "sceneManagerHost": "127.0.0.1",
   "woofx3SceneManagerPort": "$SCENE_PORT",
   "sceneManagerUrl": "http://127.0.0.1:$SCENE_PORT",
   "sceneManagerTokenSecret": "$(random_hex)",
+  "woofx3ConnectorsPort": "$CONNECTORS_PORT",
+  "woofx3Hosting": "local",
   "twitchChannelName": "",
   "twitchClientId": "",
   "twitchClientSecret": ""
@@ -178,16 +170,14 @@ WOOFX3_BARKLOADER_PORT=$BARKLOADER_PORT
 WOOFX3_MESSAGEBUS_PORT=$NATS_PORT
 WOOFX3_MESSAGEBUS_WEBSOCKET_PORT=$NATS_WS_PORT
 WOOFX3_SCENE_MANAGER_PORT=$SCENE_PORT
+WOOFX3_CONNECTORS_PORT=$CONNECTORS_PORT
 WOOFX3_UI_PORT=$UI_PORT
 EOF
 }
 
 install_engine_deps() {
   local engine_dir="$1"
-  local dir
-  for dir in "${ENGINE_BUN_DIRS[@]}"; do
-    (cd "$engine_dir/$dir" && bun install --frozen-lockfile --silent) || fail "bun install failed in $engine_dir/$dir"
-  done
+  (cd "$engine_dir" && bun install --frozen-lockfile --silent) || fail "bun install failed in $engine_dir"
   # sceneManager imports @woofx3/module-sdk by its built output.
   (cd "$engine_dir/shared/clients/typescript/module-sdk" && bun run --silent build >/dev/null) ||
     fail "module-sdk build failed in $engine_dir"
@@ -286,7 +276,7 @@ cmd_new() {
   else
     ln -s "$ENGINE_REPO" "$dir/woofx3"
     echo "  woofx3: symlink to $ENGINE_REPO"
-    [ -d "$ENGINE_REPO/shared/clients/typescript/api/node_modules" ] || install_engine_deps "$ENGINE_REPO"
+    [ -d "$ENGINE_REPO/node_modules" ] || install_engine_deps "$ENGINE_REPO"
   fi
   if $with_ui; then
     add_worktree "$UI_REPO" "$dir/woofx3-ui" "$branch" "$base"

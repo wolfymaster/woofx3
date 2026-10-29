@@ -151,6 +151,15 @@ export function isMissingRpcMethod(err: unknown, method: string): boolean {
 export const CLIENT_REVOKED_CLOSE_CODE = 4401;
 
 /**
+ * The `name` of the error `authenticate` rejects with when the engine could
+ * not check the credentials (its database gave no verdict), as opposed to
+ * refusing them. capnweb does not carry the name to the client, which sees a
+ * plain `Error` that `isAuthenticationRefused` does not match: a transient
+ * failure, so the same credentials may succeed on a retry.
+ */
+export const AUTH_UNAVAILABLE = "AuthUnavailable";
+
+/**
  * The unauthenticated capnweb entry point served by the engine. Connecting
  * to the engine's `/api` URL via capnweb HTTP batch (or WebSocket) gives
  * back a stub of this shape.

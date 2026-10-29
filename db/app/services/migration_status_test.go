@@ -18,6 +18,9 @@ func openEmptySQLite(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	if err := database.RegisterIDAssignment(db, database.RandomIDs{}); err != nil {
+		t.Fatalf("register id assignment: %v", err)
+	}
 	return db
 }
 

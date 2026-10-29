@@ -49,6 +49,12 @@ export interface Module {
    */
   marketplaceListingId?: string | null | undefined;
   marketplaceEdition?: number | null | undefined;
+  /**
+   * The stored resource (a module archive the user uploaded) this module
+   * was installed from. Unset for any other install. A module records at
+   * most one origin: this or the marketplace listing, never both.
+   */
+  uploadResourceId?: string | null | undefined;
 }
 
 export interface ModuleFunction {
@@ -87,10 +93,16 @@ export interface CreateModuleRequest {
   moduleId: string;
   /**
    * Set together for an install from the marketplace; see Module. A request
-   * that leaves them unset keeps what an existing row of the same name has.
+   * that names no origin keeps what an existing row of the same name has; one
+   * that names an origin replaces the other.
    */
   marketplaceListingId?: string | null | undefined;
   marketplaceEdition?: number | null | undefined;
+  /**
+   * Set for an install from a stored module archive; see Module. Never set
+   * together with the marketplace fields.
+   */
+  uploadResourceId?: string | null | undefined;
 }
 
 export interface CreateModuleFunctionRequest {
@@ -1533,14 +1545,12 @@ export interface ModuleService<Context = unknown> {
     registerAssetsRequest: module_asset.RegisterAssetsRequest,
     context: Context,
   ) =>
-    | Promise<module_asset.ListAssetsResponse>
-    | module_asset.ListAssetsResponse;
+    Promise<module_asset.ListAssetsResponse> | module_asset.ListAssetsResponse;
   ListAssets: (
     listAssetsRequest: module_asset.ListAssetsRequest,
     context: Context,
   ) =>
-    | Promise<module_asset.ListAssetsResponse>
-    | module_asset.ListAssetsResponse;
+    Promise<module_asset.ListAssetsResponse> | module_asset.ListAssetsResponse;
   DeleteAssetsByModuleId: (
     deleteByModuleIdRequest: DeleteByModuleIdRequest,
     context: Context,
@@ -2183,6 +2193,7 @@ export const Module = {
       moduleKey: "",
       marketplaceListingId: undefined,
       marketplaceEdition: undefined,
+      uploadResourceId: undefined,
       ...msg,
     };
   },
@@ -2250,6 +2261,9 @@ export const Module = {
     }
     if (msg.marketplaceEdition != undefined) {
       writer.writeInt32(15, msg.marketplaceEdition);
+    }
+    if (msg.uploadResourceId != undefined) {
+      writer.writeString(16, msg.uploadResourceId);
     }
     return writer;
   },
@@ -2327,6 +2341,10 @@ export const Module = {
         }
         case 15: {
           msg.marketplaceEdition = reader.readInt32();
+          break;
+        }
+        case 16: {
+          msg.uploadResourceId = reader.readString();
           break;
         }
         default: {
@@ -2502,6 +2520,7 @@ export const CreateModuleRequest = {
       moduleId: "",
       marketplaceListingId: undefined,
       marketplaceEdition: undefined,
+      uploadResourceId: undefined,
       ...msg,
     };
   },
@@ -2549,6 +2568,9 @@ export const CreateModuleRequest = {
     }
     if (msg.marketplaceEdition != undefined) {
       writer.writeInt32(11, msg.marketplaceEdition);
+    }
+    if (msg.uploadResourceId != undefined) {
+      writer.writeString(12, msg.uploadResourceId);
     }
     return writer;
   },
@@ -2607,6 +2629,10 @@ export const CreateModuleRequest = {
         }
         case 11: {
           msg.marketplaceEdition = reader.readInt32();
+          break;
+        }
+        case 12: {
+          msg.uploadResourceId = reader.readString();
           break;
         }
         default: {
@@ -4428,6 +4454,7 @@ export const ModuleJSON = {
       moduleKey: "",
       marketplaceListingId: undefined,
       marketplaceEdition: undefined,
+      uploadResourceId: undefined,
       ...msg,
     };
   },
@@ -4481,6 +4508,9 @@ export const ModuleJSON = {
     }
     if (msg.marketplaceEdition != undefined) {
       json["marketplaceEdition"] = msg.marketplaceEdition;
+    }
+    if (msg.uploadResourceId != undefined) {
+      json["uploadResourceId"] = msg.uploadResourceId;
     }
     return json;
   },
@@ -4554,6 +4584,11 @@ export const ModuleJSON = {
       json["marketplaceEdition"] ?? json["marketplace_edition"];
     if (_marketplaceEdition_) {
       msg.marketplaceEdition = protoscript.parseNumber(_marketplaceEdition_);
+    }
+    const _uploadResourceId_ =
+      json["uploadResourceId"] ?? json["upload_resource_id"];
+    if (_uploadResourceId_) {
+      msg.uploadResourceId = _uploadResourceId_;
     }
     return msg;
   },
@@ -4704,6 +4739,7 @@ export const CreateModuleRequestJSON = {
       moduleId: "",
       marketplaceListingId: undefined,
       marketplaceEdition: undefined,
+      uploadResourceId: undefined,
       ...msg,
     };
   },
@@ -4749,6 +4785,9 @@ export const CreateModuleRequestJSON = {
     }
     if (msg.marketplaceEdition != undefined) {
       json["marketplaceEdition"] = msg.marketplaceEdition;
+    }
+    if (msg.uploadResourceId != undefined) {
+      json["uploadResourceId"] = msg.uploadResourceId;
     }
     return json;
   },
@@ -4809,6 +4848,11 @@ export const CreateModuleRequestJSON = {
       json["marketplaceEdition"] ?? json["marketplace_edition"];
     if (_marketplaceEdition_) {
       msg.marketplaceEdition = protoscript.parseNumber(_marketplaceEdition_);
+    }
+    const _uploadResourceId_ =
+      json["uploadResourceId"] ?? json["upload_resource_id"];
+    if (_uploadResourceId_) {
+      msg.uploadResourceId = _uploadResourceId_;
     }
     return msg;
   },

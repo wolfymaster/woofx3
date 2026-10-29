@@ -81,9 +81,10 @@ message Resource {
   bool is_folder = 4;
   string name = 5;
 
-  // "image" | "video" | "audio" | "other" | "folder". Derived from
-  // `content_type` at create time by the api gateway, stored so
-  // listing can filter without re-parsing MIME types.
+  // "image" | "video" | "audio" | "other" | "folder" | "custom_module". Derived
+  // from `content_type` at create time by the api gateway, stored so
+  // listing can filter without re-parsing MIME types. "custom_module" is never
+  // derived: the uploader declares a module archive as one.
   string kind = 6;
 
   // Empty for folders.
@@ -150,7 +151,8 @@ message ListResourcesRequest {
   // Unset lists the root. Set lists that folder's direct children.
   optional string parent_id = 2;
 
-  // Optional filters. Empty means "no filter".
+  // Optional filters. An empty `kind` lists every kind except "custom_module":
+  // module archives are listed only when asked for by kind.
   string kind = 3;
   // Case-insensitive substring match against `name`.
   string search = 4;

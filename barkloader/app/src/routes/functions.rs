@@ -5,18 +5,20 @@ use lib_repository::{CreateFileRequest, Repository};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::Read as _;
 use std::path::PathBuf;
 use tokio::task;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
-use crate::services::file_service::FileService;
+use crate::services::file_service::{FileMetadata, unpack_zip};
 use crate::types::{AppContext, SafeTempDir};
 use lib_module::db_proxy;
 use lib_module::db_proxy_client::{HttpDbProxyClient, ModuleDbProxy};
 use lib_module::module_delete::{DeleteError, notify_delete, resolve_module, run_delete_resolved};
 use lib_module::registry_loader;
-use lib_module::{MarketplaceOrigin, ModuleFileKind, ModuleService, ModuleServiceConfig};
+use lib_module::{
+    InstallOrigin, MarketplaceOrigin, ModuleFileKind, ModuleService, ModuleServiceConfig,
+    SandboxRegistryRefresher,
+};
 
 #[derive(Serialize)]
 struct UploadResponse {
@@ -51,7 +53,7 @@ struct DeleteQuery {
 /// the working directory or, when set, the data directory.
 const UPLOAD_DIR: &str = "./uploads";
 
-fn upload_dir() -> PathBuf {
+pub(crate) fn upload_dir() -> PathBuf {
     woofx3_runtime::resolve_data_path(UPLOAD_DIR)
 }
 
@@ -90,6 +92,41 @@ fn marketplace_origin(
     }))
 }
 
+/// Where an upload says its archive came from: the marketplace fields (see
+/// `marketplace_origin`) or `upload_resource_id`, the stored resource the
+/// engine read the archive from. A blank field counts as absent. Both at
+/// once, or a resource id that is not a plain id, is refused: an install
+/// records one origin, completely.
+fn install_origin(
+    listing_id: Option<&str>,
+    edition: Option<&str>,
+    upload_resource_id: Option<&str>,
+) -> Result<Option<InstallOrigin>, String> {
+    let marketplace = marketplace_origin(listing_id, edition)?;
+    let upload_resource_id = upload_resource_id.map(str::trim).filter(|s| !s.is_empty());
+    match (marketplace, upload_resource_id) {
+        (Some(_), Some(_)) => Err(
+            "upload_resource_id was sent together with marketplace_listing_id; an install has one origin"
+                .to_string(),
+        ),
+        (Some(listing), None) => Ok(Some(InstallOrigin::Marketplace(listing))),
+        (None, Some(resource_id)) => {
+            let plain = resource_id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-');
+            if !plain {
+                return Err(format!(
+                    "upload_resource_id must be a resource id, got '{resource_id}'"
+                ));
+            }
+            Ok(Some(InstallOrigin::Upload {
+                resource_id: resource_id.to_string(),
+            }))
+        }
+        (None, None) => Ok(None),
+    }
+}
+
 #[post("/functions")]
 #[tracing::instrument(name = "POST /functions", skip_all, fields(force = query.force.unwrap_or(false)))]
 async fn upload_handler(
@@ -100,25 +137,25 @@ async fn upload_handler(
 ) -> Result<HttpResponse, Error> {
     let force = query.force.unwrap_or(false);
 
-    let file_service = FileService::new(&upload_dir());
+    let file_service = ctx.file_service.clone();
 
     // upload the file to temporary location for processing;
     // multipart fields client_id and module_key are extracted alongside the file
-    let metadata: crate::services::file_service::FileMetadata =
-        file_service.process_upload(multipart).await?;
+    let metadata: FileMetadata = file_service.process_upload(multipart).await?;
 
     let expected_module_key = metadata.module_key.clone().unwrap_or_default();
-    let marketplace = marketplace_origin(
+    let origin = install_origin(
         metadata.marketplace_listing_id.as_deref(),
         metadata.marketplace_edition.as_deref(),
+        metadata.upload_resource_id.as_deref(),
     )
     .map_err(actix_web::error::ErrorBadRequest)?;
 
     let mut request_context = {
         let client_id = metadata.client_id.clone().unwrap_or_default();
         info!(
-            "Upload form fields: client_id={:?} module_key={:?} marketplace={:?}",
-            metadata.client_id, metadata.module_key, marketplace
+            "Upload form fields: client_id={:?} module_key={:?} origin={:?}",
+            metadata.client_id, metadata.module_key, origin
         );
         Some(db_proxy::RequestContext {
             client_id,
@@ -148,18 +185,9 @@ async fn upload_handler(
         // save original zip path before processing extracts files
         let original_zip_path = PathBuf::from(&metadata.temp_dir_path).join(&metadata.file_name);
 
-        // compute SHA-256 hash of the zip for the composite module_key
-        let zip_hash = match fs::read(&original_zip_path) {
-            Ok(bytes) => {
-                let mut hasher = Sha256::new();
-                hasher.update(&bytes);
-                format!("{:x}", hasher.finalize())
-            }
-            Err(e) => {
-                error!("Failed to read zip for hashing: {}", e);
-                "0000000".to_string()
-            }
-        };
+        // SHA-256 of the zip for the composite module_key, computed while it
+        // was streamed to disk.
+        let zip_hash = metadata.sha256.clone();
         let zip_hash_short = zip_hash[..7_usize.min(zip_hash.len())].to_string();
 
         // Helper: send install status notification to db proxy via outbox
@@ -251,17 +279,13 @@ async fn upload_handler(
         };
         let mut module = ModuleService::new(module_config);
 
-        // DEBUG: log all extracted files
-        tracing::info!("=== ZIP CONTENTS ({} entries) ===", file_metadata.len());
+        debug!("zip contents ({} entries)", file_metadata.len());
         for data in &file_metadata {
-            tracing::info!(
+            debug!(
                 "  file: {:?}  ext: {:?}  dir: {:?}",
-                data.file_name,
-                data.file_extension,
-                data.temp_dir_path,
+                data.file_name, data.file_extension, data.temp_dir_path,
             );
         }
-        tracing::info!("=== END ZIP CONTENTS ===");
 
         // loop the file meta and add files to module
         // skip the original zip folder in the directory
@@ -285,39 +309,47 @@ async fn upload_handler(
             };
 
             let file_path = std::path::PathBuf::from(&data.temp_dir_path).join(&data.file_name);
-            let Ok(contents) = fs::read(&file_path) else {
-                error!("Failed to read file contents: {}", &data.file_name);
-                continue;
+            let contents = match fs::read(&file_path) {
+                Ok(contents) => contents,
+                Err(e) => {
+                    let err_msg =
+                        format!("Failed to read extracted file {}: {}", data.file_name, e);
+                    error!("{}", err_msg);
+                    notify_install(
+                        db_proxy_ref,
+                        "unknown",
+                        "unknown",
+                        "failed",
+                        &err_msg,
+                        request_context.as_ref(),
+                    )
+                    .await;
+                    return;
+                }
             };
 
             module.add_file(kind, &data.file_name, contents);
         }
 
-        // DEBUG: log what files were added to the module service
-        tracing::info!("=== FILES ADDED TO MODULE SERVICE ===");
+        debug!("files added to module service:");
         for f in module.files() {
-            tracing::info!("  name: {:?}  kind: {:?}", f.name, f.kind);
+            debug!("  name: {:?}  kind: {:?}", f.name, f.kind);
         }
-        tracing::info!("=== END FILES ADDED ===");
 
-        // run workflow to create module and upload files to repository
-        let module_plan = match module.create_plan() {
-            Ok(v) => v,
-            Err(err) => {
-                let err_msg = err.to_string();
-                error!("Failed to create module plan: {}", err_msg);
-                notify_install(
-                    db_proxy_ref,
-                    "unknown",
-                    "unknown",
-                    "failed",
-                    &err_msg,
-                    request_context.as_ref(),
-                )
-                .await;
-                return;
-            }
-        };
+        if let Err(err) = module.load_manifest() {
+            let err_msg = err.to_string();
+            error!("Failed to load module manifest: {}", err_msg);
+            notify_install(
+                db_proxy_ref,
+                "unknown",
+                "unknown",
+                "failed",
+                &err_msg,
+                request_context.as_ref(),
+            )
+            .await;
+            return;
+        }
 
         let (module_id, module_name, module_version) = match (
             module.module_id(),
@@ -326,7 +358,7 @@ async fn upload_handler(
         ) {
             (Some(id), Some(n), Some(v)) => (id, n, v),
             _ => {
-                let err_msg = "module identity missing after create_plan";
+                let err_msg = "module identity missing after load_manifest";
                 error!("{}", err_msg);
                 notify_install(
                     db_proxy_ref,
@@ -378,14 +410,33 @@ async fn upload_handler(
 
         let archive_key = format!("archives/{}.zip", computed_module_key);
 
-        if !force
-            && ctx
-                .repository
-                .current()
-                .exists(&archive_key)
-                .await
-                .unwrap_or(false)
-        {
+        // The module's name is only known once its manifest is parsed, so
+        // this is the earliest point an install can take its turn. Nothing
+        // above writes to the repository or the registry.
+        let _turn = ctx.module_locks.lock(module_name).await;
+
+        let already_installed = if force {
+            false
+        } else {
+            match ctx.repository.current().exists(&archive_key).await {
+                Ok(exists) => exists,
+                Err(e) => {
+                    let err_msg = format!("Failed to check for an existing install: {}", e);
+                    error!("{}", err_msg);
+                    notify_install(
+                        db_proxy_ref,
+                        module_name,
+                        module_version,
+                        "failed",
+                        &err_msg,
+                        request_context.as_ref(),
+                    )
+                    .await;
+                    return;
+                }
+            }
+        };
+        if already_installed {
             let err_msg = format!(
                 "Module '{}' version '{}' already exists. Use force=true to overwrite.",
                 module_name, module_version
@@ -407,46 +458,55 @@ async fn upload_handler(
             .as_ref()
             .map(|rc| rc.client_id.clone())
             .unwrap_or_default();
-        if let Err(e) = module
-            .execute_plan(
-                &module_plan,
+        let outcome = match module
+            .install(
                 &archive_key,
                 ctx.db_proxy_url.as_deref(),
-                force,
                 &computed_module_key,
                 &upload_client_id,
-                marketplace.as_ref(),
+                origin.as_ref(),
             )
             .await
         {
-            let err_msg = e.to_string();
-            error!("Module install failed: {}", err_msg);
-            notify_install(
-                db_proxy_ref,
-                module_name,
-                module_version,
-                "failed",
-                &err_msg,
-                request_context.as_ref(),
-            )
-            .await;
-            return;
-        }
+            Ok(outcome) => outcome,
+            Err(e) => {
+                let err_msg = e.to_string();
+                error!("Module install failed: {}", err_msg);
+                notify_install(
+                    db_proxy_ref,
+                    module_name,
+                    module_version,
+                    "failed",
+                    &err_msg,
+                    request_context.as_ref(),
+                )
+                .await;
+                return;
+            }
+        };
 
-        if let Some(db_proxy_url) = ctx.db_proxy_url.as_deref()
-            && let Err(err) = registry_loader::refresh_module_in_registry(
-                &ctx.registry,
+        if let (Some(db_proxy_url), Some(db_proxy)) = (ctx.db_proxy_url.as_deref(), db_proxy_ref) {
+            let repository = ctx.repository.current();
+            let refresher = SandboxRegistryRefresher {
+                registry: &ctx.registry,
                 db_proxy_url,
-                module_name,
-                &*ctx.repository.current(),
-                &ctx.scheduler,
-            )
-            .await
-        {
-            error!(
-                "Module installed to repository but sandbox registry refresh failed for {}: {}",
-                module_name, err
-            );
+                repository: &*repository,
+                scheduler: &ctx.scheduler,
+            };
+            if let Err(err) = module.finish_install(&refresher, db_proxy, &outcome).await {
+                let err_msg = err.to_string();
+                error!("Module install failed: {}", err_msg);
+                notify_install(
+                    db_proxy_ref,
+                    module_name,
+                    module_version,
+                    "failed",
+                    &err_msg,
+                    request_context.as_ref(),
+                )
+                .await;
+                return;
+            }
         }
 
         // archive the original zip keyed by module_key
@@ -561,6 +621,7 @@ async fn delete_handler(
     let module_name_task = module_name.clone();
 
     tokio::spawn(async move {
+        let _turn = ctx_clone.module_locks.lock(&module_name_task).await;
         let _frames = ctx_clone.frame_cache.clear_on_drop();
         let db_proxy = HttpDbProxyClient::new(db_proxy_url.clone());
         let mut request_context = db_proxy::RequestContext {
@@ -843,7 +904,7 @@ async fn versions_handler(
 
 /// Rolls a module back to a previously installed version by re-running
 /// the same diff-aware install path (`run_install`, via
-/// `ModuleService::create_plan`/`execute_plan`) against that version's
+/// `ModuleService::load_manifest`/`install`) against that version's
 /// archived manifest — treating "roll back" as "install this old
 /// manifest over the current state," exactly like any other upgrade.
 /// Removed-then-restored resources are re-added, resources the newer
@@ -864,6 +925,7 @@ async fn rollback_handler(
 ) -> Result<HttpResponse, Error> {
     let module_name = path.into_inner();
     let version = &query.version;
+    let _turn = ctx.module_locks.lock(&module_name).await;
     let _frames = ctx.frame_cache.clear_on_drop();
 
     let db_proxy_url = ctx.db_proxy_url.as_deref().ok_or_else(|| {
@@ -906,10 +968,6 @@ async fn rollback_handler(
     let hash = format!("{:x}", hasher.finalize());
     let hash_short = hash[..7_usize.min(hash.len())].to_string();
 
-    let cursor = std::io::Cursor::new(&zip_bytes);
-    let mut archive = zip::ZipArchive::new(cursor)
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-
     let module_config = ModuleServiceConfig {
         repository: (*ctx.repository.current()).clone(),
         system_only_actions: crate::bundled_modules::system_only_actions()
@@ -918,32 +976,33 @@ async fn rollback_handler(
     };
     let mut module = ModuleService::new(module_config);
 
-    for i in 0..archive.len() {
-        let mut file = archive
-            .by_index(i)
-            .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-        if file.is_dir() {
-            continue;
-        }
-        let file_name = file.name().to_string();
-        let extension = std::path::Path::new(&file_name)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("")
-            .to_string();
-        let Ok(kind) = extension.parse::<ModuleFileKind>() else {
-            // Mirrors upload_handler: unknown extensions are skipped,
-            // not fatal — the zip may carry files barkloader doesn't
-            // track (READMEs, screenshots, ...).
-            continue;
-        };
-        let mut contents = Vec::new();
-        file.read_to_end(&mut contents)
-            .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
-        module.add_file(kind, file_name, contents);
-    }
+    unpack_zip(
+        std::io::Cursor::new(&zip_bytes),
+        zip_bytes.len() as u64,
+        &ctx.file_service.limits(),
+        |relative, reader| {
+            let file_name = relative.to_string_lossy().replace('\\', "/");
+            let extension = relative.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let Ok(kind) = extension.parse::<ModuleFileKind>() else {
+                // Mirrors upload_handler: unknown extensions are skipped,
+                // not fatal — the zip may carry files barkloader doesn't
+                // track (READMEs, screenshots, ...).
+                return Ok(());
+            };
+            let mut contents = Vec::new();
+            reader.read_to_end(&mut contents)?;
+            module.add_file(kind, file_name, contents);
+            Ok(())
+        },
+    )
+    .map_err(|e| {
+        actix_web::error::ErrorInternalServerError(format!(
+            "Failed to read archive {}: {}",
+            archive_key, e
+        ))
+    })?;
 
-    let module_plan = module.create_plan().map_err(|e| {
+    module.load_manifest().map_err(|e| {
         actix_web::error::ErrorInternalServerError(format!(
             "Failed to parse archived manifest: {}",
             e
@@ -958,19 +1017,17 @@ async fn rollback_handler(
         (Some(id), Some(n), Some(v)) => (id.to_string(), n.to_string(), v.to_string()),
         _ => {
             return Err(actix_web::error::ErrorInternalServerError(
-                "module identity missing after create_plan",
+                "module identity missing after load_manifest",
             ));
         }
     };
     let composite_module_key =
         format!("{}:{}:{}", manifest_module_id, resolved_version, hash_short);
 
-    module
-        .execute_plan(
-            &module_plan,
+    let outcome = module
+        .install(
             &archive_key,
             Some(db_proxy_url),
-            false, // not force — go through the diff-aware upgrade path, same as any install
             &composite_module_key,
             "",
             // The archive names no listing; the row keeps the one it has.
@@ -981,15 +1038,19 @@ async fn rollback_handler(
             actix_web::error::ErrorInternalServerError(format!("Rollback install failed: {}", e))
         })?;
 
-    registry_loader::refresh_module_in_registry(
-        &ctx.registry,
+    let repository = ctx.repository.current();
+    let refresher = SandboxRegistryRefresher {
+        registry: &ctx.registry,
         db_proxy_url,
-        &resolved_name,
-        &*ctx.repository.current(),
-        &ctx.scheduler,
-    )
-    .await
-    .map_err(|e| actix_web::error::ErrorInternalServerError(e.to_string()))?;
+        repository: &*repository,
+        scheduler: &ctx.scheduler,
+    };
+    module
+        .finish_install(&refresher, &db_proxy, &outcome)
+        .await
+        .map_err(|e| {
+            actix_web::error::ErrorInternalServerError(format!("Rollback failed: {}", e))
+        })?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "success": true,
@@ -1020,6 +1081,28 @@ mod tests {
             listing_id: listing_id.to_string(),
             edition,
         })
+    }
+
+    #[test]
+    fn an_upload_names_at_most_one_origin() {
+        assert_eq!(install_origin(None, None, None), Ok(None));
+        assert_eq!(install_origin(None, None, Some(" ")), Ok(None));
+        assert_eq!(
+            install_origin(Some("cozy-v2"), Some("2"), None),
+            Ok(Some(InstallOrigin::Marketplace(MarketplaceOrigin {
+                listing_id: "cozy-v2".to_string(),
+                edition: 2,
+            })))
+        );
+        assert_eq!(
+            install_origin(None, None, Some("0b7c-11")),
+            Ok(Some(InstallOrigin::Upload {
+                resource_id: "0b7c-11".to_string(),
+            }))
+        );
+        assert!(install_origin(Some("cozy"), Some("1"), Some("0b7c-11")).is_err());
+        assert!(install_origin(None, None, Some("../x")).is_err());
+        assert!(install_origin(None, Some("2"), Some("0b7c-11")).is_err());
     }
 
     #[test]

@@ -98,6 +98,20 @@ pub trait StorageClient: Send + Sync {
     ) -> Result<CompareAndSetOutcome, String>;
 }
 
+/// How strictly the host's HTTP client applies the grant rule to a request
+/// (see `crate::net`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Enforcement {
+    /// Follow the engine's configured policy, which may only log an
+    /// ungranted destination.
+    #[default]
+    Policy,
+    /// Refuse an ungranted destination, and any redirect to another origin,
+    /// whatever the engine's policy: for requests carrying credentials the
+    /// engine holds on the module's behalf.
+    Always,
+}
+
 /// The HTTP request a module makes, and where its module may connect.
 pub struct HttpRequest<'a> {
     /// The invoking module's manifest-local id, for the log line a refusal
@@ -110,14 +124,15 @@ pub struct HttpRequest<'a> {
     pub url: &'a str,
     pub method: &'a str,
     pub opts: Value,
+    pub enforcement: Enforcement,
+    /// When the invocation's caller stops waiting. The client gives up by
+    /// then, so a slow destination cannot outlive the call it serves. `None`
+    /// for a request made outside an invocation.
+    pub deadline: Option<std::time::Instant>,
 }
 
 pub trait HttpClient: Send + Sync {
     fn request(&self, request: HttpRequest<'_>) -> Result<Value, String>;
-}
-
-pub trait ChatSender: Send + Sync {
-    fn send_message(&self, text: &str) -> Result<(), String>;
 }
 
 /// A view of a runtime-created resource instance, returned across the
@@ -271,6 +286,9 @@ pub struct RunCaller<'a> {
     pub module_id: &'a str,
     /// The invocation's grants, which must cover the providing module's.
     pub permissions: &'a HashSet<String>,
+    /// The invocation's resource-link setting ids, the same set `get` and
+    /// `list` are judged against.
+    pub resource_link_settings: &'a HashSet<String>,
     /// When the caller stops waiting; the action runs within it.
     pub deadline: Instant,
 }
@@ -323,10 +341,19 @@ pub struct InvocationContext {
     /// grants of its `url` settings (see `crate::net`). Empty for builtin
     /// invocations.
     pub permissions: HashSet<String>,
-    /// The ids of the module's `url` settings. Module code may not write
-    /// them (`ctx.module.setSetting`): a value there grants `ctx.http` its
-    /// origin, so only the streamer may set it.
-    pub url_settings: HashSet<String>,
+    /// The settings module code may not write (`ctx.module.setSetting`),
+    /// with the reason: a `url` setting's value grants `ctx.http` its origin,
+    /// and a local endpoint's host, port and password decide where the engine
+    /// connects, so only the streamer (or the companion) may set them. Live:
+    /// it follows a re-registration of the module mid-invocation.
+    pub protected_settings: crate::protected_settings::LiveProtectedSettings,
+    /// The invoking module's `local[]` endpoints. Empty for builtin
+    /// invocations.
+    pub local_endpoints: Vec<crate::protected_settings::RegisteredLocalEndpoint>,
+    /// The ids of the module's resource-link settings. Their values are the
+    /// instances the streamer linked to the module, which it may read and run
+    /// (`crate::resource_access`), so module code may not write them either.
+    pub resource_link_settings: HashSet<String>,
     /// When the caller stops waiting for the result. Host calls that wait on
     /// another service are bounded by it.
     pub deadline: Instant,
@@ -337,6 +364,7 @@ impl InvocationContext {
     pub fn call_scope(&self) -> CallScope {
         CallScope::new(self.permissions.clone(), self.deadline)
             .with_module_id(self.module_id.clone())
+            .with_local_endpoints(self.local_endpoints.clone())
     }
 }
 

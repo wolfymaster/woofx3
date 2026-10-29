@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
-import { selectStrategy } from "@woofx3/twitch/token-strategy";
 import { type PublicClientToken, TwitchOAuthError } from "@woofx3/twitch/oauth";
+import { selectStrategy } from "@woofx3/twitch/token-strategy";
 import {
   parseTokenResponse,
   type StoredPublicToken,

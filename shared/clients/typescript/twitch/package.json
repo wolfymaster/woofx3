@@ -6,7 +6,7 @@
     "test": "bun test"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "1.2.21",
     "@types/express": "^5.0.3"
   },
   "peerDependencies": {
@@ -15,7 +15,6 @@
   "dependencies": {
     "@twurple/api": "^8.0.0",
     "@twurple/auth": "^8.0.0",
-    "@twurple/chat": "^8.0.0",
     "@twurple/eventsub-ws": "^8.0.0",
     "express": "^5.1.0",
     "open": "^11.0.0"

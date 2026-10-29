@@ -19,6 +19,16 @@
       "type": "rust"
     },
     {
+      "name": "connectors",
+      "dependencies": ["message-bus", "db-proxy"],
+      "health_endpoint": "http://127.0.0.1:${WOOFX3_CONNECTORS_PORT:-9102}/health",
+      "type": "bun",
+      "path": "../connectors",
+      "enabled": true,
+      "entry": "src/server.ts",
+      "output": "connectors"
+    },
+    {
       "name": "db-proxy",
       "dependencies": ["migrate"],
       "type": "go",
@@ -55,30 +65,12 @@
       "assets": "public"
     },
     {
-      "name": "twitch",
-      "dependencies": ["message-bus", "db-proxy"],
-      "type": "bun",
-      "path": "../twitch",
-      "enabled": true,
-      "entry": "src/api.ts",
-      "output": "twitch"
-    },
-    {
       "name": "wooflow",
       "dependencies": ["message-bus", "db-proxy"],
       "type": "go",
       "path": "../workflow",
       "enabled": true,
       "output": "wooflow"
-    },
-    {
-      "name": "woofwoofwoof",
-      "dependencies": ["message-bus", "db-proxy", "barkloader"],
-      "type": "bun",
-      "path": "../woofwoofwoof",
-      "enabled": true,
-      "entry": "src/woofwoofwoof.ts",
-      "output": "woofwoofwoof"
     },
     {
       "name": "edge",

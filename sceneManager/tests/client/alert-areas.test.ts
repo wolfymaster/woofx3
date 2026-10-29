@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { EventQueueManager, type QueuedEvent } from "@woofx3/widget-host/page";
 import { type AlertArea, AlertAreas } from "../../public/scene-manager/alert-areas";
+import { AlertTimings } from "../../public/scene-manager/alert-timing";
 import type { AlertWidgetOptions } from "../../public/scene-manager/alert-widget";
 
 class FakeElement {
@@ -35,7 +36,7 @@ class FakeArea implements AlertArea {
   dispose(): void {
     this.finish();
   }
-  readAhead(): void {}
+  delivered(): void {}
 }
 
 function setup() {
@@ -44,13 +45,13 @@ function setup() {
   const acks: string[] = [];
   const alertAreas = new AlertAreas({
     document: { createElement: () => new FakeElement() } as never,
-    sceneBase: "/scene/s1",
     bridges: new Set(),
     queues,
     assets: {} as never,
     postStatus: () => {},
     ackAlert: (kind, eventId) => acks.push(`${kind} ${eventId}`),
     rendered: () => {},
+    timings: new AlertTimings({ mark: () => {}, measure: () => {}, clear: () => {} }),
     createArea: (options) => {
       const area = new FakeArea(options);
       areas.push(area);

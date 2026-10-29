@@ -1,67 +1,38 @@
+import reservedSubjects from "@woofx3/contracts/reserved-subjects.json";
+
 /**
  * Subject prefixes a workflow's `publish_event` step may not publish on, so
  * the api can refuse such a workflow when it is saved. The engine refuses it
- * too, on registration and at run time; this copy exists to give the author
+ * too, on registration and at run time; this check exists to give the author
  * the error at save time.
  *
- * Must match CommandSubjectPrefixes and EngineEventSubjectPrefixes in
- * shared/common/golang/cloudevents/reserved.go, which is the authority;
- * tests/workflow/reserved-subjects.test.ts compares them. As there, an entry
- * ending in "." reserves that namespace and any other entry exactly that name.
+ * Read from shared/common/contracts/reserved-subjects.json, the list the
+ * engine and barkloader enforce. As there, an entry ending in "." reserves
+ * that namespace and any other entry exactly that name.
  */
 export const RESERVED_SUBJECT_PREFIXES: readonly string[] = [
-  // CommandSubjectPrefixes
-  "webhook.",
-  "db.",
-  "engine.",
-  "twitchapi",
-  "message.send",
-  "ui.notify.",
-  "ui.alert.",
-  "widget.queue.",
-  "workflow.execute",
-  "workflow.replay",
-  "workflow.cancel",
-  "workflow.command.execute",
-  "action.execute",
-  // EngineEventSubjectPrefixes
-  "HEARTBEAT",
-  "MESSAGEBUS_INIT",
-  "barkloader.",
-  "channel.",
-  "channelpoints.",
-  "chat.command.",
-  "module.",
-  "session.",
-  "setting.",
-  "stream.offline",
-  "stream.online",
-  "user.message",
-  "viewer.",
-  "widget.event",
-  "workflow.health.",
-  "workflow.run.",
+  ...reservedSubjects.commandSubjectPrefixes,
+  ...reservedSubjects.engineAssertedPrefixes,
 ];
 
 /** Reservations holding platform events, which a creator can fire with simulateTwitchEvent instead. */
-const PLATFORM_EVENT_ENTRIES: ReadonlySet<string> = new Set([
-  "channel.",
-  "channelpoints.",
-  "chat.command.",
-  "stream.offline",
-  "stream.online",
-  "user.message",
-]);
+export const PLATFORM_EVENT_ENTRIES: ReadonlySet<string> = new Set(reservedSubjects.platformEventEntries);
 
 function entryMatches(entry: string, subject: string): boolean {
   return entry.endsWith(".") ? subject.startsWith(entry) : subject === entry;
 }
 
+const NOT_A_SUBJECT_PROBLEM = "contains a wildcard, whitespace or a control character, which a subject cannot";
+
+/** Must refuse what isSpaceOrControl in workflow/internal/engine/engine.go refuses. */
+function isMalformedSubject(eventType: string): boolean {
+  return /[*>\s\p{Cc}]/u.test(eventType);
+}
+
 /** Why a workflow cannot publish `eventType`, or null when it can. */
 export function publishedEventTypeProblem(eventType: string): string | null {
-  // Must refuse what isSpaceOrControl in workflow/internal/engine/engine.go refuses.
-  if (/[*>\s\p{Cc}]/u.test(eventType)) {
-    return "contains a wildcard, whitespace or a control character, which a subject cannot";
+  if (isMalformedSubject(eventType)) {
+    return NOT_A_SUBJECT_PROBLEM;
   }
   const entry = RESERVED_SUBJECT_PREFIXES.find((e) => entryMatches(e, eventType));
   if (entry === undefined) {
@@ -71,4 +42,35 @@ export function publishedEventTypeProblem(eventType: string): string | null {
     return `is reserved for the engine (${JSON.stringify(entry)}); to test a workflow against a platform event, fire it with simulateTwitchEvent`;
   }
   return `is reserved for the engine (${JSON.stringify(entry)})`;
+}
+
+const EMPTY_TOKEN_PROBLEM = "has an empty token (a leading, trailing or doubled dot), which a subject cannot";
+
+export type TestEventKind = "trigger" | "simulate";
+
+/**
+ * Why the api will not publish `eventType` on behalf of a caller testing a
+ * workflow, or null when it will. "trigger" is the generic path and refuses
+ * every engine-reserved subject; "simulate" is the platform path and accepts
+ * only platform events, since it stamps the platform on what it publishes.
+ */
+export function testEventProblem(kind: TestEventKind, eventType: string): string | null {
+  if (eventType === "") {
+    return "is empty";
+  }
+  if (isMalformedSubject(eventType)) {
+    return NOT_A_SUBJECT_PROBLEM;
+  }
+  if (/^\.|\.$|\.\./.test(eventType)) {
+    return EMPTY_TOKEN_PROBLEM;
+  }
+  if (kind === "trigger") {
+    return publishedEventTypeProblem(eventType);
+  }
+  for (const entry of PLATFORM_EVENT_ENTRIES) {
+    if (entryMatches(entry, eventType)) {
+      return null;
+    }
+  }
+  return "is not a platform event, so it cannot be simulated; use triggerEvent for custom events";
 }

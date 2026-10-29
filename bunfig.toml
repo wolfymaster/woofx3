@@ -1,0 +1,5 @@
+[install]
+# Each package sees only the dependencies it declares, as it did when every
+# package was installed on its own. The hoisted layout would let a package
+# import a sibling's dependency and only fail once installed elsewhere.
+linker = "isolated"

@@ -3,7 +3,11 @@ package repository
 import (
 	"testing"
 
+	"github.com/google/uuid"
 	gsqlite "github.com/libtnb/sqlite"
+	"github.com/wolfymaster/woofx3/db/database"
+	"github.com/wolfymaster/woofx3/db/database/dbtest"
+	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
 )
 
@@ -12,6 +16,9 @@ func newSettingsDb(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(gsqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := database.RegisterIDAssignment(db, database.RandomIDs{}); err != nil {
+		t.Fatalf("register id assignment: %v", err)
 	}
 	err = db.Exec(`CREATE TABLE module_settings (
 		id         TEXT NOT NULL PRIMARY KEY,
@@ -81,4 +88,25 @@ func TestCompareAndSetNeverCreatesAMissingSetting(t *testing.T) {
 	if err != nil || swapped {
 		t.Fatalf("CompareAndSet = %v, %v; want refused", swapped, err)
 	}
+}
+
+func TestSettingWritesInsertNewRowsOnEveryDialect(t *testing.T) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		r := NewModuleSettingRepository(db)
+
+		if err := r.UpsertDefault("wheel", "items", "[]", "list"); err != nil {
+			t.Fatalf("UpsertDefault: %v", err)
+		}
+		if err := r.Upsert(models.ModuleSetting{ModuleID: "wheel", Key: "spins", Value: "3", ValueType: "number"}); err != nil {
+			t.Fatalf("Upsert: %v", err)
+		}
+
+		rows, err := r.ListByModule("wheel")
+		if err != nil {
+			t.Fatalf("ListByModule: %v", err)
+		}
+		if len(rows) != 2 || rows[0].ID == uuid.Nil || rows[0].ID == rows[1].ID {
+			t.Fatalf("rows = %+v, want two with distinct ids", rows)
+		}
+	})
 }

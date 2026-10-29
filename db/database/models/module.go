@@ -30,6 +30,12 @@ type Module struct {
 	// a listing shares.
 	MarketplaceListingID *string `gorm:"column:marketplace_listing_id;type:text"`
 	MarketplaceEdition   *int32  `gorm:"column:marketplace_edition;type:integer"`
+
+	// The resource (an uploaded module archive) the module was installed
+	// from. Nil for any other install. At most one of this and
+	// MarketplaceListingID is set. While it is set the resource cannot be
+	// deleted (see ResourceRepository.DeleteSubtree).
+	UploadResourceID *string `gorm:"column:upload_resource_id;type:text"`
 }
 
 func (Module) TableName() string { return "modules" }

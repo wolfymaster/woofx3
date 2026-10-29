@@ -25,6 +25,19 @@ the required `WOOFX3_SCENE_MANAGER_URL` (see
   own directory, so a derived thumbnail (`.../{resourceId}/thumbnail.png`)
   sits beside the upload it came from and is removed with it. These keys
   carry no version: replacing an upload means creating a new resource.
+- **`user/custom-modules/`** holds module archives uploaded for the engine
+  to install (resources of kind `module`, declared with
+  `requestUploadUrl({ kind: "custom_module", ... })`). They are stored, counted and
+  purged like any other upload, but are never served: barkloader refuses
+  every key under this directory as it refuses an unknown prefix, and the
+  api reports no `url` for them. A media upload cannot take
+  `custom-modules` as its resource id.
+  `installModuleFromResource` installs one: the api reads it back through
+  barkloader's service-only `GET /assets/custom-module`, checks the
+  manifest against the caller's approval, and hands it to barkloader like
+  any other install. The installed module records the resource as its
+  `uploadResourceId`, and the resource cannot be deleted while the module
+  is installed.
 
 The api builds resource URLs, the workflow engine builds
 `${woofx3_asset_url:...}` token values (see
@@ -64,6 +77,21 @@ would carry no signature.
 | Inline `modules/` bytes | `public, max-age=31536000, immutable` | Keys are content-addressed |
 | Inline `user/` bytes | `public, max-age=60, must-revalidate` | A thumbnail is written after its original |
 | Redirect | `public, max-age=3600` | Well inside the presigned URL's 12 hours |
+
+### Stored documents are inert
+
+A stored file is never allowed to run as a page on the engine's origin. Barkloader
+sends `X-Content-Type-Options: nosniff` with every asset, and
+`Content-Security-Policy: sandbox; default-src 'none'` with html, svg and xml
+types. A `user/` file of one of those types is also sent as
+`Content-Disposition: attachment`. Content types come from a fixed table of
+extensions; anything else is served as `application/octet-stream`.
+
+The scene manager relays those headers unchanged, so a browser sees the same
+protection and the same attachment rule. The one exception is the sandbox on
+files under `/assets/modules/{module}/{version}/widgets/` and `.../themes/`,
+which a widget frame loads as its own scripts, styles, fonts and media; those
+are the module's own code and still carry `nosniff`.
 
 ## How an upload is stored
 

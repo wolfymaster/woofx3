@@ -34,22 +34,8 @@ if [[ ${#BUN_SERVICES[@]} -eq 0 ]]; then
 fi
 
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-COMMON_TS="$REPO_ROOT/shared/common/typescript"
-CLIENTS_TS="$REPO_ROOT/shared/clients/typescript"
-shared_ts_roots=()
-[[ -d "$COMMON_TS" ]] && shared_ts_roots+=("$COMMON_TS")
-[[ -d "$CLIENTS_TS" ]] && shared_ts_roots+=("$CLIENTS_TS")
-if [[ ${#shared_ts_roots[@]} -gt 0 ]]; then
-    log_info "bun install in shared TypeScript packages (path-alias deps)"
-    while IFS= read -r -d '' pj; do
-        dir="$(dirname "$pj")"
-        log_info "  -> $dir"
-        (cd "$dir" && bun install)
-    done < <(find "${shared_ts_roots[@]}" \
-        -name package.json \
-        -not -path "*/node_modules/*" \
-        -print0)
-fi
+log_info "bun install in the workspace"
+(cd "$REPO_ROOT" && bun install --frozen-lockfile)
 
 # sceneManager's build:client imports @woofx3/module-sdk from dist/ and copies
 # the widget host shim IIFE (dist/widget-host-shim.iife.js) into its public/.
@@ -58,7 +44,7 @@ fi
 MODULE_SDK="$REPO_ROOT/shared/clients/typescript/module-sdk"
 if [[ -f "$MODULE_SDK/package.json" ]] && jq -e '.scripts.build' "$MODULE_SDK/package.json" >/dev/null 2>&1; then
     log_info "Building @woofx3/module-sdk"
-    (cd "$MODULE_SDK" && bun install && bun run build && bun run build:shim)
+    (cd "$MODULE_SDK" && bun run build && bun run build:shim)
 fi
 
 for service_json in "${BUN_SERVICES[@]}"; do
@@ -110,26 +96,6 @@ for service_json in "${BUN_SERVICES[@]}"; do
         # Build the service
         (
             cd "$SERVICE_PATH"
-            
-            # Install dependencies if package.json exists
-            if [[ -f "package.json" ]]; then
-                # Some services reference local shared packages as workspace:*
-                # but this repo doesn't declare a Bun workspace at root.
-                # Rewrite to file: path only for this install, then restore.
-                if jq -e '.dependencies["@woofx3/common"] == "workspace:*"' package.json >/dev/null 2>&1; then
-                    cp package.json package.json.woofx3.bak
-                    trap 'mv -f package.json.woofx3.bak package.json' EXIT
-                    jq --arg v "file:$REPO_ROOT/shared/common/typescript" \
-                        '.dependencies["@woofx3/common"] = $v' \
-                        package.json > package.json.tmp
-                    mv package.json.tmp package.json
-                fi
-                bun install
-                if [[ -f package.json.woofx3.bak ]]; then
-                    mv -f package.json.woofx3.bak package.json
-                    trap - EXIT
-                fi
-            fi
 
             # Optional browser/client asset build (e.g. sceneManager public/)
             if [[ -n "$SERVICE_ASSETS" ]]; then

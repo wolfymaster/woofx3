@@ -1,8 +1,9 @@
-pub mod chat;
+mod args;
 mod in_flight;
+pub mod local;
 pub mod obs;
 pub mod twitch;
 
-pub use chat::ChatExtension;
+pub use local::LocalExtension;
 pub use obs::ObsExtension;
 pub use twitch::TwitchExtension;

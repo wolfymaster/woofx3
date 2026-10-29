@@ -139,13 +139,13 @@ WoofX3 is built around six engineering principles:
             └──┬──────────────┬──────────────┬──────────────┬────────┘
                │              │              │              │
                ▼              ▼              ▼              ▼
-         ┌──────────┐  ┌────────────┐  ┌─────────────┐  ┌──────────────┐
-         │  twitch  │  │  workflow  │  │  barkloader │  │ woofwoofwoof │
-         │  Helix + │  │   engine + │  │   modules + │  │   Twitch     │
-         │  EventSub│  │ rete rules │  │  Lua/QJS sbx│  │   chatbot    │
-         └────┬─────┘  └─────┬──────┘  └──────┬──────┘  └──────┬───────┘
-              │              │                │                │
-              └──────────────┴────────┬───────┴────────────────┘
+         ┌────────────┐  ┌─────────────┐  ┌──────────────────────────┐
+         │  workflow  │  │  barkloader │  │        connectors        │
+         │   engine + │  │   modules + │  │  Twitch + OBS adapters,  │
+         │ rete rules │  │  Lua/QJS sbx│  │  chat dispatcher         │
+         └─────┬──────┘  └──────┬──────┘  └────────────┬─────────────┘
+               │                │                      │
+               └────────────────┴───────────┬──────────┘
                                       │ Twirp (gRPC)
                                       ▼
                        ┌──────────────────────────────┐
@@ -179,8 +179,7 @@ adapted at the edges and republished onto the bus as CloudEvents.
 
 | Service | Path | Language | Role |
 | ------- | ---- | -------- | ---- |
-| **twitch** | [`twitch/`](twitch) | TypeScript (Bun) | Twitch Helix API + EventSub WebSocket bridge. Republishes Twitch events as CloudEvents and dispatches API call results back onto the bus as new commands. |
-| **woofwoofwoof** | [`woofwoofwoof/`](woofwoofwoof) | TypeScript (Bun) | Twitch chatbot. Listens to chat, processes commands, and integrates with external services and modules. Docs: [`docs/woofwoofwoof/`](docs/woofwoofwoof/index.md). |
+| **connectors** | [`connectors/`](connectors) | TypeScript (Bun) | Runs the engine's platform connections and its chat commands. Its Twitch adapter turns EventSub into CloudEvents on the bus and answers Twitch commands (`twitchapi`) through the Helix API, while Twitch is linked and enabled. Its chat command dispatcher matches chat lines from any platform against stored and built-in commands and replies through the platform gateway. Docs: [`docs/services/connectors.md`](docs/services/connectors.md). |
 | **treats** | [`treats/`](treats) | _planned_ | Viewer-engagement currency / treats system. Not yet implemented. |
 | **irl/srt-live-server** | [`irl/srt-live-server/`](irl/srt-live-server) | C++ (vendored) | SRT relay used for IRL streaming setups. |
 
@@ -211,7 +210,7 @@ platform without forking it. A module is a self-contained ZIP bundle
 (manifest + sandboxed scripts + bundled workflows + widget HTML + overlay
 assets) installed at runtime over an HTTP API and executed on demand over
 WebSocket. Even much of the "built-in" Twitch behavior is delivered as a
-module ([`barkloader/modules/twitch_platform/`](barkloader/modules/twitch_platform)).
+module ([`modules/woofx3/`](modules/woofx3)).
 
 The full reference lives under [`docs/barkloader/`](docs/barkloader/index.md);
 this section is the orientation.
@@ -346,7 +345,7 @@ Barkloader is the runtime, but a module touches several other services:
 | ------- | -------------------------- |
 | **Trigger declared** | `db` records it via Twirp `RegisterTrigger`; the workflow engine subscribes to the matching bus subject and routes events to bundled or downstream workflows. |
 | **Workflow step calls a function** | The workflow engine resolves the `#func` action to a barkloader WebSocket invoke (`module/function`) and forwards args. |
-| **Chat command matches** | `woofwoofwoof` matches the message against the module's `commands[]` and routes to either a workflow or a function invoke. |
+| **Chat command matches** | `connectors` matches the message against the module's `commands[]` and routes to either a workflow or a function invoke. |
 | **Widget / overlay loads** | Stored under `modules/{id}/widgets/...` or `overlays/...` and served as a browser source in OBS; widgets in an alert layout play when an alert reaches their scene's alert widget. |
 | **Module needs persistence** | A separate in-process `StorageClient` (gRPC to the `db` proxy's module storage) is exposed to modules. Keys are not pre-declared in the manifest — modules write to the KV namespace at runtime. |
 
@@ -360,7 +359,7 @@ a DB proxy URL is configured.
 - **[Module Format](docs/barkloader/modules.md)** — every manifest field, supported file types, and the full processing pipeline.
 - **[Sandbox & Runtimes](docs/barkloader/sandbox.md)** — adapter contracts, error categories, JSON ↔ Lua / JS type mappings.
 - **[Barkloader API](docs/barkloader/api.md)** — full HTTP and WebSocket protocol reference.
-- **Example module** — [`barkloader/modules/twitch_platform/`](barkloader/modules/twitch_platform) ships Twitch EventSub subscription types as triggers, end to end.
+- **Example module** — [`modules/woofx3/`](modules/woofx3) is the bundled system module; it declares the engine's built-in actions, triggers and widgets through the same install path as any other module.
 
 ## Repository Layout
 
@@ -370,8 +369,6 @@ woofx3/
 ├── barkloader/      Module runtime + Lua/QuickJS sandboxes (Rust)
 ├── db/              Database proxy, protobuf, migrations (Go)
 ├── workflow/        Event-driven workflow engine (Go)
-├── twitch/          Twitch Helix + EventSub bridge (TS / Bun)
-├── woofwoofwoof/    Twitch chatbot (TS / Bun)
 ├── treats/          Viewer treats system (planned)
 ├── services/
 │   └── nats/        Local NATS message bus
@@ -402,11 +399,12 @@ All services read from a shared `.woofx3.json` at the repo root (gitignored). Cr
   "databaseUrl": "postgres://...",
   "storagePath": "./data/module-storage.db",
   "barkloaderKey": "...",
+  "messagebusToken": "...",
   "databaseProxyPort": "8080"
 }
 ```
 
-Adjust the values to match your environment. When running locally with process-compose, use `nats://localhost:4222` for `messagebusUrl` instead.
+Adjust the values to match your environment. `barkloaderKey` and `messagebusToken` must each be a random value of at least 32 bytes (`openssl rand -hex 32`); `docker-compose.dev.yml` supplies development values for both. When running locally with process-compose, use `nats://localhost:4222` for `messagebusUrl` instead.
 
 ---
 
@@ -440,7 +438,7 @@ docker compose -f docker-compose.dev.yml up messagebus db barkloader
 docker compose -f docker-compose.dev.yml logs -f api
 
 # Restart a single service
-docker compose -f docker-compose.dev.yml restart twitch
+docker compose -f docker-compose.dev.yml restart connectors
 
 # Stop everything (keeps caches)
 docker compose -f docker-compose.dev.yml down
@@ -461,6 +459,7 @@ and Ubuntu).
 
 ```bash
 mise install          # install the pinned toolchains (once per machine)
+bun install           # install the TypeScript packages
 process-compose up    # start all services defined in process-compose.yml
 ```
 
@@ -500,12 +499,8 @@ Direct entry points by topic:
   ([modules](docs/barkloader/modules.md) ·
   [sandbox](docs/barkloader/sandbox.md) ·
   [API](docs/barkloader/api.md))
-- **WoofWoofWoof** — [`docs/woofwoofwoof/`](docs/woofwoofwoof/index.md)
-  ([application](docs/woofwoofwoof/application.md) ·
-  [commands](docs/woofwoofwoof/commands.md) ·
-  [Twitch chat](docs/woofwoofwoof/twitchChat.md) ·
-  [message bus](docs/woofwoofwoof/messageBus.md) ·
-  [config](docs/woofwoofwoof/config.md))
+- **Connectors** — [`docs/services/connectors.md`](docs/services/connectors.md)
+  (host, Twitch adapter, chat command dispatcher)
 - **Shared services** — [CloudEvents](docs/services/cloudevents.md) ·
   [Runtime](docs/services/runtime.md)
 
@@ -524,7 +519,7 @@ cd docs && bun run docs:build  # Static site build
 - **Communication.** Services exchange CloudEvents over NATS. Only `db` may
   touch a database; all other services use generated Twirp clients.
 - **Three-language clients.** Generated `db` clients exist for Go, Rust, and
-  TypeScript and are regenerated from `db/proto/` via `npm run generate` in
+  TypeScript and are regenerated from `db/proto/` via `bun run generate` in
   `db/`. Hand-written clients (barkloader) must be kept in sync across all
   three languages.
 - **Configuration.** A shared `.woofx3.json` at the repo root, overridden by

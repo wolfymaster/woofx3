@@ -13,6 +13,7 @@ import (
 	gsqlite "github.com/libtnb/sqlite"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/database/dbtest"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"gorm.io/gorm"
@@ -56,7 +57,7 @@ func validate(t *testing.T, svc client.ClientService, clientID, secret string) *
 }
 
 func TestClientServiceStoresOnlyTheHashOfANewSecret(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 		created := createClient(t, svc, &client.CreateClientRequest{
 			Description: "desktop", Kind: client.ClientKind_CLIENT_KIND_REGISTERED,
@@ -73,7 +74,7 @@ func TestClientServiceStoresOnlyTheHashOfANewSecret(t *testing.T) {
 }
 
 func TestClientServiceValidatesAgainstTheHash(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 		created := createClient(t, svc, &client.CreateClientRequest{
 			Description: "desktop", Kind: client.ClientKind_CLIENT_KIND_REGISTERED,
@@ -105,7 +106,7 @@ func TestClientServiceValidatesAgainstTheHash(t *testing.T) {
 }
 
 func TestClientServiceNeverReturnsAStoredSecret(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 		ctx := context.Background()
 		created := createClient(t, svc, &client.CreateClientRequest{
@@ -130,7 +131,7 @@ func TestClientServiceNeverReturnsAStoredSecret(t *testing.T) {
 }
 
 func TestHashStoredClientSecretsHashesAndClearsPlainTextOnce(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 		clients := repo.NewClientRepository(db)
 		legacy := insertLegacyClient(t, db, "legacy-plain-text")
@@ -162,7 +163,7 @@ func TestHashStoredClientSecretsHashesAndClearsPlainTextOnce(t *testing.T) {
 }
 
 func TestHashStoredClientSecretsKeepsAStoredHashOverPlainTextBesideIt(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 		created := createClient(t, svc, &client.CreateClientRequest{
 			Description: "desktop", Kind: client.ClientKind_CLIENT_KIND_REGISTERED,
@@ -189,7 +190,7 @@ func TestHashStoredClientSecretsKeepsAStoredHashOverPlainTextBesideIt(t *testing
 }
 
 func TestReplacePlaintextSecretKeepsAWriteThatLandedSinceTheRead(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		clients := repo.NewClientRepository(db)
 		legacy := insertLegacyClient(t, db, "read-earlier")
 		ids, err := clients.ListPlaintextSecretIDs()
@@ -229,7 +230,7 @@ func (s *racingStore) ReplacePlaintextSecret(id int, plaintext string, expectedH
 }
 
 func TestHashStoredClientSecretsRereadsARowThatChangedMeanwhile(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 		legacy := insertLegacyClient(t, db, "first")
 		store := &racingStore{ClientRepository: repo.NewClientRepository(db), db: db, races: 1}
@@ -249,7 +250,7 @@ func TestHashStoredClientSecretsRereadsARowThatChangedMeanwhile(t *testing.T) {
 }
 
 func TestHashStoredClientSecretsGivesUpOnARowThatNeverSettles(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		insertLegacyClient(t, db, "moving")
 		store := &racingStore{ClientRepository: repo.NewClientRepository(db), db: db, races: clientSecretSettleAttempts}
 
@@ -260,7 +261,7 @@ func TestHashStoredClientSecretsGivesUpOnARowThatNeverSettles(t *testing.T) {
 }
 
 func TestValidateClientWithoutAHashIsAnErrorNotARefusal(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		svc := newClientSvc(t, db)
 		legacy := insertLegacyClient(t, db, "never-hashed")
 
@@ -275,7 +276,7 @@ func TestValidateClientWithoutAHashIsAnErrorNotARefusal(t *testing.T) {
 }
 
 func TestHashStoredClientSecretsRefusesAnEmptySecretWithNoHash(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		insertLegacyClient(t, db, "")
 
 		if _, err := HashStoredClientSecrets(repo.NewClientRepository(db), discardLogger()); err == nil {
@@ -285,16 +286,16 @@ func TestHashStoredClientSecretsRefusesAnEmptySecretWithNoHash(t *testing.T) {
 }
 
 // upgradedSQLiteFile is an engine's SQLite file that had a client with
-// `secret` in plain text before migration 0071, migrated to the latest.
+// `secret` in plain text before migration 0075, migrated to the latest.
 func upgradedSQLiteFile(t *testing.T, secret string) (*gorm.DB, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "woofx3.db")
 	db := openSQLiteFile(t, path)
-	// The client exists before 0071, as on an engine upgrading to it: the
+	// The client exists before 0075, as on an engine upgrading to it: the
 	// migration's table rebuild then leaves a freed copy of the row behind.
 	migrator := gormigrate.New(db, gormigrate.DefaultOptions, sqliteChain(t))
-	if err := migrator.MigrateTo("0070_client_kind_origin"); err != nil {
-		t.Fatalf("migrate to 0070: %v", err)
+	if err := migrator.MigrateTo("0074_client_kind_origin"); err != nil {
+		t.Fatalf("migrate to 0074: %v", err)
 	}
 	insertLegacyClient(t, db, secret)
 	if err := migrator.Migrate(); err != nil {
@@ -388,7 +389,7 @@ func TestAFailedEraseIsRetriedOnTheNextStart(t *testing.T) {
 }
 
 func TestPostgresNeverOwesAFileErase(t *testing.T) {
-	forEachDialect(t, func(t *testing.T, db *gorm.DB) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		clients := repo.NewClientRepository(db)
 		insertLegacyClient(t, db, "cleared-on-either-dialect")
 

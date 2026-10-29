@@ -96,6 +96,10 @@ pub async fn run_field_options_responder(client: Client, sandbox: SandboxFactory
                     );
                     b"[]".to_vec()
                 }
+                Err(e @ lib_sandbox::InvokeBlockingError::Busy { .. }) => {
+                    warn!("field_options: refused {}: {}", function_id, e);
+                    b"[]".to_vec()
+                }
                 Err(e) => {
                     error!("field_options: invoke {} failed: {}", function_id, e);
                     b"[]".to_vec()

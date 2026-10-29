@@ -2,14 +2,19 @@ package services
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/database"
+	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 )
 
@@ -26,7 +31,7 @@ func newProvenanceSvc(t *testing.T) *moduleService {
 		t.Fatalf("migrate: %v", err)
 	}
 	return NewModuleService(
-		repo.NewModuleRepository(db),
+		repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }),
 		repo.NewResourceReferenceRepository(db),
 		repo.NewModuleResourceInstanceRepository(db),
 		nil,
@@ -206,4 +211,115 @@ func TestMarketplaceProvenanceCrossesTheTwirpBoundary(t *testing.T) {
 		t.Fatalf("GetModuleByModuleKey: %v", err)
 	}
 	assertProvenance(t, "protobuf client", got.Module, "cozy-v2", 2)
+}
+
+func installCozyFromUpload(t *testing.T, svc *moduleService, moduleKey, resourceID string) *client.Module {
+	t.Helper()
+	res, err := svc.CreateModule(context.Background(), &client.CreateModuleRequest{
+		Name:             "Cozy",
+		ModuleId:         "cozy",
+		Version:          "1.0.0",
+		Manifest:         "{}",
+		ModuleKey:        moduleKey,
+		CreatedByType:    "CLIENT",
+		CreatedByRef:     "client-1",
+		UploadResourceId: ptr(resourceID),
+	})
+	if err != nil {
+		t.Fatalf("CreateModule %s: %v", moduleKey, err)
+	}
+	return res.Module
+}
+
+const (
+	uploadA = "00000000-0000-0000-0000-0000000000a1"
+	uploadB = "00000000-0000-0000-0000-0000000000b2"
+)
+
+func TestUploadProvenanceRoundTripsThroughGetAndList(t *testing.T) {
+	svc := newProvenanceSvc(t)
+	created := installCozyFromUpload(t, svc, "cozy:1.0.0:abcdef0", uploadA)
+	if created.GetUploadResourceId() != uploadA || created.MarketplaceListingId != nil {
+		t.Fatalf("CreateModule provenance = (%q, %v), want (%q, nil)",
+			created.GetUploadResourceId(), created.MarketplaceListingId, uploadA)
+	}
+	listed, err := svc.ListModules(context.Background(), &client.ListModulesRequest{})
+	if err != nil {
+		t.Fatalf("ListModules: %v", err)
+	}
+	if len(listed.Modules) != 1 || listed.Modules[0].GetUploadResourceId() != uploadA {
+		t.Fatalf("ListModules = %+v, want one module from %s", listed.Modules, uploadA)
+	}
+}
+
+// A module records one origin: an install naming one replaces the other, and
+// an install naming none keeps the recorded one.
+func TestAnInstallsOriginReplacesTheOther(t *testing.T) {
+	svc := newProvenanceSvc(t)
+	installCozy(t, svc, "cozy:1.0.0:abcdef0", ptr("cozy"), ptr(int32(1)))
+
+	fromUpload := installCozyFromUpload(t, svc, "cozy:1.0.1:1111111", uploadA)
+	if fromUpload.GetUploadResourceId() != uploadA || fromUpload.MarketplaceListingId != nil || fromUpload.MarketplaceEdition != nil {
+		t.Fatalf("after an upload install: upload %q, marketplace (%v, %v)",
+			fromUpload.GetUploadResourceId(), fromUpload.MarketplaceListingId, fromUpload.MarketplaceEdition)
+	}
+
+	fromAnotherUpload := installCozyFromUpload(t, svc, "cozy:1.0.2:2222222", uploadB)
+	if fromAnotherUpload.GetUploadResourceId() != uploadB {
+		t.Fatalf("after a second upload install: upload %q, want %q", fromAnotherUpload.GetUploadResourceId(), uploadB)
+	}
+
+	unattributed := installCozy(t, svc, "cozy:1.0.3:3333333", nil, nil)
+	if unattributed.GetUploadResourceId() != uploadB {
+		t.Fatalf("an install naming no origin changed the upload to %q", unattributed.GetUploadResourceId())
+	}
+
+	fromMarketplace := installCozy(t, svc, "cozy:2.0.0:4444444", ptr("cozy-v2"), ptr(int32(2)))
+	assertProvenance(t, "marketplace after upload", fromMarketplace, "cozy-v2", 2)
+	if fromMarketplace.UploadResourceId != nil {
+		t.Fatalf("a marketplace install kept upload %q", fromMarketplace.GetUploadResourceId())
+	}
+}
+
+func TestUploadProvenanceIsRefusedWhenMalformedOrBesideTheMarketplace(t *testing.T) {
+	svc := newProvenanceSvc(t)
+	for name, req := range map[string]*client.CreateModuleRequest{
+		"not a uuid": {UploadResourceId: ptr("res-1")},
+		"blank":      {UploadResourceId: ptr("")},
+		"both origins": {
+			UploadResourceId:     ptr(uploadA),
+			MarketplaceListingId: ptr("cozy"),
+			MarketplaceEdition:   ptr(int32(1)),
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			req.Name, req.ModuleId, req.Version, req.Manifest, req.ModuleKey = "Cozy", "cozy", "1.0.0", "{}", "cozy:1.0.0:abcdef0"
+			_, err := svc.CreateModule(context.Background(), req)
+			var twerr twirp.Error
+			if !errors.As(err, &twerr) || twerr.Code() != twirp.InvalidArgument {
+				t.Fatalf("err = %v, want InvalidArgument", err)
+			}
+		})
+	}
+}
+
+func TestModuleInstallOriginNamesWhereTheInstallCameFrom(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		module models.Module
+		want   map[string]any
+	}{
+		{"no origin", models.Module{}, nil},
+		{"marketplace", models.Module{MarketplaceListingID: ptr("cozy"), MarketplaceEdition: ptr(int32(1))},
+			map[string]any{"source": "marketplace"}},
+		{"upload", models.Module{UploadResourceID: ptr(uploadA)},
+			map[string]any{"source": "upload", "upload_resource_id": uploadA}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := moduleInstallOrigin(&tc.module)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("origin = %v, want %v", got, tc.want)
+			}
+		})
+	}
 }

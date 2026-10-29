@@ -1,3 +1,4 @@
+use crate::protected_settings::RegisteredLocalEndpoint;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -57,6 +58,7 @@ pub const PERMISSION_DENIED: &str = "permission_denied";
 pub struct CallScope {
     module_id: String,
     granted: HashSet<String>,
+    local_endpoints: Vec<RegisteredLocalEndpoint>,
     deadline: Instant,
     calls: Mutex<HashMap<String, u32>>,
 }
@@ -66,6 +68,7 @@ impl CallScope {
         Self {
             module_id: String::new(),
             granted,
+            local_endpoints: Vec::new(),
             deadline,
             calls: Mutex::new(HashMap::new()),
         }
@@ -77,6 +80,12 @@ impl CallScope {
         self
     }
 
+    /// The scope of a call by a module that declares `local_endpoints`.
+    pub fn with_local_endpoints(mut self, local_endpoints: Vec<RegisteredLocalEndpoint>) -> Self {
+        self.local_endpoints = local_endpoints;
+        self
+    }
+
     /// The invoking module's manifest-local id; empty for a builtin call.
     pub fn module_id(&self) -> &str {
         &self.module_id
@@ -85,6 +94,13 @@ impl CallScope {
     /// The permissions the invoking module's manifest declares.
     pub fn granted(&self) -> &HashSet<String> {
         &self.granted
+    }
+
+    /// The invoking module's `local[]` endpoint with this id, if it declares one.
+    pub fn local_endpoint(&self, id: &str) -> Option<&RegisteredLocalEndpoint> {
+        self.local_endpoints
+            .iter()
+            .find(|endpoint| endpoint.id == id)
     }
 
     /// How long until the invocation's caller stops waiting for it; zero once

@@ -122,7 +122,7 @@ rule below guarantees.
 
 ### Exception: hashed client secrets
 
-The release that adds migration `0071_client_secret_hash` does not meet the
+The release that adds migration `0075_client_secret_hash` does not meet the
 rule for client credentials. On its first start the db proxy hashes every
 stored client secret and clears the plain text, and the release before it
 validates secrets against that plain text. Rolled back, the previous release

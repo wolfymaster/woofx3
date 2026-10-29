@@ -1,6 +1,8 @@
 package models
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 )
 
@@ -51,6 +53,11 @@ type Scene struct {
 	// is the composite moduleKey for MODULE rows; empty for USER rows.
 	CreatedByType string `gorm:"column:created_by_type;type:text;not null;default:'USER'"`
 	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
+
+	// Managed by gorm: set on insert, and `UpdatedAt` on every write,
+	// draft and editor-state writes included.
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // The kinds of composition a scene row holds. A scene is shown by overlays;

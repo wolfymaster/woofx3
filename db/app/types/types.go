@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"time"
 
 	"github.com/casbin/casbin/v2"
 	"github.com/nats-io/nats.go"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/wolfymaster/woofx3/db/app/secrets"
 	outbox "github.com/wolfymaster/woofx3/db/app/workers"
+	"github.com/wolfymaster/woofx3/db/database"
 )
 
 type IsPermissionable interface {
@@ -21,6 +23,8 @@ type App struct {
 	ModuleStorage *sql.DB
 	Casbin        *casbin.Enforcer
 	Db            *gorm.DB
+	IDs           database.IDSource
+	Now           func() time.Time
 	Logger        *slog.Logger
 	// Workers is the worker configuration main loaded once at startup, for
 	// the workers and for the routes that report on what they keep.

@@ -1,5 +1,5 @@
 {
-  "name": "@woofx3/api",
+  "name": "@woofx3/api-server",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -9,14 +9,14 @@
     "typecheck": "tsc --noEmit --noUnusedLocals --noUnusedParameters"
   },
   "dependencies": {
-    "@woofx3/common": "file:../shared/common/typescript",
+    "@woofx3/common": "workspace:*",
     "capnweb": "^0.4.0",
     "fflate": "^0.8.3",
     "protoscript": "^0.0.23",
     "zod": "^4.6.6"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "1.3.6",
     "@types/node": "^26.4.1",
     "twirpscript": "^0.0.72",
     "typescript": "5.9.3"
