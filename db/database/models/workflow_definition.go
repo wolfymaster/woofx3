@@ -1,6 +1,8 @@
 package models
 
 import (
+	"time"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -38,6 +40,11 @@ type WorkflowDefinition struct {
 	// enabled so the module works on install. The UI's `setWorkflowEnabled`
 	// action is the canonical toggle, and a module upgrade never changes it.
 	Enabled bool `gorm:"column:enabled;not null;default:false;index:idx_workflow_definitions_enabled"`
+
+	// Managed by gorm: set on insert, and `UpdatedAt` on every write.
+	// WorkflowRepository.Upsert writes raw SQL and sets both itself.
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 func (WorkflowDefinition) TableName() string {

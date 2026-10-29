@@ -3,6 +3,8 @@ package sqlite
 import (
 	"testing"
 	"time"
+
+	"github.com/wolfymaster/woofx3/db/database/models"
 )
 
 func TestWorkflowDatetimeColumnsKeepWorkflowsReadable(t *testing.T) {
@@ -18,11 +20,8 @@ func TestWorkflowDatetimeColumnsKeepWorkflowsReadable(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	var workflows []struct {
-		CreatedAt time.Time
-		UpdatedAt time.Time
-	}
-	if err := db.Raw(`SELECT created_at, updated_at FROM workflow_definitions`).Scan(&workflows).Error; err != nil {
+	var workflows []models.WorkflowDefinition
+	if err := db.Find(&workflows).Error; err != nil {
 		t.Fatalf("read workflow_definitions: %v", err)
 	}
 	if len(workflows) != 1 {

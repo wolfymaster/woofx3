@@ -727,8 +727,6 @@ func jsonOrEmptyObject(raw string) string {
 // Helper functions to convert between database models and protobuf messages
 
 func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client.Workflow {
-	var createdAt, updatedAt *timestamppb.Timestamp
-
 	var taxonomy []string
 	if wf.Taxonomy != "" {
 		json.Unmarshal([]byte(wf.Taxonomy), &taxonomy)
@@ -744,8 +742,8 @@ func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client
 		Id:            wf.ID.String(),
 		Name:          wf.Name,
 		Enabled:       wf.Enabled,
-		CreatedAt:     createdAt,
-		UpdatedAt:     updatedAt,
+		CreatedAt:     timestamppb.New(wf.CreatedAt),
+		UpdatedAt:     timestamppb.New(wf.UpdatedAt),
 		StepsJson:     wf.Steps,
 		TriggerJson:   wf.Trigger,
 		CreatedByType: wf.CreatedByType,
