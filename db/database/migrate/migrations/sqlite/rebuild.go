@@ -10,10 +10,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// tableRebuild describes a column change SQLite's ALTER TABLE cannot make in
-// place: dropping a column that carries a FOREIGN KEY or sits in a table-level
-// UNIQUE constraint, relaxing a NOT NULL, or changing a declared type. Each
-// needs the table recreated.
+// tableRebuild describes a change SQLite's ALTER TABLE cannot make in place:
+// dropping a column that carries a FOREIGN KEY or sits in a table-level UNIQUE
+// constraint, relaxing a NOT NULL, changing a declared type, or redefining a
+// named table constraint. Each needs the table recreated.
 type tableRebuild struct {
 	table string
 	// dropColumn, when set, is removed by the rebuild.
@@ -22,6 +22,9 @@ type tableRebuild struct {
 	nullable []string
 	// datetime lists TEXT columns the rebuild re-declares as DATETIME.
 	datetime []string
+	// constraints maps the name of a table-level `CONSTRAINT name ...` to the
+	// full definition that replaces it, starting with `CONSTRAINT name`.
+	constraints map[string]string
 }
 
 var (
@@ -128,15 +131,13 @@ func rebuildTable(tx *gorm.DB, r tableRebuild) error {
 	if err != nil {
 		return err
 	}
-	if r.dropColumn == "" && len(r.datetime) == 0 {
+	if r.dropColumn == "" && len(r.datetime) == 0 && len(r.constraints) == 0 {
 		return nil
 	}
 
-	var createSQL string
-	if err := tx.Raw(
-		`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`, r.table,
-	).Row().Scan(&createSQL); err != nil {
-		return fmt.Errorf("read definition of %s: %w", r.table, err)
+	createSQL, err := tableCreateSQL(tx, r.table)
+	if err != nil {
+		return err
 	}
 
 	var triggerCount int64
@@ -213,12 +214,30 @@ func rebuildTable(tx *gorm.DB, r tableRebuild) error {
 	return nil
 }
 
+func tableCreateSQL(tx *gorm.DB, table string) (string, error) {
+	var createSQL string
+	if err := tx.Raw(
+		`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`, table,
+	).Row().Scan(&createSQL); err != nil {
+		return "", fmt.Errorf("read definition of %s: %w", table, err)
+	}
+	return createSQL, nil
+}
+
 // pendingRebuild returns r without the changes the table already has: a
-// dropColumn that is gone (with the nullable changes that go with it), and
-// datetime columns already declared DATETIME. A datetime column that is
-// missing, or declared as anything but TEXT or DATETIME, is an error rather
-// than something to guess about.
+// dropColumn that is gone (with the nullable changes that go with it),
+// datetime columns already declared DATETIME, and constraints already defined
+// as asked. A datetime column that is missing, or declared as anything but
+// TEXT or DATETIME, is an error rather than something to guess about.
 func pendingRebuild(tx *gorm.DB, r tableRebuild) (tableRebuild, error) {
+	if len(r.constraints) > 0 {
+		pending, err := pendingConstraints(tx, r)
+		if err != nil {
+			return r, err
+		}
+		r.constraints = pending
+	}
+
 	if r.dropColumn != "" {
 		hasColumn, err := columnExists(tx, r.table, r.dropColumn)
 		if err != nil {
@@ -256,6 +275,51 @@ func pendingRebuild(tx *gorm.DB, r tableRebuild) (tableRebuild, error) {
 	return r, nil
 }
 
+// pendingConstraints returns the entries of r.constraints whose definition in
+// the table differs from the one asked for, compared with whitespace
+// collapsed. A named constraint the table does not have is an error: the
+// rebuild only redefines constraints, it never adds one.
+func pendingConstraints(tx *gorm.DB, r tableRebuild) (map[string]string, error) {
+	createSQL, err := tableCreateSQL(tx, r.table)
+	if err != nil {
+		return nil, err
+	}
+	items, _, err := splitCreateTable(createSQL)
+	if err != nil {
+		return nil, fmt.Errorf("parse definition of %s: %w", r.table, err)
+	}
+	current := make(map[string]string, len(items))
+	for _, item := range items {
+		if name, ok := constraintName(item); ok {
+			current[name] = item
+		}
+	}
+	pending := make(map[string]string, len(r.constraints))
+	for name, definition := range r.constraints {
+		existing, ok := current[name]
+		if !ok {
+			return nil, fmt.Errorf("cannot rebuild %s: no constraint named %s", r.table, name)
+		}
+		if collapseWhitespace(existing) != collapseWhitespace(definition) {
+			pending[name] = definition
+		}
+	}
+	return pending, nil
+}
+
+// constraintName returns the name of a `CONSTRAINT name ...` table item.
+func constraintName(item string) (string, bool) {
+	fields := strings.Fields(item)
+	if len(fields) < 2 || !strings.EqualFold(fields[0], "CONSTRAINT") {
+		return "", false
+	}
+	return strings.Trim(fields[1], "\"`[]"), true
+}
+
+func collapseWhitespace(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
 // rewriteTableItems applies r to the column definitions and table constraints
 // of a CREATE TABLE body.
 func rewriteTableItems(r tableRebuild, items []string) ([]string, error) {
@@ -267,11 +331,20 @@ func rewriteTableItems(r tableRebuild, items []string) ([]string, error) {
 	for _, column := range r.datetime {
 		pendingDatetime[column] = true
 	}
+	pendingConstraints := make(map[string]bool, len(r.constraints))
+	for name := range r.constraints {
+		pendingConstraints[name] = true
+	}
 	droppedColumn := false
 
 	kept := make([]string, 0, len(items))
 	for _, item := range items {
 		if tableConstraintRE.MatchString(item) {
+			if name, ok := constraintName(item); ok && pendingConstraints[name] {
+				kept = append(kept, r.constraints[name])
+				delete(pendingConstraints, name)
+				continue
+			}
 			if r.dropColumn == "" || !referencesIdentifier(item, r.dropColumn) {
 				kept = append(kept, item)
 				continue
@@ -318,6 +391,9 @@ func rewriteTableItems(r tableRebuild, items []string) ([]string, error) {
 	}
 	for column := range pendingDatetime {
 		return nil, fmt.Errorf("cannot rebuild %s: no column definition for %s", r.table, column)
+	}
+	for name := range pendingConstraints {
+		return nil, fmt.Errorf("cannot rebuild %s: no constraint named %s", r.table, name)
 	}
 	return kept, nil
 }

@@ -59,6 +59,9 @@ func (r *ResourceRepository) Usage() (bytes int64, files int64, err error) {
 // ListFilter selects the direct children of one folder. A nil ParentID
 // with ParentSet true means "the root"; ParentSet false means "do not
 // filter on parent at all".
+//
+// An empty Kind lists every kind except module archives, which only a
+// listing asking for them by kind returns.
 type ListFilter struct {
 	ParentID  *uuid.UUID
 	ParentSet bool
@@ -82,6 +85,8 @@ func (r *ResourceRepository) List(filter ListFilter) ([]*models.Resource, int64,
 	}
 	if filter.Kind != "" {
 		query = query.Where("kind = ?", filter.Kind)
+	} else {
+		query = query.Where("kind <> ?", models.ResourceKindCustomModule)
 	}
 	if filter.Search != "" {
 		// LOWER(...) LIKE keeps the match case-insensitive on both

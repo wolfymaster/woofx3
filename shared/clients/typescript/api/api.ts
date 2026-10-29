@@ -661,8 +661,9 @@ export interface ListPermissionsQuery {
  *
  * `url` and `thumbnailUrl` are derived rather than stored: the engine
  * keeps repository keys, and the public URL they map to depends on where
- * the overlay gateway is reachable. Both are null for a folder and for a
- * resource whose bytes have not landed yet.
+ * the overlay gateway is reachable. Both are null for a folder, for a
+ * resource whose bytes have not landed yet, and for a module archive, which
+ * is never served publicly.
  *
  * A thumbnail never appears as a resource of its own -- it is a field on
  * the resource it was derived from.
@@ -673,7 +674,7 @@ export interface Resource {
   /** Containing folder, or null at the root of the tree. */
   parentId: string | null;
   isFolder: boolean;
-  /** "image" | "video" | "audio" | "other" | "folder". */
+  /** "image" | "video" | "audio" | "other" | "folder" | "custom_module". */
   kind: string;
   /** Empty for folders. */
   contentType: string;
@@ -689,6 +690,7 @@ export interface Resource {
 export interface ResourcesQuery {
   /** Unset lists the root; set lists that folder's direct children. */
   folderId?: string | null;
+  /** Unset lists every kind except "custom_module"; module archives are listed only when asked for. */
   kind?: string;
   search?: string;
   page?: number;
@@ -732,6 +734,14 @@ export interface RequestUploadUrlInput {
    */
   size: number;
   ttlSeconds?: number;
+  /**
+   * Declares the upload a module archive for the engine to install. It must
+   * be `application/zip` and sit at the root. A module archive is counted in
+   * `getResourceUsage` like any upload, but has no public URL and is left out
+   * of a listing that does not ask for kind "custom_module". Every other kind
+   * follows from `contentType`.
+   */
+  kind?: "custom_module";
 }
 
 /** What the engine's user assets hold: every file resource, pending or ready. */

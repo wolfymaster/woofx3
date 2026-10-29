@@ -56,6 +56,26 @@ const MAX_PRESIGNED_UPLOAD_BYTES: u64 = 5 * 1024 * 1024 * 1024 - 5 * 1024 * 1024
 /// implied so adding a second one is an additive change.
 const UTILITY_THUMBNAIL: &str = "thumbnail";
 
+/// The directory below `user/` holding module archives uploaded for the
+/// engine to install. They stay under `user/` so they are stored, counted
+/// and purged like every other upload, but `routes::assets` never serves
+/// them: an archive is installable code, not a public asset.
+const CUSTOM_MODULE_SEGMENT: &str = "custom-modules";
+
+/// Every module archive key starts with this.
+pub const CUSTOM_MODULE_PREFIX: &str = "user/custom-modules/";
+
+/// What an upload is for, which decides where under `user/` it is stored.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum UploadArea {
+    /// A file for overlays and widgets, served publicly.
+    #[default]
+    Media,
+    /// A module archive, stored under `CUSTOM_MODULE_PREFIX` and never served.
+    CustomModule,
+}
+
 /// Where the browser is told to send the bytes: `relay` (default) or `direct`.
 ///
 /// A presigned PUT straight at the bucket is only usable from a browser if
@@ -79,6 +99,8 @@ struct UploadUrlRequest {
     /// Exact byte length of the upload; the grant is bound to it.
     content_length: u64,
     ttl_seconds: Option<u64>,
+    #[serde(default)]
+    area: UploadArea,
 }
 
 /// The provider-agnostic upload contract. `headers` must be sent
@@ -158,7 +180,7 @@ async fn direct_upload_enabled(ctx: &AppContext) -> bool {
 async fn upload_url_handler(ctx: Data<AppContext>, body: Json<UploadUrlRequest>) -> HttpResponse {
     let request = body.into_inner();
 
-    let key = match user_resource_key(&request.resource_id, &request.file_name) {
+    let key = match user_resource_key(request.area, &request.resource_id, &request.file_name) {
         Ok(key) => key,
         Err(message) => {
             return HttpResponse::BadRequest().json(error_body(&message));
@@ -598,13 +620,25 @@ async fn process_handler(
     HttpResponse::Accepted().json(accepted)
 }
 
-/// Build `user/{resource_id}/{file_name}`, rejecting anything that
-/// would escape that shape. The id must be a plain segment and the file
-/// name is sanitized -- the resulting key is then re-checked by
-/// `routes::assets::sanitize_asset_key` on read.
-fn user_resource_key(resource_id: &str, file_name: &str) -> Result<String, String> {
+/// Build `user/{resource_id}/{file_name}`, or
+/// `user/custom-modules/{resource_id}/{file_name}` for a module archive,
+/// rejecting anything that would escape that shape. The id must be a plain
+/// segment and the file name is sanitized -- the resulting key is then
+/// re-checked by `routes::assets::sanitize_asset_key` on read.
+///
+/// A media upload may not take the module archive directory's name as its
+/// id: its directory would then be the one holding every archive, which a
+/// delete purges whole.
+fn user_resource_key(
+    area: UploadArea,
+    resource_id: &str,
+    file_name: &str,
+) -> Result<String, String> {
     if !is_safe_segment(resource_id) {
         return Err("resource_id must be a plain path segment".to_string());
+    }
+    if resource_id == CUSTOM_MODULE_SEGMENT {
+        return Err(format!("resource_id {CUSTOM_MODULE_SEGMENT} is reserved"));
     }
     // `sanitize` strips separators but preserves dots, so "../../etc/passwd"
     // arrives here as "....etcpasswd". That cannot escape the prefix once the
@@ -616,7 +650,13 @@ fn user_resource_key(resource_id: &str, file_name: &str) -> Result<String, Strin
     if sanitized.is_empty() {
         return Err("file_name is not a usable file name".to_string());
     }
-    Ok(format!("user/{}/{}", resource_id, sanitized))
+    match area {
+        UploadArea::Media => Ok(format!("user/{}/{}", resource_id, sanitized)),
+        UploadArea::CustomModule => Ok(format!(
+            "{}{}/{}",
+            CUSTOM_MODULE_PREFIX, resource_id, sanitized
+        )),
+    }
 }
 
 /// The directory holding every object stored for the resource whose
@@ -738,16 +778,53 @@ mod tests {
     #[test]
     fn builds_the_documented_key_shape() {
         assert_eq!(
-            user_resource_key("res-1", "photo.png").unwrap(),
+            user_resource_key(UploadArea::Media, "res-1", "photo.png").unwrap(),
             "user/res-1/photo.png"
         );
+    }
+
+    #[test]
+    fn custom_modules_live_in_their_own_directory() {
+        let key = user_resource_key(UploadArea::CustomModule, "res-1", "shoutout.zip").unwrap();
+        assert_eq!(key, "user/custom-modules/res-1/shoutout.zip");
+        assert!(key.starts_with(CUSTOM_MODULE_PREFIX));
+        assert_eq!(
+            resource_directory_for_key(&key).unwrap(),
+            "user/custom-modules/res-1/"
+        );
+    }
+
+    #[test]
+    fn the_custom_module_directory_name_is_not_a_resource_id() {
+        for area in [UploadArea::Media, UploadArea::CustomModule] {
+            assert!(user_resource_key(area, CUSTOM_MODULE_SEGMENT, "photo.png").is_err());
+        }
+    }
+
+    #[test]
+    fn upload_area_defaults_to_media() {
+        let request: UploadUrlRequest = serde_json::from_value(serde_json::json!({
+            "resource_id": "res-1",
+            "file_name": "photo.png",
+            "content_length": 8,
+        }))
+        .unwrap();
+        assert_eq!(request.area, UploadArea::Media);
+        let request: UploadUrlRequest = serde_json::from_value(serde_json::json!({
+            "resource_id": "res-1",
+            "file_name": "m.zip",
+            "content_length": 8,
+            "area": "custom_module",
+        }))
+        .unwrap();
+        assert_eq!(request.area, UploadArea::CustomModule);
     }
 
     #[test]
     fn rejects_ids_that_would_escape_the_user_prefix() {
         for bad in ["..", ".", "", "a/b", "a\\b", "a b", "../etc"] {
             assert!(
-                user_resource_key(bad, "photo.png").is_err(),
+                user_resource_key(UploadArea::Media, bad, "photo.png").is_err(),
                 "resource_id {bad:?} should be rejected"
             );
         }
@@ -756,7 +833,7 @@ mod tests {
     #[test]
     fn sanitizes_the_file_name_rather_than_rejecting_it() {
         // Traversal in the file name is stripped, not honored.
-        let key = user_resource_key("res-1", "../../etc/passwd").unwrap();
+        let key = user_resource_key(UploadArea::Media, "res-1", "../../etc/passwd").unwrap();
         assert_eq!(key, "user/res-1/etcpasswd");
         assert!(!key.contains(".."));
     }
@@ -1188,7 +1265,7 @@ mod tests {
 
     #[test]
     fn rejects_file_names_that_sanitize_to_nothing() {
-        assert!(user_resource_key("res-1", "").is_err());
-        assert!(user_resource_key("res-1", "..").is_err());
+        assert!(user_resource_key(UploadArea::Media, "res-1", "").is_err());
+        assert!(user_resource_key(UploadArea::Media, "res-1", "..").is_err());
     }
 }
