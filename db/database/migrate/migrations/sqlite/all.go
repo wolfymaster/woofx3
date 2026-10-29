@@ -76,6 +76,7 @@ func All() []*gormigrate.Migration {
 		CreateSceneBackupsTable(),
 		AddLocalUISettings(),
 		RevokeUngrantedCommandWildcards(),
+		DeclareSceneDatetimeColumns(),
 		DeclareWorkflowDatetimeColumns(),
 	}
 }

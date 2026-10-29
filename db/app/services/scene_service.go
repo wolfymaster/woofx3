@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
@@ -452,10 +453,6 @@ func (s *sceneService) ListScenes(ctx context.Context, req *client.ListScenesReq
 }
 
 func (s *sceneService) sceneToProto(m *models.Scene) *client.Scene {
-	// gorm doesn't surface the auto-managed `created_at` / `updated_at`
-	// columns on the typed model today (same gap as `workflowToProto`);
-	// leave them as nil-typed timestamps until a follow-up exposes them.
-	var createdAt, updatedAt *timestamppb.Timestamp
 	scene := &client.Scene{
 		Id:            m.ID.String(),
 		Kind:          m.Kind,
@@ -467,8 +464,8 @@ func (s *sceneService) sceneToProto(m *models.Scene) *client.Scene {
 		LayoutJson:    m.LayoutJSON,
 		CreatedByType: m.CreatedByType,
 		CreatedByRef:  m.CreatedByRef,
-		CreatedAt:     createdAt,
-		UpdatedAt:     updatedAt,
+		CreatedAt:     timestamppb.New(m.CreatedAt),
+		UpdatedAt:     timestamppb.New(m.UpdatedAt),
 	}
 	if m.DraftWidgetsJSON != nil && m.DraftLayoutJSON != nil {
 		scene.DraftWidgetsJson = *m.DraftWidgetsJSON
@@ -510,6 +507,8 @@ func buildSceneChangeData(scene *models.Scene) map[string]interface{} {
 		"inputs_json":     scene.InputsJSON,
 		"created_by_type": scene.CreatedByType,
 		"created_by_ref":  scene.CreatedByRef,
+		"created_at":      scene.CreatedAt.UTC().Format(time.RFC3339Nano),
+		"updated_at":      scene.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
 
