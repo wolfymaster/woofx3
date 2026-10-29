@@ -19,6 +19,21 @@ unchanged as `version` in `GET /ready` and `getEngineInfo`, and the maintenance
 API compares it exactly with the release it deployed. A build without the
 argument reports `dev`.
 
+## Repository settings
+
+The release workflow needs one repository variable (Settings, Secrets and
+variables, Actions, Variables):
+
+| Variable | Value |
+|---|---|
+| `WOOFX3_TWITCH_PUBLIC_CLIENT_ID` | The client id of the public woofx3 Twitch app, from the Twitch developer console. |
+
+Every release package ships it, as `woofx3TwitchPublicClientId` in its
+`.woofx3.json`, so an engine can link Twitch itself with a
+[device login](../services/twitch-channel.md#device-login). It is a client id
+with no secret, which is why it is a variable and not a secret. The workflow
+stops before building anything when it is unset or is not letters and digits.
+
 ## What a release publishes
 
 - The image, tagged `v…` and `latest`.

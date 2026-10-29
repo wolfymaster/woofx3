@@ -57,6 +57,23 @@ jobs:
     outputs:
       tag: ${{ steps.next.outputs.tag }}
     steps:
+      # Every package ships the public woofx3 Twitch app, so an engine can link
+      # Twitch itself (device login). Checked here so a missing or malformed
+      # repository variable fails before anything is built. The pattern must
+      # match TWITCH_CLIENT_ID_PATTERN in api/src/config.ts.
+      - name: Check the public Twitch app id
+        env:
+          TWITCH_PUBLIC_CLIENT_ID: ${{ vars.WOOFX3_TWITCH_PUBLIC_CLIENT_ID }}
+        run: |
+          if [ -z "$TWITCH_PUBLIC_CLIENT_ID" ]; then
+            echo "::error::The WOOFX3_TWITCH_PUBLIC_CLIENT_ID repository variable is not set. Set it to the public woofx3 Twitch app's client id."
+            exit 1
+          fi
+          if ! [[ "$TWITCH_PUBLIC_CLIENT_ID" =~ ^[A-Za-z0-9]{1,64}$ ]]; then
+            echo "::error::The WOOFX3_TWITCH_PUBLIC_CLIENT_ID repository variable must be a Twitch client id (1 to 64 letters and digits)."
+            exit 1
+          fi
+
       # Made here too, with the same app as the release job, so a missing app
       # or key fails before anything is built.
       - name: Create the release app token
@@ -124,6 +141,7 @@ jobs:
           build-args: |
             BUN_VERSION=${{ env.BUN_VERSION }}
             WOOFX3_VERSION=${{ needs.plan.outputs.tag }}
+            WOOFX3_TWITCH_PUBLIC_CLIENT_ID=${{ vars.WOOFX3_TWITCH_PUBLIC_CLIENT_ID }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -131,6 +149,7 @@ jobs:
         env:
           TAG: ${{ needs.plan.outputs.tag }}
           DIGEST: ${{ steps.build.outputs.digest }}
+          TWITCH_PUBLIC_CLIENT_ID: ${{ vars.WOOFX3_TWITCH_PUBLIC_CLIENT_ID }}
         run: |
           set -euo pipefail
           CID="$(docker create "${IMAGE_NAME}@${DIGEST}")"
@@ -138,6 +157,7 @@ jobs:
           docker cp "${CID}:/app/." linux-amd64/
           docker rm "$CID"
           test -x linux-amd64/orchestrator
+          test "$(jq -r .woofx3TwitchPublicClientId linux-amd64/.woofx3.json)" = "$TWITCH_PUBLIC_CLIENT_ID"
           ARCHIVE="woofx3-${TAG}-linux-amd64.zip"
           zip -r --symlinks "$ARCHIVE" linux-amd64
           ls -lh "$ARCHIVE"
@@ -195,12 +215,14 @@ jobs:
         env:
           PROTOC_INCLUDE: /usr/include
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+          WOOFX3_TWITCH_PUBLIC_CLIENT_ID: ${{ vars.WOOFX3_TWITCH_PUBLIC_CLIENT_ID }}
         run: |
           set -euo pipefail
           cd build
           chmod +x main.sh scripts/*.sh
           ./main.sh --clean --target windows-amd64
           test -f dist/windows-amd64/orchestrator.exe
+          test "$(jq -r .woofx3TwitchPublicClientId dist/windows-amd64/.woofx3.json)" = "$WOOFX3_TWITCH_PUBLIC_CLIENT_ID"
           test -f dist/services-windows-amd64.zip
 
       - name: Name the archive for the release
