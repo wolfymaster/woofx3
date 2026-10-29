@@ -77,7 +77,9 @@ func newTestDB(t *testing.T) *gorm.DB {
 			created_by_ref TEXT NOT NULL DEFAULT '',
 			manifest_id TEXT NOT NULL DEFAULT '',
 			taxonomy TEXT NOT NULL DEFAULT '[]',
-			enabled BOOLEAN NOT NULL DEFAULT 0
+			enabled BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE command_groups (
 			command_id TEXT NOT NULL,

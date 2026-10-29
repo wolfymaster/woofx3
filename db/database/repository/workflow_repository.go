@@ -44,6 +44,10 @@ func (r *WorkflowRepository) Create(wf *models.WorkflowDefinition) error {
 // read back into `wf` so the caller reports and publishes the state the row
 // actually has, not the one the install asked for.
 //
+// Raw SQL bypasses gorm's timestamp handling, so the statement sets
+// `created_at` on insert and moves `updated_at` on every write itself, with
+// gorm's clock, and reads both back the same way as `enabled`.
+//
 // Only call this for rows with a non-empty ManifestID (MODULE-owned
 // workflows). USER-authored workflows (ManifestID == "") should go
 // through Create — they're excluded from the partial unique index by
@@ -51,24 +55,31 @@ func (r *WorkflowRepository) Create(wf *models.WorkflowDefinition) error {
 // collide.
 func (r *WorkflowRepository) Upsert(wf *models.WorkflowDefinition) error {
 	var result struct {
-		ID      uuid.UUID `gorm:"column:id"`
-		Enabled bool      `gorm:"column:enabled"`
+		ID        uuid.UUID `gorm:"column:id"`
+		Enabled   bool      `gorm:"column:enabled"`
+		CreatedAt time.Time `gorm:"column:created_at"`
+		UpdatedAt time.Time `gorm:"column:updated_at"`
 	}
+	now := r.db.NowFunc()
 	err := r.db.Raw(`
-		INSERT INTO workflow_definitions (id, name, steps, trigger, created_by_type, created_by_ref, manifest_id, taxonomy, enabled)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO workflow_definitions (id, name, steps, trigger, created_by_type, created_by_ref, manifest_id, taxonomy, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) WHERE manifest_id <> '' DO UPDATE SET
 			name = EXCLUDED.name,
 			steps = EXCLUDED.steps,
 			trigger = EXCLUDED.trigger,
-			taxonomy = EXCLUDED.taxonomy
-		RETURNING id, enabled
-	`, rowID(r.ids, wf.ID), wf.Name, wf.Steps, wf.Trigger, wf.CreatedByType, wf.CreatedByRef, wf.ManifestID, wf.Taxonomy, wf.Enabled).Scan(&result).Error
+			taxonomy = EXCLUDED.taxonomy,
+			updated_at = EXCLUDED.updated_at
+		RETURNING id, enabled, created_at, updated_at
+	`, rowID(r.ids, wf.ID), wf.Name, wf.Steps, wf.Trigger, wf.CreatedByType, wf.CreatedByRef, wf.ManifestID, wf.Taxonomy, wf.Enabled,
+		now, now).Scan(&result).Error
 	if err != nil {
 		return err
 	}
 	wf.ID = result.ID
 	wf.Enabled = result.Enabled
+	wf.CreatedAt = result.CreatedAt
+	wf.UpdatedAt = result.UpdatedAt
 	return nil
 }
 
