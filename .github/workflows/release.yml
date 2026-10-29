@@ -157,7 +157,7 @@ jobs:
           docker cp "${CID}:/app/." linux-amd64/
           docker rm "$CID"
           test -x linux-amd64/orchestrator
-          test "$(jq -r .woofx3TwitchPublicClientId linux-amd64/.woofx3.json)" = "$TWITCH_PUBLIC_CLIENT_ID"
+          test "$(jq -r .twitchPublicClientId linux-amd64/.woofx3.json)" = "$TWITCH_PUBLIC_CLIENT_ID"
           ARCHIVE="woofx3-${TAG}-linux-amd64.zip"
           zip -r --symlinks "$ARCHIVE" linux-amd64
           ls -lh "$ARCHIVE"
@@ -222,7 +222,7 @@ jobs:
           chmod +x main.sh scripts/*.sh
           ./main.sh --clean --target windows-amd64
           test -f dist/windows-amd64/orchestrator.exe
-          test "$(jq -r .woofx3TwitchPublicClientId dist/windows-amd64/.woofx3.json)" = "$WOOFX3_TWITCH_PUBLIC_CLIENT_ID"
+          test "$(jq -r .twitchPublicClientId dist/windows-amd64/.woofx3.json)" = "$WOOFX3_TWITCH_PUBLIC_CLIENT_ID"
           test -f dist/services-windows-amd64.zip
 
       - name: Name the archive for the release

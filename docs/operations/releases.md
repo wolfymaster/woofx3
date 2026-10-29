@@ -28,7 +28,7 @@ variables, Actions, Variables):
 |---|---|
 | `WOOFX3_TWITCH_PUBLIC_CLIENT_ID` | The client id of the public woofx3 Twitch app, from the Twitch developer console. |
 
-Every release package ships it, as `woofx3TwitchPublicClientId` in its
+Every release package ships it, as `twitchPublicClientId` in its
 `.woofx3.json`, so an engine can link Twitch itself with a
 [device login](../services/twitch-channel.md#device-login). It is a client id
 with no secret, which is why it is a variable and not a secret. The workflow

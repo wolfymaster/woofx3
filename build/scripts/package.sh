@@ -46,7 +46,7 @@ write_packaged_config() {
     local destination="$1"
     jq --arg twitchPublicClientId "$TWITCH_PUBLIC_CLIENT_ID" '
         if $twitchPublicClientId != "" then
-            .woofx3TwitchPublicClientId = $twitchPublicClientId
+            .twitchPublicClientId = $twitchPublicClientId
         else
             .
         end

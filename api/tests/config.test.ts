@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { RequestGuard } from "@woofx3/common/http/request-guard";
 import { DEFAULT_COMPANION_REQUEST_TIMEOUT_MS, loadConfig, resolveCompanionRequestTimeoutMs } from "../src/config";
 
@@ -35,6 +38,22 @@ function withEnv(vars: Record<string, string>): void {
   delete process.env.WOOFX3_ALLOWED_ORIGINS;
   delete process.env.WOOFX3_UI_URL;
   Object.assign(process.env, REQUIRED, vars);
+}
+
+/**
+ * Points the loader at a .woofx3.json holding `config`, as a release package
+ * ships one, runs `check`, and removes the file.
+ */
+function withConfigFile(config: Record<string, string>, check: () => void): void {
+  const dir = mkdtempSync(join(tmpdir(), "woofx3-config-"));
+  try {
+    const configPath = join(dir, ".woofx3.json");
+    writeFileSync(configPath, JSON.stringify(config));
+    process.env.WOOFX3_CONFIG = configPath;
+    check();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 describe("api listener", () => {
@@ -250,6 +269,15 @@ describe("public Twitch app", () => {
     withEnv({ WOOFX3_TWITCH_PUBLIC_CLIENT_ID: "abc123publicapp", WOOFX3_TWITCH_CLIENT_ID: "confidential" });
 
     expect(loadConfig().twitchPublicClientId).toBe("abc123publicapp");
+  });
+
+  test("is the client id a release package's config carries", () => {
+    delete process.env.WOOFX3_TWITCH_PUBLIC_CLIENT_ID;
+    withEnv({});
+
+    withConfigFile({ twitchPublicClientId: "abc123publicapp" }, () => {
+      expect(loadConfig().twitchPublicClientId).toBe("abc123publicapp");
+    });
   });
 
   test("keeps an all-digit client id as text", () => {
