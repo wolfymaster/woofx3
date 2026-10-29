@@ -291,6 +291,10 @@ func (s *resourceService) DeleteResource(ctx context.Context, req *client.Delete
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("resource not found")
 		}
+		var installed *repo.ResourceInstalledError
+		if errors.As(err, &installed) {
+			return nil, twirp.NewError(twirp.FailedPrecondition, installed.Error())
+		}
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete resource: %w", err))
 	}
 	return &client.DeleteResourceResponse{
