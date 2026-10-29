@@ -198,6 +198,7 @@ export const RPC_METHODS = [
   "setWorkflowEnabled",
   "getWorkflowRuns",
   "getWorkflowRun",
+  "listWorkflowRunSnapshots",
   "getWorkflowHealth",
   "createCommand",
   "updateCommand",
