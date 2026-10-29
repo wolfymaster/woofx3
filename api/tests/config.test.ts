@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { RequestGuard } from "@woofx3/common/http/request-guard";
 import { DEFAULT_COMPANION_REQUEST_TIMEOUT_MS, loadConfig, resolveCompanionRequestTimeoutMs } from "../src/config";
 
@@ -35,6 +38,22 @@ function withEnv(vars: Record<string, string>): void {
   delete process.env.WOOFX3_ALLOWED_ORIGINS;
   delete process.env.WOOFX3_UI_URL;
   Object.assign(process.env, REQUIRED, vars);
+}
+
+/**
+ * Points the loader at a .woofx3.json holding `config`, as a release package
+ * ships one, runs `check`, and removes the file.
+ */
+function withConfigFile(config: Record<string, string>, check: () => void): void {
+  const dir = mkdtempSync(join(tmpdir(), "woofx3-config-"));
+  try {
+    const configPath = join(dir, ".woofx3.json");
+    writeFileSync(configPath, JSON.stringify(config));
+    process.env.WOOFX3_CONFIG = configPath;
+    check();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 describe("api listener", () => {
@@ -165,6 +184,40 @@ describe("dashboard origin", () => {
     withEnv({ ...HOSTED, WOOFX3_UI_URL: "woofx3.tv" });
 
     expect(() => loadConfig()).toThrow("WOOFX3_UI_URL");
+  });
+});
+
+describe("release version", () => {
+  test("is the version WOOFX3_VERSION gives", () => {
+    withEnv({ WOOFX3_VERSION: "v1.2.3" });
+
+    expect(loadConfig().version).toBe("v1.2.3");
+  });
+
+  test("is the version a release package's config carries", () => {
+    delete process.env.WOOFX3_VERSION;
+    withEnv({});
+
+    withConfigFile({ version: "v1.2.3" }, () => {
+      expect(loadConfig().version).toBe("v1.2.3");
+    });
+  });
+
+  test("is WOOFX3_VERSION over the packaged config's", () => {
+    withEnv({ WOOFX3_VERSION: "v2.0.0" });
+
+    withConfigFile({ version: "v1.2.3" }, () => {
+      expect(loadConfig().version).toBe("v2.0.0");
+    });
+  });
+
+  test("is dev when nothing stamps one", () => {
+    delete process.env.WOOFX3_VERSION;
+    withEnv({});
+
+    withConfigFile({}, () => {
+      expect(loadConfig().version).toBe("dev");
+    });
   });
 });
 

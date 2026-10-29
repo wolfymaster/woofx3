@@ -29,6 +29,28 @@ if [[ ! -f "$TEMPLATE_CONFIG" ]]; then
     exit 1
 fi
 
+# The release this build is, reported by the api (GET /ready, getEngineInfo).
+# Written into the packaged config so an archive run with no environment
+# reports it, as the image does. Unset, the engine reports UNVERSIONED
+# (api/src/version.ts).
+RELEASE_VERSION="${WOOFX3_VERSION:-}"
+if [[ -n "$RELEASE_VERSION" && ! "$RELEASE_VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]; then
+    log_error "WOOFX3_VERSION must be a release tag (letters, digits, '.', '_', '+' and '-'), got: $RELEASE_VERSION"
+    exit 1
+fi
+
+# Writes the build's settings into a packaged copy of the template config.
+write_packaged_config() {
+    local destination="$1"
+    jq --arg version "$RELEASE_VERSION" '
+        if $version != "" then
+            .version = $version
+        else
+            .
+        end
+    ' "$TEMPLATE_CONFIG" > "$destination"
+}
+
 # Get enabled services for copying config
 readarray -t ENABLED_SERVICES < <(jq -c '.services[] | select(.enabled == true)' "$CONFIG_FILE")
 
@@ -53,8 +75,8 @@ for target in "${TARGETS[@]}"; do
     # Filter to only include enabled services
     jq '.services |= [.[] | select(.enabled == true)]' "$CONFIG_FILE" > "$TARGET_DIR/services.json"
 
-    # Copy non-secret template config for runtime use (operators replace secrets)
-    cp "$TEMPLATE_CONFIG" "$TARGET_DIR/.woofx3.json"
+    # Non-secret template config for runtime use (operators replace secrets)
+    write_packaged_config "$TARGET_DIR/.woofx3.json"
     cp "$EDGE_CONFIG" "$TARGET_DIR/Caddyfile.edge"
     
     # Create a simple startup script

@@ -12,8 +12,8 @@ name: Release
 #     capability id it ships, in docs/services/engine-capabilities.md
 #     (.github/scripts/capability-since.mts, run by .releaserc.json)
 #
-# The version is settled before anything is built, since the image reports it
-# (WOOFX3_VERSION), and nothing is tagged until every artifact exists: the
+# The version is settled before anything is built, since every package reports
+# it (WOOFX3_VERSION, written into the packaged .woofx3.json), and nothing is tagged until every artifact exists: the
 # image is pushed by digest alone, and the git tag, the release and the
 # image's tags are all created in the last job.
 
@@ -138,6 +138,7 @@ jobs:
           docker cp "${CID}:/app/." linux-amd64/
           docker rm "$CID"
           test -x linux-amd64/orchestrator
+          test "$(jq -r .version linux-amd64/.woofx3.json)" = "$TAG"
           ARCHIVE="woofx3-${TAG}-linux-amd64.zip"
           zip -r --symlinks "$ARCHIVE" linux-amd64
           ls -lh "$ARCHIVE"
@@ -195,12 +196,14 @@ jobs:
         env:
           PROTOC_INCLUDE: /usr/include
           CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: x86_64-w64-mingw32-gcc
+          WOOFX3_VERSION: ${{ needs.plan.outputs.tag }}
         run: |
           set -euo pipefail
           cd build
           chmod +x main.sh scripts/*.sh
           ./main.sh --clean --target windows-amd64
           test -f dist/windows-amd64/orchestrator.exe
+          test "$(jq -r .version dist/windows-amd64/.woofx3.json)" = "$WOOFX3_VERSION"
           test -f dist/services-windows-amd64.zip
 
       - name: Name the archive for the release

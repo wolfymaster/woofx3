@@ -19,6 +19,11 @@ unchanged as `version` in `GET /ready` and `getEngineInfo`, and the maintenance
 API compares it exactly with the release it deployed. A build without the
 argument reports `dev`.
 
+`build/scripts/package.sh` writes the version into the packaged `.woofx3.json`
+(as `version`) from the build's `WOOFX3_VERSION`, so the image, the Linux
+archive extracted from it and the Windows archive all report the tag with no
+environment set. `WOOFX3_VERSION` set where the engine runs overrides it.
+
 ## What a release publishes
 
 - The image, tagged `v…` and `latest`.

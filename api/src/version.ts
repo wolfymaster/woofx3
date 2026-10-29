@@ -1,5 +1,5 @@
 /**
- * The version an engine reports when its build did not stamp one. Must match
- * the WOOFX3_VERSION build-arg default in Dockerfile.production.
+ * The version an engine reports when neither WOOFX3_VERSION nor the packaged
+ * .woofx3.json (stamped by build/scripts/package.sh) names one.
  */
 export const UNVERSIONED = "dev";
