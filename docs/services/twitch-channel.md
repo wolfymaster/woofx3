@@ -313,7 +313,7 @@ with the `twitch.deviceLogin` capability.
 ### The public Twitch app
 
 A device login uses the engine's **public** Twitch app, named by
-`WOOFX3_TWITCH_PUBLIC_CLIENT_ID` (`woofx3TwitchPublicClientId` in
+`WOOFX3_TWITCH_PUBLIC_CLIENT_ID` (`twitchPublicClientId` in
 `.woofx3.json`). It is a client id and nothing else: a public app has no
 secret, so nothing secret ships with an engine that runs on a streamer's own
 machine. It is separate from the confidential app
@@ -321,6 +321,16 @@ machine. It is separate from the confidential app
 secret and cannot be used for a device login. The value must be letters and
 digits; anything else stops the api at startup. Without it the device login
 methods answer `not_configured` and do nothing else.
+
+Release packages ship the woofx3 public Twitch app's client id: the image,
+and the Linux and Windows archives, carry it as `twitchPublicClientId` in
+their `.woofx3.json`, written there by `build/scripts/package.sh` from the
+`WOOFX3_TWITCH_PUBLIC_CLIENT_ID` variable of the build. The release workflow
+takes it from the repository variable of the same name and refuses to release
+without it (see [Releases](../operations/releases.md#repository-settings)).
+A local build without the variable packages an engine with no public app.
+Setting `WOOFX3_TWITCH_PUBLIC_CLIENT_ID` where the engine runs still overrides
+the packaged value.
 
 The woofx3 public Twitch app must be registered in the Twitch developer
 console with the **Public** client type. Twitch refreshes a confidential

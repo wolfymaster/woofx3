@@ -29,6 +29,30 @@ if [[ ! -f "$TEMPLATE_CONFIG" ]]; then
     exit 1
 fi
 
+# The public woofx3 Twitch app an engine links Twitch with (device login). It is
+# a client id with no secret, so it ships in the packaged config; the template
+# stays free of it so a build without the variable packages an engine with no
+# public app, as the engine expects. The pattern must match
+# TWITCH_CLIENT_ID_PATTERN in api/src/config.ts, which refuses anything else at
+# startup.
+TWITCH_PUBLIC_CLIENT_ID="${WOOFX3_TWITCH_PUBLIC_CLIENT_ID:-}"
+if [[ -n "$TWITCH_PUBLIC_CLIENT_ID" && ! "$TWITCH_PUBLIC_CLIENT_ID" =~ ^[A-Za-z0-9]{1,64}$ ]]; then
+    log_error "WOOFX3_TWITCH_PUBLIC_CLIENT_ID must be a Twitch client id (1 to 64 letters and digits)"
+    exit 1
+fi
+
+# Writes the build's settings into a packaged copy of the template config.
+write_packaged_config() {
+    local destination="$1"
+    jq --arg twitchPublicClientId "$TWITCH_PUBLIC_CLIENT_ID" '
+        if $twitchPublicClientId != "" then
+            .twitchPublicClientId = $twitchPublicClientId
+        else
+            .
+        end
+    ' "$TEMPLATE_CONFIG" > "$destination"
+}
+
 # Get enabled services for copying config
 readarray -t ENABLED_SERVICES < <(jq -c '.services[] | select(.enabled == true)' "$CONFIG_FILE")
 
@@ -53,8 +77,8 @@ for target in "${TARGETS[@]}"; do
     # Filter to only include enabled services
     jq '.services |= [.[] | select(.enabled == true)]' "$CONFIG_FILE" > "$TARGET_DIR/services.json"
 
-    # Copy non-secret template config for runtime use (operators replace secrets)
-    cp "$TEMPLATE_CONFIG" "$TARGET_DIR/.woofx3.json"
+    # Non-secret template config for runtime use (operators replace secrets)
+    write_packaged_config "$TARGET_DIR/.woofx3.json"
     cp "$EDGE_CONFIG" "$TARGET_DIR/Caddyfile.edge"
     
     # Create a simple startup script
