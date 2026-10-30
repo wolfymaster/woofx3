@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.50.2](https://github.com/wolfymaster/woofx3/compare/v0.50.1...v0.50.2) (2026-10-30)
+
+### Bug Fixes
+
+* **build:** stamp the release version into packaged config ([e970b46](https://github.com/wolfymaster/woofx3/commit/e970b460ae68cfc515aa4fa98dc2baaa6d7566d8))
+
 ## [0.50.1](https://github.com/wolfymaster/woofx3/compare/v0.50.0...v0.50.1) (2026-10-30)
 
 ### Bug Fixes
