@@ -330,22 +330,26 @@ none either. What an overlay sends to sceneManager:
   page's own origin: sceneManager's public origin, as OBS reaches it. The
   default covers it when that is `WOOFX3_SCENE_MANAGER_URL` or a loopback
   address; an explicit list must include it.
-- **Widget frames** are sandboxed with an opaque origin. Their CORS-mode loads
-  from sceneManager send `Origin: null`: module scripts and `@font-face` fonts
-  from the module's files (`/assets/modules/...`) and the asset library
-  (`/assets/user/...`), and the font files (`/fonts/files/...`) a widget's
-  font stylesheet names. Frame documents, the widget host shim, stylesheets
-  and images load without CORS and send no Origin. sceneManager's default
+- **Widget frames** are sandboxed with an opaque origin. What they load from
+  sceneManager can arrive with `Origin: null`: the widget host shim
+  (`/assets/widget-host-shim.js`), the module's files (`/assets/modules/...`)
+  and the asset library (`/assets/user/...`), media through the media proxy,
+  and the font stylesheet (`/fonts/css`) and the font files (`/fonts/files/...`)
+  it names. CORS-mode loads always send it, and Firefox sends it even for a
+  sandboxed frame's plain `<script src>`, so a no-cors load is treated the
+  same. A frame
+  document itself is a navigation and sends none. sceneManager's default
   list allows `null`; an explicit list must include it when widgets load
   anything from sceneManager. The api has no such caller and refuses `null`,
   so list it in `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` (with the rest of
   sceneManager's origins), never in `WOOFX3_ALLOWED_ORIGINS`.
 
-  An admitted `null` is admitted only on those three paths; every other
+  An admitted `null` is admitted only on those paths; every other
   route, the overlay page, its session and event routes, frame documents,
   uploads, the editor WebSocket and `/health` included, answers `Origin: null`
   with `403`. An admitted `null` cannot tell one sandboxed page from another,
-  though, and those paths take no token: any sandboxed page, on any site,
+  though, and apart from the media proxy those paths take no token: any
+  sandboxed page, on any site,
   opened in a browser that can reach sceneManager's Host can read a module's
   files, an asset library file or a cached font file, if it knows the path.
   The asset library is the one piece of user data among them. Keep the Host

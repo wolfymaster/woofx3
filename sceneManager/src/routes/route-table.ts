@@ -33,10 +33,12 @@ export interface Route<TDeps> {
   cors: CorsPolicy;
   /**
    * Whether the route admits `Origin: null` when the origin list names it.
-   * Only what sandboxed widget frames load with CORS (module scripts and
-   * fonts from module and library assets, font files) says "allow";
-   * everything else refuses it, so a listed `null` opens no more of the
-   * service than frames need. With no origin list every origin is admitted.
+   * Only what sandboxed widget frames load says "allow": the shim, module
+   * and library assets, the media proxy, the font stylesheet and its files.
+   * Firefox sends `Origin: null` from a sandboxed frame even on a plain
+   * `<script src>`, so no-cors loads count, not only CORS ones. Everything
+   * else refuses it, so a listed `null` opens no more of the service than
+   * frames need. With no origin list every origin is admitted.
    */
   opaqueOrigin: OpaqueOriginPolicy;
   handle(req: Request, context: RouteContext<TDeps>): Promise<Response> | Response;

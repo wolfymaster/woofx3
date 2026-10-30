@@ -36,6 +36,7 @@ import {
   routeTable,
 } from "./routes/route-table";
 import { ENGINE_ASSET_PREFIXES } from "@woofx3/module-sdk";
+import { SHIM_SRC } from "@woofx3/widget-host/frame";
 import { MEDIA_PROXY_PATH } from "../contract/media-url";
 import { FONT_FILES_PREFIX, FONT_STYLESHEET_PATH } from "./fonts/google-font-cache";
 import { handleWidgetStorageRoute } from "./routes/widget-storage";
@@ -108,38 +109,46 @@ const ROUTES = routeTable<HttpDeps>([
       path: `${prefix}*`,
       methods: ["GET"],
       cors: "open",
-      // A sandboxed widget frame's module scripts and @font-face fonts load
-      // in CORS mode with `Origin: null`, from its module's files and the
-      // asset library.
+      // A frame's module scripts, styles, fonts and media, from its module's
+      // files and the asset library.
       opaqueOrigin: "allow",
       handle: (req, { url, deps }) =>
         handleStorageAssetRoute(req, url, deps.ctx.runtimeConfig.barkloaderUrl, deps.ctx.logger),
     })
   ),
   {
-    // See routes/media.ts for why it grants no CORS.
+    // See routes/media.ts for why it grants no CORS. A frame's `img`,
+    // `video` and `audio` elements load it with `Origin: null`.
     path: `${MEDIA_PROXY_PATH}:token`,
     methods: ["GET"],
     cors: "none",
-    opaqueOrigin: "refuse",
+    opaqueOrigin: "allow",
     handle: (req, { url, deps }) =>
       handleMediaProxyRoute(req, url, deps.ctx.runtimeConfig.barkloaderUrl, deps.ctx.logger),
   },
   {
+    // A frame links it for the Google fonts its settings name.
     path: FONT_STYLESHEET_PATH,
     methods: ["GET"],
     cors: "open",
-    opaqueOrigin: "refuse",
+    opaqueOrigin: "allow",
     handle: (req, { url, deps }) => handleFontRoute(req, url, deps.fonts),
   },
   {
     path: `${FONT_FILES_PREFIX}*`,
     methods: ["GET"],
     cors: "open",
-    // The font files a frame's linked font stylesheet names, fetched in CORS
-    // mode with `Origin: null`. The stylesheet itself loads without CORS.
+    // The font files a frame's linked font stylesheet names.
     opaqueOrigin: "allow",
     handle: (req, { url, deps }) => handleFontRoute(req, url, deps.fonts),
+  },
+  {
+    // Every frame document loads it before the widget's own scripts.
+    path: SHIM_SRC,
+    methods: ["GET"],
+    cors: "open",
+    opaqueOrigin: "allow",
+    handle: (req, { url, deps }) => handleStaticAssetRoute(req, url, deps.ctx.runtimeConfig.publicDir),
   },
   {
     path: "/assets/*",
