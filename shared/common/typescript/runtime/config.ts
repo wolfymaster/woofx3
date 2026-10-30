@@ -223,9 +223,14 @@ export interface LoadRuntimeEnvOptions {
  * Map a .woofx3.json key to the same canonical key as env (WOOFX3_X_Y -> woofx3Xy).
  * Keys already starting with "woofx3" stay as-is; others get the prefix so file and env merge.
  */
+const CANONICAL_KEY_PREFIX = "woofx3";
+
+/** A config file key as the schema names it: `apiPort` and `woofx3ApiPort` both mean `woofx3ApiPort`. */
 function fileKeyToCanonical(key: string): string {
-  if (key.length >= 7 && key.slice(0, 7).toLowerCase() === "woofx3") return key;
-  return `woofx3${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+  if (key.toLowerCase().startsWith(CANONICAL_KEY_PREFIX)) {
+    return key;
+  }
+  return `${CANONICAL_KEY_PREFIX}${key.charAt(0).toUpperCase()}${key.slice(1)}`;
 }
 
 /**
