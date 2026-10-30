@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.51.0](https://github.com/wolfymaster/woofx3/compare/v0.50.2...v0.51.0) (2026-10-30)
+
+### Features
+
+* **module:** let the Lottie widget follow a counter ([3cba74b](https://github.com/wolfymaster/woofx3/commit/3cba74b18329c32190ce5c24ed17a5074f29fb00))
+
+### Bug Fixes
+
+* **module:** name the Lottie widget's counter setting plainly ([31d1f25](https://github.com/wolfymaster/woofx3/commit/31d1f258a8b5fe676dbf9025f8950aa4af3a8700))
+
 ## [0.50.2](https://github.com/wolfymaster/woofx3/compare/v0.50.1...v0.50.2) (2026-10-30)
 
 ### Bug Fixes
