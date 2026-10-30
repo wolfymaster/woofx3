@@ -27,8 +27,8 @@ argument reports `dev`.
 - `woofx3-v…-linux-amd64.zip`, extracted from the image, and
   `woofx3-v…-windows-amd64.zip`, cross-compiled separately. Each holds the
   orchestrator and every service binary, and starts through `start.sh` /
-  `start.bat`, which migrate the database before starting the orchestrator, as
-  the image's entrypoint does.
+  `start.bat`, which run the orchestrator as the image's entrypoint does; the
+  orchestrator migrates the database before any service starts.
 - The release's entry in `CHANGELOG.md`, committed to `master` as
   `chore(release): v… [skip ci]`. The `v…` git tag points at that commit, whose
   parent is the commit the image and archives were built from; the two differ
@@ -119,6 +119,24 @@ rule below guarantees.
 - **A release that cannot meet this says so in its release notes**, and must not
   be offered to managed engines (the maintenance API's `ENGINE_VERSION`) while a
   failed upgrade to it would be rolled back automatically.
+
+### Exception: hashed client secrets
+
+The release that adds migration `0075_client_secret_hash` does not meet the
+rule for client credentials. On its first start the db proxy hashes every
+stored client secret and clears the plain text, and the release before it
+validates secrets against that plain text. Rolled back, the previous release
+starts and reports ready, and it can register new clients, but it refuses
+every client that existed before the upgrade, and every client created after
+it. Each one has to register again: the desktop shell does so from its
+registration token file by itself, and a cloud-managed engine needs its
+dashboard to register again.
+
+So this release must state the exception in its release notes, and must not be
+offered to managed engines while a failed upgrade to it would be rolled back
+automatically. The engine side of the rule still holds: the column stays,
+nullable, so the previous release starts on the migrated schema, and any plain
+text it writes is hashed and cleared on the next start of this one.
 
 `.github/workflows/upgrade-compat.yml` checks the rule. On a pull request that
 touches `db/database/migrate/`, it builds the image, lets it migrate an empty

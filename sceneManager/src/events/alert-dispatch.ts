@@ -1,12 +1,7 @@
 import type { Logger } from "@woofx3/common/runtime";
+import { alertStepTarget } from "@woofx3/scene/model";
 import type { AlertDelivery } from "../../contract/alert-delivery";
-import {
-  ALERT_EVENT_TYPE,
-  alertTarget,
-  alertWidgetsNamed,
-  hasVisibleWidget,
-  parseAlertLayout,
-} from "../scene/alert-layout";
+import { ALERT_EVENT_TYPE, alertWidgetsNamed, hasVisibleWidget, parseAlertLayout } from "../scene/alert-layout";
 import { AlertFrameUnavailableError, type AlertFraming } from "../scene/frame-catalog";
 import type { MediaProxy } from "../scene/media-proxy";
 import type { OverlayHost } from "../scene/scene-host";
@@ -182,7 +177,7 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
     layout: parsed.layout,
     event: eventType ? { type: eventType, data: raw.event?.data ?? null } : null,
   };
-  const outcome = await fanOutAlert({ target: alertTarget(parameters), report: target, delivery }, deps, timings);
+  const outcome = await fanOutAlert({ target: alertStepTarget(parameters), report: target, delivery }, deps, timings);
   if (outcome.ok) {
     // One line per alert, so where an alert's time went before any page
     // heard of it can be read off the log. Alert volume is low.

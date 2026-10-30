@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+import { comparableOriginOf } from "@woofx3/common/http/request-guard";
 import type { SharedLogger } from "@woofx3/common/logging";
+import type * as clientPb from "@woofx3/db/client.pb";
 import type { DbClient } from "./db-client";
 
 /** How long a successful credential check is reused before the db proxy is asked again. */
@@ -9,6 +11,12 @@ export interface AuthenticatedClient {
   description: string | null;
   callbackUrl: string | null;
   callbackToken: string | null;
+  /**
+   * The web origin the client may authenticate from, in comparable form
+   * (`comparableOriginOf`), for a client a browser paired; null for a
+   * registered client, which may authenticate from anywhere.
+   */
+  boundOrigin: string | null;
 }
 
 /**
@@ -115,6 +123,7 @@ export class ClientAuth {
       description: resp.client.description,
       callbackUrl: resp.client.callbackUrl,
       callbackToken: resp.client.callbackToken,
+      boundOrigin: boundOriginOf(clientId, resp.client),
     };
     if (this.generation(clientId) === generation) {
       this.remember(key, clientId, client);
@@ -174,5 +183,26 @@ export class ClientAuth {
     if (keys.size === 0) {
       this.keysByClient.delete(clientId);
     }
+  }
+}
+
+/**
+ * The origin a validated client is bound to, from db-proxy's kind and origin.
+ * Throws on a combination db-proxy's constraints rule out: admitting such a
+ * client unbound would let a paired browser's secret work from any origin.
+ */
+function boundOriginOf(clientId: string, client: Pick<clientPb.Client, "kind" | "origin">): string | null {
+  switch (client.kind) {
+    case "CLIENT_KIND_REGISTERED":
+      return null;
+    case "CLIENT_KIND_PAIRED": {
+      const origin = comparableOriginOf(client.origin);
+      if (origin === null) {
+        throw new Error(`paired client ${clientId} has no usable origin: ${JSON.stringify(client.origin)}`);
+      }
+      return origin;
+    }
+    default:
+      throw new Error(`client ${clientId} has kind ${client.kind}, which db-proxy never stores`);
   }
 }

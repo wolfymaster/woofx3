@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { RelayConfig, Woofx3EngineApi } from "@woofx3/api";
 import { Api, type ApiOptions } from "../src/api";
 import { ApiSession } from "../src/api-session";
+import { SessionLease } from "../src/client-sessions";
 import { forwardRelayConfig } from "../src/routes/relay";
 
 type Responder = (subject: string, body: unknown, timeout: number) => Promise<unknown> | unknown;
@@ -34,7 +35,11 @@ function session(respond?: Responder, options: Partial<ApiOptions> = {}) {
     logger: { debug: mock(() => {}), info: mock(() => {}), warn: mock(() => {}), error: mock(() => {}) } as never,
     ...options,
   });
-  return { requests, db, rpc: new ApiSession(api, "dash-client") as unknown as Woofx3EngineApi };
+  return {
+    requests,
+    db,
+    rpc: new ApiSession(api, "dash-client", new SessionLease(() => {})) as unknown as Woofx3EngineApi,
+  };
 }
 
 const CONFIG: RelayConfig = {

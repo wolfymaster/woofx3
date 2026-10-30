@@ -5,6 +5,7 @@ import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
 import { newWebSocketRpcSession, RpcTarget } from "capnweb";
 import { Api } from "../src/api";
+import { ClientSessions } from "../src/client-sessions";
 import type { EventCatalog, LoggedEvent } from "../src/event-catalog";
 import { ApiGateway } from "../src/gateway";
 import { createHttpServer } from "../src/http";
@@ -60,8 +61,16 @@ async function startEngine() {
     logger,
   });
   api.setStreamEventBroadcaster(broadcaster);
-  const auth = { validate: async () => ({ ok: true, value: { description: "dashboard" } }) };
-  const gateway = new ApiGateway(api, auth as never, db as never, logger, resolveRegistrationPolicy({}));
+  const auth = { validate: async () => ({ ok: true, value: { description: "dashboard", boundOrigin: null } }) };
+  const gateway = new ApiGateway(
+    api,
+    auth as never,
+    db as never,
+    logger,
+    resolveRegistrationPolicy({}),
+    new ClientSessions(logger),
+    null
+  );
   server = createHttpServer({
     port: 0,
     hostname: "127.0.0.1",
@@ -69,7 +78,7 @@ async function startEngine() {
     health: () => ({}) as never,
     logger,
     gateway,
-    requestGuard: { allowedHosts: null, allowedOrigins: null },
+    requestGuard: { allowedHosts: null, allowedOrigins: null, listedOrigins: null },
     onProcessingCallback: async () => {},
     barkloaderWebhookSecret: null,
   });

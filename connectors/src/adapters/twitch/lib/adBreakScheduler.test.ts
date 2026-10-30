@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import type { HelixAdSchedule } from "@woofx3/api/twitch-helix-bodies";
 import type { AdBreakUpcoming } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { TWITCH_DEFAULTS } from "../../../config/twitch";
 import type { Clock, TimerHandle, Timers } from "../../../host/deps";
 import { halfRandom } from "../../../host/testing";
 import { AdBreakScheduler, type AdBreakSchedulerOptions } from "./adBreakScheduler";
-import { type AdSchedule, TwitchApiError } from "./twitch";
+import { TwitchApiError } from "./twitch";
 
 const OPTIONS: AdBreakSchedulerOptions = {
   pollIntervalMs: TWITCH_DEFAULTS.adSchedulePollIntervalMs,
@@ -93,7 +94,7 @@ const silentLogger = {
   debug() {},
 } as unknown as SharedLogger;
 
-function schedule(nextAdAtMs: number | null): AdSchedule {
+function schedule(nextAdAtMs: number | null): HelixAdSchedule {
   return {
     nextAdAt: nextAdAtMs === null ? null : iso(nextAdAtMs),
     lastAdAt: null,
@@ -113,7 +114,7 @@ function harness(opts: { leadSeconds?: number; live?: boolean } = {}) {
     live: opts.live ?? true,
     fetches: 0,
     leadSeconds: opts.leadSeconds ?? 60,
-    next: schedule(T0 + 5 * 60_000) as AdSchedule | Error,
+    next: schedule(T0 + 5 * 60_000) as HelixAdSchedule | Error,
   };
   const scheduler = new AdBreakScheduler({
     fetchSchedule: async () => {
@@ -320,7 +321,7 @@ describe("AdBreakScheduler", () => {
     const scheduler = new AdBreakScheduler({
       fetchSchedule: () => {
         fetches += 1;
-        return fetches === 1 ? new Promise<AdSchedule>(() => {}) : Promise.resolve(schedule(null));
+        return fetches === 1 ? new Promise<HelixAdSchedule>(() => {}) : Promise.resolve(schedule(null));
       },
       publishUpcoming: () => {},
       logger: { ...silentLogger, warn: (_msg: string, meta: Record<string, unknown>) => warnings.push(meta) } as never,

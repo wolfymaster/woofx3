@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { Woofx3EngineApi } from "@woofx3/api";
 import { Api, type ApiOptions } from "../src/api";
 import { ApiSession } from "../src/api-session";
+import { SessionLease } from "../src/client-sessions";
 
 const TOKEN = { accessToken: "a", scope: ["chat:read"], expiresIn: 3600, obtainmentTimestamp: 1, userId: "42" };
 
@@ -54,7 +55,12 @@ function harness(faults: { enabledWrite?: boolean; publish?: boolean } = {}): Ha
     apiUrl: "http://api.test",
     logger: { debug: mock(() => {}), info: mock(() => {}), warn, error: mock(() => {}) } as never,
   });
-  return { rpc: new ApiSession(api, "dash") as unknown as Woofx3EngineApi, journal, settings, warn };
+  return {
+    rpc: new ApiSession(api, "dash", new SessionLease(() => {})) as unknown as Woofx3EngineApi,
+    journal,
+    settings,
+    warn,
+  };
 }
 
 const ENABLED_KEY = "integration.twitch.enabled";

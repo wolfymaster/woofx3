@@ -1,9 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
+import type { ApiGatewayContract } from "@woofx3/api/rpc";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { newHttpBatchRpcSession, newWebSocketRpcSession } from "capnweb";
-import type { ApiGatewayContract } from "@woofx3/api/rpc";
 import { Api } from "../src/api";
 import { ClientAuth, DEFAULT_AUTH_CACHE_TTL_MS } from "../src/auth";
+import { ClientSessions } from "../src/client-sessions";
 import { ApiGateway } from "../src/gateway";
 import { createHttpServer } from "../src/http";
 import { resolveRegistrationPolicy } from "../src/registration";
@@ -42,7 +43,7 @@ function startEngine(logger: SharedLogger) {
     listClients: async () => ({ clients: [] }),
     validateClient: async (_clientId: string, clientSecret: string) =>
       clientSecret === CLIENT_SECRET
-        ? { status: { code: "OK" }, client: { description: "desktop" } }
+        ? { status: { code: "OK" }, client: { description: "desktop", kind: "CLIENT_KIND_REGISTERED", origin: "" } }
         : { status: { code: "NOT_FOUND" } },
   };
   const api = new Api({
@@ -60,7 +61,9 @@ function startEngine(logger: SharedLogger) {
     new ClientAuth(db as never, logger, { ttlMs: DEFAULT_AUTH_CACHE_TTL_MS }),
     db as never,
     logger,
-    resolveRegistrationPolicy({ token: REGISTRATION_TOKEN })
+    resolveRegistrationPolicy({ token: REGISTRATION_TOKEN }),
+    new ClientSessions(logger),
+    null
   );
   server = createHttpServer({
     port: 0,
@@ -69,7 +72,7 @@ function startEngine(logger: SharedLogger) {
     health: () => ({}) as never,
     logger,
     gateway,
-    requestGuard: { allowedHosts: null, allowedOrigins: null },
+    requestGuard: { allowedHosts: null, allowedOrigins: null, listedOrigins: null },
     onProcessingCallback: async () => {},
     barkloaderWebhookSecret: null,
   });

@@ -86,5 +86,7 @@ func All() []*gormigrate.Migration {
 		DeclareWorkflowDatetimeColumns(),
 		AllowCustomModuleResourceKind(),
 		AddModuleUploadProvenance(),
+		AddClientKindOrigin(),
+		AddClientSecretHash(),
 	}
 }

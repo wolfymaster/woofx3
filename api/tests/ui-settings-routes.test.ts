@@ -4,6 +4,7 @@ import type { CallbackEvent } from "@woofx3/api/webhooks";
 import type * as local_ui_setting from "@woofx3/db/local_ui_setting.pb";
 import { Api, type ApiOptions } from "../src/api";
 import { ApiSession } from "../src/api-session";
+import { SessionLease } from "../src/client-sessions";
 import type { WebhookClient } from "../src/webhook-client";
 
 const UPDATED_AT = { seconds: 1_792_497_600n, nanos: 0 };
@@ -101,7 +102,11 @@ function session() {
       sent.push(event);
     }),
   } as unknown as WebhookClient);
-  return { db, sent, rpc: new ApiSession(api, "dash-client") as unknown as Woofx3EngineApi };
+  return {
+    db,
+    sent,
+    rpc: new ApiSession(api, "dash-client", new SessionLease(() => {})) as unknown as Woofx3EngineApi,
+  };
 }
 
 describe("UI settings", () => {

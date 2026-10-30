@@ -4,6 +4,7 @@ import {
   listSettingRows,
   type ModuleStateDb,
   ModuleStateWatch,
+  resourceKeyInstance,
   storageModuleFor,
 } from "../../src/scene/module-state";
 import type { StreamFrame } from "../../contract/overlay-stream";
@@ -56,6 +57,23 @@ function counterInstance(settings: Record<string, unknown>) {
 function watchOf(db: ModuleStateDb, scenes = fakeScenes([])) {
   return new ModuleStateWatch(db, scenes, logger, () => NOW);
 }
+
+describe("resourceKeyInstance", () => {
+  const cases: { key: string; canonicalId: string | null }[] = [
+    { key: "state:woofx3:counter:deaths", canonicalId: "woofx3:counter:deaths" },
+    { key: "resource:woofx3:counter:deaths", canonicalId: "woofx3:counter:deaths" },
+    { key: "state:", canonicalId: null },
+    { key: "resource:", canonicalId: null },
+    { key: "setting:volume", canonicalId: null },
+    { key: "board", canonicalId: null },
+  ];
+
+  for (const { key, canonicalId } of cases) {
+    it(`${JSON.stringify(key)} -> ${JSON.stringify(canonicalId)}`, () => {
+      expect(resourceKeyInstance(key)).toBe(canonicalId);
+    });
+  }
+});
 
 describe("storageModuleFor", () => {
   const settings = (rows: Record<string, { key: string; value: string; valueType: string }[]>) => ({

@@ -1,13 +1,16 @@
 import { describe, expect, mock, test } from "bun:test";
 import { AUTH_UNAVAILABLE, isAuthenticationRefused, refusalReason } from "@woofx3/api/rpc";
 import { type AuthResult, ClientAuth, DEFAULT_AUTH_CACHE_TTL_MS } from "../src/auth";
+import { ClientSessions } from "../src/client-sessions";
 import { resolveAuthCacheTtlMs, resolvePlatformGatewayTimeoutMs } from "../src/config";
 import { ApiGateway } from "../src/gateway";
+import type { ConnectionInfo } from "../src/gateway-connection";
 import { resolveRegistrationPolicy } from "../src/registration";
 
 const RIGHT = "right-secret";
 const WRONG = "wrong-secret";
 const TTL_MS = 1_000;
+const BATCH: ConnectionInfo = { origin: null, remoteAddress: "127.0.0.1", close: null, onEnd() {} };
 
 function fakeLogger() {
   return {
@@ -33,7 +36,14 @@ function fakeDb() {
     }
     return {
       status: { code: "OK" },
-      client: { clientId, description: `client ${clientId}`, callbackUrl: "", callbackToken: "" },
+      client: {
+        clientId,
+        description: `client ${clientId}`,
+        callbackUrl: "",
+        callbackToken: "",
+        kind: "CLIENT_KIND_REGISTERED",
+        origin: "",
+      },
     };
   });
   return { state, validateClient, db: { validateClient } as never };
@@ -236,7 +246,15 @@ describe("ApiGateway.authenticate", () => {
     state.down = down;
     const logger = fakeLogger();
     const auth = new ClientAuth(db, logger, { ttlMs: TTL_MS });
-    return new ApiGateway({} as never, auth, db, logger, resolveRegistrationPolicy({ mode: "first" }));
+    return new ApiGateway(
+      {} as never,
+      auth,
+      db,
+      logger,
+      resolveRegistrationPolicy({ mode: "first" }),
+      new ClientSessions(logger),
+      null
+    );
   }
 
   async function rejection(promise: Promise<unknown>): Promise<Error> {
@@ -249,14 +267,14 @@ describe("ApiGateway.authenticate", () => {
   }
 
   test("rejects a wrong secret as invalid credentials", async () => {
-    const err = await rejection(gateway(false).authenticate("c1", WRONG));
+    const err = await rejection(gateway(false).authenticate("c1", WRONG, BATCH));
 
     expect(isAuthenticationRefused(err)).toBe(true);
     expect(refusalReason(err)).toBe("Invalid client credentials");
   });
 
   test("rejects with a retryable AuthUnavailable when the db proxy is down", async () => {
-    const err = await rejection(gateway(true).authenticate("c1", RIGHT));
+    const err = await rejection(gateway(true).authenticate("c1", RIGHT, BATCH));
 
     expect(err.name).toBe(AUTH_UNAVAILABLE);
     expect(isAuthenticationRefused(err)).toBe(false);
@@ -304,4 +322,36 @@ describe("resolvePlatformGatewayTimeoutMs", () => {
       expect(() => resolvePlatformGatewayTimeoutMs(value)).toThrow("WOOFX3_PLATFORM_GATEWAY_TIMEOUT_MS");
     });
   }
+});
+
+describe("ClientAuth origin binding", () => {
+  function proxyAnswering(client: { kind: string; origin: string }) {
+    return {
+      validateClient: async () => ({
+        status: { code: "OK" },
+        client: { description: "d", callbackUrl: "", callbackToken: "", ...client },
+      }),
+    } as never;
+  }
+
+  test.each([
+    ["a registered client", { kind: "CLIENT_KIND_REGISTERED", origin: "" }, null],
+    ["a paired client", { kind: "CLIENT_KIND_PAIRED", origin: "HTTP://LocalHost:5173" }, "http://localhost:5173"],
+  ])("binds %s to its origin", async (_, client, boundOrigin) => {
+    const auth = new ClientAuth(proxyAnswering(client), fakeLogger(), { ttlMs: TTL_MS });
+
+    const result = await auth.validate("c1", RIGHT);
+
+    expect(result).toMatchObject({ ok: true, value: { boundOrigin } });
+  });
+
+  test.each([
+    ["no kind", { kind: "CLIENT_KIND_UNSPECIFIED", origin: "" }],
+    ["a paired client without an origin", { kind: "CLIENT_KIND_PAIRED", origin: "" }],
+    ["a paired client with an opaque origin", { kind: "CLIENT_KIND_PAIRED", origin: "null" }],
+  ])("is an error, not an unbound acceptance, for %s", async (_, client) => {
+    const auth = new ClientAuth(proxyAnswering(client), fakeLogger(), { ttlMs: TTL_MS });
+
+    await expect(auth.validate("c1", RIGHT)).rejects.toThrow();
+  });
 });

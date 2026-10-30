@@ -26,7 +26,7 @@ export const streamEventsRoutes = routeModule({
   async subscribeStreamEvents(
     callback: StreamEventSubscriber,
     types?: string[],
-    context?: { session: object }
+    context?: { session: object; clientId: string }
   ): Promise<void> {
     if (!this.streamEventBroadcaster) {
       throw new Error("Stream events are unavailable: the engine has no NATS connection");
@@ -34,7 +34,12 @@ export const streamEventsRoutes = routeModule({
     if (types !== undefined && !isEventTypeList(types)) {
       throw new Error("types must be a list of non-empty strings");
     }
-    await this.streamEventBroadcaster.subscribe(callback, types, context?.session ?? callback);
+    await this.streamEventBroadcaster.subscribe(
+      callback,
+      types,
+      context?.session ?? callback,
+      context?.clientId ?? null
+    );
   },
 
   async getEventLogSettings(): Promise<EventLogSettings> {

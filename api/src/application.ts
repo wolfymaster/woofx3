@@ -56,6 +56,10 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { AlertEmitter },
       { Api },
       { ClientAuth },
+      { ClientRevoker, ClientSessions },
+      { PairingRegistry, pairedClientCreator },
+      { DEFAULT_PAIRING_CONFIG },
+      { RequestGuard },
       { ConvexWebhookClient },
       { EngineEventStream },
       { EventCatalog },
@@ -87,13 +91,17 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
       { connectMessageBus },
       { describeHealth },
-      { ENGINE_CAPABILITIES_SCHEMA, supportedEngineCapabilities },
+      { ENGINE_CAPABILITIES_SCHEMA, hostingOffersPairing, supportedEngineCapabilities },
     ] = await Promise.all([
       import("@woofx3/nats"),
       import("./alert-log-handlers"),
       import("./alert-emitter"),
       import("./api"),
       import("./auth"),
+      import("./client-sessions"),
+      import("./pairing"),
+      import("./pairing-config"),
+      import("@woofx3/common/http/request-guard"),
       import("./convex-webhook-client"),
       import("./engine-event-stream"),
       import("./event-catalog"),
@@ -297,8 +305,32 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     }
 
     const auth = new ClientAuth(db, logger, { ttlMs: config.authCacheTtlMs });
-    api.setAuthInvalidate((clientId) => auth.invalidateCache(clientId));
-    const gateway = new ApiGateway(api, auth, db, logger, config.registration);
+    const sessions = new ClientSessions(logger);
+    api.setClientRevocation(new ClientRevoker(auth, sessions, engineEventStream, webhookClient, api));
+    // Browser pairing only where the operator's own browser talks to the
+    // engine: a local or self-hosted engine, never a managed one.
+    const pairingOriginList = new RequestGuard(config.requestGuard);
+    const pairing = hostingOffersPairing(config.hosting)
+      ? new PairingRegistry({
+          config: DEFAULT_PAIRING_CONFIG,
+          logger,
+          createPairedClient: pairedClientCreator(db),
+          isListedOrigin: (origin) => pairingOriginList.listsOrigin(origin),
+          loopbackPairsUnlisted: config.hosting === "local",
+          emit: (event) => {
+            webhookClient.send(event).catch((err) => {
+              logger.error("Failed to announce a started pairing", {
+                pairingId: event.pairingId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
+          },
+        })
+      : null;
+    if (pairing) {
+      api.setPairingRegistry(pairing);
+    }
+    const gateway = new ApiGateway(api, auth, db, logger, config.registration, sessions, pairing);
     gateway.setWebhookClient(webhookClient);
 
     this.server = createHttpServer({

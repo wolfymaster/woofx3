@@ -2,6 +2,7 @@ import { ENGINE_HOSTINGS, type EngineHosting, parseEngineHosting } from "@woofx3
 import { CALLER_TIMEOUT_MS } from "@woofx3/api/platform-gateway";
 import { RELAY_API_REQUEST_TIMEOUT_MS, RELAY_CONFIG_SET_BUDGET_MS } from "@woofx3/common/cloudevents/Relay/relay";
 import {
+  ALLOWED_ORIGINS_SETTING,
   parseRequestGuardPolicy,
   parseUiOrigins,
   type RequestGuardPolicy,
@@ -76,7 +77,8 @@ export interface ApiConfig {
   apiUrl: string;
   /**
    * Hosts and origins the HTTP server accepts (`WOOFX3_ALLOWED_HOSTS`,
-   * `WOOFX3_ALLOWED_ORIGINS`), with their defaults resolved. See
+   * `WOOFX3_ALLOWED_ORIGINS`), with their defaults resolved. `null` is
+   * refused: no sandboxed frame calls the api. See
    * shared/common/typescript/http/request-guard.ts.
    */
   requestGuard: RequestGuardPolicy;
@@ -401,6 +403,8 @@ export function loadConfig(): ApiConfig {
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: config.woofx3AllowedHosts,
     allowedOrigins: config.woofx3AllowedOrigins,
+    allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
+    opaqueOrigin: "refuse",
     exposure,
     // barkloader calls the api at apiUrl; behind the edge both apps share sceneManagerUrl's origin.
     ownUrls: [apiUrl, sceneManagerUrl],

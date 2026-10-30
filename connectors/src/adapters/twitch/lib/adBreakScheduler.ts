@@ -1,8 +1,9 @@
 import type { AdBreakUpcoming } from "@woofx3/common/cloudevents/Twitch/events";
+import type { HelixAdSchedule } from "@woofx3/api/twitch-helix-bodies";
 import { type Backoff, type BackoffConfig, createBackoff } from "@woofx3/common/runtime";
 import { bounded } from "../../../host/bounded";
 import type { Clock, Logger, RandomSource, TimerHandle, Timers } from "../../../host/deps";
-import { type AdSchedule, TwitchApiError, type TwitchApiErrorCode } from "./twitch";
+import { TwitchApiError, type TwitchApiErrorCode } from "./twitch";
 
 /** How often the schedule is read, and how long to leave it after a refusal. See TWITCH_DEFAULTS. */
 export interface AdBreakSchedulerOptions {
@@ -20,7 +21,7 @@ export interface AdBreakSchedulerOptions {
 }
 
 export interface AdBreakSchedulerDeps {
-  fetchSchedule(): Promise<AdSchedule>;
+  fetchSchedule(): Promise<HelixAdSchedule>;
   publishUpcoming(event: AdBreakUpcoming): void;
   logger: Logger;
   /**
@@ -191,7 +192,7 @@ export class AdBreakScheduler {
     this.arm(schedule, leadSeconds);
   }
 
-  private arm(schedule: AdSchedule, leadSeconds: number): void {
+  private arm(schedule: HelixAdSchedule, leadSeconds: number): void {
     this.clearLeadTimer();
     // The stream may have gone offline while the read was in flight.
     if (!this.live) {

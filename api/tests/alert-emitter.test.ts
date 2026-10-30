@@ -1,5 +1,6 @@
-import { EventType, type HypeTrainBegin } from "@woofx3/common/cloudevents/Twitch/events";
 import { describe, expect, it, mock } from "bun:test";
+import { EventType, type HypeTrainBegin } from "@woofx3/common/cloudevents/Twitch/events";
+import type { Msg } from "@woofx3/nats/src/types";
 import {
   AlertEmitter,
   mapCheer,
@@ -10,7 +11,6 @@ import {
   mapSubGift,
   mapSubscribe,
 } from "../src/alert-emitter";
-import type { Msg } from "@woofx3/nats/src/types";
 
 function fakeLogger() {
   return {

@@ -11,6 +11,7 @@ import {
   type WorkflowRunSnapshotsQuery,
 } from "@woofx3/api";
 import type { WorkflowRunSnapshot } from "@woofx3/api/webhooks";
+import { TRIGGER_OPTIONS_NEED_DATA_MESSAGE, workflowNotFoundMessage } from "@woofx3/api/workflow-trigger-errors";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
 import type { DbClient } from "../db-client";
@@ -191,7 +192,7 @@ export const workflowsExecutionRoutes = routeModule({
     const origin = resolveOrigin(triggeredBy, options.origin);
     const hasSample = options.triggerData !== undefined;
     if (!hasSample && (options.platform !== undefined || options.skipConditions !== undefined)) {
-      throw new Error("options.platform and options.skipConditions only apply with options.triggerData");
+      throw new Error(TRIGGER_OPTIONS_NEED_DATA_MESSAGE);
     }
     const triggerData = hasSample ? validateTriggerData(options.triggerData) : undefined;
     const dryRun = options.dryRun === true;
@@ -217,7 +218,7 @@ export const workflowsExecutionRoutes = routeModule({
       workflowsResponse.workflows.find((wf) => wf.id === workflowNameOrId) ??
       workflowsResponse.workflows.find((wf) => wf.name.toLowerCase() === needle);
     if (!foundWorkflow) {
-      throw new Error(`Workflow "${workflowNameOrId}" not found`);
+      throw new Error(workflowNotFoundMessage(workflowNameOrId));
     }
     if (!foundWorkflow.enabled) {
       throw new Error(`Workflow "${workflowNameOrId}" is disabled`);

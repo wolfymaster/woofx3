@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readModuleArchive, approvalShortfall } from "../module-archive";
+import { approvalShortfall, readModuleArchive } from "../module-archive";
 import {
   handArchiveToBarkloader,
   type InstallEventOrigin,

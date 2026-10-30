@@ -1,7 +1,7 @@
 import type { ActionStep, CommandVisibility, WorkflowDefinition } from "@woofx3/api";
 import type { TaskDefinition } from "@woofx3/api/workflow-definition";
-import type { DbClient } from "../db-client";
 import type { SharedLogger } from "@woofx3/common/logging";
+import type { DbClient } from "../db-client";
 import { parseInstanceSettings } from "../module-event-handlers";
 import { parseActions, parseSteps } from "../routes/helpers";
 import { parseStoredManifestJson } from "../stored-manifest";

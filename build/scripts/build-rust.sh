@@ -43,13 +43,13 @@ for service_json in "${RUST_SERVICES[@]}"; do
     # Check if service directory exists
     if [[ ! -d "$SERVICE_PATH" ]]; then
         log_error "Service directory not found: $SERVICE_PATH"
-        continue
+        exit 1
     fi
     
     # Check if Cargo.toml exists
     if [[ ! -f "$SERVICE_PATH/Cargo.toml" ]]; then
         log_error "Cargo.toml not found: $SERVICE_PATH/Cargo.toml"
-        continue
+        exit 1
     fi
 
     # Workspace package name: prefer explicit output, else first [[bin]] / package name.
@@ -63,7 +63,7 @@ for service_json in "${RUST_SERVICES[@]}"; do
                 | head -n1)
             if [[ -z "$CARGO_PACKAGE" || "$CARGO_PACKAGE" == "null" ]]; then
                 log_error "Could not resolve cargo package for $SERVICE_NAME"
-                continue
+                exit 1
             fi
             log_info "  using cargo package: $CARGO_PACKAGE"
         fi
@@ -82,7 +82,7 @@ for service_json in "${RUST_SERVICES[@]}"; do
                 ;;
             *)
                 log_error "Unsupported target: $target"
-                continue
+                exit 1
                 ;;
         esac
         
@@ -132,6 +132,7 @@ for service_json in "${RUST_SERVICES[@]}"; do
             log_info "  ✓ Built successfully: $(basename "$OUTPUT_PATH")"
         else
             log_error "  ✗ Build failed: $(basename "$OUTPUT_PATH")"
+            exit 1
         fi
     done
 done

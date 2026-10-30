@@ -8,6 +8,15 @@
 // Consumers (engine + external clients like woofx3-ui) import from
 // "@woofx3/api/rpc" to describe typed capnweb stubs.
 
+import type {
+  CancelPairingRequest,
+  CancelPairingResponse,
+  ClaimPairingRequest,
+  ClaimPairingResponse,
+  StartPairingRequest,
+  StartPairingResponse,
+} from "./pairing";
+
 /**
  * Marker for authenticated RPC surfaces returned by `ApiGateway.authenticate()`.
  * Filled in as the shared package catches up to the engine's concrete Api
@@ -15,6 +24,16 @@
  * trivially assignable to.
  */
 export interface ApiContract {}
+
+/**
+ * The gateway's `ping` answer. `pairing` is present when the engine offers
+ * browser pairing (`startPairing`); an older engine, or one that does not
+ * pair, leaves it out.
+ */
+export interface GatewayPingResponse {
+  status: string;
+  pairing?: "available";
+}
 
 /**
  * Payload passed to `ApiGatewayContract.registerClient`.
@@ -92,6 +111,45 @@ export function refusalReason(err: unknown): string | null {
   return null;
 }
 
+// Methods an engine does not serve.
+//
+// capnweb answers a call to a method its target does not have with an error
+// whose message is `'<method>' is not a function.`, and that message is all
+// that crosses the wire. An engine older than a method answers that way, so a
+// client that must work with such an engine reads the method name back out.
+
+const MISSING_METHOD = /^'([\w.]+)' is not a function\.?$/;
+
+/**
+ * The method a call failed for because the engine does not serve it, or null
+ * for any other failure. Takes the rejection itself, or its message.
+ */
+export function missingRpcMethod(err: unknown): string | null {
+  const message = err instanceof Error ? err.message : typeof err === "string" ? err : null;
+  if (message === null) {
+    return null;
+  }
+  return MISSING_METHOD.exec(message)?.[1] ?? null;
+}
+
+/** Whether `err` says the engine does not serve `method`, as opposed to `method` failing. */
+export function isMissingRpcMethod(err: unknown, method: string): boolean {
+  return missingRpcMethod(err) === method;
+}
+
+/**
+ * The WebSocket close code the engine ends a session with when its client is
+ * deleted. A client matches on this code, never on the close reason. The
+ * credentials are gone: authenticating with them again is refused, so a
+ * client stops or obtains new credentials rather than reconnecting. Calls that
+ * reach the session after the deletion are refused with an error
+ * `isAuthenticationRefused` recognises.
+ *
+ * It follows the 4000 + HTTP status convention of the scene editor's
+ * `CLOSE_CODES` (401: the credentials are no longer valid).
+ */
+export const CLIENT_REVOKED_CLOSE_CODE = 4401;
+
 /**
  * The `name` of the error `authenticate` rejects with when the engine could
  * not check the credentials (its database gave no verdict), as opposed to
@@ -108,7 +166,7 @@ export const AUTH_UNAVAILABLE = "AuthUnavailable";
  */
 export interface ApiGatewayContract {
   /** Liveness probe; used by the UI to confirm the engine is reachable. */
-  ping(): Promise<{ status: string }>;
+  ping(): Promise<GatewayPingResponse>;
 
   /**
    * Register a new client (one per UI instance / caller). The engine stores
@@ -132,4 +190,16 @@ export interface ApiGatewayContract {
    * engine does not accept the credentials.
    */
   authenticate(clientId: string, clientSecret: string): Promise<ApiContract>;
+
+  /**
+   * Start pairing this browser (see ./pairing.ts). The engine binds the
+   * pairing to the request's `Origin` header, never to a parameter.
+   */
+  startPairing(request: StartPairingRequest): Promise<StartPairingResponse>;
+
+  /** Poll a pairing this browser started; the credentials come back once, on approval. */
+  claimPairing(request: ClaimPairingRequest): Promise<ClaimPairingResponse>;
+
+  /** Give up a pairing this browser started. */
+  cancelPairing(request: CancelPairingRequest): Promise<CancelPairingResponse>;
 }

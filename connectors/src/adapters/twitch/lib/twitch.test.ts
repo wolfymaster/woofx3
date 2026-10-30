@@ -7,7 +7,6 @@ import { type SelfSentRecorder, SelfSentRegistry } from "./self-sent";
 import type { EnqueueOutcome } from "./shoutoutQueue";
 import TwitchApi, {
   isTwitchApiCommand,
-  normalizeHelixTime,
   TwitchApiError,
   type TwitchApiErrorCode,
   twitchApiErrorCodeOf,
@@ -216,28 +215,6 @@ async function rejectionOf(promise: Promise<unknown>): Promise<TwitchApiError> {
   throw new Error("expected a rejection");
 }
 
-describe("normalizeHelixTime", () => {
-  // Helix has sent each of these forms for the ad-schedule times.
-  const cases: [Parameters<typeof normalizeHelixTime>[0], string | null][] = [
-    ["2026-09-28T18:10:00Z", "2026-09-28T18:10:00.000Z"],
-    ["2026-09-28T13:10:00-05:00", "2026-09-28T18:10:00.000Z"],
-    [1790619000, "2026-09-28T18:10:00.000Z"],
-    ["1790619000", "2026-09-28T18:10:00.000Z"],
-    ["", null],
-    ["  ", null],
-    [0, null],
-    ["0", null],
-    [null, null],
-    [undefined, null],
-    ["not a time", null],
-  ];
-  for (const [raw, expected] of cases) {
-    test(`${JSON.stringify(raw)} -> ${expected}`, () => {
-      expect(normalizeHelixTime(raw)).toBe(expected);
-    });
-  }
-});
-
 describe("ad schedule", () => {
   test("reads GET /channels/ads for the broadcaster and normalizes it", async () => {
     const { client, callApi } = helixClient(() => ({
@@ -279,6 +256,21 @@ describe("ad schedule", () => {
         { next_ad_at: "", last_ad_at: "", duration: 0, preroll_free_time: 0, snooze_count: 0, snooze_refresh_at: "" },
       ],
     }));
+    const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, SELF_SENT, CLOCK);
+
+    const { serverNow: _serverNow, ...schedule } = await api.getAdSchedule({});
+    expect(schedule).toEqual({
+      nextAdAt: null,
+      lastAdAt: null,
+      durationSeconds: 0,
+      prerollFreeSeconds: 0,
+      snoozeCount: 0,
+      snoozeRefreshAt: null,
+    });
+  });
+
+  test("an answer with no schedule row reads as nothing scheduled", async () => {
+    const { client } = helixClient(() => ({ data: [] }));
     const api = new TwitchApi(client, BROADCASTER, HELIX_AUTH, SELF_SENT, CLOCK);
 
     const { serverNow: _serverNow, ...schedule } = await api.getAdSchedule({});

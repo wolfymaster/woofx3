@@ -9,6 +9,7 @@ package v1
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -21,16 +22,76 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// How a client came to exist.
+type ClientKind int32
+
+const (
+	ClientKind_CLIENT_KIND_UNSPECIFIED ClientKind = 0
+	// Called registerClient: a desktop shell, a cloud dashboard, a CLI.
+	ClientKind_CLIENT_KIND_REGISTERED ClientKind = 1
+	// Obtained by a browser through pairing; bound to its origin.
+	ClientKind_CLIENT_KIND_PAIRED ClientKind = 2
+)
+
+// Enum value maps for ClientKind.
+var (
+	ClientKind_name = map[int32]string{
+		0: "CLIENT_KIND_UNSPECIFIED",
+		1: "CLIENT_KIND_REGISTERED",
+		2: "CLIENT_KIND_PAIRED",
+	}
+	ClientKind_value = map[string]int32{
+		"CLIENT_KIND_UNSPECIFIED": 0,
+		"CLIENT_KIND_REGISTERED":  1,
+		"CLIENT_KIND_PAIRED":      2,
+	}
+)
+
+func (x ClientKind) Enum() *ClientKind {
+	p := new(ClientKind)
+	*p = x
+	return p
+}
+
+func (x ClientKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ClientKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_client_proto_enumTypes[0].Descriptor()
+}
+
+func (ClientKind) Type() protoreflect.EnumType {
+	return &file_client_proto_enumTypes[0]
+}
+
+func (x ClientKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ClientKind.Descriptor instead.
+func (ClientKind) EnumDescriptor() ([]byte, []int) {
+	return file_client_proto_rawDescGZIP(), []int{0}
+}
+
 type Client struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Description   string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
-	ClientId      string                 `protobuf:"bytes,4,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	ClientSecret  string                 `protobuf:"bytes,5,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"`
-	CallbackUrl   string                 `protobuf:"bytes,6,opt,name=callback_url,json=callbackUrl,proto3" json:"callback_url,omitempty"`
-	CallbackToken string                 `protobuf:"bytes,7,opt,name=callback_token,json=callbackToken,proto3" json:"callback_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Description string                 `protobuf:"bytes,2,opt,name=description,proto3" json:"description,omitempty"`
+	ClientId    string                 `protobuf:"bytes,4,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	// Set only in CreateClient's response. db-proxy keeps only a hash, so no
+	// other response can carry it.
+	ClientSecret  string     `protobuf:"bytes,5,opt,name=client_secret,json=clientSecret,proto3" json:"client_secret,omitempty"`
+	CallbackUrl   string     `protobuf:"bytes,6,opt,name=callback_url,json=callbackUrl,proto3" json:"callback_url,omitempty"`
+	CallbackToken string     `protobuf:"bytes,7,opt,name=callback_token,json=callbackToken,proto3" json:"callback_token,omitempty"`
+	Kind          ClientKind `protobuf:"varint,8,opt,name=kind,proto3,enum=client.ClientKind" json:"kind,omitempty"`
+	// The web origin a paired client is bound to; empty for a registered one.
+	Origin    string                 `protobuf:"bytes,9,opt,name=origin,proto3" json:"origin,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Unset until an authentication is recorded.
+	LastAuthenticatedAt *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=last_authenticated_at,json=lastAuthenticatedAt,proto3" json:"last_authenticated_at,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Client) Reset() {
@@ -105,11 +166,42 @@ func (x *Client) GetCallbackToken() string {
 	return ""
 }
 
+func (x *Client) GetKind() ClientKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ClientKind_CLIENT_KIND_UNSPECIFIED
+}
+
+func (x *Client) GetOrigin() string {
+	if x != nil {
+		return x.Origin
+	}
+	return ""
+}
+
+func (x *Client) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *Client) GetLastAuthenticatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastAuthenticatedAt
+	}
+	return nil
+}
+
 type CreateClientRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Description   string                 `protobuf:"bytes,1,opt,name=description,proto3" json:"description,omitempty"`
 	CallbackUrl   string                 `protobuf:"bytes,3,opt,name=callback_url,json=callbackUrl,proto3" json:"callback_url,omitempty"`
 	CallbackToken string                 `protobuf:"bytes,4,opt,name=callback_token,json=callbackToken,proto3" json:"callback_token,omitempty"`
+	// Required. A paired client needs an origin; a registered one must not have one.
+	Kind          ClientKind `protobuf:"varint,5,opt,name=kind,proto3,enum=client.ClientKind" json:"kind,omitempty"`
+	Origin        string     `protobuf:"bytes,6,opt,name=origin,proto3" json:"origin,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -161,6 +253,20 @@ func (x *CreateClientRequest) GetCallbackUrl() string {
 func (x *CreateClientRequest) GetCallbackToken() string {
 	if x != nil {
 		return x.CallbackToken
+	}
+	return ""
+}
+
+func (x *CreateClientRequest) GetKind() ClientKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ClientKind_CLIENT_KIND_UNSPECIFIED
+}
+
+func (x *CreateClientRequest) GetOrigin() string {
+	if x != nil {
+		return x.Origin
 	}
 	return ""
 }
@@ -409,6 +515,50 @@ func (x *ValidateClientRequest) GetClientSecret() string {
 	return ""
 }
 
+type RecordClientAuthenticationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ClientId      string                 `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RecordClientAuthenticationRequest) Reset() {
+	*x = RecordClientAuthenticationRequest{}
+	mi := &file_client_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RecordClientAuthenticationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RecordClientAuthenticationRequest) ProtoMessage() {}
+
+func (x *RecordClientAuthenticationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_client_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RecordClientAuthenticationRequest.ProtoReflect.Descriptor instead.
+func (*RecordClientAuthenticationRequest) Descriptor() ([]byte, []int) {
+	return file_client_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *RecordClientAuthenticationRequest) GetClientId() string {
+	if x != nil {
+		return x.ClientId
+	}
+	return ""
+}
+
 type ClientResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Status        *ResponseStatus        `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
@@ -419,7 +569,7 @@ type ClientResponse struct {
 
 func (x *ClientResponse) Reset() {
 	*x = ClientResponse{}
-	mi := &file_client_proto_msgTypes[7]
+	mi := &file_client_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -431,7 +581,7 @@ func (x *ClientResponse) String() string {
 func (*ClientResponse) ProtoMessage() {}
 
 func (x *ClientResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[7]
+	mi := &file_client_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -444,7 +594,7 @@ func (x *ClientResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientResponse.ProtoReflect.Descriptor instead.
 func (*ClientResponse) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{7}
+	return file_client_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ClientResponse) GetStatus() *ResponseStatus {
@@ -471,7 +621,7 @@ type ListClientsResponse struct {
 
 func (x *ListClientsResponse) Reset() {
 	*x = ListClientsResponse{}
-	mi := &file_client_proto_msgTypes[8]
+	mi := &file_client_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -483,7 +633,7 @@ func (x *ListClientsResponse) String() string {
 func (*ListClientsResponse) ProtoMessage() {}
 
 func (x *ListClientsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_client_proto_msgTypes[8]
+	mi := &file_client_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -496,7 +646,7 @@ func (x *ListClientsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListClientsResponse.ProtoReflect.Descriptor instead.
 func (*ListClientsResponse) Descriptor() ([]byte, []int) {
-	return file_client_proto_rawDescGZIP(), []int{8}
+	return file_client_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListClientsResponse) GetStatus() *ResponseStatus {
@@ -517,18 +667,26 @@ var File_client_proto protoreflect.FileDescriptor
 
 const file_client_proto_rawDesc = "" +
 	"\n" +
-	"\fclient.proto\x12\x06client\x1a\fcommon.proto\"\xdc\x01\n" +
+	"\fclient.proto\x12\x06client\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa7\x03\n" +
 	"\x06Client\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12\x1b\n" +
 	"\tclient_id\x18\x04 \x01(\tR\bclientId\x12#\n" +
 	"\rclient_secret\x18\x05 \x01(\tR\fclientSecret\x12!\n" +
 	"\fcallback_url\x18\x06 \x01(\tR\vcallbackUrl\x12%\n" +
-	"\x0ecallback_token\x18\a \x01(\tR\rcallbackTokenJ\x04\b\x03\x10\x04R\x0eapplication_id\"\x97\x01\n" +
+	"\x0ecallback_token\x18\a \x01(\tR\rcallbackToken\x12&\n" +
+	"\x04kind\x18\b \x01(\x0e2\x12.client.ClientKindR\x04kind\x12\x16\n" +
+	"\x06origin\x18\t \x01(\tR\x06origin\x129\n" +
+	"\n" +
+	"created_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12N\n" +
+	"\x15last_authenticated_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\x13lastAuthenticatedAtJ\x04\b\x03\x10\x04R\x0eapplication_id\"\xd7\x01\n" +
 	"\x13CreateClientRequest\x12 \n" +
 	"\vdescription\x18\x01 \x01(\tR\vdescription\x12!\n" +
 	"\fcallback_url\x18\x03 \x01(\tR\vcallbackUrl\x12%\n" +
-	"\x0ecallback_token\x18\x04 \x01(\tR\rcallbackTokenJ\x04\b\x02\x10\x03R\x0eapplication_id\"/\n" +
+	"\x0ecallback_token\x18\x04 \x01(\tR\rcallbackToken\x12&\n" +
+	"\x04kind\x18\x05 \x01(\x0e2\x12.client.ClientKindR\x04kind\x12\x16\n" +
+	"\x06origin\x18\x06 \x01(\tR\x06originJ\x04\b\x02\x10\x03R\x0eapplication_id\"/\n" +
 	"\x10GetClientRequest\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\"*\n" +
 	"\x12ListClientsRequestJ\x04\b\x01\x10\x02R\x0eapplication_id\"\x91\x01\n" +
@@ -541,20 +699,28 @@ const file_client_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"Y\n" +
 	"\x15ValidateClientRequest\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12#\n" +
-	"\rclient_secret\x18\x02 \x01(\tR\fclientSecret\"h\n" +
+	"\rclient_secret\x18\x02 \x01(\tR\fclientSecret\"@\n" +
+	"!RecordClientAuthenticationRequest\x12\x1b\n" +
+	"\tclient_id\x18\x01 \x01(\tR\bclientId\"h\n" +
 	"\x0eClientResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12&\n" +
 	"\x06client\x18\x02 \x01(\v2\x0e.client.ClientR\x06client\"o\n" +
 	"\x13ListClientsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12(\n" +
-	"\aclients\x18\x02 \x03(\v2\x0e.client.ClientR\aclients2\xae\x03\n" +
+	"\aclients\x18\x02 \x03(\v2\x0e.client.ClientR\aclients*]\n" +
+	"\n" +
+	"ClientKind\x12\x1b\n" +
+	"\x17CLIENT_KIND_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16CLIENT_KIND_REGISTERED\x10\x01\x12\x16\n" +
+	"\x12CLIENT_KIND_PAIRED\x10\x022\x8f\x04\n" +
 	"\rClientService\x12C\n" +
 	"\fCreateClient\x12\x1b.client.CreateClientRequest\x1a\x16.client.ClientResponse\x12=\n" +
 	"\tGetClient\x12\x18.client.GetClientRequest\x1a\x16.client.ClientResponse\x12F\n" +
 	"\vListClients\x12\x1a.client.ListClientsRequest\x1a\x1b.client.ListClientsResponse\x12C\n" +
 	"\fUpdateClient\x12\x1b.client.UpdateClientRequest\x1a\x16.client.ClientResponse\x12C\n" +
 	"\fDeleteClient\x12\x1b.client.DeleteClientRequest\x1a\x16.common.ResponseStatus\x12G\n" +
-	"\x0eValidateClient\x12\x1d.client.ValidateClientRequest\x1a\x16.client.ClientResponseB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
+	"\x0eValidateClient\x12\x1d.client.ValidateClientRequest\x1a\x16.client.ClientResponse\x12_\n" +
+	"\x1aRecordClientAuthentication\x12).client.RecordClientAuthenticationRequest\x1a\x16.common.ResponseStatusB)Z'github.com/wolfymaster/woofx3/db/gen/v1b\x06proto3"
 
 var (
 	file_client_proto_rawDescOnce sync.Once
@@ -568,41 +734,51 @@ func file_client_proto_rawDescGZIP() []byte {
 	return file_client_proto_rawDescData
 }
 
-var file_client_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_client_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_client_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_client_proto_goTypes = []any{
-	(*Client)(nil),                // 0: client.Client
-	(*CreateClientRequest)(nil),   // 1: client.CreateClientRequest
-	(*GetClientRequest)(nil),      // 2: client.GetClientRequest
-	(*ListClientsRequest)(nil),    // 3: client.ListClientsRequest
-	(*UpdateClientRequest)(nil),   // 4: client.UpdateClientRequest
-	(*DeleteClientRequest)(nil),   // 5: client.DeleteClientRequest
-	(*ValidateClientRequest)(nil), // 6: client.ValidateClientRequest
-	(*ClientResponse)(nil),        // 7: client.ClientResponse
-	(*ListClientsResponse)(nil),   // 8: client.ListClientsResponse
-	(*ResponseStatus)(nil),        // 9: common.ResponseStatus
+	(ClientKind)(0),                           // 0: client.ClientKind
+	(*Client)(nil),                            // 1: client.Client
+	(*CreateClientRequest)(nil),               // 2: client.CreateClientRequest
+	(*GetClientRequest)(nil),                  // 3: client.GetClientRequest
+	(*ListClientsRequest)(nil),                // 4: client.ListClientsRequest
+	(*UpdateClientRequest)(nil),               // 5: client.UpdateClientRequest
+	(*DeleteClientRequest)(nil),               // 6: client.DeleteClientRequest
+	(*ValidateClientRequest)(nil),             // 7: client.ValidateClientRequest
+	(*RecordClientAuthenticationRequest)(nil), // 8: client.RecordClientAuthenticationRequest
+	(*ClientResponse)(nil),                    // 9: client.ClientResponse
+	(*ListClientsResponse)(nil),               // 10: client.ListClientsResponse
+	(*timestamppb.Timestamp)(nil),             // 11: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),                    // 12: common.ResponseStatus
 }
 var file_client_proto_depIdxs = []int32{
-	9,  // 0: client.ClientResponse.status:type_name -> common.ResponseStatus
-	0,  // 1: client.ClientResponse.client:type_name -> client.Client
-	9,  // 2: client.ListClientsResponse.status:type_name -> common.ResponseStatus
-	0,  // 3: client.ListClientsResponse.clients:type_name -> client.Client
-	1,  // 4: client.ClientService.CreateClient:input_type -> client.CreateClientRequest
-	2,  // 5: client.ClientService.GetClient:input_type -> client.GetClientRequest
-	3,  // 6: client.ClientService.ListClients:input_type -> client.ListClientsRequest
-	4,  // 7: client.ClientService.UpdateClient:input_type -> client.UpdateClientRequest
-	5,  // 8: client.ClientService.DeleteClient:input_type -> client.DeleteClientRequest
-	6,  // 9: client.ClientService.ValidateClient:input_type -> client.ValidateClientRequest
-	7,  // 10: client.ClientService.CreateClient:output_type -> client.ClientResponse
-	7,  // 11: client.ClientService.GetClient:output_type -> client.ClientResponse
-	8,  // 12: client.ClientService.ListClients:output_type -> client.ListClientsResponse
-	7,  // 13: client.ClientService.UpdateClient:output_type -> client.ClientResponse
-	9,  // 14: client.ClientService.DeleteClient:output_type -> common.ResponseStatus
-	7,  // 15: client.ClientService.ValidateClient:output_type -> client.ClientResponse
-	10, // [10:16] is the sub-list for method output_type
-	4,  // [4:10] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	0,  // 0: client.Client.kind:type_name -> client.ClientKind
+	11, // 1: client.Client.created_at:type_name -> google.protobuf.Timestamp
+	11, // 2: client.Client.last_authenticated_at:type_name -> google.protobuf.Timestamp
+	0,  // 3: client.CreateClientRequest.kind:type_name -> client.ClientKind
+	12, // 4: client.ClientResponse.status:type_name -> common.ResponseStatus
+	1,  // 5: client.ClientResponse.client:type_name -> client.Client
+	12, // 6: client.ListClientsResponse.status:type_name -> common.ResponseStatus
+	1,  // 7: client.ListClientsResponse.clients:type_name -> client.Client
+	2,  // 8: client.ClientService.CreateClient:input_type -> client.CreateClientRequest
+	3,  // 9: client.ClientService.GetClient:input_type -> client.GetClientRequest
+	4,  // 10: client.ClientService.ListClients:input_type -> client.ListClientsRequest
+	5,  // 11: client.ClientService.UpdateClient:input_type -> client.UpdateClientRequest
+	6,  // 12: client.ClientService.DeleteClient:input_type -> client.DeleteClientRequest
+	7,  // 13: client.ClientService.ValidateClient:input_type -> client.ValidateClientRequest
+	8,  // 14: client.ClientService.RecordClientAuthentication:input_type -> client.RecordClientAuthenticationRequest
+	9,  // 15: client.ClientService.CreateClient:output_type -> client.ClientResponse
+	9,  // 16: client.ClientService.GetClient:output_type -> client.ClientResponse
+	10, // 17: client.ClientService.ListClients:output_type -> client.ListClientsResponse
+	9,  // 18: client.ClientService.UpdateClient:output_type -> client.ClientResponse
+	12, // 19: client.ClientService.DeleteClient:output_type -> common.ResponseStatus
+	9,  // 20: client.ClientService.ValidateClient:output_type -> client.ClientResponse
+	12, // 21: client.ClientService.RecordClientAuthentication:output_type -> common.ResponseStatus
+	15, // [15:22] is the sub-list for method output_type
+	8,  // [8:15] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_client_proto_init() }
@@ -616,13 +792,14 @@ func file_client_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_client_proto_rawDesc), len(file_client_proto_rawDesc)),
-			NumEnums:      0,
-			NumMessages:   9,
+			NumEnums:      1,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_client_proto_goTypes,
 		DependencyIndexes: file_client_proto_depIdxs,
+		EnumInfos:         file_client_proto_enumTypes,
 		MessageInfos:      file_client_proto_msgTypes,
 	}.Build()
 	File_client_proto = out.File

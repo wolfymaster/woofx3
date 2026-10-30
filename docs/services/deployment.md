@@ -232,6 +232,7 @@ machine to be protected from other web pages and from DNS rebinding.
 |---|---|
 | `WOOFX3_ALLOWED_HOSTS` | A request whose `Host` is not listed is answered `421 Misdirected Request`. This stops DNS rebinding: a page on a hostile name that resolves to the engine still sends its own name as the Host. |
 | `WOOFX3_ALLOWED_ORIGINS` | A request that sends an `Origin` not listed is answered `403`, WebSocket upgrades and CORS preflights included. A request with no `Origin` is allowed. CORS echoes the request's origin with `Vary: Origin`. |
+| `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` (`sceneManagerAllowedOrigins` in `.woofx3.json`) | sceneManager's own origin list, checked the same way. When it is not blank, sceneManager uses it instead of `WOOFX3_ALLOWED_ORIGINS`; the api never reads it. |
 | `WOOFX3_UI_URL` | The origins of the dashboards the engine is used from, added to the default Origin list. `uiUrl` in `.woofx3.json`. |
 
 When a setting is unset or blank, a default list applies:
@@ -283,10 +284,19 @@ which are not dashboards: turning the check off is `WOOFX3_ALLOWED_ORIGINS`'s
 job. An explicit `WOOFX3_ALLOWED_ORIGINS` replaces the whole default list,
 `WOOFX3_UI_URL` included, so list the dashboard there too when you set it.
 
-Each is a comma-separated list, read by both services, and an explicit list
-replaces its default rather than adding to it. A malformed entry stops the
-service at startup, and so does a value that is not a list at all, such as
-`true`.
+Each is a comma-separated list, read by both services except sceneManager's
+own list, and an explicit list replaces its default rather than adding to it.
+A malformed entry stops the service at startup, naming the setting it came
+from, and so does a value that is not a list at all, such as `true`. The api
+also refuses to start when its origin list contains `null`: nothing that calls
+the api sends it, and a listed `null` would admit every sandboxed page.
+
+sceneManager's own list replaces the shared one (and the defaults); it does
+not add to it, so repeat the shared origins in it. Each setting is looked up
+on its own (the environment, then `.env`, then `.woofx3.json`), and then the
+own list wins whatever its source: a `sceneManagerAllowedOrigins` in
+`.woofx3.json` takes precedence over a `WOOFX3_ALLOWED_ORIGINS` set in the
+environment.
 
 Matching rules:
 
@@ -321,13 +331,26 @@ none either. What an overlay sends to sceneManager:
   default covers it when that is `WOOFX3_SCENE_MANAGER_URL` or a loopback
   address; an explicit list must include it.
 - **Widget frames** are sandboxed with an opaque origin. Their CORS-mode loads
-  from sceneManager (web fonts, module scripts) send `Origin: null`, which
-  sceneManager's default allows; an explicit list must include `null` when
-  widgets load anything from sceneManager. A listed `null` cannot tell one
-  sandboxed page from another; the Host check and the session tokens remain
-  the protection there. The api has no such caller and does not allow `null`
-  by default, so give an explicit `null` to sceneManager alone, through its
-  own environment rather than the shared `.woofx3.json`.
+  from sceneManager send `Origin: null`: module scripts and `@font-face` fonts
+  from the module's files (`/assets/modules/...`) and the asset library
+  (`/assets/user/...`), and the font files (`/fonts/files/...`) a widget's
+  font stylesheet names. Frame documents, the widget host shim, stylesheets
+  and images load without CORS and send no Origin. sceneManager's default
+  list allows `null`; an explicit list must include it when widgets load
+  anything from sceneManager. The api has no such caller and refuses `null`,
+  so list it in `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` (with the rest of
+  sceneManager's origins), never in `WOOFX3_ALLOWED_ORIGINS`.
+
+  An admitted `null` is admitted only on those three paths; every other
+  route, the overlay page, its session and event routes, frame documents,
+  uploads, the editor WebSocket and `/health` included, answers `Origin: null`
+  with `403`. An admitted `null` cannot tell one sandboxed page from another,
+  though, and those paths take no token: any sandboxed page, on any site,
+  opened in a browser that can reach sceneManager's Host can read a module's
+  files, an asset library file or a cached font file, if it knows the path.
+  The asset library is the one piece of user data among them. Keep the Host
+  check on, and keep sceneManager on loopback or behind the edge, where that
+  browser is the streamer's own.
 - The **scene editor** WebSocket sends the dashboard's origin.
 
 A desktop engine on loopback needs none of this: the defaults are what it
@@ -348,16 +371,52 @@ names its Host can carry, health checks included:
 # both services
 WOOFX3_ALLOWED_HOSTS=eng-0a1b2c3d.up.railway.app,127.0.0.1
 WOOFX3_ALLOWED_ORIGINS=https://dashboard.example,https://streamer.example
-# sceneManager, through its own environment
-WOOFX3_ALLOWED_ORIGINS=https://dashboard.example,https://streamer.example,null
+# sceneManager: the same origins, plus null for widget frames
+WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS=https://dashboard.example,https://streamer.example,null
 ```
 
 ## Client registration
 
 A dashboard or desktop shell becomes a client of the engine by calling
 `registerClient` over `/api`, which returns the client id and secret it
-authenticates with from then on. Who may register is set by
-`WOOFX3_REGISTRATION_MODE`:
+authenticates with from then on. That response is the only place the secret
+appears: the db proxy stores only its SHA-256 hash, so a client that loses its
+secret registers again.
+
+A secret stored in plain text, issued before secrets were hashed, is hashed and
+its plain text cleared when the db proxy starts, before it serves. Rolling back
+to a release from before hashing therefore refuses every existing client; see
+"Rollback compatibility" in `docs/operations/releases.md`.
+
+On SQLite, clearing a secret leaves its bytes in the file's free pages, so the
+db proxy then rewrites the database file with `VACUUM`. It records that the
+rewrite is owed in the same transaction that clears a secret, and forgets it
+only once the `VACUUM` succeeds: a start that fails or is stopped during the
+rewrite leaves it owed, and the next start does it. The rewrite runs once,
+before the db proxy serves, and on a large database it can take a while; the
+db proxy logs when it starts and ends it. Until then the api's `/ready`
+answers 503, and the orchestrator reports the api unhealthy after its health
+timeout but keeps it running and reports it healthy once it is ready.
+
+On Postgres the old row versions stay on disk until the server's (auto)vacuum
+reclaims them. On either, a backup taken before the upgrade still holds the
+plain text; replace or destroy it as you would any copy of a credential.
+
+A client a browser obtained by pairing (see `docs/services/pairing.md`) is
+bound to the web origin it paired from. `authenticate` refuses its
+credentials from any other origin, or from a request with no `Origin`, with
+the same refusal as wrong credentials. A registered client has no such
+binding.
+
+The binding stops the secret being used from another web page, because a
+browser always sends the page's real `Origin`. It is not a defence against a
+stolen secret: any client outside a browser, on any machine that can reach
+the engine, can send the paired origin. Treat a paired secret like any other
+client secret, and delete the client if it is exposed. A reverse proxy in
+front of the engine must pass `Origin` through; one that drops it locks every
+paired client out.
+
+Who may register is set by `WOOFX3_REGISTRATION_MODE`:
 
 | Mode | Who may register |
 |---|---|
@@ -441,6 +500,38 @@ anything but a verdict, `authenticate` rejects with an error named
 `AuthUnavailable` on the engine side and no refusal marker, which a client
 retries.
 
+### Deleting a client
+
+`deleteClient(clientId)`, which any authenticated client may call, removes the
+client and ends every session it already holds:
+
+- each of its WebSockets is closed with code `4401` (`CLIENT_REVOKED_CLOSE_CODE`
+  in `@woofx3/api/rpc`) and reason `client revoked`, after the reply to the
+  `deleteClient` call is sent, so a client that deletes itself still gets its
+  answer;
+- any call that starts on one of its sessions afterwards, including one in an
+  HTTP batch, which has no socket to close, is refused with
+  `AuthenticationRefused: client revoked`; a call already running when the
+  client is deleted finishes;
+- its trusted credentials are forgotten, so authenticating with them again is
+  refused;
+- a session that was still authenticating when the client was deleted is
+  refused rather than admitted;
+- its event-stream, stream-event and trigger-change subscriptions end, from
+  every session it made, including one it already disposed and one on a
+  socket that stays open for another client;
+- events stop going to its callback URL at once, and it is no longer offered
+  as a client that can answer a request, whatever happens to the refresh of
+  the callback list that follows.
+
+A delete that db-proxy reports as failed still ends the client's open
+sessions and callbacks, because the engine cannot tell whether it committed.
+The client authenticates again, and the refresh that follows lists its
+callback URL again.
+
+A socket that also carries a live session of another client stays open for
+that session; only the deleted client's sessions on it end.
+
 ## Barkloader processing callbacks
 
 barkloader reports asynchronous asset jobs (thumbnails) by POSTing to the api's
@@ -465,15 +556,21 @@ running barkloader sends the header.
 
 ## Startup
 
-The entrypoint (`build/entrypoint.sh`) runs the database migrations with the
-bundled `migrate` tool before the orchestrator starts any service. A failed
-migration exits the container non-zero, so a deploy fails instead of booting
-services against a half-migrated schema.
+The orchestrator migrates the database before any service opens it:
+`services.json` declares `migrate` (the bundled `migrate -cmd up`) as a
+run-once step that db-proxy depends on, so db-proxy starts only once the step
+has exited with status 0. The image's entrypoint, the release archives'
+`start.sh` and `start.bat`, and a desktop shell that runs the orchestrator
+itself all go through it. Migrations are tracked in the database's
+`migrations` table, so a database that is already up to date makes the step a
+no-op. A failed migration, or a `migrate` that cannot be started, stops every
+service and exits the orchestrator, and so the container, non-zero: a deploy fails instead of booting services
+against a half-migrated schema.
 
 The image runs as UID 65532 and keeps its state in `/app/data`. A host that
 mounts a root-owned volume there must start the container as root (Railway:
 `RAILWAY_RUN_UID=0`); the entrypoint then hands `/app/data` to 65532 and drops
-privileges before migrating or starting anything.
+privileges before the orchestrator starts.
 
 The orchestrator starts each service once the services it depends on are up.
 The api declares `GET /ready` as its health endpoint in `services.json`, so the
@@ -552,18 +649,30 @@ database).
 
 ### Shutdown
 
-On SIGTERM the orchestrator stops the services in two phases and kills whatever
-is still running after 25 seconds.
+On SIGTERM the orchestrator stops the services in reverse dependency order and
+kills whatever is still running after 25 seconds. A service is signalled only
+once every service that depends on it has exited, so the services stop in
+waves: first those nothing depends on (the edge, wooflow, twitch,
+woofwoofwoof), then the api and sceneManager, then barkloader, and last
+db-proxy and the message bus.
 
-1. The services that depend on others are signalled first and get up to 8
-   seconds. This is when the workflow engine lets runs in flight finish, and
-   records the ones it has to abandon as failed (see
+1. The waves before the last share the first 8 seconds. This is when the
+   workflow engine lets runs in flight finish, and records the ones it has to
+   abandon as failed (see
    [Stopping the Engine](../workflow/execution.md#stopping-the-engine)). db-proxy
    and the message bus are still up, so those outcomes can be written and
-   announced.
-2. db-proxy and the message bus are signalled once those services have exited,
-   or their 8 seconds are up. db-proxy stops serving, then closes module
-   storage, which makes the final flush to the replica (bounded at 10 seconds).
+   announced. A wave still running when the 8 seconds are up no longer holds
+   back the next.
+2. db-proxy and the message bus are signalled once everything else has exited,
+   or the 8 seconds are up. db-proxy stops serving, then closes module storage,
+   which makes the final flush to the replica (bounded at 10 seconds).
+
+A run-once step (the migration) is never signalled: cut off partway, a
+migration can leave a half-applied schema. One still running when the engine
+stops has the whole 25 seconds to finish and is killed only then. Its
+migrations do not run in a transaction, because the SQLite migrations that
+rebuild tables must turn foreign key enforcement off, which cannot change
+inside one.
 
 The host must allow at least 25 seconds between SIGTERM and SIGKILL; on
 Railway, set `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` to 30 or more.
@@ -600,8 +709,12 @@ Each line is one event, with an RFC 3339 `time`:
 
 - `service` — a service moved to `starting`, `healthy`, `unhealthy` or
   `stopped` (with how it exited in `message`), or was `skipped` because its
-  prebuilt binary is not installed.
-- `ready` — every service is healthy at once, sent once per run. A service with
+  prebuilt binary is not installed. A run-once step (`migrate`) is `starting`
+  while it runs and `completed` once it exits with status 0; any other exit is
+  reported `stopped`, followed by an `error` naming it. A step that cannot be
+  started at all gets the `error` alone.
+- `ready` — every service is healthy, and every run-once step completed, at
+  once; sent once per run. A service with
   a `health_endpoint` in `services.json` is healthy when a `GET` of it answers
   `200`; one without is healthy as soon as its process has started, whether or
   not it has finished starting up. A service whose check times out is
@@ -614,6 +727,7 @@ Each line is one event, with an RFC 3339 `time`:
     (see [Readiness and version](#readiness-and-version) below);
   - sceneManager's `GET /health` answered `200`: its HTTP server is listening
     (on `WOOFX3_SCENE_MANAGER_PORT`, `9101` by default);
+  - `migrate` exited with status 0: the database is migrated;
   - connectors' `GET /health` answered `200`: its bus connection is up and
     its reconcile loop is running (on `WOOFX3_CONNECTORS_PORT`, `9102` by
     default). A stopped or parked Twitch adapter does not fail it;
@@ -623,25 +737,27 @@ Each line is one event, with an RFC 3339 `time`:
 
   Both checks go to `127.0.0.1`, so a deployment that sets
   `WOOFX3_ALLOWED_HOSTS` must list it.
-- `error` — a service could not be started (`name` set), or the orchestrator
-  could not start at all (no `name`; it exits non-zero after this line).
+- `error` — a service could not be started or a run-once step failed (`name`
+  set), or the orchestrator could not start at all or stopped because a step
+  failed (no `name`; it exits non-zero after this line, with no `stopped`).
 - `stopped` — every service has been stopped, and its own `stopped` event
   written, and the orchestrator is exiting. A service that cannot be reaped
   within 5 seconds of being killed may be missing its event.
 
-Consumers must ignore event types and fields they do not know.
+Consumers must ignore event types, service statuses and fields they do not
+know; new ones may be added.
 
 ### Windows
 
 Windows has no SIGTERM, so the orchestrator stops services differently there.
-The two phases and the 25 seconds are the same.
+The stop order and the 25 seconds are the same.
 
 - **Stopping a service.** Each service starts in a console process group of its
   own. To ask one to stop, the orchestrator sends it `CTRL_BREAK_EVENT`, and
   kills it if it has not exited when the grace period is up. Go services and
   Caddy receive the event as `os.Interrupt`, Bun services as `SIGBREAK`, and
   barkloader through its ctrl-break handler. All of them treat it as a graceful
-  shutdown.
+  shutdown. A run-once step is never sent it.
 - **The orchestrator needs a console.** A console control event can only be
   sent through a console that the sender shares with the target. A parent that
   starts the orchestrator without a visible window should use
