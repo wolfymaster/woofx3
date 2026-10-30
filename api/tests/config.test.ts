@@ -187,6 +187,40 @@ describe("dashboard origin", () => {
   });
 });
 
+describe("release version", () => {
+  test("is the version WOOFX3_VERSION gives", () => {
+    withEnv({ WOOFX3_VERSION: "v1.2.3" });
+
+    expect(loadConfig().version).toBe("v1.2.3");
+  });
+
+  test("is the version a release package's config carries", () => {
+    delete process.env.WOOFX3_VERSION;
+    withEnv({});
+
+    withConfigFile({ version: "v1.2.3" }, () => {
+      expect(loadConfig().version).toBe("v1.2.3");
+    });
+  });
+
+  test("is WOOFX3_VERSION over the packaged config's", () => {
+    withEnv({ WOOFX3_VERSION: "v2.0.0" });
+
+    withConfigFile({ version: "v1.2.3" }, () => {
+      expect(loadConfig().version).toBe("v2.0.0");
+    });
+  });
+
+  test("is dev when nothing stamps one", () => {
+    delete process.env.WOOFX3_VERSION;
+    withEnv({});
+
+    withConfigFile({}, () => {
+      expect(loadConfig().version).toBe("dev");
+    });
+  });
+});
+
 describe("engine name", () => {
   test("is the name WOOFX3_ENGINE_NAME gives", () => {
     withEnv({ WOOFX3_ENGINE_NAME: "eng-0a1b2c3d" });

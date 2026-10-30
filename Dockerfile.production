@@ -55,6 +55,11 @@ WORKDIR /src/build
 # short on memory passes a smaller number (--build-arg BUILD_JOBS=2), since
 # the release build of the AWS SDK and mlua is what runs out first.
 ARG BUILD_JOBS
+# The release this image is, reported by GET /ready and getEngineInfo:
+# build/scripts/package.sh writes it into /app/.woofx3.json, which the Linux
+# archive extracted from the image ships too. The release workflow passes the
+# tag; unset, the engine reports UNVERSIONED (api/src/version.ts).
+ARG WOOFX3_VERSION
 # The public woofx3 Twitch app, written into /app/.woofx3.json by
 # build/scripts/package.sh. Unset, the engine has no public app. The release
 # workflow passes it, so the image and the Linux archive extracted from it ship it.
@@ -97,12 +102,6 @@ ENV WOOFX3_ROOT=/app
 # Log collectors count lines, not records: pretty JSON spreads one record over
 # a dozen lines and trips per-line rate limits (Railway drops past 500/sec).
 ENV WOOFX3_LOG_PRETTY=false
-
-# The release this image is, reported by GET /ready and getEngineInfo. The
-# release workflow passes the tag; "dev" must match UNVERSIONED in
-# api/src/version.ts. Declared late so changing it rebuilds only this layer.
-ARG WOOFX3_VERSION=dev
-ENV WOOFX3_VERSION=${WOOFX3_VERSION}
 
 USER 65532:65532
 

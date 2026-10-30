@@ -29,6 +29,16 @@ if [[ ! -f "$TEMPLATE_CONFIG" ]]; then
     exit 1
 fi
 
+# The release this build is, reported by the api (GET /ready, getEngineInfo).
+# Written into the packaged config so an archive run with no environment
+# reports it, as the image does. Unset, the engine reports UNVERSIONED
+# (api/src/version.ts).
+RELEASE_VERSION="${WOOFX3_VERSION:-}"
+if [[ -n "$RELEASE_VERSION" && ! "$RELEASE_VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]]; then
+    log_error "WOOFX3_VERSION must be a release tag (letters, digits, '.', '_', '+' and '-'), got: $RELEASE_VERSION"
+    exit 1
+fi
+
 # The public woofx3 Twitch app an engine links Twitch with (device login). It is
 # a client id with no secret, so it ships in the packaged config; the template
 # stays free of it so a build without the variable packages an engine with no
@@ -44,8 +54,9 @@ fi
 # Writes the build's settings into a packaged copy of the template config.
 write_packaged_config() {
     local destination="$1"
-    jq --arg twitchPublicClientId "$TWITCH_PUBLIC_CLIENT_ID" '
-        if $twitchPublicClientId != "" then
+    jq --arg version "$RELEASE_VERSION" --arg twitchPublicClientId "$TWITCH_PUBLIC_CLIENT_ID" '
+        (if $version != "" then .version = $version else . end)
+        | if $twitchPublicClientId != "" then
             .twitchPublicClientId = $twitchPublicClientId
         else
             .

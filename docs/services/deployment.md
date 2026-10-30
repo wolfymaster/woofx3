@@ -803,8 +803,9 @@ only once the engine can be depended on, and `503` until then:
   cannot be asked.
 - `services.barkloader` — barkloader's last `HEARTBEAT` said ready, less than
   30 seconds ago (it reports ready once its bundled modules are installed).
-- `version` — the image's `WOOFX3_VERSION` build argument (the release tag), or
-  `dev` for an unversioned build. `getEngineInfo` returns it too.
+- `version` — the release tag the package was built with (`version` in its
+  `.woofx3.json`, or `WOOFX3_VERSION` where the engine runs), or `dev` for an
+  unversioned build. `getEngineInfo` returns it too.
 
 `GET /health` stays a liveness check: it answers `200` as soon as the api
 process does, whatever its dependencies are doing. It is public, so its body
