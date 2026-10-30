@@ -34,15 +34,24 @@
       const settings = host.settings;
       const inAlert = host.surface === "alert";
       const seconds = num(settings.duration, 0);
+      const counter = typeof settings.counter === "string" ? settings.counter.trim() : "";
       const container = document.getElementById("animation");
 
+      // The animation's data with the text layer's text replaced, when the
+      // settings name one.
+      function load() {
+        return loadAnimationData(host, settings.src).then((animationData) => {
+          const layerName = typeof settings.textLayer === "string" ? settings.textLayer.trim() : "";
+          if (layerName) {
+            replaceText(animationData, layerName, typeof settings.text === "string" ? settings.text : "");
+          }
+          return animationData;
+        });
+      }
+
       function start(onDone) {
-        loadAnimationData(host, settings.src)
+        load()
           .then((animationData) => {
-            const layerName = typeof settings.textLayer === "string" ? settings.textLayer.trim() : "";
-            if (layerName) {
-              replaceText(animationData, layerName, typeof settings.text === "string" ? settings.text : "");
-            }
             // In an alert the animation plays through once, unless a duration
             // holds it longer; on a scene it follows `loop`.
             const loop = inAlert ? seconds > 0 : settings.loop !== false;
@@ -66,8 +75,47 @@
           });
       }
 
+      // On a scene with a counter, the counter's value picks the frame and
+      // nothing plays on its own. The first reading shows its frame at once;
+      // each later one plays from the frame on screen to the new one, so a
+      // change animates, backwards when the value went the other way.
+      function showCounterFrames() {
+        load()
+          .then((animationData) => {
+            const animation = lottie.loadAnimation({ container, renderer: "svg", loop: false, autoplay: false, animationData });
+            // From the data rather than the player: playing a segment narrows
+            // the player's own frame range to that segment.
+            const first = num(animationData.ip, 0);
+            const last = Math.max(first, num(animationData.op, first + 1) - 1);
+            let shown = false;
+            host.storage.subscribe("resource:" + counter, (instance) => {
+              if (instance === null || typeof instance !== "object") {
+                return;
+              }
+              const instanceSettings = instance.settings || {};
+              const value = counterValue(instance.value, numberOr(instanceSettings.initialValue, 0));
+              const target = frameFor(value, num(settings.counterFrom, 0), num(settings.counterTo, 10), first, last);
+              // `currentFrame` counts from the start of the segment playing.
+              const onScreen = animation.firstFrame + animation.currentFrame;
+              if (!shown || Math.abs(target - onScreen) < 0.5) {
+                animation.goToAndStop(target - animation.firstFrame, true);
+              } else {
+                animation.playSegments([onScreen, target], true);
+              }
+              shown = true;
+            });
+          })
+          .catch((err) => {
+            console.warn("[lottie] animation failed to load", err);
+          });
+      }
+
       if (!inAlert) {
-        start(null);
+        if (counter) {
+          showCounterFrames();
+        } else {
+          start(null);
+        }
         return;
       }
       host.onEvent((event) => {
@@ -103,6 +151,29 @@
           }
         }
       }
+    }
+
+    // The frame for `value` when `from` shows the `first` frame and `to` the
+    // `last`, in proportion between them and holding either end beyond it.
+    // `to` below `from` runs the animation backwards as the value rises; the
+    // two equal show the last frame from that value on.
+    function frameFor(value, from, to, first, last) {
+      const span = to - from;
+      const t = span === 0 ? (value >= to ? 1 : 0) : (value - from) / span;
+      return first + Math.min(1, Math.max(0, t)) * (last - first);
+    }
+
+    // The counter's number from what it stores, or its starting value when
+    // it stores nothing yet. Must read as `counterValue` in
+    // widgets/counter/index.html does.
+    function counterValue(stored, initial) {
+      const raw = stored !== null && typeof stored === "object" ? stored.value : stored;
+      return numberOr(raw, initial);
+    }
+
+    function numberOr(value, fallback) {
+      const number = Number(value);
+      return value === null || value === undefined || value === "" || !Number.isFinite(number) ? fallback : number;
     }
 
     function num(value, fallback) {

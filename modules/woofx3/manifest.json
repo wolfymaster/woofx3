@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.39.0",
+  "version": "0.40.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -2202,7 +2202,7 @@
     {
       "id": "lottie",
       "name": "Lottie",
-      "description": "A Lottie animation, optionally with the text of one of its text layers replaced.",
+      "description": "A Lottie animation, optionally with the text of one of its text layers replaced. On a scene, any counter can pick its frame instead of it playing on its own.",
       "entry": "widgets/lottie/index.html",
       "assets": "widgets/lottie",
       "surfaces": [
@@ -2244,6 +2244,27 @@
           "min": 0,
           "defaultValue": 0,
           "description": "In an alert: how long the animation plays, looping if it is shorter. 0 plays it through once."
+        },
+        {
+          "id": "counter",
+          "label": "Counter",
+          "type": "resource_ref",
+          "resourceKind": "counter",
+          "description": "On a scene: any counter, whose value picks the frame in place of the animation playing on its own. Each change plays from the frame shown to the new one."
+        },
+        {
+          "id": "counterFrom",
+          "label": "Counter at first frame",
+          "type": "number",
+          "defaultValue": 0,
+          "description": "With a counter: the value that shows the animation's first frame. Values in between show the frames in between, and values beyond either end hold that end."
+        },
+        {
+          "id": "counterTo",
+          "label": "Counter at last frame",
+          "type": "number",
+          "defaultValue": 10,
+          "description": "With a counter: the value that shows the animation's last frame. Set it below the first-frame value to run the animation backwards as the counter rises."
         }
       ],
       "taxonomy": [
