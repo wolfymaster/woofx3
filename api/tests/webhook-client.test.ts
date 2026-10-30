@@ -375,3 +375,60 @@ describe("WebhookClient routing", () => {
     );
   });
 });
+
+describe("WebhookClient.dropClient", () => {
+  it("stops delivering to the client at once", async () => {
+    const http = callbackServer({});
+    try {
+      const db = fakeDb([{ clientId: "gone", description: "d", callbackUrl: http.url, callbackToken: "" }]);
+      const logger = fakeLogger();
+      const wc = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
+      await wc.refreshCallbackUrls();
+
+      wc.dropClient("gone");
+      await wc.send({ type: EngineEventType.WORKFLOW_DELETED, workflowId: "w1" });
+
+      expect(http.received).toEqual([]);
+      expect(wc.clientIds()).toEqual([]);
+    } finally {
+      http.stop();
+    }
+  });
+
+  it("keeps a refresh that read the client list before a confirmed delete from adding the client back", async () => {
+    let answer: (value: unknown) => void = () => {};
+    const listed = new Promise((resolve) => {
+      answer = resolve;
+    });
+    const db = { listClients: mock(() => listed) } as any;
+    const logger = fakeLogger();
+    const wc = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
+
+    const refreshing = wc.refreshCallbackUrls();
+    wc.forgetDeletedClient("gone");
+    answer({
+      clients: [
+        { clientId: "gone", description: "d", callbackUrl: "https://gone.example", callbackToken: "" },
+        { clientId: "kept", description: "d", callbackUrl: "https://kept.example", callbackToken: "" },
+      ],
+    });
+    await refreshing;
+
+    expect(wc.clientIds()).toEqual(["kept"]);
+  });
+});
+
+describe("WebhookClient after a revoke whose delete failed", () => {
+  it("lists the client again on the next refresh", async () => {
+    const db = fakeDb([{ clientId: "kept", description: "d", callbackUrl: "https://kept.example", callbackToken: "" }]);
+    const logger = fakeLogger();
+    const wc = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
+    await wc.refreshCallbackUrls();
+
+    wc.dropClient("kept");
+    expect(wc.clientIds()).toEqual([]);
+    await wc.refreshCallbackUrls();
+
+    expect(wc.clientIds()).toEqual(["kept"]);
+  });
+});

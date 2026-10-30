@@ -6,7 +6,7 @@ import { parseStoredManifestJson, type StoredManifest } from "./stored-manifest"
 type InstalledModule = Pick<module.Module, "name" | "moduleId" | "manifest">;
 
 /** The kinds one stored manifest declares in `resources[]`, attributed to `moduleName`. */
-export function manifestResourceKinds(moduleName: string, manifest: StoredManifest): DeclaredResourceKind[] {
+export function attributedResourceKinds(moduleName: string, manifest: StoredManifest): DeclaredResourceKind[] {
   return manifest.resources.map((resource) => ({ moduleName, ...resource }));
 }
 
@@ -26,5 +26,5 @@ export function declaredResourceKinds(modules: InstalledModule[], logger: Shared
     }
   }
   declarers.sort((a, b) => (a.moduleName < b.moduleName ? -1 : a.moduleName > b.moduleName ? 1 : 0));
-  return declarers.flatMap(({ moduleName, manifest }) => manifestResourceKinds(moduleName, manifest));
+  return declarers.flatMap(({ moduleName, manifest }) => attributedResourceKinds(moduleName, manifest));
 }

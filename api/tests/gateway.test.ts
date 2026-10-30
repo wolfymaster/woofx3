@@ -1,14 +1,18 @@
 import { describe, expect, it, mock } from "bun:test";
-import { AUTHENTICATION_REFUSED, type ApiGatewayContract, isAuthenticationRefused } from "@woofx3/api/rpc";
+import { type ApiGatewayContract, AUTHENTICATION_REFUSED, isAuthenticationRefused } from "@woofx3/api/rpc";
 import { newMessagePortRpcSession } from "capnweb";
 import { Api } from "../src/api";
 import { ApiSession } from "../src/api-session";
 import { ClientAuth, DEFAULT_AUTH_CACHE_TTL_MS } from "../src/auth";
-import { ApiGateway, AuthenticationRefused, AuthUnavailable } from "../src/gateway";
+import { ClientSessions } from "../src/client-sessions";
 import { EngineEventStream } from "../src/engine-event-stream";
+import { ApiGateway, AuthenticationRefused, AuthUnavailable } from "../src/gateway";
+import { type ConnectionInfo, GatewayConnection } from "../src/gateway-connection";
 import { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient } from "../src/webhook-client";
 
 const OPEN = { mode: "open", token: null } as const;
+
+const BATCH: ConnectionInfo = { origin: null, remoteAddress: "127.0.0.1", close: null, onEnd() {} };
 
 function fakeLogger() {
   return {
@@ -46,8 +50,10 @@ describe("ApiGateway.registerClient", () => {
     const api = newApi(db, logger);
     const webhook = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
     api.setWebhookClient(webhook);
-    const auth = { validate: mock(async () => ({ kind: "accepted", description: "test-ui" })) } as any;
-    const gateway = new ApiGateway(api, auth, db, logger, OPEN);
+    const auth = {
+      validate: mock(async () => ({ kind: "accepted", description: "test-ui", boundOrigin: null })),
+    } as any;
+    const gateway = new ApiGateway(api, auth, db, logger, OPEN, new ClientSessions(logger), null);
     gateway.setWebhookClient(webhook);
 
     const res = await gateway.registerClient("test-ui", {
@@ -60,6 +66,8 @@ describe("ApiGateway.registerClient", () => {
       description: "test-ui",
       callbackUrl: "https://cb.example",
       callbackToken: "tok",
+      kind: "CLIENT_KIND_REGISTERED",
+      origin: "",
     });
     // The new callback is picked up without a restart.
     expect(listClients).toHaveBeenCalledTimes(1);
@@ -77,10 +85,12 @@ describe("ApiGateway.registerClient", () => {
     api.setWebhookClient(webhook);
     const gateway = new ApiGateway(
       api,
-      { validate: mock(async () => ({ kind: "accepted", description: "test-ui" })) } as any,
+      { validate: mock(async () => ({ kind: "accepted", description: "test-ui", boundOrigin: null })) } as any,
       db,
       logger,
-      OPEN
+      OPEN,
+      new ClientSessions(logger),
+      null
     );
     gateway.setWebhookClient(webhook);
 
@@ -95,10 +105,12 @@ describe("ApiGateway.registerClient", () => {
     const logger = fakeLogger();
     const gateway = new ApiGateway(
       newApi(db, logger),
-      { validate: mock(async () => ({ kind: "accepted", description: "test-ui" })) } as any,
+      { validate: mock(async () => ({ kind: "accepted", description: "test-ui", boundOrigin: null })) } as any,
       db,
       logger,
-      OPEN
+      OPEN,
+      new ClientSessions(logger),
+      null
     );
 
     await expect(gateway.registerClient("test", {})).rejects.toThrow("Failed to create client");
@@ -123,20 +135,25 @@ describe("ApiGateway.authenticate", () => {
       new ClientAuth(db, logger, { ttlMs: DEFAULT_AUTH_CACHE_TTL_MS }),
       db,
       logger,
-      OPEN
+      OPEN,
+      new ClientSessions(logger),
+      null
     );
   }
-  const ACCEPTED = async () => ({ status: { code: "OK" }, client: { description: "test-ui" } });
+  const ACCEPTED = async () => ({
+    status: { code: "OK" },
+    client: { description: "test-ui", kind: "CLIENT_KIND_REGISTERED", origin: "" },
+  });
   const NOT_FOUND = async () => ({ status: { code: "NOT_FOUND", message: "Invalid credentials" } });
 
   it("returns a session for accepted credentials", async () => {
-    const session = await gatewayOver(ACCEPTED).authenticate("c1", "s1");
+    const session = await gatewayOver(ACCEPTED).authenticate("c1", "s1", BATCH);
 
     expect(session).toBeInstanceOf(ApiSession);
   });
 
   it("rejects credentials db-proxy does not know with a named refusal", async () => {
-    const err = await rejectionOf(gatewayOver(NOT_FOUND).authenticate("c1", "wrong"));
+    const err = await rejectionOf(gatewayOver(NOT_FOUND).authenticate("c1", "wrong", BATCH));
 
     expect(err).toBeInstanceOf(AuthenticationRefused);
     expect((err as Error).name).toBe(AUTHENTICATION_REFUSED);
@@ -147,7 +164,7 @@ describe("ApiGateway.authenticate", () => {
     const err = await rejectionOf(
       gatewayOver(async () => {
         throw new Error("fetch failed");
-      }).authenticate("c1", "s1")
+      }).authenticate("c1", "s1", BATCH)
     );
 
     expect(err).toBeInstanceOf(AuthUnavailable);
@@ -160,7 +177,8 @@ describe("ApiGateway.authenticate", () => {
     const err = await rejectionOf(
       gatewayOver(async () => ({ status: { code: "INTERNAL", message: "database is locked" } })).authenticate(
         "c1",
-        "s1"
+        "s1",
+        BATCH
       )
     );
 
@@ -170,7 +188,7 @@ describe("ApiGateway.authenticate", () => {
 
   it("keeps the refusal recognisable across a capnweb session", async () => {
     const channel = new MessageChannel();
-    const server = newMessagePortRpcSession(channel.port1, gatewayOver(NOT_FOUND));
+    const server = newMessagePortRpcSession(channel.port1, new GatewayConnection(gatewayOver(NOT_FOUND), BATCH));
     const client = newMessagePortRpcSession<ApiGatewayContract>(channel.port2);
     try {
       const err = await rejectionOf(client.authenticate("c1", "wrong"));

@@ -246,6 +246,15 @@ describe("triggerWorkflowByName with sample trigger data", () => {
     );
   });
 
+  test("refuses platform without sample data in its frozen words, before looking the workflow up", async () => {
+    const { trigger, published, requested } = setup(ROWS);
+    await expect(
+      trigger("no-such-workflow", {}, undefined, undefined, undefined, { platform: "twitch" })
+    ).rejects.toThrow(new Error("options.platform and options.skipConditions only apply with options.triggerData"));
+    expect(published).toHaveLength(0);
+    expect(requested).toHaveLength(0);
+  });
+
   test("refuses an origin that contradicts triggeredBy", async () => {
     const { trigger } = setup(ROWS);
     await expect(trigger("wf-2", {}, undefined, undefined, "dashboard", { origin: "test" })).rejects.toThrow(

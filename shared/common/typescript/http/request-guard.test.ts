@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  ALLOWED_ORIGINS_SETTING,
+  comparableOriginOf,
   DEFAULT_ALLOWED_ORIGINS,
   describeRequestGuardPolicy,
   isLoopbackHostname,
@@ -15,9 +17,18 @@ function request(headers: Record<string, string>): Request {
   return new Request("http://engine.test/api", { headers });
 }
 
+/** How a service that allows `null` names its origin list, unless a test says otherwise. */
+const ORIGIN_LIST = { allowedOriginsSetting: ALLOWED_ORIGINS_SETTING, opaqueOrigin: "allow" } as const;
+
 /** A network-exposed service with no URLs of its own, so only the given settings apply. */
 function policyFor(settings: Partial<RequestGuardSettings>) {
-  return parseRequestGuardPolicy({ exposure: "network", ownUrls: [], extraDefaultOrigins: [], ...settings });
+  return parseRequestGuardPolicy({
+    ...ORIGIN_LIST,
+    exposure: "network",
+    ownUrls: [],
+    extraDefaultOrigins: [],
+    ...settings,
+  });
 }
 
 function guardFor(allowedHosts = "*", allowedOrigins = "*"): RequestGuard {
@@ -203,7 +214,7 @@ describe("RequestGuard hosts and origins", () => {
 });
 
 describe("parseRequestGuardPolicy defaults", () => {
-  const loopback = { exposure: "loopback", ownUrls: [], extraDefaultOrigins: [] } as const;
+  const loopback = { ...ORIGIN_LIST, exposure: "loopback", ownUrls: [], extraDefaultOrigins: [] } as const;
 
   test("unset and blank origins default to the loopback dev servers and the desktop webview", () => {
     expect(parseRequestGuardPolicy(loopback).allowedOrigins).toEqual(
@@ -354,6 +365,7 @@ describe("parseUiOrigins", () => {
   test("its origins join the defaults as extra default origins", () => {
     const guard = new RequestGuard(
       parseRequestGuardPolicy({
+        ...ORIGIN_LIST,
         exposure: "network",
         ownUrls: ["https://streamer.woofx3.tv"],
         extraDefaultOrigins: parseUiOrigins("https://woofx3.tv"),
@@ -390,6 +402,7 @@ describe("resolveExposure", () => {
 describe("describeRequestGuardPolicy", () => {
   test("lists the resolved loopback defaults", () => {
     const policy = parseRequestGuardPolicy({
+      ...ORIGIN_LIST,
       exposure: "loopback",
       ownUrls: ["https://streamer.example"],
       extraDefaultOrigins: ["null"],
@@ -407,5 +420,97 @@ describe("describeRequestGuardPolicy", () => {
       allowedHosts: "*",
       allowedOrigins: "*",
     });
+  });
+});
+
+describe("parseRequestGuardPolicy opaque origin", () => {
+  test("a service that refuses null fails on a list naming it, and only then", () => {
+    expect(() => policyFor({ allowedOrigins: "https://app.example,null", opaqueOrigin: "refuse" })).toThrow(
+      'WOOFX3_ALLOWED_ORIGINS: "null" is not allowed'
+    );
+    expect(policyFor({ allowedOrigins: "https://app.example", opaqueOrigin: "refuse" }).allowedOrigins).toEqual([
+      { kind: "exact", origin: "https://app.example" },
+    ]);
+  });
+
+  test("a service that refuses null fails on default origins naming it", () => {
+    expect(() => policyFor({ extraDefaultOrigins: ["null"], opaqueOrigin: "refuse" })).toThrow('"null" is not allowed');
+  });
+
+  test("errors name the setting the list came from", () => {
+    expect(() =>
+      policyFor({
+        allowedOrigins: "*,https://a.example",
+        allowedOriginsSetting: "WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS",
+      })
+    ).toThrow("WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS");
+    expect(() =>
+      policyFor({ allowedOrigins: "localhost:3000", allowedOriginsSetting: "WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS" })
+    ).toThrow("WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS");
+    expect(() =>
+      policyFor({ allowedOrigins: false, allowedOriginsSetting: "WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS" })
+    ).toThrow("WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS");
+  });
+});
+
+describe("RequestGuard.rejectOpaqueOrigin", () => {
+  test("refuses Origin: null when origins are checked, null listed or not", () => {
+    for (const origins of ["https://app.example,null", "https://app.example"]) {
+      expect(guardFor("*", origins).rejectOpaqueOrigin(request({ origin: "null" }))?.status).toBe(403);
+    }
+  });
+
+  test("lets every other request through", () => {
+    const guard = guardFor("*", "https://app.example,null");
+    expect(guard.rejectOpaqueOrigin(request({ origin: "https://app.example" }))).toBeNull();
+    expect(guard.rejectOpaqueOrigin(request({}))).toBeNull();
+  });
+
+  test("admits null when origins are not checked", () => {
+    expect(new RequestGuard(OPEN_REQUEST_GUARD_POLICY).rejectOpaqueOrigin(request({ origin: "null" }))).toBeNull();
+  });
+});
+
+describe("comparableOriginOf", () => {
+  test.each([
+    ["http://localhost:5173", "http://localhost:5173"],
+    ["HTTP://LocalHost:5173", "http://localhost:5173"],
+    ["http://localhost:80", "http://localhost"],
+    ["https://app.example.com:443", "https://app.example.com"],
+    ["https://app.example.com/path?q=1", "https://app.example.com"],
+    ["tauri://localhost", "tauri://localhost"],
+  ])("%s compares as %s", (origin, expected) => {
+    expect(comparableOriginOf(origin)).toBe(expected);
+  });
+
+  test.each([["null"], [""], ["not a url"], ["file:///home/me/page.html"]])("%p has no comparable origin", (origin) => {
+    expect(comparableOriginOf(origin)).toBeNull();
+  });
+});
+
+describe("RequestGuard.listsOrigin", () => {
+  test("is true only for an origin the list names", () => {
+    const guard = guardFor("*", "https://app.example.com,http://localhost:*");
+
+    expect(guard.listsOrigin("https://app.example.com")).toBe(true);
+    expect(guard.listsOrigin("HTTPS://APP.EXAMPLE.COM:443")).toBe(true);
+    expect(guard.listsOrigin("http://localhost:5173")).toBe(true);
+    expect(guard.listsOrigin("https://hosted.example")).toBe(false);
+    expect(guard.listsOrigin("null")).toBe(false);
+  });
+
+  test("is false for every origin under the defaults, though reject admits the default origins", () => {
+    const guard = new RequestGuard(policyFor({ extraDefaultOrigins: ["https://dashboard.example"] }));
+
+    expect(guard.listsOrigin("http://localhost:5173")).toBe(false);
+    expect(guard.listsOrigin("https://dashboard.example")).toBe(false);
+    expect(guard.reject(request({ origin: "https://dashboard.example" }))).toBeNull();
+  });
+
+  test("is false for every origin when the check is off, though reject lets them all through", () => {
+    const guard = guardFor("*", "*");
+
+    expect(guard.listsOrigin("https://app.example.com")).toBe(false);
+    expect(guard.reject(request({ origin: "https://app.example.com" }))).toBeNull();
   });
 });

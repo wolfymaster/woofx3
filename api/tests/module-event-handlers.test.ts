@@ -1,17 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import {
   initModuleHandlers,
+  parseModuleActionDeregistered,
+  parseModuleActionRegistered,
   parseModuleDeleted,
   parseModuleDeleteFailed,
+  parseModuleFunctionRegistered,
   parseModuleInstalled,
   parseModuleInstallFailed,
-  parseModuleTriggerRegistered,
-  parseModuleActionRegistered,
-  parseModuleWidgetRegistered,
-  parseModuleWidgetDeregistered,
-  parseModuleFunctionRegistered,
   parseModuleTriggerDeregistered,
-  parseModuleActionDeregistered,
+  parseModuleTriggerRegistered,
+  parseModuleWidgetDeregistered,
+  parseModuleWidgetRegistered,
 } from "../src/module-event-handlers";
 
 describe("parseModuleTriggerRegistered", () => {

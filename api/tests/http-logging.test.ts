@@ -7,6 +7,7 @@ import { createHttpServer } from "../src/http";
 
 const ALLOWLIST_POLICY: RequestGuardPolicy = {
   allowedHosts: null,
+  listedOrigins: null,
   allowedOrigins: [{ kind: "exact", origin: "https://app.example" }],
 };
 

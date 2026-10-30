@@ -1,8 +1,8 @@
 import { describe, expect, mock, test } from "bun:test";
+import type { EventLogSettings } from "@woofx3/api";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { Msg } from "@woofx3/nats/src/types";
 import { DbError } from "../src/db-client";
-import type { EventLogSettings } from "@woofx3/api";
 import type { EventCatalog, LoggedEvent } from "../src/event-catalog";
 import type { EventLogSelectionSource } from "../src/event-log-selection";
 import { ANALYTICS_EVENT_TYPES, toRequest, UserEventRecorder } from "../src/user-event-recorder";

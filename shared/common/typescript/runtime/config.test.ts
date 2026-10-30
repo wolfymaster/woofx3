@@ -46,6 +46,19 @@ describe("Config loading from file and environment", () => {
     }
   }
 
+  test("a .woofx3.json key may carry the woofx3 prefix or leave it off", () => {
+    withConfigRoot(
+      { ".woofx3.json": JSON.stringify({ woofx3Prefixed: "prefixed", unprefixed: "unprefixed" }) },
+      {},
+      (rootDir) => {
+        const schema = z.object({ woofx3Prefixed: z.string(), woofx3Unprefixed: z.string() });
+        const result = loadRuntimeEnv({ rootDir, schema });
+        expect(result.config.woofx3Prefixed).toBe("prefixed");
+        expect(result.config.woofx3Unprefixed).toBe("unprefixed");
+      }
+    );
+  });
+
   test("process.env overrides .env, which overrides .woofx3.json", () => {
     withConfigRoot(
       {

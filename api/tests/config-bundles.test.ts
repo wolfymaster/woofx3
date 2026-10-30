@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import type { ConfigBundle, TaskDefinition, Woofx3EngineApi } from "@woofx3/api";
 import { Api, type ApiOptions } from "../src/api";
 import { ApiSession } from "../src/api-session";
+import { SessionLease } from "../src/client-sessions";
 import { MAX_CONFIG_BUNDLE_BYTES, MAX_CONFIG_SECTION_ITEMS } from "../src/config-bundle/schema";
 
 function fakeLogger() {
@@ -179,7 +180,7 @@ function makeApi(db: FakeEngineDb) {
   });
   // The contract methods are installed on the session's prototype at load
   // time, so its class type does not list them; a client sees this interface.
-  const session = new ApiSession(api, "client-1") as unknown as Woofx3EngineApi;
+  const session = new ApiSession(api, "client-1", new SessionLease(() => {})) as unknown as Woofx3EngineApi;
   return { api, session, published };
 }
 

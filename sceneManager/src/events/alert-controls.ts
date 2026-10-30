@@ -6,7 +6,8 @@ import type {
   AlertSkipResult,
 } from "@woofx3/api";
 import type { Logger } from "@woofx3/common/runtime";
-import { ALERT_EVENT_TYPE, ALERT_SURFACE } from "../scene/alert-layout";
+import { ALERT_SURFACE } from "@woofx3/scene/model";
+import { ALERT_EVENT_TYPE } from "../scene/alert-layout";
 import type { OverlayHost } from "../scene/scene-host";
 import {
   type AlertDispatchDeps,

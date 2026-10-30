@@ -3,6 +3,7 @@ import type { EngineEventFrame } from "@woofx3/api";
 import { EngineEventType, EngineRequestType, makeRequestEnvelope } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { Api } from "../src/api";
+import { ClientRevoker, ClientSessions } from "../src/client-sessions";
 import { EngineEventStream } from "../src/engine-event-stream";
 
 const logger = { debug() {}, info() {}, warn() {}, error() {} } as unknown as SharedLogger;
@@ -132,9 +133,12 @@ describe("deleteClient", () => {
   test("drops the deleted client's event stream subscriptions", async () => {
     const db = {
       getClientByClientID: mock(async () => ({ client: { id: "row-1", clientId: "gone" } })),
-      deleteClient: mock(async () => ({})),
+      deleteClient: mock(async () => ({ code: "OK" })),
     };
     const { api, stream } = newApi(db);
+    api.setClientRevocation(
+      new ClientRevoker({ invalidateCache() {} }, new ClientSessions(logger), stream, { dropClient() {} }, api)
+    );
     const gone = recorder();
     const kept = recorder();
     await api.subscribeEngineEvents(gone.subscriber, undefined, { session: {}, clientId: "gone" });

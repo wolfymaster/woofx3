@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import type { DeclaredResourceKind } from "@woofx3/api";
-import { declaredResourceKinds, manifestResourceKinds } from "../src/resource-kinds";
+import { attributedResourceKinds, declaredResourceKinds } from "../src/resource-kinds";
 import { parseStoredManifest } from "../src/stored-manifest";
 
 const silent = { debug() {}, info() {}, warn() {}, error() {} } as any;
 
-describe("manifestResourceKinds", () => {
+describe("attributedResourceKinds", () => {
   const cases: Array<{ name: string; manifest: unknown; expected: DeclaredResourceKind[] }> = [
     { name: "a manifest without resources declares none", manifest: { id: "m" }, expected: [] },
     { name: "resources that are not a list declare none", manifest: { resources: { kind: "x" } }, expected: [] },
@@ -52,7 +52,7 @@ describe("manifestResourceKinds", () => {
   ];
   for (const { name, manifest, expected } of cases) {
     test(name, () => {
-      expect(manifestResourceKinds("m", parseStoredManifest(manifest, silent, "m"))).toEqual(expected);
+      expect(attributedResourceKinds("m", parseStoredManifest(manifest, silent, "m"))).toEqual(expected);
     });
   }
 });

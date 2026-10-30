@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
+  ALLOWED_ORIGINS_SETTING,
+  type OriginListSetting,
   parseRequestGuardPolicy,
   parseUiOrigins,
   type RequestGuardPolicy,
@@ -51,6 +53,9 @@ export const SceneManagerEnvSchema = z.object({
   // Host and Origin allowlists (shared/common/typescript/http/request-guard.ts).
   woofx3AllowedHosts: z.union([z.string(), z.number(), z.boolean()]).optional(),
   woofx3AllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
+  // sceneManager's own origin list, used instead of woofx3AllowedOrigins when
+  // set: widget frames need `null`, which the api must never accept.
+  woofx3SceneManagerAllowedOrigins: z.union([z.string(), z.number(), z.boolean()]).optional(),
   // The URL OBS and the dashboard reach sceneManager at; its host and origin
   // join the request guard's defaults.
   woofx3SceneManagerUrl: z.string().optional(),
@@ -65,6 +70,8 @@ export const SceneManagerEnvSchema = z.object({
   woofx3SceneManagerObsRefreshRetryBaseMs: z.union([z.number(), z.string()]).default(OBS_REFRESH_DEFAULTS.retryBaseMs),
   woofx3SceneManagerObsRefreshRetryMaxMs: z.union([z.number(), z.string()]).default(OBS_REFRESH_DEFAULTS.retryMaxMs),
 });
+
+export const SCENE_MANAGER_ALLOWED_ORIGINS_SETTING: OriginListSetting = "WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS";
 
 export interface SceneManagerRuntimeConfig {
   port: number;
@@ -191,6 +198,30 @@ function nonBlank(value: unknown): string | undefined {
   return text === "" ? undefined : text;
 }
 
+/**
+ * The origin list sceneManager checks, and the setting it came from: its own
+ * list (`WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS`, `sceneManagerAllowedOrigins`
+ * in `.woofx3.json`) when that is not blank, else the list it shares with the
+ * api. The own list replaces the shared one rather than adding to it, from
+ * whichever source each comes: an own list in `.woofx3.json` wins over a
+ * shared one in the environment. A blank own list falls back, as a blank
+ * value never overrides another setting. With neither set, the request
+ * guard's defaults apply, `null` among them.
+ *
+ * sceneManager may list `null`, which sandboxed widget frames send, and the
+ * api may not. Which routes admit it is the route table's call (`opaqueOrigin`
+ * in routes/route-table.ts).
+ */
+function sceneManagerAllowedOrigins(
+  own: string | number | boolean | undefined,
+  shared: string | number | boolean | undefined
+): { allowedOrigins: string | number | boolean | undefined; allowedOriginsSetting: OriginListSetting } {
+  if (nonBlank(own) !== undefined) {
+    return { allowedOrigins: own, allowedOriginsSetting: SCENE_MANAGER_ALLOWED_ORIGINS_SETTING };
+  }
+  return { allowedOrigins: shared, allowedOriginsSetting: ALLOWED_ORIGINS_SETTING };
+}
+
 export function loadConfig(): SceneManagerRuntimeConfig {
   const result = loadRuntimeEnv({ injectIntoProcess: true, schema: SceneManagerEnvSchema });
   const c = result.config;
@@ -212,7 +243,8 @@ export function loadConfig(): SceneManagerRuntimeConfig {
   const publicUrl = nonBlank(c.woofx3SceneManagerUrl);
   const requestGuard = parseRequestGuardPolicy({
     allowedHosts: c.woofx3AllowedHosts,
-    allowedOrigins: c.woofx3AllowedOrigins,
+    ...sceneManagerAllowedOrigins(c.woofx3SceneManagerAllowedOrigins, c.woofx3AllowedOrigins),
+    opaqueOrigin: "allow",
     exposure: resolveExposure(bindHost, c.woofx3BehindEdge === true),
     ownUrls: publicUrl === undefined ? [] : [publicUrl],
     // Sandboxed widget frames load fonts and module scripts from sceneManager with `Origin: null`.

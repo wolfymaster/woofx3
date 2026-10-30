@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
-import { resourcePublicUrl, resourceToItem, resourcesRoutes } from "../src/routes/resources";
 import { registerAllRoutes } from "../src/routes/index";
+import { resourcePublicUrl, resourcesRoutes, resourceToItem } from "../src/routes/resources";
 
 const BASE_URL = "http://127.0.0.1:9100";
 

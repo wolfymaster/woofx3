@@ -5,8 +5,8 @@
 #         Configure with WOOFX3_* variables (they override the baked
 #         /app/.woofx3.json); mount a volume at /app/data for state.
 #
-# The entrypoint migrates the database before the orchestrator starts any
-# service, and exits non-zero if migration fails.
+# The orchestrator migrates the database before it starts any service, and
+# the container exits non-zero if migration fails.
 #
 # Override with: docker build --build-arg BUN_VERSION=... (must support
 # streaming fetch request bodies; see sceneManager's upload relay)
@@ -60,6 +60,10 @@ ARG BUILD_JOBS
 # archive extracted from the image ships too. The release workflow passes the
 # tag; unset, the engine reports UNVERSIONED (api/src/version.ts).
 ARG WOOFX3_VERSION
+# The public woofx3 Twitch app, written into /app/.woofx3.json by
+# build/scripts/package.sh. Unset, the engine has no public app. The release
+# workflow passes it, so the image and the Linux archive extracted from it ship it.
+ARG WOOFX3_TWITCH_PUBLIC_CLIENT_ID
 RUN chmod +x main.sh scripts/*.sh \
     && CARGO_BUILD_JOBS="${BUILD_JOBS:-$(nproc)}" ./main.sh --target linux-amd64 \
     && ls -la /src/build/dist/linux-amd64/ \

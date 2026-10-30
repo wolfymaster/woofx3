@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.1](https://github.com/wolfymaster/woofx3/compare/v0.50.0...v0.50.1) (2026-10-30)
+
+### Bug Fixes
+
+* **release:** package the public Twitch app under the key the api reads ([5d50c9a](https://github.com/wolfymaster/woofx3/commit/5d50c9a3f597c009e6ab86c4267238d4c40e5aa8))
+* **runtime:** read woofx3-prefixed keys from .woofx3.json ([829c3ab](https://github.com/wolfymaster/woofx3/commit/829c3ab19ff4ee09f9695075c5e9de1e78e37ce5))
+
 ## [0.50.0](https://github.com/wolfymaster/woofx3/compare/v0.49.0...v0.50.0) (2026-10-29)
 
 ### Features

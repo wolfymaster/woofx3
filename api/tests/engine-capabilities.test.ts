@@ -39,7 +39,7 @@ function advertisedFor(hosting: EngineHosting | null): string[] {
     .filter((id) => !UNADVERTISED_ENGINE_CAPABILITIES.has(id))
     .filter((id) => {
       const required = HOSTING_ENGINE_CAPABILITIES.get(id);
-      return required === undefined || required === hosting;
+      return required === undefined || (hosting !== null && required.includes(hosting));
     })
     .sort();
 }
@@ -58,6 +58,14 @@ describe("getEngineCapabilities", () => {
     const local = await getEngineCapabilities("local");
     expect(local.capabilities).toContain(ENGINE_CAPABILITIES.engineLocalMode);
     expect(local.capabilities).toEqual(advertisedFor("local"));
+  });
+
+  test("advertises clients.pairing only when the engine is local or self-hosted", async () => {
+    const expected = { unset: false, managed: false, self: true, local: true } as const;
+    for (const [hosting, advertised] of Object.entries(expected)) {
+      const { capabilities } = await getEngineCapabilities(hosting === "unset" ? null : (hosting as EngineHosting));
+      expect(capabilities.includes(ENGINE_CAPABILITIES.clientsPairing)).toBe(advertised);
+    }
   });
 
   test("advertises the same build capabilities whatever the hosting", async () => {

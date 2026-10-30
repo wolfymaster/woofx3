@@ -4,7 +4,9 @@ import {
   AUTHENTICATION_REFUSED,
   authenticationRefusedMessage,
   isAuthenticationRefused,
+  isMissingRpcMethod,
   isRegistrationRefused,
+  missingRpcMethod,
   refusalReason,
   registrationRefusedMessage,
 } from "../rpc";
@@ -117,5 +119,53 @@ describe("refusalReason", () => {
     const err = await rejectionAcrossCapnweb((gateway) => gateway.authenticate());
 
     expect(refusalReason(err)).toBe("Invalid client credentials");
+  });
+});
+
+describe("missingRpcMethod", () => {
+  const cases: { name: string; err: unknown; method: string | null }[] = [
+    {
+      name: "capnweb's refusal",
+      err: new Error("'getEngineCapabilities' is not a function."),
+      method: "getEngineCapabilities",
+    },
+    {
+      name: "the refusal without its full stop",
+      err: new Error("'listAlerts' is not a function"),
+      method: "listAlerts",
+    },
+    { name: "the refusal as a message string", err: "'getLeaderboard' is not a function.", method: "getLeaderboard" },
+    { name: "a dotted method", err: new Error("'twitch.getUsers' is not a function."), method: "twitch.getUsers" },
+    { name: "the method failing", err: new Error("getLeaderboard: limit must be a number"), method: null },
+    {
+      name: "the phrase inside another error",
+      err: new Error("Workflow \"'x' is not a function.\" not found"),
+      method: null,
+    },
+    { name: "a method name with a space", err: new Error("'get leaderboard' is not a function."), method: null },
+    { name: "an object with a message", err: { message: "'listAlerts' is not a function." }, method: null },
+    { name: "nothing", err: undefined, method: null },
+  ];
+
+  for (const { name, err, method } of cases) {
+    test(`${name} -> ${JSON.stringify(method)}`, () => {
+      expect(missingRpcMethod(err)).toBe(method);
+    });
+  }
+
+  test("reads the refusal capnweb gives a method the target lacks", async () => {
+    const err = await rejectionAcrossCapnweb((gateway) =>
+      (gateway as unknown as { getEngineCapabilities(): Promise<unknown> }).getEngineCapabilities()
+    );
+
+    expect(missingRpcMethod(err)).toBe("getEngineCapabilities");
+    expect(isMissingRpcMethod(err, "getEngineCapabilities")).toBe(true);
+    expect(isMissingRpcMethod(err, "ping")).toBe(false);
+  });
+
+  test("a method that exists and fails is not missing", async () => {
+    const err = await rejectionAcrossCapnweb((gateway) => gateway.ping());
+
+    expect(isMissingRpcMethod(err, "ping")).toBe(false);
   });
 });

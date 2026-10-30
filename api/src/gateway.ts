@@ -1,19 +1,30 @@
+import type {
+  CancelPairingRequest,
+  CancelPairingResponse,
+  ClaimPairingRequest,
+  ClaimPairingResponse,
+  StartPairingRequest,
+  StartPairingResponse,
+} from "@woofx3/api/pairing";
 import {
   AUTH_UNAVAILABLE,
   AUTHENTICATION_REFUSED,
-  type ApiGatewayContract,
   authenticationRefusedMessage,
+  type GatewayPingResponse,
   REGISTRATION_REFUSED,
   type RegisterClientOptions,
   registrationRefusedMessage,
 } from "@woofx3/api/rpc";
+import { comparableOriginOf } from "@woofx3/common/http/request-guard";
 import { secretsMatch } from "@woofx3/common/http/secrets";
 import type { SharedLogger } from "@woofx3/common/logging";
-import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 import { ApiSession } from "./api-session";
 import type { ClientAuth } from "./auth";
+import type { ClientSessions } from "./client-sessions";
 import type { DbClient } from "./db-client";
+import type { ConnectionInfo } from "./gateway-connection";
+import type { PairingRegistry } from "./pairing";
 import type { RegistrationPolicy } from "./registration";
 import { callbackUrlRefusal, type WebhookClient } from "./webhook-client";
 
@@ -53,7 +64,17 @@ export class AuthUnavailable extends Error {
   }
 }
 
-export class ApiGateway extends RpcTarget implements ApiGatewayContract {
+/** Whether `connection` came from `boundOrigin`, a comparable origin. */
+function fromOrigin(connection: ConnectionInfo, boundOrigin: string): boolean {
+  return connection.origin !== null && comparableOriginOf(connection.origin) === boundOrigin;
+}
+
+/**
+ * The unauthenticated gateway's behaviour, shared by every connection. It is
+ * not served itself: capnweb serves a `GatewayConnection` per connection,
+ * which calls in here with what it knows about that connection.
+ */
+export class ApiGateway {
   private webhookClient: WebhookClient | null = null;
 
   /**
@@ -66,15 +87,18 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
    * @param registration Who may register (see registration.ts). A managed
    *   engine is publicly reachable before anyone has registered, so without
    *   a token the first caller to find it would own it.
+   * @param pairing The engine's browser pairings, or null on an engine that
+   *   does not pair (see `hostingOffersPairing`).
    */
   constructor(
     private api: Api,
     private auth: ClientAuth,
     private db: DbClient,
     private logger: SharedLogger,
-    private registration: RegistrationPolicy
+    private registration: RegistrationPolicy,
+    private sessions: ClientSessions,
+    private pairing: PairingRegistry | null
   ) {
-    super();
     if (registration.mode === "open") {
       logger.warn(
         "WOOFX3_REGISTRATION_MODE=open: any caller that reaches this engine over loopback can register a client."
@@ -93,7 +117,17 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     this.webhookClient = client;
   }
 
-  async authenticate(clientId: string, clientSecret: string): Promise<ApiSession> {
+  /**
+   * A session for `clientId`, registered so that deleting the client ends
+   * it. A client deleted while its credentials were being checked is
+   * refused, not admitted with a session that outlives it.
+   *
+   * A client a browser paired is bound to the origin it paired from: from
+   * any other origin, or with none, its credentials are refused with the same
+   * message as wrong ones, so the refusal says nothing about the secret.
+   */
+  async authenticate(clientId: string, clientSecret: string, connection: ConnectionInfo): Promise<ApiSession> {
+    const generation = this.sessions.generation(clientId);
     const result = await this.auth.validate(clientId, clientSecret);
     if (!result.ok) {
       if (result.error.kind === "auth_unavailable") {
@@ -102,11 +136,27 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
       // woofx3-ui matches this text inside the message to tell a rejected client from a failed call.
       throw new AuthenticationRefused("Invalid client credentials");
     }
+    const client = result.value;
+    if (client.boundOrigin !== null && !fromOrigin(connection, client.boundOrigin)) {
+      this.logger.warn("Refused a paired client from another origin", {
+        clientId,
+        origin: connection.origin,
+        remoteAddress: connection.remoteAddress,
+      });
+      throw new AuthenticationRefused("Invalid client credentials");
+    }
+    const lease = this.sessions.register(clientId, generation, connection);
+    if (lease === null) {
+      this.logger.warn("Refused a client deleted while it authenticated", { clientId });
+      throw new AuthenticationRefused("Invalid client credentials");
+    }
     this.logger.debug("Authenticated client", {
       clientId,
-      description: result.value.description,
+      description: client.description,
+      origin: connection.origin,
+      remoteAddress: connection.remoteAddress,
     });
-    return new ApiSession(this.api, clientId);
+    return new ApiSession(this.api, clientId, lease);
   }
 
   async registerClient(
@@ -152,6 +202,8 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
       description,
       callbackUrl: callbackUrl ?? "",
       callbackToken: callbackToken ?? "",
+      kind: "CLIENT_KIND_REGISTERED",
+      origin: "",
     });
     if (!resp.client) {
       throw new Error("Failed to create client");
@@ -187,8 +239,31 @@ export class ApiGateway extends RpcTarget implements ApiGatewayContract {
     }
   }
 
-  async ping(): Promise<{ status: string }> {
+  async ping(): Promise<GatewayPingResponse> {
     this.logger.info("ping called");
-    return { status: "ok" };
+    return this.pairing ? { status: "ok", pairing: "available" } : { status: "ok" };
+  }
+
+  /** Start pairing the browser `connection` came from; see pairing.ts. */
+  async startPairing(request: StartPairingRequest, connection: ConnectionInfo): Promise<StartPairingResponse> {
+    if (!this.pairing) {
+      return { ok: false, code: "not_available", error: "this engine does not offer browser pairing" };
+    }
+    return this.pairing.start(request, connection.origin, connection.remoteAddress);
+  }
+
+  /** On an engine that does not pair no pairing exists, so every claim answers `not_found`. */
+  async claimPairing(request: ClaimPairingRequest, connection: ConnectionInfo): Promise<ClaimPairingResponse> {
+    if (!this.pairing) {
+      return { status: "not_found" };
+    }
+    return this.pairing.claim(request, connection.origin);
+  }
+
+  async cancelPairing(request: CancelPairingRequest, connection: ConnectionInfo): Promise<CancelPairingResponse> {
+    if (!this.pairing) {
+      return { ok: false, code: "not_available" };
+    }
+    return this.pairing.cancel(request, connection.origin);
   }
 }

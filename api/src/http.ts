@@ -4,6 +4,7 @@ import type { ServerWebSocket } from "bun";
 import { newHttpBatchRpcResponse, newWebSocketRpcSession } from "capnweb";
 import { hasBarkloaderBearer } from "./barkloader-webhook-auth";
 import type { ApiGateway } from "./gateway";
+import { type ConnectionInfo, ConnectionLifetime, GatewayConnection } from "./gateway-connection";
 import type { Health } from "./health";
 import type { Readiness } from "./readiness";
 
@@ -31,6 +32,9 @@ export interface HttpDeps {
   barkloaderWebhookSecret: string | null;
 }
 
+/** What a WebSocket carries from its upgrade request to `open`, where its gateway connection is built. */
+type SocketData = Pick<ConnectionInfo, "origin" | "remoteAddress">;
+
 /** CORS for `/api` batch RPC, beside the origin headers the request guard picks. */
 const BATCH_CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -55,7 +59,7 @@ type SocketListeners = { [K in keyof SocketEvents]: Set<(event: SocketEvents[K])
  */
 class BunWebSocketAdapter {
   private listeners: SocketListeners = { message: new Set(), close: new Set(), error: new Set() };
-  private bunWs: ServerWebSocket<unknown>;
+  private bunWs: ServerWebSocket<SocketData>;
   private logger: SharedLogger;
 
   // Standard WebSocket readyState constants
@@ -64,7 +68,7 @@ class BunWebSocketAdapter {
   static readonly CLOSING = 2;
   static readonly CLOSED = 3;
 
-  constructor(bunWs: ServerWebSocket<unknown>, logger: SharedLogger) {
+  constructor(bunWs: ServerWebSocket<SocketData>, logger: SharedLogger) {
     this.bunWs = bunWs;
     this.logger = logger;
   }
@@ -162,9 +166,15 @@ export function createHttpServer(deps: HttpDeps) {
   const requestGuard = new RequestGuard(deps.requestGuard);
 
   // Map to track WebSocket adapters by their Bun WebSocket (capnweb path)
-  const wsAdapters = new WeakMap<ServerWebSocket<unknown>, BunWebSocketAdapter>();
+  const wsAdapters = new WeakMap<ServerWebSocket<SocketData>, BunWebSocketAdapter>();
+  const wsLifetimes = new WeakMap<ServerWebSocket<SocketData>, ConnectionLifetime>();
+  const logEndListenerError = (err: unknown) => {
+    logger.error("Error ending a connection's sessions", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  };
 
-  return Bun.serve({
+  return Bun.serve<SocketData>({
     port,
     hostname,
     async fetch(req, server) {
@@ -190,7 +200,9 @@ export function createHttpServer(deps: HttpDeps) {
           path: url.pathname,
           origin: req.headers.get("origin"),
         });
-        const upgraded = server.upgrade(req);
+        const upgraded = server.upgrade(req, {
+          data: { origin: req.headers.get("origin"), remoteAddress: server.requestIP(req)?.address ?? null },
+        });
         if (!upgraded) {
           logger.error("WebSocket upgrade failed");
           return new Response("WebSocket upgrade failed", { status: 500 });
@@ -210,12 +222,19 @@ export function createHttpServer(deps: HttpDeps) {
         }
 
         const startTime = Date.now();
+        const lifetime = new ConnectionLifetime(logEndListenerError);
         try {
           // Measured, not the client-declared Content-Length (absent when chunked,
           // arbitrary when lying). capnweb reads the whole body as text anyway.
           const requestBody = await req.text();
           const batchRequest = new Request(req.url, { method: req.method, headers: req.headers, body: requestBody });
-          const rpcResponse = await newHttpBatchRpcResponse(batchRequest, gateway, {
+          const connection: ConnectionInfo = {
+            origin: req.headers.get("origin"),
+            remoteAddress: server.requestIP(req)?.address ?? null,
+            close: null,
+            onEnd: (listener) => lifetime.onEnd(listener),
+          };
+          const rpcResponse = await newHttpBatchRpcResponse(batchRequest, new GatewayConnection(gateway, connection), {
             onSendError(error: Error) {
               logger.error("RPC method error", {
                 error: error.message,
@@ -262,6 +281,8 @@ export function createHttpServer(deps: HttpDeps) {
               headers: { "Content-Type": "application/json" },
             }
           );
+        } finally {
+          lifetime.end();
         }
       }
 
@@ -328,7 +349,14 @@ export function createHttpServer(deps: HttpDeps) {
         try {
           const adapter = new BunWebSocketAdapter(ws, logger);
           wsAdapters.set(ws, adapter);
-          newWebSocketRpcSession(asCapnwebSocket(adapter), gateway, {
+          const lifetime = new ConnectionLifetime(logEndListenerError);
+          wsLifetimes.set(ws, lifetime);
+          const connection: ConnectionInfo = {
+            ...ws.data,
+            close: (code, reason) => adapter.close(code, reason),
+            onEnd: (listener) => lifetime.onEnd(listener),
+          };
+          newWebSocketRpcSession(asCapnwebSocket(adapter), new GatewayConnection(gateway, connection), {
             onSendError(error: Error) {
               logger.error("WebSocket RPC method error", {
                 error: error.message,
@@ -352,6 +380,8 @@ export function createHttpServer(deps: HttpDeps) {
           adapter.dispatchClose(code, reason);
           wsAdapters.delete(ws);
         }
+        wsLifetimes.get(ws)?.end();
+        wsLifetimes.delete(ws);
       },
       // Invariant: Bun's WebSocketHandler has no `error` hook (only open,
       // message, close, drain, ping, pong), so socket failures reach the

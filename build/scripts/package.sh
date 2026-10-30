@@ -39,12 +39,25 @@ if [[ -n "$RELEASE_VERSION" && ! "$RELEASE_VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._+
     exit 1
 fi
 
+# The public woofx3 Twitch app an engine links Twitch with (device login). It is
+# a client id with no secret, so it ships in the packaged config; the template
+# stays free of it so a build without the variable packages an engine with no
+# public app, as the engine expects. The pattern must match
+# TWITCH_CLIENT_ID_PATTERN in api/src/config.ts, which refuses anything else at
+# startup.
+TWITCH_PUBLIC_CLIENT_ID="${WOOFX3_TWITCH_PUBLIC_CLIENT_ID:-}"
+if [[ -n "$TWITCH_PUBLIC_CLIENT_ID" && ! "$TWITCH_PUBLIC_CLIENT_ID" =~ ^[A-Za-z0-9]{1,64}$ ]]; then
+    log_error "WOOFX3_TWITCH_PUBLIC_CLIENT_ID must be a Twitch client id (1 to 64 letters and digits)"
+    exit 1
+fi
+
 # Writes the build's settings into a packaged copy of the template config.
 write_packaged_config() {
     local destination="$1"
-    jq --arg version "$RELEASE_VERSION" '
-        if $version != "" then
-            .version = $version
+    jq --arg version "$RELEASE_VERSION" --arg twitchPublicClientId "$TWITCH_PUBLIC_CLIENT_ID" '
+        (if $version != "" then .version = $version else . end)
+        | if $twitchPublicClientId != "" then
+            .twitchPublicClientId = $twitchPublicClientId
         else
             .
         end
@@ -66,7 +79,7 @@ for target in "${TARGETS[@]}"; do
     
     if [[ ! -d "$TARGET_DIR" ]]; then
         log_error "Target directory not found: $TARGET_DIR"
-        continue
+        exit 1
     fi
     
     log_info "Packaging $target..."
@@ -91,11 +104,7 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 export WOOFX3_ROOT_PATH="${WOOFX3_ROOT_PATH:-$DIR}"
 
-# Migrate before any service starts, as the container entrypoint does: a
-# failed migration stops here rather than booting against a stale schema.
-"$DIR/migrate" -cmd up
-
-# Start the orchestrator
+# The orchestrator migrates the database before any service starts.
 exec "$DIR/orchestrator"
 EOF
             chmod +x "$TARGET_DIR/start.sh"
@@ -105,7 +114,6 @@ EOF
 @echo off
 cd /d "%~dp0"
 if not defined WOOFX3_ROOT_PATH set WOOFX3_ROOT_PATH=%cd%
-migrate.exe -cmd up || exit /b 1
 orchestrator.exe
 EOF
             ;;
@@ -186,6 +194,7 @@ EOF
         log_info "  ✓ Created archive: $(basename "$ARCHIVE_FILE") ($ARCHIVE_SIZE)"
     else
         log_error "  ✗ Failed to create archive: $(basename "$ARCHIVE_FILE")"
+        exit 1
     fi
 done
 

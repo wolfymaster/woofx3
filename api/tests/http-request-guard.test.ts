@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  ALLOWED_ORIGINS_SETTING,
   OPEN_REQUEST_GUARD_POLICY,
   parseRequestGuardPolicy,
   parseUiOrigins,
@@ -58,6 +59,8 @@ describe("api request guard set to *", () => {
   test("is what * parses to", () => {
     expect(
       parseRequestGuardPolicy({
+        allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
+        opaqueOrigin: "refuse",
         allowedHosts: "*",
         allowedOrigins: "*",
         exposure: "loopback",
@@ -102,7 +105,13 @@ function upgradeRequest(base: string, origin: string): Promise<Response> {
 }
 
 describe("api request guard unset on a loopback-only engine", () => {
-  const policy = parseRequestGuardPolicy({ exposure: "loopback", ownUrls: [], extraDefaultOrigins: [] });
+  const policy = parseRequestGuardPolicy({
+    allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
+    opaqueOrigin: "refuse",
+    exposure: "loopback",
+    ownUrls: [],
+    extraDefaultOrigins: [],
+  });
 
   test("refuses a WebSocket upgrade from a hostile page", async () => {
     const base = start(policy);
@@ -139,6 +148,8 @@ describe("api request guard set", () => {
   const policy = parseRequestGuardPolicy({
     allowedHosts: "127.0.0.1,localhost",
     allowedOrigins: "https://app.example",
+    allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
+    opaqueOrigin: "refuse",
     exposure: "loopback",
     ownUrls: [],
     extraDefaultOrigins: [],
@@ -188,6 +199,8 @@ describe("api request guard set", () => {
 
 describe("api request guard on a hosted engine with a dashboard origin", () => {
   const policy = parseRequestGuardPolicy({
+    allowedOriginsSetting: ALLOWED_ORIGINS_SETTING,
+    opaqueOrigin: "refuse",
     exposure: "network",
     ownUrls: ["http://127.0.0.1:5050", "https://streamer.woofx3.tv"],
     extraDefaultOrigins: parseUiOrigins("https://woofx3.tv"),

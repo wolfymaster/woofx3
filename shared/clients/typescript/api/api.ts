@@ -11,6 +11,13 @@ import type {
 } from "./config-bundle";
 import type { EngineEventSubscribeOptions, EngineEventSubscriber, EngineRequestAnswer } from "./engine-events";
 import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "./marketplace-catalog";
+import type {
+  DecidePairingRequest,
+  DecidePairingResponse,
+  ListPendingPairingsResponse,
+  LookupPairingRequest,
+  LookupPairingResponse,
+} from "./pairing";
 import type { PlatformGatewayResult, SendToPlatformsParams } from "./platform-gateway";
 import type { RegisterClientOptions } from "./rpc";
 import type {
@@ -536,29 +543,36 @@ export interface AvailableFunction {
 }
 
 /**
- * A resource kind an installed module declares in its manifest's
- * `resources[]`: the definition an instance is created from. Two modules may
- * each declare a kind of the same name; `moduleName` tells them apart.
+ * A resource kind a module declares in its manifest's `resources[]`: the
+ * definition an instance is created from. `module-manifest.ts` reads it.
  */
-export interface DeclaredResourceKind {
-  /** The declaring module's manifest id, the first segment of its instances' canonical ids. */
-  moduleName: string;
+export interface ManifestResourceKind {
   kind: string;
   name: string;
   description: string;
   /** A lucide icon name, when the module chose one. */
   icon?: string;
   /**
+   * Where in an instance's value the reading shown beside its name is: object
+   * keys and list indexes joined by `.` (`display.summary`). Absent means the
+   * whole value.
+   */
+  summaryPath?: string;
+  /**
    * The create-instance form, as config fields: the vocabulary actions and
    * triggers declare. Passed through as the manifest holds it; the engine
    * never reads it.
    */
   schema: unknown[];
-  /**
-   * Where in an instance's value the reading shown beside its name is: object
-   * keys and list indexes joined by `.`. Absent means the whole value.
-   */
-  summaryPath?: string;
+}
+
+/**
+ * A resource kind an installed module declares. Two modules may each declare
+ * a kind of the same name; `moduleName` tells them apart.
+ */
+export interface DeclaredResourceKind extends ManifestResourceKind {
+  /** The declaring module's manifest id, the first segment of its instances' canonical ids. */
+  moduleName: string;
 }
 
 /**
@@ -2258,6 +2272,17 @@ export interface Woofx3EngineApi {
   getTwitchDeviceLogin(loginId: string): Promise<TwitchDeviceLoginStateResult>;
   /** Stop polling for a device login and forget it. `cancelled` is false when there was none in progress. */
   cancelTwitchDeviceLogin(loginId: string): Promise<{ cancelled: boolean }>;
+
+  // Browser pairing, for an approver: any client of this engine. See
+  // ./pairing.ts and the `clients.pairing` capability; on an engine that does
+  // not pair each answers `not_available`.
+
+  /** The pairing a browser shows `userCode` for, with the origin to show the operator. */
+  lookupPairing(request: LookupPairingRequest): Promise<LookupPairingResponse>;
+  /** Approve or deny a pairing. An approved browser collects its credentials on its next poll. */
+  decidePairing(request: DecidePairingRequest): Promise<DecidePairingResponse>;
+  /** Every pairing not yet claimed or expired. */
+  listPendingPairings(): Promise<ListPendingPairingsResponse>;
 
   // Twitch: each method performs one Helix call as the linked broadcaster
   // and answers with Twitch's own result (see ./twitch-helix.ts). They never

@@ -55,7 +55,7 @@ for target in "${TARGETS[@]}"; do
             ;;
         *)
             log_error "Unsupported target: $target"
-            continue
+            exit 1
             ;;
     esac
     
@@ -85,6 +85,7 @@ for target in "${TARGETS[@]}"; do
         log_info "  ✓ Built successfully: orchestrator${BINARY_EXT}"
     else
         log_error "  ✗ Build failed: orchestrator${BINARY_EXT}"
+        exit 1
     fi
 done
 

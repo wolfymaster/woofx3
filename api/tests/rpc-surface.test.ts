@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { Api } from "../src/api";
 import { ApiSession, RPC_METHODS } from "../src/api-session";
+import { SessionLease } from "../src/client-sessions";
 
 /**
  * The type assertions in api-session.ts already tie RPC_METHODS to
@@ -29,7 +30,7 @@ describe("the RPC surface a client sees", () => {
     // is delivered; initSubscriptions duplicates four NATS subscriptions on every call;
     // handleProcessingCallback is barkloader's completion path, which
     // http.ts serves separately and deliberately keeps off capnweb.
-    const internal = ["setWebhookClient", "setAuthInvalidate", "initSubscriptions", "handleProcessingCallback"];
+    const internal = ["setWebhookClient", "setClientRevocation", "initSubscriptions", "handleProcessingCallback"];
     for (const name of internal) {
       expect(exposedMethods()).not.toContain(name);
     }
@@ -52,7 +53,7 @@ describe("the RPC surface a client sees", () => {
         };
       },
     });
-    const session = new ApiSession(api, "client-1");
+    const session = new ApiSession(api, "client-1", new SessionLease(() => {}));
 
     for (const name of RPC_METHODS) {
       const method = (session as unknown as Record<string, unknown>)[name];
@@ -75,7 +76,7 @@ describe("the RPC surface a client sees", () => {
         };
       },
     });
-    const session = new ApiSession(api, "client-42");
+    const session = new ApiSession(api, "client-42", new SessionLease(() => {}));
 
     await session.uninstallModule("some-module");
 
@@ -92,7 +93,7 @@ describe("the RPC surface a client sees", () => {
         };
       },
     });
-    const session = new ApiSession(api, "client-42");
+    const session = new ApiSession(api, "client-42", new SessionLease(() => {}));
     const params = {
       action: "chat.send" as const,
       platforms: ["twitch" as const],
@@ -115,12 +116,12 @@ describe("the RPC surface a client sees", () => {
         };
       },
     });
-    const session = new ApiSession(api, "client-42");
+    const session = new ApiSession(api, "client-42", new SessionLease(() => {}));
     const callback = { onStreamEvent: async () => {} };
 
     await session.subscribeStreamEvents(callback, ["goal.reached"]);
 
-    expect(received).toEqual([[callback, ["goal.reached"], { session }]]);
+    expect(received).toEqual([[callback, ["goal.reached"], { session, clientId: "client-42" }]]);
   });
 
   test("every method on Api is either published or a known internal", () => {
@@ -130,10 +131,13 @@ describe("the RPC surface a client sees", () => {
     // choice is deliberate either way -- declare it, or name it here.
     const INTERNAL = [
       "setWebhookClient",
-      "setAuthInvalidate",
+      "setClientRevocation",
+      "setPairingRegistry",
       "setStreamEventBroadcaster",
       "setEventLogSelectionSource",
       "setEngineEventStream",
+      "dropSessionSubscriptions",
+      "dropClientSubscriptions",
       "initSubscriptions",
       "handleProcessingCallback",
     ].sort();

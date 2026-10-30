@@ -8,12 +8,24 @@ pub struct Client {
     pub description: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
     pub client_id: ::prost::alloc::string::String,
+    /// Set only in CreateClient's response. db-proxy keeps only a hash, so no
+    /// other response can carry it.
     #[prost(string, tag="5")]
     pub client_secret: ::prost::alloc::string::String,
     #[prost(string, tag="6")]
     pub callback_url: ::prost::alloc::string::String,
     #[prost(string, tag="7")]
     pub callback_token: ::prost::alloc::string::String,
+    #[prost(enumeration="ClientKind", tag="8")]
+    pub kind: i32,
+    /// The web origin a paired client is bound to; empty for a registered one.
+    #[prost(string, tag="9")]
+    pub origin: ::prost::alloc::string::String,
+    #[prost(message, optional, tag="10")]
+    pub created_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Unset until an authentication is recorded.
+    #[prost(message, optional, tag="11")]
+    pub last_authenticated_at: ::core::option::Option<::pbjson_types::Timestamp>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateClientRequest {
@@ -23,6 +35,11 @@ pub struct CreateClientRequest {
     pub callback_url: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
     pub callback_token: ::prost::alloc::string::String,
+    /// Required. A paired client needs an origin; a registered one must not have one.
+    #[prost(enumeration="ClientKind", tag="5")]
+    pub kind: i32,
+    #[prost(string, tag="6")]
+    pub origin: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetClientRequest {
@@ -56,6 +73,11 @@ pub struct ValidateClientRequest {
     pub client_secret: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RecordClientAuthenticationRequest {
+    #[prost(string, tag="1")]
+    pub client_id: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ClientResponse {
     #[prost(message, optional, tag="1")]
     pub status: ::core::option::Option<super::common::ResponseStatus>,
@@ -68,6 +90,38 @@ pub struct ListClientsResponse {
     pub status: ::core::option::Option<super::common::ResponseStatus>,
     #[prost(message, repeated, tag="2")]
     pub clients: ::prost::alloc::vec::Vec<Client>,
+}
+/// How a client came to exist.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ClientKind {
+    Unspecified = 0,
+    /// Called registerClient: a desktop shell, a cloud dashboard, a CLI.
+    Registered = 1,
+    /// Obtained by a browser through pairing; bound to its origin.
+    Paired = 2,
+}
+impl ClientKind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unspecified => "CLIENT_KIND_UNSPECIFIED",
+            Self::Registered => "CLIENT_KIND_REGISTERED",
+            Self::Paired => "CLIENT_KIND_PAIRED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CLIENT_KIND_UNSPECIFIED" => Some(Self::Unspecified),
+            "CLIENT_KIND_REGISTERED" => Some(Self::Registered),
+            "CLIENT_KIND_PAIRED" => Some(Self::Paired),
+            _ => None,
+        }
+    }
 }
 include!("client.serde.rs");
 include!("client.tonic.rs");

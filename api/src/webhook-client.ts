@@ -152,6 +152,14 @@ async function readCapped(response: Response, maxBytes: number): Promise<{ body:
  */
 export class WebhookClient {
   private instances: RegisteredInstance[] = [];
+  /**
+   * Every client db-proxy confirmed deleted since the engine started. A
+   * refresh that read the client list before a delete can land after it, so
+   * its answer is filtered through this set rather than trusted. Client ids
+   * are never reused, so an id here stays deleted; the set grows only with
+   * deletions.
+   */
+  private deleted = new Set<string>();
 
   constructor(
     private db: DbClient,
@@ -174,12 +182,30 @@ export class WebhookClient {
     return ids;
   }
 
+  /**
+   * Stop delivering to a client at once, without waiting for a refresh. The
+   * next refresh lists it again if it still exists, as after a delete that
+   * failed.
+   */
+  dropClient(clientId: string): void {
+    this.instances = this.instances.filter((instance) => instance.clientId !== clientId);
+  }
+
+  /**
+   * Record that db-proxy deleted `clientId`, so no refresh, including one
+   * already under way, lists it again.
+   */
+  forgetDeletedClient(clientId: string): void {
+    this.deleted.add(clientId);
+    this.dropClient(clientId);
+  }
+
   async refreshCallbackUrls(): Promise<void> {
     const resp = await this.db.listClients();
     const newInstances: RegisteredInstance[] = [];
 
     for (const client of resp.clients ?? []) {
-      if (client.callbackUrl) {
+      if (client.callbackUrl && !this.deleted.has(client.clientId)) {
         const refusal = callbackUrlRefusal(client.callbackUrl);
         if (refusal !== null) {
           this.logger.warn("Skipping a client whose stored callback URL is no longer accepted", {

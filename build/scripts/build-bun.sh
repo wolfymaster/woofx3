@@ -59,13 +59,13 @@ for service_json in "${BUN_SERVICES[@]}"; do
     # Check if service directory exists
     if [[ ! -d "$SERVICE_PATH" ]]; then
         log_error "Service directory not found: $SERVICE_PATH"
-        continue
+        exit 1
     fi
     
     # Check if entry file exists
     if [[ ! -f "$SERVICE_PATH/$SERVICE_ENTRY" ]]; then
         log_error "Entry file not found: $SERVICE_PATH/$SERVICE_ENTRY"
-        continue
+        exit 1
     fi
     
     # Build for each target
@@ -81,7 +81,7 @@ for service_json in "${BUN_SERVICES[@]}"; do
                 ;;
             *)
                 log_error "Unsupported target: $target"
-                continue
+                exit 1
                 ;;
         esac
         
@@ -113,7 +113,7 @@ for service_json in "${BUN_SERVICES[@]}"; do
             log_info "  ✓ Built successfully: $(basename "$OUTPUT_PATH")"
         else
             log_error "  ✗ Build failed: $(basename "$OUTPUT_PATH")"
-            continue
+            exit 1
         fi
 
         # Copy declared static assets next to the binary for release layout.
@@ -123,7 +123,7 @@ for service_json in "${BUN_SERVICES[@]}"; do
             ASSET_DST="$TARGET_DIR/$SERVICE_ASSETS"
             if [[ ! -d "$ASSET_SRC" ]]; then
                 log_error "  ✗ Assets directory not found: $ASSET_SRC"
-                continue
+                exit 1
             fi
             log_info "  -> copying assets $SERVICE_ASSETS -> $ASSET_DST"
             rm -rf "$ASSET_DST"

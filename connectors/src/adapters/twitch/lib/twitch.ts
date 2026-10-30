@@ -1,5 +1,11 @@
 import type { ApiClient, HelixUser } from "@twurple/api";
 import {
+  type HelixAdSchedule,
+  type HelixAdSnooze,
+  parseHelixAdSchedule,
+  parseHelixAdSnooze,
+} from "@woofx3/api/twitch-helix-bodies";
+import {
   type CreateMarkerArgs,
   type HelixCommandResult,
   TWITCHAPI_COMMANDS,
@@ -33,28 +39,6 @@ export interface ChannelPointRewardOption {
   cost: number;
   prompt: string;
   isEnabled: boolean;
-}
-
-/**
- * The broadcaster's ad schedule. Times are ISO-8601, or null when Twitch has
- * none to report (no ad scheduled, or no ad run yet this stream).
- */
-export interface AdSchedule {
-  nextAdAt: string | null;
-  lastAdAt: string | null;
-  durationSeconds: number;
-  prerollFreeSeconds: number;
-  snoozeCount: number;
-  snoozeRefreshAt: string | null;
-  /** The engine's clock when it answered, so a client can correct for skew. */
-  serverNow: string;
-}
-
-export interface SnoozeResult {
-  snoozeCount: number;
-  snoozeRefreshAt: string | null;
-  nextAdAt: string | null;
-  serverNow: string;
 }
 
 /** Twitch's own limits on channel information, checked before any request is made. */
@@ -263,58 +247,20 @@ export function classifyTwitchError(err: unknown, context: string, scope: string
   return new TwitchApiError("failed", `${context}: ${message}`);
 }
 
-type HelixTime = string | number | null | undefined;
-
-interface HelixAdScheduleRow {
-  next_ad_at?: HelixTime;
-  last_ad_at?: HelixTime;
-  duration?: number | string;
-  preroll_free_time?: number | string;
-  snooze_count?: number | string;
-  snooze_refresh_at?: HelixTime;
-}
-
-interface HelixSnoozeRow {
-  snooze_count?: number | string;
-  snooze_refresh_at?: HelixTime;
-  next_ad_at?: HelixTime;
-}
-
 /**
- * A Helix ad-schedule time as ISO-8601, or null for "none". Accepts every
- * form Helix has used: RFC3339, Unix seconds as a number or a numeric
- * string, and "" or 0 for nothing scheduled. An unreadable value is null
- * rather than an error: one odd field should not take the whole schedule
- * down with it.
+ * What a schedule read answers when Twitch sends no schedule row: nothing
+ * scheduled, no snoozes. The ad break scheduler then has nothing to arm.
  */
-export function normalizeHelixTime(raw: HelixTime): string | null {
-  if (raw === null || raw === undefined) {
-    return null;
-  }
-  if (typeof raw === "number") {
-    return epochSecondsToIso(raw);
-  }
-  const text = raw.trim();
-  if (text === "") {
-    return null;
-  }
-  if (/^\d+(\.\d+)?$/.test(text)) {
-    return epochSecondsToIso(Number(text));
-  }
-  const ms = Date.parse(text);
-  return Number.isNaN(ms) ? null : new Date(ms).toISOString();
-}
-
-function epochSecondsToIso(seconds: number): string | null {
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    return null;
-  }
-  return new Date(seconds * 1000).toISOString();
-}
-
-function wholeSeconds(raw: number | string | undefined): number {
-  const value = Number(raw ?? 0);
-  return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+function noAdSchedule(serverNow: string): HelixAdSchedule {
+  return {
+    nextAdAt: null,
+    lastAdAt: null,
+    durationSeconds: 0,
+    prerollFreeSeconds: 0,
+    snoozeCount: 0,
+    snoozeRefreshAt: null,
+    serverNow,
+  };
 }
 
 export default class TwitchApi {
@@ -413,13 +359,13 @@ export default class TwitchApi {
    * Requires `channel:read:ads`. Called through `callApi` rather than
    * Twurple's `getAdSchedule` because Twurple converts the times assuming
    * Unix seconds, and Helix has sent them as RFC3339 strings, epoch numbers,
-   * numeric strings and "" (nothing scheduled). The raw fields go through
-   * `normalizeHelixTime` instead.
+   * numeric strings and "" (nothing scheduled). The raw body goes through
+   * `parseHelixAdSchedule` instead, the reader dashboards use too.
    */
-  async getAdSchedule(_args: unknown): Promise<AdSchedule> {
-    let row: HelixAdScheduleRow | undefined;
+  async getAdSchedule(_args: unknown): Promise<HelixAdSchedule> {
+    let body: unknown;
     try {
-      const response = await this.apiClient.callApi<{ data?: HelixAdScheduleRow[] }>({
+      body = await this.apiClient.callApi<unknown>({
         type: "helix",
         url: "channels/ads",
         method: "GET",
@@ -427,19 +373,11 @@ export default class TwitchApi {
         scopes: ["channel:read:ads"],
         query: { broadcaster_id: this.broadcaster.id },
       });
-      row = response.data?.[0];
     } catch (err) {
       throw classifyTwitchError(err, "getAdSchedule", "channel:read:ads");
     }
-    return {
-      nextAdAt: normalizeHelixTime(row?.next_ad_at),
-      lastAdAt: normalizeHelixTime(row?.last_ad_at),
-      durationSeconds: wholeSeconds(row?.duration),
-      prerollFreeSeconds: wholeSeconds(row?.preroll_free_time),
-      snoozeCount: wholeSeconds(row?.snooze_count),
-      snoozeRefreshAt: normalizeHelixTime(row?.snooze_refresh_at),
-      serverNow: new Date(this.clock.now()).toISOString(),
-    };
+    const serverNow = new Date(this.clock.now()).toISOString();
+    return parseHelixAdSchedule(body, serverNow) ?? noAdSchedule(serverNow);
   }
 
   /**
@@ -613,10 +551,10 @@ export default class TwitchApi {
    * which surfaces as a `failed` error carrying Twitch's message.
    * Requires `channel:manage:ads`.
    */
-  async snoozeNextAd(_args: unknown): Promise<SnoozeResult> {
-    let row: HelixSnoozeRow | undefined;
+  async snoozeNextAd(_args: unknown): Promise<HelixAdSnooze> {
+    let body: unknown;
     try {
-      const response = await this.apiClient.callApi<{ data?: HelixSnoozeRow[] }>({
+      body = await this.apiClient.callApi<unknown>({
         type: "helix",
         url: "channels/ads/schedule/snooze",
         method: "POST",
@@ -624,16 +562,11 @@ export default class TwitchApi {
         scopes: ["channel:manage:ads"],
         query: { broadcaster_id: this.broadcaster.id },
       });
-      row = response.data?.[0];
     } catch (err) {
       throw classifyTwitchError(err, "snoozeNextAd", "channel:manage:ads");
     }
-    return {
-      snoozeCount: wholeSeconds(row?.snooze_count),
-      snoozeRefreshAt: normalizeHelixTime(row?.snooze_refresh_at),
-      nextAdAt: normalizeHelixTime(row?.next_ad_at),
-      serverNow: new Date(this.clock.now()).toISOString(),
-    };
+    const serverNow = new Date(this.clock.now()).toISOString();
+    return parseHelixAdSnooze(body, serverNow) ?? { snoozeCount: 0, snoozeRefreshAt: null, nextAdAt: null, serverNow };
   }
 
   /**
