@@ -79,7 +79,7 @@
       // nothing plays on its own. The first reading shows its frame at once;
       // each later one plays from the frame on screen to the new one, so a
       // change animates, backwards when the value went the other way.
-      function follow() {
+      function showCounterFrames() {
         load()
           .then((animationData) => {
             const animation = lottie.loadAnimation({ container, renderer: "svg", loop: false, autoplay: false, animationData });
@@ -112,7 +112,7 @@
 
       if (!inAlert) {
         if (counter) {
-          follow();
+          showCounterFrames();
         } else {
           start(null);
         }

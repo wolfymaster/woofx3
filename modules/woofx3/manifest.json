@@ -2202,7 +2202,7 @@
     {
       "id": "lottie",
       "name": "Lottie",
-      "description": "A Lottie animation, optionally with the text of one of its text layers replaced. On a scene it can follow a counter instead of playing on its own: the counter's value picks the frame.",
+      "description": "A Lottie animation, optionally with the text of one of its text layers replaced. On a scene, any counter can pick its frame instead of it playing on its own.",
       "entry": "widgets/lottie/index.html",
       "assets": "widgets/lottie",
       "surfaces": [
@@ -2247,10 +2247,10 @@
         },
         {
           "id": "counter",
-          "label": "Follow counter",
+          "label": "Counter",
           "type": "resource_ref",
           "resourceKind": "counter",
-          "description": "On a scene: a counter whose value picks the frame, in place of the animation playing on its own. Each change plays from the frame shown to the new one."
+          "description": "On a scene: any counter, whose value picks the frame in place of the animation playing on its own. Each change plays from the frame shown to the new one."
         },
         {
           "id": "counterFrom",

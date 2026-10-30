@@ -159,7 +159,7 @@ describe("built-in lottie widget", () => {
     return { animations, mock };
   }
 
-  it("plays on its own on a scene when it follows no counter", async () => {
+  it("plays on its own on a scene when no counter is picked", async () => {
     const { animations } = runLottie({ settings: { src: SRC } });
     await tick();
     expect(animations).toHaveLength(1);
