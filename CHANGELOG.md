@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.51.1](https://github.com/wolfymaster/woofx3/compare/v0.51.0...v0.51.1) (2026-10-30)
+
+### Bug Fixes
+
+* **scenemanager:** serve widget frames everything they load with Origin null ([ed2126d](https://github.com/wolfymaster/woofx3/commit/ed2126d4c32cbe1bbbddc3a49790b50b7e262fba))
+
 ## [0.51.0](https://github.com/wolfymaster/woofx3/compare/v0.50.2...v0.51.0) (2026-10-30)
 
 ### Features
