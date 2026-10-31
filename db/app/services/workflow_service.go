@@ -248,15 +248,27 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 		wf.Name = req.Name
 	}
 
-	if req.StepsJson != "" && req.StepsJson != wf.Steps || req.TriggerJson != "" && req.TriggerJson != wf.Trigger {
+	triggerJSON := req.TriggerJson
+	if triggerJSON == "" {
+		triggerJSON = wf.Trigger
+	}
+	if wf.CreatedByType == "USER" && wf.ManifestID == "" {
+		stored, err := s.workflowRepo.GetAll()
+		if err != nil {
+			return nil, twirp.InternalErrorWith(fmt.Errorf("list workflows to place %s: %w", wf.ID, err))
+		}
+		triggerJSON, err = withOwnWorkflowOrder(triggerJSON, stored, wf.ID)
+		if err != nil {
+			return nil, twirp.InvalidArgumentError("trigger_json", err.Error())
+		}
+	}
+	if req.StepsJson != "" && req.StepsJson != wf.Steps || triggerJSON != wf.Trigger {
 		wf.Revision = baseRevision + 1
 	}
 	if req.StepsJson != "" {
 		wf.Steps = req.StepsJson
 	}
-	if req.TriggerJson != "" {
-		wf.Trigger = req.TriggerJson
-	}
+	wf.Trigger = triggerJSON
 	if req.Enabled != nil {
 		wf.Enabled = *req.Enabled
 	}
