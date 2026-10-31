@@ -58,6 +58,11 @@ export interface Workflow {
    * creation time only; not currently updatable via UpdateWorkflowRequest.
    */
   taxonomy: string[];
+  /**
+   * Counts changes to the steps and trigger. A caller saving an edit sends
+   * the revision it read as `UpdateWorkflowRequest.expected_revision`.
+   */
+  revision: number;
 }
 
 export declare namespace Workflow {
@@ -235,6 +240,11 @@ export interface UpdateWorkflowRequest {
   timeoutSeconds: number;
   stepsJson: string;
   triggerJson: string;
+  /**
+   * Refuses the update with `aborted` unless the workflow is still at this
+   * revision, so an edit of an older copy can't overwrite newer steps.
+   */
+  expectedRevision?: number | null | undefined;
 }
 
 export declare namespace UpdateWorkflowRequest {
@@ -1075,6 +1085,7 @@ export const Workflow = {
       triggerJson: "",
       manifestId: "",
       taxonomy: [],
+      revision: 0,
       ...msg,
     };
   },
@@ -1151,6 +1162,9 @@ export const Workflow = {
     }
     if (msg.taxonomy?.length) {
       writer.writeRepeatedString(20, msg.taxonomy);
+    }
+    if (msg.revision) {
+      writer.writeInt32(21, msg.revision);
     }
     return writer;
   },
@@ -1233,6 +1247,10 @@ export const Workflow = {
         }
         case 20: {
           msg.taxonomy.push(reader.readString());
+          break;
+        }
+        case 21: {
+          msg.revision = reader.readInt32();
           break;
         }
         default: {
@@ -2205,6 +2223,7 @@ export const UpdateWorkflowRequest = {
       timeoutSeconds: 0,
       stepsJson: "",
       triggerJson: "",
+      expectedRevision: undefined,
       ...msg,
     };
   },
@@ -2255,6 +2274,9 @@ export const UpdateWorkflowRequest = {
     }
     if (msg.triggerJson) {
       writer.writeString(12, msg.triggerJson);
+    }
+    if (msg.expectedRevision != undefined) {
+      writer.writeInt32(13, msg.expectedRevision);
     }
     return writer;
   },
@@ -2313,6 +2335,10 @@ export const UpdateWorkflowRequest = {
         }
         case 12: {
           msg.triggerJson = reader.readString();
+          break;
+        }
+        case 13: {
+          msg.expectedRevision = reader.readInt32();
           break;
         }
         default: {
@@ -3876,6 +3902,7 @@ export const WorkflowJSON = {
       triggerJson: "",
       manifestId: "",
       taxonomy: [],
+      revision: 0,
       ...msg,
     };
   },
@@ -3945,6 +3972,9 @@ export const WorkflowJSON = {
     }
     if (msg.taxonomy?.length) {
       json["taxonomy"] = msg.taxonomy;
+    }
+    if (msg.revision) {
+      json["revision"] = msg.revision;
     }
     return json;
   },
@@ -4025,6 +4055,10 @@ export const WorkflowJSON = {
     const _taxonomy_ = json["taxonomy"];
     if (_taxonomy_) {
       msg.taxonomy = _taxonomy_;
+    }
+    const _revision_ = json["revision"];
+    if (_revision_) {
+      msg.revision = protoscript.parseNumber(_revision_);
     }
     return msg;
   },
@@ -4864,6 +4898,7 @@ export const UpdateWorkflowRequestJSON = {
       timeoutSeconds: 0,
       stepsJson: "",
       triggerJson: "",
+      expectedRevision: undefined,
       ...msg,
     };
   },
@@ -4915,6 +4950,9 @@ export const UpdateWorkflowRequestJSON = {
     }
     if (msg.triggerJson) {
       json["triggerJson"] = msg.triggerJson;
+    }
+    if (msg.expectedRevision != undefined) {
+      json["expectedRevision"] = msg.expectedRevision;
     }
     return json;
   },
@@ -4974,6 +5012,11 @@ export const UpdateWorkflowRequestJSON = {
     const _triggerJson_ = json["triggerJson"] ?? json["trigger_json"];
     if (_triggerJson_) {
       msg.triggerJson = _triggerJson_;
+    }
+    const _expectedRevision_ =
+      json["expectedRevision"] ?? json["expected_revision"];
+    if (_expectedRevision_) {
+      msg.expectedRevision = protoscript.parseNumber(_expectedRevision_);
     }
     return msg;
   },

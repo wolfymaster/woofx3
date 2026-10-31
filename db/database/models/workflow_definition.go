@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,6 +42,11 @@ type WorkflowDefinition struct {
 	// action is the canonical toggle, and a module upgrade never changes it.
 	Enabled bool `gorm:"column:enabled;not null;default:false;index:idx_workflow_definitions_enabled"`
 
+	// Revision counts changes to Steps and Trigger, so a save made from an older
+	// copy can be refused. Switching a workflow on or off leaves it alone: an
+	// editor's copy of the steps is still current after that.
+	Revision int32 `gorm:"column:revision;not null;default:1"`
+
 	// Managed by gorm: set on insert, and `UpdatedAt` on every write.
 	// WorkflowRepository.Upsert writes raw SQL and sets both itself.
 	CreatedAt time.Time
@@ -58,6 +64,33 @@ func (wd *WorkflowDefinition) Create(db *gorm.DB) error {
 
 func (wd *WorkflowDefinition) Update(db *gorm.DB) error {
 	return db.Save(wd).Error
+}
+
+// ErrWorkflowRevisionStale reports a write that lost to one made since the row was read.
+var ErrWorkflowRevisionStale = errors.New("workflow changed since it was read")
+
+// UpdateAtRevision writes the row only if it is still at baseRevision, in one
+// statement so two writers can't both pass the check.
+func (wd *WorkflowDefinition) UpdateAtRevision(db *gorm.DB, baseRevision int32) error {
+	now := db.NowFunc()
+	result := db.Model(&WorkflowDefinition{}).
+		Where("id = ? AND revision = ?", wd.ID, baseRevision).
+		Updates(map[string]any{
+			"name":       wd.Name,
+			"steps":      wd.Steps,
+			"trigger":    wd.Trigger,
+			"enabled":    wd.Enabled,
+			"revision":   wd.Revision,
+			"updated_at": now,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrWorkflowRevisionStale
+	}
+	wd.UpdatedAt = now
+	return nil
 }
 
 func (wd *WorkflowDefinition) Delete(db *gorm.DB) error {

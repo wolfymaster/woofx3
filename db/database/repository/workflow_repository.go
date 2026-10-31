@@ -57,6 +57,7 @@ func (r *WorkflowRepository) Upsert(wf *models.WorkflowDefinition) error {
 	var result struct {
 		ID        uuid.UUID `gorm:"column:id"`
 		Enabled   bool      `gorm:"column:enabled"`
+		Revision  int32     `gorm:"column:revision"`
 		CreatedAt time.Time `gorm:"column:created_at"`
 		UpdatedAt time.Time `gorm:"column:updated_at"`
 	}
@@ -69,8 +70,9 @@ func (r *WorkflowRepository) Upsert(wf *models.WorkflowDefinition) error {
 			steps = EXCLUDED.steps,
 			trigger = EXCLUDED.trigger,
 			taxonomy = EXCLUDED.taxonomy,
+			revision = workflow_definitions.revision + 1,
 			updated_at = EXCLUDED.updated_at
-		RETURNING id, enabled, created_at, updated_at
+		RETURNING id, enabled, revision, created_at, updated_at
 	`, rowID(r.ids, wf.ID), wf.Name, wf.Steps, wf.Trigger, wf.CreatedByType, wf.CreatedByRef, wf.ManifestID, wf.Taxonomy, wf.Enabled,
 		now, now).Scan(&result).Error
 	if err != nil {
@@ -78,6 +80,7 @@ func (r *WorkflowRepository) Upsert(wf *models.WorkflowDefinition) error {
 	}
 	wf.ID = result.ID
 	wf.Enabled = result.Enabled
+	wf.Revision = result.Revision
 	wf.CreatedAt = result.CreatedAt
 	wf.UpdatedAt = result.UpdatedAt
 	return nil
@@ -86,6 +89,12 @@ func (r *WorkflowRepository) Upsert(wf *models.WorkflowDefinition) error {
 // Update updates a WorkflowDefinition
 func (r *WorkflowRepository) Update(wf *models.WorkflowDefinition) error {
 	return r.db.Save(wf).Error
+}
+
+// UpdateAtRevision updates a WorkflowDefinition still at baseRevision, or
+// returns models.ErrWorkflowRevisionStale.
+func (r *WorkflowRepository) UpdateAtRevision(wf *models.WorkflowDefinition, baseRevision int32) error {
+	return wf.UpdateAtRevision(r.db, baseRevision)
 }
 
 // Delete deletes a WorkflowDefinition

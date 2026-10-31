@@ -211,6 +211,16 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 		if linked > 0 || failed > 0 {
 			a.logger.Info("Linked commands to workflows", "linked", linked, "failed", failed)
 		}
+
+		merged, unmerged := svc.MergeOwnWorkflows(
+			repository.NewWorkflowRepository(a.db, database.RandomIDs{}),
+			a.db,
+			a.eventPublisher,
+			repository.NewResourceReferenceRepository(a.db),
+		)
+		if merged > 0 || unmerged > 0 {
+			a.logger.Info("Merged workflows sharing a trigger", "merged", merged, "failed", unmerged)
+		}
 	}
 
 	return nil

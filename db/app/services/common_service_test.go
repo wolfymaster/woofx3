@@ -78,6 +78,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			manifest_id TEXT NOT NULL DEFAULT '',
 			taxonomy TEXT NOT NULL DEFAULT '[]',
 			enabled BOOLEAN NOT NULL DEFAULT 0,
+			revision INTEGER NOT NULL DEFAULT 1,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,

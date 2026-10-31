@@ -36,6 +36,8 @@ interface RawWorkflowRow {
   enabled?: unknown;
   projection_key?: unknown;
   projectionKey?: unknown;
+  merged_into?: unknown;
+  revision?: unknown;
   Taxonomy?: unknown;
   taxonomy?: unknown;
   CreatedAt?: unknown;
@@ -114,6 +116,9 @@ function buildSnapshot(ce: Record<string, unknown>): WorkflowSnapshot | null {
   if (projectionKey !== "") {
     snapshot.projectionKey = projectionKey;
   }
+  if (typeof row.revision === "number") {
+    snapshot.revision = row.revision;
+  }
   return snapshot;
 }
 
@@ -168,6 +173,10 @@ export function parseWorkflowDeleted(ce: Record<string, unknown>): ParsedWorkflo
   };
   if (projectionKey !== "") {
     event.projectionKey = projectionKey;
+  }
+  const mergedInto = pickFirst(row.merged_into);
+  if (mergedInto !== "") {
+    event.mergedInto = mergedInto;
   }
   return { clientId, event };
 }

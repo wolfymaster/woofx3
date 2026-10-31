@@ -199,6 +199,7 @@ export class ApiRouteHost extends RpcTarget {
     enabled?: boolean;
     stepsJson?: string;
     triggerJson?: string;
+    revision?: number;
     createdAt?: { seconds?: bigint; nanos?: number };
     updatedAt?: { seconds?: bigint; nanos?: number };
     taxonomy?: string[];
@@ -209,6 +210,7 @@ export class ApiRouteHost extends RpcTarget {
       description: wf.description ?? "",
       isEnabled: wf.enabled ?? false,
       definition: rebuildWorkflowDefinition(wf),
+      revision: wf.revision,
       stats: { runsToday: 0, successRate: 100 },
       createdAt: timestampToIso(wf.createdAt),
       updatedAt: timestampToIso(wf.updatedAt),

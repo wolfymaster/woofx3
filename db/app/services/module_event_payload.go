@@ -348,6 +348,7 @@ func buildWorkflowChangeData(wf *models.WorkflowDefinition) map[string]any {
 		"enabled":         wf.Enabled,
 		"steps_json":      wf.Steps,
 		"trigger_json":    wf.Trigger,
+		"revision":        wf.Revision,
 		"created_by_type": wf.CreatedByType,
 		"created_by_ref":  wf.CreatedByRef,
 		"manifest_id":     wf.ManifestID,
