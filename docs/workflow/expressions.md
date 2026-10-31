@@ -5,7 +5,8 @@ resolves against runtime data before a step runs. An alert's layout,
 widget settings included, leaves the engine with final values, and a
 widget shows them as written.
 
-The resolver is **safe**: no `eval`, no globals, no arithmetic, no calls.
+The resolver is **safe**: no `eval`, no globals and no arithmetic operators.
+The only calls are to a [fixed set of functions](#functions).
 
 ## Workflow engine (Go)
 
@@ -45,8 +46,48 @@ The falsy values are `null`, `false`, `0` and `""`. Inside an expression a
 path that does not exist is `null`, so `${trigger.data.nick ||
 trigger.data.userName}` falls back cleanly, and ordering (`>`, `>=`, `<`,
 `<=`) against `null` is false. An unknown source is still an error. There
-is deliberately no arithmetic, concatenation or function call: an
-expression chooses between values, it does not compute them.
+are deliberately no arithmetic or concatenation operators, and a workflow
+cannot define a function: computing goes through the fixed set below.
+
+### Functions
+
+Code: `workflow/internal/expression/functions.go`. `name(a, b)` calls a
+function, so a step named `round` is still `${round.result}`. An argument can
+be anything an expression can hold, including another call:
+`${round(divide(trigger.data.bits, 100), 2)}`.
+
+| Function | Result |
+|---|---|
+| `add(a, b, ...)`, `multiply(a, b, ...)` | The sum or product of two or more numbers. |
+| `subtract(a, b)` | `a` minus `b`. |
+| `divide(a, b)` | `a` divided by `b`. Dividing by zero fails. |
+| `min(a, b, ...)`, `max(a, b, ...)` | The smallest or largest of two or more numbers. |
+| `round(x)`, `round(x, digits)` | `x` to `digits` decimal places, 0 to 10, default 0. Halves round away from zero. |
+| `uppercase(text)`, `lowercase(text)` | The text in that case. A missing value is empty text; a number becomes text. |
+| `random(min, max)` | A whole number from `min` to `max`, both included. Both must be whole numbers. |
+
+Text holding a number counts as a number, because chat arguments arrive as
+text. A missing value or any other text fails a numeric function rather than
+quietly becoming 0; `${add(trigger.data.amount || 0, 1)}` states the fallback.
+Arithmetic results are cut to 10 decimal places, so binary floating point
+noise never shows.
+
+Each `random` call draws on its own, so two in one step differ, and running a
+step again, as a replay does, draws again. The run's recorded step inputs show
+what was drawn.
+
+**A call that fails always fails its step**, even inside a longer string:
+leaving `${divide(a, 0)}` in a chat message would show it to viewers. An
+unknown function, a wrong argument count or a malformed call could never
+succeed, so a definition holding one is refused when it is saved and when the
+engine loads it, with the path of the offending value
+(`shared/clients/typescript/api/expression.ts` is the same check for the API and
+the editor, held to the engine's by a shared conformance file).
+
+`{` and `}` cannot appear inside a string literal, because an expression ends
+at its first `}`.
+
+Engines advertise functions as the `workflow.expressionFunctions` capability.
 
 **Examples:**
 
@@ -68,8 +109,8 @@ credentials), which the module's own functions read; see
 A string that is exactly one `${…}` keeps the value's type, so a number
 stays a number; one inside a longer string becomes text.
 
-When a `${…}` inside a longer string fails to resolve, the resolver
-leaves the literal token in place and returns the rest of the string
+When a `${…}` inside a longer string fails to resolve, and it is not a
+[function call](#functions), the resolver leaves the literal token in place and returns the rest of the string
 unchanged, which makes authoring errors visible at render time. A string
 that is nothing but one failing `${…}` fails the step instead.
 
@@ -172,6 +213,7 @@ $$ alice gifted 5 subs $$
 |---|---|---|
 | `{trigger.data.amount > 1 ? 'subs' : 'sub'}` | Braces without `$` are not an expression; the Text widget shows them as written. | `${trigger.data.amount > 1 ? 'subs' : 'sub'}` |
 | `${event.data.X}` | The engine has no `event` source, so the token is left unresolved. | `${trigger.data.X}` |
+| `${trigger.data.X + 1}` | There are no arithmetic operators. | `${add(trigger.data.X, 1)}` |
 | `${trigger.data.X + 'suffix'}` | There is no concatenation. | Put the literal outside the expression: `"${trigger.data.X}suffix"`. |
 
 ## See also

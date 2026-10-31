@@ -2,7 +2,7 @@
 
 Tasks are the units of execution within a workflow. Each task has a `type` that determines its behavior and the shape of its `parameters`.
 
-> **Strings inside `parameters` carry `${…}` expressions resolved by the engine before the task runs.** The grammar is path-only — no operators, no ternary. See [Expressions](./expressions.md) for what's in scope and where to use the streamware-side `{…}` syntax instead.
+> **Strings inside `parameters` carry `${…}` expressions resolved by the engine before the task runs.** References, conditionals and a fixed set of functions, with no arithmetic operators. See [Expressions](./expressions.md) for what's in scope and where to use the streamware-side `{…}` syntax instead.
 
 ## Disabling a task
 

@@ -94,6 +94,7 @@ describe("getEngineCapabilities", () => {
     expect(capabilities).toEqual(
       expect.arrayContaining([
         "workflow.delayWait",
+        "workflow.expressionFunctions",
         "workflow.testRunOptions",
         "workflow.dryRun",
         "workflow.realCancel",

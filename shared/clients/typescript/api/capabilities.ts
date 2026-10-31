@@ -274,6 +274,11 @@ export const ENGINE_CAPABILITIES = {
    */
   workflowDelayWait: "workflow.delayWait",
   /**
+   * `${…}` expressions may call the fixed functions in `@woofx3/api/expression`,
+   * such as `${round(trigger.data.amount, 2)}`.
+   */
+  workflowExpressionFunctions: "workflow.expressionFunctions",
+  /**
    * `triggerWorkflowByName` options: sample `triggerData`, `platform` and
    * `skipConditions`, answered with the started run or the unmet conditions.
    */
