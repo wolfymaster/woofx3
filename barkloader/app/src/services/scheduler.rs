@@ -1210,7 +1210,36 @@ mod tests {
             expiry.event["deadline"]["firedAt"]
         );
         assert_eq!(h.fired(WOOFX3_RECONCILE), vec![0, 60_000, 120_000]);
-        assert_eq!(h.calls().len(), 4, "{:?}", h.calls());
+        let timer_calls = h
+            .calls()
+            .into_iter()
+            .filter(|c| c.function.contains("timer."))
+            .count();
+        assert_eq!(timer_calls, 4, "{:?}", h.calls());
+    }
+
+    /// The bundled schedule through its real declarations: it reconciles on load
+    /// and once a minute, and an armed run invokes its firing function.
+    #[tokio::test(start_paused = true)]
+    async fn the_bundled_schedule_fires_when_due_and_reconciles_once_a_minute() {
+        const WOOFX3_FIRE: &str = "woofx3:function:schedule.fire";
+        const WOOFX3_RECONCILE: &str = "woofx3:function:schedule.reconcile";
+        let h = Harness::new();
+        h.scheduler.register("woofx3", &bundled_woofx3_schedule());
+        let target = "woofx3:schedule:chat_plug";
+        h.scheduler
+            .at(
+                "woofx3",
+                "schedule_due",
+                target,
+                h.now_ms() + 30_000,
+                json!({ "target": target }),
+            )
+            .unwrap();
+        advance(150_000).await;
+
+        assert_eq!(h.fired(WOOFX3_FIRE), vec![30_000]);
+        assert_eq!(h.fired(WOOFX3_RECONCILE), vec![0, 60_000, 120_000]);
     }
 
     #[test]
