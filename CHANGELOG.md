@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.56.0](https://github.com/wolfymaster/woofx3/compare/v0.55.0...v0.56.0) (2026-10-31)
+
+### Features
+
+* **api:** carry mergedInto on the workflow deleted callback ([224a153](https://github.com/wolfymaster/woofx3/commit/224a15316785979297fe7414075394bea83bd110))
+* **db:** add a workflow revision and refuse writes from an older one ([127a629](https://github.com/wolfymaster/woofx3/commit/127a62915ee8db49e75c32401a11fb987777cbf9))
+* **db:** merge the streamer's workflows sharing a trigger ([567164f](https://github.com/wolfymaster/woofx3/commit/567164ff8b4328647740e29d9b4b694dc9ae2ec8))
+
+### Bug Fixes
+
+* **api:** report stored steps and refuse saves from an older workflow copy ([23fae75](https://github.com/wolfymaster/woofx3/commit/23fae75fc140098428a631faa5e5ee5da95dbf14))
+
 ## [0.55.0](https://github.com/wolfymaster/woofx3/compare/v0.54.0...v0.55.0) (2026-10-31)
 
 ### Features
