@@ -5,6 +5,7 @@ export * from "./alert-names";
 export * from "./alert-targets";
 export * from "./animation";
 export * from "./bind";
+export * from "./canvas";
 export * from "./composition";
 export * from "./entity-types";
 export * from "./json-schema";
