@@ -252,3 +252,21 @@ func TestResolveEnvIsAnUnknownSource(t *testing.T) {
 		t.Fatalf("ResolveString = %q, want the token left in place", got)
 	}
 }
+
+// A user page form's answers are read by field id, and an id may hold a hyphen.
+func TestResolveStringReadsAnswerByHyphenatedFieldID(t *testing.T) {
+	r := NewResolver()
+	r.AddSource("trigger", map[string]any{"data": map[string]any{
+		"answers": map[string]any{"fav-song": "Never gonna"},
+	}})
+
+	for _, expr := range []string{"${trigger.data.answers.fav-song}", "${trigger.data.answers.fav-song || 'none'}"} {
+		got, err := r.ResolveString(expr)
+		if err != nil {
+			t.Fatalf("%s: %v", expr, err)
+		}
+		if got != "Never gonna" {
+			t.Fatalf("%s = %v", expr, got)
+		}
+	}
+}

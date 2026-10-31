@@ -2800,7 +2800,7 @@ func (s *viewerFactServiceServer) serveGetViewerSegmentsProtobuf(ctx context.Con
 }
 
 func (s *viewerFactServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor20, 0
+	return twirpFileDescriptor21, 0
 }
 
 func (s *viewerFactServiceServer) ProtocGenTwirpVersion() string {
@@ -2814,7 +2814,7 @@ func (s *viewerFactServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "viewer_fact", "ViewerFactService")
 }
 
-var twirpFileDescriptor20 = []byte{
+var twirpFileDescriptor21 = []byte{
 	// 1656 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbc, 0x57, 0x4b, 0x6f, 0xdb, 0xd6,
 	0x12, 0x0e, 0x29, 0xeb, 0x35, 0xb2, 0xe4, 0xf8, 0xc4, 0x0f, 0x46, 0x4e, 0x6c, 0x5f, 0xe6, 0xe5,

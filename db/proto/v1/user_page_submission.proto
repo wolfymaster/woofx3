@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package user_page_submission;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// Form answers viewers sent from the streamer's public user page. Every
+// submission is written once, together with the `userpage.form.submitted`
+// event that queues the workflows bound to it.
+service UserPageSubmissionService {
+  // Records a submission and its trigger event in one transaction.
+  //
+  // `created` is false when `submission_id` was already recorded: nothing is
+  // written and no second event is queued, whatever the repeat carries.
+  //
+  // Fails with `invalid_argument` when the submission is malformed, which a
+  // retry cannot fix. Any other failure wrote nothing and may be retried.
+  rpc RecordUserPageSubmission(RecordUserPageSubmissionRequest) returns (RecordUserPageSubmissionResponse);
+}
+
+message UserPageViewer {
+  string platform = 1;
+  string platform_user_id = 2;
+  string display_name = 3;
+  repeated string roles = 4;
+}
+
+message UserPageSubmissionField {
+  string id = 1;
+  string label = 2;
+  // "text", "textarea", "select" or "checkbox". A checkbox carries
+  // `checked_value`, every other type `text_value`.
+  string type = 3;
+  oneof value {
+    string text_value = 4;
+    bool checked_value = 5;
+  }
+}
+
+message RecordUserPageSubmissionRequest {
+  string submission_id = 1;
+  string page_id = 2;
+  string form_id = 3;
+  optional string form_title = 4;
+  google.protobuf.Timestamp submitted_at = 5;
+  // Absent for an anonymous viewer.
+  optional UserPageViewer viewer = 6;
+  repeated UserPageSubmissionField fields = 7;
+}
+
+message RecordUserPageSubmissionResponse {
+  common.ResponseStatus status = 1;
+  bool created = 2;
+}

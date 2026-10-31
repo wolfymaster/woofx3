@@ -403,6 +403,10 @@ Every alert snapshot carries the row's `version`, which the database increments 
 
 The full set of webhook event types is defined in `shared/clients/typescript/api/webhooks.ts`. Each one also reaches clients subscribed to the engine event stream; see [Engine callbacks](./engine-callbacks.md).
 
+## Go — User Page Subjects
+
+`SubjectUserPageFormSubmitted` (`userpage.form.submitted`) fires when a form submission from a public user page is recorded. See [User page forms](./user-page-forms.md#the-trigger).
+
 ## Go — Workflow Subjects
 
 The Go shared package defines NATS subjects for workflow-related events:

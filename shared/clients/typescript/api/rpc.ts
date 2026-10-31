@@ -74,6 +74,14 @@ export const REGISTRATION_REFUSED = "RegistrationRefused";
  */
 export const AUTHENTICATION_REFUSED = "AuthenticationRefused";
 
+/**
+ * The marker of a refused `deliverUserPageSubmission`: the delivery is
+ * malformed, so resending it cannot succeed. Any other rejection recorded
+ * nothing and may be retried. The rest of the message names the offending
+ * paths and never quotes a value.
+ */
+export const USER_PAGE_SUBMISSION_REFUSED = "UserPageSubmissionRefused";
+
 /** The message of a refused `registerClient`, for the engine to throw. */
 export function registrationRefusedMessage(reason: string): string {
   return `${REGISTRATION_REFUSED}: ${reason}`;
@@ -84,6 +92,11 @@ export function authenticationRefusedMessage(reason: string): string {
   return `${AUTHENTICATION_REFUSED}: ${reason}`;
 }
 
+/** The message of a refused `deliverUserPageSubmission`, for the engine to throw. */
+export function userPageSubmissionRefusedMessage(reason: string): string {
+  return `${USER_PAGE_SUBMISSION_REFUSED}: ${reason}`;
+}
+
 /** Whether `err` is a refused `registerClient`, as opposed to a transport or transient failure. */
 export function isRegistrationRefused(err: unknown): err is Error {
   return err instanceof Error && err.message.startsWith(`${REGISTRATION_REFUSED}: `);
@@ -92,6 +105,11 @@ export function isRegistrationRefused(err: unknown): err is Error {
 /** Whether `err` is a refused `authenticate`, as opposed to a transport or transient failure. */
 export function isAuthenticationRefused(err: unknown): err is Error {
   return err instanceof Error && err.message.startsWith(`${AUTHENTICATION_REFUSED}: `);
+}
+
+/** Whether `err` is a refused `deliverUserPageSubmission`, as opposed to a transport or transient failure. */
+export function isUserPageSubmissionRefused(err: unknown): err is Error {
+  return err instanceof Error && err.message.startsWith(`${USER_PAGE_SUBMISSION_REFUSED}: `);
 }
 
 /**

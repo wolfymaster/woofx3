@@ -977,6 +977,34 @@ export interface SceneEditorSession {
  * value for yet reads as null, as does `name` when neither the event nor the
  * db knows it.
  */
+/** One form answer in a `UserPageSubmissionDelivery`. A checkbox's value is a boolean, any other type's a string. */
+export interface UserPageSubmissionField {
+  id: string;
+  label: string;
+  type: "text" | "textarea" | "select" | "checkbox";
+  value: string | boolean;
+}
+
+/** One form submission from a public user page. Answers and viewer are viewer-supplied and untrusted. */
+export interface UserPageSubmissionDelivery {
+  /** Minted by the sender and the idempotency key: resending it records nothing new. */
+  submissionId: string;
+  pageId: string;
+  /** The form widget's id. */
+  formId: string;
+  formTitle?: string;
+  /** ISO 8601. */
+  submittedAt: string;
+  /** Null for an anonymous viewer. */
+  viewer: { platform: string; platformUserId: string; displayName: string; roles: string[] } | null;
+  /** At most 20, ids unique, each value at most 5000 characters. */
+  fields: UserPageSubmissionField[];
+}
+
+export interface UserPageSubmissionReceipt {
+  status: "recorded" | "duplicate";
+}
+
 export interface ViewerFact {
   /** The path after `viewer.`, e.g. `"id"` or `"user.apple_mentions"`. */
   path: string;
@@ -2164,6 +2192,18 @@ export interface Woofx3EngineApi {
    * Requires the `workflow.viewerFacts` capability.
    */
   listViewerFacts(): Promise<ViewerFact[]>;
+
+  /**
+   * Hands the engine one form submission from a public user page. The answer
+   * means the submission and the event that queues its workflows are committed
+   * together; a repeat of `submissionId` answers `duplicate` and queues nothing.
+   *
+   * Rejects with an error `isUserPageSubmissionRefused` (`./rpc`) recognises
+   * when the delivery is malformed, which a resend cannot fix. Any other
+   * rejection recorded nothing, so the caller resends. Requires the
+   * `userPages.formSubmissions` capability.
+   */
+  deliverUserPageSubmission(delivery: UserPageSubmissionDelivery): Promise<UserPageSubmissionReceipt>;
 
   // Local UI settings. Each write emits a `ui.setting.changed` webhook.
   // Requires the `ui.settings` capability.
