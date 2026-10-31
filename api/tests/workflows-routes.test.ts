@@ -67,7 +67,12 @@ describe("updateWorkflow from an older copy", () => {
     stepsJson: JSON.stringify([{ id: "a" }, { id: "b" }]),
     triggerJson: JSON.stringify({ type: "event", event: "cheer" }),
   };
-  const sent = { id: "wf-cheer", name: "Cheer", trigger: { type: "event", event: "cheer" }, tasks: [{ id: "a", type: "action", action: "print" }] };
+  const sent = {
+    id: "wf-cheer",
+    name: "Cheer",
+    trigger: { type: "event", event: "cheer" },
+    tasks: [{ id: "a", type: "action", action: "print" }],
+  };
 
   function refusing(update: () => Promise<unknown>) {
     const db = {
