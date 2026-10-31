@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.53.0](https://github.com/wolfymaster/woofx3/compare/v0.52.0...v0.53.0) (2026-10-31)
+
+### Features
+
+* **api:** take user page form submissions ([59647ee](https://github.com/wolfymaster/woofx3/commit/59647ee2f3b3ef7fb4efcea9fc4ed89b07f3dff9))
+* **contracts:** reserve the userpage. subject namespace ([58a827f](https://github.com/wolfymaster/woofx3/commit/58a827f1a20dd87895b994d3202a8e8d0a2afc3d))
+* **db:** declare UserPageSubmissionService ([d6e5733](https://github.com/wolfymaster/woofx3/commit/d6e57333575f4a2da6a66c8c7cc43207514acab3))
+* **db:** record user page submissions with their trigger event ([5de96ec](https://github.com/wolfymaster/woofx3/commit/5de96ec59d5eebeeceb376a39ec986b1fc61384f))
+* **woofx3:** declare userpage.form.submitted, manifest 0.41.0 ([5d04e98](https://github.com/wolfymaster/woofx3/commit/5d04e98610a308bee41334242ed20158af5f6714))
+
 ## [0.52.0](https://github.com/wolfymaster/woofx3/compare/v0.51.2...v0.52.0) (2026-10-31)
 
 ### Features
