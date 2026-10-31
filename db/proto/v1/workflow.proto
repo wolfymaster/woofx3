@@ -89,6 +89,9 @@ message Workflow {
     // (e.g. "platform.twitch.chat"). See module.Trigger.taxonomy. Set at
     // creation time only; not currently updatable via UpdateWorkflowRequest.
     repeated string taxonomy = 20;
+    // Counts changes to the steps and trigger. A caller saving an edit sends
+    // the revision it read as `UpdateWorkflowRequest.expected_revision`.
+    int32 revision = 21;
 }
 
 // Workflow execution
@@ -214,6 +217,9 @@ message UpdateWorkflowRequest {
     int32 timeout_seconds = 10;
     string steps_json = 11;
     string trigger_json = 12;
+    // Refuses the update with `aborted` unless the workflow is still at this
+    // revision, so an edit of an older copy can't overwrite newer steps.
+    optional int32 expected_revision = 13;
 }
 
 // Request to delete a workflow

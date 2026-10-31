@@ -217,6 +217,7 @@ func (s *commandService) setCommandSteps(tx *gorm.DB, cmd *models.Command, steps
 		existing.Steps = stepsJSON
 		existing.Trigger = trigger
 		existing.Enabled = true
+		existing.Revision++
 		if err := tx.Save(existing).Error; err != nil {
 			return nil, fmt.Errorf("update the workflow of command %q: %w", cmd.Command, err)
 		}

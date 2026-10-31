@@ -377,7 +377,9 @@ func (s *workflowService) mergeSameTrigger(survivorID uuid.UUID) (*mergedAway, e
 		}
 		survivor.Steps = string(written)
 		survivor.Trigger = trigger
-		if err := tx.Save(survivor).Error; err != nil {
+		baseRevision := survivor.Revision
+		survivor.Revision = baseRevision + 1
+		if err := survivor.UpdateAtRevision(tx, baseRevision); err != nil {
 			return fmt.Errorf("save merged workflow: %w", err)
 		}
 

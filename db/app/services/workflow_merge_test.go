@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
@@ -324,4 +325,61 @@ func TestMergeOwnWorkflows_ConvertsExistingAndIsRepeatable(t *testing.T) {
 	if merged, failed := MergeOwnWorkflows(workflows, db, nil, nil); merged != 0 || failed != 0 {
 		t.Fatalf("second run merged = %d, failed = %d", merged, failed)
 	}
+}
+
+func TestUpdateWorkflow_ExpectedRevision(t *testing.T) {
+	svc, _ := newWorkflowTestService(t)
+	ctx := context.Background()
+	wf := ownWorkflow(t, svc, "first", cheerTrigger(`,"order":0`), `[`+reply+`]`, false)
+	updateSteps := func(expected *int32) (*client.WorkflowResponse, error) {
+		return svc.UpdateWorkflow(ctx, &client.UpdateWorkflowRequest{
+			Id:               wf.Id,
+			StepsJson:        `[` + strings.Replace(reply, `"step_1"`, `"step_2"`, 1) + `]`,
+			ExpectedRevision: expected,
+		})
+	}
+
+	stale := wf.Revision - 1
+	if _, err := updateSteps(&stale); err == nil {
+		t.Fatal("a save from an older revision must be refused")
+	} else {
+		wantTwirpCode(t, err, twirp.Aborted)
+	}
+	stored, err := svc.GetWorkflow(ctx, &client.GetWorkflowRequest{Id: wf.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Workflow.StepsJson != wf.StepsJson || stored.Workflow.Revision != wf.Revision {
+		t.Fatal("a refused save must change nothing")
+	}
+
+	saved, err := updateSteps(&wf.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Workflow.Revision != wf.Revision+1 {
+		t.Fatalf("revision = %d, want %d", saved.Workflow.Revision, wf.Revision+1)
+	}
+	on := setEnabled(t, svc, wf.Id)
+	if on.Revision != saved.Workflow.Revision {
+		t.Fatalf("switching on moved the revision to %d, want %d", on.Revision, saved.Workflow.Revision)
+	}
+}
+
+func TestUpdateWorkflow_MergeRefusesASaveFromBeforeIt(t *testing.T) {
+	svc, _ := newWorkflowTestService(t)
+	ownWorkflow(t, svc, "first", cheerTrigger(`,"order":0`), `[`+reply+`]`, true)
+	beforeMerge := ownWorkflow(t, svc, "second", cheerTrigger(`,"order":1`), `[`+reply+`]`, false)
+
+	merged := setEnabled(t, svc, beforeMerge.Id)
+	if merged.Revision == beforeMerge.Revision {
+		t.Fatal("a merge must move the revision")
+	}
+
+	_, err := svc.UpdateWorkflow(context.Background(), &client.UpdateWorkflowRequest{
+		Id:               merged.Id,
+		StepsJson:        `[` + reply + `]`,
+		ExpectedRevision: &beforeMerge.Revision,
+	})
+	wantTwirpCode(t, err, twirp.Aborted)
 }
