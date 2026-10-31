@@ -809,6 +809,12 @@ export interface WorkflowDeletedEvent {
    * projection row. Empty / undefined for USER-authored workflows.
    */
   projectionKey?: string;
+  /**
+   * Set when the workflow's steps moved into another workflow with the same
+   * trigger, rather than being removed. Anything holding this id should follow
+   * it to this one.
+   */
+  mergedInto?: string;
 }
 
 // ---------------------------------------------------------------------------

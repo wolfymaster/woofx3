@@ -36,6 +36,7 @@ interface RawWorkflowRow {
   enabled?: unknown;
   projection_key?: unknown;
   projectionKey?: unknown;
+  merged_into?: unknown;
   Taxonomy?: unknown;
   taxonomy?: unknown;
   CreatedAt?: unknown;
@@ -168,6 +169,10 @@ export function parseWorkflowDeleted(ce: Record<string, unknown>): ParsedWorkflo
   };
   if (projectionKey !== "") {
     event.projectionKey = projectionKey;
+  }
+  const mergedInto = pickFirst(row.merged_into);
+  if (mergedInto !== "") {
+    event.mergedInto = mergedInto;
   }
   return { clientId, event };
 }
