@@ -917,6 +917,73 @@ pub async fn delete_commands_by_module(db_proxy_url: &str, module_name: &str) ->
 }
 
 /// Twirp JSON for finding workflows by module and deleting them.
+/// Deletes the module's workflow with this manifest-local id. A workflow already
+/// gone is success, so an upgrade run twice converges.
+pub async fn delete_module_workflow(
+    db_proxy_url: &str,
+    module_name: &str,
+    manifest_id: &str,
+) -> Result<()> {
+    let client = http_client()?;
+    let list_url = format!(
+        "{}/twirp/workflow.WorkflowService/ListWorkflows",
+        db_proxy_url
+    );
+    let response = client
+        .post(&list_url)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .map_err(|e| anyhow!("ListWorkflows request failed: {}", e))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(anyhow!("ListWorkflows failed: {}", status));
+    }
+    let listed: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| anyhow!("ListWorkflows returned unreadable JSON: {}", e))?;
+
+    let text_of = |wf: &serde_json::Value, key: &str| {
+        wf.get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_string()
+    };
+    let found = listed
+        .get("workflows")
+        .and_then(|w| w.as_array())
+        .into_iter()
+        .flatten()
+        .find(|wf| {
+            text_of(wf, "created_by_type") == "MODULE"
+                && text_of(wf, "created_by_ref") == module_name
+                && text_of(wf, "manifest_id") == manifest_id
+        });
+    let Some(workflow) = found else {
+        return Ok(());
+    };
+
+    let id = text_of(workflow, "id");
+    let delete_url = format!(
+        "{}/twirp/workflow.WorkflowService/DeleteWorkflow",
+        db_proxy_url
+    );
+    let response = client
+        .post(&delete_url)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({ "id": id }))
+        .send()
+        .await
+        .map_err(|e| anyhow!("DeleteWorkflow request failed for {}: {}", id, e))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(anyhow!("DeleteWorkflow failed for {}: {}", id, status));
+    }
+    Ok(())
+}
+
 pub async fn delete_workflows_by_module(db_proxy_url: &str, module_name: &str) -> Result<()> {
     let list_url = format!(
         "{}/twirp/workflow.WorkflowService/ListWorkflows",

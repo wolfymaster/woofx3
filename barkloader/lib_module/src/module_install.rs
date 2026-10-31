@@ -460,6 +460,34 @@ async fn prune_removed_resources(
     };
     let removed = removed_manifest_ids(&prev_manifest, new_manifest);
     remove_resources(db_proxy, module_key, removed, "dropped from manifest").await;
+
+    // Unlike the kinds above, nothing references a workflow by canonical id at
+    // run time and an archived one would keep running on its event, so it is
+    // deleted.
+    let declared: std::collections::HashSet<&str> = new_manifest
+        .workflows
+        .iter()
+        .map(|w| w.id.as_str())
+        .collect();
+    for dropped in prev_manifest
+        .workflows
+        .iter()
+        .filter(|w| !declared.contains(w.id.as_str()))
+    {
+        match db_proxy
+            .delete_module_workflow(module_key, &dropped.id)
+            .await
+        {
+            Ok(()) => info!(
+                "Removed workflow '{}' from module {} (dropped from manifest)",
+                dropped.id, module_key
+            ),
+            Err(e) => warn!(
+                "failed to delete workflow {} for {} (dropped from manifest): {}",
+                dropped.id, module_key, e
+            ),
+        }
+    }
 }
 
 /// The host and port settings of `new`'s `local[]` endpoints that `previous`
@@ -2842,6 +2870,32 @@ mod tests {
         let removed = removed_manifest_ids(&old, &new);
 
         assert_eq!(removed, vec![("trigger", "A".to_string())]);
+    }
+
+    #[tokio::test]
+    async fn test_prune_removed_resources_deletes_a_dropped_workflow() {
+        let (old, old_json) = fault_test_manifest_with_workflow("wf-prune");
+        let mut new = old.clone();
+        new.workflows.clear();
+        let previous = PreviousInstall {
+            manifest: String::from_utf8(old_json).expect("manifest is utf-8"),
+            ..serde_json::from_value(serde_json::json!({
+                "name": "wf-prune",
+                "module_key": "wf-prune",
+                "version": "1.0.0",
+                "created_by_type": "SYSTEM"
+            }))
+            .expect("previous install")
+        };
+        let db_proxy = FakeDbProxyClient::new();
+
+        prune_removed_resources(&db_proxy, "wf-prune", &previous, &new).await;
+
+        assert!(
+            db_proxy
+                .calls()
+                .contains(&"delete_module_workflow".to_string())
+        );
     }
 
     #[test]
