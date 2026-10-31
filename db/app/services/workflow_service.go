@@ -274,6 +274,15 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 		})
 	}
 
+	// The save has already succeeded, so a merge that can't happen leaves the
+	// workflows apart and is tried again at the next save or start.
+	merged, err := s.mergeSameTrigger(wf.ID)
+	if err != nil {
+		log.Printf("workflow_service: leaving workflows sharing the trigger of %s unmerged: %v", wf.ID, err)
+	} else if merged != nil {
+		wf = merged.survivor
+	}
+
 	return &client.WorkflowResponse{
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,

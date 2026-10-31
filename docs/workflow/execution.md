@@ -525,6 +525,8 @@ A workflow whose trigger sets `order` (see [TriggerConfig](./schema.md#triggerco
 
 For workflows without waits this is the order a single workflow holding them as consecutive steps would run in, and it is what keeps an event's alert triggers raising their alerts in the order the streamer arranged them: the UI stores each trigger as a workflow of its own, ordered by its place in the list.
 
+The streamer's own switched-on workflows with the same event and conditions are merged into one workflow by db-proxy, when one is saved or switched on and at every start, so their steps form one list that runs strictly in order. The one being saved keeps its id; the rest are deleted with `merged_into` on their `db.workflow.deleted` event, and their runs and alerts move across. A workflow stays apart while it has a run in flight, while another workflow's steps or a command's actions name it, or when its steps or exports can't be combined with the others. Paused and module workflows are never merged.
+
 Installing a module gives each of its workflows on an event the next `order` after the ones already there, and an upgrade keeps the order it has, so a module's workflows queue like the streamer's own triggers. A failure in one leaves the next to run, which is why modules sharing an event stay separate workflows rather than steps of one.
 
 Every ordered run is begun when the event matches, so each is in the run history, recorded and announced as running, while it waits its turn; only executing its steps is sequential. As a result:
