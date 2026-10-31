@@ -51,6 +51,10 @@ pub struct Workflow {
     /// creation time only; not currently updatable via UpdateWorkflowRequest.
     #[prost(string, repeated, tag="20")]
     pub taxonomy: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Counts changes to the steps and trigger. A caller saving an edit sends
+    /// the revision it read as `UpdateWorkflowRequest.expected_revision`.
+    #[prost(int32, tag="21")]
+    pub revision: i32,
 }
 /// Workflow execution
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -235,6 +239,10 @@ pub struct UpdateWorkflowRequest {
     pub steps_json: ::prost::alloc::string::String,
     #[prost(string, tag="12")]
     pub trigger_json: ::prost::alloc::string::String,
+    /// Refuses the update with `aborted` unless the workflow is still at this
+    /// revision, so an edit of an older copy can't overwrite newer steps.
+    #[prost(int32, optional, tag="13")]
+    pub expected_revision: ::core::option::Option<i32>,
 }
 /// Request to delete a workflow
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]

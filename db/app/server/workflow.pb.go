@@ -54,7 +54,10 @@ type Workflow struct {
 	// Open, multi-valued UI classification — dotted hierarchical strings
 	// (e.g. "platform.twitch.chat"). See module.Trigger.taxonomy. Set at
 	// creation time only; not currently updatable via UpdateWorkflowRequest.
-	Taxonomy      []string `protobuf:"bytes,20,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	Taxonomy []string `protobuf:"bytes,20,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
+	// Counts changes to the steps and trigger. A caller saving an edit sends
+	// the revision it read as `UpdateWorkflowRequest.expected_revision`.
+	Revision      int32 `protobuf:"varint,21,opt,name=revision,proto3" json:"revision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -206,6 +209,13 @@ func (x *Workflow) GetTaxonomy() []string {
 		return x.Taxonomy
 	}
 	return nil
+}
+
+func (x *Workflow) GetRevision() int32 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
 }
 
 // Workflow execution
@@ -807,8 +817,11 @@ type UpdateWorkflowRequest struct {
 	TimeoutSeconds int32                  `protobuf:"varint,10,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
 	StepsJson      string                 `protobuf:"bytes,11,opt,name=steps_json,json=stepsJson,proto3" json:"steps_json,omitempty"`
 	TriggerJson    string                 `protobuf:"bytes,12,opt,name=trigger_json,json=triggerJson,proto3" json:"trigger_json,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Refuses the update with `aborted` unless the workflow is still at this
+	// revision, so an edit of an older copy can't overwrite newer steps.
+	ExpectedRevision *int32 `protobuf:"varint,13,opt,name=expected_revision,json=expectedRevision,proto3,oneof" json:"expected_revision,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *UpdateWorkflowRequest) Reset() {
@@ -916,6 +929,13 @@ func (x *UpdateWorkflowRequest) GetTriggerJson() string {
 		return x.TriggerJson
 	}
 	return ""
+}
+
+func (x *UpdateWorkflowRequest) GetExpectedRevision() int32 {
+	if x != nil && x.ExpectedRevision != nil {
+		return *x.ExpectedRevision
+	}
+	return 0
 }
 
 // Request to delete a workflow
@@ -1910,7 +1930,7 @@ var File_workflow_proto protoreflect.FileDescriptor
 
 const file_workflow_proto_rawDesc = "" +
 	"\n" +
-	"\x0eworkflow.proto\x12\bworkflow\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe9\x05\n" +
+	"\x0eworkflow.proto\x12\bworkflow\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x85\x06\n" +
 	"\bWorkflow\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -1936,7 +1956,8 @@ const file_workflow_proto_rawDesc = "" +
 	"\ftrigger_json\x18\x12 \x01(\tR\vtriggerJson\x12\x1f\n" +
 	"\vmanifest_id\x18\x13 \x01(\tR\n" +
 	"manifestId\x12\x1a\n" +
-	"\btaxonomy\x18\x14 \x03(\tR\btaxonomy\x1a<\n" +
+	"\btaxonomy\x18\x14 \x03(\tR\btaxonomy\x12\x1a\n" +
+	"\brevision\x18\x15 \x01(\x05R\brevision\x1a<\n" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\a\x10\bR\x0eapplication_idR\n" +
@@ -2020,7 +2041,7 @@ const file_workflow_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"r\n" +
 	"\x10WorkflowResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12.\n" +
-	"\bworkflow\x18\x02 \x01(\v2\x12.workflow.WorkflowR\bworkflow\"\xeb\x03\n" +
+	"\bworkflow\x18\x02 \x01(\v2\x12.workflow.WorkflowR\bworkflow\"\xb3\x04\n" +
 	"\x15UpdateWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -2037,12 +2058,14 @@ const file_workflow_proto_rawDesc = "" +
 	" \x01(\x05R\x0etimeoutSeconds\x12\x1d\n" +
 	"\n" +
 	"steps_json\x18\v \x01(\tR\tstepsJson\x12!\n" +
-	"\ftrigger_json\x18\f \x01(\tR\vtriggerJson\x1a<\n" +
+	"\ftrigger_json\x18\f \x01(\tR\vtriggerJson\x120\n" +
+	"\x11expected_revision\x18\r \x01(\x05H\x01R\x10expectedRevision\x88\x01\x01\x1a<\n" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\n" +
 	"\n" +
-	"\b_enabledJ\x04\b\x05\x10\x06R\x05steps\"'\n" +
+	"\b_enabledB\x14\n" +
+	"\x12_expected_revisionJ\x04\b\x05\x10\x06R\x05steps\"'\n" +
 	"\x15DeleteWorkflowRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"\xbe\x01\n" +
 	"\x14ListWorkflowsRequest\x12)\n" +
