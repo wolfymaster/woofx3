@@ -37,6 +37,7 @@ interface RawWorkflowRow {
   projection_key?: unknown;
   projectionKey?: unknown;
   merged_into?: unknown;
+  revision?: unknown;
   Taxonomy?: unknown;
   taxonomy?: unknown;
   CreatedAt?: unknown;
@@ -114,6 +115,9 @@ function buildSnapshot(ce: Record<string, unknown>): WorkflowSnapshot | null {
   const projectionKey = pickFirst(row.projection_key, row.projectionKey);
   if (projectionKey !== "") {
     snapshot.projectionKey = projectionKey;
+  }
+  if (typeof row.revision === "number") {
+    snapshot.revision = row.revision;
   }
   return snapshot;
 }

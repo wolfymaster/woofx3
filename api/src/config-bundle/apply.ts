@@ -13,6 +13,7 @@ import type {
   UpdateWorkflowInput,
   WorkflowDefinition,
   WorkflowMutationResult,
+  WorkflowUpdateConflict,
 } from "@woofx3/api";
 import type { ResourceInstanceDefinition } from "@woofx3/api/webhooks";
 import { keepsExisting, type PlannedStep } from "./plan";
@@ -26,7 +27,10 @@ import type { EngineConfigState } from "./state";
  */
 export interface ConfigWriter {
   createWorkflow(data: CreateWorkflowInput): Promise<WorkflowMutationResult>;
-  updateWorkflow(id: string, data: UpdateWorkflowInput): Promise<WorkflowMutationResult | null>;
+  updateWorkflow(
+    id: string,
+    data: UpdateWorkflowInput
+  ): Promise<WorkflowMutationResult | WorkflowUpdateConflict | null>;
   setWorkflowEnabled(id: string, isEnabled: boolean): Promise<{ id: string; isEnabled: boolean }>;
   createCommand(input: CreateCommandInput): Promise<CommandSnapshot>;
   updateCommand(id: string, input: UpdateCommandInput): Promise<CommandSnapshot>;
@@ -185,6 +189,9 @@ async function applyWorkflow(
     const updated = await writer.updateWorkflow(id, { definition: { ...definition, id } });
     if (!updated) {
       throw new Error(`Workflow "${targetName}" disappeared before it could be updated.`);
+    }
+    if ("conflict" in updated) {
+      throw new Error(`Workflow "${targetName}" changed while it was being updated.`);
     }
     enabled = updated.isEnabled;
   } else {

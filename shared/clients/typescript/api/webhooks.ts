@@ -774,6 +774,12 @@ export interface WorkflowSnapshot {
   id: string;
   definition: WorkflowDefinition;
   isEnabled: boolean;
+  /**
+   * Counts changes to the steps and trigger. Callbacks can arrive out of order,
+   * so a mirror keeps the highest it has seen. Absent from an engine that
+   * doesn't count them.
+   */
+  revision?: number;
   createdAt: string;
   updatedAt: string;
   /**
