@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.55.0](https://github.com/wolfymaster/woofx3/compare/v0.54.0...v0.55.0) (2026-10-31)
+
+### Features
+
+* **db:** line up module workflows on their event ([d4c8865](https://github.com/wolfymaster/woofx3/commit/d4c8865fcd2e7b4d20121a3d8563ed161a7e6f8e))
+
+### Bug Fixes
+
+* **barkloader:** delete a workflow dropped from a module's manifest ([735d26a](https://github.com/wolfymaster/woofx3/commit/735d26a53c6887c02a27f3d262dac39fb09936e8))
+
 ## [0.54.0](https://github.com/wolfymaster/woofx3/compare/v0.53.0...v0.54.0) (2026-10-31)
 
 ### Features
