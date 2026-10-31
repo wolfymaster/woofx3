@@ -2,7 +2,7 @@
  * The Twitch scopes an engine asks for when it links Twitch itself (a device
  * login). They are the scopes a dashboard asks for, so an engine linked
  * either way can do the same things: must match `TWITCH_INTEGRATION_SCOPES`
- * in woofx3-ui's `convex/lib/twitchIntegrationScopes.ts`.
+ * in woofx3-ui's `shared/twitch-integration-scopes.ts`.
  *
  * This file imports nothing so the api service can use it without pulling in
  * the Twitch client's dependencies.
