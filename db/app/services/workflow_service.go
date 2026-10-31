@@ -140,6 +140,16 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 	// upsert never touches `enabled` on conflict, so an upgrade keeps
 	// whatever the streamer has since switched it to.
 	moduleOwned := createdByType == "MODULE" && req.ManifestId != ""
+	if moduleOwned {
+		stored, err := s.workflowRepo.GetAll()
+		if err != nil {
+			return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list workflows: %w", err))
+		}
+		triggerJSON, err = withModuleWorkflowOrder(triggerJSON, req.CreatedByRef, req.ManifestId, stored)
+		if err != nil {
+			return nil, twirp.InvalidArgumentError("trigger_json", err.Error())
+		}
+	}
 	wf := &models.WorkflowDefinition{
 		Name:          req.Name,
 		Steps:         stepsJSON,

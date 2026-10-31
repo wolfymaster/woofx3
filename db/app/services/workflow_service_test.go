@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -194,5 +195,86 @@ func TestBuildWorkflowChangeData_CarriesTheWorkflowsTimes(t *testing.T) {
 	data := buildWorkflowChangeData(&models.WorkflowDefinition{ID: uuid.New(), CreatedAt: created, UpdatedAt: updated})
 	if data["created_at"] != "2026-01-02T03:04:05.0000006Z" || data["updated_at"] != "2026-01-02T04:04:05.0000006Z" {
 		t.Fatalf("times not carried: %v, %v", data["created_at"], data["updated_at"])
+	}
+}
+
+func moduleWorkflowRequest(moduleID, manifestID, event string) *client.CreateWorkflowRequest {
+	return &client.CreateWorkflowRequest{
+		Name:          moduleID + "/" + manifestID,
+		Enabled:       true,
+		CreatedByType: "MODULE",
+		CreatedByRef:  moduleID,
+		ManifestId:    manifestID,
+		TriggerJson:   `{"$ref":"","type":"event","event":"` + event + `"}`,
+	}
+}
+
+func triggerOrder(t *testing.T, wf *client.Workflow) *int {
+	t.Helper()
+	var trigger storedTrigger
+	if err := json.Unmarshal([]byte(wf.GetTriggerJson()), &trigger); err != nil {
+		t.Fatalf("read trigger: %v", err)
+	}
+	return trigger.Order
+}
+
+func TestCreateWorkflow_ModuleWorkflowsLineUpPerEvent(t *testing.T) {
+	svc, _ := newWorkflowTestService(t)
+	tests := []struct {
+		moduleID, manifestID, event string
+		want                        int
+	}{
+		{"credits", "cheers", "channel.cheer", 0},
+		{"board", "cheers", "channel.cheer", 1},
+		{"credits", "chatters", "user.message", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.moduleID+"/"+tt.manifestID, func(t *testing.T) {
+			wf := createWorkflow(t, svc, moduleWorkflowRequest(tt.moduleID, tt.manifestID, tt.event))
+			order := triggerOrder(t, wf)
+			if order == nil || *order != tt.want {
+				t.Fatalf("order = %v, want %d", order, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateWorkflow_ModuleWorkflowFollowsTheStreamersOrderedTriggers(t *testing.T) {
+	svc, _ := newWorkflowTestService(t)
+	createWorkflow(t, svc, &client.CreateWorkflowRequest{
+		Name:        "mine",
+		TriggerJson: `{"type":"event","event":"channel.cheer","order":4}`,
+	})
+	wf := createWorkflow(t, svc, moduleWorkflowRequest("credits", "cheers", "channel.cheer"))
+	if order := triggerOrder(t, wf); order == nil || *order != 5 {
+		t.Fatalf("order = %v, want 5", order)
+	}
+}
+
+func TestCreateWorkflow_ModuleUpgradeKeepsTheOrder(t *testing.T) {
+	svc, _ := newWorkflowTestService(t)
+	createWorkflow(t, svc, moduleWorkflowRequest("credits", "cheers", "channel.cheer"))
+	createWorkflow(t, svc, moduleWorkflowRequest("board", "cheers", "channel.cheer"))
+
+	upgraded := createWorkflow(t, svc, moduleWorkflowRequest("credits", "cheers", "channel.cheer"))
+	if order := triggerOrder(t, upgraded); order == nil || *order != 0 {
+		t.Fatalf("order after upgrade = %v, want 0", order)
+	}
+}
+
+func TestCreateWorkflow_UserWorkflowGetsNoOrderOfItsOwn(t *testing.T) {
+	svc, _ := newWorkflowTestService(t)
+	wf := createWorkflow(t, svc, &client.CreateWorkflowRequest{Name: "mine"})
+	if order := triggerOrder(t, wf); order != nil {
+		t.Fatalf("order = %d, want none", *order)
+	}
+}
+
+func TestCreateWorkflow_ModuleWorkflowWithUnreadableTriggerIsRefused(t *testing.T) {
+	svc, _ := newWorkflowTestService(t)
+	req := moduleWorkflowRequest("credits", "cheers", "channel.cheer")
+	req.TriggerJson = "{"
+	if _, err := svc.CreateWorkflow(context.Background(), req); err == nil {
+		t.Fatal("expected the unreadable trigger to be refused")
 	}
 }
