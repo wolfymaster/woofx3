@@ -11,6 +11,7 @@
     ".": "./index.ts",
     "./capabilities": "./capabilities.ts",
     "./engine-events": "./engine-events.ts",
+    "./expression": "./expression.ts",
     "./overlay-events": "./overlay-events.ts",
     "./pairing": "./pairing.ts",
     "./platform-gateway": "./platform-gateway.ts",
