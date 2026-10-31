@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.51.2](https://github.com/wolfymaster/woofx3/compare/v0.51.1...v0.51.2) (2026-10-31)
+
+### Bug Fixes
+
+* **scene:** edit a scene saved without a canvas size on the default canvas ([e6955c5](https://github.com/wolfymaster/woofx3/commit/e6955c5634300d112c48d8fc32d852b205eeb82c))
+
 ## [0.51.1](https://github.com/wolfymaster/woofx3/compare/v0.51.0...v0.51.1) (2026-10-30)
 
 ### Bug Fixes
