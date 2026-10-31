@@ -203,6 +203,14 @@ const (
 	SubjectViewerSegmentEntered Subject = "viewer.segment.entered"
 	SubjectViewerSegmentLeft    Subject = "viewer.segment.left"
 
+	// A viewer sent a form on the streamer's public user page, published by the
+	// db proxy inside the transaction that recorded the submission. As with the
+	// segment events, the NATS subject equals the CloudEvent type.
+	// Data: { submissionId, pageId, formId, formTitle, submittedAt, viewer,
+	//         fields: [{ id, label, type, value }], answers: { <fieldId>: value } }
+	// where viewer is null for an anonymous viewer.
+	SubjectUserPageFormSubmitted Subject = "userpage.form.submitted"
+
 	// System events
 	SubjectHeartbeat      Subject = "HEARTBEAT"
 	SubjectMessageBusInit Subject = "MESSAGEBUS_INIT"
