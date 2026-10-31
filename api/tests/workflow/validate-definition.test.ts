@@ -234,6 +234,28 @@ describe("schedule triggers", () => {
       tasks: [{ id: "t1", type: "action" as const, action: "print", parameters }],
     });
 
+    test("refuses a function call that could only fail, with its path", () => {
+      const r = validateWorkflowDefinition(
+        withParameters({ request: ["plain", { text: "Hi ${shout(trigger.data.name)}" }] })
+      );
+      expect(r).toEqual({
+        ok: false,
+        errors: [
+          {
+            path: "tasks[0].parameters.request[1].text",
+            message: '${shout(trigger.data.name)}: unknown function "shout"',
+          },
+        ],
+      });
+    });
+
+    test("accepts function calls the engine can run", () => {
+      const r = validateWorkflowDefinition(
+        withParameters({ text: "Rolled ${random(1, 6)}: ${round(trigger.data.x, 2)}" })
+      );
+      expect(r.ok).toBe(true);
+    });
+
     test("refuses ${env.*} in a nested step parameter, with its path", () => {
       const r = validateWorkflowDefinition(
         withParameters({ request: { headers: ["plain", { auth: "Bearer ${env.TWITCH_TOKEN}" }] } })

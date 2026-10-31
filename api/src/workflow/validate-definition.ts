@@ -1,6 +1,7 @@
 import type { ConditionConfig, ConditionOperator, TaskDefinition, WorkflowDefinition } from "@woofx3/api";
-// The module itself rather than the package index: the index also loads the
-// RPC client and its dependencies, which a value import would pull in.
+// The modules themselves rather than the package index: the index also loads
+// the RPC client and its dependencies, which a value import would pull in.
+import { functionCallProblem } from "@woofx3/api/expression";
 import {
   TRIGGER_TYPE_COMMAND,
   WAIT_DELAY_MAX_MS,
@@ -207,6 +208,34 @@ function findEnvReference(value: unknown, path: string): string | null {
   return null;
 }
 
+// Returns the first bad function call in the definition, which the engine also
+// refuses (refuseInvalidFunctionCalls in env_refusal.go), in the same walk order.
+function findFunctionCallProblem(value: unknown, path: string): ValidationError | null {
+  if (typeof value === "string") {
+    const message = functionCallProblem(value);
+    return message === null ? null : { path, message };
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      const found = findFunctionCallProblem(value[i], `${path}[${i}]`);
+      if (found !== null) {
+        return found;
+      }
+    }
+    return null;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    for (const key of Object.keys(record).sort()) {
+      const found = findFunctionCallProblem(record[key], path === "" ? key : `${path}.${key}`);
+      if (found !== null) {
+        return found;
+      }
+    }
+  }
+  return null;
+}
+
 export interface ValidationOptions {
   /**
    * Accept a trigger of type "command". Only the command path sets it: such a
@@ -322,6 +351,11 @@ export function validateWorkflowDefinition(input: unknown, options: ValidationOp
   const envPath = findEnvReference(input, "");
   if (envPath !== null) {
     errors.push({ path: envPath, message: ENV_REFERENCE_MESSAGE });
+  }
+
+  const functionCallError = findFunctionCallProblem(input, "");
+  if (functionCallError !== null) {
+    errors.push(functionCallError);
   }
 
   if (errors.length > 0) {

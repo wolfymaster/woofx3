@@ -274,12 +274,16 @@ func (e *Engine[TServices]) RegisterValidatedAction(name string, action tasks.Ac
 // missing step, or a cycle would otherwise register fine and fail every run.
 //
 // A `${env.*}` reference anywhere in the definition is refused: workflows
-// never read the engine's environment.
+// never read the engine's environment, and so is a function call that could
+// only fail.
 func (e *Engine[TServices]) validateDefinition(def *types.WorkflowDefinition) error {
 	if _, err := NewDependencyGraph(def.Tasks); err != nil {
 		return err
 	}
 	if err := refuseEnvReferences(def); err != nil {
+		return err
+	}
+	if err := refuseInvalidFunctionCalls(def); err != nil {
 		return err
 	}
 	for i := range def.Tasks {

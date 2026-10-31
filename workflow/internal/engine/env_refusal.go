@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/wolfymaster/woofx3/workflow/internal/expression"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
@@ -41,6 +42,54 @@ func refuseEnvReferences(def *types.WorkflowDefinition) error {
 	}
 	if path, found := findEnvReference(tree, ""); found {
 		return fmt.Errorf("%s: %w", path, ErrEnvReference)
+	}
+	return nil
+}
+
+// refuseInvalidFunctionCalls walks the definition the same way, so a call that
+// could only ever fail its step (an unknown function, the wrong number of
+// arguments, a malformed call) is refused with its path when the workflow is
+// accepted. Must match findFunctionCallProblem in
+// api/src/workflow/validate-definition.ts.
+func refuseInvalidFunctionCalls(def *types.WorkflowDefinition) error {
+	encoded, err := json.Marshal(def)
+	if err != nil {
+		return fmt.Errorf("encoding definition to check function calls: %w", err)
+	}
+	var tree any
+	if err := json.Unmarshal(encoded, &tree); err != nil {
+		return fmt.Errorf("decoding definition to check function calls: %w", err)
+	}
+	return findInvalidFunctionCall(tree, "")
+}
+
+func findInvalidFunctionCall(value any, path string) error {
+	switch v := value.(type) {
+	case string:
+		if err := expression.ValidateFunctionCalls(v); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+	case []any:
+		for i, item := range v {
+			if err := findInvalidFunctionCall(item, fmt.Sprintf("%s[%d]", path, i)); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		for _, key := range keys {
+			child := key
+			if path != "" {
+				child = path + "." + key
+			}
+			if err := findInvalidFunctionCall(v[key], child); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

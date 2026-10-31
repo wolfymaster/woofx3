@@ -24,12 +24,31 @@ func isCompound(expr string) bool {
 //	== != > >= < <=  numeric when both sides are numbers (=== and !== alias)
 //	( ... )          grouping
 //	'text' "text"    string literals; 12, 1.5 and -3 are numbers; true false null
+//	name(a, b)       a call to one of the fixed functions (functions.go)
 //
 // Anything else is a reference, resolved like a plain `${source.path}`,
 // except that a path which is not there is null, and ordering against null
-// is false. Deliberately no arithmetic and no calls: this chooses between
-// values, it does not compute them.
+// is false. Computing goes through the fixed functions only: there are no
+// arithmetic operators and no way to define a function.
 func (r *Resolver) evaluateCompound(expr string) (any, error) {
+	root, err := parseCompound(expr)
+	if err != nil {
+		return nil, err
+	}
+	return root.eval(r)
+}
+
+// parseCompound parses an expression. A failure in one that reads as a function
+// call counts as a failed call, whatever part of the grammar it tripped on.
+func parseCompound(expr string) (node, error) {
+	root, err := parseGrammar(expr)
+	if err != nil && callPattern.MatchString(expr) {
+		return nil, fmt.Errorf("%w: %w", ErrFunctionCall, err)
+	}
+	return root, err
+}
+
+func parseGrammar(expr string) (node, error) {
 	tokens, err := tokenize(expr)
 	if err != nil {
 		return nil, err
@@ -42,7 +61,7 @@ func (r *Resolver) evaluateCompound(expr string) (any, error) {
 	if !p.done() {
 		return nil, fmt.Errorf("unexpected %q in %q", p.tokens[p.pos].text, expr)
 	}
-	return root.eval(r)
+	return root, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -65,7 +84,7 @@ type token struct {
 }
 
 // Longest first, so ">=" is never read as ">" followed by "=".
-var operatorSpellings = []string{"===", "!==", "==", "!=", ">=", "<=", "&&", "||", ">", "<", "!", "?", ":", "(", ")"}
+var operatorSpellings = []string{"===", "!==", "==", "!=", ">=", "<=", "&&", "||", ">", "<", "!", "?", ":", "(", ")", ","}
 
 var operatorAliases = map[string]string{"===": "==", "!==": "!="}
 
@@ -255,6 +274,9 @@ func (p *parser) parsePrimary() (node, error) {
 		case "null":
 			return literal{value: nil}, nil
 		}
+		if _, ok := p.acceptOperator("("); ok {
+			return p.parseCall(tok.text)
+		}
 		return reference{path: tok.text}, nil
 	}
 	if tok.text == "(" {
@@ -268,6 +290,32 @@ func (p *parser) parsePrimary() (node, error) {
 		return inner, nil
 	}
 	return nil, fmt.Errorf("unexpected %q in %q", tok.text, p.expr)
+}
+
+// parseCall parses a call's arguments, the opening parenthesis already taken.
+func (p *parser) parseCall(name string) (node, error) {
+	var args []node
+	if _, ok := p.acceptOperator(")"); !ok {
+		for {
+			arg, err := p.parseTernary()
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, arg)
+			if _, ok := p.acceptOperator(","); ok {
+				continue
+			}
+			if _, ok := p.acceptOperator(")"); ok {
+				break
+			}
+			return nil, fmt.Errorf("missing ')' in call to %s in %q", name, p.expr)
+		}
+	}
+	fn, err := lookupFunction(name, len(args))
+	if err != nil {
+		return nil, err
+	}
+	return call{name: name, fn: fn, args: args}, nil
 }
 
 // ---------------------------------------------------------------------------
