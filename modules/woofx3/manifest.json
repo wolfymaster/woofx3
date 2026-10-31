@@ -1982,29 +1982,29 @@
           {
             "path": "viewer",
             "type": "object",
-            "description": "Who sent it, or null when the viewer was not signed in."
+            "description": "Who sent it. Always present: a viewer who was not signed in has a null platform and platformUserId and the name \"anonymous\"."
           },
           {
             "path": "viewer.platform",
             "type": "string",
-            "description": "The platform the viewer signed in with."
+            "description": "The platform the viewer signed in with, or null when they did not sign in."
           },
           {
             "path": "viewer.platformUserId",
             "type": "string",
-            "description": "The viewer, by platform user id.",
+            "description": "The viewer, by platform user id, or null when they did not sign in. Test this to tell anonymous submissions apart.",
             "identity": "viewer",
             "displayName": "viewer.displayName"
           },
           {
             "path": "viewer.displayName",
             "type": "string",
-            "description": "The viewer's display name."
+            "description": "The viewer's display name, or \"anonymous\" when they did not sign in. A signed-in viewer can have that name too, so it does not tell you who is anonymous."
           },
           {
             "path": "viewer.roles",
             "type": "array",
-            "description": "The viewer's roles on the channel."
+            "description": "The viewer's roles on the channel. Empty when they did not sign in."
           },
           {
             "path": "fields",
