@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.0](https://github.com/wolfymaster/woofx3/compare/v0.53.0...v0.54.0) (2026-10-31)
+
+### Features
+
+* **db:** publish anonymous form viewers with a default display name ([c917736](https://github.com/wolfymaster/woofx3/commit/c917736c6f8f53564ce4d1573ffdea1c482bf800))
+* **woofx3:** describe the anonymous viewer on userpage.form.submitted ([ed613dd](https://github.com/wolfymaster/woofx3/commit/ed613dd88d6ffd97a22505c38da969a66c66987d))
+
 ## [0.53.0](https://github.com/wolfymaster/woofx3/compare/v0.52.0...v0.53.0) (2026-10-31)
 
 ### Features
