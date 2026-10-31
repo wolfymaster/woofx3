@@ -14,6 +14,7 @@
 // because the editor names every alert area it adds.
 
 import { ALERT_SURFACE, alertWidgetName, nextAlertWidgetName } from "../model/alert-names";
+import { canvasSizeOfLayout } from "../model/canvas";
 import { assert } from "../model/composition";
 import { HOST_EFFECT_KINDS, HOST_TRANSITION_KINDS } from "../model/entity-types";
 import { evenKeys, keyBetween, stackOrder } from "../model/keys";
@@ -149,30 +150,12 @@ export function randomNodeId(taken: ReadonlySet<string>): string {
 }
 
 /**
- * The canvas size a composition's layout declares, or null when it declares
- * none that can be drawn. The registry never lets an edit leave a canvas
- * like that, but a stored document can still arrive with one.
+ * The canvas a composition is drawn on: its layout's size, with the default
+ * standing in for a dimension the layout leaves out, as the overlay renders
+ * it (`canvasSizeOfLayout`).
  */
-export function canvasSizeOf(doc: CompositionDocument): CanvasSize | null {
-  const { width, height } = doc.layout;
-  if (
-    typeof width !== "number" ||
-    typeof height !== "number" ||
-    !Number.isFinite(width) ||
-    !Number.isFinite(height) ||
-    width <= 0 ||
-    height <= 0
-  ) {
-    return null;
-  }
-  return { width, height };
-}
-
-/** The canvas size a composition's layout declares. Fails fast on a layout without one. */
-export function canvasOf(doc: CompositionDocument): CanvasSize {
-  const size = canvasSizeOf(doc);
-  assert(size !== null, "a composition's layout has a positive width and height");
-  return size;
+export function canvasSizeOf(doc: CompositionDocument): CanvasSize {
+  return canvasSizeOfLayout(doc.layout);
 }
 
 /** The key that puts a new placement on top of `doc`'s stack. */
@@ -205,7 +188,7 @@ export interface NewPlacementInput {
  * the next free alert name.
  */
 export function newPlacement({ row, catalog, doc, profile, at }: NewPlacementInput): PlacementDocument {
-  const canvas = canvasOf(doc);
+  const canvas = canvasSizeOf(doc);
   const kind = widgetKind(row.widgetId);
   const settings: Record<string, unknown> = {};
   for (const field of row.settings) {

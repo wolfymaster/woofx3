@@ -621,22 +621,24 @@ describe("canvas", () => {
     expect(editor.canvas.patch({ width: 1280 })).toEqual({ ok: false, detail: "the document is read-only" });
   });
 
-  test("a document loaded without a size refuses what needs one, without throwing, until the size is set", () => {
+  test("a document loaded without a size is fitted and edited on the default canvas, as the overlay draws it", () => {
     const doc = threeStack();
-    doc.layout = { width: 0, height: 1080 };
-    const { editor, source } = harness(doc);
-    expect(editor.getState().view.canvas).toBeNull();
-    expect(editor.gesture.begin({ kind: "move", node: "a", point: { x: 0, y: 0 } })).toBe(false);
-    expect(editor.nodes.add(CLOCK)).toEqual({ ok: false, detail: "the canvas has no size: set its width and height" });
-    expect(editor.nodes.moveCenter("a", { x: 10, y: 10 }).ok).toBe(false);
-    editor.dispatch("selection.select", { id: "a" });
-    expect(editor.dispatch("node.nudge", { dx: 1, dy: 0 }).ok).toBe(false);
-    expect(editor.dispatch("node.duplicate").ok).toBe(false);
-    expect(editor.nodes.patch("a", { name: "still editable" }).ok).toBe(true);
-    expect(editor.canvas.patch({ width: 1920 }).ok).toBe(true);
+    doc.layout = {};
+    const { editor } = harness(doc);
+    expect(editor.getState().view.canvas).toEqual({ width: 1920, height: 1080 });
+    editor.viewport.setStage({ width: 1024, height: 640 });
+    editor.dispatch("view.zoomFit");
+    expect(editor.getState().viewport.zoom).toBeCloseTo((1024 - 64) / 1920);
     expect(editor.nodes.add(CLOCK).ok).toBe(true);
+    expect(editor.nodes.moveCenter("a", { x: 10, y: 10 }).ok).toBe(true);
     expect(editor.gesture.begin({ kind: "move", node: "a", point: { x: 0, y: 0 } })).toBe(true);
-    expect(source.getDocument().layout.width).toBe(1920);
+  });
+
+  test("each missing or unusable dimension falls back on its own", () => {
+    const doc = threeStack();
+    doc.layout = { width: 1280, height: 0 };
+    const { editor } = harness(doc);
+    expect(editor.getState().view.canvas).toEqual({ width: 1280, height: 1080 });
   });
 });
 

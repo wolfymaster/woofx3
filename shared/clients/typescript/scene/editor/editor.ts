@@ -323,8 +323,6 @@ export interface CompositionEditor {
   destroy(): void;
 }
 
-const NO_CANVAS_SIZE = "the canvas has no size: set its width and height";
-
 /** How far a duplicate or paste lands from what it copies. */
 const PASTE_OFFSET = 20;
 
@@ -595,17 +593,6 @@ export function createCompositionEditor(options: CompositionEditorOptions): Comp
   }
 
   /**
-   * The canvas size, or a refusal for a document stored without one that
-   * can be drawn. Edits cannot leave a canvas like that (the registry
-   * refuses them), so this is a loaded document's problem, which the user
-   * fixes by setting the size; until then nothing that works out a position
-   * on the canvas can run.
-   */
-  function canvasOrRefusal(doc: CompositionDocument): CanvasSize | { ok: false; detail: string } {
-    return canvasSizeOf(doc) ?? { ok: false, detail: NO_CANVAS_SIZE };
-  }
-
-  /**
    * Apply one change through the source and hand the ops it made to
    * `recorded`. The registry sees the whole result first; a document it
    * refuses is never applied.
@@ -748,9 +735,6 @@ export function createCompositionEditor(options: CompositionEditorOptions): Comp
         detail: `${widgetId} cannot be placed on ${profile.id === "alert" ? "an alert" : "a scene"}`,
       };
     }
-    if (canvasSizeOf(lastDoc as CompositionDocument) === null) {
-      return { ok: false, detail: NO_CANVAS_SIZE };
-    }
     const id = freshNodeId(lastDoc as CompositionDocument);
     const result = commit((doc) => {
       const placement = newPlacement({ row, catalog, doc, profile, at });
@@ -859,10 +843,7 @@ export function createCompositionEditor(options: CompositionEditorOptions): Comp
     if (doc === null) {
       return refuse("the document has not loaded");
     }
-    const canvas = canvasOrRefusal(doc);
-    if ("ok" in canvas) {
-      return canvas;
-    }
+    const canvas = canvasSizeOf(doc);
     return editPlacements([id], (placement) => withCenter(placement, clampCenter(center, canvas)), `move:${id}`);
   }
 
@@ -894,10 +875,7 @@ export function createCompositionEditor(options: CompositionEditorOptions): Comp
     if (ids.length === 0) {
       return refuse(selection.length === 0 ? "nothing is selected" : "the selection is locked");
     }
-    const canvas = canvasOrRefusal(doc);
-    if ("ok" in canvas) {
-      return canvas;
-    }
+    const canvas = canvasSizeOf(doc);
     return editPlacements(
       ids,
       (placement) => {
@@ -1042,10 +1020,7 @@ export function createCompositionEditor(options: CompositionEditorOptions): Comp
     if (pasting.length === 0) {
       return refuse("nothing to paste here");
     }
-    const canvas = canvasOrRefusal(doc);
-    if ("ok" in canvas) {
-      return canvas;
-    }
+    const canvas = canvasSizeOf(doc);
     const takenNodes = new Set(Object.keys(doc.widgets));
     const idMap = new Map<NodeId, NodeId>();
     for (const { id } of pasting) {
@@ -1272,7 +1247,7 @@ export function createCompositionEditor(options: CompositionEditorOptions): Comp
     }
     const placement = doc.widgets[id] as PlacementDocument;
     const canvas = canvasSizeOf(doc);
-    if (placement.locked || canvas === null) {
+    if (placement.locked) {
       return false;
     }
     let ids: NodeId[];
