@@ -89,5 +89,6 @@ func All() []*gormigrate.Migration {
 		AddClientKindOrigin(),
 		AddClientSecretHash(),
 		AddUserPageSubmissions(),
+		OrderModuleWorkflows(),
 	}
 }

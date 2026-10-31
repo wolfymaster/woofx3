@@ -107,6 +107,7 @@ pub trait ModuleDbProxy: Send + Sync {
         module_key: &str,
     ) -> Result<()>;
     async fn delete_workflows_by_module(&self, module_name: &str) -> Result<()>;
+    async fn delete_module_workflow(&self, module_name: &str, manifest_id: &str) -> Result<()>;
     async fn delete_commands_by_module(&self, module_name: &str) -> Result<()>;
     async fn list_commands_by_module(&self, module_name: &str) -> Result<Vec<ModuleCommandRow>>;
     async fn delete_command(&self, id: &str) -> Result<()>;
@@ -398,6 +399,10 @@ impl ModuleDbProxy for HttpDbProxyClient {
 
     async fn delete_workflows_by_module(&self, module_name: &str) -> Result<()> {
         db_proxy::delete_workflows_by_module(&self.base_url, module_name).await
+    }
+
+    async fn delete_module_workflow(&self, module_name: &str, manifest_id: &str) -> Result<()> {
+        db_proxy::delete_module_workflow(&self.base_url, module_name, manifest_id).await
     }
 
     async fn delete_commands_by_module(&self, module_name: &str) -> Result<()> {
@@ -1043,6 +1048,16 @@ mod test_support {
 
         async fn delete_workflows_by_module(&self, _module_name: &str) -> Result<()> {
             self.record("delete_workflows_by_module")
+        }
+
+        async fn delete_module_workflow(
+            &self,
+            _module_name: &str,
+            manifest_id: &str,
+        ) -> Result<()> {
+            self.record("delete_module_workflow")?;
+            self.record_removed("workflow", manifest_id);
+            Ok(())
         }
 
         async fn delete_commands_by_module(&self, _module_name: &str) -> Result<()> {

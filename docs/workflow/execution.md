@@ -525,6 +525,8 @@ A workflow whose trigger sets `order` (see [TriggerConfig](./schema.md#triggerco
 
 For workflows without waits this is the order a single workflow holding them as consecutive steps would run in, and it is what keeps an event's alert triggers raising their alerts in the order the streamer arranged them: the UI stores each trigger as a workflow of its own, ordered by its place in the list.
 
+Installing a module gives each of its workflows on an event the next `order` after the ones already there, and an upgrade keeps the order it has, so a module's workflows queue like the streamer's own triggers. A failure in one leaves the next to run, which is why modules sharing an event stay separate workflows rather than steps of one.
+
 Every ordered run is begun when the event matches, so each is in the run history, recorded and announced as running, while it waits its turn; only executing its steps is sequential. As a result:
 
 - A queued run can be cancelled before its turn. It settles as cancelled at once, never starts, and the queue moves past it.
