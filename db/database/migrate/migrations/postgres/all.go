@@ -88,5 +88,6 @@ func All() []*gormigrate.Migration {
 		AddModuleUploadProvenance(),
 		AddClientKindOrigin(),
 		AddClientSecretHash(),
+		AddUserPageSubmissions(),
 	}
 }

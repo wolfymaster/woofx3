@@ -29,6 +29,7 @@
     "stream.offline",
     "stream.online",
     "user.message",
+    "userpage.",
     "viewer.",
     "widget.event",
     "workflow.health.",
@@ -51,6 +52,7 @@
     "module.",
     "session.",
     "setting.",
+    "userpage.",
     "viewer.",
     "workflow."
   ],

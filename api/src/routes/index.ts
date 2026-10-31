@@ -37,6 +37,7 @@ import { twitchDeviceLoginRoutes } from "./twitch-device-login";
 import { twitchLinkRoutes } from "./twitch-link";
 import { uiSettingsRoutes } from "./ui-settings";
 import { userActionsRoutes } from "./user-actions";
+import { userPagesRoutes } from "./user-pages";
 import { viewerFactsRoutes } from "./viewer-facts";
 import { workflowsRoutes } from "./workflows";
 import { workflowsExecutionRoutes } from "./workflows-execution";
@@ -76,6 +77,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof relayRoutes &
   typeof platformRoutes &
   typeof viewerFactsRoutes &
+  typeof userPagesRoutes &
   typeof twitchRoutes &
   typeof uiSettingsRoutes &
   typeof twitchDeviceLoginRoutes &
@@ -147,6 +149,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(relayRoutes),
     instrumentRoutes(platformRoutes),
     instrumentRoutes(viewerFactsRoutes),
+    instrumentRoutes(userPagesRoutes),
     instrumentRoutes(twitchRoutes),
     instrumentRoutes(uiSettingsRoutes),
     instrumentRoutes(twitchDeviceLoginRoutes),
