@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.52.0](https://github.com/wolfymaster/woofx3/compare/v0.51.2...v0.52.0) (2026-10-31)
+
+### Features
+
+* **api:** advertise the workflow.expressionFunctions capability ([2c435a5](https://github.com/wolfymaster/woofx3/commit/2c435a5f9ed59cb376b6dba81406b7e33c58587f))
+* **api:** check expression function calls when saving a workflow ([7666310](https://github.com/wolfymaster/woofx3/commit/76663109bc4076dcc8c69b2ef9b51b5fb9a8b14e))
+* **workflow:** call fixed functions in ${…} expressions ([27a5c0d](https://github.com/wolfymaster/woofx3/commit/27a5c0d9bfb7cd6fc197f60c29ecf6a0cc8112ee))
+
 ## [0.51.2](https://github.com/wolfymaster/woofx3/compare/v0.51.1...v0.51.2) (2026-10-31)
 
 ### Bug Fixes
