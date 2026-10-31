@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math/rand/v2"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,6 +21,10 @@ var expressionPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 // legitimately contain dots (file extensions), which would otherwise be
 // misparsed as a path segment.
 const assetURLPrefix = "woofx3_asset_url:"
+
+// assetMarkerPrefix marks a module's own asset reference before barkloader
+// bakes it into an assetURLPrefix token.
+const assetMarkerPrefix = "asset:"
 
 // ErrPathNotFound wraps every failure to follow a path into a source's data:
 // a missing key, an index out of range, or a step into a value that has no
@@ -38,13 +43,22 @@ type Resolver struct {
 	lazySources     map[string]LazyLoader
 	assetURLBase    string
 	hasAssetURLBase bool
+	// randomBelow returns a uniform number in [0, n), for the random function.
+	randomBelow func(n uint64) uint64
 }
 
 func NewResolver() *Resolver {
 	return &Resolver{
 		sources:     make(map[string]any),
 		lazySources: make(map[string]LazyLoader),
+		randomBelow: rand.Uint64N,
 	}
+}
+
+// SetRandomSource replaces where the random function draws from, so a test can
+// fix its results.
+func (r *Resolver) SetRandomSource(randomBelow func(n uint64) uint64) {
+	r.randomBelow = randomBelow
 }
 
 func (r *Resolver) AddSource(name string, data any) {
@@ -111,14 +125,21 @@ func (r *Resolver) ResolveString(s string) (any, error) {
 		return r.evaluateExpression(expr)
 	}
 
+	var failedCall error
 	result := expressionPattern.ReplaceAllStringFunc(s, func(match string) string {
 		expr := match[2 : len(match)-1]
 		resolved, err := r.evaluateExpression(expr)
 		if err != nil {
+			if failedCall == nil && errors.Is(err, ErrFunctionCall) {
+				failedCall = err
+			}
 			return match
 		}
 		return toString(resolved)
 	})
+	if failedCall != nil {
+		return nil, failedCall
+	}
 
 	return result, nil
 }

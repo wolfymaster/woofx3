@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wolfymaster/woofx3/workflow/internal/expression"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
@@ -108,6 +109,62 @@ func TestRegisterWorkflowAcceptsDefinitionWithoutEnv(t *testing.T) {
 	e := newExecEngine(t)
 	registerNoopAction(t, e)
 	if err := e.RegisterWorkflow(envProbeWorkflow()); err != nil {
+		t.Fatalf("RegisterWorkflow: %v", err)
+	}
+}
+
+func TestRegisterWorkflowRefusesInvalidFunctionCalls(t *testing.T) {
+	tests := []struct {
+		name     string
+		mutate   func(def *types.WorkflowDefinition)
+		wantPath string
+	}{
+		{
+			name: "unknown function in a nested parameter",
+			mutate: func(def *types.WorkflowDefinition) {
+				def.Tasks[0].Parameters = map[string]any{"request": []any{"plain", map[string]any{"text": "Hi ${shout(1)}"}}}
+			},
+			wantPath: "tasks[0].parameters.request[1].text",
+		},
+		{
+			name: "wrong argument count in a trigger condition",
+			mutate: func(def *types.WorkflowDefinition) {
+				def.Trigger.Conditions = []types.ConditionConfig{{Field: "${add(1)}", Operator: "exists"}}
+			},
+			wantPath: "trigger.conditions[0].field",
+		},
+		{
+			name: "disabled step",
+			mutate: func(def *types.WorkflowDefinition) {
+				def.Tasks[0].Disabled = true
+				def.Tasks[0].Parameters = map[string]any{"message": "${round(}"}
+			},
+			wantPath: "tasks[0].parameters.message",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newExecEngine(t)
+			registerNoopAction(t, e)
+			def := envProbeWorkflow()
+			tc.mutate(def)
+			err := e.RegisterWorkflow(def)
+			if !errors.Is(err, expression.ErrFunctionCall) {
+				t.Fatalf("got %v, want ErrFunctionCall", err)
+			}
+			if !strings.Contains(err.Error(), tc.wantPath+": ") {
+				t.Fatalf("RegisterWorkflow err = %v, want path %s", err, tc.wantPath)
+			}
+		})
+	}
+}
+
+func TestRegisterWorkflowAcceptsValidFunctionCalls(t *testing.T) {
+	e := newExecEngine(t)
+	registerNoopAction(t, e)
+	def := envProbeWorkflow()
+	def.Tasks[0].Parameters = map[string]any{"message": "Rolled ${random(1, 6)}: ${round(trigger.data.x, 2)}"}
+	if err := e.RegisterWorkflow(def); err != nil {
 		t.Fatalf("RegisterWorkflow: %v", err)
 	}
 }
