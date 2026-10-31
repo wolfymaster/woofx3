@@ -34,6 +34,7 @@ func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middle
 	UserEventRoutes(mux, app, casbinMiddleware)
 	StreamGaugeRoutes(mux, app, casbinMiddleware)
 	ViewerFactRoutes(mux, app, casbinMiddleware)
+	UserPageSubmissionRoutes(mux, app, casbinMiddleware)
 	LocalUISettingRoutes(mux, app, casbinMiddleware)
 	return nil
 }
