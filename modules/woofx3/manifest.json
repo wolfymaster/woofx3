@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.40.0",
+  "version": "0.41.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -1927,6 +1927,94 @@
             "path": "cause",
             "type": "object",
             "description": "The event that caused the change, as { source, eventId }."
+          }
+        ]
+      }
+    },
+    {
+      "id": "userpage_form_submitted",
+      "name": "User page form submitted",
+      "description": "Fires when a viewer sends a form on your public page. Answers are whatever the viewer typed, so treat them as untrusted text.",
+      "type": "eventbus",
+      "event": "userpage.form.submitted",
+      "taxonomy": [
+        "system.viewer"
+      ],
+      "schema": [
+        {
+          "id": "form",
+          "label": "Form",
+          "type": "text",
+          "eventPath": "formId",
+          "operator": "eq",
+          "description": "Only this form, by its id. Leave it as any to act on every form.",
+          "anyText": "any form"
+        }
+      ],
+      "sentence": "a viewer submits {form}",
+      "emits": {
+        "fields": [
+          {
+            "path": "submissionId",
+            "type": "string",
+            "description": "The submission's id, unique to it. Each submission fires once."
+          },
+          {
+            "path": "pageId",
+            "type": "string",
+            "description": "The page the form is on."
+          },
+          {
+            "path": "formId",
+            "type": "string",
+            "description": "The form, by its id on the page."
+          },
+          {
+            "path": "formTitle",
+            "type": "string",
+            "description": "The form's title, or empty when it has none."
+          },
+          {
+            "path": "submittedAt",
+            "type": "string",
+            "description": "When the viewer sent it, as an RFC 3339 UTC time."
+          },
+          {
+            "path": "viewer",
+            "type": "object",
+            "description": "Who sent it, or null when the viewer was not signed in."
+          },
+          {
+            "path": "viewer.platform",
+            "type": "string",
+            "description": "The platform the viewer signed in with."
+          },
+          {
+            "path": "viewer.platformUserId",
+            "type": "string",
+            "description": "The viewer, by platform user id.",
+            "identity": "viewer",
+            "displayName": "viewer.displayName"
+          },
+          {
+            "path": "viewer.displayName",
+            "type": "string",
+            "description": "The viewer's display name."
+          },
+          {
+            "path": "viewer.roles",
+            "type": "array",
+            "description": "The viewer's roles on the channel."
+          },
+          {
+            "path": "fields",
+            "type": "array",
+            "description": "Each answer in form order, as { id, label, type, value }. The value is a string, or a boolean for a checkbox."
+          },
+          {
+            "path": "answers",
+            "type": "object",
+            "description": "Each answer's value under its field id: answers.<field id>."
           }
         ]
       }
