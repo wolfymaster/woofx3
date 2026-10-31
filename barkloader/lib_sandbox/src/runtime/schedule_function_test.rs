@@ -25,6 +25,17 @@ fn schedule(settings: Value) -> Harness {
     Harness::new(SCHEDULE_JS, TARGET, "schedule", settings)
 }
 
+fn set_stream(harness: &Harness, state: Result<bool, String>) {
+    *harness.stream.0.lock().unwrap() = state;
+}
+
+/// A schedule on a stream that is live, so being offline is not why it skips.
+fn live_schedule(settings: Value) -> Harness {
+    let harness = schedule(settings);
+    set_stream(&harness, Ok(true));
+    harness
+}
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -107,7 +118,7 @@ fn stopping_cancels_the_next_run_and_a_new_schedule_reads_stopped() {
 
 #[test]
 fn a_due_firing_announces_the_run_and_arms_the_next_on_its_grid() {
-    let harness = schedule(json!({ "interval": 15 }));
+    let harness = live_schedule(json!({ "interval": 15 }));
     let stored = running_in(-1_000);
     harness.store(stored.clone());
 
@@ -129,7 +140,7 @@ fn a_due_firing_announces_the_run_and_arms_the_next_on_its_grid() {
 
 #[test]
 fn a_repeated_firing_announces_nothing_and_arms_again() {
-    let harness = schedule(json!({ "interval": 15 }));
+    let harness = live_schedule(json!({ "interval": 15 }));
     harness.store(running_in(-1_000));
     harness
         .run("scheduleFire", json!({ "target": TARGET }))
@@ -179,6 +190,61 @@ fn a_run_missed_by_more_than_an_interval_is_skipped_and_stays_on_the_grid() {
         "next run in {left}ms"
     );
     assert_eq!((next_at(&next) - next_at(&stored)) % FIFTEEN_MINUTES_MS, 0);
+}
+
+#[test]
+fn an_offline_firing_is_skipped_by_default_and_keeps_the_grid() {
+    let harness = schedule(json!({ "interval": 15 }));
+    let stored = running_in(-1_000);
+    harness.store(stored.clone());
+
+    let result = harness
+        .run("scheduleFire", json!({ "target": TARGET }))
+        .unwrap();
+    assert_eq!(result["fired"], false);
+    assert_eq!(harness.take_events(), []);
+
+    let next = harness.stored().unwrap();
+    assert_eq!(next["lastFiredAt"], Value::Null);
+    assert_eq!(next_at(&next), next_at(&stored) + FIFTEEN_MINUTES_MS);
+    assert_eq!(harness.take_schedule_calls(), [armed_at(next_at(&next))]);
+}
+
+#[test]
+fn a_schedule_set_to_run_while_offline_fires_on_an_offline_stream() {
+    let harness = schedule(json!({ "interval": 15, "runWhileOffline": true }));
+    harness.store(running_in(-1_000));
+    let result = harness
+        .run("scheduleFire", json!({ "target": TARGET }))
+        .unwrap();
+    assert_eq!(result["fired"], true);
+    assert_eq!(harness.take_events().len(), 1);
+}
+
+#[test]
+fn a_schedule_set_to_run_while_offline_never_asks_whether_the_stream_is_live() {
+    let harness = schedule(json!({ "interval": 15, "runWhileOffline": true }));
+    set_stream(&harness, Err("db proxy down".into()));
+    harness.store(running_in(-1_000));
+    let result = harness
+        .run("scheduleFire", json!({ "target": TARGET }))
+        .unwrap();
+    assert_eq!(result["fired"], true);
+}
+
+#[test]
+fn an_unknown_stream_state_writes_nothing_so_the_run_can_be_retried() {
+    let harness = schedule(json!({ "interval": 15 }));
+    set_stream(&harness, Err("db proxy down".into()));
+    let stored = running_in(-1_000);
+    harness.store(stored.clone());
+
+    let err = harness
+        .run("scheduleFire", json!({ "target": TARGET }))
+        .unwrap_err();
+    assert!(err.contains("db proxy down"), "{err}");
+    assert_eq!(harness.stored(), Some(stored));
+    assert_eq!(harness.take_events(), []);
 }
 
 #[test]

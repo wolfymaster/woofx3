@@ -174,7 +174,7 @@
               "label": "For this stream session"
             }
           ],
-          "description": "A session schedule stops when the stream session ends; start it again from a workflow when you go live to run it only while you are live. Changing this applies the next time the schedule changes."
+          "description": "A session schedule stops when the stream session ends and waits to be started again. Changing this applies the next time the schedule changes."
         },
         {
           "id": "interval",
@@ -185,6 +185,13 @@
           "max": 40320,
           "defaultValue": 15,
           "description": "How long it waits between runs, up to four weeks. Changing this applies within a minute to a schedule that is running."
+        },
+        {
+          "id": "runWhileOffline",
+          "label": "Run while offline",
+          "type": "toggle",
+          "defaultValue": false,
+          "description": "Off, it only runs while you are live and skips its runs the rest of the time. On, it also runs when you are not streaming."
         }
       ]
     }

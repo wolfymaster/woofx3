@@ -68,7 +68,13 @@ function scheduleGet(ctx) {
 //
 // A run more than an interval late is skipped rather than announced, the way cron
 // skips what came due while it was not running: an engine started after a night
-// off should not post its 15-minute chat message the moment it boots.
+// off should not post its 15-minute chat message the moment it boots. So is a run
+// while the stream is offline, unless the schedule's `runWhileOffline` is on; both
+// keep the schedule's place on its grid.
+//
+// When whether the stream is live cannot be read, `ctx.stream.isLive` throws out of
+// this firing before anything is written, so the reconcile task retries the run
+// within a minute rather than guessing either way.
 function scheduleFire(ctx) {
   const target = parameters(ctx).target;
   if (typeof target !== "string" || target === "") {
@@ -89,7 +95,7 @@ function scheduleFire(ctx) {
     arm(ctx, schedule, nextAt);
     return ctx.result({ fired: false });
   }
-  const fired = now - nextAt <= schedule.intervalMs;
+  const fired = now - nextAt <= schedule.intervalMs && (schedule.runWhileOffline || ctx.stream.isLive());
   const following = nextAt + (Math.floor((now - nextAt) / schedule.intervalMs) + 1) * schedule.intervalMs;
   const value = runningValue(following, schedule, fired ? now : lastFiredAt(stored));
   if (!ctx.storage.compareAndSet(schedule.key, stored, value, schedule.options).swapped) {
@@ -189,6 +195,7 @@ function scheduleFromInstance(instance) {
     target: instance.canonical_id,
     key: `state:${instance.canonical_id}`,
     intervalMs: intervalMinutes(settings.interval) * MS_PER_MINUTE,
+    runWhileOffline: settings.runWhileOffline === true,
     options: { clearOnSessionEnd: settings.lifetime === "session" },
   };
 }
