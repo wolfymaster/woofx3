@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.42.0",
+  "version": "0.43.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -192,6 +192,28 @@
           "type": "toggle",
           "defaultValue": false,
           "description": "Off, it only runs while you are live and skips its runs the rest of the time. On, it also runs when you are not streaming."
+        }
+      ]
+    },
+    {
+      "kind": "form",
+      "name": "Form",
+      "description": "Questions viewers answer on your public page. Each submission can run workflows, so answers can join a queue, post to chat or anything else.",
+      "icon": "ClipboardList",
+      "schema": [
+        {
+          "id": "title",
+          "label": "Title",
+          "type": "text",
+          "description": "Shown above the questions. Leave it empty for no title."
+        },
+        {
+          "id": "submitLabel",
+          "label": "Button text",
+          "type": "text",
+          "required": true,
+          "defaultValue": "Send",
+          "description": "What the send button says."
         }
       ]
     }
@@ -2193,10 +2215,11 @@
         {
           "id": "form",
           "label": "Form",
-          "type": "text",
+          "type": "resource_ref",
+          "resourceKind": "form",
           "eventPath": "formId",
           "operator": "eq",
-          "description": "Only this form, by its id. Leave it as any to act on every form.",
+          "description": "Only this form. Leave it as any to act on every form.",
           "anyText": "any form"
         }
       ],
@@ -2211,12 +2234,12 @@
           {
             "path": "pageId",
             "type": "string",
-            "description": "The page the form is on."
+            "description": "The page it was sent from. One form can sit on several pages."
           },
           {
             "path": "formId",
             "type": "string",
-            "description": "The form, by its id on the page."
+            "description": "The form, by canonical id."
           },
           {
             "path": "formTitle",
@@ -2263,7 +2286,7 @@
           {
             "path": "answers",
             "type": "object",
-            "description": "Each answer's value under its field id: answers.<field id>."
+            "description": "Each answer's value under its question's id: answers.<question id>."
           }
         ]
       }

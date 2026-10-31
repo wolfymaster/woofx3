@@ -1924,6 +1924,7 @@ The bundled `woofx3` module's kinds store these values, which is what a widget o
 | `counter` | `{ "value": <number>, "reached": { "<goal>": <epoch ms> } }`. `reached` records when each of the counter's goals was first reached, which is what decides whether reaching one again is the first time. A counter written before counters carried goals holds a bare number and still reads. Its goals are a `list` setting of `{ value, name }` rows, the name optional; goals set up before they had names are a comma-separated string of numbers, which still reads. | Its `initialValue` setting, no goal reached. |
 | `timer` | `{ "running": true, "endsAt": <epoch ms> }` while counting down; `{ "running": false, "remainingMs": <ms> }` while stopped. A running timer is never rewritten as it ticks, so time left is `max(0, endsAt - now)`. | Stopped at its `duration` setting. |
 | `queue` | An array of strings, first in line first. | Empty. |
+| `form` | Nothing: a form is only its settings. Submissions arrive as [`userpage.form.submitted`](../services/user-page-forms.md). | Always. |
 | `schedule` | `{ "running": true, "nextAt": <epoch ms>, "intervalMs": <ms>, "lastFiredAt": <epoch ms or null> }` while running; `{ "running": false, "lastFiredAt": <epoch ms or null> }` while stopped. A running schedule is only rewritten when it runs or its interval is edited. | Stopped, never run. |
 
 Each kind also declares eventbus triggers, announced by its functions through

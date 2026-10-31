@@ -1,12 +1,22 @@
 # User page forms
 
-A streamer's public page can carry forms. The dashboard's backend owns the
-pages and keeps a durable outbox of what viewers send; it hands each submission
+A streamer's public page can carry forms. A form is an instance of the bundled
+module's `form` resource kind, and a page widget places one by canonical id. The
+dashboard's backend owns the pages and keeps a durable outbox of what viewers send; it hands each submission
 to the engine and resends until the engine confirms. Viewers never cause an
 engine call directly. Workflows act on the result through the
 `userpage.form.submitted` trigger.
 
 Engines advertise this as the `userPages.formSubmissions` capability.
+
+## The form kind
+
+`woofx3:form` holds a form's definition in its instance settings: `title` and
+`submitLabel` from the kind's schema, and `fields`, the questions, written by the
+dashboard's question editor. A question's dropdown choices are a list inside a
+list, which a kind's schema cannot declare, so `fields` is not in the schema. The
+engine never reads any of it: the dashboard's mirror of the instance is what the
+public page renders and what a submission is checked against.
 
 ## Delivery
 
@@ -58,7 +68,7 @@ nor db-proxy logs them, only ids.
 {
   "submissionId": "sub-1",
   "pageId": "page-1",
-  "formId": "form-1",
+  "formId": "woofx3:form:song_requests",
   "formTitle": "Song requests",
   "submittedAt": "2026-10-31T12:00:00Z",
   "viewer": { "platform": "twitch", "platformUserId": "42", "displayName": "Wolfy", "roles": ["moderator"] },
@@ -88,7 +98,9 @@ Do not test `displayName`: a signed-in viewer can really be called `anonymous`.
 - `${trigger.data.answers.song}` reads an answer by field id, which `fields`
   cannot do because a path only indexes an array by position. An id made only of
   digits is read as an array index, so it cannot be read this way.
-- The trigger's optional `form` field matches `formId`.
+- The trigger's optional `form` field is a `resource_ref` matching `formId`, the
+  instance's canonical id. `pageId` says which page it was sent from, since one
+  form can sit on several.
 - `viewer.platformUserId` is the viewer's identity, and `viewer.platform` also
   goes on the event's `platform` extension, so `${viewer.*}` and viewer facts
   work. An anonymous submission has no `platform` extension and names no viewer:
