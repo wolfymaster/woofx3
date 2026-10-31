@@ -678,6 +678,17 @@ fn build_lua_ctx(
     }
     ctx.set("schedule", schedule)?;
 
+    // stream namespace -- `ctx.stream.isLive()`; raises when the answer is not known.
+    let stream = lua.create_table()?;
+    {
+        let host = invocation.host.clone();
+        let is_live_fn = lua.create_function(move |_, ()| {
+            host.stream.is_live().map_err(mlua::Error::RuntimeError)
+        })?;
+        stream.set("isLive", is_live_fn)?;
+    }
+    ctx.set("stream", stream)?;
+
     // module namespace
     {
         let module_tbl = lua.create_table()?;

@@ -280,6 +280,15 @@ pub trait ScheduleClient: Send + Sync {
     fn cancel_key(&self, key: &str);
 }
 
+/// `ctx.stream`: what a module function may know about the broadcast. Read only,
+/// and the same answer for every module, so it needs no permission. Called from
+/// the sandbox's blocking thread.
+pub trait StreamClient: Send + Sync {
+    /// Whether the stream is live right now. An error means the answer is not
+    /// known, which is different from offline.
+    fn is_live(&self) -> Result<bool, String>;
+}
+
 /// Who is asking `ActionRunner::run` to act: the invoking module, bound by the
 /// host and never supplied by module code.
 pub struct RunCaller<'a> {
@@ -319,6 +328,7 @@ pub struct HostContext {
     pub resources: Arc<dyn ResourceClient>,
     pub settings: Arc<dyn SettingsClient>,
     pub schedule: Arc<dyn ScheduleClient>,
+    pub stream: Arc<dyn StreamClient>,
     pub actions: Arc<dyn ActionRunner>,
     pub extensions: Arc<ExtensionRegistry>,
 }

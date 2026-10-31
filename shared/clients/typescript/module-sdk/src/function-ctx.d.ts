@@ -281,6 +281,12 @@ export interface CtxResources {
   ): CtxCompareAndSetSettingResult;
 }
 
+/** `ctx.stream` — what a function may know about the broadcast. */
+export interface CtxStream {
+  /** Whether the stream is live right now. Throws when the answer is not known. */
+  isLive(): boolean;
+}
+
 /**
  * `ctx.schedule` — one-shot invocations of a function this module declares
  * under the manifest's `deadlines`. An entry is identified by
@@ -714,6 +720,7 @@ export interface Ctx extends CtxExtensions {
   http: CtxHttp;
   resources: CtxResources;
   schedule: CtxSchedule;
+  stream: CtxStream;
   module: CtxModule;
   log: CtxLog;
   /**

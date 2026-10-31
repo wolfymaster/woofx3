@@ -338,6 +338,7 @@ fn build_ctx_object<'js>(
     build_http_namespace(ctx, &ctx_obj, invocation, limits)?;
     build_resources_namespace(ctx, &ctx_obj, invocation, limits)?;
     build_schedule_namespace(ctx, &ctx_obj, invocation, limits)?;
+    build_stream_namespace(ctx, &ctx_obj, invocation)?;
     build_module_namespace(ctx, &ctx_obj, invocation, limits)?;
     build_log_namespace(ctx, &ctx_obj, invocation, limits)?;
     build_response_fn(ctx, &ctx_obj, limits)?;
@@ -793,6 +794,24 @@ fn build_schedule_namespace<'js>(
     schedule.set("cancel", cancel_fn).map_err(map)?;
 
     ctx_obj.set("schedule", schedule).map_err(map)?;
+    Ok(())
+}
+
+/// `ctx.stream.isLive()` -> boolean; throws when the answer is not known.
+fn build_stream_namespace<'js>(
+    ctx: &Ctx<'js>,
+    ctx_obj: &Object<'js>,
+    invocation: &InvocationContext,
+) -> Result<(), Error> {
+    let map = |e: rquickjs::Error| Error::RuntimeError(e.to_string());
+    let stream = Object::new(ctx.clone()).map_err(map)?;
+    let host = invocation.host.clone();
+    let is_live_fn = JsFunction::new(ctx.clone(), move || -> rquickjs::Result<bool> {
+        host.stream.is_live().map_err(host_err)
+    })
+    .map_err(map)?;
+    stream.set("isLive", is_live_fn).map_err(map)?;
+    ctx_obj.set("stream", stream).map_err(map)?;
     Ok(())
 }
 

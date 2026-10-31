@@ -145,6 +145,15 @@ impl ActionRunner for NoopActionRunner {
     }
 }
 
+/// Reads as offline, like a channel that has never gone live.
+pub struct NoopStreamClient;
+
+impl StreamClient for NoopStreamClient {
+    fn is_live(&self) -> Result<bool, String> {
+        Ok(false)
+    }
+}
+
 pub fn noop_host_context() -> HostContext {
     HostContext {
         nats: Arc::new(NoopNatsPublisher),
@@ -153,6 +162,7 @@ pub fn noop_host_context() -> HostContext {
         resources: Arc::new(NoopResourceClient),
         settings: Arc::new(NoopSettingsClient),
         schedule: Arc::new(NoopScheduleClient),
+        stream: Arc::new(NoopStreamClient),
         actions: Arc::new(NoopActionRunner),
         extensions: Arc::new(ExtensionRegistry::new()),
     }

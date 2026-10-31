@@ -15,7 +15,7 @@ use crate::host::noop::noop_host_context;
 use crate::host::recording::RecordingSchedule;
 use crate::host::{
     CompareAndSetOutcome, InvocationContext, ResourceClient, ResourceInstance, StorageClient,
-    StorageSetOptions,
+    StorageSetOptions, StreamClient,
 };
 use crate::runtime::RuntimeAdapter;
 use crate::runtime::quickjs::QuickJSAdapter;
@@ -115,6 +115,15 @@ impl ResourceClient for OneInstance {
     }
 }
 
+/// A stream whose state the test sets; offline until it does.
+pub struct FakeStream(pub Mutex<Result<bool, String>>);
+
+impl StreamClient for FakeStream {
+    fn is_live(&self) -> Result<bool, String> {
+        self.0.lock().unwrap().clone()
+    }
+}
+
 /// One function file and the single resource instance it is run against.
 pub struct Harness {
     source: &'static str,
@@ -123,6 +132,7 @@ pub struct Harness {
     resources: Arc<OneInstance>,
     /// Every `ctx.schedule` call the functions run so far made.
     pub schedule: Arc<RecordingSchedule>,
+    pub stream: Arc<FakeStream>,
     /// Every event the functions run so far asked to publish, in order.
     pub events: Mutex<Vec<ModuleEvent>>,
 }
@@ -146,6 +156,7 @@ impl Harness {
                 settings,
             })),
             schedule: Arc::new(RecordingSchedule::default()),
+            stream: Arc::new(FakeStream(Mutex::new(Ok(false)))),
             events: Mutex::new(Vec::new()),
         }
     }
@@ -155,6 +166,7 @@ impl Harness {
         host.storage = self.storage.clone();
         host.resources = self.resources.clone();
         host.schedule = self.schedule.clone();
+        host.stream = self.stream.clone();
         let invocation = InvocationContext {
             event: json!({ "parameters": parameters }),
             user: Value::Null,
