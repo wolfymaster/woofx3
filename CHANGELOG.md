@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.58.0](https://github.com/wolfymaster/woofx3/compare/v0.57.0...v0.58.0) (2026-10-31)
+
+### Features
+
+* **woofx3:** add a form resource kind, manifest 0.43.0 ([94092d6](https://github.com/wolfymaster/woofx3/commit/94092d6bca55f333d8c94d290601a1f5d8ffffed))
+
 ## [0.57.0](https://github.com/wolfymaster/woofx3/compare/v0.56.0...v0.57.0) (2026-10-31)
 
 ### Features
