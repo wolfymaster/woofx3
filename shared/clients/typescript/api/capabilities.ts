@@ -244,6 +244,11 @@ export const ENGINE_CAPABILITIES = {
    * `listUISettingChangesSince`, and the `ui.setting.changed` webhook.
    */
   uiSettings: "ui.settings",
+  /**
+   * Taking form submissions from public user pages: `deliverUserPageSubmission`,
+   * and the `userpage.form.submitted` trigger of the bundled module.
+   */
+  userPagesFormSubmissions: "userPages.formSubmissions",
   /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
   widgetsThemes: "widgets.themes",
   /**

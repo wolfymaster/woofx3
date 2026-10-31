@@ -342,6 +342,7 @@ export const RPC_METHODS = [
   "getAlertQueue",
   "getObsStatus",
   "listViewerFacts",
+  "deliverUserPageSubmission",
   "listUISettings",
   "getUISetting",
   "setUISetting",

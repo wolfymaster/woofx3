@@ -23,6 +23,7 @@ import * as stream_session from "@woofx3/db/stream_session.pb";
 import * as treat from "@woofx3/db/treat.pb";
 import * as user from "@woofx3/db/user.pb";
 import * as user_event from "@woofx3/db/user_event.pb";
+import * as user_page_submission from "@woofx3/db/user_page_submission.pb";
 import * as viewer_fact from "@woofx3/db/viewer_fact.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
 import * as workflow from "@woofx3/db/workflow.pb";
@@ -646,6 +647,17 @@ export class DbClient {
     const response = await user_event.RecordUserEvent(req, this.config);
     unwrapVoid("recordUserEvent", response);
     return response;
+  }
+
+  /**
+   * Records a user page form submission and its trigger event in one
+   * transaction, and returns whether this call wrote them: false for an id
+   * already recorded. Rejects with `invalid_argument` for a malformed one.
+   */
+  async recordUserPageSubmission(req: user_page_submission.RecordUserPageSubmissionRequest): Promise<boolean> {
+    const response = await user_page_submission.RecordUserPageSubmission(req, this.config);
+    unwrapVoid("recordUserPageSubmission", response);
+    return response.created;
   }
 
   /**
