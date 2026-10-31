@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.57.0](https://github.com/wolfymaster/woofx3/compare/v0.56.0...v0.57.0) (2026-10-31)
+
+### Features
+
+* **barkloader:** let module functions read whether the stream is live ([446be1b](https://github.com/wolfymaster/woofx3/commit/446be1b66c34712937778165583f791dabcf60fd))
+* **woofx3:** add a schedule resource kind, manifest 0.42.0 ([7f48896](https://github.com/wolfymaster/woofx3/commit/7f488968b3f11463d721b1a2995502488ae2cf92))
+* **woofx3:** skip schedule runs while offline unless told otherwise ([2aa06c0](https://github.com/wolfymaster/woofx3/commit/2aa06c0d996ff9d7a99783d10b339e75acb994fe))
+
 ## [0.56.0](https://github.com/wolfymaster/woofx3/compare/v0.55.0...v0.56.0) (2026-10-31)
 
 ### Features
