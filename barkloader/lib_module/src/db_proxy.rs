@@ -2087,6 +2087,44 @@ pub async fn compare_and_set_resource_instance_setting(
         .map_err(|e| anyhow!("parse CompareAndSetResourceInstanceSetting response: {}", e))
 }
 
+/// Twirp JSON for `stream_session.StreamSessionService/EnsureCurrentStreamSession`,
+/// read for whether a segment is open, which is what "the stream is live" means.
+/// The session itself is always present, so ensuring it changes nothing in practice.
+pub async fn is_stream_live(db_proxy_url: &str) -> Result<bool> {
+    #[derive(serde::Deserialize)]
+    struct StreamSessionState {
+        // Twirp JSON leaves out a proto3 field at its default.
+        #[serde(default)]
+        is_segment_open: bool,
+    }
+    let url = format!(
+        "{}/twirp/stream_session.StreamSessionService/EnsureCurrentStreamSession",
+        db_proxy_url
+    );
+    let response = http_client()?
+        .clone()
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({}))
+        .send()
+        .await
+        .map_err(|e| anyhow!("EnsureCurrentStreamSession request failed: {}", e))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "EnsureCurrentStreamSession failed {}: {}",
+            status,
+            text
+        ));
+    }
+    let state: StreamSessionState = response
+        .json()
+        .await
+        .map_err(|e| anyhow!("parse EnsureCurrentStreamSession response: {}", e))?;
+    Ok(state.is_segment_open)
+}
+
 /// Twirp JSON for `module.ModuleService/ListResourceInstancesByKind`.
 /// Returns every instance of the kind across every installed module — the
 /// flat list the UI picker for `resource_ref(kind=...)` ConfigField

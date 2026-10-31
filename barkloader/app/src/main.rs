@@ -149,6 +149,9 @@ async fn setup() -> Result<AppContext> {
                 ),
             );
             ctx.storage = Arc::new(HttpStorageClient::new(resource_proxy_url.clone()));
+            ctx.stream = Arc::new(services::sandbox_stream::HttpStreamClient::new(
+                resource_proxy_url.clone(),
+            ));
         } else {
             info!(
                 "databaseProxyUrl not set in .woofx3.json; using noop resource, settings, and storage clients"

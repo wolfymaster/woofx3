@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.41.0",
+  "version": "0.42.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -151,6 +151,49 @@
           "description": "Let the same entry be in line more than once. Off, adding an entry already in line leaves it where it is."
         }
       ]
+    },
+    {
+      "kind": "schedule",
+      "name": "Schedule",
+      "description": "Runs on a repeating interval once started, so a workflow can post a chat message every 15 minutes or do anything else on a clock.",
+      "icon": "CalendarClock",
+      "schema": [
+        {
+          "id": "lifetime",
+          "label": "Keeps running",
+          "type": "select",
+          "required": true,
+          "defaultValue": "forever",
+          "options": [
+            {
+              "value": "forever",
+              "label": "Until it is stopped"
+            },
+            {
+              "value": "session",
+              "label": "For this stream session"
+            }
+          ],
+          "description": "A session schedule stops when the stream session ends and waits to be started again. Changing this applies the next time the schedule changes."
+        },
+        {
+          "id": "interval",
+          "label": "Runs every",
+          "type": "number",
+          "unit": "minutes",
+          "min": 1,
+          "max": 40320,
+          "defaultValue": 15,
+          "description": "How long it waits between runs, up to four weeks. Changing this applies within a minute to a schedule that is running."
+        },
+        {
+          "id": "runWhileOffline",
+          "label": "Run while offline",
+          "type": "toggle",
+          "defaultValue": false,
+          "description": "Off, it only runs while you are live and skips its runs the rest of the time. On, it also runs when you are not streaming."
+        }
+      ]
     }
   ],
   "functions": [
@@ -265,6 +308,41 @@
       "runtime": "js",
       "path": "functions/timer.js",
       "entryPoint": "timerReconcile"
+    },
+    {
+      "id": "schedule.start",
+      "name": "Start schedule",
+      "runtime": "js",
+      "path": "functions/schedule.js",
+      "entryPoint": "scheduleStart"
+    },
+    {
+      "id": "schedule.stop",
+      "name": "Stop schedule",
+      "runtime": "js",
+      "path": "functions/schedule.js",
+      "entryPoint": "scheduleStop"
+    },
+    {
+      "id": "schedule.get",
+      "name": "Read schedule",
+      "runtime": "js",
+      "path": "functions/schedule.js",
+      "entryPoint": "scheduleGet"
+    },
+    {
+      "id": "schedule.fire",
+      "name": "Run a schedule that came due",
+      "runtime": "js",
+      "path": "functions/schedule.js",
+      "entryPoint": "scheduleFire"
+    },
+    {
+      "id": "schedule.reconcile",
+      "name": "Re-arm schedule runs",
+      "runtime": "js",
+      "path": "functions/schedule.js",
+      "entryPoint": "scheduleReconcile"
     }
   ],
   "actions": [
@@ -1268,6 +1346,141 @@
       "taxonomy": [
         "tools.queue"
       ]
+    },
+    {
+      "id": "schedule.start",
+      "name": "Start schedule",
+      "description": "Start the schedule, with its first run one interval from now. A schedule already running keeps its place.",
+      "sentence": "Start {target}",
+      "type": "function",
+      "function": "schedule.start",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Schedule",
+          "type": "resource_ref",
+          "resourceKind": "schedule",
+          "required": true,
+          "description": "Which schedule to change."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The schedule that changed."
+          },
+          {
+            "path": "running",
+            "type": "boolean",
+            "description": "Whether it is running."
+          },
+          {
+            "path": "nextAt",
+            "type": "number",
+            "description": "Its next run, in milliseconds since the Unix epoch; null when it is stopped."
+          },
+          {
+            "path": "lastFiredAt",
+            "type": "number",
+            "description": "Its last run, in milliseconds since the Unix epoch; null when it has not run."
+          }
+        ]
+      },
+      "taxonomy": [
+        "tools.schedule"
+      ]
+    },
+    {
+      "id": "schedule.stop",
+      "name": "Stop schedule",
+      "description": "Stop the schedule until something starts it again.",
+      "sentence": "Stop {target}",
+      "type": "function",
+      "function": "schedule.stop",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Schedule",
+          "type": "resource_ref",
+          "resourceKind": "schedule",
+          "required": true,
+          "description": "Which schedule to change."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The schedule that changed."
+          },
+          {
+            "path": "running",
+            "type": "boolean",
+            "description": "Whether it is running."
+          },
+          {
+            "path": "nextAt",
+            "type": "number",
+            "description": "Its next run, in milliseconds since the Unix epoch; null when it is stopped."
+          },
+          {
+            "path": "lastFiredAt",
+            "type": "number",
+            "description": "Its last run, in milliseconds since the Unix epoch; null when it has not run."
+          }
+        ]
+      },
+      "taxonomy": [
+        "tools.schedule"
+      ]
+    },
+    {
+      "id": "schedule.get",
+      "name": "Read schedule",
+      "description": "Whether the schedule is running and when it runs next, without changing it.",
+      "sentence": "Read {target}",
+      "type": "function",
+      "function": "schedule.get",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Schedule",
+          "type": "resource_ref",
+          "resourceKind": "schedule",
+          "required": true,
+          "description": "Which schedule to read."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The schedule that was read."
+          },
+          {
+            "path": "running",
+            "type": "boolean",
+            "description": "Whether it is running."
+          },
+          {
+            "path": "nextAt",
+            "type": "number",
+            "description": "Its next run, in milliseconds since the Unix epoch; null when it is stopped."
+          },
+          {
+            "path": "lastFiredAt",
+            "type": "number",
+            "description": "Its last run, in milliseconds since the Unix epoch; null when it has not run."
+          }
+        ]
+      },
+      "taxonomy": [
+        "tools.schedule"
+      ]
     }
   ],
   "triggers": [
@@ -1736,6 +1949,42 @@
             "path": "size",
             "type": "number",
             "description": "How many entries the queue holds now."
+          }
+        ]
+      }
+    },
+    {
+      "id": "schedule_fired",
+      "name": "Schedule runs",
+      "description": "Fires every time a running schedule comes due. Add any action here to run it on the schedule's interval.",
+      "type": "eventbus",
+      "event": "schedule.fired",
+      "taxonomy": [
+        "system.schedule"
+      ],
+      "schema": [
+        {
+          "id": "schedule",
+          "label": "Schedule",
+          "type": "resource_ref",
+          "resourceKind": "schedule",
+          "eventPath": "target",
+          "operator": "eq",
+          "description": "Only this schedule. Leave it as any to act on every schedule."
+        }
+      ],
+      "sentence": "{schedule} runs",
+      "emits": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The schedule, by canonical id."
+          },
+          {
+            "path": "firedAt",
+            "type": "number",
+            "description": "When it ran, in milliseconds since the Unix epoch."
           }
         ]
       }
@@ -2541,6 +2790,12 @@
       "function": "timer.expire",
       "maxPending": 256,
       "description": "Ends a running timer the moment it reaches zero and announces that it ended."
+    },
+    {
+      "id": "schedule_due",
+      "function": "schedule.fire",
+      "maxPending": 256,
+      "description": "Runs a schedule the moment it comes due, announces the run and arms the next one."
     }
   ],
   "backgroundTasks": [
@@ -2550,6 +2805,13 @@
       "schedule": "* * * * *",
       "runOnLoad": true,
       "description": "When the module loads and once a minute after, ends every running timer that has run out and arms the end of the rest."
+    },
+    {
+      "id": "schedule_reconcile",
+      "function": "schedule.reconcile",
+      "schedule": "* * * * *",
+      "runOnLoad": true,
+      "description": "When the module loads and once a minute after, arms the next run of every running schedule and applies edited intervals."
     }
   ]
 }

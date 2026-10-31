@@ -17,6 +17,8 @@ mod queue_function_test;
 #[cfg(test)]
 mod resource_function_harness;
 #[cfg(test)]
+mod schedule_function_test;
+#[cfg(test)]
 mod timer_function_test;
 
 pub trait RuntimeAdapter: Send {

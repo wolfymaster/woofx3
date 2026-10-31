@@ -3258,6 +3258,7 @@ mod tests {
             ),
             ("timer", &["lifetime", "duration"][..]),
             ("queue", &["lifetime", "capacity", "allowDuplicates"][..]),
+            ("schedule", &["lifetime", "interval", "runWhileOffline"][..]),
         ] {
             let declared = manifest
                 .resources

@@ -58,6 +58,8 @@ const KNOWN_TOP_LEVEL = new Set([
   "resources",
   // Built by build_schedule_namespace, quickjs.rs
   "schedule",
+  // Built by build_stream_namespace, quickjs.rs
+  "stream",
   // Built by build_module_namespace, quickjs.rs:429-456
   "module",
   // Built by build_log_namespace, quickjs.rs
@@ -75,6 +77,7 @@ const KNOWN_NESTED: Record<string, string[]> = {
   http: ["request"],
   resources: ["create", "delete", "get", "list", "run", "compareAndSetSetting"],
   schedule: ["at", "cancel"],
+  stream: ["isLive"],
   // `module` appears here *and* in KNOWN_DATA_FIELDS below: it is the one
   // namespace that mixes plain properties with a callable, and the two maps
   // check different declaration shapes.
@@ -261,7 +264,7 @@ describe("function ctx drift guard", () => {
     // (the contract is the same regardless of runtime).
     const quickjs = readRust("barkloader/lib_sandbox/src/runtime/quickjs.rs");
     const lua = readRust("barkloader/lib_sandbox/src/runtime/lua.rs");
-    for (const ns of ["crypto", "storage", "http", "resources", "schedule", "module"]) {
+    for (const ns of ["crypto", "storage", "http", "resources", "schedule", "stream", "module"]) {
       const inQ = quickjs.includes(`build_${ns}_namespace`) || quickjs.includes(`"${ns}"`);
       const inL = lua.includes(`build_${ns}_namespace`) || lua.includes(`"${ns}"`);
       if (!inQ || !inL) {

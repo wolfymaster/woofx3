@@ -2,9 +2,9 @@
   "modules": [
     {
       "id": "woofx3",
-      "len": 108765,
-      "sha256": "40e7238b0e96f61fc2a7dec58adccca689979d2c871e943d8ef484c57f2f2c94",
-      "version": "0.41.0"
+      "len": 112901,
+      "sha256": "ed8b485c6ec21deb6cb355b540854079fb1e8f2f2da1b1250313f1ae4f7de1ed",
+      "version": "0.42.0"
     }
   ]
 }

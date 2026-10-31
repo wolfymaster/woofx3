@@ -13,6 +13,7 @@ pub mod nats;
 pub mod oauth;
 pub mod public_url;
 pub mod sandbox_resources;
+pub mod sandbox_stream;
 pub mod scheduler;
 pub mod session;
 pub mod signing;
