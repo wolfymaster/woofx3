@@ -32,6 +32,11 @@ const (
 	submissionFieldTypeChecked = "checkbox"
 )
 
+// anonymousViewerName is the display name published for a viewer who was not
+// signed in, so a workflow can show `viewer.displayName` without a fallback.
+// It says nothing about identity: a signed-in viewer can have this name too.
+const anonymousViewerName = "anonymous"
+
 // Field ids become keys of the event's `answers`, so they are limited to what
 // a `${trigger.data.answers.<id>}` path can name.
 var submissionFieldIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -76,8 +81,10 @@ type userPageFormSubmittedEvent struct {
 }
 
 type userPageEventViewer struct {
-	Platform       string   `json:"platform"`
-	PlatformUserID string   `json:"platformUserId"`
+	// Platform and PlatformUserID are null for an anonymous viewer, which is
+	// what keeps the event from naming a viewer to `${viewer.*}` and viewer facts.
+	Platform       *string  `json:"platform"`
+	PlatformUserID *string  `json:"platformUserId"`
 	DisplayName    string   `json:"displayName"`
 	Roles          []string `json:"roles"`
 }
@@ -102,8 +109,8 @@ func (s *userPageSubmissionService) RecordUserPageSubmission(ctx context.Context
 
 	// The workflow service reads an event's platform only from this extension.
 	var extensions map[string]string
-	if event.Viewer != nil {
-		extensions = map[string]string{"platform": event.Viewer.Platform}
+	if req.Viewer != nil {
+		extensions = map[string]string{"platform": req.Viewer.Platform}
 	}
 
 	created, err := s.repo.Record(&models.UserPageSubmission{
@@ -139,6 +146,7 @@ func userPageFormSubmittedEventOf(req *client.RecordUserPageSubmissionRequest) u
 		SubmittedAt:  req.SubmittedAt.AsTime().UTC().Format(time.RFC3339Nano),
 		Fields:       make([]userPageEventField, 0, len(req.Fields)),
 		Answers:      make(map[string]any, len(req.Fields)),
+		Viewer:       &userPageEventViewer{DisplayName: anonymousViewerName, Roles: []string{}},
 	}
 	if viewer := req.Viewer; viewer != nil {
 		roles := viewer.Roles
@@ -146,8 +154,8 @@ func userPageFormSubmittedEventOf(req *client.RecordUserPageSubmissionRequest) u
 			roles = []string{}
 		}
 		event.Viewer = &userPageEventViewer{
-			Platform:       viewer.Platform,
-			PlatformUserID: viewer.PlatformUserId,
+			Platform:       &viewer.Platform,
+			PlatformUserID: &viewer.PlatformUserId,
 			DisplayName:    viewer.DisplayName,
 			Roles:          roles,
 		}

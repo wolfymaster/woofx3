@@ -208,7 +208,8 @@ const (
 	// segment events, the NATS subject equals the CloudEvent type.
 	// Data: { submissionId, pageId, formId, formTitle, submittedAt, viewer,
 	//         fields: [{ id, label, type, value }], answers: { <fieldId>: value } }
-	// where viewer is null for an anonymous viewer.
+	// where an anonymous viewer is { platform: null, platformUserId: null,
+	// displayName: "anonymous", roles: [] }.
 	SubjectUserPageFormSubmitted Subject = "userpage.form.submitted"
 
 	// System events

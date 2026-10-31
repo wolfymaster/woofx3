@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -120,7 +121,7 @@ func TestRecordUserPageSubmission_WritesRowAndEvent(t *testing.T) {
 	})
 }
 
-func TestRecordUserPageSubmission_AnonymousEmptyFormHasNullViewerAndEmptyCollections(t *testing.T) {
+func TestRecordUserPageSubmission_AnonymousEmptyFormHasNoIdentityAndEmptyCollections(t *testing.T) {
 	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		req := submissionRequest("sub-anon")
 		req.Viewer = nil
@@ -136,9 +137,9 @@ func TestRecordUserPageSubmission_AnonymousEmptyFormHasNullViewerAndEmptyCollect
 		if err := json.Unmarshal([]byte(event.Payload), &data); err != nil {
 			t.Fatalf("decode payload: %v", err)
 		}
-		viewer, present := data["viewer"]
-		if !present || viewer != nil {
-			t.Fatalf("viewer = %v (present %v), want null", viewer, present)
+		wantViewer := map[string]any{"platform": nil, "platformUserId": nil, "displayName": "anonymous", "roles": []any{}}
+		if !reflect.DeepEqual(data["viewer"], wantViewer) {
+			t.Fatalf("viewer = %#v, want %#v", data["viewer"], wantViewer)
 		}
 		if fields, ok := data["fields"].([]any); !ok || len(fields) != 0 {
 			t.Fatalf("fields = %v, want []", data["fields"])

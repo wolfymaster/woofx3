@@ -70,8 +70,20 @@ nor db-proxy logs them, only ids.
 }
 ```
 
-`formTitle` is empty when the form has none, `viewer` is `null` for an anonymous
-viewer, and `submittedAt` is normalized to UTC. Each submission fires once.
+`formTitle` is empty when the form has none, and `submittedAt` is normalized to
+UTC. Each submission fires once.
+
+`delivery.viewer` is `null` for an anonymous viewer, and the event then carries:
+
+```json
+{ "platform": null, "platformUserId": null, "displayName": "anonymous", "roles": [] }
+```
+
+So `${trigger.data.viewer.displayName}` always resolves, and gives `anonymous`
+with no fallback needed. To tell anonymous submissions apart or replace the name,
+test `viewer.platformUserId` for null:
+`${trigger.data.viewer.platformUserId == null ? 'friend' : trigger.data.viewer.displayName}`.
+Do not test `displayName`: a signed-in viewer can really be called `anonymous`.
 
 - `${trigger.data.answers.song}` reads an answer by field id, which `fields`
   cannot do because a path only indexes an array by position. An id made only of
@@ -79,9 +91,9 @@ viewer, and `submittedAt` is normalized to UTC. Each submission fires once.
 - The trigger's optional `form` field matches `formId`.
 - `viewer.platformUserId` is the viewer's identity, and `viewer.platform` also
   goes on the event's `platform` extension, so `${viewer.*}` and viewer facts
-  work. An anonymous submission counts toward no viewer. Reading into a `null`
-  viewer fails a plain reference, so write
-  `${trigger.data.viewer.displayName || 'someone'}`.
+  work. An anonymous submission has no `platform` extension and names no viewer:
+  it counts toward no fact, no facts are read, and every `${viewer.*}` path,
+  `id` and `name` included, is null. Use `trigger.data.viewer` for the name.
 
 `userpage.` is a reserved subject namespace
 ([Engine integrity](./engine-integrity.md#reserved-subjects)), so only db-proxy
