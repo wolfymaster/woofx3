@@ -4,11 +4,13 @@ import type {
   WorkflowDefinition,
   WorkflowHealth,
   WorkflowMutationResult,
+  WorkflowUpdateConflict,
 } from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import { TRIGGER_TYPE_COMMAND } from "@woofx3/api/workflow-definition";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
+import { DbError } from "../db-client";
 import { assertValidWorkflowDefinition } from "../workflow/validate-definition";
 import { requestWorkflowHealth } from "../workflow-health-emitter";
 import { routeModule } from "./context";
@@ -123,7 +125,10 @@ export const workflowsRoutes = routeModule({
     return { id: createdId, definition: storedDefinition, isEnabled: false };
   },
 
-  async updateWorkflow(id: string, data: UpdateWorkflowInput): Promise<WorkflowMutationResult | null> {
+  async updateWorkflow(
+    id: string,
+    data: UpdateWorkflowInput
+  ): Promise<WorkflowMutationResult | WorkflowUpdateConflict | null> {
     if (data.definition.id !== id) {
       throw new Error(`definition.id (${data.definition.id}) must match path id (${id})`);
     }
@@ -137,26 +142,43 @@ export const workflowsRoutes = routeModule({
     }
     assertNotCommandWorkflow(existing);
 
-    const response = await this.db.updateWorkflow({
-      id,
-      name: data.definition.name,
-      description: data.definition.description ?? "",
-      enabled: existing.enabled ?? false,
-      stepsJson: JSON.stringify(data.definition.tasks ?? []),
-      triggerJson: JSON.stringify(data.definition.trigger),
-      variables: existing.variables ?? {},
-      onSuccess: existing.onSuccess ?? "",
-      onFailure: existing.onFailure ?? "",
-      maxRetries: existing.maxRetries ?? 0,
-      timeoutSeconds: existing.timeoutSeconds ?? 0,
-    });
-    if (!response) {
-      return null;
+    let response: workflow.Workflow;
+    try {
+      response = await this.db.updateWorkflow({
+        id,
+        name: data.definition.name,
+        description: data.definition.description ?? "",
+        enabled: existing.enabled ?? false,
+        stepsJson: JSON.stringify(data.definition.tasks ?? []),
+        triggerJson: JSON.stringify(data.definition.trigger),
+        expectedRevision: data.expectedRevision,
+        variables: existing.variables ?? {},
+        onSuccess: existing.onSuccess ?? "",
+        onFailure: existing.onFailure ?? "",
+        maxRetries: existing.maxRetries ?? 0,
+        timeoutSeconds: existing.timeoutSeconds ?? 0,
+      });
+    } catch (err) {
+      if (err instanceof DbError && err.code === "aborted") {
+        const current = await this.db.getWorkflow({ id });
+        const definition = rebuildWorkflowDefinition(current);
+        if (definition) {
+          this.logger.info("Refused a workflow update made from an older copy", { id });
+          return {
+            conflict: true,
+            current: { id, definition, isEnabled: current.enabled ?? false, revision: current.revision },
+          };
+        }
+      }
+      throw err;
     }
 
     this.logger.info("Updated workflow", { id, name: response.name });
 
+    // What is stored, not what was sent: the save may have merged other steps in.
+    const definition = rebuildWorkflowDefinition(response) ?? data.definition;
     const isEnabled = response.enabled ?? false;
+    const revision = response.revision;
     const createdAt = timestampToIso(existing.createdAt);
     const updatedAt = timestampToIso(response.updatedAt);
 
@@ -165,15 +187,16 @@ export const workflowsRoutes = routeModule({
       correlationKey: data.correlationKey,
       workflow: {
         id,
-        definition: data.definition,
+        definition,
         isEnabled,
+        revision,
         createdAt,
         updatedAt,
         taxonomy: response.taxonomy ?? [],
       },
     });
 
-    return { id, definition: data.definition, isEnabled };
+    return { id, definition, isEnabled, revision };
   },
 
   async deleteWorkflow(id: string, correlationKey?: string): Promise<boolean> {
@@ -210,6 +233,7 @@ export const workflowsRoutes = routeModule({
       enabled: isEnabled,
       stepsJson: existing.stepsJson ?? "",
       triggerJson: existing.triggerJson ?? "",
+      expectedRevision: existing.revision,
       variables: existing.variables ?? {},
       onSuccess: existing.onSuccess ?? "",
       onFailure: existing.onFailure ?? "",
@@ -217,7 +241,7 @@ export const workflowsRoutes = routeModule({
       timeoutSeconds: existing.timeoutSeconds ?? 0,
     });
 
-    const definition = rebuildWorkflowDefinition(existing);
+    const definition = rebuildWorkflowDefinition(response);
     if (definition) {
       const createdAt = timestampToIso(existing.createdAt);
       const updatedAt = timestampToIso(response.updatedAt);
@@ -228,6 +252,7 @@ export const workflowsRoutes = routeModule({
           id,
           definition,
           isEnabled,
+          revision: response.revision,
           createdAt,
           updatedAt,
           taxonomy: response.taxonomy ?? [],

@@ -2616,6 +2616,9 @@ impl serde::Serialize for UpdateWorkflowRequest {
         if !self.trigger_json.is_empty() {
             len += 1;
         }
+        if self.expected_revision.is_some() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("workflow.UpdateWorkflowRequest", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -2650,6 +2653,9 @@ impl serde::Serialize for UpdateWorkflowRequest {
         if !self.trigger_json.is_empty() {
             struct_ser.serialize_field("triggerJson", &self.trigger_json)?;
         }
+        if let Some(v) = self.expected_revision.as_ref() {
+            struct_ser.serialize_field("expectedRevision", v)?;
+        }
         struct_ser.end()
     }
 }
@@ -2677,6 +2683,8 @@ impl<'de> serde::Deserialize<'de> for UpdateWorkflowRequest {
             "stepsJson",
             "trigger_json",
             "triggerJson",
+            "expected_revision",
+            "expectedRevision",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -2692,6 +2700,7 @@ impl<'de> serde::Deserialize<'de> for UpdateWorkflowRequest {
             TimeoutSeconds,
             StepsJson,
             TriggerJson,
+            ExpectedRevision,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -2724,6 +2733,7 @@ impl<'de> serde::Deserialize<'de> for UpdateWorkflowRequest {
                             "timeoutSeconds" | "timeout_seconds" => Ok(GeneratedField::TimeoutSeconds),
                             "stepsJson" | "steps_json" => Ok(GeneratedField::StepsJson),
                             "triggerJson" | "trigger_json" => Ok(GeneratedField::TriggerJson),
+                            "expectedRevision" | "expected_revision" => Ok(GeneratedField::ExpectedRevision),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -2754,6 +2764,7 @@ impl<'de> serde::Deserialize<'de> for UpdateWorkflowRequest {
                 let mut timeout_seconds__ = None;
                 let mut steps_json__ = None;
                 let mut trigger_json__ = None;
+                let mut expected_revision__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -2828,6 +2839,14 @@ impl<'de> serde::Deserialize<'de> for UpdateWorkflowRequest {
                             }
                             trigger_json__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::ExpectedRevision => {
+                            if expected_revision__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("expectedRevision"));
+                            }
+                            expected_revision__ = 
+                                map_.next_value::<::std::option::Option<::pbjson::private::NumberDeserialize<_>>>()?.map(|x| x.0)
+                            ;
+                        }
                     }
                 }
                 Ok(UpdateWorkflowRequest {
@@ -2842,6 +2861,7 @@ impl<'de> serde::Deserialize<'de> for UpdateWorkflowRequest {
                     timeout_seconds: timeout_seconds__.unwrap_or_default(),
                     steps_json: steps_json__.unwrap_or_default(),
                     trigger_json: trigger_json__.unwrap_or_default(),
+                    expected_revision: expected_revision__,
                 })
             }
         }
@@ -3068,6 +3088,9 @@ impl serde::Serialize for Workflow {
         if !self.taxonomy.is_empty() {
             len += 1;
         }
+        if self.revision != 0 {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("workflow.Workflow", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -3120,6 +3143,9 @@ impl serde::Serialize for Workflow {
         if !self.taxonomy.is_empty() {
             struct_ser.serialize_field("taxonomy", &self.taxonomy)?;
         }
+        if self.revision != 0 {
+            struct_ser.serialize_field("revision", &self.revision)?;
+        }
         struct_ser.end()
     }
 }
@@ -3158,6 +3184,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
             "manifest_id",
             "manifestId",
             "taxonomy",
+            "revision",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -3179,6 +3206,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
             TriggerJson,
             ManifestId,
             Taxonomy,
+            Revision,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -3217,6 +3245,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                             "triggerJson" | "trigger_json" => Ok(GeneratedField::TriggerJson),
                             "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
+                            "revision" => Ok(GeneratedField::Revision),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -3253,6 +3282,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                 let mut trigger_json__ = None;
                 let mut manifest_id__ = None;
                 let mut taxonomy__ = None;
+                let mut revision__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -3363,6 +3393,14 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                             }
                             taxonomy__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::Revision => {
+                            if revision__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("revision"));
+                            }
+                            revision__ = 
+                                Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
+                            ;
+                        }
                     }
                 }
                 Ok(Workflow {
@@ -3383,6 +3421,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                     trigger_json: trigger_json__.unwrap_or_default(),
                     manifest_id: manifest_id__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
+                    revision: revision__.unwrap_or_default(),
                 })
             }
         }

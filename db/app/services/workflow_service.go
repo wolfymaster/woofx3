@@ -233,6 +233,11 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 		return nil, err
 	}
 
+	baseRevision := wf.Revision
+	if req.ExpectedRevision != nil && *req.ExpectedRevision != baseRevision {
+		return nil, staleRevisionError()
+	}
+
 	// Update fields. Patch semantics: scalar fields with non-zero values
 	// overwrite; zero values are treated as "not set" (legacy contract
 	// — see UpdateWorkflowRequest doc in workflow.proto). `enabled` is
@@ -243,6 +248,9 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 		wf.Name = req.Name
 	}
 
+	if req.StepsJson != "" && req.StepsJson != wf.Steps || req.TriggerJson != "" && req.TriggerJson != wf.Trigger {
+		wf.Revision = baseRevision + 1
+	}
 	if req.StepsJson != "" {
 		wf.Steps = req.StepsJson
 	}
@@ -253,7 +261,10 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 		wf.Enabled = *req.Enabled
 	}
 
-	err = s.workflowRepo.Update(wf)
+	err = s.workflowRepo.UpdateAtRevision(wf, baseRevision)
+	if errors.Is(err, models.ErrWorkflowRevisionStale) {
+		return nil, staleRevisionError()
+	}
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update workflow: %w", err))
 	}
@@ -274,6 +285,15 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 		})
 	}
 
+	// The save has already succeeded, so a merge that can't happen leaves the
+	// workflows apart and is tried again at the next save or start.
+	merged, err := s.mergeSameTrigger(wf.ID)
+	if err != nil {
+		log.Printf("workflow_service: leaving workflows sharing the trigger of %s unmerged: %v", wf.ID, err)
+	} else if merged != nil {
+		wf = merged.survivor
+	}
+
 	return &client.WorkflowResponse{
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
@@ -281,6 +301,10 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 		},
 		Workflow: s.workflowToProto(wf),
 	}, nil
+}
+
+func staleRevisionError() error {
+	return twirp.NewError(twirp.Aborted, models.ErrWorkflowRevisionStale.Error())
 }
 
 func (s *workflowService) DeleteWorkflow(ctx context.Context, req *client.DeleteWorkflowRequest) (*client.ResponseStatus, error) {
@@ -765,6 +789,7 @@ func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client
 		UpdatedAt:     timestamppb.New(wf.UpdatedAt),
 		StepsJson:     wf.Steps,
 		TriggerJson:   wf.Trigger,
+		Revision:      wf.Revision,
 		CreatedByType: wf.CreatedByType,
 		CreatedByRef:  wf.CreatedByRef,
 		ManifestId:    wf.ManifestID,

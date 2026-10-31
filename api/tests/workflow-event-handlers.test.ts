@@ -223,6 +223,11 @@ describe("parseWorkflowDeleted", () => {
     expect(event?.workflowId).toBe("wf-deleted");
   });
 
+  test("threads merged_into onto the deleted event when present", () => {
+    const { event } = parseWorkflowDeleted({ data: { id: "wf-old", merged_into: "wf-kept" } });
+    expect(event?.mergedInto).toBe("wf-kept");
+  });
+
   test("falls back to entity_id extension if data lacks id", () => {
     const ce = {
       entity_id: "wf-from-extension",

@@ -774,6 +774,12 @@ export interface WorkflowSnapshot {
   id: string;
   definition: WorkflowDefinition;
   isEnabled: boolean;
+  /**
+   * Counts changes to the steps and trigger. Callbacks can arrive out of order,
+   * so a mirror keeps the highest it has seen. Absent from an engine that
+   * doesn't count them.
+   */
+  revision?: number;
   createdAt: string;
   updatedAt: string;
   /**
@@ -809,6 +815,12 @@ export interface WorkflowDeletedEvent {
    * projection row. Empty / undefined for USER-authored workflows.
    */
   projectionKey?: string;
+  /**
+   * Set when the workflow's steps moved into another workflow with the same
+   * trigger, rather than being removed. Anything holding this id should follow
+   * it to this one.
+   */
+  mergedInto?: string;
 }
 
 // ---------------------------------------------------------------------------

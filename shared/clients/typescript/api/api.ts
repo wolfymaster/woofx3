@@ -227,6 +227,8 @@ export interface Workflow {
   description: string;
   isEnabled: boolean;
   definition: WorkflowDefinition | null;
+  /** See `WorkflowMutationResult.revision`. */
+  revision?: number;
   stats: WorkflowStats;
   createdAt: string;
   updatedAt: string;
@@ -261,6 +263,11 @@ export interface CreateWorkflowInput {
 export interface UpdateWorkflowInput {
   definition: WorkflowDefinition;
   correlationKey?: string;
+  /**
+   * The `revision` the edit was made from. When the workflow has moved on, the
+   * update changes nothing and answers with a `WorkflowUpdateConflict`.
+   */
+  expectedRevision?: number;
 }
 
 /**
@@ -273,6 +280,14 @@ export interface WorkflowMutationResult {
   id: string;
   definition: WorkflowDefinition;
   isEnabled: boolean;
+  /** Counts changes to the steps and trigger. Absent from an engine that doesn't count them. */
+  revision?: number;
+}
+
+/** An update refused because the workflow changed after the caller read it. `current` is what is stored now. */
+export interface WorkflowUpdateConflict {
+  conflict: true;
+  current: WorkflowMutationResult;
 }
 
 /**
@@ -2155,7 +2170,10 @@ export interface Woofx3EngineApi {
   getWorkflows(query?: WorkflowsQuery): Promise<PaginatedWorkflows>;
   getWorkflow(id: string): Promise<Workflow | null>;
   createWorkflow(data: CreateWorkflowInput): Promise<WorkflowMutationResult>;
-  updateWorkflow(id: string, data: UpdateWorkflowInput): Promise<WorkflowMutationResult | null>;
+  updateWorkflow(
+    id: string,
+    data: UpdateWorkflowInput
+  ): Promise<WorkflowMutationResult | WorkflowUpdateConflict | null>;
   deleteWorkflow(id: string, correlationKey?: string): Promise<boolean>;
   setWorkflowEnabled(
     id: string,

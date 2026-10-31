@@ -10,6 +10,7 @@ export interface WorkflowItem {
   description: string;
   isEnabled: boolean;
   definition: WorkflowDefinition | null;
+  revision?: number;
   stats: { runsToday: number; successRate: number };
   createdAt: string;
   updatedAt: string;
