@@ -1,9 +1,6 @@
 // SSE client for `/scene/{sceneId}/events`, with a hand-written
 // reconnect/backoff loop. Deliberately NOT the native browser
-// `EventSource`, whose reconnect cadence isn't controllable, and NOT
-// dependent on data-star's own SSE plugin: this is the thing that flips the
-// `$connected` signal data-star's `data-show`/`data-class` react to,
-// not something built on top of data-star's transport.
+// `EventSource`, whose reconnect cadence isn't controllable.
 //
 // On backoff cadence: sceneManager runs on the same machine as the
 // overlay, so "disconnected" means its process is down, not that the

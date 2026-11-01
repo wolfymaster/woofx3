@@ -138,6 +138,7 @@ const MOUNT: PatchOp = {
   box: { x: 10, y: 20, width: 300, height: 200, rotation: 45, opacity: 0.5 },
   z: 3,
   visible: true,
+  awaitingPaint: false,
 };
 
 function boxOf(renderer: ReturnType<typeof setup>["renderer"], id: string): FakeElement {
@@ -219,7 +220,9 @@ describe("createDomRenderer structure", () => {
 
   test("refuses ops for a widget that is not mounted, and a double mount", () => {
     const { renderer } = setup();
-    expect(() => renderer.apply([{ op: "setVisible", id: "nope", visible: true }])).toThrow(/not mounted/);
+    expect(() => renderer.apply([{ op: "setVisible", id: "nope", visible: true, awaitingPaint: false }])).toThrow(
+      /not mounted/
+    );
     renderer.apply([MOUNT]);
     expect(() => renderer.apply([MOUNT])).toThrow(/already mounted/);
   });
@@ -244,8 +247,28 @@ describe("createDomRenderer writes", () => {
       [true, "zIndex", "7"],
     ]);
     doc.writes.length = 0;
-    renderer.apply([{ op: "setVisible", id: "w1", visible: false }]);
+    renderer.apply([{ op: "setVisible", id: "w1", visible: false, awaitingPaint: false }]);
     expect(doc.writes.map((write) => [write.property, write.value])).toEqual([["visibility", "hidden"]]);
+  });
+
+  test("a widget awaiting paint is hidden with opacity, so its frame keeps rendering", () => {
+    const { renderer } = setup();
+    renderer.apply([{ ...MOUNT, visible: false, awaitingPaint: true } as PatchOp]);
+    const style = boxOf(renderer, "w1").style;
+    expect(style.visibility).toBe("");
+    expect(style.opacity).toBe("0");
+    renderer.apply([{ op: "setVisible", id: "w1", visible: true, awaitingPaint: false }]);
+    expect(style.visibility).toBe("");
+    expect(style.opacity).toBe("0.5");
+  });
+
+  test("a widget the streamer hid stops rendering, even after awaiting paint", () => {
+    const { renderer } = setup();
+    renderer.apply([{ ...MOUNT, visible: false, awaitingPaint: true } as PatchOp]);
+    renderer.apply([{ op: "setVisible", id: "w1", visible: false, awaitingPaint: false }]);
+    const style = boxOf(renderer, "w1").style;
+    expect(style.visibility).toBe("hidden");
+    expect(style.opacity).toBe("0.5");
   });
 
   test("hidden with opacity, a widget keeps its visibility and is shown at its own opacity", () => {
@@ -254,7 +277,7 @@ describe("createDomRenderer writes", () => {
     expect(boxOf(renderer, "w1").style.opacity).toBe("0");
     expect(doc.writes.filter((write) => write.property === "visibility")).toEqual([]);
     doc.writes.length = 0;
-    renderer.apply([{ op: "setVisible", id: "w1", visible: true }]);
+    renderer.apply([{ op: "setVisible", id: "w1", visible: true, awaitingPaint: false }]);
     expect(doc.writes.map((write) => [write.property, write.value])).toEqual([["opacity", "0.5"]]);
   });
 
@@ -264,7 +287,7 @@ describe("createDomRenderer writes", () => {
     const box = MOUNT.op === "mount" ? MOUNT.box : null;
     renderer.apply([{ op: "setBox", id: "w1", box: { ...(box as NonNullable<typeof box>), opacity: 0.8 } }]);
     expect(boxOf(renderer, "w1").style.opacity).toBe("0");
-    renderer.apply([{ op: "setVisible", id: "w1", visible: true }]);
+    renderer.apply([{ op: "setVisible", id: "w1", visible: true, awaitingPaint: false }]);
     expect(boxOf(renderer, "w1").style.opacity).toBe("0.8");
   });
 

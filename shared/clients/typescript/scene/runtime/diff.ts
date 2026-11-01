@@ -19,10 +19,10 @@ export type AnimationOwner = NodeId | null;
 
 export type PatchOp =
   | { op: "unmount"; id: NodeId }
-  | { op: "mount"; id: NodeId; widget: string; box: BoxState; z: number; visible: boolean }
+  | { op: "mount"; id: NodeId; widget: string; box: BoxState; z: number; visible: boolean; awaitingPaint: boolean }
   | { op: "setBox"; id: NodeId; box: BoxState }
   | { op: "setStack"; id: NodeId; z: number }
-  | { op: "setVisible"; id: NodeId; visible: boolean }
+  | { op: "setVisible"; id: NodeId; visible: boolean; awaitingPaint: boolean }
   | { op: "cancelAnimation"; id: AnimationOwner; layer: HostLayer; behavior: BehaviorId }
   | { op: "startAnimation"; id: AnimationOwner; layer: HostLayer; behavior: BehaviorId; spec: AnimationSpec }
   | { op: "cancelDelegate"; id: NodeId; behavior: BehaviorId }
@@ -54,7 +54,15 @@ export function diffPlans(prev: RenderPlan | null, next: RenderPlan): PatchOp[] 
     const old = before[id];
     const mounted = old !== undefined && old.widget === widget.widget;
     if (!mounted) {
-      mounts.push({ op: "mount", id, widget: widget.widget, box: widget.box, z: widget.z, visible: widget.visible });
+      mounts.push({
+        op: "mount",
+        id,
+        widget: widget.widget,
+        box: widget.box,
+        z: widget.z,
+        visible: widget.visible,
+        awaitingPaint: widget.awaitingPaint,
+      });
     } else {
       if (!sameBox(old.box, widget.box)) {
         writes.push({ op: "setBox", id, box: widget.box });
@@ -62,8 +70,8 @@ export function diffPlans(prev: RenderPlan | null, next: RenderPlan): PatchOp[] 
       if (old.z !== widget.z) {
         writes.push({ op: "setStack", id, z: widget.z });
       }
-      if (old.visible !== widget.visible) {
-        writes.push({ op: "setVisible", id, visible: widget.visible });
+      if (old.visible !== widget.visible || old.awaitingPaint !== widget.awaitingPaint) {
+        writes.push({ op: "setVisible", id, visible: widget.visible, awaitingPaint: widget.awaitingPaint });
       }
     }
     diffAnimations(id, mounted ? old.animations : EMPTY_LAYERS, widget.animations, cancels, starts);
