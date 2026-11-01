@@ -15,6 +15,7 @@ import { GetSetting, SetSetting } from "@woofx3/db/setting.pb";
 import TwitchClient, { requestTokenOverNats, TWITCH_NOT_LINKED, type TwitchAuthProviderKind } from "@woofx3/twitch";
 import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
 import { type Clock, errorMessage, type IdSource, type Logger, type RandomSource, type Timers } from "../../host/deps";
+import type { LiveStatusHandle } from "../../host/live-status";
 import type { BusMessage, ScopedBus } from "../../host/scoped-bus";
 import type { DbProxyClientConfig } from "../../services/db-proxy";
 import { TWITCH_EVENT_SOURCE } from "./event-source";
@@ -88,6 +89,7 @@ export type TwitchAppContext = {
   config: TwitchConfig;
   /** Tells the host this run lost Twitch, so it restarts the adapter with backoff (see AdapterContext). */
   reportFault(reason: string): void;
+  liveStatus: LiveStatusHandle;
   /** Absent until connected. */
   broadcaster?: HelixUser;
   /** Absent until connected. */
@@ -302,6 +304,7 @@ export default class TwitchApplication {
     const signal = this.lifetime.signal;
     signal.throwIfAborted();
     this.link = "connecting";
+    ctx.liveStatus.reset();
     const db = ctx.db;
     const connection: Connection = {
       closed: false,
@@ -428,7 +431,10 @@ export default class TwitchApplication {
       events,
       membershipEnricher: this.buildMembershipEnricher(ctx, apiClient),
       selfSent: this.deps.selfSent,
-      onStreamLiveChange: (live: boolean) => adBreakScheduler.setLive(live),
+      onStreamLiveChange: (live: boolean, startedAt?: string) => {
+        adBreakScheduler.setLive(live);
+        ctx.liveStatus.changed(live ? { live, startedAt } : { live });
+      },
     };
     const eventBus = new TwitchEventBus(eventBusCtx, listener);
     connection.eventBus = eventBus;
@@ -449,26 +455,19 @@ export default class TwitchApplication {
 
   /**
    * EventSub does not replay a stream.online that happened before this
-   * adapter connected, so an adapter started mid-stream asks Helix once.
-   * A failed read leaves the scheduler offline until the next online event:
-   * a missed heads-up is better than polling a stream that is not live.
-   * Stops waiting, and seeds nothing, once `signal` aborts.
+   * adapter connected, so an adapter started mid-stream asks Helix. Until a read
+   * succeeds the ad scheduler stays offline: a missed heads-up is better than
+   * polling a stream that is not live. Stops waiting once `signal` aborts.
    */
-  private async seedLiveState(ctx: TwitchAppContext, connected: Connected, signal: AbortSignal): Promise<void> {
-    try {
+  private seedLiveState(ctx: TwitchAppContext, connected: Connected, signal: AbortSignal): Promise<void> {
+    return ctx.liveStatus.seed(async (readSignal) => {
       const stream = await untilAborted(
         connected.apiClient.streams.getStreamByUserId(connected.broadcaster.id),
-        signal
+        readSignal
       );
       connected.adBreakScheduler.seedLive(stream !== null);
-    } catch (err) {
-      if (signal.aborted) {
-        return;
-      }
-      ctx.logger.warn("twitch: could not read whether the stream is live; ad heads-up waits for stream.online", {
-        err: errorMessage(err),
-      });
-    }
+      return stream === null ? { live: false } : { live: true, startedAt: stream.startDate.toISOString() };
+    }, signal);
   }
 
   /**

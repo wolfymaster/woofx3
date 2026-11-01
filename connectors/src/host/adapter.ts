@@ -11,6 +11,7 @@ import type { AdapterId } from "./adapter-ids";
 import type { Logger } from "./deps";
 import type { ParseResult } from "./host-requests";
 import type { LinkState } from "./link-readers";
+import type { LiveStatusHandle } from "./live-status";
 import type { ScopedBus } from "./scoped-bus";
 
 /**
@@ -143,6 +144,8 @@ export interface AdapterContext {
   dbProxy: DbProxyClientConfig;
   /** The companion gateway, scoped to the local endpoints this adapter's manifest claims. */
   companion: CompanionHandle;
+  /** For a platform adapter: where it reports whether its stream is live. */
+  liveStatus: LiveStatusHandle;
   /**
    * Tells the host a running adapter lost its connection. The host stops it and
    * restarts it with backoff, the same as a failed start. Ignored once the

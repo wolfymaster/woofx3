@@ -6,6 +6,7 @@ import {
   INTEGRATION_ENABLED_UPDATED_SUBJECT,
   INTEGRATION_TOKEN_UPDATED_SUBJECT,
 } from "@woofx3/common/integrations/integration-settings";
+import { EventType as StreamStatusEventType } from "@woofx3/common/cloudevents/StreamStatus/events";
 import { FakeDispatcherDb, NO_ROLES, storedCommand } from "../chat/testing";
 import { TRUSTED_LINE_SOURCES } from "../chat/trust";
 import { ChatEnvSchema, chatConfig } from "../config/chat";
@@ -269,6 +270,36 @@ describe("Host", () => {
     await flush();
 
     expect(getCurrentSessionId()).toBe("sess-host-1");
+    await host.stop();
+  });
+
+  test("answers a stream status request with what a running adapter read", async () => {
+    const { values, bus, adapter, host, announce } = await setup();
+    await host.start();
+    await host.settled();
+    values.twitch_token = "tok";
+    values["integration.twitch.enabled"] = "true";
+    await announce(true);
+    const observed = () => bus.published.filter((m) => m.subject === StreamStatusEventType.StreamStatusObserved);
+    const requested = event(StreamStatusEventType.StreamStatusRequested, {});
+
+    bus.deliver(StreamStatusEventType.StreamStatusRequested, requested);
+    await flush();
+    expect(observed()).toEqual([]);
+
+    await adapter.lastContext?.liveStatus.seed(async () => ({ live: true }), new AbortController().signal);
+    expect(observed()).toHaveLength(1);
+
+    bus.deliver(StreamStatusEventType.StreamStatusRequested, requested);
+    await flush();
+    expect(observed()).toHaveLength(2);
+    expect((JSON.parse(text(observed()[1].data)) as { platform: string }).platform).toBe("twitch");
+
+    values["integration.twitch.enabled"] = "false";
+    await announce(false);
+    bus.deliver(StreamStatusEventType.StreamStatusRequested, requested);
+    await flush();
+    expect(observed()).toHaveLength(2);
     await host.stop();
   });
 

@@ -30,5 +30,5 @@ export interface Context {
   /** Timers that outlive one callback, such as the synthesized ad break end. */
   timers: Timers;
   /** Told when stream.online / stream.offline arrives, after it is published. */
-  onStreamLiveChange?: (live: boolean) => void;
+  onStreamLiveChange?: (live: boolean, startedAt?: string) => void;
 }

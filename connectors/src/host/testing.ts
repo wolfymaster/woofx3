@@ -15,6 +15,7 @@ import {
   type LinkStore,
   linkReaders,
 } from "./link-readers";
+import type { LiveStatusBoard } from "./live-status";
 import { type BusClient, type BusHandler, type BusMessage, type BusSubscription, subjectCovered } from "./scoped-bus";
 
 /** An endpoint store with nothing installed and nothing routed through a companion; it refuses relay writes. */
@@ -71,6 +72,12 @@ export function testCompanion(
 }
 
 /** For a supervisor under test whose adapters never reach a local endpoint. */
+/** A live status board for a test that does not look at it. */
+export const noLiveStatus: Pick<LiveStatusBoard, "forAdapter" | "clear"> = {
+  forAdapter: () => ({ reset: () => {}, seed: async () => {}, changed: () => {} }),
+  clear: () => {},
+};
+
 export const noCompanion: Pick<CompanionGateway, "forAdapter"> = {
   forAdapter: (id): CompanionHandle => ({
     resolve: () => Promise.reject(new Error(`the ${id} adapter has no companion gateway in this test`)),

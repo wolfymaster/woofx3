@@ -114,6 +114,7 @@ export class TwitchAdapter implements Adapter {
       db: ctx.dbProxy,
       config: this.deps.config,
       reportFault: (reason) => ctx.reportFault(reason),
+      liveStatus: ctx.liveStatus,
     };
     this.run = { app, ctx: appCtx };
     const outcome = await app.start(appCtx, signal);

@@ -11,6 +11,7 @@ import {
   halfRandom,
   linked,
   noCompanion,
+  noLiveStatus,
   RecordingLogger,
   unlinked,
 } from "./testing";
@@ -33,6 +34,7 @@ function setup(adapter = new FakeAdapter()) {
     bus,
     dbProxy: { baseURL: "http://db.test" },
     companion: noCompanion,
+    liveStatus: noLiveStatus,
     clock,
     random: halfRandom,
     timers: time,

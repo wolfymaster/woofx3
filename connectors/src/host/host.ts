@@ -1,5 +1,6 @@
 import { PLATFORM_IDS } from "@woofx3/api/platform-gateway";
 import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
+import { EventType as StreamStatusEventType } from "@woofx3/common/cloudevents/StreamStatus/events";
 import { type SessionBus, subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
 import type { DispatcherDb } from "../chat/db-client";
 import { ClaimRegistry } from "../companion/claims";
@@ -23,6 +24,7 @@ import { type Clock, errorMessage, type IdSource, type Logger, type RandomSource
 import type { HealthSnapshot } from "./health";
 import { HostRequests } from "./host-requests";
 import type { LinkReaderRegistry, LinkStore } from "./link-readers";
+import { LiveStatusBoard } from "./live-status";
 import { type BusClient, ScopeCounters, ScopedBus, subjectCovered } from "./scoped-bus";
 import { ServedSubjects } from "./served-subjects";
 import { SettingsWatcher, watchedSubjects } from "./settings-watcher";
@@ -100,6 +102,7 @@ export class Host {
   private readonly gateway: PlatformGateway;
   private readonly chat: ChatService;
   private readonly companion: EngineCompanionGateway;
+  private readonly liveStatus: LiveStatusBoard;
   private lifecycle: HostState = "idle";
   /** How long stop gives the adapters and the held requests together: the longest of the stop deadline and the served budgets. */
   private readonly drainMs: number;
@@ -148,6 +151,12 @@ export class Host {
     if (shutdownProblem !== undefined) {
       throw new Error(shutdownProblem);
     }
+    this.liveStatus = new LiveStatusBoard({
+      publish: (subject, data) => this.scope.publish(subject, data),
+      random: deps.random,
+      timers: deps.timers,
+      logger: deps.logger.child({ component: "live-status" }),
+    });
     this.supervisor = new Supervisor(
       deps.adapters,
       {
@@ -160,6 +169,7 @@ export class Host {
         bus: deps.bus,
         dbProxy: deps.dbProxy,
         companion: this.companion,
+        liveStatus: this.liveStatus,
         clock: deps.clock,
         random: deps.random,
         timers: deps.timers,
@@ -170,10 +180,11 @@ export class Host {
       scope: HOST_SCOPE,
       client: deps.bus,
       grants: {
-        publishes: [],
+        publishes: [StreamStatusEventType.StreamStatusObserved],
         subscribes: [
           ...watchedSubjects(deps.readers),
           SessionEventType.SessionStarted,
+          StreamStatusEventType.StreamStatusRequested,
           ...COMPANION_GATEWAY_GRANTS.subscribes,
           ...this.servedSubjects(),
         ],
@@ -250,6 +261,10 @@ export class Host {
     await this.companion.start(this.scope);
     this.assertStillStarting();
     await this.chat.start();
+    this.assertStillStarting();
+    // Before the watcher starts any adapter, so a request is never missed
+    // between an adapter's read and this subscription.
+    await this.scope.subscribe(StreamStatusEventType.StreamStatusRequested, () => this.liveStatus.publishKnown());
     this.assertStillStarting();
     await this.watcher.start();
     this.assertStillStarting();

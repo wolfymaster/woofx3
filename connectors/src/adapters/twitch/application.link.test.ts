@@ -158,6 +158,7 @@ function context(config: Partial<TwitchConfig> = {}) {
     db: { baseURL: "http://db-proxy" },
     config: { ...CREDENTIALS, ...config },
     reportFault,
+    liveStatus: { reset: () => {}, seed: async () => {}, changed: () => {} },
   } as unknown as TwitchAppContext;
   return { ctx, handlers, logger, reportFault };
 }
