@@ -356,3 +356,33 @@ Each step is independently useful and safe to stop after:
    webhook the resolver emits as it adopts a session. `stream-stats.tsx` keys
    its tallies on the session, and `convex/pins.ts` compares against the
    session's start rather than the broadcast's.
+
+## Syncing with a stream that is already live
+
+`stream.online` and `stream.offline` are only delivered as they happen, so an
+engine that was off when a stream started or ended never hears them. Segments
+would then be wrong until the next one, and everything reading them with it,
+such as a schedule that only runs while live.
+
+Two subjects carry the same fact as a state instead:
+
+- `stream.status.observed` says what a platform's stream is doing now, with the
+  platform in the event's `platform` attribute.
+- `stream.status.requested` asks every connected platform to publish that.
+
+A platform adapter reads its state once when it connects, after subscribing to
+the platform's events, and publishes the result. A failed read retries with
+backoff, and an event that arrives during the read wins over it. The connectors
+host holds what each adapter last knew and answers requests from that, so a new
+platform only supplies the read. An adapter that has not read successfully, or
+that is stopped, reports nothing: unknown never counts as offline.
+
+The resolver asks when it starts and applies each observation the way it would
+apply the event, so startup order does not matter and a state that already
+matches changes nothing. It does not publish `stream.online`, and neither subject
+can trigger a workflow, so a stream found already live never replays what going
+live does. Those workflows do not run late. A session split that the observation
+causes still announces `session.ended` and `session.started`, as it would have.
+
+An observed offline closes the open segment, as `stream.offline` does, stamped
+with the time of the observation because the real end is not known.

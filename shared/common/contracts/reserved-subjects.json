@@ -28,6 +28,7 @@
     "setting.",
     "stream.offline",
     "stream.online",
+    "stream.status.",
     "user.message",
     "userpage.",
     "viewer.",
@@ -52,6 +53,7 @@
     "module.",
     "session.",
     "setting.",
+    "stream.status.",
     "userpage.",
     "viewer.",
     "workflow."

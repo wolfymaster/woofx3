@@ -1,6 +1,10 @@
 import { EngineEventType } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
 import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
+import {
+  EventType as StreamStatusEventType,
+  type StreamStatusObserved,
+} from "@woofx3/common/cloudevents/StreamStatus/events";
 import { setCurrentSessionId } from "@woofx3/common/cloudevents/session";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import { encode } from "@woofx3/common/cloudevents/utils";
@@ -48,11 +52,18 @@ export class StreamSessionResolver {
     // subscription callback has already returned.
     await this.nats.subscribe(EventType.StreamOnline, (msg: Msg) => this.handleStreamOnline(msg));
     await this.nats.subscribe(EventType.StreamOffline, (msg: Msg) => this.handleStreamOffline(msg));
+    await this.nats.subscribe(StreamStatusEventType.StreamStatusObserved, (msg: Msg) =>
+      this.handleStreamStatusObserved(msg)
+    );
 
     // Resolve and announce before the first event arrives. A process that
     // restarted would otherwise publish unstamped until the next broadcast,
     // which on a quiet day is hours.
     await this.syncCurrentSession();
+
+    // After subscribing, so no answer is missed. A platform that connects later
+    // publishes its state when it does.
+    await this.requestStreamStatus();
 
     this.logger.info("StreamSessionResolver started", {
       subjects: [EventType.StreamOnline, EventType.StreamOffline],
@@ -74,9 +85,47 @@ export class StreamSessionResolver {
     }
   }
 
-  private async handleStreamOnline(msg: Msg): Promise<void> {
+  private async requestStreamStatus(): Promise<void> {
     try {
-      const at = this.eventTime(msg);
+      await this.publish(StreamStatusEventType.StreamStatusRequested, {});
+    } catch (err) {
+      this.logger.warn("StreamSessionResolver: could not ask the platforms whether the stream is live", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  private handleStreamOnline(msg: Msg): Promise<void> {
+    return this.streamWentLive(this.eventTime(msg));
+  }
+
+  private handleStreamOffline(msg: Msg): Promise<void> {
+    return this.streamWentOffline(this.eventTime(msg));
+  }
+
+  /**
+   * Brings the session in line with what a platform says is true now, for the
+   * changes this process was not running to hear. The same decisions as the two
+   * events above, and as safe to repeat, so a state that already matches changes
+   * nothing. `stream.online` itself is not published: that is what would replay
+   * what going live does.
+   */
+  private async handleStreamStatusObserved(msg: Msg): Promise<void> {
+    const status = readStreamStatus(msg);
+    if (status === null) {
+      this.logger.warn(`${StreamStatusEventType.StreamStatusObserved}: malformed event; skipping`);
+      return;
+    }
+    if (!status.live) {
+      await this.streamWentOffline(new Date());
+      return;
+    }
+    const startedAt = status.startedAt === undefined ? Number.NaN : Date.parse(status.startedAt);
+    await this.streamWentLive(Number.isNaN(startedAt) ? new Date() : new Date(startedAt));
+  }
+
+  private async streamWentLive(at: Date): Promise<void> {
+    try {
       const state = await this.db.ensureCurrentStreamSession({});
       if (!state.session?.id) {
         this.logger.warn(`${EventType.StreamOnline}: no open stream session; skipping`);
@@ -131,13 +180,13 @@ export class StreamSessionResolver {
     }
   }
 
-  private async handleStreamOffline(msg: Msg): Promise<void> {
+  private async streamWentOffline(at: Date): Promise<void> {
     try {
       // Only the segment closes. The session stays open and keeps stamping --
       // a stream that ends is not a session that ends, which is the whole
       // reason a dropout does not wipe session-scoped state.
       await this.db.closeStreamSessionSegment({
-        endedAt: timestampFromDate(this.eventTime(msg)),
+        endedAt: timestampFromDate(at),
       });
     } catch (err) {
       if (err instanceof DbError && err.code === "not_found") {
@@ -272,9 +321,23 @@ export class StreamSessionResolver {
    * the holder, and undefined drops out at serialization, so the attribute is
    * absent rather than null.
    */
-  private async publish(type: SessionEventType, data: Record<string, unknown>): Promise<void> {
+  private async publish(type: SessionEventType | StreamStatusEventType, data: Record<string, unknown>): Promise<void> {
     const event = Event<Record<string, unknown>>({ type, source: "api", sessionId: undefined }, data);
     await this.nats.publish(type, encode(event));
+  }
+}
+
+/** The data of a `stream.status.observed`, or null when it is not one. */
+function readStreamStatus(msg: Msg): StreamStatusObserved | null {
+  try {
+    const data = (msg.json() as { data?: { live?: unknown; startedAt?: unknown } }).data;
+    if (typeof data?.live !== "boolean") {
+      return null;
+    }
+    return typeof data.startedAt === "string" ? { live: data.live, startedAt: data.startedAt } : { live: data.live };
+  } catch {
+    // Not JSON at all: the same as any other malformed event, which the caller logs.
+    return null;
   }
 }
 

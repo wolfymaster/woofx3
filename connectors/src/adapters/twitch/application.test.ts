@@ -55,6 +55,7 @@ function createMockListener() {
   };
 }
 
+let helixClient: unknown = {};
 let lastTwitchClientConfig: unknown;
 let lastClient: MockTwitchClient | undefined;
 let lastListener: ReturnType<typeof createMockListener> | undefined;
@@ -67,7 +68,7 @@ class MockTwitchClient {
 
   init = mock(async () => {});
   close = mock(async () => {});
-  ApiClient = mock(() => ({}));
+  ApiClient = mock(() => helixClient);
   EventBusListener = mock(() => {
     lastListener = createMockListener();
     return lastListener;
@@ -122,6 +123,7 @@ function context(overrides: Partial<TwitchAppContext> = {}): TwitchAppContext {
     },
     db: { baseURL: "http://db-proxy" },
     config: CONFIG,
+    liveStatus: { reset: () => {}, seed: async () => {}, changed: () => {} },
     ...overrides,
   } as unknown as TwitchAppContext;
 }
@@ -180,6 +182,39 @@ describe("TwitchApplication", () => {
     expect(ctx.twitchApi).toBeUndefined();
     expect(ctx.broadcaster).toBeUndefined();
     expect(app.eventSubStatus()).toEqual({ established: 0, expected: expect.any(Number), ready: false });
+  });
+
+  test("reports the stream's state and its start through the host's live status", async () => {
+    const startDate = new Date("2026-10-31T12:00:00.000Z");
+    helixClient = { streams: { getStreamByUserId: async () => ({ startDate }) } };
+    try {
+      const reads: Promise<unknown>[] = [];
+      const reset = mock(() => {});
+      const ctx = context({
+        liveStatus: {
+          reset,
+          changed: () => {},
+          seed: async (read, signal) => {
+            reads.push(read(signal));
+          },
+        },
+      });
+      const app = new TwitchApplication({
+        clock: new FakeTime(),
+        ids: countingIds(),
+        timers: systemTimers,
+        random: halfRandom,
+        selfSent: selfSentLines(),
+      });
+
+      await app.start(ctx, running);
+
+      expect(reset).toHaveBeenCalledTimes(1);
+      expect(await reads[0]).toEqual({ live: true, startedAt: "2026-10-31T12:00:00.000Z" });
+      await app.stop(ctx);
+    } finally {
+      helixClient = {};
+    }
   });
 
   test("stop before anything connected is safe", async () => {

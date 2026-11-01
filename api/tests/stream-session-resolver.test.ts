@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
+import { EventType as StreamStatusEventType } from "@woofx3/common/cloudevents/StreamStatus/events";
 import { clearCurrentSessionId, getCurrentSessionId } from "@woofx3/common/cloudevents/session";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { Msg } from "@woofx3/nats/src/types";
@@ -116,7 +117,7 @@ describe("StreamSessionResolver.start", () => {
 
     expect(resolver.currentSessionId()).toBe("session-1");
     expect(getCurrentSessionId()).toBe("session-1");
-    expect(published(nats)).toEqual([
+    expect(published(nats).filter((event) => event.type === SessionEventType.SessionStarted)).toEqual([
       {
         type: SessionEventType.SessionStarted,
         data: { sessionId: "session-1", startedAt: "2026-01-01T00:00:00.000Z" },
@@ -306,5 +307,85 @@ describe("stream.offline", () => {
 
     const handler = handlers.get(EventType.StreamOffline);
     await expect((async () => handler?.(makeMsg(EventType.StreamOffline, {})))()).resolves.toBeUndefined();
+  });
+});
+
+describe("StreamSessionResolver syncing with the platforms", () => {
+  const OBSERVED = StreamStatusEventType.StreamStatusObserved;
+  const STARTED_AT = "2026-10-31T12:00:00.000Z";
+
+  test("asks the platforms for their state once subscribed", async () => {
+    const { resolver, nats, handlers } = setup();
+    await resolver.start();
+    expect(handlers.has(OBSERVED)).toBe(true);
+    expect(published(nats).map((event) => event.type)).toContain(StreamStatusEventType.StreamStatusRequested);
+  });
+
+  test("still starts when asking fails", async () => {
+    const { resolver, nats } = setup();
+    nats.publish = mock(async (subject: string) => {
+      if (subject === StreamStatusEventType.StreamStatusRequested) {
+        throw new Error("bus down");
+      }
+    });
+    await expect(resolver.start()).resolves.toBeUndefined();
+  });
+
+  test("opens a segment at the stream's own start when it is found already live", async () => {
+    const { resolver, db, handlers } = setup();
+    await resolver.start();
+    await handlers.get(OBSERVED)?.(makeMsg(OBSERVED, { live: true, startedAt: STARTED_AT }));
+
+    expect(db.openStreamSessionSegment).toHaveBeenCalledTimes(1);
+    const [request] = db.openStreamSessionSegment.mock.calls[0];
+    expect(request.startedAt).toEqual(timestampFor(STARTED_AT));
+  });
+
+  test("never publishes stream.online for a stream found already live", async () => {
+    const { resolver, nats, handlers } = setup();
+    await resolver.start();
+    await handlers.get(OBSERVED)?.(makeMsg(OBSERVED, { live: true, startedAt: STARTED_AT }));
+    expect(published(nats).map((event) => event.type)).not.toContain(EventType.StreamOnline);
+  });
+
+  test("splits a session the stream came back to long after, as going live would", async () => {
+    const { resolver, db, handlers } = setup({
+      ensureCurrentStreamSession: mock(async () => ({
+        status: { code: "OK" },
+        session: session("session-1"),
+        isSegmentOpen: false,
+        lastSegmentEndedAt: timestampFor("2026-10-30T12:00:00.000Z"),
+      })),
+    });
+    await resolver.start();
+    await handlers.get(OBSERVED)?.(makeMsg(OBSERVED, { live: true, startedAt: STARTED_AT }));
+    expect(db.splitStreamSession).toHaveBeenCalledTimes(1);
+  });
+
+  test("uses the time it learned of it when the platform gives no start", async () => {
+    const { resolver, db, handlers } = setup();
+    await resolver.start();
+    for (const data of [{ live: true }, { live: true, startedAt: "not a time" }]) {
+      await handlers.get(OBSERVED)?.(makeMsg(OBSERVED, data));
+    }
+    expect(db.openStreamSessionSegment).toHaveBeenCalledTimes(2);
+  });
+
+  test("closes the open segment when the stream is found offline", async () => {
+    const { resolver, db, handlers } = setup();
+    await resolver.start();
+    await handlers.get(OBSERVED)?.(makeMsg(OBSERVED, { live: false }));
+    expect(db.closeStreamSessionSegment).toHaveBeenCalledTimes(1);
+    expect(db.openStreamSessionSegment).not.toHaveBeenCalled();
+  });
+
+  test("ignores a malformed observation", async () => {
+    const { resolver, db, handlers } = setup();
+    await resolver.start();
+    for (const data of [{}, { live: "yes" }, null]) {
+      await handlers.get(OBSERVED)?.(makeMsg(OBSERVED, data));
+    }
+    expect(db.openStreamSessionSegment).not.toHaveBeenCalled();
+    expect(db.closeStreamSessionSegment).not.toHaveBeenCalled();
   });
 });

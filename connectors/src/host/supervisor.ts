@@ -7,6 +7,7 @@ import { type Bounded, bounded } from "./bounded";
 import type { Clock, Logger, RandomSource, TimerHandle, Timers } from "./deps";
 import { errorMessage } from "./deps";
 import type { LinkState } from "./link-readers";
+import type { LiveStatusBoard } from "./live-status";
 import { type BusClient, ScopeCounters, ScopedBus, type SubscriptionLimits } from "./scoped-bus";
 
 export interface SupervisorConfig {
@@ -20,6 +21,7 @@ export interface SupervisorDeps {
   bus: BusClient;
   dbProxy: DbProxyClientConfig;
   companion: Pick<CompanionGateway, "forAdapter">;
+  liveStatus: Pick<LiveStatusBoard, "forAdapter" | "clear">;
   clock: Clock;
   random: RandomSource;
   timers: Timers;
@@ -337,6 +339,7 @@ export class Supervisor {
       bus: scope,
       dbProxy: this.deps.dbProxy,
       companion: this.deps.companion.forAdapter(slot.id),
+      liveStatus: this.deps.liveStatus.forAdapter(slot.id),
       reportFault: (reason) => this.fault(slot, epoch, reason),
     };
     const { result: started, releaseBy } = await this.settleStart(slot, ctx, abort.signal);
@@ -401,6 +404,7 @@ export class Supervisor {
   private async release(slot: Slot, reason: string, releaseBy: number): Promise<void> {
     slot.abort?.abort();
     slot.abort = undefined;
+    this.deps.liveStatus.clear(slot.id);
     const scope = slot.scope;
     slot.scope = undefined;
 
