@@ -89,6 +89,55 @@ describe("built-in counter widget", () => {
   });
 });
 
+describe("built-in queue widget", () => {
+  const KEY = "resource:woofx3:queue:songs";
+  const queue = (value: unknown) => ({ value, settings: {} });
+
+  it("draws as many entries from the front as it is told to, and redraws as the queue changes", async () => {
+    const { el, mock } = run("queue", {
+      settings: { queue: "woofx3:queue:songs", count: 2, text: "{position}. {entry}" },
+      storage: { [KEY]: queue(["a", "b", "c"]) },
+    });
+    await tick();
+    expect(el.textContent).toBe("1. a\n2. b");
+
+    mock.setStorage(KEY, queue(["b", "c"]));
+    await tick();
+    expect(el.textContent).toBe("1. b\n2. c");
+  });
+
+  it("shows only the front entry by default", async () => {
+    const { el } = run("queue", {
+      settings: { queue: "woofx3:queue:songs" },
+      storage: { [KEY]: queue(["a", "b"]) },
+    });
+    await tick();
+    expect(el.textContent).toBe("a");
+  });
+
+  it("shows the empty text for a queue holding nothing, and nothing without one", async () => {
+    const { el, mock } = run("queue", {
+      settings: { queue: "woofx3:queue:songs", emptyText: "No requests yet" },
+      storage: { [KEY]: queue(null) },
+    });
+    await tick();
+    expect(el.textContent).toBe("No requests yet");
+
+    mock.setSettings({ queue: "woofx3:queue:songs" });
+    await tick();
+    expect(el.textContent).toBe("");
+  });
+
+  it("leaves a template token inside a viewer's entry as they wrote it", async () => {
+    const { el } = run("queue", {
+      settings: { queue: "woofx3:queue:songs", text: "{entry} at {position}" },
+      storage: { [KEY]: queue(["{position}"]) },
+    });
+    await tick();
+    expect(el.textContent).toBe("{position} at 1");
+  });
+});
+
 describe("built-in timer widget", () => {
   it("redraws in place when its template changes", async () => {
     const stopped = { value: { running: false, remainingMs: 65_000 }, settings: { duration: 300 }, readAt: 0 };

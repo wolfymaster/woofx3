@@ -221,3 +221,81 @@ fn a_refused_entry_or_an_empty_queue_announces_nothing() {
         .unwrap();
     assert!(harness.take_events().is_empty());
 }
+
+const DESTINATION: &str = "woofx3:queue:on_stream";
+
+fn two_queues(destination_settings: Value) -> Harness {
+    queue(json!({})).with_instance(DESTINATION, "queue", destination_settings)
+}
+
+fn move_entry(harness: &Harness, entry: &str) -> Value {
+    harness
+        .run(
+            "queueMove",
+            json!({ "target": TARGET, "destination": DESTINATION, "entry": entry }),
+        )
+        .unwrap()
+}
+
+#[test]
+fn moving_takes_the_entry_to_the_back_of_the_other_queue_and_announces_it_joining() {
+    let harness = two_queues(json!({}));
+    harness.store(json!(["alice", "bob"]));
+    harness
+        .run(
+            "queueAdd",
+            json!({ "target": DESTINATION, "entry": "carol" }),
+        )
+        .unwrap();
+    harness.take_events();
+
+    assert_eq!(
+        move_entry(&harness, "bob"),
+        json!({ "target": TARGET, "destination": DESTINATION, "entry": "bob", "moved": true, "reason": "", "position": 2, "size": 1 })
+    );
+    assert_eq!(harness.stored(), Some(json!(["alice"])));
+    assert_eq!(
+        harness.stored_at(DESTINATION),
+        Some(json!(["carol", "bob"]))
+    );
+    let events = harness.take_events();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].0, "queue.added");
+    assert_eq!(events[0].1["target"], DESTINATION);
+    assert_eq!(events[0].1["entry"], "bob");
+}
+
+#[test]
+fn an_entry_the_other_queue_refuses_stays_where_it_is() {
+    let harness = two_queues(json!({ "capacity": 1 }));
+    harness.store(json!(["alice", "bob"]));
+    assert_eq!(move_entry(&harness, "alice")["moved"], true);
+    harness.take_events();
+
+    let refused = move_entry(&harness, "bob");
+    assert_eq!(refused["moved"], false);
+    assert_eq!(refused["reason"], "full");
+    assert_eq!(harness.stored(), Some(json!(["bob"])));
+    assert_eq!(harness.take_events(), vec![]);
+}
+
+#[test]
+fn moving_an_entry_that_is_not_there_reports_it_missing() {
+    let harness = two_queues(json!({}));
+    let missing = move_entry(&harness, "nobody");
+    assert_eq!(missing["moved"], false);
+    assert_eq!(missing["reason"], "missing");
+    assert_eq!(harness.stored_at(DESTINATION), None);
+}
+
+#[test]
+fn a_queue_cannot_move_an_entry_to_itself() {
+    let harness = two_queues(json!({}));
+    harness.store(json!(["alice"]));
+    let refused = harness.run(
+        "queueMove",
+        json!({ "target": TARGET, "destination": TARGET, "entry": "alice" }),
+    );
+    assert!(refused.unwrap_err().contains("to itself"));
+    assert_eq!(harness.stored(), Some(json!(["alice"])));
+}
