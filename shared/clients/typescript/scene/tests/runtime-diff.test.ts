@@ -37,6 +37,7 @@ function widget(id: string, overrides: Partial<WidgetPlan> = {}): WidgetPlan {
     box: { x: 0, y: 0, width: 100, height: 100, rotation: 0, opacity: 1 },
     z: 0,
     visible: true,
+    awaitingPaint: false,
     animations: { transition: [], effect: [] },
     delegated: [],
     ...overrides,
@@ -67,7 +68,15 @@ describe("diffPlans from nothing", () => {
       [animation("stage")]
     );
     expect(diffPlans(null, next)).toEqual([
-      { op: "mount", id: "w1", widget: "woofx3:widget:text", box: next.widgets.w1.box, z: 1, visible: false },
+      {
+        op: "mount",
+        id: "w1",
+        widget: "woofx3:widget:text",
+        box: next.widgets.w1.box,
+        z: 1,
+        visible: false,
+        awaitingPaint: false,
+      },
       { op: "startAnimation", id: "w1", layer: "transition", behavior: "in", spec: spec(0) },
       { op: "startAnimation", id: "w1", layer: "effect", behavior: "shake", spec: spec(0, "effect") },
       { op: "startAnimation", id: null, layer: "transition", behavior: "stage", spec: spec(0) },
@@ -113,7 +122,7 @@ describe("diffPlans between plans", () => {
   test("showing a widget writes only its visibility", () => {
     const prev = base();
     prev.widgets.w2.visible = false;
-    expect(diffPlans(prev, base())).toEqual([{ op: "setVisible", id: "w2", visible: true }]);
+    expect(diffPlans(prev, base())).toEqual([{ op: "setVisible", id: "w2", visible: true, awaitingPaint: false }]);
   });
 
   test("a removed widget is unmounted, its animations and delegations with it", () => {
@@ -129,7 +138,15 @@ describe("diffPlans between plans", () => {
     next.widgets.w1.widget = "woofx3:widget:image";
     expect(diffPlans(base(), next)).toEqual([
       { op: "unmount", id: "w1" },
-      { op: "mount", id: "w1", widget: "woofx3:widget:image", box: next.widgets.w1.box, z: 0, visible: true },
+      {
+        op: "mount",
+        id: "w1",
+        widget: "woofx3:widget:image",
+        box: next.widgets.w1.box,
+        z: 0,
+        visible: true,
+        awaitingPaint: false,
+      },
       { op: "startAnimation", id: "w1", layer: "transition", behavior: "a", spec: spec(0) },
       { op: "startAnimation", id: "w1", layer: "transition", behavior: "b", spec: spec(0) },
       { op: "startAnimation", id: "w1", layer: "transition", behavior: "c", spec: spec(0) },

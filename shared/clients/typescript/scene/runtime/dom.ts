@@ -7,13 +7,14 @@
 //     > effect         effects that play while the widget is shown
 //       > slot         the widget's content, mounted by the caller
 //
-// A widget the plan does not show is hidden on its box, in one of two ways
-// (`HideWith`), because Chromium stops rendering a cross-origin frame under
+// A widget the plan does not show is hidden on its box, in one of two ways,
+// because Chromium stops rendering a cross-origin frame under
 // `visibility: hidden`: it runs no animation frames and paints nothing until
 // shown. That is what a scene wants of a widget the streamer hid, and wrong
-// for one waiting to enter, which has to paint first: the timeline holds an
-// entrance until the widget has painted, so a frame that cannot paint while
-// hidden is shown only once RENDER_WAIT_MS gives up on it.
+// for one waiting to enter (`awaitingPaint`), which has to paint first: the
+// timeline holds an entrance until the widget has painted, so a frame that
+// cannot paint while hidden is shown only once RENDER_WAIT_MS gives up on it.
+// A widget awaiting paint is therefore always hidden with opacity 0.
 //
 // The box is written only when the plan changes. It is placed with
 // `transform` rather than `left`/`top`, so moving a widget never triggers
@@ -80,12 +81,12 @@ export interface RenderDocument<TElement extends RenderElement<TElement>> {
 }
 
 /**
- * How a widget the plan does not show is hidden:
+ * How a widget the plan does not show, and that is not awaiting paint, is
+ * hidden:
  *
  * - `"visibility"`: `visibility: hidden`. Its frame stops rendering (no
  *   animation frames, no paint) until it is shown; its scripts keep running.
- * - `"opacity"`: opacity 0. Its frame keeps rendering unseen, so a widget can
- *   paint before it enters and enter as soon as it is due.
+ * - `"opacity"`: opacity 0. Its frame keeps rendering unseen.
  */
 export type HideWith = "visibility" | "opacity";
 
@@ -133,8 +134,8 @@ interface Wrappers<TElement> {
 
 interface MountedWidget<TElement> extends Wrappers<TElement> {
   box: TElement;
-  /** The plan's opacity for the box and whether it shows the widget; both decide the written opacity. */
-  shown: { opacity: number; visible: boolean };
+  /** The plan's opacity for the box, whether it shows the widget and whether it must keep painting unseen. */
+  shown: { opacity: number; visible: boolean; awaitingPaint: boolean };
   unmountContent: () => void;
   /** The last value written to each box property, so an unchanged one is not written again. */
   written: Partial<Record<keyof RenderStyle, string>>;
@@ -211,10 +212,11 @@ export function createDomRenderer<TElement extends RenderElement<TElement>>(
   }
 
   function writeShown(widget: MountedWidget<TElement>): void {
-    const { opacity, visible } = widget.shown;
+    const { opacity, visible, awaitingPaint } = widget.shown;
     if (hideWith === "visibility") {
-      writeStyle(widget, "visibility", visible ? "" : "hidden");
-      writeStyle(widget, "opacity", String(opacity));
+      const paintingUnseen = !visible && awaitingPaint;
+      writeStyle(widget, "visibility", visible || paintingUnseen ? "" : "hidden");
+      writeStyle(widget, "opacity", paintingUnseen ? "0" : String(opacity));
     } else {
       writeStyle(widget, "opacity", visible ? String(opacity) : "0");
     }
@@ -240,7 +242,7 @@ export function createDomRenderer<TElement extends RenderElement<TElement>>(
       box,
       transition,
       effect,
-      shown: { opacity: op.box.opacity, visible: op.visible },
+      shown: { opacity: op.box.opacity, visible: op.visible, awaitingPaint: op.awaitingPaint },
       animations: new Map(),
       unmountContent: () => {},
       written: {},
@@ -310,6 +312,7 @@ export function createDomRenderer<TElement extends RenderElement<TElement>>(
           case "setVisible": {
             const widget = mustGet(op.id);
             widget.shown.visible = op.visible;
+            widget.shown.awaitingPaint = op.awaitingPaint;
             writeShown(widget);
             break;
           }
