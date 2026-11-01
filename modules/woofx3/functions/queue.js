@@ -28,7 +28,11 @@ const MAX_ENTRY_LENGTH = 500;
 function queueAdd(ctx) {
   const queue = loadQueue(ctx);
   const entry = entryParameter(ctx, queue);
-  return update(ctx, queue, (entries) => {
+  return update(ctx, queue, addEntry(queue, entry));
+}
+
+function addEntry(queue, entry) {
+  return (entries) => {
     const existing = entries.indexOf(entry);
     if (!queue.allowDuplicates && existing !== -1) {
       return { entries, result: { entry, added: false, reason: "duplicate", position: existing + 1 } };
@@ -42,7 +46,7 @@ function queueAdd(ctx) {
       result: { entry, added: true, reason: "", position: next.length },
       announce: "queue.added",
     };
-  });
+  };
 }
 
 // Takes the first entry out of the queue.
@@ -60,14 +64,46 @@ function queueNext(ctx) {
 function queueRemove(ctx) {
   const queue = loadQueue(ctx);
   const entry = entryParameter(ctx, queue);
-  return update(ctx, queue, (entries) => {
+  return update(ctx, queue, removeEntry(entry));
+}
+
+function removeEntry(entry) {
+  return (entries) => {
     const index = entries.indexOf(entry);
     if (index === -1) {
       return { entries, result: { entry, removed: false, position: 0 } };
     }
     const next = entries.slice(0, index).concat(entries.slice(index + 1));
     return { entries: next, result: { entry, removed: true, position: index + 1 } };
-  });
+  };
+}
+
+// Moves an entry from one queue to the back of another, such as from a review
+// queue to the one shown on stream. Two queues can't change in one write, so it
+// joins the destination first: a failure between the writes leaves the entry in
+// both rather than in neither. An entry the destination refuses stays where it is.
+function queueMove(ctx) {
+  const source = loadQueue(ctx);
+  const destination = loadQueueAt(ctx, parameters(ctx).destination);
+  if (destination.target === source.target) {
+    throw new Error(`queue: can't move an entry from ${source.target} to itself`);
+  }
+  const entry = entryParameter(ctx, source);
+  const stored = ctx.storage.get(source.key);
+  const held = Array.isArray(stored) ? stored.map(String) : [];
+  const report = { target: source.target, destination: destination.target, entry };
+  if (held.indexOf(entry) === -1) {
+    return ctx.result(Object.assign(report, { moved: false, reason: "missing", position: 0, size: held.length }), []);
+  }
+  const joined = apply(ctx, destination, addEntry(destination, entry));
+  if (!joined.result.added) {
+    return ctx.result(Object.assign(report, { moved: false, reason: joined.result.reason, position: 0, size: held.length }), []);
+  }
+  const left = apply(ctx, source, removeEntry(entry));
+  return ctx.result(
+    Object.assign(report, { moved: true, reason: "", position: joined.result.position, size: left.result.size }),
+    [{ type: joined.announce, data: joined.result }]
+  );
 }
 
 function queueClear(ctx) {
@@ -94,7 +130,10 @@ function entryParameter(ctx, queue) {
 // The chosen queue and its settings. Refuses a target that is not a queue,
 // since writing a list over another kind's value would corrupt it silently.
 function loadQueue(ctx) {
-  const target = parameters(ctx).target;
+  return loadQueueAt(ctx, parameters(ctx).target);
+}
+
+function loadQueueAt(ctx, target) {
   if (typeof target !== "string" || target === "") {
     throw new Error("queue: no queue chosen");
   }
@@ -121,17 +160,22 @@ function loadQueue(ctx) {
 // on, the event to announce it as. The report gains the queue and its size after
 // the change, which is what later workflow steps read, and is the event's data.
 function update(ctx, queue, change) {
+  const { result, announce } = apply(ctx, queue, change);
+  return ctx.result(result, announce ? [{ type: announce, data: result }] : []);
+}
+
+function apply(ctx, queue, change) {
   let stored = ctx.storage.get(queue.key);
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const entries = Array.isArray(stored) ? stored.map(String) : [];
     const changed = change(entries);
     const result = Object.assign({ target: queue.target }, changed.result, { size: changed.entries.length });
     if (changed.entries === entries) {
-      return ctx.result(result, []);
+      return { result, announce: null };
     }
     const written = ctx.storage.compareAndSet(queue.key, stored === undefined ? null : stored, changed.entries, queue.options);
     if (written.swapped) {
-      return ctx.result(result, changed.announce ? [{ type: changed.announce, data: result }] : []);
+      return { result, announce: changed.announce };
     }
     stored = written.current;
   }

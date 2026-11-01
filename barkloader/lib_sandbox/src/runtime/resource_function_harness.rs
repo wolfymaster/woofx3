@@ -90,10 +90,10 @@ impl StorageClient for MemoryStorage {
     }
 }
 
-/// Knows exactly one instance.
-struct OneInstance(ResourceInstance);
+/// Knows the instances a test gave it.
+struct KnownInstances(Mutex<Vec<ResourceInstance>>);
 
-impl ResourceClient for OneInstance {
+impl ResourceClient for KnownInstances {
     fn create(
         &self,
         _: &str,
@@ -108,10 +108,16 @@ impl ResourceClient for OneInstance {
         Err("not used".into())
     }
     fn get(&self, canonical_id: &str) -> Result<Option<ResourceInstance>, String> {
-        Ok((canonical_id == self.0.canonical_id).then(|| self.0.clone()))
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|instance| instance.canonical_id == canonical_id)
+            .cloned())
     }
     fn list_by_kind(&self, _: &str) -> Result<Vec<ResourceInstance>, String> {
-        Ok(vec![self.0.clone()])
+        Ok(self.0.lock().unwrap().clone())
     }
 }
 
@@ -124,12 +130,12 @@ impl StreamClient for FakeStream {
     }
 }
 
-/// One function file and the single resource instance it is run against.
+/// One function file and the resource instances it is run against.
 pub struct Harness {
     source: &'static str,
     target: String,
     pub storage: Arc<MemoryStorage>,
-    resources: Arc<OneInstance>,
+    resources: Arc<KnownInstances>,
     /// Every `ctx.schedule` call the functions run so far made.
     pub schedule: Arc<RecordingSchedule>,
     pub stream: Arc<FakeStream>,
@@ -142,23 +148,27 @@ impl Harness {
     /// `kind` is what the instance claims to be, which a test may set to
     /// something else to check the function refuses it.
     pub fn new(source: &'static str, target: &str, kind: &str, settings: Value) -> Self {
-        let instance_id = target.rsplit(':').next().unwrap_or_default().to_string();
         Self {
             source,
             target: target.to_string(),
             storage: Arc::new(MemoryStorage::default()),
-            resources: Arc::new(OneInstance(ResourceInstance {
-                canonical_id: target.to_string(),
-                module_name: "woofx3".to_string(),
-                kind: kind.to_string(),
-                display_name: instance_id.clone(),
-                instance_id,
-                settings,
-            })),
+            resources: Arc::new(KnownInstances(Mutex::new(vec![instance_at(
+                target, kind, settings,
+            )]))),
             schedule: Arc::new(RecordingSchedule::default()),
             stream: Arc::new(FakeStream(Mutex::new(Ok(false)))),
             events: Mutex::new(Vec::new()),
         }
+    }
+
+    /// Makes a second instance known, for a function that reaches two.
+    pub fn with_instance(self, target: &str, kind: &str, settings: Value) -> Self {
+        self.resources
+            .0
+            .lock()
+            .unwrap()
+            .push(instance_at(target, kind, settings));
+        self
     }
 
     pub fn run(&self, entry_point: &str, parameters: Value) -> Result<Value, String> {
@@ -208,8 +218,12 @@ impl Harness {
 
     /// The target's value, at the key every resource kind keeps it under.
     pub fn stored(&self) -> Option<Value> {
+        self.stored_at(&self.target)
+    }
+
+    pub fn stored_at(&self, target: &str) -> Option<Value> {
         self.storage
-            .get("woofx3", &format!("state:{}", self.target))
+            .get("woofx3", &format!("state:{target}"))
             .unwrap()
     }
 
@@ -223,6 +237,18 @@ impl Harness {
             )
             .unwrap();
         self.storage.write_options.lock().unwrap().clear();
+    }
+}
+
+fn instance_at(target: &str, kind: &str, settings: Value) -> ResourceInstance {
+    let instance_id = target.rsplit(':').next().unwrap_or_default().to_string();
+    ResourceInstance {
+        canonical_id: target.to_string(),
+        module_name: "woofx3".to_string(),
+        kind: kind.to_string(),
+        display_name: instance_id.clone(),
+        instance_id,
+        settings,
     }
 }
 

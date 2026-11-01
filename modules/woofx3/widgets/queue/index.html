@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <title>queue</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+    }
+
+    #box {
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+      padding: 8px;
+    }
+
+    /* Colour, font, size and alignment come from the placement's settings
+       through the host's bindings, so changing them updates the widget in
+       place. */
+    #text {
+      width: 100%;
+      color: var(--setting-color, #ffffff);
+      font-family: var(--setting-fontFamily, Roboto, system-ui, sans-serif);
+      font-size: calc(var(--setting-fontSize, 48) * 1px);
+      text-align: var(--setting-align, center);
+      font-weight: bold;
+      line-height: 1.2;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+    }
+  </style>
+</head>
+
+<body>
+  <div id="box">
+    <div id="text"></div>
+  </div>
+
+  <script>
+    (function () {
+      const host = window.widgetHost;
+      if (!host) {
+        return;
+      }
+      const el = document.getElementById("text");
+
+      // The queue followed, how to stop following it, and the last reading of
+      // it. Nothing shows until the first reading arrives.
+      let following = null;
+      let stopFollowing = null;
+      let instance = null;
+
+      function draw() {
+        if (instance === null) {
+          return;
+        }
+        const entries = Array.isArray(instance.value) ? instance.value.map(String) : [];
+        if (entries.length === 0) {
+          el.textContent = typeof host.settings.emptyText === "string" ? host.settings.emptyText : "";
+          return;
+        }
+        const template = str(host.settings.text, "{entry}");
+        const lines = entries
+          .slice(0, shownCount(host.settings.count))
+          .map((entry, index) => fill(template, { entry, position: String(index + 1) }));
+        el.textContent = lines.join("\n");
+      }
+
+      // Follows the queue the settings name and draws it with their template.
+      function follow() {
+        const queue = str(host.settings.queue, "");
+        if (queue === following) {
+          draw();
+          return;
+        }
+        if (stopFollowing !== null) {
+          stopFollowing();
+          stopFollowing = null;
+        }
+        following = queue;
+        instance = null;
+        el.textContent = "";
+        if (queue === "") {
+          return;
+        }
+        stopFollowing = host.storage.subscribe("resource:" + queue, (next) => {
+          if (next === null || typeof next !== "object") {
+            return;
+          }
+          instance = next;
+          draw();
+        });
+      }
+
+      // On a scene, an edit to the settings redraws in place rather than
+      // reloading the widget. A host without the call reloads it.
+      if (host.surface !== "alert" && typeof host.onSettingsChange === "function") {
+        host.onSettingsChange(follow);
+      }
+      follow();
+    })();
+
+    function shownCount(raw) {
+      const count = Math.floor(Number(raw));
+      return Number.isFinite(count) && count >= 1 ? count : 1;
+    }
+
+    // One pass over the template, so an entry that contains "{position}" stays
+    // as the viewer wrote it.
+    function fill(template, values) {
+      return template.replace(/\{(entry|position)\}/g, (_, token) => values[token]);
+    }
+
+    function str(value, fallback) {
+      return typeof value === "string" && value.trim() !== "" ? value : fallback;
+    }
+  </script>
+</body>
+
+</html>

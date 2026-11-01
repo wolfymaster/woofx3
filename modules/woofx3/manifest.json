@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.43.0",
+  "version": "0.44.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -149,6 +149,13 @@
           "type": "toggle",
           "defaultValue": false,
           "description": "Let the same entry be in line more than once. Off, adding an entry already in line leaves it where it is."
+        },
+        {
+          "id": "approveInto",
+          "label": "Approve into",
+          "type": "resource_ref",
+          "resourceKind": "queue",
+          "description": "Makes this a review queue: each entry gets an Approve button that moves it to this other queue. Leave it empty for a normal queue."
         }
       ]
     },
@@ -316,6 +323,13 @@
       "runtime": "js",
       "path": "functions/queue.js",
       "entryPoint": "queueClear"
+    },
+    {
+      "id": "queue.move",
+      "name": "Move to another queue",
+      "runtime": "js",
+      "path": "functions/queue.js",
+      "entryPoint": "queueMove"
     },
     {
       "id": "timer.expire",
@@ -1363,6 +1377,53 @@
             "type": "number",
             "description": "How many entries it holds after the change."
           }
+        ]
+      },
+      "taxonomy": [
+        "tools.queue"
+      ]
+    },
+    {
+      "id": "queue.move",
+      "name": "Move to another queue",
+      "description": "Move an entry to the back of another queue, such as from a review queue to the one shown on stream. If the other queue refuses it, it stays where it is.",
+      "sentence": "Move {entry} from {target} to {destination}",
+      "type": "function",
+      "function": "queue.move",
+      "schema": [
+        {
+          "id": "target",
+          "label": "From queue",
+          "type": "resource_ref",
+          "resourceKind": "queue",
+          "required": true,
+          "description": "The queue the entry is in."
+        },
+        {
+          "id": "destination",
+          "label": "To queue",
+          "type": "resource_ref",
+          "resourceKind": "queue",
+          "required": true,
+          "description": "The queue it joins."
+        },
+        {
+          "id": "entry",
+          "label": "Entry",
+          "type": "text",
+          "required": true,
+          "description": "The entry to move."
+        }
+      ],
+      "returns": {
+        "fields": [
+          { "path": "target", "type": "string", "description": "The queue it was in." },
+          { "path": "destination", "type": "string", "description": "The queue it was moved to." },
+          { "path": "entry", "type": "string", "description": "The entry asked for." },
+          { "path": "moved", "type": "boolean", "description": "Whether it moved." },
+          { "path": "reason", "type": "string", "description": "Why it did not move: missing, duplicate or full. Empty when it moved." },
+          { "path": "position", "type": "number", "description": "Its place in the other queue, counting from 1; 0 when it did not move." },
+          { "path": "size", "type": "number", "description": "How many entries the first queue holds after the change." }
         ]
       },
       "taxonomy": [
@@ -2805,6 +2866,83 @@
           }
         ]
       }
+    },
+    {
+      "id": "queue",
+      "name": "Queue",
+      "description": "The entries at the front of a queue, kept up to date as it changes. Show one for what is on now, or several for who is up next.",
+      "entry": "widgets/queue/index.html",
+      "assets": "widgets/queue",
+      "surfaces": [
+        "scene"
+      ],
+      "settingsSchema": [
+        {
+          "id": "queue",
+          "label": "Queue",
+          "type": "resource_ref",
+          "resourceKind": "queue",
+          "required": true,
+          "description": "The queue to show."
+        },
+        {
+          "id": "count",
+          "label": "Entries shown",
+          "type": "number",
+          "min": 1,
+          "max": 50,
+          "defaultValue": 1,
+          "description": "How many entries to show, from the front of the line."
+        },
+        {
+          "id": "text",
+          "label": "Text",
+          "type": "text",
+          "defaultValue": "{entry}",
+          "placeholder": "{position}. {entry}",
+          "description": "How each entry reads. {entry} is the entry and {position} its place in line."
+        },
+        {
+          "id": "emptyText",
+          "label": "Text when empty",
+          "type": "text",
+          "description": "Shown when the queue is empty. Leave it blank to show nothing."
+        },
+        {
+          "id": "color",
+          "label": "Color",
+          "type": "color",
+          "defaultValue": "#ffffff"
+        },
+        {
+          "id": "fontFamily",
+          "label": "Font",
+          "type": "font",
+          "defaultValue": "Roboto, system-ui, sans-serif"
+        },
+        {
+          "id": "fontSize",
+          "label": "Font size",
+          "type": "number",
+          "unit": "px",
+          "min": 1,
+          "defaultValue": 48
+        },
+        {
+          "id": "align",
+          "label": "Alignment",
+          "type": "select",
+          "defaultValue": "center",
+          "options": [
+            { "value": "left", "label": "Left" },
+            { "value": "center", "label": "Center" },
+            { "value": "right", "label": "Right" }
+          ]
+        }
+      ],
+      "taxonomy": [
+        "data.queue"
+      ]
     }
   ],
   "deadlines": [
