@@ -149,6 +149,13 @@
           "type": "toggle",
           "defaultValue": false,
           "description": "Let the same entry be in line more than once. Off, adding an entry already in line leaves it where it is."
+        },
+        {
+          "id": "approveInto",
+          "label": "Approve into",
+          "type": "resource_ref",
+          "resourceKind": "queue",
+          "description": "Makes this a review queue: each entry gets an Approve button that moves it to this other queue. Leave it empty for a normal queue."
         }
       ]
     },
