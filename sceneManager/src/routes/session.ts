@@ -29,7 +29,10 @@ export async function handleSessionRefreshRoute(req: Request, sceneId: string, d
     authAt = now;
   }
   const fresh = await deps.sessionTokens.mint({ sceneId, authAt });
-  return jsonOk({ status: "ok" }, { "Set-Cookie": serializeSessionCookie(sceneId, fresh, SESSION_TOKEN_TTL_SECONDS) });
+  return jsonOk(
+    { status: "ok" },
+    { "Set-Cookie": serializeSessionCookie(req, sceneId, fresh, SESSION_TOKEN_TTL_SECONDS) }
+  );
 }
 
 /** The overlay token a refresh carries, or "" for one with none (or a body that is not `{ token }`). */
