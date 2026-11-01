@@ -7,7 +7,7 @@ import { handleStaticAssetRoute } from "../../src/routes/assets";
 async function withPublicDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = join(tmpdir(), `scene-manager-assets-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   await mkdir(join(dir, "vendor"), { recursive: true });
-  await writeFile(join(dir, "vendor", "datastar.js"), "// datastar");
+  await writeFile(join(dir, "vendor", "lib.js"), "// lib");
   try {
     await fn(dir);
   } finally {
@@ -34,10 +34,10 @@ describe("handleStaticAssetRoute", () => {
 
   it("maps every other path under publicDir verbatim", async () => {
     await withPublicDir(async (dir) => {
-      const { req, url } = get("/assets/vendor/datastar.js");
+      const { req, url } = get("/assets/vendor/lib.js");
       const resp = await handleStaticAssetRoute(req, url, dir);
       expect(resp.status).toBe(200);
-      expect(await resp.text()).toBe("// datastar");
+      expect(await resp.text()).toBe("// lib");
     });
   });
 

@@ -24,7 +24,7 @@ describe("routes for stored files", () => {
   it("answer module and library files, and nothing else under /assets/ but the shim and the static catch-all", () => {
     expect(routeOf("/assets/modules/m1/abc123/assets/bell.mp3")).toBe("/assets/modules/*");
     expect(routeOf("/assets/user/res-1/photo.png")).toBe("/assets/user/*");
-    expect(routeOf("/assets/vendor/datastar.js")).toBe("/assets/*");
+    expect(routeOf("/assets/vendor/lib.js")).toBe("/assets/*");
     expect(routeOf("/assets/widget-host-shim.js")).toBe("/assets/widget-host-shim.js");
     expect(routeOf("/assets/modulesx/m1/a.png")).toBe("/assets/*");
   });

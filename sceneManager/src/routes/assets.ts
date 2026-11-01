@@ -2,8 +2,7 @@ import { join, normalize } from "node:path";
 
 /**
  * `GET /assets/*` — everything sceneManager itself serves statically:
- * the vendored data-star bundle, the client scene-manager script, and
- * the widget-host-shim. Traversal-safe: the resolved path must stay
+ * the client scene-manager script and the widget-host-shim. Traversal-safe: the resolved path must stay
  * within `publicDir`.
  *
  * Widget files are not served here. Every widget, including the bundled
