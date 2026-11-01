@@ -52,7 +52,7 @@ function sessionOf(response: Response): string {
 async function openPage(): Promise<string> {
   const token = await tokens.mintPreview();
   const url = new URL(`http://scene.test/preview/composition?token=${token}`);
-  return sessionOf(await handleCompositionPreviewRoute(url, deps().deps));
+  return sessionOf(await handleCompositionPreviewRoute(new Request(url), url, deps().deps));
 }
 
 function post(path: string, session: string | null, body = ""): Request {
@@ -70,7 +70,7 @@ describe("GET /preview/composition", () => {
   it("serves the page and its session for the api's preview token", async () => {
     const token = await tokens.mintPreview();
     const url = new URL(`http://scene.test/preview/composition?token=${token}`);
-    const response = await handleCompositionPreviewRoute(url, deps().deps);
+    const response = await handleCompositionPreviewRoute(new Request(url), url, deps().deps);
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(await response.text()).toContain("/assets/scene-manager/composition-preview-page.js");
@@ -89,7 +89,7 @@ describe("GET /preview/composition", () => {
     ];
     for (const token of others) {
       const url = new URL(`http://scene.test/preview/composition?token=${encodeURIComponent(token)}`);
-      const response = await handleCompositionPreviewRoute(url, deps().deps);
+      const response = await handleCompositionPreviewRoute(new Request(url), url, deps().deps);
       expect(response.status).toBe(404);
       expect(response.headers.get("Set-Cookie")).toBeNull();
       expect(await response.text()).not.toContain("composition-preview-page.js");

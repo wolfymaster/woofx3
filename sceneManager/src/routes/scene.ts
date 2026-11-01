@@ -46,7 +46,7 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store",
       "Referrer-Policy": "no-referrer",
-      "Set-Cookie": serializeSessionCookie(state.sceneId, sessionToken, SESSION_TOKEN_TTL_SECONDS),
+      "Set-Cookie": serializeSessionCookie(req, state.sceneId, sessionToken, SESSION_TOKEN_TTL_SECONDS),
     },
   });
 }
