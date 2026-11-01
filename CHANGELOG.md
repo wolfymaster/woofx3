@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.59.0](https://github.com/wolfymaster/woofx3/compare/v0.58.0...v0.59.0) (2026-11-01)
+
+### Features
+
+* **api:** sync stream segments from observed live state ([11db4f3](https://github.com/wolfymaster/woofx3/commit/11db4f3158e646156fe2a840a8ccdf231d6ae33a))
+* **connectors:** report each platform's live state from a host board ([6f72fc4](https://github.com/wolfymaster/woofx3/commit/6f72fc45b7c5bce3933a4faff4b989d9d21ca447))
+* **contracts:** reserve stream.status subjects for live state sync ([fce1b43](https://github.com/wolfymaster/woofx3/commit/fce1b4367ac12e442935456805c1aa1aa39336fa))
+
 ## [0.58.0](https://github.com/wolfymaster/woofx3/compare/v0.57.0...v0.58.0) (2026-10-31)
 
 ### Features
