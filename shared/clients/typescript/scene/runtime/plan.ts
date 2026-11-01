@@ -80,6 +80,8 @@ export interface WidgetPlan {
   /** Stacking rank, 0 at the bottom, dense across the plan's widgets. */
   z: number;
   visible: boolean;
+  /** Not shown yet, but its entrance waits on its frame painting, so it must keep rendering unseen. */
+  awaitingPaint: boolean;
   animations: LayerAnimations;
   /** Behaviors handed to the widget, in behavior order. */
   delegated: DelegatedBehavior[];
@@ -178,6 +180,7 @@ export function planFrame(doc: CompositionDocument, options: PlanOptions = {}): 
       },
       z: rank,
       visible: timeline === undefined ? placement.visible : shownAt(timeline, id, atMs as number, changes),
+      awaitingPaint: timeline?.widgets[id]?.awaitingPaint ?? false,
       animations: { transition: [], effect: [] },
       delegated: [],
     };
