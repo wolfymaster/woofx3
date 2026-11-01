@@ -478,6 +478,33 @@ func neededById(tx *gorm.DB, wf *models.WorkflowDefinition, rows []*models.Workf
 	return commands > 0, nil
 }
 
+// placeOwnWorkflow stores the order withOwnWorkflowOrder gives row, updating row
+// so a later row is placed against it.
+func (s *workflowService) placeOwnWorkflow(row *models.WorkflowDefinition, stored []*models.WorkflowDefinition) error {
+	trigger, err := withOwnWorkflowOrder(row.Trigger, stored, row.ID)
+	if err != nil || trigger == row.Trigger {
+		return err
+	}
+	baseRevision := row.Revision
+	row.Trigger = trigger
+	row.Revision = baseRevision + 1
+	return s.executionRepo.Transaction(func(tx *gorm.DB) error {
+		if err := row.UpdateAtRevision(tx, baseRevision); err != nil {
+			return fmt.Errorf("save order: %w", err)
+		}
+		if s.publisher == nil {
+			return nil
+		}
+		return s.publisher.PublishIn(tx, workers.PublishOptions{
+			EntityType:      "workflow",
+			EntityID:        row.ID.String(),
+			Operation:       "updated",
+			Data:            buildWorkflowChangeData(row),
+			AutoAcknowledge: true,
+		})
+	})
+}
+
 // MergeOwnWorkflows merges every set of switched-on workflows sharing a trigger.
 // db-proxy runs it on every start, so a database from before merging is converted
 // where the outbox can announce it, and a set left apart because a run was in
@@ -493,6 +520,15 @@ func MergeOwnWorkflows(
 	if err != nil {
 		log.Printf("workflow_service: list workflows to merge: %v", err)
 		return 0, 0
+	}
+	for _, row := range rows {
+		if row.CreatedByType != "USER" || row.ManifestID != "" {
+			continue
+		}
+		// One that can't be placed runs where it did, and is tried again next start.
+		if err := s.placeOwnWorkflow(row, rows); err != nil {
+			log.Printf("workflow_service: leaving the order of %s as it is: %v", row.ID, err)
+		}
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return runOrderLess(rows[i], rows[j]) })
 	seen := map[string]bool{}
