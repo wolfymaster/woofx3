@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.60.0](https://github.com/wolfymaster/woofx3/compare/v0.59.0...v0.60.0) (2026-11-01)
+
+### Features
+
+* **woofx3:** add a queue scene widget and queue.move, manifest 0.44.0 ([bcbdf74](https://github.com/wolfymaster/woofx3/commit/bcbdf74babe7a87da17de297efa832b5c451c64a))
+* **woofx3:** let a queue name the queue its entries are approved into ([bfd9594](https://github.com/wolfymaster/woofx3/commit/bfd95946bedbf7854bb4a18df201d71dcd6aeafa))
+
 ## [0.59.0](https://github.com/wolfymaster/woofx3/compare/v0.58.0...v0.59.0) (2026-11-01)
 
 ### Features
