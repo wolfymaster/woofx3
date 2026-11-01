@@ -7,6 +7,8 @@ export interface SceneShellConfig {
   /** The scene's sequenced document the page applies later saves to as
    *  ops; null when it could not be loaded. */
   document?: unknown;
+  /** Where the overlay client script is served from. */
+  overlayScriptUrl: string;
 }
 
 function escapeForInlineScript(value: unknown): string {
@@ -121,8 +123,8 @@ export function renderSceneShell(config: SceneShellConfig): string {
     <span id="disconnected-text">woofx3 overlay disconnected</span>
   </div>
 </div>
-<script>window.__WOOFX3_SCENE__ = ${escapeForInlineScript(config)};</script>
-<script type="module" src="/assets/scene-manager/index.js"></script>
+<script>window.__WOOFX3_SCENE__ = ${escapeForInlineScript({ scene: config.scene, document: config.document })};</script>
+<script type="module" src="${config.overlayScriptUrl}"></script>
 </body>
 </html>`;
 }
