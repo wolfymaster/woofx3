@@ -3257,7 +3257,10 @@ mod tests {
                 ][..],
             ),
             ("timer", &["lifetime", "duration"][..]),
-            ("queue", &["lifetime", "capacity", "allowDuplicates"][..]),
+            (
+                "queue",
+                &["lifetime", "capacity", "allowDuplicates", "approveInto"][..],
+            ),
             ("schedule", &["lifetime", "interval", "runWhileOffline"][..]),
         ] {
             let declared = manifest
