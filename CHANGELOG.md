@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.61.0](https://github.com/wolfymaster/woofx3/compare/v0.60.1...v0.61.0) (2026-11-02)
+
+### Features
+
+* **db:** run the streamer's steps before a module's on the same trigger ([a26c394](https://github.com/wolfymaster/woofx3/commit/a26c3945c6e9ecd5fd4ecec93a4fd2fd493cd528))
+
+### Bug Fixes
+
+* **sceneManager:** keep overlay sessions working in a cross-site frame ([105ee87](https://github.com/wolfymaster/woofx3/commit/105ee87e5f4e31666e36782f141321e487cb7108))
+
 ## [0.60.1](https://github.com/wolfymaster/woofx3/compare/v0.60.0...v0.60.1) (2026-11-02)
 
 ### Bug Fixes
