@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.61.1](https://github.com/wolfymaster/woofx3/compare/v0.61.0...v0.61.1) (2026-11-02)
+
+### Bug Fixes
+
+* **scene:** limit every widget frame to loading from the engine ([450fc30](https://github.com/wolfymaster/woofx3/commit/450fc3055ddffc1716a9d58f9a9418dd7a697966))
+
 ## [0.61.0](https://github.com/wolfymaster/woofx3/compare/v0.60.1...v0.61.0) (2026-11-02)
 
 ### Features
