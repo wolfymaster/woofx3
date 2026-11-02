@@ -32,9 +32,13 @@ async function previewSessionAllows(req: Request, deps: HttpDeps): Promise<boole
   return cookie !== null && (await deps.sessionTokens.verifyPreviewSession(cookie));
 }
 
-async function withFreshSession(deps: HttpDeps, headers: Record<string, string>): Promise<Record<string, string>> {
+async function withFreshSession(
+  req: Request,
+  deps: HttpDeps,
+  headers: Record<string, string>
+): Promise<Record<string, string>> {
   const session = await deps.sessionTokens.mintPreviewSession();
-  return { ...headers, "Set-Cookie": serializeCookie(PREVIEW_SESSION_COOKIE, session, SESSION_TOKEN_TTL_SECONDS) };
+  return { ...headers, "Set-Cookie": serializeCookie(req, PREVIEW_SESSION_COOKIE, session, SESSION_TOKEN_TTL_SECONDS) };
 }
 
 /**
@@ -42,7 +46,7 @@ async function withFreshSession(deps: HttpDeps, headers: Record<string, string>)
  * expired or foreign token (an overlay's session, an editor's) gets the same
  * blank document a wrong path would.
  */
-export async function handleCompositionPreviewRoute(url: URL, deps: HttpDeps): Promise<Response> {
+export async function handleCompositionPreviewRoute(req: Request, url: URL, deps: HttpDeps): Promise<Response> {
   const token = url.searchParams.get("token") ?? "";
   if (!(await deps.sessionTokens.verifyPreview(token))) {
     return new Response(BLANK_FRAME_DOC, {
@@ -52,7 +56,7 @@ export async function handleCompositionPreviewRoute(url: URL, deps: HttpDeps): P
   }
   return new Response(renderCompositionPreviewShell(), {
     status: 200,
-    headers: await withFreshSession(deps, {
+    headers: await withFreshSession(req, deps, {
       "Content-Type": "text/html; charset=utf-8",
       ...NO_STORE,
       "Referrer-Policy": "no-referrer",
@@ -65,7 +69,7 @@ export async function handleCompositionPreviewRefreshRoute(req: Request, deps: H
   if (!(await previewSessionAllows(req, deps))) {
     return invalidSession();
   }
-  return jsonOk({ status: "ok" }, await withFreshSession(deps, {}));
+  return jsonOk({ status: "ok" }, await withFreshSession(req, deps, {}));
 }
 
 /** One widget the page asks to frame. */

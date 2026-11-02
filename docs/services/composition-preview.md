@@ -17,7 +17,7 @@ Capability: `compositions.preview`.
 | 2 | The api asks sceneManager over NATS (`engine.scene.composition-preview-token`, request/reply, no body). sceneManager mints a JWT with the `composition-preview` scope, good for 300 s, and answers `{ ok, token, expiresInSeconds, path: "/preview/composition" }`. |
 | 3 | The api answers `{ url, expiresInSeconds }`, `url` being `{sceneManager public URL}/preview/composition?token=…` (the URL stored as `scene.publicUrl`, else the configured one). |
 | 4 | The dashboard frames `url` directly, like the scene editor's preview: a page from a third site in between would make every request to sceneManager cross-site and drop the session cookie. |
-| 5 | `GET /preview/composition?token=` verifies the token and serves the page with a session cookie (`sm_preview_session`, HttpOnly, SameSite=Strict, 60 s), which the page refreshes every 50 s at `POST /preview/composition/session/refresh`. Any other token, an overlay's session or an editor's included, gets a blank 404 page. |
+| 5 | `GET /preview/composition?token=` verifies the token and serves the page with a session cookie (`sm_preview_session`, HttpOnly, 60 s, partitioned and cross-site over HTTPS so the desktop app can frame the page, SameSite=Strict otherwise), which the page refreshes every 50 s at `POST /preview/composition/session/refresh`. Any other token, an overlay's session or an editor's included, gets a blank 404 page. |
 
 The tokens name no scene or composition, so neither verifies as an overlay's
 session or an editor's token, and neither of those opens this page. Overlay

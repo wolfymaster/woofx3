@@ -164,7 +164,7 @@ const ROUTES = routeTable<HttpDeps>([
     methods: ["GET"],
     cors: "open",
     opaqueOrigin: "refuse",
-    handle: (_req, { url, deps }) => handleCompositionPreviewRoute(url, deps),
+    handle: (req, { url, deps }) => handleCompositionPreviewRoute(req, url, deps),
   },
   {
     path: COMPOSITION_PREVIEW_FRAMES_PATH,
