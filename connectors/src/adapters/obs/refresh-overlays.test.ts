@@ -35,7 +35,7 @@ describe("isOverlayUrl", () => {
   });
 
   it("rejects a non-scene path on our port", () => {
-    expect(isOverlayUrl("http://localhost:9101/assets/vendor/datastar.js", 9101)).toBe(false);
+    expect(isOverlayUrl("http://localhost:9101/assets/widget-host-shim.js", 9101)).toBe(false);
   });
 
   it("resolves the implicit port for http and https", () => {

@@ -266,11 +266,11 @@ before it can become a repository write (see
 
 A placement's media setting can name a file hosted outside the engine:
 `{ "source": "url", "name", "url", "type" }`, beside the library's
-`{ "id", "name", "url", "type" }`. The frame of a widget with a theme
-contract only loads images and media from the engine's origins (see
-[Rendering and fallback](../barkloader/modules.md#rendering-and-fallback)),
-so for those widgets sceneManager points such a value's `url` at the
-engine's media proxy before it reaches an overlay:
+`{ "id", "name", "url", "type" }`. A widget's frame only loads images and
+media from the engine's origins (see
+[What a frame may load](../barkloader/sdk.md#what-a-frame-may-load)), so
+sceneManager points such a value's `url` at the engine's media proxy before
+it reaches an overlay:
 
 ```
 browser (widget frame)
@@ -278,9 +278,6 @@ browser (widget frame)
         └─> GET {barkloaderUrl}/assets/media/{token}     barkloader
               └─> GET https://the.file/elsewhere.mp4     the upstream host
 ```
-
-A widget without a theme contract has no such policy: its settings reach
-it as entered and it loads the file from its host directly.
 
 ### What is rewritten
 
@@ -291,9 +288,8 @@ own URLs, and a bare string or an unmarked object cannot be told apart from
 a link or an API endpoint a widget calls. A URL already on the engine's
 public origin is left as it is.
 
-Which placements are rewritten is decided by framing: barkloader's frame
-answer for the widget has a `theme` when the widget declares a contract,
-and the placement's meta then carries `mediaProxyBase`, the proxy's URL
+The placement's meta carries `mediaProxyBase`, set when the widget is framed:
+the proxy's URL
 prefix under barkloader's public URL (taken from the widget's resource base
 URL, so a public URL with a path prefix keeps it). The rewrite happens
 everywhere sceneManager hands settings to an overlay:
@@ -312,15 +308,14 @@ which rewrites with the same helper the page uses for a draft answer's
 `mediaUrls` (`replaceMediaUrls` in `public/scene-manager/media-url.ts`).
 
 Media that does not arrive as a picker-shaped setting is not rewritten, and
-a themeable widget's frame cannot load it from another host: a URL in a
+a widget's frame cannot load it from another host: a URL in a
 bare string setting, or one in the raw event a widget receives through
 `onEvent` (a clip thumbnail, an image from another emote service). A
 picker-shaped setting of an alert widget is rewritten even when the alert
 step filled it from event data (see below). The one exception is images from Twitch's CDN,
-which the frame's policy allows. A widget with a theme contract shows
+which the frame's policy allows. A widget shows
 external media only through a `media` / `asset` setting the picker filled,
-or from Twitch's CDN; a widget that must show other external media should
-not declare a theme contract.
+or from Twitch's CDN.
 
 ### Drafts: only what an editor chose is signed
 
@@ -343,10 +338,8 @@ a URL it has signed no longer asks for another draft.
 
 An alert widget's settings come from the workflow's alert step, with its
 expressions resolved, so a media setting may hold a URL the streamer typed
-into the step or one filled from event data at runtime. An alert frame of a
-themeable widget points every picker-shaped external media value in the
-delivered settings at the proxy, wherever the URL came from; a widget
-without a theme contract gets the URLs as entered.
+into the step or one filled from event data at runtime. An alert frame points every picker-shaped external media value in the
+delivered settings at the proxy, wherever the URL came from.
 
 What bounds the engine's fetches here is the proxy itself, not which URLs
 get signed: it connects only to public addresses (redirects included),
@@ -495,7 +488,8 @@ widget ─ host.assets.load(ref) ─> shim ─ asset.load {id, path} ─> overla
   revalidates an upload (so a replaced one is picked up) at the cost of a
   round trip and no download.
 - **No connections of its own.** Every widget frame is served with
-  `connect-src 'none'` (themeable frames add it to their theme policy), so
+  `connect-src 'none'` (see
+  [What a frame may load](../barkloader/sdk.md#what-a-frame-may-load)), so
   widget code cannot `fetch`, open a socket or send a beacon. What it needs
   from the network it asks the host for; a file hosted outside the engine is
   for elements to load by URL, not for a script to read.

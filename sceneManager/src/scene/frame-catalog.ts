@@ -11,7 +11,7 @@ import type { OverlayWidgetInstance } from "./scene-host";
  * Bumped whenever the frame assembler changes what it writes into a frame
  * document, so cached documents built the old way are not reused.
  */
-export const FRAME_DOCUMENT_REVISION = 2;
+export const FRAME_DOCUMENT_REVISION = 3;
 
 /**
  * The version of the frame document barkloader's answer produces. It changes
@@ -52,7 +52,7 @@ export function frameDocumentUrl(
 /** How one widget and theme is framed. */
 interface Framing {
   frameUrl: string;
-  /** Set when the frame runs under the theme policy (see `PlacementMeta.mediaProxyBase`). */
+  /** Where the frame's external media is proxied (see `PlacementMeta.mediaProxyBase`). */
   mediaProxyBase?: string;
   /** Set when barkloader gave no frame (see `OverlayWidgetInstance.frameUnavailable`). */
   frameUnavailable?: true;

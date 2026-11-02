@@ -802,7 +802,7 @@ export class SceneDocuments {
    * Frame again, a while from now, the placements framed without
    * barkloader's answer. Until then such a placement has an unversioned
    * frame URL and no `mediaProxyBase`, while the frame itself may already be
-   * served under the theme policy, which blocks its external media. Retries
+   * served under the frame policy, which blocks its external media. Retries
    * back off to `REFRAME_RETRY_MAX_MS`, and stop once the scene is let go or
    * nobody has it open; an overlay or editor opening it starts them again.
    */

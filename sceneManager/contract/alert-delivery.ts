@@ -15,7 +15,7 @@ export interface AlertWidgetFrame {
   frameUrl: string;
   linkedResources: Record<string, string>;
   /**
-   * Set for a widget whose frame runs under the theme policy: the engine's
+   * Set when the frame's resources are on the engine: the engine's
    * media proxy prefix its external media is signed under as the delivery is
    * sent to a page, never as it is stored.
    */

@@ -203,6 +203,22 @@ support:
 const host = window.widgetHost;
 ```
 
+### What a frame may load
+
+A widget's frame loads scripts, styles, fonts, images and media only from the
+engine, so ship your libraries and fonts in the module instead of linking a
+CDN. Two things reach further: images on Twitch's CDN (emotes, badges and
+profile pictures in event data), and a file the streamer picked by URL in a
+`media` or `asset` setting, which reaches the frame through the engine's media
+proxy. A URL in a plain string setting or in other event data is blocked.
+
+Nested frames, workers and plugins are blocked, and so are `fetch`, sockets and
+beacons: ask the host instead (storage, events, `assets.load`).
+
+This policy limits what a widget can reach. It does not make a widget unable
+to send out what it is shown, because no policy can stop a frame navigating
+itself or opening a WebRTC connection, so hand a widget only what it needs.
+
 ### Live settings
 
 A streamer edits a widget's settings in the scene editor with the widget on

@@ -6,7 +6,7 @@
 import type { WidgetBootPayload } from "@woofx3/module-sdk";
 import { type CspDirectives, contentSecurityPolicy, withDirectives } from "./csp";
 import { escapeHtmlAttribute } from "./html";
-import { buildThemeStyle, type FrameTheme, injectThemeStylesheet, originOf, themeCspDirectives } from "./theme";
+import { buildThemeStyle, type FrameTheme, injectThemeStylesheet, originOf } from "./theme";
 
 /** The widget host shim's file name, as whatever serves frames serves it under `/assets/`. */
 export const WIDGET_HOST_SHIM_FILE = "widget-host-shim.js";
@@ -16,22 +16,66 @@ export const WIDGET_HOST_SHIM_FILE = "widget-host-shim.js";
 export const SHIM_SRC = `/assets/${WIDGET_HOST_SHIM_FILE}`;
 
 /**
- * The directives every widget frame is served with, laid over any theme's so
- * a theme can never relax them:
+ * Images on Twitch's CDN, where emotes, badges and profile pictures in event
+ * data are hosted. A frame can make a request to it, but whatever the URL
+ * carries lands with Twitch, never with someone who could read it. Exact host
+ * and https only, so no other Twitch host is opened with it.
+ */
+export const TWITCH_IMAGE_CDN = "https://static-cdn.jtvnw.net";
+
+/**
+ * The directives every widget frame is served with, whatever else it loads.
+ * Widget code and theme stylesheets are end-user data, and anything a frame
+ * can make the browser request can carry what the frame is shown in its URL:
  *
- * - `connect-src 'none'`: widget code is end-user code, and a frame that
- *   could `fetch`, open a socket or beacon could send whatever it is shown
- *   anywhere. What a widget needs from the network it asks the host for over
- *   the bridge (storage, events, `assets.load`), and elements still load
- *   media by URL under their own directives.
+ * - `default-src 'none'`: nothing loads unless `frameLoadDirectives` names it,
+ *   including nested frames, workers, plugins and prefetches.
+ * - `connect-src 'none'`: no `fetch`, sockets or beacons. What a widget needs
+ *   from the network it asks the host for over the bridge (storage, events,
+ *   `assets.load`).
  * - `sandbox allow-scripts`: the same sandbox the pages give the iframe, so a
  *   frame document opened on its own, outside any page, still runs with an
  *   opaque origin rather than on the origin that holds overlay sessions.
+ *
+ * A policy cannot stop a frame navigating itself or opening a WebRTC connection
+ * (Chromium ignores CSP's `webrtc` directive, and a STUN request reaches its
+ * server), so a widget can still send what it is shown to another host those
+ * ways. This limits what a widget can
+ * reach; it does not make what a widget is given secret from its author.
  */
 export const FRAME_DIRECTIVES: CspDirectives = {
+  "default-src": ["'none'"],
   "connect-src": ["'none'"],
   sandbox: ["allow-scripts"],
 };
+
+/**
+ * Where a frame may load from: the engine, plus images from Twitch's CDN. Each
+ * engine origin is listed because `'self'` alone is not enough: the frame's
+ * document comes from the scene manager and its resources from barkloader's
+ * public origin. External media a placement's settings name reaches the frame
+ * through the engine's media proxy (the scene manager's media-proxy.ts).
+ *
+ * Only picker-shaped settings (`{ source: "url", url }`, see the scene
+ * manager's media-url.ts) are proxied, so a widget cannot load external media
+ * that arrives any other way: a URL in a bare string setting, or one in event
+ * data other than a Twitch CDN image. That is deliberate, since every host
+ * listed here is one a widget can send data to.
+ *
+ * `'unsafe-inline'` is for the boot scaffold, theme variables and widgets'
+ * own inline code. `'unsafe-eval'` is for libraries that compile at runtime,
+ * such as Lottie's expressions; neither opens a host.
+ */
+export function frameLoadDirectives(engineOrigins: string[]): CspDirectives {
+  const origins = ["'self'", ...new Set(engineOrigins.filter((o) => o !== "" && o !== "null"))];
+  return {
+    "script-src": [...origins, "'unsafe-inline'", "'unsafe-eval'"],
+    "style-src": [...origins, "'unsafe-inline'"],
+    "font-src": [...origins, "data:"],
+    "img-src": [...origins, TWITCH_IMAGE_CDN, "data:", "blob:"],
+    "media-src": [...origins, "data:", "blob:"],
+  };
+}
 
 /** The headers every frame document carries, whatever its cache policy. */
 export const FRAME_DOCUMENT_HEADERS: Readonly<Record<string, string>> = Object.freeze({
@@ -125,14 +169,10 @@ export function frameDocument(source: FrameSource, boot: WidgetBootPayload | Wid
   const theme = source.theme;
   const scaffold = buildFrameScaffold({ boot, baseHref: source.resourceBaseUrl, theme });
   let html = injectFrameScaffold(source.entryHtml, scaffold);
-  // Every widget that opted into themes runs under the theme policy, themed
-  // or not, so a theme can never be the thing that changes what loads.
-  const themeDirectives: CspDirectives = theme
-    ? themeCspDirectives([
-        originOf(source.resourceBaseUrl),
-        ...(theme.stylesheetUrl ? [originOf(theme.stylesheetUrl)] : []),
-      ])
-    : {};
+  const loadDirectives = frameLoadDirectives([
+    originOf(source.resourceBaseUrl),
+    ...(theme?.stylesheetUrl ? [originOf(theme.stylesheetUrl)] : []),
+  ]);
   if (theme?.stylesheetUrl) {
     html = injectThemeStylesheet(html, theme.stylesheetUrl);
   }
@@ -140,7 +180,7 @@ export function frameDocument(source: FrameSource, boot: WidgetBootPayload | Wid
     html,
     headers: {
       ...FRAME_DOCUMENT_HEADERS,
-      "Content-Security-Policy": contentSecurityPolicy(withDirectives(themeDirectives, FRAME_DIRECTIVES)),
+      "Content-Security-Policy": contentSecurityPolicy(withDirectives(loadDirectives, FRAME_DIRECTIVES)),
     },
   };
 }

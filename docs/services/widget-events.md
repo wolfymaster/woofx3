@@ -154,7 +154,7 @@ which every placement and alert showing that widget shares and the browser cache
 an alert's frames need no request to the scene manager once the widget has been shown.
 The alert's half of the boot (instance id, settings, linked resources, entrance) rides in
 the frame URL's fragment and never reaches the server. External media in the settings
-of a widget under the theme policy is signed each time the delivery is sent to a page,
+of a widget is signed each time the delivery is sent to a page,
 never when it is stored. Each layout widget boots with `surface: "alert"` and receives
 one `alert` event whose `data` is the triggering CloudEvent (`{ type, data }`, or
 `null` when nothing triggered the workflow).

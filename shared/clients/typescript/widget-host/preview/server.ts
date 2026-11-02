@@ -18,6 +18,7 @@ import {
   hostTheme,
   SHIM_SRC,
   type WidgetFrameBoot,
+  withDirectives,
 } from "../frame";
 import { escapeHtmlAttribute } from "../frame/html";
 import type { PreviewBundles } from "./bundles";
@@ -105,7 +106,9 @@ function frameProblem(status: number, message: string): Response {
       status,
       headers: {
         ...FRAME_DOCUMENT_HEADERS,
-        "Content-Security-Policy": contentSecurityPolicy(FRAME_DIRECTIVES),
+        "Content-Security-Policy": contentSecurityPolicy(
+          withDirectives({ "style-src": ["'unsafe-inline'"] }, FRAME_DIRECTIVES)
+        ),
         ...NO_STORE,
       },
     }
