@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.60.1](https://github.com/wolfymaster/woofx3/compare/v0.60.0...v0.60.1) (2026-11-02)
+
+### Bug Fixes
+
+* **scene:** let widgets waiting to enter paint in scene overlays ([01639f7](https://github.com/wolfymaster/woofx3/commit/01639f7bcdb280cfc5c638bb538a03060554be47))
+
+### Performance Improvements
+
+* **sceneManager:** keep the overlay's scripts in the browser cache ([4acbfb3](https://github.com/wolfymaster/woofx3/commit/4acbfb3c0a4cc309aae426a3a33b188c6c01125a))
+
 ## [0.60.0](https://github.com/wolfymaster/woofx3/compare/v0.59.0...v0.60.0) (2026-11-01)
 
 ### Features
