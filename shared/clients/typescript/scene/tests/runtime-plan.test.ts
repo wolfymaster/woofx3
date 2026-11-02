@@ -41,6 +41,7 @@ describe("planFrame without a timeline", () => {
     expect(plan.nextChangeMs).toBeNull();
     expect(plan.skipped).toEqual([]);
     expect(plan.widgets.w1).toEqual({
+      awaitingPaint: false,
       id: "w1",
       widget: "woofx3:widget:text",
       box: { x: 10, y: 20, width: 300, height: 200, rotation: 15, opacity: 0.5 },

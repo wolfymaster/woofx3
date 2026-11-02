@@ -5,6 +5,7 @@ import { serializeSessionCookie } from "../scene/session-cookie";
 import { BODY_LIMITS, invalidSession, jsonError, jsonOk, readJsonBody, requireSceneSession } from "./http-kit";
 import type { SceneVersion } from "../scene/scene-host";
 import { renderSceneShell } from "../scene/shell";
+import { OVERLAY_SCRIPT_PATH, versionedAssetUrl } from "./assets";
 import { configOfSnapshot } from "../../contract/scene-config";
 
 /** Which version of the scene a page shows: `?view=draft` for the editor's preview. */
@@ -40,7 +41,9 @@ export async function handleSceneRoute(req: Request, url: URL, sceneId: string, 
     : deps.mediaProxy.sceneConfig((await deps.host.buildConfig(token)).scene).scene;
   const sessionToken = await deps.sessionTokens.mint({ sceneId: state.sceneId, authAt: nowSeconds() });
 
-  return new Response(renderSceneShell({ scene, document: snapshot }), {
+  const overlayScriptUrl = await versionedAssetUrl(OVERLAY_SCRIPT_PATH, deps.ctx.runtimeConfig.publicDir);
+
+  return new Response(renderSceneShell({ scene, document: snapshot, overlayScriptUrl }), {
     status: 200,
     headers: {
       "Content-Type": "text/html; charset=utf-8",

@@ -17,14 +17,6 @@ declare global {
 function renderConnected(connected: boolean): void {
   const banner = document.getElementById("disconnected-banner");
   banner?.classList.toggle("visible", !connected);
-  // Data-star's reactive store gets the same verdict, for any `data-show` or
-  // `data-class` binding on it. The class toggle above is what shows the
-  // banner either way.
-  try {
-    document.dispatchEvent(new CustomEvent("datastar-signal-patch", { detail: { connected } }));
-  } catch {
-    // Data-star not loaded, or the signal not declared.
-  }
 }
 
 function main(): void {

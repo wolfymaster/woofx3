@@ -96,6 +96,7 @@ describe("alert end", () => {
     expect(result.widgets.video).toEqual({
       status: "timed",
       enterMs: 50,
+      awaitingPaint: false,
       completeMs: 8_000,
       leaveMs: 8_000,
       exitMs: 8_000,
@@ -203,6 +204,7 @@ describe("alert end", () => {
     );
     expect(result.widgets.sound).toEqual({
       status: "never",
+      awaitingPaint: false,
       enterMs: null,
       completeMs: null,
       leaveMs: null,
@@ -235,6 +237,22 @@ describe("rendering", () => {
     expect(result.widgets.painted.enterMs).toBe(300);
     expect(result.widgets.slow.enterMs).toBe(RENDER_WAIT_MS);
     expect(result.widgets.waiting.enterMs).toBe(RENDER_WAIT_MS);
+  });
+
+  test("a widget is awaiting paint from when it is due until it enters", () => {
+    const doc = compose({ waiting: {}, painted: {} });
+    const waiting = resolveTimeline(doc, scene, facts(100, { painted: { renderedAtMs: 50 } }));
+    expect(waiting.widgets.waiting.awaitingPaint).toBe(true);
+    expect(waiting.widgets.painted.awaitingPaint).toBe(false);
+    const gaveUp = resolveTimeline(doc, scene, facts(RENDER_WAIT_MS + 100));
+    expect(gaveUp.widgets.waiting.awaitingPaint).toBe(false);
+  });
+
+  test("a widget the streamer hid is not awaiting paint", () => {
+    const doc = compose({ hidden: { visible: false } });
+    const result = resolveTimeline(doc, scene, facts(100));
+    expect(result.widgets.hidden.enterMs).toBeNull();
+    expect(result.widgets.hidden.awaitingPaint).toBe(false);
   });
 
   test("an unpainted widget is not shown before the render wait passes", () => {
@@ -596,6 +614,7 @@ describe("estimates", () => {
     const result = resolveTimeline(doc, alert, { startedAtMs: 0 }, { estimate: { durationsMs: { sound: 2_500 } } });
     expect(result.widgets.video).toEqual({
       status: "timed",
+      awaitingPaint: false,
       enterMs: 0,
       completeMs: 6_000,
       leaveMs: 6_000,

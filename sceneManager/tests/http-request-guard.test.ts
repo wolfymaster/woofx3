@@ -163,7 +163,7 @@ describe("sceneManager request guard set", () => {
       ["OPTIONS", "/scene/s1/widget/w1/status"],
       ["GET", "/frames/m1/widget"],
       ["GET", "/assets/scene-manager/index.js"],
-      ["GET", "/assets/vendor/datastar.js"],
+      ["GET", "/assets/vendor/lib.js"],
       ["OPTIONS", "/assets/upload/grant-1"],
       ["GET", "/assets/read/user/lib-1/anim.json"],
     ];

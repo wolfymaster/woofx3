@@ -164,6 +164,11 @@ export type WidgetStatus = "pending" | "timed" | "untimed" | "ignored" | "never"
 export interface WidgetTimeline {
   status: WidgetStatus;
   enterMs: number | null;
+  /**
+   * The widget is due to enter and its entrance is held until its frame has
+   * painted (`RENDER_WAIT_MS`). Whatever hides it meanwhile must let it paint.
+   */
+  awaitingPaint: boolean;
   completeMs: number | null;
   leaveMs: number | null;
   exitMs: number | null;
@@ -277,6 +282,7 @@ class Resolver {
       widgets[id] = {
         status: this.status(id),
         enterMs: known(this.enter(id)),
+        awaitingPaint: this.awaitingPaint(id),
         completeMs: known(this.rawComplete(id)),
         leaveMs: known(departure.leave),
         exitMs: known(departure.exit),
@@ -528,6 +534,11 @@ class Resolver {
       return planned;
     }
     return this.passed(planned + RENDER_WAIT_MS) ? planned + RENDER_WAIT_MS : null;
+  }
+
+  private awaitingPaint(id: NodeId): boolean {
+    const planned = this.plannedEnter(id);
+    return planned !== null && planned !== NEVER && this.enter(id) === null;
   }
 
   private status(id: NodeId): WidgetStatus {

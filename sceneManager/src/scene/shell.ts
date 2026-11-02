@@ -1,13 +1,14 @@
 /**
  * Server-rendered HTML shell for `GET /scene/{sceneId}`: the whole page
- * besides the vendored data-star bundle and the overlay client script
- * (`public/scene-manager/`).
+ * besides the overlay client script (`public/scene-manager/`).
  */
 export interface SceneShellConfig {
   scene: unknown;
   /** The scene's sequenced document the page applies later saves to as
    *  ops; null when it could not be loaded. */
   document?: unknown;
+  /** Where the overlay client script is served from. */
+  overlayScriptUrl: string;
 }
 
 function escapeForInlineScript(value: unknown): string {
@@ -122,9 +123,8 @@ export function renderSceneShell(config: SceneShellConfig): string {
     <span id="disconnected-text">woofx3 overlay disconnected</span>
   </div>
 </div>
-<script>window.__WOOFX3_SCENE__ = ${escapeForInlineScript(config)};</script>
-<script type="module" src="/assets/vendor/datastar.js"></script>
-<script type="module" src="/assets/scene-manager/index.js"></script>
+<script>window.__WOOFX3_SCENE__ = ${escapeForInlineScript({ scene: config.scene, document: config.document })};</script>
+<script type="module" src="${config.overlayScriptUrl}"></script>
 </body>
 </html>`;
 }

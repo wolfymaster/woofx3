@@ -99,7 +99,7 @@ describe("handleAssetReadRoute", () => {
   it("404s a key that names no engine file, or steps out of one, without reaching barkloader", async () => {
     const fetchFn = upstream();
     for (const path of [
-      "/assets/read/vendor/datastar.js",
+      "/assets/read/vendor/lib.js",
       "/assets/read/media/token",
       "/assets/read/",
       "/assets/read/user/res-1",

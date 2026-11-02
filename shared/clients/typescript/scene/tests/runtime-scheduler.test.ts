@@ -59,8 +59,8 @@ describe("createScheduler for an alert", () => {
     scheduler.widgetRendered("video");
 
     expect(ops("setVisible")).toEqual([
-      { atMs: 200, op: { op: "setVisible", id: "text", visible: true } },
-      { atMs: 300, op: { op: "setVisible", id: "video", visible: true } },
+      { atMs: 200, op: { op: "setVisible", id: "text", visible: true, awaitingPaint: false } },
+      { atMs: 300, op: { op: "setVisible", id: "video", visible: true, awaitingPaint: false } },
     ]);
     const entrances = ops("startAnimation").map(({ atMs, op }) => [
       atMs,
@@ -97,8 +97,8 @@ describe("createScheduler for an alert", () => {
     expect(finished).toEqual([]);
     at(10_000);
     expect(ops("setVisible").slice(2)).toEqual([
-      { atMs: 4_499, op: { op: "setVisible", id: "text", visible: false } },
-      { atMs: 4_499, op: { op: "setVisible", id: "video", visible: false } },
+      { atMs: 4_499, op: { op: "setVisible", id: "text", visible: false, awaitingPaint: false } },
+      { atMs: 4_499, op: { op: "setVisible", id: "video", visible: false, awaitingPaint: false } },
     ]);
     expect(finished).toEqual([4_499]);
   });
@@ -125,7 +125,9 @@ describe("createScheduler for an alert", () => {
     at(1_999);
     expect(ops("setVisible")).toEqual([]);
     at(2_000);
-    expect(ops("setVisible")).toEqual([{ atMs: 2_000, op: { op: "setVisible", id: "silent", visible: true } }]);
+    expect(ops("setVisible")).toEqual([
+      { atMs: 2_000, op: { op: "setVisible", id: "silent", visible: true, awaitingPaint: false } },
+    ]);
     at(9_999);
     expect(scheduler.timeline().widgets.silent.status).toBe("pending");
     expect(finished).toEqual([]);
@@ -189,7 +191,9 @@ describe("createScheduler for a scene", () => {
     const { scheduler, at, ops, finished } = setup(doc, "scene");
     at(100);
     scheduler.widgetRendered("w1");
-    expect(ops("setVisible")).toEqual([{ atMs: 100, op: { op: "setVisible", id: "w1", visible: true } }]);
+    expect(ops("setVisible")).toEqual([
+      { atMs: 100, op: { op: "setVisible", id: "w1", visible: true, awaitingPaint: false } },
+    ]);
 
     at(5_000);
     scheduler.setDocument({ ...doc, widgets: { w1: { ...doc.widgets.w1, visible: false } } });
@@ -200,11 +204,17 @@ describe("createScheduler for a scene", () => {
     at(5_499);
     expect(ops("setVisible")).toHaveLength(1);
     at(5_500);
-    expect(ops("setVisible").at(-1)).toEqual({ atMs: 5_500, op: { op: "setVisible", id: "w1", visible: false } });
+    expect(ops("setVisible").at(-1)).toEqual({
+      atMs: 5_500,
+      op: { op: "setVisible", id: "w1", visible: false, awaitingPaint: false },
+    });
 
     at(8_000);
     scheduler.visibilityChanged("w1", true);
-    expect(ops("setVisible").at(-1)).toEqual({ atMs: 8_000, op: { op: "setVisible", id: "w1", visible: true } });
+    expect(ops("setVisible").at(-1)).toEqual({
+      atMs: 8_000,
+      op: { op: "setVisible", id: "w1", visible: true, awaitingPaint: false },
+    });
     const reentry = ops("startAnimation").filter(
       ({ atMs, op }) => atMs === 8_000 && (op as { behavior: string }).behavior === "w1-in"
     );
@@ -222,11 +232,22 @@ describe("createScheduler for a scene", () => {
     const mount = ops("mount").find(({ op }) => (op as { id: string }).id === "w2");
     expect(mount).toEqual({
       atMs: 30_000,
-      op: { op: "mount", id: "w2", widget: "woofx3:widget:text", box: expect.anything(), z: 1, visible: false },
+      op: {
+        op: "mount",
+        id: "w2",
+        widget: "woofx3:widget:text",
+        box: expect.anything(),
+        z: 1,
+        visible: false,
+        awaitingPaint: true,
+      },
     });
     at(30_300);
     scheduler.widgetRendered("w2");
-    expect(ops("setVisible").at(-1)).toEqual({ atMs: 30_300, op: { op: "setVisible", id: "w2", visible: true } });
+    expect(ops("setVisible").at(-1)).toEqual({
+      atMs: 30_300,
+      op: { op: "setVisible", id: "w2", visible: true, awaitingPaint: false },
+    });
     const entrance = ops("startAnimation").find(({ op }) => (op as { behavior: string }).behavior === "w2-in");
     expect((entrance?.op as { spec: { timing: { delay: number } } }).spec.timing.delay).toBe(30_300);
   });
