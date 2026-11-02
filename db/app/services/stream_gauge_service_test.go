@@ -195,25 +195,27 @@ func TestRecordStreamGaugeSampleRejectsMalformedSamples(t *testing.T) {
 func TestListStreamGaugeSamplesFollowsSegmentsAcrossASplit(t *testing.T) {
 	ctx := context.Background()
 	gauges, sessions := newGaugeSvcs(t)
+	// The session opens on the wall clock and a split cannot precede its start.
+	wentLive := time.Now().UTC().Truncate(time.Hour).Add(time.Hour)
 
-	earlier := goLive(t, sessions, gaugeWentLive)
-	if _, err := gauges.RecordStreamGaugeSample(ctx, viewerSample(gaugeWentLive.Add(time.Minute), 10)); err != nil {
+	earlier := goLive(t, sessions, wentLive)
+	if _, err := gauges.RecordStreamGaugeSample(ctx, viewerSample(wentLive.Add(time.Minute), 10)); err != nil {
 		t.Fatalf("RecordStreamGaugeSample: %v", err)
 	}
-	goOffline(t, sessions, gaugeWentLive.Add(time.Hour))
+	goOffline(t, sessions, wentLive.Add(time.Hour))
 
 	split, err := sessions.SplitStreamSession(ctx, &client.SplitStreamSessionRequest{
-		At: timestamppb.New(gaugeWentLive.Add(5 * time.Hour)),
+		At: timestamppb.New(wentLive.Add(5 * time.Hour)),
 	})
 	if err != nil {
 		t.Fatalf("SplitStreamSession: %v", err)
 	}
-	later := goLive(t, sessions, gaugeWentLive.Add(5*time.Hour))
+	later := goLive(t, sessions, wentLive.Add(5*time.Hour))
 	if later != split.Started.Id {
 		t.Fatalf("went live in %s, want the split's successor %s", later, split.Started.Id)
 	}
 	for _, minute := range []time.Duration{3, 1, 2} {
-		at := gaugeWentLive.Add(5*time.Hour + minute*time.Minute)
+		at := wentLive.Add(5*time.Hour + minute*time.Minute)
 		if _, err := gauges.RecordStreamGaugeSample(ctx, viewerSample(at, int64(minute))); err != nil {
 			t.Fatalf("RecordStreamGaugeSample: %v", err)
 		}
