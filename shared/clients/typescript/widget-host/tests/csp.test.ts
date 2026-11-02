@@ -14,6 +14,8 @@ describe("withDirectives", () => {
   it("lets the frame's fixed directives replace whatever a policy says for them", () => {
     const relaxed = { "connect-src": ["*"], "img-src": ["'self'"], sandbox: ["allow-scripts", "allow-same-origin"] };
     const policy = contentSecurityPolicy(withDirectives(relaxed, FRAME_DIRECTIVES));
-    expect(policy).toBe("connect-src 'none'; img-src 'self'; sandbox allow-scripts");
+    expect(policy).toBe(
+      "connect-src 'none'; img-src 'self'; sandbox allow-scripts; default-src 'none'"
+    );
   });
 });

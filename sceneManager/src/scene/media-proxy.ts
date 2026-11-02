@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
+import type { PlacementDocument, PlacementMeta, SceneDocument, SceneSnapshot } from "@woofx3/api/scene-editor/document";
 import { type AlertDelivery, parseAlertDelivery } from "../../contract/alert-delivery";
 import { externalMediaUrls, MEDIA_PROXY_PATH, replaceMediaUrls } from "../../contract/media-url";
-import type { PlacementDocument, PlacementMeta, SceneDocument, SceneSnapshot } from "@woofx3/api/scene-editor/document";
 import type { BarkloaderFrameInfo } from "./frame-assembler";
 
 /**
@@ -58,16 +58,12 @@ export function mediaProxyBaseOf(resourceBaseUrl: string): string | null {
 
 /**
  * The media proxy URL prefix for a widget's frame, or undefined when its
- * external media loads directly. A widget that declares a theme contract runs
- * under the theme policy whether or not a theme is selected (see
- * `FrameAssembler.render`), so it is the contract, not the selection, that
- * decides. Both where a placement is framed and where a frame is served ask
- * this, so the two agree.
+ * resources are not in barkloader's layout. A frame's policy lets it load media
+ * only from the engine, so its external media goes through the proxy. Both
+ * where a placement is framed and where a frame is served ask this, so the two
+ * agree.
  */
 export function frameMediaProxyBase(info: BarkloaderFrameInfo): string | undefined {
-  if (!info.theme) {
-    return undefined;
-  }
   return mediaProxyBaseOf(info.resourceBaseUrl) ?? undefined;
 }
 
@@ -90,9 +86,9 @@ export interface OverlaySceneConfig<T> {
 
 /**
  * Turns external media URLs in placement settings into signed media proxy
- * URLs, for the widgets whose frames run under the theme policy. Which those
- * are is per placement: `PlacementMeta.mediaProxyBase` is set for them, and
- * other placements keep external URLs as entered, loading them directly.
+ * URLs, because a frame's policy lets it load media only from the engine.
+ * `PlacementMeta.mediaProxyBase` says where a placement's proxy is; a placement
+ * without one (its frame could not be looked up) keeps URLs as entered.
  *
  * Every path that hands settings to an overlay or a frame derives them with
  * `overlaySettings`: documents, snapshots and ops (`placement`), page scene

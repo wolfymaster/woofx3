@@ -44,7 +44,7 @@ export interface OverlayWidgetInstance {
   /** The resource instances the widget's module links (see `linkedResources`
    *  in module-state.ts), handed to the frame with the placement. */
   linkedResources?: Record<string, string>;
-  /** Set by framing for a widget whose frame runs under the theme policy
+  /** The media proxy prefix framing found for the widget
    *  (see `PlacementMeta.mediaProxyBase`). */
   mediaProxyBase?: string;
   /** Set by framing when barkloader gave no frame for the widget (it failed,

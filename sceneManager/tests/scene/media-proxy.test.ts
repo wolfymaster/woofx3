@@ -469,9 +469,9 @@ describe("FrameCatalog — media proxy base", () => {
       logger()
     ).frame([instance("a", {}, false)]);
 
-  it("sets it for a widget with a theme contract, and not for one without", async () => {
+  it("sets it for every widget, with a theme contract or without, since no frame loads media from elsewhere", async () => {
     expect((await frame(THEME))[0]!.mediaProxyBase).toBe(BASE);
-    expect((await frame(null))[0]!.mediaProxyBase).toBeUndefined();
+    expect((await frame(null))[0]!.mediaProxyBase).toBe(BASE);
     expect((await frame(THEME))[0]!.frameUnavailable).toBeUndefined();
   });
 

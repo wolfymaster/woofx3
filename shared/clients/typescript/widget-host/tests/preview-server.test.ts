@@ -8,6 +8,8 @@ import { buildPreviewBundles, type PreviewBundles } from "../preview/bundles";
 import { CHANGE_EVENT, CHANGES_PATH, MODULE_PATH, PAGE_SCRIPT_PATH, parseModuleAnswer } from "../preview/protocol";
 import { PreviewServer } from "../preview/server";
 
+const FRAME_POLICY_TAIL = "default-src 'none'; connect-src 'none'; sandbox allow-scripts";
+
 const MANIFEST = {
   id: "mod",
   name: "Test Module",
@@ -139,7 +141,8 @@ describe("the preview server", () => {
   it("builds a widget's frame document as the scene manager does, under the frame policy", async () => {
     const response = await get("/frames/plain");
     expect(response.status).toBe(200);
-    expect(response.headers.get("Content-Security-Policy")).toBe("connect-src 'none'; sandbox allow-scripts");
+    expect(response.headers.get("Content-Security-Policy")).toContain("script-src 'self' ");
+    expect(response.headers.get("Content-Security-Policy")).toEndWith(FRAME_POLICY_TAIL);
     expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     const html = await response.text();
@@ -160,11 +163,11 @@ describe("the preview server", () => {
     expect(isWidgetBootPayload({ ...(boot as object), nonce: "n", instanceId: "i", settings: {} })).toBe(true);
   });
 
-  it("frames a themeable widget with its contract defaults, its fonts, and the theme policy", async () => {
+  it("frames a themeable widget with its contract defaults, its fonts, and the frame policy", async () => {
     const response = await get("/frames/themed");
     const origin = new URL(server.url).origin;
     expect(response.headers.get("Content-Security-Policy")).toContain(`style-src 'self' ${origin} 'unsafe-inline'`);
-    expect(response.headers.get("Content-Security-Policy")).toContain("connect-src 'none'; sandbox allow-scripts");
+    expect(response.headers.get("Content-Security-Policy")).toEndWith(FRAME_POLICY_TAIL);
     const html = await response.text();
     const resourceBaseUrl = `${server.url}assets/modules/mod/preview/widgets/themed/`;
     expect(html).toContain("--theme-accent: #7ad7ff;");
@@ -189,7 +192,7 @@ describe("the preview server", () => {
     const absent = await get("/frames/absent");
     expect(absent.status).toBe(404);
     expect(await absent.text()).toContain("its entry widgets/absent/index.html does not exist");
-    expect(absent.headers.get("Content-Security-Policy")).toBe("connect-src 'none'; sandbox allow-scripts");
+    expect(absent.headers.get("Content-Security-Policy")).toBe(`style-src 'unsafe-inline'; ${FRAME_POLICY_TAIL}`);
   });
 
   it("serves a widget's files under its engine path and through the read route", async () => {

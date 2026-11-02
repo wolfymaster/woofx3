@@ -101,16 +101,18 @@ describe("frameDocument", () => {
     resourceBaseUrl: "https://cdn.example.com/mod/w/",
   };
 
-  it("closes connections and sandboxes the frame, whatever it holds", () => {
+  it("loads only from the engine, with connections closed, whatever the frame holds", () => {
     const { html, headers } = frameDocument({ ...source, theme: null }, minimalBoot());
-    expect(headers["Content-Security-Policy"]).toBe("connect-src 'none'; sandbox allow-scripts");
+    expect(headers["Content-Security-Policy"]).toBe(
+      "script-src 'self' https://cdn.example.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' https://cdn.example.com 'unsafe-inline'; font-src 'self' https://cdn.example.com data:; img-src 'self' https://cdn.example.com https://static-cdn.jtvnw.net data: blob:; media-src 'self' https://cdn.example.com data: blob:; default-src 'none'; connect-src 'none'; sandbox allow-scripts"
+    );
     expect(headers["Content-Type"]).toBe("text/html; charset=utf-8");
     expect(headers["Referrer-Policy"]).toBe("no-referrer");
     expect(headers["Cache-Control"]).toBeUndefined();
     expect(html.indexOf(SHIM_SRC)).toBeGreaterThan(html.indexOf("<head>"));
   });
 
-  it("puts a themeable widget under the theme policy, with its variables and stylesheet", () => {
+  it("lists a theme stylesheet's origin, with its variables and stylesheet", () => {
     const theme = {
       id: "mod:theme:dark",
       contractVersion: 1,

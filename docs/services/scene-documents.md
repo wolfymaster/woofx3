@@ -52,7 +52,7 @@ kept beside the document as each placement's meta.
 Meta is worked out by asking barkloader for the widget's frame. When it
 fails, times out or gives no frame, the placement gets an unversioned frame
 URL and no `mediaProxyBase`, while the frame itself may later be served
-under the theme policy, which would block its external media. Such a
+under the frame policy, which would block its external media. Such a
 placement is framed again a while later (10 s, doubling up to 5 minutes,
 while anyone has the scene open), and the meta barkloader's answer brings
 is committed as an `external` entry that carries only meta: overlays get

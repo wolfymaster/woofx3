@@ -33,7 +33,7 @@ port) and `--host` (default `127.0.0.1`).
 What runs is what an overlay runs:
 
 - Each widget's frame document is built by `frameDocument` from its entry, as
-  the scene manager builds it, under the same policy (`connect-src 'none'`,
+  the scene manager builds it, under the same policy (loading only from the engine, `connect-src 'none'`,
   sandboxed with `allow-scripts` only) and booting the widget host shim built
   from this checkout's module SDK source.
 - The widget's files are served under the engine path its resource base names
@@ -43,8 +43,7 @@ What runs is what an overlay runs:
 - The page answers the frame with the real `WidgetBridge`, event queue and
   `AssetCache`. Settings are applied with `settingsUpdate`: patched in when the
   widget's script never read what changed, a fresh frame when it did.
-- A widget with a theme contract renders with the contract defaults and runs
-  under the theme policy. Font settings load their Google Fonts family through
+- A widget with a theme contract renders with the contract defaults. Font settings load their Google Fonts family through
   the preview's own origin, as overlays load it through the engine's.
 
 The page builds the settings form from the widget's `settingsSchema`, lets the

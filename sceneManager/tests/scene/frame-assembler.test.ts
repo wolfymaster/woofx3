@@ -126,7 +126,9 @@ describe("FrameAssembler.assembleDocument", () => {
     const resp = await assembler.assembleDocument("mymod", "mywid", null, frameVersion(info));
     const html = await resp.text();
     expect(html).toContain('<base href="https://cdn.example.com/modules/mymod/abc123/widgets/mywid/">');
-    expect(resp.headers.get("Content-Security-Policy")).toBe("connect-src 'none'; sandbox allow-scripts");
+    expect(resp.headers.get("Content-Security-Policy")).toBe(
+      "script-src 'self' https://cdn.example.com 'unsafe-inline' 'unsafe-eval'; style-src 'self' https://cdn.example.com 'unsafe-inline'; font-src 'self' https://cdn.example.com data:; img-src 'self' https://cdn.example.com https://static-cdn.jtvnw.net data: blob:; media-src 'self' https://cdn.example.com data: blob:; default-src 'none'; connect-src 'none'; sandbox allow-scripts"
+    );
     const boot = bootOf(html);
     expect(boot).toMatchObject({ moduleId: "mymod", widgetCanonicalId: "mymod:widget:mywid", surface: "scene" });
     expect(boot.theme).toBeNull();
@@ -267,7 +269,7 @@ describe("FrameAssembler — widget themes", () => {
     });
   });
 
-  it("restricts styles, fonts, images and media to the engine for a themeable widget", async () => {
+  it("limits everything a themeable widget loads to the engine", async () => {
     const { resp } = await assembleThemed({}, frameTheme({ id: null, stylesheetUrl: null }));
     const csp = resp.headers.get("Content-Security-Policy") ?? "";
     const directives = Object.fromEntries(
@@ -278,19 +280,22 @@ describe("FrameAssembler — widget themes", () => {
     );
     // Exact values, so the policy cannot widen without this test changing.
     expect(directives).toEqual({
+      "script-src": ["'self'", "https://engine.example.com", "'unsafe-inline'", "'unsafe-eval'"],
       "style-src": ["'self'", "https://engine.example.com", "'unsafe-inline'"],
       "font-src": ["'self'", "https://engine.example.com", "data:"],
       "img-src": ["'self'", "https://engine.example.com", "https://static-cdn.jtvnw.net", "data:", "blob:"],
       "media-src": ["'self'", "https://engine.example.com", "data:", "blob:"],
+      "default-src": ["'none'"],
       "connect-src": ["'none'"],
       sandbox: ["allow-scripts"],
     });
     expect(csp).toBe(
-      "style-src 'self' https://engine.example.com 'unsafe-inline'; " +
+      "script-src 'self' https://engine.example.com 'unsafe-inline' 'unsafe-eval'; " +
+        "style-src 'self' https://engine.example.com 'unsafe-inline'; " +
         "font-src 'self' https://engine.example.com data:; " +
         "img-src 'self' https://engine.example.com https://static-cdn.jtvnw.net data: blob:; " +
         "media-src 'self' https://engine.example.com data: blob:; " +
-        "connect-src 'none'; sandbox allow-scripts"
+        "default-src 'none'; connect-src 'none'; sandbox allow-scripts"
     );
     for (const sources of Object.values(directives) as string[][]) {
       for (const source of sources) {

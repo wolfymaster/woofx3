@@ -29,8 +29,7 @@ The session authorizes the one thing the page asks the engine for:
 `POST /preview/composition/frames` with `{ widgets: [{ id, widget, settings }] }`.
 It frames each widget as an overlay frames a placement (the widget's versioned,
 cached frame document at `/frames/{moduleId}/{manifestId}`, its module's linked
-resources, the behavior kinds it declares in the catalog) and signs the external media in its settings for the media proxy,
-for widgets whose frames run under the theme policy (see
+resources, the behavior kinds it declares in the catalog) and signs the external media in its settings for the media proxy (see
 [External media](./asset-delivery.md#external-media)). Every external URL in the
 posted settings is signed, where a scene's draft config signs only URLs already
 in the scene's document: an overlay token is held by every browser source, this

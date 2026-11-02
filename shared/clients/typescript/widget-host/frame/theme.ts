@@ -102,50 +102,6 @@ export function injectThemeStylesheet(html: string, stylesheetUrl: string): stri
   return link + html;
 }
 
-/**
- * Twitch's CDN for emotes, badges and profile pictures, which arrive in
- * event data (chat messages, alerts) rather than in settings, so they never
- * pass the media proxy. It is safe to allow in a themeable frame because it
- * is a fixed platform host that no theme author controls: a theme stylesheet
- * can make the frame request an image from it, but whatever the request
- * carries in its URL lands with Twitch, never with someone who could read it.
- * Exact host and https only, so no other Twitch host is opened with it.
- */
-export const TWITCH_IMAGE_CDN = "https://static-cdn.jtvnw.net";
-
-/**
- * The Content-Security-Policy directives for a themeable widget's frame: styles, fonts,
- * images and media from the engine only, plus images from Twitch's CDN
- * (`TWITCH_IMAGE_CDN`). A theme stylesheet is author data, and its `url(...)`
- * or `@import` could otherwise reach any host, carrying whatever its
- * selectors can read off the page; nothing a theme ships is a script, so
- * scripts are left as they were. Connections are closed for every frame,
- * themed or not (`FRAME_DIRECTIVES` in document.ts). External media a
- * placement's settings name reaches the frame through the engine's media
- * proxy (the scene manager's media-proxy.ts), so it needs no outside host here either.
- *
- * Only picker-shaped settings (`{ source: "url", url }`, see the scene manager's media-url.ts) are
- * proxied, so a themeable widget cannot load external media that arrives any
- * other way: a URL in a bare string setting, or one in event data other than
- * a Twitch CDN image. That is a deliberate limit, not an oversight: listing
- * more hosts here would let a theme stylesheet reach them too. A widget that
- * needs such media should not declare a theme contract.
- *
- * `'self'` alone is not enough: the frame is sandboxed and its resources
- * come from barkloader's public origin, not the scene manager's, so each
- * engine origin is listed. `'unsafe-inline'` is for the widget's own inline
- * styles and the variables block this module injects.
- */
-export function themeCspDirectives(engineOrigins: string[]): CspDirectives {
-  const origins = ["'self'", ...new Set(engineOrigins.filter((o) => o !== "" && o !== "null"))];
-  return {
-    "style-src": [...origins, "'unsafe-inline'"],
-    "font-src": [...origins, "data:"],
-    "img-src": [...origins, TWITCH_IMAGE_CDN, "data:", "blob:"],
-    "media-src": [...origins, "data:", "blob:"],
-  };
-}
-
 /** The origin of an absolute URL, or `""` when it has none. */
 export function originOf(url: string): string {
   try {

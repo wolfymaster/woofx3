@@ -18,8 +18,8 @@ export interface WidgetPlacementConfig {
   frameUrl: string;
   /** The resource instances the widget's module links, handed to the frame. */
   linkedResources?: Record<string, string>;
-  /** The engine's media proxy URL prefix, for a widget whose frame runs
-   *  under the theme policy (see `PlacementMeta.mediaProxyBase`). */
+  /** The engine's media proxy URL prefix, for a widget's external
+   *  media (see `PlacementMeta.mediaProxyBase`). */
   mediaProxyBase?: string;
   /** The kinds the widget declares it plays itself (see
    *  `PlacementMeta.behaviorKinds`); absent means none. */
