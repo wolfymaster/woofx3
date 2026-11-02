@@ -383,3 +383,97 @@ func TestUpdateWorkflow_MergeRefusesASaveFromBeforeIt(t *testing.T) {
 	})
 	wantTwirpCode(t, err, twirp.Aborted)
 }
+
+func TestWithOwnWorkflowOrder(t *testing.T) {
+	own := uuid.New()
+	module := func(trigger string) *models.WorkflowDefinition {
+		return &models.WorkflowDefinition{ID: uuid.New(), Trigger: trigger, CreatedByType: "MODULE"}
+	}
+	withCondition := `,"conditions":[{"field":"${trigger.data.bits}","operator":"gte","value":100}]`
+	tests := []struct {
+		name    string
+		trigger string
+		stored  []*models.WorkflowDefinition
+		want    *int
+	}{
+		{"unordered with nothing else starts the event", cheerTrigger(""), nil, intPtr(0)},
+		{"unordered goes after what is on the event", cheerTrigger(""), []*models.WorkflowDefinition{
+			module(cheerTrigger(withCondition + `,"order":4`)),
+		}, intPtr(5)},
+		{"goes before the earliest module on its trigger", cheerTrigger(`,"order":9`), []*models.WorkflowDefinition{
+			module(cheerTrigger(`,"order":3`)), module(cheerTrigger(`,"order":2`)),
+		}, intPtr(1)},
+		{"a tie with a module is not left to ids", cheerTrigger(`,"order":2`), []*models.WorkflowDefinition{
+			module(cheerTrigger(`,"order":2`)),
+		}, intPtr(1)},
+		{"already first stays", cheerTrigger(`,"order":1`), []*models.WorkflowDefinition{
+			module(cheerTrigger(`,"order":2`)),
+		}, intPtr(1)},
+		{"a module on other conditions doesn't move it", cheerTrigger(`,"order":7`), []*models.WorkflowDefinition{
+			module(cheerTrigger(withCondition + `,"order":2`)),
+		}, intPtr(7)},
+		{"a trigger that can't merge is left alone", `{"type":"command","event":"chat.command.hi"}`, nil, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			written, err := withOwnWorkflowOrder(tt.trigger, tt.stored, own)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got storedTrigger
+			if err := json.Unmarshal([]byte(written), &got); err != nil {
+				t.Fatal(err)
+			}
+			switch {
+			case tt.want == nil && got.Order != nil:
+				t.Fatalf("order = %d, want none", *got.Order)
+			case tt.want != nil && (got.Order == nil || *got.Order != *tt.want):
+				t.Fatalf("order = %v, want %d", got.Order, *tt.want)
+			}
+		})
+	}
+}
+
+func intPtr(n int) *int {
+	return &n
+}
+
+func TestUpdateWorkflow_RunsOwnStepsBeforeAModulesOnTheSameTrigger(t *testing.T) {
+	svc, db := newWorkflowTestService(t)
+	wf := ownWorkflow(t, svc, "mine", cheerTrigger(`,"order":5`), `[`+reply+`]`, false)
+	moduleRow := &models.WorkflowDefinition{
+		ID: uuid.New(), Name: "m/thanks", Steps: `[` + reply + `]`, Trigger: cheerTrigger(`,"order":2`),
+		CreatedByType: "MODULE", CreatedByRef: "m", ManifestID: "thanks", Taxonomy: "[]", Enabled: true,
+	}
+	if err := db.Create(moduleRow).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	on := setEnabled(t, svc, wf.Id)
+	if order := triggerOrder(t, on); order == nil || *order != 1 {
+		t.Fatalf("order = %v, want 1", order)
+	}
+	if on.Revision != wf.Revision+1 {
+		t.Fatalf("revision = %d, want %d: the move changed the trigger", on.Revision, wf.Revision+1)
+	}
+}
+
+func TestMergeOwnWorkflows_PlacesUnorderedWorkflows(t *testing.T) {
+	svc, db := newWorkflowTestService(t)
+	unordered := &models.WorkflowDefinition{
+		ID: uuid.New(), Name: "old", Steps: `[` + reply + `]`, Trigger: cheerTrigger(""),
+		CreatedByType: "USER", Taxonomy: "[]", Enabled: false,
+	}
+	if err := db.Create(unordered).Error; err != nil {
+		t.Fatal(err)
+	}
+	MergeOwnWorkflows(repo.NewWorkflowRepository(db, database.RandomIDs{}), db, nil, nil)
+
+	stored, err := svc.GetWorkflow(context.Background(), &client.GetWorkflowRequest{Id: unordered.ID.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if order := triggerOrder(t, stored.Workflow); order == nil || *order != 0 {
+		t.Fatalf("order = %v, want 0", order)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 )
 
@@ -61,18 +62,68 @@ func withModuleWorkflowOrder(
 		next = *kept
 	}
 
+	return withTriggerOrder(triggerJSON, next)
+}
+
+// withOwnWorkflowOrder returns triggerJSON holding the order a streamer's
+// workflow runs in, so what the Alerts page lists is what happens: their own
+// steps run before any module's on the same trigger, and every one of their
+// workflows waits its turn. A workflow already in the right place is returned
+// as it is. A trigger with fields a merge doesn't know is left alone, because it
+// isn't listed under another workflow's trigger.
+func withOwnWorkflowOrder(triggerJSON string, stored []*models.WorkflowDefinition, id uuid.UUID) (string, error) {
+	identity, ok := triggerIdentity(triggerJSON)
+	if !ok {
+		return triggerJSON, nil
+	}
+	var trigger storedTrigger
+	if err := json.Unmarshal([]byte(triggerJSON), &trigger); err != nil {
+		return "", fmt.Errorf("read trigger: %w", err)
+	}
+
+	var lowestModule *int
+	next := 0
+	for _, row := range stored {
+		var other storedTrigger
+		// A row with an unreadable trigger has no place in any event's order.
+		if row.ID == id || json.Unmarshal([]byte(row.Trigger), &other) != nil {
+			continue
+		}
+		if other.Type != eventTriggerType || other.Event != trigger.Event || other.Order == nil {
+			continue
+		}
+		if *other.Order >= next {
+			next = *other.Order + 1
+		}
+		otherIdentity, ok := triggerIdentity(row.Trigger)
+		if row.CreatedByType == "MODULE" && ok && otherIdentity == identity &&
+			(lowestModule == nil || *other.Order < *lowestModule) {
+			lowestModule = other.Order
+		}
+	}
+
+	switch {
+	case lowestModule != nil && (trigger.Order == nil || *trigger.Order >= *lowestModule):
+		return withTriggerOrder(triggerJSON, *lowestModule-1)
+	case trigger.Order == nil:
+		return withTriggerOrder(triggerJSON, next)
+	}
+	return triggerJSON, nil
+}
+
+func withTriggerOrder(triggerJSON string, order int) (string, error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(triggerJSON), &fields); err != nil {
 		return "", fmt.Errorf("read trigger: %w", err)
 	}
-	order, err := json.Marshal(next)
+	written, err := json.Marshal(order)
 	if err != nil {
 		return "", fmt.Errorf("write trigger order: %w", err)
 	}
-	fields["order"] = order
-	written, err := json.Marshal(fields)
+	fields["order"] = written
+	trigger, err := json.Marshal(fields)
 	if err != nil {
 		return "", fmt.Errorf("write trigger: %w", err)
 	}
-	return string(written), nil
+	return string(trigger), nil
 }
