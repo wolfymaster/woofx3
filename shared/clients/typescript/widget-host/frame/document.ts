@@ -56,6 +56,12 @@ export const FRAME_DIRECTIVES: CspDirectives = {
  * public origin. External media a placement's settings name reaches the frame
  * through the engine's media proxy (the scene manager's media-proxy.ts).
  *
+ * `storageOrigin` is the engine's bucket, where an uploaded file's URL on the
+ * engine redirects to; a browser checks the policy again on a redirect. Whatever
+ * a URL carries lands in the engine's own storage, and the origin is unique to
+ * that bucket. It is left out of scripts and styles, which are always served
+ * from the engine.
+ *
  * Only picker-shaped settings (`{ source: "url", url }`, see the scene
  * manager's media-url.ts) are proxied, so a widget cannot load external media
  * that arrives any other way: a URL in a bare string setting, or one in event
@@ -66,14 +72,15 @@ export const FRAME_DIRECTIVES: CspDirectives = {
  * own inline code. `'unsafe-eval'` is for libraries that compile at runtime,
  * such as Lottie's expressions; neither opens a host.
  */
-export function frameLoadDirectives(engineOrigins: string[]): CspDirectives {
+export function frameLoadDirectives(engineOrigins: string[], storageOrigin: string | null): CspDirectives {
   const origins = ["'self'", ...new Set(engineOrigins.filter((o) => o !== "" && o !== "null"))];
+  const storage = storageOrigin === null ? [] : [storageOrigin];
   return {
     "script-src": [...origins, "'unsafe-inline'", "'unsafe-eval'"],
     "style-src": [...origins, "'unsafe-inline'"],
-    "font-src": [...origins, "data:"],
-    "img-src": [...origins, TWITCH_IMAGE_CDN, "data:", "blob:"],
-    "media-src": [...origins, "data:", "blob:"],
+    "font-src": [...origins, ...storage, "data:"],
+    "img-src": [...origins, ...storage, TWITCH_IMAGE_CDN, "data:", "blob:"],
+    "media-src": [...origins, ...storage, "data:", "blob:"],
   };
 }
 
@@ -154,6 +161,8 @@ export function injectFrameScaffold(entryHtml: string, scaffoldHtml: string): st
 export interface FrameSource {
   entryHtml: string;
   resourceBaseUrl: string;
+  /** The bucket asset requests redirect to; `null` when they do not redirect. */
+  storageOrigin: string | null;
   /** `null` for a widget that declares no theme contract. */
   theme: FrameTheme | null;
 }
@@ -169,10 +178,10 @@ export function frameDocument(source: FrameSource, boot: WidgetBootPayload | Wid
   const theme = source.theme;
   const scaffold = buildFrameScaffold({ boot, baseHref: source.resourceBaseUrl, theme });
   let html = injectFrameScaffold(source.entryHtml, scaffold);
-  const loadDirectives = frameLoadDirectives([
-    originOf(source.resourceBaseUrl),
-    ...(theme?.stylesheetUrl ? [originOf(theme.stylesheetUrl)] : []),
-  ]);
+  const loadDirectives = frameLoadDirectives(
+    [originOf(source.resourceBaseUrl), ...(theme?.stylesheetUrl ? [originOf(theme.stylesheetUrl)] : [])],
+    source.storageOrigin
+  );
   if (theme?.stylesheetUrl) {
     html = injectThemeStylesheet(html, theme.stylesheetUrl);
   }

@@ -87,10 +87,26 @@ describe("HttpBarkloaderFrameClient — logging on failure", () => {
     expect(result).toEqual({
       entryHtml: "<html></html>",
       resourceBaseUrl: "https://cdn.example.com/w/",
+      storageOrigin: null,
       theme: null,
       fontSettings: [],
     });
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("carries the storage origin barkloader names into the frame info", async () => {
+    const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
+    const fetchFn = mock(async () =>
+      Response.json({
+        entryHtml: "<html></html>",
+        resourceBaseUrl: "https://cdn.example.com/w/",
+        storageOrigin: "https://bucket.storage.example.com",
+      })
+    ) as unknown as typeof fetch;
+    const client = new HttpBarkloaderFrameClient("http://barkloader.local", BARKLOADER_KEY, logger, fetchFn);
+
+    const result = await client.fetchWidgetFrame("mymod", "mywid");
+    expect(result?.storageOrigin).toBe("https://bucket.storage.example.com");
   });
 
   it("reads the widget's font settings", async () => {
@@ -109,6 +125,7 @@ describe("FrameAssembler.assembleDocument", () => {
   const info = {
     entryHtml: "<!doctype html><body></body>",
     resourceBaseUrl: "https://cdn.example.com/modules/mymod/abc123/widgets/mywid/",
+    storageOrigin: null,
     theme: null,
     fontSettings: [],
   };
@@ -215,6 +232,7 @@ async function assembleThemed(settings: Record<string, unknown>, theme: FrameThe
   const fetchWidgetFrame = mock(async (_moduleKey: string, _manifestId: string, _themeId?: string) => ({
     entryHtml: "<!doctype html><html><head><style>#t{}</style></head><body><script>1</script></body></html>",
     resourceBaseUrl: THEMED_BASE,
+    storageOrigin: null,
     theme,
     fontSettings: [],
   }));

@@ -170,6 +170,10 @@ impl Repository for FileRepository {
     async fn presign_read(&self, _key: &str, _ttl: Duration) -> Result<ReadEndpoint> {
         Ok(ReadEndpoint::Unsupported)
     }
+
+    async fn read_origin(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
 }
 
 #[cfg(test)]

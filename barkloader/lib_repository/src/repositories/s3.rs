@@ -113,6 +113,25 @@ impl S3Repository {
     }
 }
 
+/// Signed only to read the origin off the URL, never requested.
+const READ_ORIGIN_PROBE_KEY: &str = "read-origin-probe";
+const READ_ORIGIN_PROBE_TTL: Duration = Duration::from_secs(60);
+
+/// The origin of a presigned URL when its host names the bucket
+/// (`{bucket}.host`), or `None` for a path-style URL. A path-style host also
+/// serves other people's buckets, and a browser ignores a CSP source's path
+/// after a redirect, so a widget frame could not be allowed to follow a
+/// redirect there without being able to reach those buckets too. Reads from
+/// such a store are served inline instead, which costs range requests and
+/// holds each file in memory while it is served.
+fn bucket_origin(url: &str, bucket: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://")?;
+    let authority = rest.split(['/', '?']).next()?;
+    authority
+        .starts_with(&format!("{bucket}."))
+        .then(|| format!("{scheme}://{authority}"))
+}
+
 /// Did `head_object` report the key as absent, rather than fail?
 ///
 /// Decided on the typed error, falling back to the raw status for a backend
@@ -389,8 +408,20 @@ impl Repository for S3Repository {
             .await
             .map_err(|e| anyhow!("S3 presign get_object {} failed: {}", full_key, e))?;
 
-        Ok(ReadEndpoint::Presigned {
-            url: presigned.uri().to_string(),
-        })
+        let url = presigned.uri().to_string();
+        if bucket_origin(&url, &self.config.bucket).is_none() {
+            return Ok(ReadEndpoint::Unsupported);
+        }
+        Ok(ReadEndpoint::Presigned { url })
+    }
+
+    async fn read_origin(&self) -> Result<Option<String>> {
+        match self
+            .presign_read(READ_ORIGIN_PROBE_KEY, READ_ORIGIN_PROBE_TTL)
+            .await?
+        {
+            ReadEndpoint::Presigned { url } => Ok(bucket_origin(&url, &self.config.bucket)),
+            ReadEndpoint::Unsupported => Ok(None),
+        }
     }
 }

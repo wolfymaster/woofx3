@@ -115,6 +115,12 @@ pub trait Repository {
 
     /// Does not check that the key exists.
     async fn presign_read(&self, key: &str, ttl: Duration) -> Result<ReadEndpoint>;
+
+    /// The origin `presign_read` URLs point at, or `None` when reads are
+    /// served by the caller. Widget frames list it in their load policy, so
+    /// it must belong to this store alone: anything a frame can load from
+    /// is somewhere it can send data.
+    async fn read_origin(&self) -> Result<Option<String>>;
 }
 
 #[enum_dispatch]

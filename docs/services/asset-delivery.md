@@ -64,6 +64,13 @@ Barkloader checks that the key exists before redirecting, so a missing key
 is the same 404 as any other rejection rather than a redirect to a storage
 error. Presigned URLs are valid for 12 hours.
 
+A browser checks a frame's policy again on a redirect, so barkloader's frame
+answer names the bucket's origin as `storageOrigin`, and the frame allows it for
+fonts, images and media. That only holds when the origin belongs to the bucket
+alone (`{bucket}.host`). A store using path-style URLs shares its host with other
+buckets, so barkloader does not redirect to it: it serves those files itself,
+holding each in memory and without range requests.
+
 Widget bundle files (`modules/{moduleKey}/{versionDir}/widgets/...`) are
 always served inline. A browser resolves a stylesheet's `url(...)` and a
 module script's relative `import` against the URL it finally loaded from;
