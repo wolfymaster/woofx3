@@ -1,0 +1,87 @@
+id: WFX-API-002
+title: db-proxy events are written in the change's transaction
+lang: go
+scope:
+  include: ["db/**/*.go"]
+  exclude:
+    - "db/app/workers/**"
+    - "db/app/server/**"
+    - "**/migrations/**"
+  skip_tests: true
+category: api
+severity: warn
+enforcement: static
+static:
+  engine: ast-grep
+  rule_file: astgrep/wfx-api-002.yml
+statement: >
+  A db-proxy service announces a change by calling
+  `EventPublisher.Publish(workers.PublishOptions{...})` after the change has
+  already been written in its own statement or transaction, instead of
+  writing the outbox event with `PublishIn(tx, ...)` (or `PublishEventIn`)
+  inside the same `gorm` transaction that makes the change. A call that
+  drops the returned error makes it worse, but a checked
+  `Publish` is still a violation when a change it describes was committed
+  separately. Code inside `db/app/workers` (the publisher and its workers)
+  is not covered.
+rationale: >
+  The db proxy's outbox is how every other service learns that data
+  changed: workflows trigger on `db.*` events, the api pushes them to the
+  dashboard, the scene manager drops cached state. Written after the commit,
+  the event is lost whenever the process stops or the outbox insert fails
+  between the two writes, and the change happened with nobody told; written
+  before it, subscribers hear about a change that may still roll back. One
+  transaction makes the event exist if and only if the change does.
+violation_examples:
+  - note: The user row is committed, then the event is written on its own and its error dropped.
+    code: |
+      if err := s.repo.Create(user); err != nil {
+      	return nil, twirp.InternalErrorWith(err)
+      }
+      if s.publisher != nil {
+      	s.publisher.Publish(workers.PublishOptions{
+      		EntityType: "user",
+      		EntityID:   user.ID,
+      		Operation:  "created",
+      		Data:       user,
+      	})
+      }
+  - note: A checked error does not make a post-commit publish atomic.
+    code: |
+      if err := s.repo.Upsert(&setting); err != nil {
+      	return nil, err
+      }
+      if err := s.publisher.Publish(workers.PublishOptions{
+      	EntityType: "module.setting",
+      	Operation:  "updated",
+      	Data:       map[string]string{"key": setting.Key},
+      }); err != nil {
+      	return nil, fmt.Errorf("publish setting change: %w", err)
+      }
+non_violation_examples:
+  - note: The change and its event commit together.
+    code: |
+      err := s.db.Transaction(func(tx *gorm.DB) error {
+      	if err := s.repo.WithDB(tx).Create(user); err != nil {
+      		return fmt.Errorf("create user: %w", err)
+      	}
+      	return s.publisher.PublishIn(tx, workers.PublishOptions{
+      		EntityType: "user",
+      		EntityID:   user.ID,
+      		Operation:  "created",
+      		Data:       user,
+      	})
+      })
+  - note: >
+      Near miss. An engine event that workflows trigger on goes through
+      PublishEventIn, which also takes the transaction.
+    code: |
+      return s.db.Transaction(func(tx *gorm.DB) error {
+      	if err := s.segments.WithDB(tx).MarkEntered(viewerID, segmentID); err != nil {
+      		return err
+      	}
+      	return s.publisher.PublishEventIn(tx, "viewer.segment.entered", viewerID, nil, payload)
+      })
+context_needs: [enclosing_decl]
+status: draft
+metrics: { precision: null, recall: null, agreement: null, last_eval: null }

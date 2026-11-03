@@ -1,0 +1,85 @@
+id: WFX-API-003
+title: db-proxy SQL runs on both dialects and binds its times
+lang: go
+scope:
+  include: ["db/**/*.go"]
+  exclude:
+    - "db/app/server/**"
+    - "**/migrations/**"
+  skip_tests: true
+category: api
+severity: error
+enforcement: static
+static:
+  engine: ast-grep
+  rule_file: astgrep/wfx-api-003.yml
+statement: >
+  SQL written in db-proxy Go code (a `Raw`, `Exec`, `Where`, `Order` or
+  `gorm.Expr` string) uses syntax only one system-database dialect accepts,
+  or stamps a time with the database's own clock. Flagged forms: a
+  `public.` schema prefix, `NOW()`, `CURRENT_TIMESTAMP` / `CURRENT_DATE`,
+  `datetime('now')`, `strftime(`, a `::type` cast, `ILIKE`,
+  `gen_random_uuid()`, `jsonb_*()` and `json_extract()`. Tables are named
+  without a schema, times are bound as parameters from the repository's
+  injected clock in UTC, and ids are assigned in Go before the insert. Code
+  that checks the dialect (`isPostgres()`, `database.DialectPostgres`,
+  `Dialector.Name()`) and spells each dialect in its own branch is not a
+  violation, and neither are per-dialect migrations or gorm struct tags.
+rationale: >
+  An engine runs on Postgres or on a local SQLite file, and the same
+  repository code serves both. SQLite has no `public` schema and no
+  `NOW()`, so statements that only Postgres accepts made every module
+  install, module workflow save and overlay delivery ack fail on SQLite
+  engines. Database-clock stamps are wrong on both: SQLite's
+  `CURRENT_TIMESTAMP` is whole seconds in a text layout unlike the times
+  gorm binds into the same columns, so rows sort apart and events in one
+  second have no defined order, and no test can fake the clock.
+violation_examples:
+  - note: A Postgres-only schema prefix and database clock in an upsert.
+    code: |
+      err := r.db.Raw(`
+      	INSERT INTO public.triggers (id, name, event, created_at, updated_at)
+      	VALUES (?, ?, ?, NOW(), NOW())
+      	ON CONFLICT (created_by_ref, manifest_id) DO UPDATE SET
+      		name = EXCLUDED.name,
+      		updated_at = NOW()
+      	RETURNING id
+      `, t.ID, t.Name, t.Event).Scan(&result).Error
+  - note: CURRENT_TIMESTAMP is portable syntax but reads the database clock.
+    code: |
+      return r.db.Model(&models.Action{}).
+      	Where("module_id = ? AND archived_at IS NULL", moduleID).
+      	Update("archived_at", gorm.Expr("CURRENT_TIMESTAMP")).Error
+  - note: A Postgres cast and ILIKE in a search.
+    code: |
+      q := r.db.Where("name ILIKE ? AND id::text <> ?", "%"+term+"%", excludeID)
+non_violation_examples:
+  - note: No schema, times bound from the injected clock.
+    code: |
+      now := r.clock.Now().UTC()
+      err := r.db.Raw(`
+      	INSERT INTO triggers (id, name, event, created_at, updated_at)
+      	VALUES (?, ?, ?, ?, ?)
+      	ON CONFLICT (created_by_ref, manifest_id) DO UPDATE SET
+      		name = EXCLUDED.name,
+      		updated_at = EXCLUDED.updated_at
+      	RETURNING id
+      `, t.ID, t.Name, t.Event, now, now).Scan(&result).Error
+  - note: >
+      Near miss. The function checks the dialect and spells each one on
+      purpose.
+    code: |
+      func (r *UserEventRepository) isGiftedSub() string {
+      	if database.Dialect(r.db.Dialector.Name()) == database.DialectPostgres {
+      		return `(event_value->>'isGift') = 'true'`
+      	}
+      	return `json_extract(event_value, '$.isGift') = 1`
+      }
+  - note: Near miss. A gorm column type in a struct tag; SQLite accepts any declared type.
+    code: |
+      type Scene struct {
+      	LayoutJSON string `gorm:"column:layout_json;type:jsonb;not null;default:'{}'"`
+      }
+context_needs: [enclosing_decl]
+status: draft
+metrics: { precision: null, recall: null, agreement: null, last_eval: null }

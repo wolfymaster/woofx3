@@ -1,0 +1,76 @@
+# stylegate configuration for the woofx3 engine. Run it through
+# scripts/stylegate.sh, which layers these rules over stylegate's own.
+# Keys left out take stylegate's defaults.
+
+# stylegate runs locally only, on the logged-in claude CLI's subscription.
+provider: claude_code
+
+# Generated clients and servers (buf, twirp, prost) and contract outputs,
+# the fixtures that break rules on purpose, and the rule calibration corpus.
+exclude:
+  - "db/app/server/**"
+  - "shared/clients/golang/db/**"
+  - "shared/clients/typescript/db/**"
+  - "shared/clients/rust/db/src/**"
+  - "shared/clients/rust/twirp/**"
+  - "**/*.gen.ts"
+  - "**/*.gen.rs"
+  - "**/*_gen.go"
+  - "shared/common/golang/cloudevents/reserved_data.go"
+  - ".stylegate/eval/**"
+  - "**/testdata/**"
+  - "**/fixtures/**"
+  - "**/target/**"
+
+project_context: >
+  woofx3 is a single-tenant streaming control plane that runs locally on
+  Windows and Linux with no third-party services: Go, Rust and Bun
+  TypeScript services that talk only through CloudEvents on a local NATS
+  bus. Only the db proxy (db/) touches a database; every other service uses
+  its generated Twirp/gRPC clients. Module code is untrusted end-user code:
+  it returns values in platform-defined shapes and the engine validates them
+  and performs effects; it never publishes on the bus or picks event types.
+  An engine is single-tenant, so no tenant or application id is configured,
+  passed or stored. Config comes from WOOFX3_* env, .env, then .woofx3.json;
+  a blank value never overrides a set one, and required config fails fast at
+  startup. Clients exist in TypeScript, Go and Rust and change together.
+  Some services run hundreds of times per second.
+
+# stylegate's defaults plus Rust test files and the db test helpers.
+test_globs:
+  - "**/*_test.go"
+  - "**/*.test.*"
+  - "**/*.spec.*"
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/__tests__/**"
+  - "**/testing/**"
+  - "**/testdata/**"
+  - "**/*.fake.*"
+  - "**/*.mock.*"
+  - "**/__mocks__/**"
+  - "**/fixtures/**"
+  - "**/*_test.rs"
+  - "**/*_harness.rs"
+  - "**/dbtest/**"
+
+# Where this engine's general conventions live, for the base rules.
+rules:
+  ANY-API-007:
+    notes: >
+      Module-reachable capabilities are the ctx.* table in
+      docs/services/engine-integrity.md, enforced in
+      barkloader/lib_sandbox/src/permissions.rs. A new module-reachable
+      workflow action needs an explicit systemOnly decision.
+  ANY-ERR-003:
+    notes: >
+      Blank counts as unset: TypeScript uses nonBlank / unsetWhenBlank in
+      connectors/src/config/env.ts and the runtime envSchema; barkloader uses
+      util::get_env_or_default_with_key and validate_required_config.
+  ANY-ABS-005:
+    notes: db repositories take an injected clock.
+  ANY-NAM-004:
+    notes: >
+      Bus subjects are lowercase, dot-separated snake_case tokens (e.g.
+      platform.gateway.field_options); CloudEvent extension names are
+      lowercase alphanumerics only.

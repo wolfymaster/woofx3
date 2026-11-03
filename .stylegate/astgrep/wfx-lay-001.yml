@@ -1,0 +1,33 @@
+# Static half of WFX-LAY-001: a database driver, ORM or query builder
+# imported outside db/. The rule's scope excludes db/, so any match is a
+# service reaching a data store around the db proxy.
+id: WFX-LAY-001
+language: go
+severity: error
+message: Database driver imported outside db/. Reach the data through the db proxy's generated client (shared/clients/golang/db).
+rule:
+  kind: import_spec
+  has:
+    field: path
+    regex: '^"(database/sql|gorm\.io/.+|github\.com/jackc/pgx.*|github\.com/lib/pq|github\.com/mattn/go-sqlite3|modernc\.org/sqlite.*|github\.com/glebarez/sqlite|github\.com/ncruces/go-sqlite3.*|zombiezen\.com/go/sqlite.*|crawshaw\.io/sqlite.*|github\.com/jmoiron/sqlx|entgo\.io/ent.*|github\.com/uptrace/bun.*)"$'
+---
+id: WFX-LAY-001
+language: typescript
+severity: error
+message: Database driver imported outside db/. Reach the data through the db proxy's generated client (shared/clients/typescript/db).
+rule:
+  kind: import_statement
+  has:
+    field: source
+    regex: '^["''](bun:sqlite|node:sqlite|pg|pg-promise|postgres|sqlite|sqlite3|better-sqlite3|@libsql/client|mysql2?|knex|kysely|typeorm|@prisma/client|drizzle-orm(/.*)?|@electric-sql/pglite)["'']$'
+---
+id: WFX-LAY-001
+language: rust
+severity: error
+message: Database driver used outside db/. Reach the data through the db proxy's generated client (shared/clients/rust/db).
+rule:
+  any:
+    - kind: use_declaration
+      regex: '^(pub\s+)?use\s+(::)?(rusqlite|sqlx|diesel|tokio_postgres|postgres|sea_orm|libsql|duckdb|sqlite)\b'
+    - kind: extern_crate_declaration
+      regex: '\b(rusqlite|sqlx|diesel|tokio_postgres|postgres|sea_orm|libsql|duckdb|sqlite)\b'

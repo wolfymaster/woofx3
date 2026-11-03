@@ -1,0 +1,99 @@
+id: WFX-API-005
+title: Values a shared contract defines come from its generated code
+lang: any
+scope:
+  include:
+    - "api/src/**/*.ts"
+    - "connectors/src/**/*.ts"
+    - "sceneManager/src/**/*.ts"
+    - "shared/clients/typescript/**/*.ts"
+    - "shared/common/typescript/**/*.ts"
+    - "workflow/**/*.go"
+    - "shared/common/golang/**/*.go"
+    - "barkloader/**/*.rs"
+  exclude:
+    - "**/*.gen.ts"
+    - "**/*.gen.rs"
+    - "**/*_gen.go"
+    - "shared/common/golang/cloudevents/reserved_data.go"
+    - "shared/common/contracts/**"
+    - "**/node_modules/**"
+    - "**/target/**"
+  skip_tests: true
+category: api
+severity: warn
+enforcement: llm
+statement: >
+  Code restates a value that one of the cross-service contracts in
+  `shared/common/contracts/` (`platform-gateway.json`,
+  `companion-gateway.json`, `reserved-subjects.json`) defines, instead of
+  importing it from that contract's generated code: a subject
+  (`platform.gateway.send`, `engine.companion.module.request`), a limit or
+  timeout (the gateway caller timeout, a budget or frame-size bound, the
+  pin duration range), a set of allowed values (failure codes, reply
+  types, Twitch announcement colours, platform names) or a reserved
+  prefix. The generated code is `shared/clients/typescript/api/platform-gateway.gen.ts`,
+  `shared/common/typescript/cloudevents/Companion/module-request.gen.ts`,
+  `shared/common/golang/platformgateway`, `shared/common/golang/cloudevents/reserved_data.go`
+  and `barkloader/lib_sandbox/src/contracts/companion_gateway.gen.rs`. A
+  hand-written constant with a "must match X in Y" comment is the typical
+  form. A value the contract does not define, such as a service's own
+  internal timeout that is derived from a contract value (`CallerTimeout -
+  margin`), is not a violation, nor is a test asserting the generated value.
+rationale: >
+  These values cross languages: the api, connectors, the workflow engine
+  and barkloader each read them, in TypeScript, Go and Rust. A copy that
+  says "must match" drifts silently the first time the contract changes,
+  and the failure shows up as a caller giving up before the gateway
+  answers, a colour or code one side refuses, or a subject one side no
+  longer reserves. Generating each language's values from one schema makes
+  the drift a compile error.
+violation_examples:
+  - note: Go. The workflow engine repeats the gateway's caller timeout.
+    code: |
+      // PlatformGatewayTimeout must exceed the gateway's own deadline. Must
+      // match GATEWAY_CALLER_TIMEOUT_MS in connectors/src/config/gateway.ts.
+      const PlatformGatewayTimeout = 12 * time.Second
+
+      func NewNATSPlatformGateway(bus Bus, logger *slog.Logger) *NATSPlatformGateway {
+      	return &NATSPlatformGateway{bus: bus, timeout: PlatformGatewayTimeout, logger: logger}
+      }
+  - note: TypeScript. Connectors keeps its own list of announcement colours.
+    code: |
+      /** The colours Twitch's Send Chat Announcement takes. */
+      const ANNOUNCEMENT_COLORS = ["blue", "green", "orange", "purple", "primary"] as const;
+
+      export function isAnnouncementColor(value: string): boolean {
+        return (ANNOUNCEMENT_COLORS as readonly string[]).includes(value);
+      }
+  - note: Rust. ctx.local repeats the contract's budget bounds.
+    code: |
+      /// The contract's upper bound on `budgetMs`.
+      pub const MAX_BUDGET: Duration = Duration::from_millis(4_500);
+      const MIN_BUDGET_MS: u64 = 100;
+non_violation_examples:
+  - note: Go. The timeout is the contract's constant.
+    code: |
+      func NewNATSPlatformGateway(bus Bus, logger *slog.Logger) *NATSPlatformGateway {
+      	return &NATSPlatformGateway{bus: bus, timeout: platformgateway.CallerTimeout, logger: logger}
+      }
+  - note: Rust. The bounds come from the generated contract module.
+    code: |
+      use crate::contracts::companion_gateway::{MAX_BUDGET_MS, MIN_BUDGET_MS};
+
+      pub const MAX_BUDGET: Duration = Duration::from_millis(MAX_BUDGET_MS as u64);
+      pub const MIN_BUDGET: Duration = Duration::from_millis(MIN_BUDGET_MS as u64);
+  - note: >
+      Near miss. TypeScript. A service's own limit that the contract does not
+      define, derived from a contract value, is the service's to name.
+    code: |
+      import { CALLER_TIMEOUT_MS } from "@woofx3/api/platform-gateway";
+
+      /** Leave the caller time to log the reply before it gives up. */
+      const ADAPTER_DEADLINE_MS = CALLER_TIMEOUT_MS - 3_000;
+context_needs: [enclosing_decl, imports]
+trigger:
+  - '(?i)gateway|companion|twitchapi|reserved|announcement|colou?r|budget|failure.?code|reply.?type|must match'
+  - '(?i)\b(MAX|MIN)_[A-Z_]+|_MS\b|Timeout\b|Duration::from|time\.(Second|Millisecond)'
+status: draft
+metrics: { precision: 1, recall: 1, agreement: 1, last_eval: "2026-11-03" }

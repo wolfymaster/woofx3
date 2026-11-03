@@ -1,0 +1,88 @@
+id: WFX-ERR-002
+title: Configuration is read through the shared runtime config
+lang: any
+scope:
+  include: ["**/*.go", "**/*.ts", "**/*.tsx", "**/*.mts", "**/*.rs"]
+  exclude:
+    - "shared/common/golang/config/**"
+    - "shared/common/golang/runtime/**"
+    - "shared/common/golang/logging/**"
+    - "shared/common/typescript/runtime/**"
+    - "shared/common/typescript/logging/**"
+    - "shared/common/rust/runtime/**"
+    - "shared/common/rust/logging/**"
+    - "barkloader/app/src/util.rs"
+    - "**/build.rs"
+    - "**/dbtest/**"
+    - "**/scripts/**"
+    - ".github/**"
+    - "examples/**"
+    - "**/node_modules/**"
+    - "**/target/**"
+    - "**/*.d.ts"
+  skip_tests: true
+category: errors
+severity: warn
+enforcement: static
+static:
+  engine: ast-grep
+  rule_file: astgrep/wfx-err-002.yml
+statement: >
+  A service reads a configuration value straight from the process
+  environment (`os.Getenv` / `os.LookupEnv` in Go, `process.env.X`,
+  `Bun.env.X` or `import.meta.env.X` in TypeScript, `std::env::var` in
+  Rust) instead of through the shared runtime config: the TypeScript
+  runtime's `envSchema` and loaded config, `shared/common/golang/config`
+  and the Go runtime's `EnvSchema`, or `woofx3_runtime::Config` (and
+  barkloader's `util::get_env_or_default_with_key`) in Rust. A lookup
+  function injected into a parser so tests can replace it
+  (`loadConfig(os.Getenv)`) is not a read and not a violation; the loader
+  packages themselves, build scripts and CI scripts are out of scope.
+rationale: >
+  Every service is configured the same way: a `WOOFX3_*` variable, then
+  `./.env`, then `.woofx3.json` found by walking up from the working
+  directory, with a blank value never overriding a set one. A direct read
+  sees only the first source, so a key set in `.woofx3.json` (how the
+  desktop app and packaged releases configure an engine) is silently
+  ignored, a blank variable can mask a real value, and a key read this way
+  is invisible to the startup validation that should fail fast on it.
+violation_examples:
+  - note: Rust. Upload limits read only the process environment, never .woofx3.json.
+    code: |
+      impl UploadLimits {
+          pub fn from_env() -> Result<Self> {
+              Self::from_lookup(|name| std::env::var(name).ok())
+          }
+      }
+  - note: Go. A service decides its mode from an ad-hoc variable.
+    code: |
+      func isDevelopment() bool {
+      	env := os.Getenv("GO_ENV")
+      	return env == "development" || env == "dev"
+      }
+  - note: TypeScript. A client id read with a blank fallback, outside the schema.
+    code: |
+      const clientId = process.env.WOOFX3_TWITCH_CLIENT_ID || "";
+non_violation_examples:
+  - note: Rust. The shared config applies env, .env and .woofx3.json in order.
+    code: |
+      let config = woofx3_runtime::Config::load()?;
+      let limits = UploadLimits::from_lookup(|name| config.get_non_empty(name))?;
+  - note: TypeScript. The key is declared in the runtime's schema and read from the loaded config.
+    code: |
+      const EnvSchema = z.object({
+        WOOFX3_TWITCH_CLIENT_ID: z.string().min(1),
+      });
+      const runtime = createRuntime({ application, envSchema: EnvSchema });
+      // later, inside the application
+      const clientId = ctx.config.WOOFX3_TWITCH_CLIENT_ID;
+  - note: >
+      Near miss. Go. The environment lookup is injected into a parser so a
+      test can pass its own map; nothing is read here.
+    code: |
+      func LoadConfig() (Config, error) {
+      	return loadConfig(os.Getenv)
+      }
+context_needs: [enclosing_decl, imports]
+status: draft
+metrics: { precision: null, recall: null, agreement: null, last_eval: null }

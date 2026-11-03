@@ -1,0 +1,77 @@
+id: WFX-ERR-001
+title: NATS request failures are classified by type, not text
+lang: typescript
+scope:
+  include: ["**/*.ts", "**/*.tsx", "**/*.mts"]
+  exclude:
+    - "**/node_modules/**"
+    - "**/*.d.ts"
+    - "shared/clients/typescript/nats/**"
+  skip_tests: true
+category: errors
+severity: warn
+enforcement: static
+static:
+  engine: ast-grep
+  rule_file: astgrep/wfx-err-001.yml
+statement: >
+  Code that made a request over the bus tells a timeout or "no responders"
+  apart from other failures by matching the error's `name` or `message`
+  text (`err.name === "TimeoutError"`, `message.includes("no responders")`,
+  `err.message.includes("503")`) instead of calling
+  `requestFailureKind(err)` from `@woofx3/nats`, which reads the client's
+  typed `TimeoutError`, `RequestError` and `NoRespondersError` classes and
+  returns `"timeout"`, `"no_responders"` or `"other"`. Comparing the
+  engine's own reply or result codes (`reply.code === "timeout"`,
+  `failure === "no_responders"`) is not a violation.
+rationale: >
+  Error text is not a contract. An unrelated error whose message happens to
+  contain "503" or "timeout" was read as a NATS failure and retried or
+  reported as the gateway being down, and a client upgrade that rewords a
+  message silently turns a retryable failure into a hard one. Several
+  services carried their own copy of these string checks; one typed
+  classifier beside the shared client keeps them all reading the same
+  classes, and tests throw the real error classes instead of imitating
+  their text.
+violation_examples:
+  - note: A boot retry keyed on the message text.
+    code: |
+      try {
+        return await nats.request(subject, bytes, { timeout });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!message.includes("no responders")) {
+          throw err;
+        }
+        await sleep(backoffMs);
+      }
+  - note: Classification by name and message.
+    code: |
+      function isTimeout(err: unknown): boolean {
+        return err instanceof Error && (err.name === "TimeoutError" || err.message === "timeout");
+      }
+non_violation_examples:
+  - note: The shared classifier reads the typed errors.
+    code: |
+      import { requestFailureKind } from "@woofx3/nats";
+
+      try {
+        return await nats.request(subject, bytes, { timeout });
+      } catch (err) {
+        const failure = requestFailureKind(err);
+        if (failure === "no_responders") {
+          await sleep(backoffMs);
+          return retry();
+        }
+        throw err;
+      }
+  - note: >
+      Near miss. The gateway's reply carries an engine-defined code; matching
+      it is reading a contract, not error text.
+    code: |
+      if (reply.ok === false && reply.error.code === "timeout") {
+        return { status: 504, body: { error: reply.error } };
+      }
+context_needs: [enclosing_decl, imports]
+status: draft
+metrics: { precision: null, recall: null, agreement: null, last_eval: null }

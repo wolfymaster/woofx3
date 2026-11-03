@@ -1,0 +1,89 @@
+id: WFX-LAY-001
+title: Only the db proxy opens a database
+lang: any
+scope:
+  include: ["**/*.go", "**/*.ts", "**/*.tsx", "**/*.mts", "**/*.rs"]
+  exclude:
+    - "db/**"
+    - "**/node_modules/**"
+    - "**/target/**"
+    - "**/*.d.ts"
+category: layering
+severity: error
+enforcement: static
+static:
+  engine: ast-grep
+  rule_file: astgrep/wfx-lay-001.yml
+statement: >
+  Code outside `db/` imports a database driver, ORM or query builder: in Go
+  `database/sql`, `gorm.io/...`, pgx, `lib/pq` or a SQLite driver; in
+  TypeScript `bun:sqlite`, `pg`, `postgres`, `better-sqlite3`, drizzle,
+  kysely or similar; in Rust `rusqlite`, `sqlx`, `diesel` or
+  `tokio_postgres`. Only the db proxy (`db/`) talks to the system database
+  (Postgres or SQLite) and the module key/value store. Every other service,
+  test helper included, reaches that data through the db proxy's generated
+  Twirp/gRPC clients in `shared/clients/{golang,typescript,rust}/db`.
+  Importing a package whose name merely contains "sql" or "postgres" (a
+  local module, `postgres_types`) is not a violation.
+rationale: >
+  The db proxy owns the schema, both SQL dialects, the transactional outbox
+  that turns writes into bus events, and the permission checks. A second
+  connection skips all of them: it writes rows no event announces, reads
+  around permissions, and breaks the moment the engine runs on the other
+  dialect. One owner also keeps the engine runnable from a single local
+  SQLite file on Windows and Linux.
+violation_examples:
+  - note: Go. A workflow helper reads settings straight from the database.
+    code: |
+      import (
+      	"context"
+      	"database/sql"
+
+      	_ "modernc.org/sqlite"
+      )
+
+      func (s *SettingsReader) Get(ctx context.Context, key string) (string, error) {
+      	var value string
+      	err := s.db.QueryRowContext(ctx, "SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+      	return value, err
+      }
+  - note: TypeScript. A connectors adapter caches tokens in its own SQLite file.
+    code: |
+      import { Database } from "bun:sqlite";
+
+      const tokens = new Database("tokens.db");
+      export function storeToken(login: string, token: string): void {
+        tokens.run("INSERT OR REPLACE INTO tokens (login, token) VALUES (?, ?)", [login, token]);
+      }
+  - note: Rust. A barkloader service opens module storage directly.
+    code: |
+      use rusqlite::Connection;
+
+      pub fn read_counter(path: &Path, key: &str) -> Result<i64> {
+          let conn = Connection::open(path)?;
+          Ok(conn.query_row("SELECT value FROM storage WHERE key = ?1", [key], |r| r.get(0))?)
+      }
+non_violation_examples:
+  - note: Go. The service uses the db proxy's generated client.
+    code: |
+      import client "github.com/wolfymaster/woofx3/clients/db"
+
+      func (s *SettingsReader) Get(ctx context.Context, key string) (string, error) {
+      	res, err := s.settings.GetSetting(ctx, &client.GetSettingRequest{Key: key})
+      	if err != nil {
+      		return "", fmt.Errorf("get setting %q: %w", key, err)
+      	}
+      	return res.Setting.Value, nil
+      }
+  - note: >
+      Near miss. TypeScript. A relative module named after the database it
+      talks to through the proxy is not a driver.
+    code: |
+      import { readModuleStorage } from "./sqlite-storage-client";
+      import { createDbClients } from "@woofx3/db";
+  - note: Near miss. Rust. `postgres_types` is a different crate, and `crate::sqlite` is local.
+    code: |
+      use crate::sqlite::StorageKey;
+context_needs: [imports]
+status: draft
+metrics: { precision: null, recall: null, agreement: null, last_eval: null }

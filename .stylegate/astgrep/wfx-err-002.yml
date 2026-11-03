@@ -1,0 +1,58 @@
+# Static half of WFX-ERR-002: a service reading the process environment
+# itself instead of through the shared runtime config loaders, which apply
+# the WOOFX3_* > .env > .woofx3.json precedence and treat blanks as unset.
+# The loaders' own packages are outside the rule's scope.
+id: WFX-ERR-002
+language: go
+severity: warning
+message: Configuration read straight from the environment. Read it through the shared runtime config (shared/common/golang/config, runtime EnvSchema) so .env and .woofx3.json apply.
+rule:
+  kind: call_expression
+  has:
+    field: function
+    regex: '^os\.(Getenv|LookupEnv)$'
+---
+id: WFX-ERR-002
+language: typescript
+severity: warning
+message: Configuration read straight from the environment. Declare the key in the service's envSchema and read the loaded config so .env and .woofx3.json apply.
+rule:
+  any:
+    - kind: member_expression
+      regex: '^(process\.env|Bun\.env|import\.meta\.env)\.[A-Za-z_]'
+    - kind: subscript_expression
+      regex: '^(process\.env|Bun\.env|import\.meta\.env)\['
+---
+id: WFX-ERR-002
+language: rust
+severity: warning
+message: Configuration read straight from the environment. Read it through woofx3_runtime::Config (or barkloader's util::get_env_or_default_with_key) so .env and .woofx3.json apply.
+rule:
+  kind: call_expression
+  has:
+    field: function
+    regex: '^(std::)?env::(var|var_os|vars)$'
+  not:
+    any:
+      - inside:
+          stopBy: end
+          kind: function_item
+          follows:
+            kind: attribute_item
+            regex: 'test'
+            stopBy:
+              not:
+                any:
+                  - kind: attribute_item
+                  - kind: line_comment
+      - inside:
+          stopBy: end
+          kind: mod_item
+          follows:
+            kind: attribute_item
+            regex: 'cfg\(test\)'
+            stopBy:
+              not:
+                any:
+                  - kind: attribute_item
+                  - kind: line_comment

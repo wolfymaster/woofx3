@@ -1,0 +1,102 @@
+id: WFX-API-004
+title: Subjects from module code, manifests or callers pass the reserved-subject check
+lang: any
+scope:
+  include:
+    - "barkloader/**/*.rs"
+    - "api/src/**/*.ts"
+    - "workflow/**/*.go"
+    - "connectors/src/**/*.ts"
+  exclude:
+    - "**/contracts/*.gen.rs"
+    - "**/target/**"
+    - "**/node_modules/**"
+  skip_tests: true
+category: api
+severity: error
+enforcement: llm
+statement: >
+  The engine publishes, requests, subscribes or dispatches on a subject or
+  event type that it did not choose itself, namely one taken from module code
+  (a `ctx.*` argument, a `ctx.result` or webhook handler's `events`), from
+  a module manifest (an eventbus trigger, a field `source`, a button
+  `action`), from a workflow definition (`publish_event`'s `eventType`,
+  including one computed by an expression) or from an api caller (the
+  test-fire routes), without first checking it against the reserved-subject
+  registry and refusing a match. The registry is the one in
+  `shared/common/contracts/reserved-subjects.json`, read through
+  `cloudevents.ReservedSubjectMatch` in Go,
+  `publishedEventTypeProblem` / `testEventProblem` in
+  `api/src/workflow/reserved-subjects.ts`, and
+  `reserved_subjects::declared_event_reservation` in barkloader. Barkloader
+  must also check a module's events against its own declared eventbus
+  triggers. Copying the reserved prefixes into a local list instead of
+  reading the registry is also a violation. A subject that is an
+  engine-defined constant (`engine.obs.command`, `SUBJECT_MODULE_REQUEST`)
+  with only its payload taken from module code is not a violation.
+rationale: >
+  The bus is the engine's control plane: triggers, workflows, chat commands
+  and outbox events all travel on it. A subject passed through verbatim
+  lets module or workflow code impersonate any event source (a
+  `channel.cheer`, a `db.*` outbox event, another module's subjects), drive
+  a platform through `platform.gateway.*` or skip the engine's validation,
+  caps and provenance. The registry exists once so that the workflow
+  engine, the api and barkloader refuse the same names; a hand-copied list
+  drifts the first time a namespace is reserved.
+violation_examples:
+  - note: Rust. A webhook handler's returned events are published as given.
+    code: |
+      for event in result.events {
+          let subject = event.event_type.clone();
+          self.nats.publish(subject, serde_json::to_vec(&event)?).await?;
+      }
+  - note: Go. A workflow step publishes an expression-computed type with no reservation check.
+    code: |
+      func (a *PublishEventAction) Execute(ctx context.Context, in ActionInput) error {
+      	eventType, err := in.Expr.EvalString(a.EventType)
+      	if err != nil {
+      		return fmt.Errorf("evaluate event type: %w", err)
+      	}
+      	return a.bus.Publish(eventType, in.Payload)
+      }
+  - note: TypeScript. The api keeps its own copy of the reserved prefixes.
+    code: |
+      const RESERVED = ["engine.", "platform.gateway.", "db.", "workflow.command."];
+
+      export function canPublish(eventType: string): boolean {
+        return !RESERVED.some((prefix) => eventType.startsWith(prefix));
+      }
+non_violation_examples:
+  - note: Go. The computed type is checked against the shared registry, failing closed.
+    code: |
+      eventType, err := in.Expr.EvalString(a.EventType)
+      if err != nil {
+      	return fmt.Errorf("evaluate event type: %w", err)
+      }
+      if entry, reserved := cloudevents.ReservedSubjectMatch(eventType); reserved {
+      	return fmt.Errorf("publish_event: %q is reserved for the engine (%q)", eventType, entry)
+      }
+      return a.bus.Publish(eventType, in.Payload)
+  - note: Rust. Each event is checked against the module's declared triggers and the registry before barkloader publishes it.
+    code: |
+      for event in &result.events {
+          if !declared.contains(&event.event_type) {
+              return Err(HostError::refused(format!("{} is not a declared trigger", event.event_type)));
+          }
+          if let Some(entry) = declared_event_reservation(&event.event_type, module_id) {
+              return Err(HostError::refused(format!("{} is reserved ({entry})", event.event_type)));
+          }
+      }
+      publish_all(&self.nats, &result.events).await?;
+  - note: >
+      Near miss. Rust. The subject is an engine constant; module code only
+      supplies the arguments carried in the payload.
+    code: |
+      let request = BaseEvent::new(COMMAND_SUBJECT, EVENT_SOURCE, json!({ "command": name, "args": args }));
+      let reply = scope.request(COMMAND_SUBJECT, request.to_bytes()?, timeout)?;
+context_needs: [enclosing_decl, imports, callers]
+trigger:
+  - '(?i)publish|request|subscribe|dispatch'
+  - '(?i)subject|event_?type|eventType|reserved'
+status: draft
+metrics: { precision: 1, recall: 1, agreement: 1, last_eval: "2026-11-03" }

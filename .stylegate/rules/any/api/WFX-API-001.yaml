@@ -1,0 +1,79 @@
+id: WFX-API-001
+title: An engine is single-tenant, so nothing carries a scoping id
+lang: any
+scope:
+  include: ["**/*.go", "**/*.ts", "**/*.tsx", "**/*.mts", "**/*.rs"]
+  exclude:
+    - "**/node_modules/**"
+    - "**/target/**"
+    - "**/*.d.ts"
+    - "**/migrations/**"
+  skip_tests: true
+category: api
+severity: error
+enforcement: static
+static:
+  engine: ast-grep
+  rule_file: astgrep/wfx-api-001.yml
+statement: >
+  Engine code declares, passes, stores or reads a tenant, application,
+  account, organization or workspace id (`applicationId`, `ApplicationID`,
+  `tenant_id`, `accountId`, `appId`, `workspaceId`, ...) as a field,
+  parameter, variable, object key or storage key. An engine is
+  single-tenant: every table, storage key, event, RPC and setting belongs to
+  the one engine, and differences by platform or channel belong in trigger
+  conditions. Ids that name a real entity the engine holds many of
+  (`moduleId`, `userId`, `clientId`, `sceneId`, `broadcasterId`) are not
+  scoping ids and are not violations.
+rationale: >
+  The engine once scoped its data by an "application" id threaded through
+  every proto, client and service, with "use the default application when
+  none is given" fallbacks. Every engine had exactly one application, so
+  the scoping could only resolve one way, and a caller that resolved it
+  differently silently read nothing. The concept was removed and its proto
+  fields reserved; a new scoping id reintroduces that failure and invites a
+  second value that can never exist.
+violation_examples:
+  - note: TypeScript. A query type in the shared api client asks for an account.
+    code: |
+      export interface StreamEventsQuery {
+        accountId: string;
+        limit?: number;
+        types?: string[];
+      }
+  - note: Go. A db-proxy model scopes scenes by application.
+    code: |
+      type Scene struct {
+      	ID            uuid.UUID `gorm:"type:uuid;primaryKey"`
+      	ApplicationID uuid.UUID `gorm:"type:uuid;not null;index"`
+      	Name          string    `gorm:"not null"`
+      }
+  - note: Rust. A barkloader invocation context carries a tenant.
+    code: |
+      pub struct InvocationScope {
+          pub tenant_id: String,
+          pub module_id: String,
+      }
+non_violation_examples:
+  - note: The query names only what varies inside one engine.
+    code: |
+      export interface StreamEventsQuery {
+        limit?: number;
+        types?: string[];
+      }
+  - note: >
+      Near miss. A Twitch broadcaster id and an OAuth client id name real
+      entities the engine has many of; they are not tenant scoping.
+    code: |
+      type ChannelLink struct {
+      	BroadcasterID string
+      	ClientID      string
+      	ModuleID      string
+      }
+  - note: Near miss. A name that only starts like a scoping id is something else.
+    code: |
+      const accountName = profile.displayName;
+      const appIdentity = buildUserAgent(version);
+context_needs: [enclosing_decl]
+status: draft
+metrics: { precision: null, recall: null, agreement: null, last_eval: null }

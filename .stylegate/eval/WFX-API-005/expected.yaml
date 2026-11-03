@@ -1,0 +1,18 @@
+reviewed: false
+findings:
+  - file: bad/workflow/platform_gateway.go
+    line_start: 10
+    line_end: 13
+    note: The gateway caller timeout is a hand-copied 12 s with a "must match" comment instead of platformgateway.CallerTimeout.
+  - file: bad/workflow/platform_gateway.go
+    line_start: 28
+    line_end: 28
+    note: The platform.gateway.send subject is a literal instead of the contract's subject constant.
+  - file: bad/connectors/src/chat/announcement.ts
+    line_start: 3
+    line_end: 4
+    note: Twitch announcement colours are re-listed instead of TWITCH_ANNOUNCEMENT_COLORS from the platform gateway contract.
+  - file: bad/barkloader/lib_sandbox/src/extensions/local_budget.rs
+    line_start: 5
+    line_end: 10
+    note: The companion gateway contract's budgetMs bounds are repeated as literals instead of MAX_BUDGET_MS and MIN_BUDGET_MS.
