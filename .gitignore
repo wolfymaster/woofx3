@@ -67,7 +67,8 @@ boardModule/*
 tmp/*
 
 # claude
-.claude/
+.claude/*
+!.claude/settings.json
 
 # logs
 logs/
@@ -81,3 +82,8 @@ logs/
 # `go build ./...` in a module directory writes the binary next to the source.
 build/orchestrator/orchestrator
 services/nats/messagebus
+
+# stylegate run records, answer caches and mined drafts (scripts/stylegate.sh)
+.stylegate/runs/
+.stylegate/cache/
+.stylegate/mined/
