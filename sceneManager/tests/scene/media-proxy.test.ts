@@ -462,6 +462,7 @@ describe("FrameCatalog — media proxy base", () => {
         fetchWidgetFrame: async () => ({
           entryHtml: "<html></html>",
           resourceBaseUrl: RESOURCE_BASE,
+          storageOrigin: null,
           theme,
           fontSettings: [],
         }),

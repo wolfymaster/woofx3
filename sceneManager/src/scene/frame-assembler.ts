@@ -77,6 +77,7 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
     const body = (await response.json()) as {
       entryHtml?: unknown;
       resourceBaseUrl?: unknown;
+      storageOrigin?: unknown;
       theme?: unknown;
       fontSettings?: unknown;
     };
@@ -92,6 +93,7 @@ export class HttpBarkloaderFrameClient implements BarkloaderFrameClient {
     return {
       entryHtml: body.entryHtml,
       resourceBaseUrl: body.resourceBaseUrl,
+      storageOrigin: typeof body.storageOrigin === "string" ? body.storageOrigin : null,
       theme: parseFrameTheme(body.theme),
       fontSettings: parseFontSettings(body.fontSettings),
     };

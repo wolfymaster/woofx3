@@ -19,6 +19,10 @@ pub struct FrameResponse {
     entry_html: String,
     #[serde(rename = "resourceBaseUrl")]
     resource_base_url: String,
+    /// Where asset requests redirect to, which the frame's load policy has to
+    /// allow; `null` when assets are served without a redirect.
+    #[serde(rename = "storageOrigin")]
+    storage_origin: Option<String>,
     /// What the widget renders with when it declares a theme contract, or
     /// `null` for a widget that cannot be themed.
     theme: Option<ResolvedTheme>,
@@ -216,9 +220,15 @@ async fn resolve_frame(
         })
         .unwrap_or_default();
 
+    let storage_origin = ctx.repository.current().read_origin().await.map_err(|e| {
+        warn!("widget_frame: storage read origin unavailable: {}", e);
+        FrameError::Internal
+    })?;
+
     Ok(FrameResponse {
         entry_html,
         resource_base_url,
+        storage_origin,
         theme,
         font_settings,
     })

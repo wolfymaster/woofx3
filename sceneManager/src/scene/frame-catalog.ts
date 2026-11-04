@@ -11,7 +11,7 @@ import type { OverlayWidgetInstance } from "./scene-host";
  * Bumped whenever the frame assembler changes what it writes into a frame
  * document, so cached documents built the old way are not reused.
  */
-export const FRAME_DOCUMENT_REVISION = 3;
+export const FRAME_DOCUMENT_REVISION = 4;
 
 /**
  * The version of the frame document barkloader's answer produces. It changes
