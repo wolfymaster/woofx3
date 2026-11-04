@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -28,6 +29,63 @@ type SecretSpec struct {
 	// ConfigKey is the secret's key in .woofx3.json. Config file keys map to
 	// variables by name, so EnvKey must be WOOFX3_ plus its SCREAMING_SNAKE form.
 	ConfigKey string
+	// Kind says what a usable value looks like and how a new one is written.
+	Kind SecretKind
+}
+
+// SecretKind is the shape a secret's consumers expect.
+type SecretKind int
+
+const (
+	// SecretToken is an opaque shared token: any value that passes
+	// woofx3config.ValidateSecret, generated as hex.
+	SecretToken SecretKind = iota + 1
+	// SecretAESKey is an AES-256 key in standard base64, the form db's
+	// secrets.NewBox decodes; any other value would stop db from starting.
+	SecretAESKey
+)
+
+// aesKeyBytes is the AES-256 key length a SecretAESKey decodes to.
+const aesKeyBytes = 32
+
+// validate reports why value is not a usable secret of this kind, naming the
+// setting and never the value.
+func (k SecretKind) validate(spec SecretSpec, value string) error {
+	switch k {
+	case SecretToken:
+		return woofx3config.ValidateSecret(spec.ConfigKey, value)
+	case SecretAESKey:
+		key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(value))
+		if err != nil {
+			return fmt.Errorf("%s (%s) is not standard base64", spec.ConfigKey, spec.EnvKey)
+		}
+		if len(key) != aesKeyBytes {
+			return fmt.Errorf("%s (%s) decodes to %d bytes, want %d", spec.ConfigKey, spec.EnvKey, len(key), aesKeyBytes)
+		}
+		return nil
+	default:
+		return fmt.Errorf("secret %s has no kind", spec.Name)
+	}
+}
+
+// generate reads a new secret of this kind from random.
+func (k SecretKind) generate(random io.Reader) (string, error) {
+	switch k {
+	case SecretToken:
+		raw := make([]byte, generatedSecret)
+		if _, err := io.ReadFull(random, raw); err != nil {
+			return "", fmt.Errorf("generating a secret: %w", err)
+		}
+		return hex.EncodeToString(raw), nil
+	case SecretAESKey:
+		raw := make([]byte, aesKeyBytes)
+		if _, err := io.ReadFull(random, raw); err != nil {
+			return "", fmt.Errorf("generating a key: %w", err)
+		}
+		return base64.StdEncoding.EncodeToString(raw), nil
+	default:
+		return "", fmt.Errorf("unknown secret kind %d", k)
+	}
 }
 
 // secretsSubdir holds generated secrets, one file per SecretSpec.Name, under
@@ -57,14 +115,13 @@ const (
 )
 
 // ResolveSecrets returns a usable value for each spec, keyed by its EnvKey.
-// Each comes from the first of these that holds a valid secret (see
-// woofx3config.ValidateSecret):
+// Each comes from the first of these that holds a valid secret of its Kind:
 //
 //  1. the environment (the process environment, then .env);
 //  2. the config file;
 //  3. <stateDir>/data/secrets/<Name>, written by an earlier run;
-//  4. a new secret of MinSecretBytes bytes from random, hex-encoded and
-//     written to that file (mode 0600, in a 0700 directory).
+//  4. a new secret from random, as its Kind writes one, saved to that file
+//     (mode 0600, in a 0700 directory).
 //
 // A value that is set but invalid, such as a template placeholder, is logged
 // and passed over rather than refused, so an install that carries one starts
@@ -101,7 +158,8 @@ func ResolveSecrets(specs []SecretSpec, sources woofx3config.Sources, stateDir s
 
 // checkSecretSpecs refuses a registry the orchestrator could not honour: a
 // name that is not a plain file name, an EnvKey the services would not find
-// under ConfigKey, or two specs sharing a name or variable.
+// under ConfigKey, a spec without a known Kind, or two specs sharing a name
+// or variable.
 func checkSecretSpecs(specs []SecretSpec) error {
 	names := make(map[string]bool, len(specs))
 	envKeys := make(map[string]bool, len(specs))
@@ -111,6 +169,9 @@ func checkSecretSpecs(specs []SecretSpec) error {
 		}
 		if want := "WOOFX3_" + woofx3config.CamelToScreamingSnake(spec.ConfigKey); spec.ConfigKey == "" || spec.EnvKey != want {
 			return fmt.Errorf("secret %s: EnvKey %q does not match ConfigKey %q", spec.Name, spec.EnvKey, spec.ConfigKey)
+		}
+		if spec.Kind != SecretToken && spec.Kind != SecretAESKey {
+			return fmt.Errorf("secret %s has no known kind", spec.Name)
 		}
 		if names[spec.Name] || envKeys[spec.EnvKey] {
 			return fmt.Errorf("secret %s (%s) is registered twice", spec.Name, spec.EnvKey)
@@ -128,7 +189,7 @@ func usableSecret(spec SecretSpec, value, source string, logger *slog.Logger) (s
 	if strings.TrimSpace(value) == "" {
 		return "", false
 	}
-	if err := woofx3config.ValidateSecret(spec.ConfigKey, value); err != nil {
+	if err := spec.Kind.validate(spec, value); err != nil {
 		logger.Warn("Ignoring an engine secret that is not usable; falling back to the next source",
 			"key", spec.EnvKey, "source", source, "reason", err)
 		return "", false
@@ -144,7 +205,7 @@ func persistedSecret(spec SecretSpec, secretsDir string, random io.Reader, logge
 	switch {
 	case err == nil:
 		value := strings.TrimSpace(string(data))
-		validateErr := woofx3config.ValidateSecret(spec.ConfigKey, value)
+		validateErr := spec.Kind.validate(spec, value)
 		if validateErr == nil {
 			return value, nil
 		}
@@ -153,11 +214,10 @@ func persistedSecret(spec SecretSpec, secretsDir string, random io.Reader, logge
 		return "", fmt.Errorf("reading %s: %w", path, err)
 	}
 
-	raw := make([]byte, generatedSecret)
-	if _, err := io.ReadFull(random, raw); err != nil {
-		return "", fmt.Errorf("generating a secret: %w", err)
+	value, err := spec.Kind.generate(random)
+	if err != nil {
+		return "", err
 	}
-	value := hex.EncodeToString(raw)
 	if err := writeSecretFile(secretsDir, spec.Name, value); err != nil {
 		return "", err
 	}
