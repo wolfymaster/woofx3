@@ -164,7 +164,7 @@
       "name": "an unknown action",
       "invalidField": "action",
       "request": {
-        "action": "chat.delete",
+        "action": "chat.shout",
         "target": { "kind": "all" },
         "payload": { "message": "hello chat" },
         "idempotencyKey": "exec-1:task-1",
@@ -600,6 +600,130 @@
         "idempotencyKey": "k",
         "requestedBy": { "kind": "api", "ref": "c" },
         "workflowChain": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "chat.delete one message",
+      "invalidField": null,
+      "request": {
+        "action": "chat.delete",
+        "target": { "kind": "origin", "origin": { "platform": "twitch", "messageId": "chat-1" } },
+        "payload": { "messageId": "chat-1" },
+        "idempotencyKey": "moderation:chat-1:chat.delete",
+        "requestedBy": { "kind": "dispatcher", "ref": "moderation" }
+      }
+    },
+    {
+      "name": "chat.delete without a message id",
+      "invalidField": "payload.messageId",
+      "request": {
+        "action": "chat.delete",
+        "target": { "kind": "origin", "origin": { "platform": "twitch", "messageId": "chat-1" } },
+        "payload": {},
+        "idempotencyKey": "moderation:chat-1:chat.delete",
+        "requestedBy": { "kind": "dispatcher", "ref": "moderation" }
+      }
+    },
+    {
+      "name": "chat.delete with an empty message id",
+      "invalidField": "payload.messageId",
+      "request": {
+        "action": "chat.delete",
+        "target": { "kind": "origin", "origin": { "platform": "twitch", "messageId": "chat-1" } },
+        "payload": { "messageId": "" },
+        "idempotencyKey": "moderation:chat-1:chat.delete",
+        "requestedBy": { "kind": "dispatcher", "ref": "moderation" }
+      }
+    },
+    {
+      "name": "moderation.warn with a reason",
+      "invalidField": null,
+      "request": {
+        "action": "moderation.warn",
+        "target": { "kind": "origin", "origin": { "platform": "twitch", "messageId": "chat-1" } },
+        "payload": { "viewer": "141981764", "reason": "no links please" },
+        "idempotencyKey": "moderation:chat-1:moderation.warn",
+        "requestedBy": { "kind": "dispatcher", "ref": "moderation" }
+      }
+    },
+    {
+      "name": "moderation.warn without a reason",
+      "invalidField": "payload.reason",
+      "request": {
+        "action": "moderation.warn",
+        "target": { "kind": "origin", "origin": { "platform": "twitch", "messageId": "chat-1" } },
+        "payload": { "viewer": "141981764" },
+        "idempotencyKey": "moderation:chat-1:moderation.warn",
+        "requestedBy": { "kind": "dispatcher", "ref": "moderation" }
+      }
+    },
+    {
+      "name": "moderation.warn reason over its bound",
+      "invalidField": "payload.reason",
+      "request": {
+        "action": "moderation.warn",
+        "target": { "kind": "origin", "origin": { "platform": "twitch", "messageId": "chat-1" } },
+        "payload": {
+          "viewer": "141981764",
+          "reason": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "idempotencyKey": "moderation:chat-1:moderation.warn",
+        "requestedBy": { "kind": "dispatcher", "ref": "moderation" }
+      }
+    },
+    {
+      "name": "moderation.timeout at its upper bound",
+      "invalidField": null,
+      "request": {
+        "action": "moderation.timeout",
+        "target": { "kind": "origin", "origin": { "platform": "twitch", "messageId": "chat-1" } },
+        "payload": { "viewer": "141981764", "durationSeconds": 1209600, "reason": "spam" },
+        "idempotencyKey": "moderation:chat-1:moderation.timeout",
+        "requestedBy": { "kind": "dispatcher", "ref": "moderation" }
+      }
+    },
+    {
+      "name": "moderation.timeout of zero seconds",
+      "invalidField": "payload.durationSeconds",
+      "request": {
+        "action": "moderation.timeout",
+        "target": { "kind": "origin", "origin": { "platform": "twitch", "messageId": "chat-1" } },
+        "payload": { "viewer": "141981764", "durationSeconds": 0 },
+        "idempotencyKey": "moderation:chat-1:moderation.timeout",
+        "requestedBy": { "kind": "dispatcher", "ref": "moderation" }
+      }
+    },
+    {
+      "name": "moderation.timeout without a duration",
+      "invalidField": "payload.durationSeconds",
+      "request": {
+        "action": "moderation.timeout",
+        "target": { "kind": "origin", "origin": { "platform": "twitch", "messageId": "chat-1" } },
+        "payload": { "viewer": "141981764" },
+        "idempotencyKey": "moderation:chat-1:moderation.timeout",
+        "requestedBy": { "kind": "dispatcher", "ref": "moderation" }
+      }
+    },
+    {
+      "name": "moderation.ban without a reason",
+      "invalidField": null,
+      "request": {
+        "action": "moderation.ban",
+        "target": { "kind": "origin", "origin": { "platform": "twitch", "messageId": "chat-1" } },
+        "payload": { "viewer": "141981764" },
+        "idempotencyKey": "moderation:chat-1:moderation.ban",
+        "requestedBy": { "kind": "dispatcher", "ref": "moderation" }
+      }
+    },
+    {
+      "name": "moderation.ban without a viewer",
+      "invalidField": "payload.viewer",
+      "request": {
+        "action": "moderation.ban",
+        "target": { "kind": "origin", "origin": { "platform": "twitch", "messageId": "chat-1" } },
+        "payload": { "reason": "spam" },
+        "idempotencyKey": "moderation:chat-1:moderation.ban",
+        "requestedBy": { "kind": "dispatcher", "ref": "moderation" }
       }
     }
   ]
