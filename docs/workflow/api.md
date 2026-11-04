@@ -684,6 +684,40 @@ settled. The dashboard learns of the change through the `workflow.run.updated`
 webhook, and a caller watching the run's `triggerId` through
 `workflow.run.cancelled`. Throws for an id no run has.
 
+## Workflow groups
+
+A workflow group (shown to streamers as an *alert group*) is a named set of workflows switched on and off together. Groups are engine-owned (db-proxy `WorkflowGroupService`, `db/proto/v1/workflow_group.proto`) and advertised by the `workflows.groups` capability. They move nothing and change no workflow definition: a group switch writes its members' own `enabled`, which stays the only switch the runtime, `ListWorkflows` and merging read.
+
+### Methods
+
+| Method | What it does |
+|---|---|
+| `listWorkflowGroups()` | Every group, by name, with its `memberIds` |
+| `createWorkflowGroup({ name, description?, correlationKey? })` | A new group, off and empty, so nothing changes. Names are unique |
+| `updateWorkflowGroup(id, { name, description?, correlationKey? })` | Name and description only |
+| `deleteWorkflowGroup(id, correlationKey?)` | Releases every member first if the group is on, then removes the group |
+| `setWorkflowGroupEnabled(id, enabled, correlationKey?)` | Holds (on) or releases (off) every member; a no-op when already in that state |
+| `addWorkflowGroupMembers(groupId, workflowIds, correlationKey?)` | Holds each new member if the group is on. Refuses a chat command's workflow |
+| `removeWorkflowGroupMembers(groupId, workflowIds, correlationKey?)` | Releases each removed member if the group is on |
+
+Each returns the group as it now stands and echoes a `workflow_group.*` webhook with the call's `correlationKey`. Members whose switch or group list changed arrive as their own `workflow.updated`, carrying `groupIds`.
+
+### Hold and release
+
+Each workflow has one saved state, `pre_group_enabled`, set while at least one group that is on contains it ("held") and empty otherwise.
+
+```
+hold(X):    if X is not held: save X's enabled
+            enabled = true
+release(X): if no other group that is on contains X: enabled = saved; clear saved
+            otherwise: leave X alone
+```
+
+- On always wins: a workflow stays on while any group that is on contains it, and goes back to its saved state when the last one lets go. The saved state is the one the earliest group took, so a later group never saves a state another forced.
+- A manual `setWorkflowEnabled` on a held workflow also replaces its saved state, so the manual choice is what comes back. The group does not force it on again while it stays on; another group switching on does.
+- Held workflows are never merged, and only workflows in exactly the same groups merge, so a duplicate put in another group to split its steps stays apart.
+- Every change, the member rows it moves and the outbox events commit in one transaction, locking the group row and then the member rows in id order, so overlapping switches serialize. db-proxy checks the saved states at start and repairs any that disagree with the groups that are on.
+
 ## Event-Driven Updates
 
 When workflows are created, updated, or deleted through the DB Proxy, CloudEvents are published to the NATS message bus. The workflow engine subscribes to these events and hot-reloads its internal registry without requiring a restart.
