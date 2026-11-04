@@ -95,10 +95,11 @@ func main() {
 				return err
 			}
 			dbClient := db.NewDbProxyClient(cfg.DatabaseProxyURL, httpClient)
-			// The alert and viewer fact services are not on DbProxyClient,
+			// The alert, viewer fact and database record services are not on DbProxyClient,
 			// which predates them.
 			alertClient := db.NewAlertServiceProtobufClient(cfg.DatabaseProxyURL, httpClient)
 			factClient := db.NewViewerFactServiceProtobufClient(cfg.DatabaseProxyURL, factHTTPClient)
+			recordClient := db.NewDatabaseRecordServiceProtobufClient(cfg.DatabaseProxyURL, httpClient)
 			dbProxyService := service.NewDbProxyService(dbClient, true)
 			logger.Info("Database client configured", "url", cfg.DatabaseProxyURL)
 
@@ -127,7 +128,7 @@ func main() {
 			// Wire runtime services into the application now that config is loaded
 			// and the post-config services have been constructed. natsSvc was
 			// constructed pre-config in main(); the others are local to this scope.
-			app.SetServices(natsSvc, barkloaderService, dbClient, alertClient, factClient, cfg.SceneManagerURL)
+			app.SetServices(natsSvc, barkloaderService, dbClient, alertClient, factClient, recordClient, cfg.SceneManagerURL)
 
 			runRecorder, err := newAsyncRunRecorder(dbClient.Workflow, defaultRecorderConfig(), logger, time.Now)
 			if err != nil {
