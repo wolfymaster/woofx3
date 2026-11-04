@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.63.1](https://github.com/wolfymaster/woofx3/compare/v0.63.0...v0.63.1) (2026-11-04)
+
+### Bug Fixes
+
+* **orchestrator:** generate the secrets key on first run ([ecc0492](https://github.com/wolfymaster/woofx3/commit/ecc04929c4f7b8d00074dd9f1fd8d9f4781008f8))
+
 ## [0.63.0](https://github.com/wolfymaster/woofx3/compare/v0.62.0...v0.63.0) (2026-11-04)
 
 ### Features
