@@ -1,4 +1,4 @@
-import { MODERATION_LIMITS, type ModerationParseResult } from "./moderation-config";
+import { MODERATION_LIMITS, type ModerationParseResult } from "./moderation-limits";
 
 /**
  * Banned-phrase patterns: a small grammar compiled here, never a regular
