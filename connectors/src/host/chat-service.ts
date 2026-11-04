@@ -9,7 +9,7 @@ import { ModerationConfigStore } from "../moderation/config-store";
 import { MODERATION_TUNABLES } from "../moderation/defaults";
 import { MODERATION_FILTERS } from "../moderation/filters";
 import { MemoryChatterHistory } from "../moderation/history";
-import { MemoryPermitStore } from "../moderation/permit-store";
+import { linkPermits, MemoryPermitStore } from "../moderation/permit-store";
 import { filterRegistry } from "../moderation/registry";
 import { MODERATION_GRANTS, ModerationService } from "../moderation/service";
 import type { DbProxyClientConfig } from "../services/db-proxy";
@@ -83,6 +83,13 @@ export class ChatService {
       timeoutMs: deps.config.replyTimeoutMs,
       logger: deps.logger,
     });
+    const moderationLogger = deps.logger.child({ component: "moderation" });
+    this.moderationConfig = new ModerationConfigStore({
+      settings: deps.settings,
+      bus: this.scope,
+      logger: moderationLogger,
+    });
+    const permits = new MemoryPermitStore(MODERATION_TUNABLES.permitCapacity, deps.clock);
     this.dispatcher = new ChatDispatcher({
       config: deps.config,
       db,
@@ -90,6 +97,7 @@ export class ChatService {
       builtins: builtinCommands({
         db,
         twitchApi: new TwitchApiClient({ bus: this.scope, timeoutMs: deps.config.twitchApi.timeoutMs }),
+        permits: linkPermits(this.moderationConfig, permits),
         random: deps.random,
         logger: deps.logger,
       }),
@@ -97,12 +105,6 @@ export class ChatService {
       timers: deps.timers,
       logger: deps.logger,
       replier: this.replier,
-    });
-    const moderationLogger = deps.logger.child({ component: "moderation" });
-    this.moderationConfig = new ModerationConfigStore({
-      settings: deps.settings,
-      bus: this.scope,
-      logger: moderationLogger,
     });
     const moderation = new ModerationService({
       config: this.moderationConfig,
@@ -117,7 +119,7 @@ export class ChatService {
           },
           deps.clock
         ),
-        permits: new MemoryPermitStore(MODERATION_TUNABLES.permitCapacity, deps.clock),
+        permits,
       },
       bus: this.scope,
       clock: deps.clock,
