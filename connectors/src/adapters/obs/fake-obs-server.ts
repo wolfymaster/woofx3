@@ -47,6 +47,8 @@ export interface FakeObsServer {
   protocols: string[];
   /** Request types received, in order. */
   requests: string[];
+  /** The `eventSubscriptions` of each Identify, in order. */
+  eventSubscriptions: (number | undefined)[];
   stop(): void;
 }
 
@@ -78,6 +80,7 @@ export function startFakeObs(options: FakeObsOptions = {}): FakeObsServer {
   const scenes = options.scenes ?? DEFAULT_SCENES;
   const upgrades: URL[] = [];
   const protocols: string[] = [];
+  const eventSubscriptions: (number | undefined)[] = [];
   const requests: string[] = [];
   let failuresLeft = options.failRequests?.times ?? 0;
   let ignoresLeft = options.ignoreRequests?.times ?? 0;
@@ -178,6 +181,7 @@ export function startFakeObs(options: FakeObsOptions = {}): FakeObsServer {
           d: Record<string, unknown>;
         };
         if (message.op === 1) {
+          eventSubscriptions.push(message.d.eventSubscriptions as number | undefined);
           if (options.password) {
             const expected = obsAuthentication(options.password, ws.data.salt, ws.data.challenge);
             if (message.d.authentication !== expected) {
@@ -202,6 +206,7 @@ export function startFakeObs(options: FakeObsOptions = {}): FakeObsServer {
     upgrades,
     protocols,
     requests,
+    eventSubscriptions,
     stop: () => {
       server.stop(true);
     },

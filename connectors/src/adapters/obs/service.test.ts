@@ -341,6 +341,13 @@ describe("opening OBS on the route the gateway gave", () => {
     expect(obs.status().route).toBe("companion");
   });
 
+  it("subscribes to no OBS events, so OBS sends the bridge only answers to requests", async () => {
+    fake = startFakeObs();
+    const { obs } = serviceOn({ ok: true, route: "direct", url: fake.url, address: "127.0.0.1" });
+    await until(() => obs.status().state === "connected");
+    expect(fake.eventSubscriptions).toEqual([0]);
+  });
+
   it("reads a refused bridge upgrade as a relay failure, and a direct one as unreachable", async () => {
     fake = startFakeObs({ acceptUrl: () => false });
     const bridged = serviceOn({
