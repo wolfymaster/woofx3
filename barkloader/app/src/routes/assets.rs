@@ -146,8 +146,7 @@ async fn redirect_if_present(repository: &RepositoryImpl, key: &str, url: String
 /// `url(...)` or a module's relative `import` against the post-redirect
 /// URL, which on a private bucket would arrive unsigned. Theme files are
 /// served the same way for a second reason: a widget frame's CSP allows
-/// styles, fonts and media from the engine only, and a redirect to the
-/// bucket would leave it.
+/// styles from the engine only, and a redirect to the bucket would leave it.
 fn is_widget_bundle_key(key: &str) -> bool {
     let mut segments = key.split('/');
     segments.next() == Some("modules") && matches!(segments.nth(2), Some("widgets" | "themes"))

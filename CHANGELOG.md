@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.61.2](https://github.com/wolfymaster/woofx3/compare/v0.61.1...v0.61.2) (2026-11-04)
+
+### Bug Fixes
+
+* **scene:** let widget frames load uploads from the engine's bucket ([f7d2f62](https://github.com/wolfymaster/woofx3/commit/f7d2f6251c5464184ac47192a5e58fc79c04a641))
+
 ## [0.61.1](https://github.com/wolfymaster/woofx3/compare/v0.61.0...v0.61.1) (2026-11-02)
 
 ### Bug Fixes

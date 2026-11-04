@@ -29,6 +29,43 @@ async fn s3_repo(config: S3RepositoryConfig) -> S3Repository {
 }
 
 #[tokio::test]
+async fn s3_read_origin_names_the_bucket_host() {
+    let mut config = s3_config();
+    config.endpoint = Some("https://account.r2.cloudflarestorage.com".to_string());
+    let repo = s3_repo(config).await;
+
+    assert_eq!(
+        repo.read_origin().await.expect("read origin").as_deref(),
+        Some("https://woofx3-test.account.r2.cloudflarestorage.com")
+    );
+}
+
+#[tokio::test]
+async fn s3_path_style_reads_are_served_by_the_caller() {
+    let mut config = s3_config();
+    config.endpoint = Some("https://shared.example.com".to_string());
+    config.force_path_style = true;
+    let repo = s3_repo(config).await;
+
+    assert_eq!(repo.read_origin().await.expect("read origin"), None);
+    let endpoint = repo
+        .presign_read("user/photo.png", Duration::from_secs(60))
+        .await
+        .expect("presign read");
+    assert_eq!(endpoint, ReadEndpoint::Unsupported);
+}
+
+#[tokio::test]
+async fn file_backend_has_no_read_origin() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let repo = FileRepository::new(FileRepositoryConfig {
+        destination: dir.path().to_path_buf(),
+    });
+
+    assert_eq!(repo.read_origin().await.expect("read origin"), None);
+}
+
+#[tokio::test]
 async fn file_backend_reports_it_cannot_sign() {
     let dir = tempfile::tempdir().expect("tempdir");
     let repo = FileRepository::new(FileRepositoryConfig {

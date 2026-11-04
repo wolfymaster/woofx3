@@ -99,6 +99,7 @@ describe("frameDocument", () => {
   const source = {
     entryHtml: "<html><head></head><body></body></html>",
     resourceBaseUrl: "https://cdn.example.com/mod/w/",
+    storageOrigin: null,
   };
 
   it("loads only from the engine, with connections closed, whatever the frame holds", () => {
@@ -110,6 +111,25 @@ describe("frameDocument", () => {
     expect(headers["Referrer-Policy"]).toBe("no-referrer");
     expect(headers["Cache-Control"]).toBeUndefined();
     expect(html.indexOf(SHIM_SRC)).toBeGreaterThan(html.indexOf("<head>"));
+  });
+
+  it("allows the engine's bucket for what redirects there, and only that", () => {
+    const { headers } = frameDocument(
+      { ...source, storageOrigin: "https://bucket.storage.example.com", theme: null },
+      minimalBoot()
+    );
+    const directives = new Map(
+      headers["Content-Security-Policy"].split("; ").map((directive) => {
+        const [name, ...sources] = directive.split(" ");
+        return [name, sources] as const;
+      })
+    );
+    for (const name of ["font-src", "img-src", "media-src"]) {
+      expect(directives.get(name)).toContain("https://bucket.storage.example.com");
+    }
+    for (const name of ["script-src", "style-src", "connect-src", "default-src"]) {
+      expect(directives.get(name)).not.toContain("https://bucket.storage.example.com");
+    }
   });
 
   it("lists a theme stylesheet's origin, with its variables and stylesheet", () => {

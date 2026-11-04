@@ -29,6 +29,19 @@ describe("session cookie", () => {
       expected: FRAMEABLE,
     },
     { name: "direct HTTP", url: "http://scene.test/", expected: STRICT },
+    { name: "HTTP on a LAN address", url: "http://192.168.1.20:8080/", expected: STRICT },
+    { name: "HTTP at localhost", url: "http://localhost:8080/", expected: FRAMEABLE },
+    { name: "HTTP at a localhost subdomain", url: "http://engine.localhost:8080/", expected: FRAMEABLE },
+    { name: "HTTP at 127.0.0.1", url: "http://127.0.0.1:8080/", expected: FRAMEABLE },
+    { name: "HTTP at another IPv4 loopback", url: "http://127.4.5.6:8080/", expected: FRAMEABLE },
+    { name: "HTTP at IPv6 loopback", url: "http://[::1]:8080/", expected: FRAMEABLE },
+    { name: "a lookalike of localhost", url: "http://localhost.example.com/", expected: STRICT },
+    {
+      name: "HTTP forwarded to a loopback upstream",
+      url: "http://127.0.0.1:8080/",
+      forwarded: "http",
+      expected: STRICT,
+    },
     { name: "HTTP forwarded over HTTPS", url: "https://scene.test/", forwarded: "http", expected: STRICT },
   ];
   for (const { name, url, forwarded, expected } of cases) {

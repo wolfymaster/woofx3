@@ -33,6 +33,7 @@ function placement(overrides: Partial<OverlayWidgetInstance>): OverlayWidgetInst
 const INFO: BarkloaderFrameInfo = {
   entryHtml: "<html></html>",
   resourceBaseUrl: "https://e/mod/abc/",
+  storageOrigin: null,
   theme: null,
   fontSettings: [],
 };
@@ -42,6 +43,7 @@ describe("frameVersion", () => {
     expect(frameVersion(INFO)).toBe(frameVersion({ ...INFO }));
     expect(frameVersion(INFO)).not.toBe(frameVersion({ ...INFO, resourceBaseUrl: "https://e/mod/def/" }));
     expect(frameVersion(INFO)).not.toBe(frameVersion({ ...INFO, entryHtml: "<html>v2</html>" }));
+    expect(frameVersion(INFO)).not.toBe(frameVersion({ ...INFO, storageOrigin: "https://bucket.example.com" }));
   });
 });
 
@@ -163,6 +165,7 @@ describe("FrameCatalog.frameAlert", () => {
     const themed: BarkloaderFrameInfo = {
       ...INFO,
       resourceBaseUrl: "https://engine.example.com/assets/modules/mod/abc/widgets/w/",
+      storageOrigin: null,
       theme: { css: "", tokens: {} } as never,
     };
     const fetchWidgetFrame = mock(async () => {

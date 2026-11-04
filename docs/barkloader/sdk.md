@@ -207,7 +207,8 @@ const host = window.widgetHost;
 
 A widget's frame loads scripts, styles, fonts, images and media only from the
 engine, so ship your libraries and fonts in the module instead of linking a
-CDN. Two things reach further: images on Twitch's CDN (emotes, badges and
+CDN. The engine's own storage counts as the engine: fonts, images and media from
+the asset library load from it. Two things reach further: images on Twitch's CDN (emotes, badges and
 profile pictures in event data), and a file the streamer picked by URL in a
 `media` or `asset` setting, which reaches the frame through the engine's media
 proxy. A URL in a plain string setting or in other event data is blocked.

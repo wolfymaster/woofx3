@@ -1,4 +1,4 @@
-import OBSWebSocket, { type OBSRequestTypes, type OBSResponseTypes } from "obs-websocket-js";
+import OBSWebSocket, { EventSubscription, type OBSRequestTypes, type OBSResponseTypes } from "obs-websocket-js";
 import type { TimerHandle, Timers } from "../../host/deps";
 import type { ObsSession } from "./connection";
 
@@ -47,7 +47,9 @@ export async function openObsSession(config: ObsSessionTarget): Promise<ObsSessi
   let onAbort: (() => void) | undefined;
   try {
     await Promise.race([
-      ws.connect(config.url, config.token),
+      // Nothing here reads OBS events, and left unset OBS sends all of them. Through the companion
+      // relay each one is a billed Durable Object request.
+      ws.connect(config.url, config.token, { eventSubscriptions: EventSubscription.None }),
       new Promise((_, reject) => {
         timer = config.timers.setTimeout(
           () => reject(new Error(`timeout after ${config.connectTimeoutMs}ms`)),

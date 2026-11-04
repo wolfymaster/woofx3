@@ -212,7 +212,10 @@ export class PreviewServer {
         ? {}
         : { fonts: { settings: [...widget.fontSettings], stylesheetUrl: FONT_STYLESHEET_PATH } }),
     };
-    const document = frameDocument({ entryHtml: await entry.text(), resourceBaseUrl, theme }, boot);
+    const document = frameDocument(
+      { entryHtml: await entry.text(), resourceBaseUrl, storageOrigin: null, theme },
+      boot
+    );
     return new Response(document.html, { headers: { ...document.headers, ...NO_STORE } });
   }
 
