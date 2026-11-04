@@ -91,7 +91,9 @@ export async function subscribeProjections(deps: ProjectionDeps, projections: Pr
           }
           return;
         }
-        await webhookClient.send(parsed.event, parsed.clientId || undefined);
+        // The outbox row's id, so a redelivered row is deduplicated downstream.
+        const envelopeId = typeof ce.id === "string" && ce.id !== "" ? ce.id : undefined;
+        await webhookClient.send(parsed.event, parsed.clientId || undefined, envelopeId);
         logger.info(`${projection.name} webhook dispatched`, projection.context?.(parsed.event));
       } catch (err) {
         // A failed row must not take the subscription down with it: NATS

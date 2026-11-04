@@ -250,13 +250,19 @@ export class WebhookClient {
    * Deliver `event` to every client, or to `targetClientId` alone. An empty
    * target id throws: it names no client, and broadcasting it instead would
    * send one client's event to all of them.
+   *
+   * `envelopeId` is the envelope's id when the event has a durable source
+   * with its own id, such as an outbox row, so a redelivery of that source
+   * carries the same id and receivers deduplicate it. Without one the id is
+   * random.
    */
-  async send(event: CallbackEvent, targetClientId?: string): Promise<void> {
+  async send(event: CallbackEvent, targetClientId?: string, envelopeId?: string): Promise<void> {
     if (targetClientId === "") {
       throw new Error(`WebhookClient.send(${event.type}): targetClientId is empty; omit it to broadcast`);
     }
     const eventType = event.type;
-    const envelope = makeCallbackEnvelope(event);
+    const envelope =
+      envelopeId === undefined ? makeCallbackEnvelope(event) : makeCallbackEnvelope(event, "engine", envelopeId);
     const streamed = this.stream.publish(envelope, targetClientId);
 
     let targets = this.instances;

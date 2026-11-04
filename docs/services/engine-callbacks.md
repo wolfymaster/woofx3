@@ -58,7 +58,7 @@ The token is separate from the callback token for least privilege: whoever holds
 - The FIFO holds 10,000 envelopes per target. Past that the oldest are dropped, with an error naming how many.
 - On shutdown the engine waits up to 5 seconds for buffered envelopes to be delivered. What remains is lost and logged, so an engine that restarts while its target is unreachable loses what it held.
 
-The tunables are `DEFAULT_EVENT_SHIPPER_CONFIG` in `api/src/config.ts`.
+The tunables are `DEFAULT_EVENT_SHIPPER_CONFIG` in `api/src/config.ts`. An event projected from a db-proxy outbox row carries the row's id as its envelope id, so a redelivered row arrives with the same id and the receiver deduplicates it.
 
 ## Subscribing
 
