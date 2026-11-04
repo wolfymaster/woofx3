@@ -1,6 +1,7 @@
 import type { DatabaseRecordChange, DatabaseValue } from "@woofx3/api";
 import { type DatabaseRecordChangedEvent, EngineEventType } from "@woofx3/api/webhooks";
 import type { SharedLogger } from "@woofx3/common/logging";
+// stylegate:ignore ANY-LAY-010 reason="@woofx3/nats exports its client type only from src/client, which every projection handler in this service imports"
 import type NATSClient from "@woofx3/nats/src/client";
 import { z } from "zod";
 import { readRow } from "./outbox";
