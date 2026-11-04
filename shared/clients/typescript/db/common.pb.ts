@@ -32,11 +32,7 @@ export interface ResponseStatus {
 
 export declare namespace ResponseStatus {
   export type Code =
-    | "OK"
-    | "INVALID_ARGUMENT"
-    | "NOT_FOUND"
-    | "PERMISSION_DENIED"
-    | "INTERNAL";
+    "OK" | "INVALID_ARGUMENT" | "NOT_FOUND" | "PERMISSION_DENIED" | "INTERNAL";
 }
 
 /**

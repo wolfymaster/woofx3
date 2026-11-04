@@ -512,7 +512,7 @@ func (s *userPageSubmissionServiceServer) serveRecordUserPageSubmissionProtobuf(
 }
 
 func (s *userPageSubmissionServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor20, 0
+	return twirpFileDescriptor21, 0
 }
 
 func (s *userPageSubmissionServiceServer) ProtocGenTwirpVersion() string {
@@ -526,7 +526,7 @@ func (s *userPageSubmissionServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "user_page_submission", "UserPageSubmissionService")
 }
 
-var twirpFileDescriptor20 = []byte{
+var twirpFileDescriptor21 = []byte{
 	// 565 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x53, 0x41, 0x6f, 0xd3, 0x4c,
 	0x10, 0xad, 0xd3, 0xd6, 0x69, 0xc6, 0x69, 0xf5, 0x69, 0x55, 0x7d, 0x35, 0xbe, 0x34, 0x04, 0x10,
