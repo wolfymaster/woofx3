@@ -10,12 +10,20 @@ import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import { encode } from "@woofx3/common/cloudevents/utils";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type * as storage from "@woofx3/db/storage.pb";
+import type * as stream_session from "@woofx3/db/stream_session.pb";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
 import { type DbClient, DbError } from "./db-client";
 import { timestampFromDate, timestampToIso } from "./routes/helpers";
-import { decideOnStreamOnline } from "./stream-session-policy";
+import { decideOnStreamOnline, isBroadcastOver, type OpenSessionState } from "./stream-session-policy";
 import type { WebhookClient } from "./webhook-client";
+
+/**
+ * How often the resolver checks whether an offline stream's grace window has
+ * passed. A late check delays the announcement but never moves the boundary,
+ * which is the last segment's end.
+ */
+const BROADCAST_END_CHECK_INTERVAL_MS = 60_000;
 
 /**
  * Owns which stream session the system is in.
@@ -23,7 +31,9 @@ import type { WebhookClient } from "./webhook-client";
  * `stream.online` and `stream.offline` are inputs to a decision rather than
  * boundaries: going live asks whether to extend the open session or start a new
  * one, and going offline only closes a segment within whichever session is
- * open. A session is always present, so this never has to answer "no session".
+ * open. A session ends at its last segment's end once the stream has stayed down
+ * past the grace window, and an idle session takes over the offline time. A
+ * session is always present, so this never has to answer "no session".
  *
  * The rule itself lives in `stream-session-policy.ts` and the storage in
  * db-proxy; this is the part that joins them to the bus. Everything else in the
@@ -32,12 +42,21 @@ import type { WebhookClient } from "./webhook-client";
  */
 export class StreamSessionResolver {
   private sessionId: string | null = null;
+  private checkTimer: ReturnType<typeof setInterval> | null = null;
+  /**
+   * The tail of the running decisions. Each reads the session's state and then
+   * writes, so a broadcast-end check overlapping a `stream.online` could close
+   * the session the stream just went live in.
+   */
+  private decisions: Promise<void> = Promise.resolve();
 
   constructor(
     private nats: NATSClient,
     private db: DbClient,
     private logger: SharedLogger,
-    private webhook: WebhookClient | null = null
+    private webhook: WebhookClient | null = null,
+    private now: () => number = Date.now,
+    private checkIntervalMs: number = BROADCAST_END_CHECK_INTERVAL_MS
   ) {}
 
   /** The session events should be stamped with, or null before `start()` resolved one. */
@@ -61,6 +80,12 @@ export class StreamSessionResolver {
     // which on a quiet day is hours.
     await this.syncCurrentSession();
 
+    // A stream that ended while this process was down is over already.
+    await this.endBroadcastIfOver();
+    this.checkTimer = setInterval(() => {
+      void this.endBroadcastIfOver();
+    }, this.checkIntervalMs);
+
     // After subscribing, so no answer is missed. A platform that connects later
     // publishes its state when it does.
     await this.requestStreamStatus();
@@ -68,6 +93,63 @@ export class StreamSessionResolver {
     this.logger.info("StreamSessionResolver started", {
       subjects: [EventType.StreamOnline, EventType.StreamOffline],
     });
+  }
+
+  stop(): void {
+    if (this.checkTimer !== null) {
+      clearInterval(this.checkTimer);
+      this.checkTimer = null;
+    }
+  }
+
+  /**
+   * Closes the session if the stream has stayed down past the grace window.
+   * Resolves when the check is done; a failure is logged and the next check
+   * tries again. Exposed for tests.
+   */
+  endBroadcastIfOver(): Promise<void> {
+    return this.inTurn(async () => {
+      try {
+        const state = await this.db.ensureCurrentStreamSession({});
+        if (!state.session?.id) {
+          this.logger.warn("StreamSessionResolver: no open stream session; skipping the broadcast-end check");
+          return;
+        }
+        const decision = decisionState(state);
+        if (isBroadcastOver(decision, this.now()) && decision.lastSegmentEndedAt !== undefined) {
+          await this.endBroadcast(new Date(decision.lastSegmentEndedAt));
+        }
+      } catch (err) {
+        this.logger.error("StreamSessionResolver: checking whether the broadcast ended failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    });
+  }
+
+  private inTurn(decide: () => Promise<void>): Promise<void> {
+    this.decisions = this.decisions.then(decide);
+    return this.decisions;
+  }
+
+  /**
+   * Ends the broadcast's session at `endedAt` and leaves an idle session holding
+   * the offline time from then on. Events stamped since then are unaffected:
+   * analytics attributes an event by when it occurred.
+   */
+  private async endBroadcast(endedAt: Date): Promise<string> {
+    const split = await this.db.splitStreamSession({ at: timestampFromDate(endedAt) });
+    if (!split.ended?.id || !split.started?.id) {
+      throw new Error("split did not return both the ended session and its successor");
+    }
+    await this.clearSessionScopedStorage(split.ended.id);
+    await this.publish(SessionEventType.SessionEnded, {
+      sessionId: split.ended.id,
+      endedAt: endedAt.toISOString(),
+      replacedBySessionId: split.started.id,
+    });
+    await this.adoptSession(split.started.id, endedAt.toISOString());
+    return split.started.id;
   }
 
   private async syncCurrentSession(): Promise<void> {
@@ -124,7 +206,15 @@ export class StreamSessionResolver {
     await this.streamWentLive(Number.isNaN(startedAt) ? new Date() : new Date(startedAt));
   }
 
-  private async streamWentLive(at: Date): Promise<void> {
+  private streamWentLive(at: Date): Promise<void> {
+    return this.inTurn(() => this.decideOnLive(at));
+  }
+
+  private streamWentOffline(at: Date): Promise<void> {
+    return this.inTurn(() => this.closeSegment(at));
+  }
+
+  private async decideOnLive(at: Date): Promise<void> {
     try {
       const state = await this.db.ensureCurrentStreamSession({});
       if (!state.session?.id) {
@@ -132,18 +222,18 @@ export class StreamSessionResolver {
         return;
       }
 
-      const action = decideOnStreamOnline(
-        {
-          isSegmentOpen: state.isSegmentOpen === true,
-          lastSegmentEndedAt: timestampToEpochMs(state.lastSegmentEndedAt),
-        },
-        at.getTime()
-      );
+      const decision = decisionState(state);
+      const action = decideOnStreamOnline(decision, at.getTime());
 
       let sessionId = state.session.id;
-      let endedSessionId: string | null = null;
+      let replacedSessionId: string | null = null;
 
       if (action === "split") {
+        // Only reached with a broadcast still open if no check ran since its
+        // grace window passed. It ends where it always would have.
+        if (decision.lastSegmentEndedAt !== undefined) {
+          await this.endBroadcast(new Date(decision.lastSegmentEndedAt));
+        }
         const split = await this.db.splitStreamSession({
           at: timestampFromDate(at),
         });
@@ -151,7 +241,7 @@ export class StreamSessionResolver {
           this.logger.error(`${EventType.StreamOnline}: split returned no successor session`);
           return;
         }
-        endedSessionId = split.ended?.id || null;
+        replacedSessionId = split.ended?.id || null;
         sessionId = split.started.id;
       }
 
@@ -162,13 +252,11 @@ export class StreamSessionResolver {
         startedAt: timestampFromDate(at),
       });
 
-      if (endedSessionId) {
-        await this.clearSessionScopedStorage(endedSessionId);
-        await this.publish(SessionEventType.SessionEnded, {
-          sessionId: endedSessionId,
-          endedAt: at.toISOString(),
-          replacedBySessionId: sessionId,
-        });
+      // An idle session is not a broadcast, so its end is not announced: no
+      // recap follows it. Values written while offline must still not carry
+      // into the broadcast.
+      if (replacedSessionId) {
+        await this.clearSessionScopedStorage(replacedSessionId);
       }
       if (this.sessionId !== sessionId) {
         await this.adoptSession(sessionId, at.toISOString());
@@ -180,11 +268,11 @@ export class StreamSessionResolver {
     }
   }
 
-  private async streamWentOffline(at: Date): Promise<void> {
+  private async closeSegment(at: Date): Promise<void> {
     try {
-      // Only the segment closes. The session stays open and keeps stamping --
-      // a stream that ends is not a session that ends, which is the whole
-      // reason a dropout does not wipe session-scoped state.
+      // Only the segment closes. The session stays open through the grace
+      // window -- a stream that ends is not yet a session that ends, which is
+      // the whole reason a dropout does not wipe session-scoped state.
       await this.db.closeStreamSessionSegment({
         endedAt: timestampFromDate(at),
       });
@@ -325,6 +413,18 @@ export class StreamSessionResolver {
     const event = Event<Record<string, unknown>>({ type, source: "api", sessionId: undefined }, data);
     await this.nats.publish(type, encode(event));
   }
+}
+
+function decisionState(state: stream_session.StreamSessionStateResponse): OpenSessionState {
+  const startedAt = timestampToEpochMs(state.session?.startedAt);
+  if (startedAt === undefined) {
+    throw new Error(`stream session ${state.session?.id} has no start time`);
+  }
+  return {
+    startedAt,
+    isSegmentOpen: state.isSegmentOpen === true,
+    lastSegmentEndedAt: timestampToEpochMs(state.lastSegmentEndedAt),
+  };
 }
 
 /** The data of a `stream.status.observed`, or null when it is not one. */

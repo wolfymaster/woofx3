@@ -30,14 +30,16 @@ Its purpose is to answer three questions:
 **A session is always present.** There is no gap between sessions and no state
 in which the current session is unknown. `stream.online` and `stream.offline`
 are *inputs to a decision*, not boundaries in themselves: going live asks
-whether to extend the open session or start a new one, and going offline simply
-closes a segment within whichever session is open. A session may therefore be
-entirely offline.
+whether to extend the open session or start a new one, and going offline closes
+a segment within whichever session is open. A session that has been live ends at
+its last segment's end once the stream has stayed down past the grace window, and
+an **idle session** with no segments holds the offline time up to the next
+broadcast.
 
 This matters more than it sounds. Because there is always an answer:
 
-- no event ever carries a null session, so offline chat still counts toward the
-  channel's totals;
+- no event ever carries a null session, so offline chat, follows and subs still
+  count toward the channel's totals, without appearing in any stream's recap;
 - `isLive` and the session are orthogonal — a consumer that wants uptime asks
   about the broadcast, one that wants "since this stream began" asks about the
   session;
@@ -76,6 +78,11 @@ The consequence is a rule every consumer must respect:
 Merging two sessions is the same operation in the other direction, which is why
 "combine data across several streams" needs no separate mechanism.
 
+Ending a broadcast's session works the same way. For the grace window after a
+stream goes down, events are stamped with the broadcast's session. If the stream
+does not come back, the session's end is set to the last segment's end, so those
+events fall in the idle session's time without being touched.
+
 Once a session has ended, Analytics [compacts](/services/analytics#retention)
 it: its per-viewer totals and timeline are copied out of the raw event log,
 and a week later the raw events are pruned. A closed session's bounds do not
@@ -101,15 +108,23 @@ The rule is separate again, in `api/src/stream-session-policy.ts`, so it can
 change without touching either persistence or the bus. The resolver is the only
 thing that joins the two.
 
-The extend-or-split decision happens at `stream.online` and nowhere else.
-Because a session is always present and only ends when a new one replaces it,
-nothing is ever pending: there is no scheduled close to fire and no in-flight
-decision for a restart to lose.
+Two decisions are made here, one at a time:
 
-It is still **durable**, but for a simpler reason than a timer would need. What
-has to survive a restart is the session row and the end of its last segment,
-because that is the input the next decision reads. Both live in db-proxy behind
-`StreamSessionService`.
+- **At `stream.online`:** extend the open session or start a new one. Back within
+  the grace window extends. An idle session is always left for a new one, so
+  offline activity never sits at the front of the next recap. The exception is a
+  session that began after the stream did, when the engine started mid-broadcast:
+  it holds no offline time, and splitting would end it before it began.
+- **Once a minute, and at startup:** has the stream stayed down past the grace
+  window? If so, end the session at its last segment's end and adopt an idle one.
+
+The check is **durable** without any scheduled close. What has to survive a
+restart is the session row and the end of its last segment, because those are the
+inputs both decisions read, and both live in db-proxy behind
+`StreamSessionService`. Because the boundary is the segment's end and not the time
+of the check, a late or missed check delays the announcement but never moves it.
+`stream.online` applies the same boundary if no check has run since the grace
+window passed.
 
 Two partial unique indexes hold the invariants the rest of the design leans on:
 at most one open session, and at most one open segment. They sit
@@ -124,16 +139,16 @@ in one call, opening a session when none is open. That is what makes "a session
 is always present" true rather than aspirational, and it gives the invariant one
 owner instead of every caller.
 
-The cost of deciding only on the way up is that a session's end is recognised
-when the next broadcast begins, not when the last one stopped — so anything
-keyed on `session.ended`, clearing included, lags until then.
+The cost of waiting out the grace window is that a session's end is recognised
+up to about a minute after the window passes, not when the stream stopped, so
+anything keyed on `session.ended`, clearing included, lags until then.
 
 ### Lifecycle events
 
 | Subject | Fired when | Meaning for consumers |
 |---|---|---|
-| `session.started` | a new session opens, and again when the resolver starts | The session to stamp is now this one. |
-| `session.ended` | the resolver closes one | The previous broadcast is over. Ephemeral state scoped to it should be dropped. |
+| `session.started` | a new session opens, idle ones included, and again when the resolver starts | The session to stamp is now this one. |
+| `session.ended` | the resolver closes a session that has been live | The broadcast is over. Ephemeral state scoped to it should be dropped. |
 
 `session.started` states the current session rather than marking a boundary. The
 resolver re-announces on startup so a process that restarted learns the session
@@ -146,8 +161,9 @@ not also claim to have happened during one, so the resolver passes an explicit
 `sessionId: undefined` to override the ambient holder. Undefined drops out at
 serialization, leaving the attribute absent rather than null.
 
-`session.ended` fires on a **split** — not on `stream.offline`. It may arrive
-long after a stream ended, and for a brief dropout it never arrives at all.
+`session.ended` fires when the grace window passes — not on `stream.offline`. For
+a brief dropout it never arrives at all. An idle session's end is not announced:
+no recap follows it.
 Anything that clears state must listen for this and not for the stream going
 down, or a reconnect will wipe exactly the state this concept exists to
 preserve.
@@ -181,7 +197,7 @@ invisible gap in a new place.
 The subscription is to `session.started` **only**. `session.ended` means a
 finished session's state should be dropped, not that a publisher should forget
 what to stamp: the resolver emits `ended` immediately followed by `started` for
-the successor, so clearing on `ended` would publish unstamped events in the gap
+the idle successor, so clearing on `ended` would publish unstamped events in the gap
 between the two messages. A session is always present, so the holder should
 never empty once filled.
 
@@ -220,8 +236,10 @@ validates the attribute on the way in.
 
 `storage.proto` carries `clear_on_session_end` on every stored item, and
 `ClearSessionScoped` drops every key that flags it. The resolver calls that RPC
-when a session ends, *before* publishing `session.ended`, so nothing reacting to
-the announcement can read state that is about to disappear. A failed clear is
+when a broadcast's session ends, *before* publishing `session.ended`, so nothing
+reacting to the announcement can read state that is about to disappear. It calls
+it again when an idle session gives way to a broadcast, so a value written while
+offline does not carry into the stream. A failed clear is
 logged and swallowed — a boundary that could not clear is still a boundary, and
 refusing to announce it would strand every other consumer over a storage fault.
 
@@ -274,19 +292,19 @@ session that was just replaced.
 
 The three existing writers need no change. `ctx.db.patch` is a shallow merge and
 all of them omit these keys, so the fields survive untouched — including through
-`onStreamOffline`, which is correct rather than an oversight: a session outlives
-its broadcast and may be entirely offline, so clearing them there would destroy
-the property sessions exist for.
+`onStreamOffline`, which is correct rather than an oversight: a session outlasts
+a dropout, so clearing them there would destroy the property sessions exist for.
 
 `instanceLiveState` is a latest-value row. A reader can observe that the session
 *changed* but never that one *ended*, so anything that must react to an ending
 needs the bus event rather than the row.
 
 Past sessions are read over RPC rather than pushed. `listStreamSessions` (newest
-first, `limit`/`offset`) and `getStreamSession(id)` return each session with its
-segments, oldest first, because "when was this stream live" is a segment-level
-question. An empty `segments` list means the session has never been live, and a
-missing end is `null`, never a zero timestamp. Splits and merges move segments
+first, `limit`/`offset`) lists only sessions that have been live, since an idle
+session is not a stream anyone can look back on. It and `getStreamSession(id)`
+return each session with its segments, oldest first, because "when was this stream
+live" is a segment-level question. An empty `segments` list means the session has
+never been live, and a missing end is `null`, never a zero timestamp. Splits and merges move segments
 between sessions, so a cached session id can stop existing; `getStreamSession`
 returns `null` for it.
 
@@ -381,7 +399,7 @@ The resolver asks when it starts and applies each observation the way it would
 apply the event, so startup order does not matter and a state that already
 matches changes nothing. It does not publish `stream.online`, and neither subject
 can trigger a workflow, so a stream found already live never replays what going
-live does. Those workflows do not run late. A session split that the observation
+live does. Those workflows do not run late. A broadcast end that the observation
 causes still announces `session.ended` and `session.started`, as it would have.
 
 An observed offline closes the open segment, as `stream.offline` does, stamped

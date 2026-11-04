@@ -62,13 +62,13 @@ and its `reached` record in a single `compareAndSet`. Two counters have no such
 guarantee, so one failed write diverges them for good.
 
 There is a fifth problem specific to `lifetime: session`, and it is the one
-most likely to be mistaken for a bug. A session ends on a **split**, at the
-next `stream.online` past the grace window (`DEFAULT_SESSION_GRACE_MS`, ten
-minutes, `api/src/stream-session-policy.ts`) — never at `stream.offline`. So a
-session-scoped counter holds last broadcast's number for the entire gap between
-streams and clears when the next one begins. That is correct for ephemeral
-state, which is what the setting is for. It is not what a tile reading "subs
-this stream" should do.
+most likely to be mistaken for a bug. A session ends once the stream has stayed
+down past the grace window (`DEFAULT_SESSION_GRACE_MS`, ten minutes,
+`api/src/stream-session-policy.ts`) — never at `stream.offline`. So a
+session-scoped counter clears shortly after a broadcast ends, counts offline
+activity while the stream is down, and clears again when the next broadcast
+begins. That is correct for ephemeral state, which is what the setting is for. It
+is not what a tile reading "subs this stream" should do.
 
 None of this argues for changing counters. It argues that totals are a
 different subsystem, which is what this document is.
@@ -361,8 +361,9 @@ That is the "resolve once, not per row" the stamp requires, and it was chosen
 over a materialised canonical column because there is nothing to keep in step:
 a split or merge changes the session's bounds and the next read follows. It
 also counts events that were published unstamped (before the first
-`session.started` reached a process) and offline events between broadcasts,
-which belong to the session that was open, as sessions intend. Any future
+`session.started` reached a process). Offline events between broadcasts belong
+to the idle session that owns that time, so they count toward lifetime figures
+and no stream's recap. Any future
 operation that moves time between sessions must keep their bounds describing
 the time each one owns.
 

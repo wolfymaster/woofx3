@@ -202,8 +202,9 @@ func TestListStreamGaugeSamplesFollowsSegmentsAcrossASplit(t *testing.T) {
 	}
 	goOffline(t, sessions, gaugeWentLive.Add(time.Hour))
 
+	// The session opened on the wall clock, and a split cannot precede its start.
 	split, err := sessions.SplitStreamSession(ctx, &client.SplitStreamSessionRequest{
-		At: timestamppb.New(gaugeWentLive.Add(5 * time.Hour)),
+		At: timestamppb.New(time.Now().UTC()),
 	})
 	if err != nil {
 		t.Fatalf("SplitStreamSession: %v", err)

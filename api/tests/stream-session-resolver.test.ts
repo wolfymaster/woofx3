@@ -5,6 +5,7 @@ import { clearCurrentSessionId, getCurrentSessionId } from "@woofx3/common/cloud
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { Msg } from "@woofx3/nats/src/types";
 import { DbError } from "../src/db-client";
+import { DEFAULT_SESSION_GRACE_MS } from "../src/stream-session-policy";
 import { StreamSessionResolver, timestampToEpochMs } from "../src/stream-session-resolver";
 
 const ABSENT_TIMESTAMP = { seconds: 0n, nanos: 0 };
@@ -38,7 +39,9 @@ function session(id: string, startedAt = "2026-01-01T00:00:00.000Z") {
   return { id, status: "open", startedAt: timestampFor(startedAt) };
 }
 
-function setup(db: Record<string, unknown> = {}) {
+const JUST_AFTER_FIRST_SESSION = Date.parse("2026-01-01T00:00:00.000Z");
+
+function setup(db: Record<string, unknown> = {}, now: () => number = () => JUST_AFTER_FIRST_SESSION) {
   const handlers = new Map<string, (msg: Msg) => void>();
   const nats = {
     subscribe: mock(async (subject: string, handler: (msg: Msg) => void) => {
@@ -48,6 +51,7 @@ function setup(db: Record<string, unknown> = {}) {
     publish: mock(async () => {}),
   } as any;
 
+  let splits = 0;
   const dbClient = {
     ensureCurrentStreamSession: mock(async () => ({
       status: { code: "OK" },
@@ -55,17 +59,20 @@ function setup(db: Record<string, unknown> = {}) {
       isSegmentOpen: false,
       lastSegmentEndedAt: ABSENT_TIMESTAMP,
     })),
-    splitStreamSession: mock(async () => ({
-      status: { code: "OK" },
-      ended: session("session-1"),
-      started: session("session-2"),
-    })),
+    splitStreamSession: mock(async () => {
+      splits += 1;
+      return {
+        status: { code: "OK" },
+        ended: session(`session-${splits}`),
+        started: session(`session-${splits + 1}`),
+      };
+    }),
     openStreamSessionSegment: mock(async () => ({ id: "segment-1" })),
     closeStreamSessionSegment: mock(async () => ({ id: "segment-1" })),
     ...db,
   } as any;
 
-  const resolver = new StreamSessionResolver(nats, dbClient, fakeLogger());
+  const resolver = new StreamSessionResolver(nats, dbClient, fakeLogger(), null, now);
   return { resolver, nats, db: dbClient, handlers };
 }
 
@@ -138,9 +145,155 @@ describe("StreamSessionResolver.start", () => {
   });
 });
 
+describe("the end of a broadcast", () => {
+  const WENT_DOWN = "2026-03-01T20:00:00.000Z";
+  const offlineSession = () =>
+    mock(async () => ({
+      status: { code: "OK" },
+      session: session("session-1"),
+      isSegmentOpen: false,
+      lastSegmentEndedAt: timestampFor(WENT_DOWN),
+    }));
+
+  test("leaves the session open through the grace window", async () => {
+    let now = Date.parse(WENT_DOWN);
+    const { resolver, db } = setup({ ensureCurrentStreamSession: offlineSession() }, () => now);
+    await resolver.start();
+
+    now += DEFAULT_SESSION_GRACE_MS;
+    await resolver.endBroadcastIfOver();
+
+    expect(db.splitStreamSession).not.toHaveBeenCalled();
+    resolver.stop();
+  });
+
+  // The regression this exists for: offline follows and subs must not land in
+  // the stream's recap, so the end is the last segment's, however late the check.
+  test("past the grace window, ends the session when the stream did and adopts an idle one", async () => {
+    let now = Date.parse(WENT_DOWN);
+    const { resolver, nats, db } = setup(
+      { ensureCurrentStreamSession: offlineSession(), clearSessionScoped: mock(async () => []) },
+      () => now
+    );
+    await resolver.start();
+    nats.publish.mockClear();
+
+    now += 6 * DEFAULT_SESSION_GRACE_MS;
+    await resolver.endBroadcastIfOver();
+
+    expect(db.splitStreamSession).toHaveBeenCalledWith({ at: timestampFor(WENT_DOWN) });
+    expect(db.clearSessionScoped).toHaveBeenCalledTimes(1);
+    expect(published(nats)).toEqual([
+      {
+        type: SessionEventType.SessionEnded,
+        data: { sessionId: "session-1", endedAt: WENT_DOWN, replacedBySessionId: "session-2" },
+      },
+      {
+        type: SessionEventType.SessionStarted,
+        data: { sessionId: "session-2", startedAt: WENT_DOWN },
+      },
+    ]);
+    expect(resolver.currentSessionId()).toBe("session-2");
+    resolver.stop();
+  });
+
+  test("a stream that ended while the engine was down is settled at startup", async () => {
+    const { resolver, db } = setup(
+      { ensureCurrentStreamSession: offlineSession(), clearSessionScoped: mock(async () => []) },
+      () => Date.parse(WENT_DOWN) + 2 * DEFAULT_SESSION_GRACE_MS
+    );
+    await resolver.start();
+
+    expect(db.splitStreamSession).toHaveBeenCalledTimes(1);
+    resolver.stop();
+  });
+
+  test("does nothing while the stream is live", async () => {
+    const { resolver, db } = setup(
+      {
+        ensureCurrentStreamSession: mock(async () => ({
+          status: { code: "OK" },
+          session: session("session-1"),
+          isSegmentOpen: true,
+          lastSegmentEndedAt: timestampFor(WENT_DOWN),
+        })),
+      },
+      () => Date.parse(WENT_DOWN) + 100 * DEFAULT_SESSION_GRACE_MS
+    );
+    await resolver.start();
+    await resolver.endBroadcastIfOver();
+
+    expect(db.splitStreamSession).not.toHaveBeenCalled();
+    resolver.stop();
+  });
+
+  test("a failed check is logged and the next one tries again", async () => {
+    const splitStreamSession = mock(async () => {
+      throw new Error("db down");
+    });
+    const { resolver, db } = setup(
+      {
+        ensureCurrentStreamSession: offlineSession(),
+        splitStreamSession,
+      },
+      () => Date.parse(WENT_DOWN) + 2 * DEFAULT_SESSION_GRACE_MS
+    );
+    await resolver.start();
+    await resolver.endBroadcastIfOver();
+
+    expect(db.splitStreamSession).toHaveBeenCalledTimes(2);
+    resolver.stop();
+  });
+
+  test("a going-live waits for a check in progress, so it cannot be closed under the stream", async () => {
+    const order: string[] = [];
+    let live = false;
+    let now = Date.parse(WENT_DOWN);
+    const { resolver, handlers } = setup(
+      {
+        ensureCurrentStreamSession: mock(async () => ({
+          status: { code: "OK" },
+          session: session("session-1"),
+          isSegmentOpen: live,
+          lastSegmentEndedAt: timestampFor(WENT_DOWN),
+        })),
+        splitStreamSession: mock(async () => {
+          order.push("split");
+          return { status: { code: "OK" }, ended: session("session-1"), started: session("session-2") };
+        }),
+        openStreamSessionSegment: mock(async () => {
+          order.push("open");
+          live = true;
+          return { id: "segment-1" };
+        }),
+        clearSessionScoped: mock(async () => []),
+      },
+      () => now
+    );
+    await resolver.start();
+
+    now += 2 * DEFAULT_SESSION_GRACE_MS;
+    const check = resolver.endBroadcastIfOver();
+    const goingLive = handlers.get(EventType.StreamOnline)?.(
+      makeMsg(EventType.StreamOnline, { startedAt: new Date(now).toISOString() })
+    );
+    await Promise.all([check, goingLive]);
+
+    expect(order.indexOf("open")).toBe(order.length - 1);
+    resolver.stop();
+  });
+});
+
 describe("stream.online", () => {
-  test("extends the open session, opening a segment without ending anything", async () => {
-    const { resolver, nats, db, handlers } = setup();
+  test("extends the open session within the grace window, opening a segment without ending anything", async () => {
+    const { resolver, nats, db, handlers } = setup({
+      ensureCurrentStreamSession: mock(async () => ({
+        status: { code: "OK" },
+        session: session("session-1"),
+        isSegmentOpen: false,
+        lastSegmentEndedAt: timestampFor("2026-01-01T00:55:00.000Z"),
+      })),
+    });
     await resolver.start();
     nats.publish.mockClear();
 
@@ -154,7 +307,9 @@ describe("stream.online", () => {
     expect(resolver.currentSessionId()).toBe("session-1");
   });
 
-  test("splits after a gap past the grace window, ending then starting", async () => {
+  // Reached when no check ran after the grace window, such as an engine that was
+  // down. The broadcast ends where it would have, and the idle span stays apart.
+  test("past the grace window, ends the session at its last segment and starts another", async () => {
     const lastEnded = "2026-01-01T00:00:00.000Z";
     const backOnline = "2026-01-01T02:00:00.000Z";
     const { resolver, nats, db, handlers } = setup({
@@ -170,23 +325,26 @@ describe("stream.online", () => {
 
     await handlers.get(EventType.StreamOnline)?.(makeMsg(EventType.StreamOnline, { startedAt: backOnline }));
 
-    expect(db.splitStreamSession).toHaveBeenCalledTimes(1);
+    expect(db.splitStreamSession.mock.calls.map(([req]: [{ at: unknown }]) => req.at)).toEqual([
+      timestampFor(lastEnded),
+      timestampFor(backOnline),
+    ]);
     expect(published(nats)).toEqual([
       {
         type: SessionEventType.SessionEnded,
-        data: {
-          sessionId: "session-1",
-          endedAt: backOnline,
-          replacedBySessionId: "session-2",
-        },
+        data: { sessionId: "session-1", endedAt: lastEnded, replacedBySessionId: "session-2" },
       },
       {
         type: SessionEventType.SessionStarted,
-        data: { sessionId: "session-2", startedAt: backOnline },
+        data: { sessionId: "session-2", startedAt: lastEnded },
+      },
+      {
+        type: SessionEventType.SessionStarted,
+        data: { sessionId: "session-3", startedAt: backOnline },
       },
     ]);
-    expect(resolver.currentSessionId()).toBe("session-2");
-    expect(getCurrentSessionId()).toBe("session-2");
+    expect(resolver.currentSessionId()).toBe("session-3");
+    expect(getCurrentSessionId()).toBe("session-3");
   });
 
   // A session value that goes away has to be announced, or everything showing
@@ -238,10 +396,35 @@ describe("stream.online", () => {
     expect(db.splitStreamSession).not.toHaveBeenCalled();
   });
 
-  // A session that has never been live has no gap to measure. Splitting here
-  // would start a fresh session on the very first broadcast.
-  test("a session that has never been live extends", async () => {
-    const { db, resolver, handlers } = setup();
+  // Offline activity must not sit at the front of the next recap. Only a stream
+  // session's end is announced: no recap follows an idle one.
+  test("leaves an idle session for a new one, clearing storage without announcing an end", async () => {
+    const { db, nats, resolver, handlers } = setup({
+      clearSessionScoped: mock(async () => []),
+    });
+    await resolver.start();
+    nats.publish.mockClear();
+
+    await handlers.get(EventType.StreamOnline)?.(
+      makeMsg(EventType.StreamOnline, { startedAt: "2026-06-01T00:00:00.000Z" })
+    );
+
+    expect(db.splitStreamSession).toHaveBeenCalledTimes(1);
+    expect(db.clearSessionScoped).toHaveBeenCalledTimes(1);
+    expect(db.openStreamSessionSegment.mock.calls[0][0].streamSessionId).toBe("session-2");
+    expect(published(nats).map((event) => event.type)).toEqual([SessionEventType.SessionStarted]);
+    expect(resolver.currentSessionId()).toBe("session-2");
+  });
+
+  test("a stream that began before the session extends it, as after an engine start mid-broadcast", async () => {
+    const { db, resolver, handlers } = setup({
+      ensureCurrentStreamSession: mock(async () => ({
+        status: { code: "OK" },
+        session: session("session-1", "2026-06-01T00:05:00.000Z"),
+        isSegmentOpen: false,
+        lastSegmentEndedAt: ABSENT_TIMESTAMP,
+      })),
+    });
     await resolver.start();
 
     await handlers.get(EventType.StreamOnline)?.(
@@ -359,7 +542,7 @@ describe("StreamSessionResolver syncing with the platforms", () => {
     });
     await resolver.start();
     await handlers.get(OBSERVED)?.(makeMsg(OBSERVED, { live: true, startedAt: STARTED_AT }));
-    expect(db.splitStreamSession).toHaveBeenCalledTimes(1);
+    expect(db.splitStreamSession).toHaveBeenCalledTimes(2);
   });
 
   test("uses the time it learned of it when the platform gives no start", async () => {

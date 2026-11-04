@@ -9,6 +9,7 @@ import type { EngineEventStream } from "./engine-event-stream";
 import type { EventCatalog } from "./event-catalog";
 import type { EventLogSelectionSource } from "./event-log-selection";
 import type { StreamGaugeSampler } from "./stream-gauge-sampler";
+import type { StreamSessionResolver } from "./stream-session-resolver";
 
 export type ApiServices = {
   db: DbService;
@@ -40,6 +41,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   readonly __finalContextType!: ApiRuntimeContext;
   private server: ReturnType<typeof Bun.serve> | null = null;
   private gaugeSampler: StreamGaugeSampler | null = null;
+  private streamSessionResolver: StreamSessionResolver | null = null;
   private engineEventStream: EngineEventStream | null = null;
   private eventCatalog: EventCatalog | null = null;
   private eventLogSelection: EventLogSelectionSource | null = null;
@@ -249,8 +251,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       const sessionSummaryEmitter = new SessionSummaryEmitter(natsClient, db, webhookClient, logger);
       await sessionSummaryEmitter.start();
 
-      const streamSessionResolver = new StreamSessionResolver(natsClient, db, logger, webhookClient);
-      await streamSessionResolver.start();
+      this.streamSessionResolver = new StreamSessionResolver(natsClient, db, logger, webhookClient);
+      await this.streamSessionResolver.start();
 
       // The recorder follows the streamer's selection of the catalog's
       // subjects, the broadcaster each subscriber's. Both listen before the
@@ -382,6 +384,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     this.api = null;
     this.gaugeSampler?.stop();
     this.gaugeSampler = null;
+    this.streamSessionResolver?.stop();
+    this.streamSessionResolver = null;
     this.eventCatalog?.stop();
     this.eventCatalog = null;
     this.eventLogSelection?.stop();
