@@ -712,8 +712,7 @@ pub struct ConnectionMessageResponse {
 /// `alert_types` are the wire-format AlertContext.type strings the widget
 /// renders (e.g. \["follow"\], \["raid"\], \["follow","cheer","raid"\]).
 /// Engine-internal validation operates on canonical event ids; the wire
-/// format is projected from those at registration time via the
-/// AlertEmitter's lookup table.
+/// format is projected from those at registration time.
 ///
 /// `settings_schema` is a serialized JSON document describing the widget's
 /// configuration surface. Engine treats it as opaque; the UI parses it into

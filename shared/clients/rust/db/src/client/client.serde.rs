@@ -37,6 +37,12 @@ impl serde::Serialize for Client {
         if self.last_authenticated_at.is_some() {
             len += 1;
         }
+        if !self.events_url.is_empty() {
+            len += 1;
+        }
+        if !self.events_token.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("client.Client", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -70,6 +76,12 @@ impl serde::Serialize for Client {
         if let Some(v) = self.last_authenticated_at.as_ref() {
             struct_ser.serialize_field("lastAuthenticatedAt", v)?;
         }
+        if !self.events_url.is_empty() {
+            struct_ser.serialize_field("eventsUrl", &self.events_url)?;
+        }
+        if !self.events_token.is_empty() {
+            struct_ser.serialize_field("eventsToken", &self.events_token)?;
+        }
         struct_ser.end()
     }
 }
@@ -96,6 +108,10 @@ impl<'de> serde::Deserialize<'de> for Client {
             "createdAt",
             "last_authenticated_at",
             "lastAuthenticatedAt",
+            "events_url",
+            "eventsUrl",
+            "events_token",
+            "eventsToken",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -110,6 +126,8 @@ impl<'de> serde::Deserialize<'de> for Client {
             Origin,
             CreatedAt,
             LastAuthenticatedAt,
+            EventsUrl,
+            EventsToken,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -141,6 +159,8 @@ impl<'de> serde::Deserialize<'de> for Client {
                             "origin" => Ok(GeneratedField::Origin),
                             "createdAt" | "created_at" => Ok(GeneratedField::CreatedAt),
                             "lastAuthenticatedAt" | "last_authenticated_at" => Ok(GeneratedField::LastAuthenticatedAt),
+                            "eventsUrl" | "events_url" => Ok(GeneratedField::EventsUrl),
+                            "eventsToken" | "events_token" => Ok(GeneratedField::EventsToken),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -170,6 +190,8 @@ impl<'de> serde::Deserialize<'de> for Client {
                 let mut origin__ = None;
                 let mut created_at__ = None;
                 let mut last_authenticated_at__ = None;
+                let mut events_url__ = None;
+                let mut events_token__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -232,6 +254,18 @@ impl<'de> serde::Deserialize<'de> for Client {
                             }
                             last_authenticated_at__ = map_.next_value()?;
                         }
+                        GeneratedField::EventsUrl => {
+                            if events_url__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("eventsUrl"));
+                            }
+                            events_url__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::EventsToken => {
+                            if events_token__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("eventsToken"));
+                            }
+                            events_token__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Client {
@@ -245,6 +279,8 @@ impl<'de> serde::Deserialize<'de> for Client {
                     origin: origin__.unwrap_or_default(),
                     created_at: created_at__,
                     last_authenticated_at: last_authenticated_at__,
+                    events_url: events_url__.unwrap_or_default(),
+                    events_token: events_token__.unwrap_or_default(),
                 })
             }
         }
@@ -456,6 +492,12 @@ impl serde::Serialize for CreateClientRequest {
         if !self.origin.is_empty() {
             len += 1;
         }
+        if !self.events_url.is_empty() {
+            len += 1;
+        }
+        if !self.events_token.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("client.CreateClientRequest", len)?;
         if !self.description.is_empty() {
             struct_ser.serialize_field("description", &self.description)?;
@@ -474,6 +516,12 @@ impl serde::Serialize for CreateClientRequest {
         if !self.origin.is_empty() {
             struct_ser.serialize_field("origin", &self.origin)?;
         }
+        if !self.events_url.is_empty() {
+            struct_ser.serialize_field("eventsUrl", &self.events_url)?;
+        }
+        if !self.events_token.is_empty() {
+            struct_ser.serialize_field("eventsToken", &self.events_token)?;
+        }
         struct_ser.end()
     }
 }
@@ -491,6 +539,10 @@ impl<'de> serde::Deserialize<'de> for CreateClientRequest {
             "callbackToken",
             "kind",
             "origin",
+            "events_url",
+            "eventsUrl",
+            "events_token",
+            "eventsToken",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -500,6 +552,8 @@ impl<'de> serde::Deserialize<'de> for CreateClientRequest {
             CallbackToken,
             Kind,
             Origin,
+            EventsUrl,
+            EventsToken,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -526,6 +580,8 @@ impl<'de> serde::Deserialize<'de> for CreateClientRequest {
                             "callbackToken" | "callback_token" => Ok(GeneratedField::CallbackToken),
                             "kind" => Ok(GeneratedField::Kind),
                             "origin" => Ok(GeneratedField::Origin),
+                            "eventsUrl" | "events_url" => Ok(GeneratedField::EventsUrl),
+                            "eventsToken" | "events_token" => Ok(GeneratedField::EventsToken),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -550,6 +606,8 @@ impl<'de> serde::Deserialize<'de> for CreateClientRequest {
                 let mut callback_token__ = None;
                 let mut kind__ = None;
                 let mut origin__ = None;
+                let mut events_url__ = None;
+                let mut events_token__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Description => {
@@ -582,6 +640,18 @@ impl<'de> serde::Deserialize<'de> for CreateClientRequest {
                             }
                             origin__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::EventsUrl => {
+                            if events_url__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("eventsUrl"));
+                            }
+                            events_url__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::EventsToken => {
+                            if events_token__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("eventsToken"));
+                            }
+                            events_token__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(CreateClientRequest {
@@ -590,6 +660,8 @@ impl<'de> serde::Deserialize<'de> for CreateClientRequest {
                     callback_token: callback_token__.unwrap_or_default(),
                     kind: kind__.unwrap_or_default(),
                     origin: origin__.unwrap_or_default(),
+                    events_url: events_url__.unwrap_or_default(),
+                    events_token: events_token__.unwrap_or_default(),
                 })
             }
         }
@@ -1048,6 +1120,133 @@ impl<'de> serde::Deserialize<'de> for RecordClientAuthenticationRequest {
             }
         }
         deserializer.deserialize_struct("client.RecordClientAuthenticationRequest", FIELDS, GeneratedVisitor)
+    }
+}
+impl serde::Serialize for SetClientEventsTargetRequest {
+    #[allow(deprecated)]
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut len = 0;
+        if !self.id.is_empty() {
+            len += 1;
+        }
+        if !self.events_url.is_empty() {
+            len += 1;
+        }
+        if !self.events_token.is_empty() {
+            len += 1;
+        }
+        let mut struct_ser = serializer.serialize_struct("client.SetClientEventsTargetRequest", len)?;
+        if !self.id.is_empty() {
+            struct_ser.serialize_field("id", &self.id)?;
+        }
+        if !self.events_url.is_empty() {
+            struct_ser.serialize_field("eventsUrl", &self.events_url)?;
+        }
+        if !self.events_token.is_empty() {
+            struct_ser.serialize_field("eventsToken", &self.events_token)?;
+        }
+        struct_ser.end()
+    }
+}
+impl<'de> serde::Deserialize<'de> for SetClientEventsTargetRequest {
+    #[allow(deprecated)]
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        const FIELDS: &[&str] = &[
+            "id",
+            "events_url",
+            "eventsUrl",
+            "events_token",
+            "eventsToken",
+        ];
+
+        #[allow(clippy::enum_variant_names)]
+        enum GeneratedField {
+            Id,
+            EventsUrl,
+            EventsToken,
+        }
+        impl<'de> serde::Deserialize<'de> for GeneratedField {
+            fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                struct GeneratedVisitor;
+
+                impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+                    type Value = GeneratedField;
+
+                    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        write!(formatter, "expected one of: {:?}", &FIELDS)
+                    }
+
+                    #[allow(unused_variables)]
+                    fn visit_str<E>(self, value: &str) -> std::result::Result<GeneratedField, E>
+                    where
+                        E: serde::de::Error,
+                    {
+                        match value {
+                            "id" => Ok(GeneratedField::Id),
+                            "eventsUrl" | "events_url" => Ok(GeneratedField::EventsUrl),
+                            "eventsToken" | "events_token" => Ok(GeneratedField::EventsToken),
+                            _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
+                        }
+                    }
+                }
+                deserializer.deserialize_identifier(GeneratedVisitor)
+            }
+        }
+        struct GeneratedVisitor;
+        impl<'de> serde::de::Visitor<'de> for GeneratedVisitor {
+            type Value = SetClientEventsTargetRequest;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("struct client.SetClientEventsTargetRequest")
+            }
+
+            fn visit_map<V>(self, mut map_: V) -> std::result::Result<SetClientEventsTargetRequest, V::Error>
+                where
+                    V: serde::de::MapAccess<'de>,
+            {
+                let mut id__ = None;
+                let mut events_url__ = None;
+                let mut events_token__ = None;
+                while let Some(k) = map_.next_key()? {
+                    match k {
+                        GeneratedField::Id => {
+                            if id__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("id"));
+                            }
+                            id__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::EventsUrl => {
+                            if events_url__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("eventsUrl"));
+                            }
+                            events_url__ = Some(map_.next_value()?);
+                        }
+                        GeneratedField::EventsToken => {
+                            if events_token__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("eventsToken"));
+                            }
+                            events_token__ = Some(map_.next_value()?);
+                        }
+                    }
+                }
+                Ok(SetClientEventsTargetRequest {
+                    id: id__.unwrap_or_default(),
+                    events_url: events_url__.unwrap_or_default(),
+                    events_token: events_token__.unwrap_or_default(),
+                })
+            }
+        }
+        deserializer.deserialize_struct("client.SetClientEventsTargetRequest", FIELDS, GeneratedVisitor)
     }
 }
 impl serde::Serialize for UpdateClientRequest {
