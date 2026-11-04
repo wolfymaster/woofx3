@@ -13,6 +13,7 @@ import (
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
+	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"gorm.io/gorm"
 )
@@ -78,8 +79,11 @@ func (s *moduleService) CreateResourceInstance(ctx context.Context, req *client.
 		DisplayName: req.DisplayName,
 		Settings:    settings,
 	}
-	if err := s.instanceRepo.Create(inst); err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("create resource instance: %w", err))
+	_, err = s.writeInstanceSettings(ctx, module, inst, "", settings, func(instances *repo.ModuleResourceInstanceRepository) (bool, error) {
+		return true, instances.Create(inst)
+	})
+	if err != nil {
+		return nil, settingsWriteError("settings_json", "create resource instance", err)
 	}
 
 	s.publishInstanceEvent(req.RequestContext, module, inst, "created")
@@ -110,10 +114,14 @@ func (s *moduleService) UpdateResourceInstance(ctx context.Context, req *client.
 		return nil, twirp.InvalidArgumentError("settings_json", err.Error())
 	}
 
+	previous := instanceSettingsOrEmpty(inst.Settings)
 	inst.DisplayName = req.DisplayName
 	inst.Settings = settings
-	if err := s.instanceRepo.Update(inst); err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("update resource instance: %w", err))
+	_, err = s.writeInstanceSettings(ctx, module, inst, previous, settings, func(instances *repo.ModuleResourceInstanceRepository) (bool, error) {
+		return true, instances.Update(inst)
+	})
+	if err != nil {
+		return nil, settingsWriteError("settings_json", "update resource instance", err)
 	}
 
 	s.publishInstanceEvent(req.RequestContext, module, inst, "updated")
@@ -125,6 +133,49 @@ func (s *moduleService) UpdateResourceInstance(ctx context.Context, req *client.
 		},
 		Instance: resourceInstanceToProto(module, inst),
 	}, nil
+}
+
+// writeInstanceSettings runs write, then the settings validator of the
+// instance's kind if it has one, in one transaction, and reports whether
+// write wrote. A validator refusing the settings rolls the write back, so no
+// path that writes settings, a module function's compare-and-set included,
+// can store settings the kind's owner refuses.
+func (s *moduleService) writeInstanceSettings(
+	ctx context.Context,
+	module *models.Module,
+	inst *models.ModuleResourceInstance,
+	previous, next string,
+	write func(instances *repo.ModuleResourceInstanceRepository) (bool, error),
+) (bool, error) {
+	validator, validated := s.kindValidators.For(canonicalKindOf(module, inst))
+	wrote := false
+	err := s.instanceRepo.Transaction(ctx, func(tx *gorm.DB) error {
+		var err error
+		wrote, err = write(s.instanceRepo.WithTx(tx))
+		if err != nil || !wrote || !validated {
+			return err
+		}
+		return validator.ApplySettings(ctx, tx, inst.ID, previous, next)
+	})
+	if err != nil {
+		return false, err
+	}
+	return wrote, nil
+}
+
+// settingsWriteError maps a failed settings write to its Twirp error: a
+// refusal by the kind's validator names the field that carried the settings.
+func settingsWriteError(field, doing string, err error) error {
+	if refused, ok := asKindSettingsError(err); ok {
+		return twirp.InvalidArgumentError(field, refused.Reason)
+	}
+	return twirp.InternalErrorWith(fmt.Errorf("%s: %w", doing, err))
+}
+
+// canonicalKindOf is the `<module>:<kind>` an instance's kind is registered
+// under.
+func canonicalKindOf(module *models.Module, inst *models.ModuleResourceInstance) string {
+	return instanceModuleName(module) + ":" + inst.Kind
 }
 
 // instanceSettingCASAttempts bounds how often CompareAndSetResourceInstanceSetting
@@ -196,9 +247,11 @@ func (s *moduleService) CompareAndSetResourceInstanceSetting(ctx context.Context
 		if err != nil {
 			return nil, twirp.InternalErrorWith(fmt.Errorf("encode settings of %q: %w", req.CanonicalId, err))
 		}
-		swapped, err := s.instanceRepo.CompareAndSetSettings(inst.ID, inst.Settings, written)
+		swapped, err := s.writeInstanceSettings(ctx, module, inst, read, written, func(instances *repo.ModuleResourceInstanceRepository) (bool, error) {
+			return instances.CompareAndSetSettings(inst.ID, inst.Settings, written)
+		})
 		if err != nil {
-			return nil, twirp.InternalErrorWith(fmt.Errorf("write settings of %q: %w", req.CanonicalId, err))
+			return nil, settingsWriteError("value_json", fmt.Sprintf("write settings of %q", req.CanonicalId), err)
 		}
 		if swapped {
 			inst.Settings = written

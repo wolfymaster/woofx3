@@ -35,6 +35,7 @@ func newProvenanceSvc(t *testing.T) *moduleService {
 		repo.NewResourceReferenceRepository(db),
 		repo.NewModuleResourceInstanceRepository(db),
 		nil,
+		NewKindSettingsValidators(),
 	)
 }
 

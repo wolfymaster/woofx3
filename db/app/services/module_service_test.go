@@ -38,6 +38,7 @@ func moduleSvcOn(db *gorm.DB, publisher *workers.EventPublisher) *moduleService 
 		repo.NewResourceReferenceRepository(db),
 		repo.NewModuleResourceInstanceRepository(db),
 		publisher,
+		NewKindSettingsValidators(),
 	)
 }
 
