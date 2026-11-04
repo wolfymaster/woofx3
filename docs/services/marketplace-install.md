@@ -2,7 +2,7 @@
 
 The engine can install a marketplace listing by its id. It reads the listing, claims it for the buyer, downloads the archive, checks it, and installs it itself. Whatever the caller is, the engine installs only what the marketplace recorded for that listing.
 
-The methods are behind capability `modules.marketplaceInstall` (see [Engine capabilities](./engine-capabilities.md)):
+The methods:
 
 ```ts
 installMarketplaceListing(listingId, { approvedPermissions, approvedLocalEndpoints, buyerToken? }): Promise<MarketplaceInstallResult>

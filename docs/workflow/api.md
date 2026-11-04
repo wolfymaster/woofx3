@@ -513,7 +513,6 @@ Returns detailed execution status including per-step progress and a progress per
 
 Returns one recorded run whole: the run, every step it recorded in the order it ran them,
 and the alerts it fired. Answers `null` when the engine holds no run with that id.
-Requires the `workflow.runDetail` capability.
 
 The run and its steps are the snapshots the `workflow.run.recorded`,
 `workflow.run.updated` and `workflow.run.step.recorded` callbacks carry
@@ -573,7 +572,7 @@ Lists recorded runs, newest first by start time, each as the `WorkflowRunSnapsho
 `workflow.run.recorded` and `workflow.run.updated` callbacks carry: the fields of `run` in
 [getWorkflowRun](#getworkflowrun) without `workflowName`, and without steps or alerts. A
 field the run never recorded is left out, so a run with no `triggerEvent` has no stored
-trigger event to replay. Requires the `workflow.runSnapshots` capability.
+trigger event to replay.
 
 A workflow with no recorded runs lists none. A `limit` that is not a whole number from 1
 to 200 is refused, and a failed read rejects instead of answering an empty list.
@@ -610,7 +609,7 @@ Returns what the workflow builder composes from, in one read: `triggers` as
 `listAvailableFunctions()` lists them. A trigger fired by inbound HTTP (`transport`
 `"webhook"`) is left out, because its module's handler fires it and nothing binds to it.
 The three are read together and the call fails whole if any read fails, so a client never
-holds a catalog with one part missing. Requires the `workflow.catalog` capability.
+holds a catalog with one part missing.
 
 ```json
 {

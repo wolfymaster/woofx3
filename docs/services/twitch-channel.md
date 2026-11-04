@@ -289,8 +289,8 @@ the rest), `collectHelixPages` for the paginated lists, and
 Twitch's JSON as it is, so they read a direct Helix call's body the same way.
 
 The Helix methods above are Twitch-only. To send a chat line, announcement or
-pin without choosing the platform, the dashboard can use `sendToPlatforms`
-(capability `platform.gateway`), which goes through the platform gateway and
+pin without choosing the platform, the dashboard can use `sendToPlatforms`,
+which goes through the platform gateway and
 reports Twitch's outcome with its message id. See
 [Platform gateway → Sending from the dashboard](./platform-gateway.md#sending-from-the-dashboard).
 
@@ -307,8 +307,7 @@ An engine with no dashboard to run Twitch OAuth for it (an engine in local
 mode, under the desktop app) links Twitch itself with Twitch's
 [Device Code Grant](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/#device-code-grant-flow).
 The streamer is shown a short code and a Twitch page to enter it on; the
-engine waits for them to approve and stores the token. Engines advertise it
-with the `twitch.deviceLogin` capability.
+engine waits for them to approve and stores the token.
 
 ### The public Twitch app
 
@@ -400,8 +399,7 @@ announced.
 getTwitchLink(): Promise<TwitchLinkInfo>;
 ```
 
-`getTwitchLink` describes the linked account, however it was linked. Engines
-advertise it with the `twitch.linkRead` capability. With nothing linked it
+`getTwitchLink` describes the linked account, however it was linked. With nothing linked it
 answers `{ linked: false, revision }`. Otherwise it answers `linked: true` with
 the account's `userId`, the `scopes` the token was granted, `expiresAt` (when
 the current access token expires, null when it does not), `authFailedAt` and
@@ -463,7 +461,7 @@ engine only carries the resulting events.
 | `getAdSchedule` / `snoozeNextAd` | Twitch adapter, `twitchapi` commands (`connectors/src/adapters/twitch/lib/twitch.ts`) | Helix reads and snoozes on request over NATS |
 | Browser delivery | api (`StreamEventBroadcaster`) | Forwards the three `channel.ad_break.*` events to `subscribeStreamEvents` clients that ask for them, and to every client that names no types |
 | Triggers | `woofx3_twitch` platform module (woofx3-modules) | Declares the three events as workflow triggers |
-| Dashboard widget | woofx3-ui | Reads the schedule and snoozes from Convex actions, through the engine's `twitchGetAdSchedule` and `twitchSnoozeNextAd` (see [Dashboard Helix calls](#dashboard-helix-calls)) or straight to Helix on an engine without `twitch.ads` |
+| Dashboard widget | woofx3-ui | Reads the schedule and snoozes from Convex actions, through the engine's `twitchGetAdSchedule` and `twitchSnoozeNextAd` (see [Dashboard Helix calls](#dashboard-helix-calls)), or straight to Helix for an instance with no engine |
 
 The api exposes no ad RPC: an engine API method named after one platform's
 feature would leak that platform into the generic surface every client sees.

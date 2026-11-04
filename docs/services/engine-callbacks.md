@@ -3,7 +3,7 @@
 The engine tells its clients when its state changes (a workflow saved, a scene deleted, a module installed, an alert played), and sometimes needs a client to answer a question (a fresh Twitch token, a relay credential, a place in the shoutout queue). Both travel as CloudEvents 1.0 envelopes defined in `shared/clients/typescript/api/webhooks.ts`, over one of two transports:
 
 - **Webhooks**: an HTTP POST to the `callbackUrl` a client gave when it registered (`registerClient`). This is how a cloud dashboard hears from its engine, whether or not anyone has the dashboard open.
-- **The event stream**: a push over the client's own capnweb WebSocket session, after it calls `subscribeEngineEvents`. This is how a client with no callback URL, such as the desktop app driving a local engine, hears from its engine. Engines with the `engine.eventStream` capability serve it.
+- **The event stream**: a push over the client's own capnweb WebSocket session, after it calls `subscribeEngineEvents`. This is how a client with no callback URL, such as the desktop app driving a local engine, hears from its engine.
 
 Both transports carry the same envelopes. The api builds each envelope once, in `WebhookClient` (`api/src/webhook-client.ts`), and hands it to both: the HTTP delivery in that file, and `EngineEventStream` (`api/src/engine-event-stream.ts`) for the stream. So a handler written for webhook bodies works unchanged on stream frames.
 

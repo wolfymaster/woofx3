@@ -1051,7 +1051,7 @@ export interface ViewerFact {
  *   password. Through the companion it is the bridge's host, never a ticket.
  * - `route`: how the last attempt reached OBS: straight to the address in the
  *   module's settings, or through the companion's bridge. Absent before any
- *   attempt, and from engines without the `modules.localEndpoints` capability.
+ *   attempt.
  */
 export interface ObsStatus {
   state: ObsConnectionState | "unanswered";
@@ -1841,9 +1841,8 @@ export interface Woofx3EngineApi {
 
   /**
    * The capability ids this engine supports (see `ENGINE_CAPABILITIES` and
-   * docs/services/engine-capabilities.md). Clients gate newer features on
-   * these ids rather than on the engine version, which is an image tag. An
-   * engine without this method predates capabilities and supports none.
+   * docs/services/engine-capabilities.md). Clients gate features on these
+   * ids rather than on the engine version, which is an image tag.
    */
   getEngineCapabilities(): Promise<EngineCapabilities>;
 
@@ -1943,7 +1942,7 @@ export interface Woofx3EngineApi {
    * permissions and `local[]` endpoints against the approval before handing
    * it to barkloader. Install webhooks the engine sends itself carry
    * `source: "marketplace"`. `clientId` is injected by the session.
-   * Capability `modules.marketplaceInstall`.
+   *
    */
   installMarketplaceListing(listingId: string, request: MarketplaceInstallRequest): Promise<MarketplaceInstallResult>;
 
@@ -1957,7 +1956,7 @@ export interface Woofx3EngineApi {
    * outcome arrives as `module.installed` or `module.install_failed` keyed by
    * it, with `source: "upload"` and `uploadResourceId`. The resource cannot be
    * deleted while the module is installed. `clientId` is injected by the
-   * session. Capability `modules.resourceInstall`.
+   * session.
    */
   installModuleFromResource(
     resourceId: string,
@@ -1967,7 +1966,7 @@ export interface Woofx3EngineApi {
   /**
    * A module or theme listing's current build, read from its verified
    * archive: the manifest, permissions, local endpoints and files an install
-   * would review. Claims nothing. Capability `modules.marketplaceInstall`.
+   * would review. Claims nothing.
    */
   inspectMarketplaceListing(listingId: string, buyerToken?: string): Promise<MarketplaceListingInspection>;
 
@@ -1975,7 +1974,7 @@ export interface Woofx3EngineApi {
    * Install an overlay or alert listing: its bundle becomes a new scene or
    * alert composition, through the same writes as `createScene` and
    * `createAlertComposition`. Claims the listing for the buyer first when
-   * given a `buyerToken`. Capability `modules.marketplaceInstall`.
+   * given a `buyerToken`.
    */
   installMarketplaceBundle(listingId: string, buyerToken?: string): Promise<MarketplaceBundleInstallResult>;
 
@@ -1985,7 +1984,7 @@ export interface Woofx3EngineApi {
   // claim it reveals dev-tier listings, without it the read is the same as
   // an anonymous one. A marketplace failure throws a message that
   // `parseMarketplaceCatalogError` reads (`marketplace-catalog.ts`).
-  // Capability `marketplace.catalog`.
+  //
 
   /** `GET /catalog`: search and browse every listing type. Unknown query keys are refused. */
   marketplaceSearch(query: MarketplaceCatalogQuery, buyerToken?: string): Promise<unknown>;
@@ -2152,8 +2151,7 @@ export interface Woofx3EngineApi {
 
   /**
    * Every resource kind the installed modules' manifests declare, one entry
-   * per declaration, by module and then in manifest order. Requires the
-   * `modules.resourceKinds` capability.
+   * per declaration, by module and then in manifest order.
    */
   listResourceKinds(): Promise<DeclaredResourceKind[]>;
 
@@ -2162,7 +2160,7 @@ export interface Woofx3EngineApi {
   getActions(createdByType?: string, createdByRef?: string): Promise<ActionDefinition[]>;
   /**
    * The triggers, actions and module functions a workflow can use, read
-   * together. Requires the `workflow.catalog` capability.
+   * together.
    */
   getWorkflowCatalog(): Promise<WorkflowCatalog>;
 
@@ -2184,15 +2182,14 @@ export interface Woofx3EngineApi {
   /**
    * One recorded run with its steps' inputs, outputs, errors, timings and
    * attempts, and the alerts it fired. Null when the engine holds no run with
-   * that id. Requires the `workflow.runDetail` capability.
+   * that id.
    */
   getWorkflowRun(executionId: string): Promise<WorkflowRunDetail | null>;
   /**
    * Recorded runs as whole `WorkflowRunSnapshot`s, the shape the
    * `workflow.run.recorded` and `workflow.run.updated` callbacks carry, newest
    * first by start time. Rejects a `limit` out of range and a failed read
-   * rather than answering an empty list. Requires the `workflow.runSnapshots`
-   * capability.
+   * rather than answering an empty list.
    */
   listWorkflowRunSnapshots(query: WorkflowRunSnapshotsQuery): Promise<WorkflowRunSnapshot[]>;
   /**
@@ -2207,7 +2204,6 @@ export interface Woofx3EngineApi {
   /**
    * Every value `${viewer.*}` can resolve in a workflow, in a stable order:
    * `id`, `platform` and `name` first, then the active facts by path.
-   * Requires the `workflow.viewerFacts` capability.
    */
   listViewerFacts(): Promise<ViewerFact[]>;
 
@@ -2218,13 +2214,11 @@ export interface Woofx3EngineApi {
    *
    * Rejects with an error `isUserPageSubmissionRefused` (`./rpc`) recognises
    * when the delivery is malformed, which a resend cannot fix. Any other
-   * rejection recorded nothing, so the caller resends. Requires the
-   * `userPages.formSubmissions` capability.
+   * rejection recorded nothing, so the caller resends.
    */
   deliverUserPageSubmission(delivery: UserPageSubmissionDelivery): Promise<UserPageSubmissionReceipt>;
 
   // Local UI settings. Each write emits a `ui.setting.changed` webhook.
-  // Requires the `ui.settings` capability.
 
   /** A namespace's live settings, by key. Tombstones are left out. */
   listUISettings(namespace: string): Promise<UISetting[]>;
@@ -2315,14 +2309,12 @@ export interface Woofx3EngineApi {
   deleteTwitchToken(): Promise<{ ok: true }>;
   /**
    * The linked Twitch account, or `linked: false`. Every change to the link
-   * sends a `twitch.link.changed` webhook with a higher `revision`. Requires
-   * the `twitch.linkRead` capability.
+   * sends a `twitch.link.changed` webhook with a higher `revision`.
    */
   getTwitchLink(): Promise<TwitchLinkInfo>;
 
   // Twitch device login: the engine links Twitch itself with its public
-  // Twitch app (see ./twitch-device-login.ts). Requires the
-  // `twitch.deviceLogin` capability.
+  // Twitch app (see ./twitch-device-login.ts).
 
   /** Start a device login for `scopes` (the engine's own set when omitted), replacing any login in progress. */
   startTwitchDeviceLogin(scopes?: string[]): Promise<TwitchDeviceLoginStartResult>;
@@ -2346,51 +2338,51 @@ export interface Woofx3EngineApi {
   // and answers with Twitch's own result (see ./twitch-helix.ts). They never
   // throw for a refusal; `ok: false` carries the reason.
 
-  /** `GET /helix/channels` for the broadcaster. Requires the `twitch.streamInfo` capability. */
+  /** `GET /helix/channels` for the broadcaster. */
   twitchGetChannelInformation(): Promise<TwitchHelixResult>;
-  /** `GET /helix/games`. Requires the `twitch.streamInfo` capability. */
+  /** `GET /helix/games`. */
   twitchGetGames(params: TwitchGetGamesParams): Promise<TwitchHelixResult>;
-  /** `GET /helix/search/categories`. Requires the `twitch.streamInfo` capability. */
+  /** `GET /helix/search/categories`. */
   twitchSearchCategories(params: TwitchSearchCategoriesParams): Promise<TwitchHelixResult>;
-  /** `PATCH /helix/channels` for the broadcaster. Requires the `twitch.streamInfo` capability. */
+  /** `PATCH /helix/channels` for the broadcaster. */
   twitchModifyChannelInformation(params: TwitchModifyChannelInformationParams): Promise<TwitchHelixResult>;
-  /** `POST /helix/streams/markers` on the broadcaster's stream. Requires the `twitch.streamInfo` capability. */
+  /** `POST /helix/streams/markers` on the broadcaster's stream. */
   twitchCreateStreamMarker(params: TwitchCreateStreamMarkerParams): Promise<TwitchHelixResult>;
-  /** `GET /helix/channels/ads` for the broadcaster. Requires the `twitch.ads` capability. */
+  /** `GET /helix/channels/ads` for the broadcaster. */
   twitchGetAdSchedule(): Promise<TwitchHelixResult>;
-  /** `POST /helix/channels/ads/schedule/snooze` for the broadcaster. Requires the `twitch.ads` capability. */
+  /** `POST /helix/channels/ads/schedule/snooze` for the broadcaster. */
   twitchSnoozeNextAd(): Promise<TwitchHelixResult>;
-  /** `GET /helix/users`. Requires the `twitch.moderation` capability. */
+  /** `GET /helix/users`. */
   twitchGetUsers(params: TwitchGetUsersParams): Promise<TwitchHelixResult>;
-  /** `GET /helix/moderation/blocked_terms` for the broadcaster. Requires the `twitch.moderation` capability. */
+  /** `GET /helix/moderation/blocked_terms` for the broadcaster. */
   twitchGetBlockedTerms(params: TwitchGetBlockedTermsParams): Promise<TwitchHelixResult>;
-  /** `POST /helix/moderation/blocked_terms` for the broadcaster. Requires the `twitch.moderation` capability. */
+  /** `POST /helix/moderation/blocked_terms` for the broadcaster. */
   twitchAddBlockedTerm(params: TwitchAddBlockedTermParams): Promise<TwitchHelixResult>;
-  /** `DELETE /helix/moderation/blocked_terms` for the broadcaster. Requires the `twitch.moderation` capability. */
+  /** `DELETE /helix/moderation/blocked_terms` for the broadcaster. */
   twitchRemoveBlockedTerm(params: TwitchRemoveBlockedTermParams): Promise<TwitchHelixResult>;
-  /** `POST /helix/moderation/bans` for the broadcaster. Requires the `twitch.moderation` capability. */
+  /** `POST /helix/moderation/bans` for the broadcaster. */
   twitchBanUser(params: TwitchBanUserParams): Promise<TwitchHelixResult>;
-  /** `DELETE /helix/moderation/bans` for the broadcaster. Requires the `twitch.moderation` capability. */
+  /** `DELETE /helix/moderation/bans` for the broadcaster. */
   twitchUnbanUser(params: TwitchUnbanUserParams): Promise<TwitchHelixResult>;
-  /** `GET /helix/chat/settings` for the broadcaster. Requires the `twitch.moderation` capability. */
+  /** `GET /helix/chat/settings` for the broadcaster. */
   twitchGetChatSettings(): Promise<TwitchHelixResult>;
-  /** `PATCH /helix/chat/settings` for the broadcaster. Requires the `twitch.moderation` capability. */
+  /** `PATCH /helix/chat/settings` for the broadcaster. */
   twitchUpdateChatSettings(params: TwitchUpdateChatSettingsParams): Promise<TwitchHelixResult>;
-  /** `POST /helix/chat/messages` as the broadcaster. Requires the `twitch.chat` capability. */
+  /** `POST /helix/chat/messages` as the broadcaster. */
   twitchSendChatMessage(params: TwitchSendChatMessageParams): Promise<TwitchHelixResult>;
-  /** `POST /helix/chat/announcements` for the broadcaster. Requires the `twitch.chat` capability. */
+  /** `POST /helix/chat/announcements` for the broadcaster. */
   twitchSendChatAnnouncement(params: TwitchSendChatAnnouncementParams): Promise<TwitchHelixResult>;
-  /** `POST /helix/chat/shoutouts` from the broadcaster. Requires the `twitch.chat` capability. */
+  /** `POST /helix/chat/shoutouts` from the broadcaster. */
   twitchSendShoutout(params: TwitchSendShoutoutParams): Promise<TwitchHelixResult>;
-  /** `GET /helix/chat/chatters` for the broadcaster. Requires the `twitch.chat` capability. */
+  /** `GET /helix/chat/chatters` for the broadcaster. */
   twitchGetChatters(params: TwitchGetChattersParams): Promise<TwitchHelixResult>;
-  /** `GET /helix/chat/pins` for the broadcaster (Twitch beta). Requires the `twitch.pins` capability. */
+  /** `GET /helix/chat/pins` for the broadcaster (Twitch beta). */
   twitchGetChatPins(): Promise<TwitchHelixResult>;
-  /** `PUT /helix/chat/pins` for the broadcaster (Twitch beta). Requires the `twitch.pins` capability. */
+  /** `PUT /helix/chat/pins` for the broadcaster (Twitch beta). */
   twitchPinChatMessage(params: TwitchChatPinParams): Promise<TwitchHelixResult>;
-  /** `DELETE /helix/chat/pins` for the broadcaster (Twitch beta). Requires the `twitch.pins` capability. */
+  /** `DELETE /helix/chat/pins` for the broadcaster (Twitch beta). */
   twitchUnpinChatMessage(params: TwitchChatPinParams): Promise<TwitchHelixResult>;
-  /** `POST /helix/clips` on the broadcaster's stream. Requires the `twitch.clips` capability. */
+  /** `POST /helix/clips` on the broadcaster's stream. */
   twitchCreateClip(): Promise<TwitchHelixResult>;
 
   // Generic dynamic-options dispatch. The caller names the field; the engine
@@ -2417,12 +2409,11 @@ export interface Woofx3EngineApi {
    * Every scene as its whole stored record (the `SceneSnapshot` the
    * `scene.*` webhooks carry), ordered by name, in one read. Alert
    * compositions are never listed; `listAlertCompositions` reads those.
-   * Requires the `scenes.snapshots` capability.
    */
   listSceneSnapshots(): Promise<{ scenes: SceneSnapshot[] }>;
   /**
    * One scene's whole stored record, or null when the id is unknown or names
-   * an alert composition. Requires the `scenes.snapshots` capability.
+   * an alert composition.
    */
   getSceneSnapshot(id: string): Promise<SceneSnapshot | null>;
 
@@ -2491,8 +2482,7 @@ export interface Woofx3EngineApi {
   // overlay page and never given an overlay token. They form a library: a
   // client copies one into an alert step's own layout, filling its inputs,
   // and the step never refers back to it. Each change emits the `scene.*`
-  // webhooks with `kind: "alert"` in the snapshot. Requires the
-  // `compositions.alerts` capability.
+  // webhooks with `kind: "alert"` in the snapshot.
   listAlertCompositions(): Promise<{ compositions: AlertComposition[] }>;
   /** The alert, or null when the id is unknown or names a scene. */
   getAlertComposition(id: string): Promise<AlertComposition | null>;
@@ -2530,7 +2520,7 @@ export interface Woofx3EngineApi {
    * a composition the dashboard posts to it, with real widget frames, on a
    * timeline the dashboard plays, pauses and scrubs. Null when sceneManager
    * did not answer. The URL opens only that page, never an overlay, and names
-   * no composition. Requires the `compositions.preview` capability.
+   * no composition.
    */
   getCompositionPreviewUrl(): Promise<CompositionPreviewUrl | null>;
 
@@ -2663,7 +2653,6 @@ export interface Woofx3EngineApi {
   /**
    * The engine's recorded alerts, newest first: every alert it dispatched
    * and how each one went, kept until the db proxy prunes settled alerts.
-   * Requires the `alerts.history` capability.
    */
   listAlerts(query?: AlertListQuery): Promise<AlertListPage>;
 
@@ -2673,27 +2662,26 @@ export interface Woofx3EngineApi {
    * ending with the hour that starts at `hourStart`, epoch milliseconds on
    * the hour. The caller passes the start of its current hour, so the
    * arguments change once an hour. Anything out of range is refused, not
-   * clamped. Requires the `alerts.overview` capability.
+   * clamped.
    */
   getAlertOverview(hourStart: number, windowHours?: number): Promise<AlertOverview>;
 
   /**
    * What the open overlays are playing now and what waits behind it, as the
-   * scene manager holds it. Requires the `alerts.queueState` capability.
+   * scene manager holds it.
    */
   getAlertQueue(): Promise<AlertQueueState>;
 
   /**
    * How the connectors host's connection to OBS is doing, for the OBS module's
-   * page. Requires the `obs.status` capability.
+   * page.
    */
   getObsStatus(): Promise<ObsStatus>;
   /**
    * What the dashboard's scene editor needs to open sceneManager's editor
    * socket for a scene: a token presented once, as `?token=`, on the socket
    * at `path` (relative to sceneManager's public URL). Null when the scene
-   * does not exist or sceneManager does not answer. Requires the
-   * `scenes.editorSync` capability (the socket speaks protocol 2).
+   * does not exist or sceneManager does not answer.
    */
   getSceneEditorSession(sceneId: string): Promise<SceneEditorSession | null>;
   /**
@@ -2702,7 +2690,7 @@ export interface Woofx3EngineApi {
    * column that it cannot read, is copied into the db's `scene_backups` as
    * stored, then the readable rest is written back in its place. Data a newer
    * engine wrote can look unreadable to an older one, which is why nothing is
-   * dropped without a backup. Requires the `scenes.repair` capability.
+   * dropped without a backup.
    */
   repairScene(sceneId: string): Promise<SceneRepairResult>;
 
@@ -2710,8 +2698,7 @@ export interface Woofx3EngineApi {
    * Finish connecting a module's OAuth integration (the manifest's `oauth[]`):
    * the engine exchanges the code the dashboard collected and keeps the
    * tokens where module code cannot read them, for `ctx.oauth.request`.
-   * Answers with the scopes granted, never a token. Requires the
-   * `modules.oauth` capability.
+   * Answers with the scopes granted, never a token.
    */
   completeModuleOAuth(
     moduleId: string,
@@ -2723,8 +2710,7 @@ export interface Woofx3EngineApi {
    * Route the listed local endpoints through the companion's bridge, or stop
    * (null). Stored, so a restart keeps it. The bridge credential is not part
    * of it: the engine asks the dashboard that called this for one with the
-   * `relay.credential.requested` request. Requires the
-   * `modules.localEndpoints` capability.
+   * `relay.credential.requested` request.
    */
   setRelayConfig(config: RelayConfig | null): Promise<{ ok: true }>;
 
@@ -2737,7 +2723,6 @@ export interface Woofx3EngineApi {
    * `idempotencyKey` within the gateway's idempotency window replays a reply
    * that reached a platform (or joins a send still running); a reply where
    * nothing reached a platform is not held, so a retry sends again.
-   * Requires the `platform.gateway` capability.
    */
   sendToPlatforms(params: SendToPlatformsParams): Promise<PlatformGatewayResult>;
 

@@ -7,8 +7,6 @@ to the engine and resends until the engine confirms. Viewers never cause an
 engine call directly. Workflows act on the result through the
 `userpage.form.submitted` trigger.
 
-Engines advertise this as the `userPages.formSubmissions` capability.
-
 ## The form kind
 
 `woofx3:form` holds a form's definition in its instance settings: `title` and

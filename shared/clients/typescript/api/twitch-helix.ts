@@ -99,7 +99,7 @@ export interface TwitchUnbanUserParams {
 /** `POST /helix/chat/messages`: a message in the broadcaster's chat, sent as the broadcaster. */
 export interface TwitchSendChatMessageParams {
   message: string;
-  /** Pin the message as it is sent (Twitch beta). Requires the `twitch.pins` capability. */
+  /** Pin the message as it is sent (Twitch beta). */
   pin?: boolean;
 }
 

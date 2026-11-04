@@ -102,8 +102,8 @@ companion gateway makes every decision against the stored manifest:
   [Companion gateway → The module policy](./companion-gateway.md#the-module-policy).
 
 There is no permission for `ctx.local`: approving a module's `local[]`
-entries at install (shown as `connect to "<id>" on your network`) is the grant. On an engine with `ctx.local` (the
-`modules.localEndpointCalls` capability) the module's own code can send frames
+entries at install (shown as `connect to "<id>" on your network`) is the grant. With `ctx.local` the module's own
+code can send frames
 to those endpoints, as well as a host adapter.
 
 The only other way module code reaches the streamer's network is `ctx.http`,

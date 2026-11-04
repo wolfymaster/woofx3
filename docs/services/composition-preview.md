@@ -7,8 +7,6 @@ a scene's alert area, see [Scenes and alerts](./scene-documents.md#scenes-and-al
 so sceneManager serves a page for exactly this: `/preview/composition`. It
 plays whatever composition the page framing it posts, and saves nothing.
 
-Capability: `compositions.preview`.
-
 ## Opening the page
 
 | Step | What happens |

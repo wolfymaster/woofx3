@@ -555,7 +555,7 @@ it renders as empty.
 cannot be read under `${viewer.*}`, and is logged once. A step whose id is
 `viewer` shadows the source.
 
-`listViewerFacts()` on the engine API (capability `workflow.viewerFacts`)
+`listViewerFacts()` on the engine API
 lists every path `${viewer.*}` can resolve now, for a condition editor's field
 picker: `id`, `platform` and `name` first, then each `active` fact by path,
 with its name, description, value kind and window. It applies the same rules

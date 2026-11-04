@@ -221,7 +221,7 @@ the published scene, always copied into the draft.
 
 The dashboard's scene editor talks to sceneManager directly, over a websocket
 at `/scene/{id}/edit?token=…&protocol=2`, protocol 2 of
-`@woofx3/api/scene-editor/protocol` (capability `scenes.editorSync`). It gets
+`@woofx3/api/scene-editor/protocol`. It gets
 a token for one scene from the api (`getSceneEditorSession`), which asks
 sceneManager for it over NATS (`engine.scene.editor-token`). The token carries
 an edit scope and lives five minutes: it is presented once, when the socket
@@ -320,7 +320,7 @@ memory only when nothing is open on it and nothing is waiting to be written.
 
 Behaviors are stored as a JSON object keyed by behavior id, in their own
 columns, so they survive restarts and a save made elsewhere carries them like
-any other part of the document (capability `scenes.behaviors`). A draft's
+any other part of the document. A draft's
 behaviors are stored with its widgets and layout and cleared with them; a
 draft written without behaviors has none. `inputs_json` is never written by
 sceneManager: the api writes it, and sceneManager takes it in from the save
@@ -347,7 +347,7 @@ read (`StoredUnread` in `scene-host.ts`):
 
 Data a newer engine wrote can look unreadable to an older one, after a
 downgrade, so nothing is dropped for being unreadable without a copy.
-`repairScene` (capability `scenes.repair`) asks sceneManager, over
+`repairScene` asks sceneManager, over
 `engine.scene.repair`, to make such a scene editable again. In the scene's
 serial queue it:
 
@@ -422,7 +422,7 @@ Everything that serves or lists scenes reads only `scene` rows:
 | --- | --- |
 | `ListScenes` (db) | Lists `scene` rows unless asked for `kind: "alert"`, so every caller that predates alerts sees scenes only. It answers with every row of the kind in one response: its page and sort fields are not applied. |
 | `getScenes`, `getScene`, `updateScene`, `deleteScene` (api) | Scenes only: `getScene` is null for an alert, `updateScene` and `deleteScene` refuse one. |
-| `listSceneSnapshots`, `getSceneSnapshot` (api) | Scenes only, each as the whole stored record the `scene.*` webhooks carry: the list is every scene ordered by name, and `getSceneSnapshot` is null for an alert (capability `scenes.snapshots`). |
+| `listSceneSnapshots`, `getSceneSnapshot` (api) | Scenes only, each as the whole stored record the `scene.*` webhooks carry: the list is every scene ordered by name, and `getSceneSnapshot` is null for an alert. |
 | Overlay tokens | `MintOverlayToken` refuses an alert, so no browser-source URL addresses one. |
 | `/scene/{id}?token=…` (sceneManager) | `loadScene` serves no page for a token that resolves to an alert; every other overlay route needs the session that page mints. |
 | `/preview/composition?token=…` (sceneManager) | Not an overlay: opens only with a token the api mints for a dashboard (`getCompositionPreviewUrl`), and plays what the dashboard posts to it, never a stored scene or alert. See [Composition preview](./composition-preview.md). |
@@ -438,7 +438,7 @@ the current shape by the registry's migrations when they are loaded (a
 placement's legacy `transitionIn` / `transitionOut` become transition
 behaviors); the row changes only when the document is next written.
 
-The api serves alerts apart from scenes (capability `compositions.alerts`):
+The api serves alerts apart from scenes:
 `listAlertCompositions`, `getAlertComposition`, `createAlertComposition`,
 `updateAlertComposition` (name, description and inputs; the document is
 edited through the socket) and `deleteAlertComposition`. Deleting an alert

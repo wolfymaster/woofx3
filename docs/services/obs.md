@@ -14,9 +14,7 @@ workflow step ─▶ woofx3_obs function ─▶ ctx.obs ──request──▶ e
                                                ◀──{ ok, error? }──────────────────────┘
 ```
 
-An engine with no OBS module installed has no OBS actions, and an engine
-without `ctx.obs` does not advertise the `obs.control`
-[capability](./engine-capabilities.md).
+An engine with no OBS module installed has no OBS actions.
 
 The connection is only kept while something needs it: while a module whose
 manifest lists the `obs.control` permission is installed and active, or while
@@ -216,7 +214,7 @@ flagged rather than refused.
 
 ## Connection status (`engine.obs.status`)
 
-The api's `getObsStatus()` (capability `obs.status`) asks the adapter how
+The api's `getObsStatus()` asks the adapter how
 its connection is doing, for the OBS module's page. The adapter answers
 `engine.obs.status` from its own state, without touching OBS, so the reply is
 immediate whether OBS is up or not:
