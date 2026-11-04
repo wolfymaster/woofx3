@@ -55,14 +55,12 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     const [
       { createMessageBus },
       { initAlertLogHandlers },
-      { AlertEmitter },
       { Api },
       { ClientAuth },
       { ClientRevoker, ClientSessions },
       { PairingRegistry, pairedClientCreator },
       { DEFAULT_PAIRING_CONFIG },
       { RequestGuard },
-      { ConvexWebhookClient },
       { EngineEventStream },
       { EventCatalog },
       { EventLogSelectionSource },
@@ -97,14 +95,12 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     ] = await Promise.all([
       import("@woofx3/nats"),
       import("./alert-log-handlers"),
-      import("./alert-emitter"),
       import("./api"),
       import("./auth"),
       import("./client-sessions"),
       import("./pairing"),
       import("./pairing-config"),
       import("@woofx3/common/http/request-guard"),
-      import("./convex-webhook-client"),
       import("./engine-event-stream"),
       import("./event-catalog"),
       import("./event-log-selection"),
@@ -228,9 +224,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       });
     }
 
-    const convexWebhookClient = new ConvexWebhookClient({ db, logger });
-    await convexWebhookClient.loadConfig();
-
     // api.initSubscriptions() covers only the module.trigger.* and
     // twitch stream lifecycle subscriptions — the ones that need more
     // than (nats, webhookClient, logger) (see routes/subscriptions.ts's
@@ -240,9 +233,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     await api.initSubscriptions();
 
     if (natsClient) {
-      const alertEmitter = new AlertEmitter(natsClient, convexWebhookClient, logger);
-      await alertEmitter.start();
-
       const storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
       await storageChangeEmitter.start();
 

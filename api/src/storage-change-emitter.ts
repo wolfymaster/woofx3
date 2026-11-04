@@ -31,10 +31,8 @@ interface StorageChangedData {
 /**
  * Bridges the engine's NATS-side `module.storage.<moduleId>.changed`
  * events out to the registered Convex callback channel as
- * `EngineEventType.MODULE_STORAGE_CHANGED` envelopes. Symmetric with
- * `AlertEmitter` but routes through the Bearer-auth `WebhookClient`
- * (rather than the HMAC-signed alert/OBS channel) since storage events
- * belong to the module-extension webhook contract.
+ * `EngineEventType.MODULE_STORAGE_CHANGED` envelopes through the
+ * Bearer-auth `WebhookClient`.
  */
 export class StorageChangeEmitter {
   constructor(
