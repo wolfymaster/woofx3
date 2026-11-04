@@ -1,0 +1,80 @@
+# Static half of WFX-ERR-001: a NATS request failure told apart by its
+# error's name, message or code text instead of requestFailureKind from
+# @woofx3/nats, which reads the client's typed error classes.
+id: WFX-ERR-001
+language: typescript
+severity: warning
+message: NATS request failure classified by error text. Use requestFailureKind(err) from @woofx3/nats.
+utils:
+  failure-text:
+    kind: string
+    regex: '^["''`](?i:no responders|noresponders|noresponderserror|503|timeout|timeouterror|requesterror|natserror)["''`]$'
+  error-text:
+    regex: '(?i)(^|\.)(message|name)$|^(err|error|e|cause)$|\.cause$'
+rule:
+  any:
+    - kind: call_expression
+      all:
+        - has:
+            field: function
+            kind: member_expression
+            all:
+              - has:
+                  field: property
+                  regex: '^(includes|startsWith|endsWith|match|indexOf|test)$'
+              - has:
+                  field: object
+                  matches: error-text
+        - has:
+            field: arguments
+            has:
+              matches: failure-text
+    - kind: binary_expression
+      regex: '(===|!==|==|!=)'
+      all:
+        - has:
+            kind: member_expression
+            has:
+              field: property
+              regex: '^(name|message)$'
+        - has:
+            matches: failure-text
+---
+id: WFX-ERR-001
+language: tsx
+severity: warning
+message: NATS request failure classified by error text. Use requestFailureKind(err) from @woofx3/nats.
+utils:
+  failure-text:
+    kind: string
+    regex: '^["''`](?i:no responders|noresponders|noresponderserror|503|timeout|timeouterror|requesterror|natserror)["''`]$'
+  error-text:
+    regex: '(?i)(^|\.)(message|name)$|^(err|error|e|cause)$|\.cause$'
+rule:
+  any:
+    - kind: call_expression
+      all:
+        - has:
+            field: function
+            kind: member_expression
+            all:
+              - has:
+                  field: property
+                  regex: '^(includes|startsWith|endsWith|match|indexOf|test)$'
+              - has:
+                  field: object
+                  matches: error-text
+        - has:
+            field: arguments
+            has:
+              matches: failure-text
+    - kind: binary_expression
+      regex: '(===|!==|==|!=)'
+      all:
+        - has:
+            kind: member_expression
+            has:
+              field: property
+              regex: '^(name|message)$'
+        - has:
+            matches: failure-text

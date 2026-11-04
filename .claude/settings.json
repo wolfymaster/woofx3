@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/scripts/stylegate.sh hook",
+            "timeout": 300
+          }
+        ]
+      }
+    ]
+  },
+  "includeCoAuthoredBy": false
+}

@@ -54,6 +54,21 @@ scripts/check.sh --all      # everything CI checks
 
 This project makes heavy use of Typescript (Bun), Rust, and Golang. Core services are written in Rust or Golang for performance. Some services may be called hundreds of times per second. Typescript is used on 'edge' services and at integration points.
 
+### stylegate: style and quality gate
+
+[stylegate](https://github.com/wolfymaster/stylegate) reviews changes against versioned rules: its general rules, layered with this repository's own in `.stylegate/rules/` (`WFX-*`). It runs locally only, never in CI. Its LLM rules run on the logged-in `claude` CLI's subscription (`provider: claude_code`), never with an API key. Always run it through `scripts/stylegate.sh`, which finds the stylegate checkout next to this repository's main clone (`~/code/stylegate`) and its rules. Drafts are enforced and warnings fail.
+
+- **Every turn:** the Stop hook in `.claude/settings.json` runs the deterministic rules on uncommitted changes and blocks on findings. `scripts/stylegate.sh quick` runs the same check by hand.
+- **Before opening a feature PR:** run `scripts/stylegate.sh review` (the whole branch against `origin/master`, LLM rules included) and resolve every finding.
+- **Resolving a finding:** fix a real violation. Mark a justified exception with `// stylegate:ignore <RULE-ID> reason="..."` on the line above it. Never silence a wrong finding to get a pass: it is a false positive, a defect in the rule.
+- **Record every decision** stylegate shaped, in the local ledger (outside the repository, shared by all worktrees):
+  ```bash
+  scripts/stylegate.sh decisions add --rule <RULE-ID> --outcome <outcome> --at <path:line> --summary "<what was decided and why>"
+  ```
+  Outcomes: `fixed` (code changed to follow a rule), `shaped` (a design chosen to follow a rule before any finding), `exception`, `false_positive`, and `missed` (a real problem stylegate stayed silent on; `--rule` optional).
+- **Report it:** when a feature is done, include the output of `scripts/stylegate.sh decisions summary` in your report to the user, with noteworthy hits and misses.
+- **Improve the rules:** fix a false positive or a miss where it belongs. A general rule is fixed in the stylegate repository. A convention specific to this repository becomes or improves a `WFX-*` draft rule in `.stylegate/rules/`, with violation and near-miss examples, validated with `scripts/stylegate.sh rules lint` and run against real history before you rely on it. `scripts/stylegate.sh rules explain <ID>` shows any rule.
+
 ### Running, building, and linting
 
 - **TypeScript/Bun projects** (e.g., `sceneManager/`): Every package belongs to one Bun workspace (the root `package.json`, one `bun.lock`), so install once from the repo root with `bun install`. Then run `bun run <script>` or `bun run typecheck` / `bun run lint` in the package

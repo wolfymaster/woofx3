@@ -1,0 +1,27 @@
+# Static half of WFX-API-003: SQL in db-proxy Go code that only one of the
+# two system-database dialects (Postgres, SQLite) accepts, or that stamps
+# times with the database's clock. Struct tags (gorm column types) are left
+# alone: SQLite accepts any declared type name. A function that checks the
+# dialect and spells each one separately is exempt.
+id: WFX-API-003
+language: go
+severity: error
+message: SQL that is not portable across Postgres and SQLite, or that reads the database clock. Name tables without a schema, bind times from the injected clock, and use syntax both dialects accept.
+rule:
+  any:
+    - kind: raw_string_literal
+    - kind: interpreted_string_literal
+  regex: '(\bpublic\.[a-z_]+|(?i:\bnow\(\))|(?i:\bcurrent_(timestamp|date|time)\b)|(?i:datetime\(\s*.now.\s*\))|(?i:strftime\()|::\s*(?i:text|uuid|int|int4|int8|integer|bigint|jsonb|json|timestamptz|timestamp|date|boolean|bool|varchar)\b|(?i:\bilike\b)|(?i:gen_random_uuid\(\))|(?i:\bjsonb_[a-z_]+\()|(?i:\bjson_extract\())'
+  not:
+    any:
+      - inside:
+          kind: field_declaration
+          stopBy: end
+      # A function that branches on the dialect spells each one on purpose.
+      - inside:
+          any:
+            - kind: function_declaration
+            - kind: method_declaration
+            - kind: func_literal
+          regex: '(isPostgres|isSQLite|isSqlite)\(\)|\bDialect(Postgres|SQLite|Sqlite)\b|Dialector\.Name\(\)'
+          stopBy: end

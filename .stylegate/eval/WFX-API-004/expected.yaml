@@ -1,0 +1,14 @@
+reviewed: false
+findings:
+  - file: bad/barkloader/app/src/services/webhook_dispatch.rs
+    line_start: 19
+    line_end: 25
+    note: Events a module's webhook handler returned are published under their own event_type with no check against the declared triggers or the reserved subjects.
+  - file: bad/workflow/publish_event_action.go
+    line_start: 21
+    line_end: 30
+    note: An expression-computed event type is published with no reserved-subject check.
+  - file: bad/api/src/routes/test-fire.ts
+    line_start: 4
+    line_end: 16
+    note: The route keeps its own copy of the reserved prefixes instead of reading the shared registry, and publishes the caller's subject past it.

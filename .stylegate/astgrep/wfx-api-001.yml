@@ -1,0 +1,47 @@
+# Static half of WFX-API-001: a tenant, application, account or workspace
+# id named in engine code. An engine is single-tenant, so any declaration,
+# parameter, field or key with one of these names scopes data by an id that
+# can only ever have one value.
+id: WFX-API-001
+language: go
+severity: error
+message: Scoping id in a single-tenant engine. Every table, key, event and RPC belongs to the one engine; drop the id.
+rule:
+  any:
+    - kind: field_identifier
+    - kind: identifier
+  regex: '(?i)^(tenant|application|app|account|organization|org|workspace)_?ids?$'
+---
+id: WFX-API-001
+language: typescript
+severity: error
+message: Scoping id in a single-tenant engine. Every table, key, event and RPC belongs to the one engine; drop the id.
+rule:
+  any:
+    - kind: property_identifier
+    - kind: shorthand_property_identifier
+    - kind: shorthand_property_identifier_pattern
+    - kind: identifier
+  regex: '(?i)^(tenant|application|app|account|organization|org|workspace)_?ids?$'
+---
+id: WFX-API-001
+language: tsx
+severity: error
+message: Scoping id in a single-tenant engine. Every table, key, event and RPC belongs to the one engine; drop the id.
+rule:
+  any:
+    - kind: property_identifier
+    - kind: shorthand_property_identifier
+    - kind: shorthand_property_identifier_pattern
+    - kind: identifier
+  regex: '(?i)^(tenant|application|app|account|organization|org|workspace)_?ids?$'
+---
+id: WFX-API-001
+language: rust
+severity: error
+message: Scoping id in a single-tenant engine. Every table, key, event and RPC belongs to the one engine; drop the id.
+rule:
+  any:
+    - kind: field_identifier
+    - kind: identifier
+  regex: '(?i)^(tenant|application|app|account|organization|org|workspace)_?ids?$'

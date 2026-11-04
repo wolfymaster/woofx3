@@ -1,0 +1,21 @@
+# Static half of WFX-API-002: a db-proxy event written with the
+# non-transactional EventPublisher.Publish. PublishIn and PublishEventIn take
+# the change's transaction; Publish writes the outbox row on its own.
+id: WFX-API-002
+language: go
+severity: warning
+message: Outbox event written outside the change's transaction. Write it with PublishIn(tx, ...) inside the transaction that makes the change, and check its error.
+rule:
+  kind: call_expression
+  has:
+    field: function
+    kind: selector_expression
+    has:
+      field: field
+      regex: '^Publish$'
+  all:
+    - has:
+        field: arguments
+        has:
+          kind: composite_literal
+          regex: '^(workers\.)?PublishOptions\s*\{'
