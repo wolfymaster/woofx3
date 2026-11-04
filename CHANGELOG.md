@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.63.2](https://github.com/wolfymaster/woofx3/compare/v0.63.1...v0.63.2) (2026-11-04)
+
+### Bug Fixes
+
+* **build:** default sceneManagerUrl in packaged releases ([d18e117](https://github.com/wolfymaster/woofx3/commit/d18e117aa59e79c064608c3075a6192785e1a997))
+
 ## [0.63.1](https://github.com/wolfymaster/woofx3/compare/v0.63.0...v0.63.1) (2026-11-04)
 
 ### Bug Fixes
