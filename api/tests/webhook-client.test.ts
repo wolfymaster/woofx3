@@ -9,6 +9,13 @@ import {
   type WebhookClientConfig,
 } from "../src/webhook-client";
 
+/** For clients without an events target, which never reach the shipper. */
+const NO_SHIPPER = {
+  ship: () => {
+    throw new Error("no client in this test has an events target");
+  },
+};
+
 function fakeLogger() {
   return {
     debug: mock(() => {}),
@@ -28,7 +35,7 @@ function webhookClient(
   stream: EngineEventStream,
   config: WebhookClientConfig = DEFAULT_WEBHOOK_CLIENT_CONFIG
 ): WebhookClient {
-  return new WebhookClient(db, logger, stream, config);
+  return new WebhookClient(db, logger, stream, config, NO_SHIPPER);
 }
 
 describe("WebhookClient", () => {
@@ -321,6 +328,68 @@ describe("WebhookClient routing", () => {
     }
   });
 
+  it("ships a client's events to its events target and never to its callback URL, while requests stay on HTTP", async () => {
+    const http = callbackServer({ via: "http" });
+    try {
+      const logger = fakeLogger();
+      const shipped: [unknown, string][] = [];
+      const wc = new WebhookClient(
+        fakeDb([
+          {
+            clientId: "queued",
+            description: "d",
+            callbackUrl: http.url,
+            callbackToken: "",
+            eventsUrl: "https://queue.example/v1/engine-events",
+            eventsToken: "events-token",
+          },
+        ]),
+        logger,
+        new EngineEventStream(logger),
+        DEFAULT_WEBHOOK_CLIENT_CONFIG,
+        { ship: (target, envelope) => shipped.push([target, envelope.type]) }
+      );
+      await wc.refreshCallbackUrls();
+
+      await wc.send({ type: EngineEventType.WORKFLOW_DELETED, workflowId: "w1" });
+      expect(await wc.request(TOKEN_REQUEST, "queued")).toEqual({ via: "http" });
+
+      expect(shipped).toEqual([
+        [{ url: "https://queue.example/v1/engine-events", token: "events-token" }, EngineEventType.WORKFLOW_DELETED],
+      ]);
+      expect(http.received.map((r) => r.type)).toEqual([EngineRequestType.TWITCH_TOKEN_REQUESTED]);
+    } finally {
+      http.stop();
+    }
+  });
+
+  it("ships to a client with an events target and no callback URL, which cannot be asked over HTTP", async () => {
+    const logger = fakeLogger();
+    const shipped: string[] = [];
+    const wc = new WebhookClient(
+      fakeDb([
+        {
+          clientId: "events-only",
+          description: "d",
+          callbackUrl: "",
+          callbackToken: "",
+          eventsUrl: "https://queue.example/v1/engine-events",
+          eventsToken: "events-token",
+        },
+      ]),
+      logger,
+      new EngineEventStream(logger),
+      DEFAULT_WEBHOOK_CLIENT_CONFIG,
+      { ship: (_target, envelope) => shipped.push(envelope.type) }
+    );
+    await wc.refreshCallbackUrls();
+
+    await wc.send({ type: EngineEventType.WORKFLOW_DELETED, workflowId: "w1" });
+
+    expect(shipped).toEqual([EngineEventType.WORKFLOW_DELETED]);
+    await expect(wc.request(TOKEN_REQUEST, "events-only")).rejects.toThrow("no registered dashboard");
+  });
+
   it("sends an event for one client to that client's stream alone", async () => {
     const logger = fakeLogger();
     const stream = new EngineEventStream(logger);
@@ -382,7 +451,13 @@ describe("WebhookClient.dropClient", () => {
     try {
       const db = fakeDb([{ clientId: "gone", description: "d", callbackUrl: http.url, callbackToken: "" }]);
       const logger = fakeLogger();
-      const wc = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
+      const wc = new WebhookClient(
+        db,
+        logger,
+        new EngineEventStream(logger),
+        DEFAULT_WEBHOOK_CLIENT_CONFIG,
+        NO_SHIPPER
+      );
       await wc.refreshCallbackUrls();
 
       wc.dropClient("gone");
@@ -402,7 +477,7 @@ describe("WebhookClient.dropClient", () => {
     });
     const db = { listClients: mock(() => listed) } as any;
     const logger = fakeLogger();
-    const wc = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
+    const wc = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG, NO_SHIPPER);
 
     const refreshing = wc.refreshCallbackUrls();
     wc.forgetDeletedClient("gone");
@@ -422,7 +497,7 @@ describe("WebhookClient after a revoke whose delete failed", () => {
   it("lists the client again on the next refresh", async () => {
     const db = fakeDb([{ clientId: "kept", description: "d", callbackUrl: "https://kept.example", callbackToken: "" }]);
     const logger = fakeLogger();
-    const wc = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
+    const wc = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG, NO_SHIPPER);
     await wc.refreshCallbackUrls();
 
     wc.dropClient("kept");
