@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/hex"
 	"io"
 	"os"
@@ -14,7 +15,7 @@ import (
 	woofx3config "github.com/wolfymaster/woofx3/common/config"
 )
 
-var barkloaderKeySpec = SecretSpec{Name: "barkloader-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey"}
+var barkloaderKeySpec = SecretSpec{Name: "barkloader-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey", Kind: SecretToken}
 
 // fixedRandom yields the same byte forever, so a generated secret is known
 // in advance: 32 of b, hex-encoded.
@@ -128,11 +129,91 @@ func TestResolveSecrets(t *testing.T) {
 	}
 }
 
+var secretsKeySpec = SecretSpec{Name: "secrets-key", EnvKey: "WOOFX3_SECRETS_KEY", ConfigKey: "secretsKey", Kind: SecretAESKey}
+
+func TestResolveSecretsAESKey(t *testing.T) {
+	valid := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x11}, aesKeyBytes))
+	generated := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xab}, aesKeyBytes))
+
+	cases := []struct {
+		name    string
+		sources woofx3config.Sources
+		// stored is the key file's content before the call; "" means no file.
+		stored string
+		want   string
+	}{
+		{
+			name:    "a valid environment key wins",
+			sources: woofx3config.Sources{Process: map[string]string{"WOOFX3_SECRETS_KEY": valid}},
+			want:    valid,
+		},
+		{
+			name:    "a valid config file key is used when the environment has none",
+			sources: woofx3config.Sources{File: map[string]string{"WOOFX3_SECRETS_KEY": valid}},
+			want:    valid,
+		},
+		{
+			name:    "a hex token is not a key",
+			sources: woofx3config.Sources{Process: map[string]string{"WOOFX3_SECRETS_KEY": hexOf(0x11, 32)}},
+			want:    generated,
+		},
+		{
+			name:    "a key of the wrong length is not a key",
+			sources: woofx3config.Sources{Process: map[string]string{"WOOFX3_SECRETS_KEY": base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x11}, 16))}},
+			want:    generated,
+		},
+		{
+			name:    "URL-safe base64 is not a key",
+			sources: woofx3config.Sources{Process: map[string]string{"WOOFX3_SECRETS_KEY": base64.URLEncoding.EncodeToString(bytes.Repeat([]byte{0xfb}, aesKeyBytes))}},
+			want:    generated,
+		},
+		{
+			name:   "a stored key from an earlier run is kept",
+			stored: valid + "\n",
+			want:   valid,
+		},
+		{
+			name:   "an unusable stored key is replaced",
+			stored: "changeme",
+			want:   generated,
+		},
+		{
+			name: "nothing set generates a key",
+			want: generated,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dataDir := t.TempDir()
+			if tc.stored != "" {
+				path := filepath.Join(dataDir, "data", "secrets", secretsKeySpec.Name)
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatalf("mkdir: %v", err)
+				}
+				if err := os.WriteFile(path, []byte(tc.stored), 0o600); err != nil {
+					t.Fatalf("write stored key: %v", err)
+				}
+			}
+			got, err := ResolveSecrets([]SecretSpec{secretsKeySpec}, tc.sources, dataDir, fixedRandom(0xab), discardLogger())
+			if err != nil {
+				t.Fatalf("ResolveSecrets: %v", err)
+			}
+			if got["WOOFX3_SECRETS_KEY"] != tc.want {
+				t.Errorf("WOOFX3_SECRETS_KEY = %q, want %q", got["WOOFX3_SECRETS_KEY"], tc.want)
+			}
+			key, err := base64.StdEncoding.DecodeString(got["WOOFX3_SECRETS_KEY"])
+			if err != nil || len(key) != aesKeyBytes {
+				t.Errorf("resolved key decodes to %d bytes (%v), want %d", len(key), err, aesKeyBytes)
+			}
+		})
+	}
+}
+
 func TestResolveSecretsGeneratesOncePrivately(t *testing.T) {
 	dataDir := t.TempDir()
 	specs := []SecretSpec{
 		barkloaderKeySpec,
-		{Name: "scene-manager-token-secret", EnvKey: "WOOFX3_SCENE_MANAGER_TOKEN_SECRET", ConfigKey: "sceneManagerTokenSecret"},
+		{Name: "scene-manager-token-secret", EnvKey: "WOOFX3_SCENE_MANAGER_TOKEN_SECRET", ConfigKey: "sceneManagerTokenSecret", Kind: SecretToken},
 	}
 
 	first, err := ResolveSecrets(specs, woofx3config.Sources{}, dataDir, fixedRandom(0x11), discardLogger())
@@ -186,12 +267,13 @@ func TestResolveSecretsRefusesABadRegistry(t *testing.T) {
 		name  string
 		specs []SecretSpec
 	}{
-		{"name with a path separator", []SecretSpec{{Name: "../key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey"}}},
-		{"empty name", []SecretSpec{{Name: "", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey"}}},
-		{"variable that does not match the config key", []SecretSpec{{Name: "barkloader-key", EnvKey: "BARKLOADER_KEY", ConfigKey: "barkloaderKey"}}},
-		{"no config key", []SecretSpec{{Name: "barkloader-key", EnvKey: "WOOFX3_", ConfigKey: ""}}},
-		{"duplicate name", []SecretSpec{barkloaderKeySpec, {Name: "barkloader-key", EnvKey: "WOOFX3_OTHER_KEY", ConfigKey: "otherKey"}}},
-		{"duplicate variable", []SecretSpec{barkloaderKeySpec, {Name: "other-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey"}}},
+		{"name with a path separator", []SecretSpec{{Name: "../key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey", Kind: SecretToken}}},
+		{"empty name", []SecretSpec{{Name: "", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey", Kind: SecretToken}}},
+		{"variable that does not match the config key", []SecretSpec{{Name: "barkloader-key", EnvKey: "BARKLOADER_KEY", ConfigKey: "barkloaderKey", Kind: SecretToken}}},
+		{"no config key", []SecretSpec{{Name: "barkloader-key", EnvKey: "WOOFX3_", ConfigKey: "", Kind: SecretToken}}},
+		{"no kind", []SecretSpec{{Name: "barkloader-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey"}}},
+		{"duplicate name", []SecretSpec{barkloaderKeySpec, {Name: "barkloader-key", EnvKey: "WOOFX3_OTHER_KEY", ConfigKey: "otherKey", Kind: SecretToken}}},
+		{"duplicate variable", []SecretSpec{barkloaderKeySpec, {Name: "other-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey", Kind: SecretToken}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
