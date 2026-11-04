@@ -14,6 +14,7 @@
   "messagebusJwt": "",
   "messagebusNKey": "",
   "sceneManagerHost": "127.0.0.1",
+  "sceneManagerUrl": "http://127.0.0.1:9101",
   "twitchChannelName": "",
   "twitchClientId": "",
   "twitchClientSecret": ""
