@@ -32,6 +32,15 @@ export const ENGINE_CAPABILITIES = {
    * HOSTING_ENGINE_CAPABILITIES.
    */
   clientsPairing: "clients.pairing",
+  /**
+   * Databases (./databases.ts): the `database` resource kind, the
+   * `listDatabaseRecords`, `getDatabaseRecord`, `createDatabaseRecord`,
+   * `updateDatabaseRecord`, `deleteDatabaseRecord` and
+   * `listPublicDatabaseRecords` methods, the `database.record.changed`
+   * event, and the `database.insert`, `database.update` and `database.get`
+   * workflow actions.
+   */
+  databases: "databases.records",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];

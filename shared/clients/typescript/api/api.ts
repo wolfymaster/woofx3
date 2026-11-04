@@ -9,6 +9,16 @@ import type {
   ConfigImportPlan,
   ConfigImportResult,
 } from "./config-bundle";
+import type {
+  DatabaseRecord,
+  DatabaseRecordCreate,
+  DatabaseRecordCreateResult,
+  DatabaseRecordDeleteResult,
+  DatabaseRecordPage,
+  DatabaseRecordsQuery,
+  DatabaseRecordUpdate,
+  DatabaseRecordUpdateResult,
+} from "./databases";
 import type { EngineEventSubscribeOptions, EngineEventSubscriber, EngineRequestAnswer } from "./engine-events";
 import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "./marketplace-catalog";
 import type {
@@ -2206,6 +2216,23 @@ export interface Woofx3EngineApi {
    * `id`, `platform` and `name` first, then the active facts by path.
    */
   listViewerFacts(): Promise<ViewerFact[]>;
+
+  // Databases (capability `databases.records`). The engine checks every
+  // value against the database's columns and rejects one that does not fit,
+  // naming the column. Each change emits `database.record.changed`.
+
+  /** One page of a database's rows, in the order asked for, and how many it holds. */
+  listDatabaseRecords(query: DatabaseRecordsQuery): Promise<DatabaseRecordPage>;
+  /** One row, or null when the database holds no row with that id. */
+  getDatabaseRecord(databaseId: string, recordId: string): Promise<DatabaseRecord | null>;
+  createDatabaseRecord(create: DatabaseRecordCreate): Promise<DatabaseRecordCreateResult>;
+  updateDatabaseRecord(update: DatabaseRecordUpdate): Promise<DatabaseRecordUpdateResult>;
+  deleteDatabaseRecord(databaseId: string, recordId: string): Promise<DatabaseRecordDeleteResult>;
+  /**
+   * Rows newest first with only the columns public now, for the public user
+   * page's projection. Empty for a database with no public column.
+   */
+  listPublicDatabaseRecords(databaseId: string, offset: number, limit: number): Promise<DatabaseRecordPage>;
 
   /**
    * Hands the engine one form submission from a public user page. The answer

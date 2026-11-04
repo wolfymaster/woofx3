@@ -9,6 +9,7 @@ import { configBundlesRoutes } from "./config-bundles";
 import type { ApiRouteHost } from "./context";
 import { dashboardRoutes } from "./dashboard";
 import { dashboardStatsRoutes } from "./dashboard-stats";
+import { databasesRoutes } from "./databases";
 import { engineRoutes } from "./engine";
 import { engineEventsRoutes } from "./engine-events";
 import { eventsRoutes } from "./events";
@@ -78,6 +79,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof platformRoutes &
   typeof viewerFactsRoutes &
   typeof userPagesRoutes &
+  typeof databasesRoutes &
   typeof twitchRoutes &
   typeof uiSettingsRoutes &
   typeof twitchDeviceLoginRoutes &
@@ -150,6 +152,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(platformRoutes),
     instrumentRoutes(viewerFactsRoutes),
     instrumentRoutes(userPagesRoutes),
+    instrumentRoutes(databasesRoutes),
     instrumentRoutes(twitchRoutes),
     instrumentRoutes(uiSettingsRoutes),
     instrumentRoutes(twitchDeviceLoginRoutes),
