@@ -37,6 +37,9 @@ func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middle
 	StreamGaugeRoutes(mux, app, casbinMiddleware)
 	ViewerFactRoutes(mux, app, casbinMiddleware)
 	UserPageSubmissionRoutes(mux, app, casbinMiddleware)
+	if err := DatabaseRecordRoutes(mux, app); err != nil {
+		return err
+	}
 	LocalUISettingRoutes(mux, app, casbinMiddleware)
 	return nil
 }

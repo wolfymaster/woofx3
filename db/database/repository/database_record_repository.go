@@ -104,11 +104,21 @@ func (r *DatabaseRecordRepository) Insert(ctx context.Context, databaseID uuid.U
 	if result.RowsAffected > 0 {
 		return record, true, nil
 	}
-	var existing models.DatabaseRecord
-	if err := r.db.WithContext(ctx).Where("database_instance_id = ? AND insert_key = ?", databaseID, *insertKey).Take(&existing).Error; err != nil {
+	existing, err := r.FindByInsertKey(ctx, databaseID, *insertKey)
+	if err != nil {
 		return nil, false, fmt.Errorf("read database record of a repeated insert key: %w", err)
 	}
-	return &existing, false, nil
+	return existing, false, nil
+}
+
+// FindByInsertKey reads the record a database stored under an insert key.
+// None is gorm.ErrRecordNotFound.
+func (r *DatabaseRecordRepository) FindByInsertKey(ctx context.Context, databaseID uuid.UUID, insertKey string) (*models.DatabaseRecord, error) {
+	var record models.DatabaseRecord
+	if err := r.db.WithContext(ctx).Where("database_instance_id = ? AND insert_key = ?", databaseID, insertKey).Take(&record).Error; err != nil {
+		return nil, err
+	}
+	return &record, nil
 }
 
 // Update applies patch to a record's values: a key with a nil value clears
