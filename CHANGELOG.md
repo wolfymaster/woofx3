@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.62.0](https://github.com/wolfymaster/woofx3/compare/v0.61.2...v0.62.0) (2026-11-04)
+
+### ⚠ BREAKING CHANGES
+
+* **api:** getEngineCapabilities and /health list only the hosting
+capability ids. A client that still gates on a retired id reads the
+feature as missing.
+
+### Bug Fixes
+
+* **connectors:** subscribe to no OBS events ([e4bc746](https://github.com/wolfymaster/woofx3/commit/e4bc746d0d3fe814d92ca181944f47fcf0b0a7a0))
+* **scene:** keep the session cookie frameable on loopback ([e9eeed8](https://github.com/wolfymaster/woofx3/commit/e9eeed8a71f50f777359ef96868f1d765e6fce56))
+
+### Code Refactoring
+
+* **api:** stop advertising the version-gate capability ids ([50ef151](https://github.com/wolfymaster/woofx3/commit/50ef1510122548d62238e02e4b3db560a1de53e5))
+
 ## [0.61.2](https://github.com/wolfymaster/woofx3/compare/v0.61.1...v0.61.2) (2026-11-04)
 
 ### Bug Fixes
