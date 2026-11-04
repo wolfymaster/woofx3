@@ -66,6 +66,7 @@ func NewDatabaseInsertAction() tasks.ActionFunc[AppServices] {
 }
 
 func databaseInsertResult(target string, resp *dbv1.CreateDatabaseRecordResponse) (map[string]any, error) {
+	// stylegate:ignore GO-ABS-002 reason="an action returns its outputs as map[string]any (tasks.ActionFunc); the keys are the manifest returns paths"
 	result := map[string]any{"target": target, "recordId": resp.GetRecord().GetId(), "inserted": false, "reason": ""}
 	switch resp.Outcome {
 	case dbv1.CreateDatabaseRecordOutcome_CREATE_DATABASE_RECORD_OUTCOME_CREATED:
@@ -104,6 +105,7 @@ func NewDatabaseUpdateAction() tasks.ActionFunc[AppServices] {
 		if err != nil {
 			return nil, fmt.Errorf("change row %s in %s: %w", write.recordID, write.target, err)
 		}
+		// stylegate:ignore GO-ABS-002 reason="an action returns its outputs as map[string]any (tasks.ActionFunc); the keys are the manifest returns paths"
 		result := map[string]any{"target": write.target, "recordId": write.recordID, "updated": resp.Updated, "reason": ""}
 		if !resp.Updated {
 			result["reason"] = databaseReasonMissing
@@ -141,6 +143,7 @@ func NewDatabaseGetAction() tasks.ActionFunc[AppServices] {
 }
 
 func databaseGetResult(target string, resp *dbv1.FindDatabaseRecordResponse) (map[string]any, error) {
+	// stylegate:ignore GO-ABS-002 reason="an action returns its outputs as map[string]any (tasks.ActionFunc); the keys are the manifest returns paths"
 	result := map[string]any{"target": target, "found": false, "recordId": "", "createdAt": "", "values": map[string]any{}}
 	if !resp.Found {
 		return result, nil

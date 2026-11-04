@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -12,9 +13,8 @@ import (
 )
 
 // fakeDatabaseRecords answers like the db service would and records what it
-// was asked. Only the methods the actions call are implemented.
+// was asked. The methods no action calls fail the test's step loudly.
 type fakeDatabaseRecords struct {
-	dbv1.DatabaseRecordService
 	creates  []*dbv1.CreateDatabaseRecordRequest
 	updates  []*dbv1.UpdateDatabaseRecordRequest
 	finds    []*dbv1.FindDatabaseRecordRequest
@@ -42,6 +42,26 @@ func (f *fakeDatabaseRecords) FindDatabaseRecord(_ context.Context, req *dbv1.Fi
 	f.finds = append(f.finds, req)
 	return &dbv1.FindDatabaseRecordResponse{Found: f.found != nil, Record: f.found}, nil
 }
+
+var errNotCalledByActions = errors.New("not called by the database actions")
+
+func (f *fakeDatabaseRecords) DeleteDatabaseRecord(context.Context, *dbv1.DeleteDatabaseRecordRequest) (*dbv1.DeleteDatabaseRecordResponse, error) {
+	return nil, errNotCalledByActions
+}
+
+func (f *fakeDatabaseRecords) GetDatabaseRecord(context.Context, *dbv1.GetDatabaseRecordRequest) (*dbv1.GetDatabaseRecordResponse, error) {
+	return nil, errNotCalledByActions
+}
+
+func (f *fakeDatabaseRecords) ListDatabaseRecords(context.Context, *dbv1.ListDatabaseRecordsRequest) (*dbv1.ListDatabaseRecordsResponse, error) {
+	return nil, errNotCalledByActions
+}
+
+func (f *fakeDatabaseRecords) ListPublicDatabaseRecords(context.Context, *dbv1.ListPublicDatabaseRecordsRequest) (*dbv1.ListPublicDatabaseRecordsResponse, error) {
+	return nil, errNotCalledByActions
+}
+
+var _ dbv1.DatabaseRecordService = (*fakeDatabaseRecords)(nil)
 
 func runDatabaseAction(t *testing.T, records *fakeDatabaseRecords, action tasks.ActionFunc[AppServices], params map[string]any) map[string]any {
 	t.Helper()
@@ -141,21 +161,26 @@ func TestDatabaseGetReturnsValuesByColumn(t *testing.T) {
 }
 
 func TestDatabaseActionsRefuseAStepTheyCannotCarryOut(t *testing.T) {
+	insert := func(p map[string]any) error { _, err := parseDatabaseInsertParams(p); return err }
+	update := func(p map[string]any) error { _, err := parseDatabaseUpdateParams(p); return err }
+	get := func(p map[string]any) error { _, err := parseDatabaseGetParams(p); return err }
 	cases := []struct {
-		name   string
-		parse  func(map[string]any) error
-		params map[string]any
+		name    string
+		parse   func(map[string]any) error
+		params  map[string]any
+		problem string
 	}{
-		{"insert without a database", func(p map[string]any) error { _, err := parseDatabaseInsertParams(p); return err }, map[string]any{}},
-		{"insert with values not an object", func(p map[string]any) error { _, err := parseDatabaseInsertParams(p); return err }, map[string]any{"target": gamesDatabase, "values": "x"}},
-		{"insert with a list value", func(p map[string]any) error { _, err := parseDatabaseInsertParams(p); return err }, map[string]any{"target": gamesDatabase, "values": map[string]any{"a": []any{}}}},
-		{"update without a row", func(p map[string]any) error { _, err := parseDatabaseUpdateParams(p); return err }, map[string]any{"target": gamesDatabase}},
-		{"get without a match", func(p map[string]any) error { _, err := parseDatabaseGetParams(p); return err }, map[string]any{"target": gamesDatabase, "match": " "}},
+		{"insert without a database", insert, map[string]any{}, "target must be a database"},
+		{"insert with values not an object", insert, map[string]any{"target": gamesDatabase, "values": "x"}, "values must be an object"},
+		{"insert with a list value", insert, map[string]any{"target": gamesDatabase, "values": map[string]any{"a": []any{}}}, "values.a must be text"},
+		{"update without a row", update, map[string]any{"target": gamesDatabase}, "record must be a row id"},
+		{"get without a match", get, map[string]any{"target": gamesDatabase, "match": " "}, "match must be the text"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := tc.parse(tc.params); err == nil {
-				t.Fatal("expected an error")
+			err := tc.parse(tc.params)
+			if err == nil || !strings.Contains(err.Error(), tc.problem) {
+				t.Fatalf("error = %v, want one mentioning %q", err, tc.problem)
 			}
 		})
 	}
@@ -169,7 +194,7 @@ func TestDatabaseDryRunsWriteNothing(t *testing.T) {
 	if err != nil || !strings.Contains(summary, "would add a row") {
 		t.Fatalf("insert dry run = %q, %v", summary, err)
 	}
-	if _, err := databaseUpdateActionSpec.DryRun(map[string]any{"target": gamesDatabase}); err == nil {
-		t.Fatal("update dry run accepted a step with no row")
+	if _, err := databaseUpdateActionSpec.DryRun(map[string]any{"target": gamesDatabase}); err == nil || !strings.Contains(err.Error(), "record must be a row id") {
+		t.Fatalf("update dry run without a row = %v", err)
 	}
 }
