@@ -24,7 +24,9 @@ import (
 // holds every later step, which separate ordered workflows do not do. Paused
 // workflows and modules' workflows are never merged, because merging would change
 // what is switched on, or let a module's upgrade or uninstall touch the streamer's
-// steps.
+// steps. Workflows a group holds are never merged either, so a merge never has to
+// choose between two saved states, and only workflows in exactly the same groups
+// merge, so a duplicate put in another group to split its steps stays apart.
 
 // errNotMergeable marks a workflow whose steps can't be appended to as one list.
 var errNotMergeable = errors.New("steps do not read as one list")
@@ -301,9 +303,20 @@ type mergedAway struct {
 	absorbed []*models.WorkflowDefinition
 }
 
-// isMergeCandidate reports whether wf is a switched-on workflow of the streamer's.
+// isMergeCandidate reports whether wf is a switched-on workflow of the streamer's
+// that no group that is on holds.
 func isMergeCandidate(wf *models.WorkflowDefinition) bool {
-	return wf.Enabled && wf.CreatedByType == "USER" && wf.ManifestID == ""
+	return wf.Enabled && wf.PreGroupEnabled == nil && wf.CreatedByType == "USER" && wf.ManifestID == ""
+}
+
+// mergeKey is what two workflows must share to merge: the trigger, and the exact
+// set of groups they belong to. ok is false for a trigger that can't merge.
+func mergeKey(wf *models.WorkflowDefinition, groupIDs map[uuid.UUID][]uuid.UUID) (key string, ok bool) {
+	identity, ok := triggerIdentity(wf.Trigger)
+	if !ok {
+		return "", false
+	}
+	return identity + "\x00groups:" + strings.Join(uuidStrings(groupIDs[wf.ID]), ","), true
 }
 
 // mergeSameTrigger folds the other workflows sharing survivorID's trigger into it,
@@ -329,7 +342,11 @@ func (s *workflowService) mergeSameTrigger(survivorID uuid.UUID) (*mergedAway, e
 		if survivor == nil || !isMergeCandidate(survivor) {
 			return nil
 		}
-		identity, ok := triggerIdentity(survivor.Trigger)
+		groupIDs, err := repo.NewWorkflowGroupRepository(tx).GroupIDsByWorkflow(nil)
+		if err != nil {
+			return fmt.Errorf("read workflow groups: %w", err)
+		}
+		key, ok := mergeKey(survivor, groupIDs)
 		if !ok {
 			return nil
 		}
@@ -339,7 +356,7 @@ func (s *workflowService) mergeSameTrigger(survivorID uuid.UUID) (*mergedAway, e
 			if row.ID == survivorID || !isMergeCandidate(row) {
 				continue
 			}
-			if other, ok := triggerIdentity(row.Trigger); !ok || other != identity {
+			if other, ok := mergeKey(row, groupIDs); !ok || other != key {
 				continue
 			}
 			needed, err := neededById(tx, row, rows)
@@ -397,6 +414,11 @@ func (s *workflowService) mergeSameTrigger(survivorID uuid.UUID) (*mergedAway, e
 				Update("workflow_id", survivorID).Error; err != nil {
 				return fmt.Errorf("move alerts of workflow %s: %w", member.ID, err)
 			}
+			// Every member is in the survivor's groups, so those groups each
+			// lose this one and are announced below.
+			if _, err := leaveWorkflowGroups(tx, member.ID); err != nil {
+				return err
+			}
 			deleted := tx.Delete(member)
 			if deleted.Error != nil {
 				return fmt.Errorf("delete merged workflow %s: %w", member.ID, deleted.Error)
@@ -426,10 +448,13 @@ func (s *workflowService) mergeSameTrigger(survivorID uuid.UUID) (*mergedAway, e
 				EntityType:      "workflow",
 				EntityID:        survivorID.String(),
 				Operation:       "updated",
-				Data:            buildWorkflowChangeData(survivor),
+				Data:            buildWorkflowChangeData(survivor, groupIDs[survivorID]),
 				AutoAcknowledge: true,
 			}); err != nil {
 				return fmt.Errorf("announce merged workflow %s: %w", survivorID, err)
+			}
+			if err := announceWorkflowGroupsIn(tx, s.publisher, groupIDs[survivorID]); err != nil {
+				return fmt.Errorf("announce groups of merged workflow %s: %w", survivorID, err)
 			}
 		}
 		result = &mergedAway{survivor: survivor, absorbed: absorbed}
@@ -495,11 +520,15 @@ func (s *workflowService) placeOwnWorkflow(row *models.WorkflowDefinition, store
 		if s.publisher == nil {
 			return nil
 		}
+		groupIDs, err := repo.NewWorkflowGroupRepository(tx).GroupIDsByWorkflow([]uuid.UUID{row.ID})
+		if err != nil {
+			return fmt.Errorf("read groups: %w", err)
+		}
 		return s.publisher.PublishIn(tx, workers.PublishOptions{
 			EntityType:      "workflow",
 			EntityID:        row.ID.String(),
 			Operation:       "updated",
-			Data:            buildWorkflowChangeData(row),
+			Data:            buildWorkflowChangeData(row, groupIDs[row.ID]),
 			AutoAcknowledge: true,
 		})
 	})
@@ -530,17 +559,23 @@ func MergeOwnWorkflows(
 			log.Printf("workflow_service: leaving the order of %s as it is: %v", row.ID, err)
 		}
 	}
+	groupIDs, err := repo.NewWorkflowGroupRepository(db).GroupIDsByWorkflow(nil)
+	if err != nil {
+		// stylegate:ignore GO-LAY-002 reason="MergeOwnWorkflows has no injected logger; logs like the rest of this function"
+		log.Printf("workflow_service: read workflow groups to merge: %v", err)
+		return 0, 0
+	}
 	sort.SliceStable(rows, func(i, j int) bool { return runOrderLess(rows[i], rows[j]) })
 	seen := map[string]bool{}
 	for _, row := range rows {
 		if !isMergeCandidate(row) {
 			continue
 		}
-		identity, ok := triggerIdentity(row.Trigger)
-		if !ok || seen[identity] {
+		key, ok := mergeKey(row, groupIDs)
+		if !ok || seen[key] {
 			continue
 		}
-		seen[identity] = true
+		seen[key] = true
 		result, err := s.mergeSameTrigger(row.ID)
 		if err != nil {
 			failed++

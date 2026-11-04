@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -275,8 +276,7 @@ func (s *workflowGroupService) publishMemberChanges(tx *gorm.DB, groups *repo.Wo
 		return twirp.InternalErrorWith(fmt.Errorf("read groups of changed members: %w", err))
 	}
 	for _, row := range rows {
-		data := buildWorkflowChangeData(row)
-		data["group_ids"] = uuidStrings(groupIDs[row.ID])
+		data := buildWorkflowChangeData(row, groupIDs[row.ID])
 		if err := s.publisher.PublishIn(tx, workers.PublishOptions{
 			EntityType:      "workflow",
 			EntityID:        row.ID.String(),
@@ -291,7 +291,11 @@ func (s *workflowGroupService) publishMemberChanges(tx *gorm.DB, groups *repo.Wo
 }
 
 func (s *workflowGroupService) publishGroup(tx *gorm.DB, operation string, group *models.WorkflowGroup, memberIDs []uuid.UUID) error {
-	if err := s.publisher.PublishIn(tx, workers.PublishOptions{
+	return publishWorkflowGroupIn(tx, s.publisher, operation, group, memberIDs)
+}
+
+func publishWorkflowGroupIn(tx *gorm.DB, publisher *workers.EventPublisher, operation string, group *models.WorkflowGroup, memberIDs []uuid.UUID) error {
+	if err := publisher.PublishIn(tx, workers.PublishOptions{
 		EntityType:      "workflow_group",
 		EntityID:        group.ID.String(),
 		Operation:       operation,
@@ -590,4 +594,106 @@ func (s *workflowGroupService) RemoveWorkflowGroupMembers(ctx context.Context, r
 		return nil, err
 	}
 	return &client.RemoveWorkflowGroupMembersResponse{Status: okStatus("Workflows removed from group"), Group: out}, nil
+}
+
+// leaveWorkflowGroups removes workflowID from every group it is in, inside
+// tx, and returns those groups. Deleting a workflow takes its saved state
+// with the row, so the groups need no release; the memberships go explicitly
+// rather than by the foreign key's cascade, which SQLite applies only on a
+// connection that enabled it.
+func leaveWorkflowGroups(tx *gorm.DB, workflowID uuid.UUID) ([]uuid.UUID, error) {
+	groups := repo.NewWorkflowGroupRepository(tx)
+	byWorkflow, err := groups.GroupIDsByWorkflow([]uuid.UUID{workflowID})
+	if err != nil {
+		return nil, fmt.Errorf("read groups of workflow %s: %w", workflowID, err)
+	}
+	for _, groupID := range byWorkflow[workflowID] {
+		if err := groups.RemoveMembers(groupID, []uuid.UUID{workflowID}); err != nil {
+			return nil, fmt.Errorf("remove workflow %s from group %s: %w", workflowID, groupID, err)
+		}
+	}
+	return byWorkflow[workflowID], nil
+}
+
+// announceWorkflowGroupsIn announces db.workflow_group.updated, inside tx,
+// for each group in groupIDs as it now stands.
+func announceWorkflowGroupsIn(tx *gorm.DB, publisher *workers.EventPublisher, groupIDs []uuid.UUID) error {
+	groups := repo.NewWorkflowGroupRepository(tx)
+	for _, groupID := range groupIDs {
+		group, err := groups.GetByID(groupID)
+		if err != nil {
+			return fmt.Errorf("read group %s: %w", groupID, err)
+		}
+		members, err := groups.MemberIDs(groupID)
+		if err != nil {
+			return fmt.Errorf("list members of group %s: %w", groupID, err)
+		}
+		if err := publishWorkflowGroupIn(tx, publisher, "updated", group, members); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// RepairHeldWorkflows restores the saved-state invariant (a workflow has a
+// saved state exactly while a group that is on contains it) and returns how
+// many workflows it repaired. Group changes keep the invariant in their own
+// transactions; this catches a database edited by hand or left by a crash
+// between versions. A saved state with no group on is restored, as the last
+// group letting go would have; a held workflow with none saves its current
+// state. db-proxy runs it on every start, before merging, which skips held
+// workflows.
+func RepairHeldWorkflows(db *gorm.DB, publisher *workers.EventPublisher, logger *slog.Logger) (int, error) {
+	repaired := 0
+	err := db.Transaction(func(tx *gorm.DB) error {
+		groups := repo.NewWorkflowGroupRepository(tx)
+		held, err := groups.HeldWorkflowIDs()
+		if err != nil {
+			return fmt.Errorf("read held workflows: %w", err)
+		}
+		var saved []*models.WorkflowDefinition
+		if err := tx.Where("pre_group_enabled IS NOT NULL").Order("id ASC").Find(&saved).Error; err != nil {
+			return fmt.Errorf("read saved states: %w", err)
+		}
+		heldRows, err := groups.LockWorkflows(sortedIDs(held))
+		if err != nil {
+			return fmt.Errorf("read held workflows: %w", err)
+		}
+		moved := []uuid.UUID{}
+		for _, row := range saved {
+			if held[row.ID] {
+				continue
+			}
+			logger.Warn("Restoring a workflow no group that is on holds", "workflow_id", row.ID, "restored_enabled", *row.PreGroupEnabled)
+			if row.Enabled != *row.PreGroupEnabled {
+				moved = append(moved, row.ID)
+			}
+			row.Enabled, row.PreGroupEnabled = *row.PreGroupEnabled, nil
+			if err := groups.SaveHeldState(row); err != nil {
+				return err
+			}
+			repaired++
+		}
+		for _, row := range heldRows {
+			if row.PreGroupEnabled != nil {
+				continue
+			}
+			logger.Warn("Saving the state of a held workflow that had none", "workflow_id", row.ID, "saved_enabled", row.Enabled)
+			own := row.Enabled
+			row.PreGroupEnabled = &own
+			if err := groups.SaveHeldState(row); err != nil {
+				return err
+			}
+			repaired++
+		}
+		if publisher == nil || len(moved) == 0 {
+			return nil
+		}
+		s := &workflowGroupService{db: tx, publisher: publisher}
+		return s.publishMemberChanges(tx, groups, moved)
+	})
+	if err != nil {
+		return 0, err
+	}
+	return repaired, nil
 }
