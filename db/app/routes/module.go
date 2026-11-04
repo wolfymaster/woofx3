@@ -18,7 +18,10 @@ func ModuleRoutes(mux *http.ServeMux, app *types.App) error {
 	if err != nil {
 		return err
 	}
-	databaseColumns := svc.NewDatabaseColumnsValidator(records, svc.DefaultDatabaseLimits())
+	databaseColumns, err := svc.NewDatabaseColumnsValidator(records, svc.DefaultDatabaseLimits())
+	if err != nil {
+		return err
+	}
 	if err := kindValidators.Register(svc.DatabaseKind, databaseColumns); err != nil {
 		return err
 	}

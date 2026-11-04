@@ -27,14 +27,20 @@ type KindSettingsValidator interface {
 // reason is shown to whoever wrote the settings.
 type KindSettingsError struct {
 	Reason string
+	err    error
 }
 
 func (e *KindSettingsError) Error() string {
 	return e.Reason
 }
 
+func (e *KindSettingsError) Unwrap() error {
+	return errors.Unwrap(e.err)
+}
+
 func kindSettingsErrorf(format string, args ...any) error {
-	return &KindSettingsError{Reason: fmt.Sprintf(format, args...)}
+	err := fmt.Errorf(format, args...)
+	return &KindSettingsError{Reason: err.Error(), err: err}
 }
 
 // asKindSettingsError reports whether err refuses the settings.

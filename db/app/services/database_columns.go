@@ -14,8 +14,6 @@ import (
 // rows they describe and validates every write to them.
 const DatabaseKind = "woofx3:database"
 
-// databaseColumnsSetting is the instance setting holding the column
-// definitions.
 const databaseColumnsSetting = "columns"
 
 // DatabaseLimits are integrity bounds of every database, on every engine. Must
@@ -79,7 +77,6 @@ type DatabaseColumnOption struct {
 	Label string `json:"label"`
 }
 
-// hasOption reports whether a select column offers value.
 func (c DatabaseColumn) hasOption(value string) bool {
 	for _, option := range c.Options {
 		if option.Value == value {
@@ -106,7 +103,7 @@ func parseDatabaseColumns(settingsJSON string, limits DatabaseLimits) ([]Databas
 	decoder.DisallowUnknownFields()
 	var columns []DatabaseColumn
 	if err := decoder.Decode(&columns); err != nil {
-		return nil, kindSettingsErrorf("columns must be a list of column definitions: %v", err)
+		return nil, kindSettingsErrorf("columns must be a list of column definitions: %w", err)
 	}
 	if len(columns) > limits.MaxColumns {
 		return nil, kindSettingsErrorf("a database holds at most %d columns", limits.MaxColumns)
@@ -114,7 +111,7 @@ func parseDatabaseColumns(settingsJSON string, limits DatabaseLimits) ([]Databas
 	seen := make(map[string]bool, len(columns))
 	for i, column := range columns {
 		if err := checkDatabaseColumn(column); err != nil {
-			return nil, kindSettingsErrorf("column %d: %s", i+1, err.Error())
+			return nil, kindSettingsErrorf("column %d: %w", i+1, err)
 		}
 		if seen[column.ID] {
 			return nil, kindSettingsErrorf("column %d: id %q is used by another column", i+1, column.ID)
@@ -132,7 +129,7 @@ func checkDatabaseColumn(column DatabaseColumn) error {
 		return fmt.Errorf("id must be 1 to 64 letters, digits, \"-\" or \"_\", and not only digits")
 	}
 	if err := checkDatabaseLabel(column.Label); err != nil {
-		return fmt.Errorf("label %s", err.Error())
+		return fmt.Errorf("label %w", err)
 	}
 	if !databaseColumnTypes[column.Type] {
 		return fmt.Errorf("type must be text, number, boolean, date, url or select")
@@ -156,7 +153,7 @@ func checkDatabaseColumn(column DatabaseColumn) error {
 		}
 		values[option.Value] = true
 		if err := checkDatabaseLabel(option.Label); err != nil {
-			return fmt.Errorf("option label %s", err.Error())
+			return fmt.Errorf("option label %w", err)
 		}
 	}
 	return nil

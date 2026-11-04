@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -9,20 +10,23 @@ import (
 	"gorm.io/gorm"
 )
 
-// databaseColumnsValidator is the settings validator of DatabaseKind. It
+// DatabaseColumnsValidator is the settings validator of DatabaseKind. It
 // checks the column definitions, refuses a change that would misread values
 // records already hold, and strips the values of deleted columns, all in the
 // transaction that writes the settings.
-type databaseColumnsValidator struct {
+type DatabaseColumnsValidator struct {
 	records *repo.DatabaseRecordRepository
 	limits  DatabaseLimits
 }
 
-func NewDatabaseColumnsValidator(records *repo.DatabaseRecordRepository, limits DatabaseLimits) KindSettingsValidator {
-	return &databaseColumnsValidator{records: records, limits: limits}
+func NewDatabaseColumnsValidator(records *repo.DatabaseRecordRepository, limits DatabaseLimits) (*DatabaseColumnsValidator, error) {
+	if records == nil {
+		return nil, errors.New("database columns validator: record repository is nil")
+	}
+	return &DatabaseColumnsValidator{records: records, limits: limits}, nil
 }
 
-func (v *databaseColumnsValidator) ApplySettings(ctx context.Context, tx *gorm.DB, instanceID uuid.UUID, previous, next string) error {
+func (v *DatabaseColumnsValidator) ApplySettings(ctx context.Context, tx *gorm.DB, instanceID uuid.UUID, previous, next string) error {
 	columns, err := parseDatabaseColumns(next, v.limits)
 	if err != nil {
 		return err
@@ -59,7 +63,7 @@ func (v *databaseColumnsValidator) ApplySettings(ctx context.Context, tx *gorm.D
 // checkKeptColumn refuses a change to a column that records' values would no
 // longer fit: a new type while any record holds a value, or a removed select
 // option while any record holds it.
-func (v *databaseColumnsValidator) checkKeptColumn(ctx context.Context, records *repo.DatabaseRecordRepository, instanceID uuid.UUID, old, column DatabaseColumn) error {
+func (v *DatabaseColumnsValidator) checkKeptColumn(ctx context.Context, records *repo.DatabaseRecordRepository, instanceID uuid.UUID, old, column DatabaseColumn) error {
 	if old.Type != column.Type {
 		count, err := records.CountByColumn(ctx, instanceID, column.ID)
 		if err != nil {

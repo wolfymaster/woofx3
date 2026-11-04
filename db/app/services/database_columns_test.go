@@ -78,7 +78,14 @@ func TestParseDatabaseColumns(t *testing.T) {
 
 func TestKindSettingsValidatorsRefuseADuplicate(t *testing.T) {
 	validators := NewKindSettingsValidators()
-	validator := NewDatabaseColumnsValidator(nil, DefaultDatabaseLimits())
+	records, err := repo.NewDatabaseRecordRepository(openEmptySQLite(t), time.Now)
+	if err != nil {
+		t.Fatalf("NewDatabaseRecordRepository: %v", err)
+	}
+	validator, err := NewDatabaseColumnsValidator(records, DefaultDatabaseLimits())
+	if err != nil {
+		t.Fatalf("NewDatabaseColumnsValidator: %v", err)
+	}
 	if err := validators.Register(DatabaseKind, validator); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -109,7 +116,11 @@ func newDatabaseFixture(t *testing.T, db *gorm.DB, columns string) *databaseFixt
 		t.Fatalf("NewDatabaseRecordRepository: %v", err)
 	}
 	validators := NewKindSettingsValidators()
-	if err := validators.Register(DatabaseKind, NewDatabaseColumnsValidator(records, DefaultDatabaseLimits())); err != nil {
+	validator, err := NewDatabaseColumnsValidator(records, DefaultDatabaseLimits())
+	if err != nil {
+		t.Fatalf("NewDatabaseColumnsValidator: %v", err)
+	}
+	if err := validators.Register(DatabaseKind, validator); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 	module := &models.Module{ModuleKey: "woofx3:0.45.0:abc", ModuleID: "woofx3", Name: "woofx3", Version: "0.45.0"}
