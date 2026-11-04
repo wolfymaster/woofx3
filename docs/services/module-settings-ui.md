@@ -66,8 +66,10 @@ should never see again: a signing secret, an API key, a token.
 
 - **Stored sealed.** db-proxy encrypts the value (AES-256-GCM, bound to its module id
   and key) before writing it. The key is `WOOFX3_SECRETS_KEY` (env) or `secretsKey`
-  (`.woofx3.json`): a base64-encoded 32-byte key, required at startup and injected
-  like any other config, so every instance shares it. Changing or losing it makes the
+  (`.woofx3.json`): a base64-encoded 32-byte key, required at startup. Hosted
+  deployments inject it like any other config, so every instance shares it; an
+  engine started without one gets a key the orchestrator generates and keeps
+  under `data/secrets` (see [Engine secrets](./deployment.md#engine-secrets)). Changing or losing it makes the
   stored secrets unreadable; the streamer re-enters them.
 - **Write-only through these methods.** `getModuleSettings` returns a secret with
   `value: ""` and `isSet`. `updateModuleSetting` seals a non-empty value and clears on
