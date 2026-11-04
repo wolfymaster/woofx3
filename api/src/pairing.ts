@@ -55,6 +55,8 @@ export function pairedClientCreator(db: Pick<DbClient, "createClient">): CreateP
       callbackToken: "",
       kind: "CLIENT_KIND_PAIRED",
       origin,
+      eventsUrl: "",
+      eventsToken: "",
     });
     if (!resp.client?.clientId || !resp.client.clientSecret) {
       throw new Error(`db-proxy created no paired client: ${resp.status?.message ?? "no client in its answer"}`);

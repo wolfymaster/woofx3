@@ -56,6 +56,17 @@ func (r *ClientRepository) Update(client *models.Client) error {
 	return r.db.Save(client).Error
 }
 
+// SetEventsTarget writes only the events columns of the client with `id`,
+// and reports whether the client exists.
+func (r *ClientRepository) SetEventsTarget(id int, url, token string) (bool, error) {
+	res := r.db.Model(&models.Client{}).Where("id = ?", id).
+		Updates(map[string]any{"events_url": url, "events_token": token})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}
+
 // Delete removes the client with `id` and records it as it stood. A client
 // already gone, including one a concurrent delete removed first, is not an
 // error and records nothing: the row comes back from the DELETE itself, so

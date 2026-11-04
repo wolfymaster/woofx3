@@ -70,6 +70,9 @@ func (s *clientService) CreateClient(ctx context.Context, req *client.CreateClie
 	if err != nil {
 		return nil, err
 	}
+	if err := checkEventsTarget(req.EventsUrl, req.EventsToken); err != nil {
+		return nil, err
+	}
 	clientID := uuid.New()
 	clientSecret, err := generateSecret()
 	if err != nil {
@@ -83,6 +86,8 @@ func (s *clientService) CreateClient(ctx context.Context, req *client.CreateClie
 		Description:      req.Description,
 		CallbackUrl:      req.CallbackUrl,
 		CallbackToken:    req.CallbackToken,
+		EventsUrl:        req.EventsUrl,
+		EventsToken:      req.EventsToken,
 		Kind:             kind,
 		Origin:           origin,
 		CreatedAt:        s.now(),
@@ -223,6 +228,41 @@ func (s *clientService) UpdateClient(ctx context.Context, req *client.UpdateClie
 		return nil, err
 	}
 
+	return &client.ClientResponse{
+		Status: &client.ResponseStatus{Code: client.ResponseStatus_OK},
+		Client: clientModelToProto(model),
+	}, nil
+}
+
+// checkEventsTarget refuses a URL without a token or a token without a URL.
+func checkEventsTarget(url, token string) error {
+	if (url == "") != (token == "") {
+		return twirp.InvalidArgumentError("events_url", "events_url and events_token must be set or empty together")
+	}
+	return nil
+}
+
+func (s *clientService) SetClientEventsTarget(ctx context.Context, req *client.SetClientEventsTargetRequest) (*client.ClientResponse, error) {
+	id, err := strconv.Atoi(req.Id)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("id", "not a client id")
+	}
+	if err := checkEventsTarget(req.EventsUrl, req.EventsToken); err != nil {
+		return nil, err
+	}
+	found, err := s.repo.SetEventsTarget(id, req.EventsUrl, req.EventsToken)
+	if err != nil {
+		return nil, fmt.Errorf("setting events target of client %d: %w", id, err)
+	}
+	if !found {
+		return &client.ClientResponse{
+			Status: &client.ResponseStatus{Code: client.ResponseStatus_NOT_FOUND, Message: "Client not found"},
+		}, nil
+	}
+	model, err := s.repo.GetByID(id)
+	if err != nil {
+		return nil, fmt.Errorf("reading client %d: %w", id, err)
+	}
 	return &client.ClientResponse{
 		Status: &client.ResponseStatus{Code: client.ResponseStatus_OK},
 		Client: clientModelToProto(model),
@@ -404,6 +444,8 @@ func clientModelToProto(m *models.Client) *client.Client {
 		ClientId:            m.ClientID.String(),
 		CallbackUrl:         m.CallbackUrl,
 		CallbackToken:       m.CallbackToken,
+		EventsUrl:           m.EventsUrl,
+		EventsToken:         m.EventsToken,
 		Kind:                clientKindToProto(m.Kind),
 		Origin:              origin,
 		CreatedAt:           timestamppb.New(m.CreatedAt),
