@@ -449,7 +449,8 @@ func TestWorkflowGroupSwitchIsAtomic(t *testing.T) {
 			if tx.Statement.Table == "workflow_definitions" {
 				writes++
 				if writes == 2 {
-					tx.AddError(errors.New("forced failure"))
+					// AddError hands back the error it records; recording it is what fails the write.
+					_ = tx.AddError(errors.New("forced failure"))
 				}
 			}
 		}); err != nil {
