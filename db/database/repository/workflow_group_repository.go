@@ -13,17 +13,12 @@ import (
 // two workflow columns a group switch writes (enabled, pre_group_enabled).
 // The hold and release rules live in the service; this layer only reads and
 // writes rows, and every method is meant to run inside the caller's
-// transaction (WithDB).
+// transaction: build one per transaction with NewWorkflowGroupRepository(tx).
 type WorkflowGroupRepository struct {
 	db *gorm.DB
 }
 
 func NewWorkflowGroupRepository(db *gorm.DB) *WorkflowGroupRepository {
-	return &WorkflowGroupRepository{db: db}
-}
-
-// WithDB returns a repository that runs on `db`, typically a transaction.
-func (r *WorkflowGroupRepository) WithDB(db *gorm.DB) *WorkflowGroupRepository {
 	return &WorkflowGroupRepository{db: db}
 }
 
