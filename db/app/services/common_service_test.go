@@ -79,6 +79,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 			taxonomy TEXT NOT NULL DEFAULT '[]',
 			enabled BOOLEAN NOT NULL DEFAULT 0,
 			revision INTEGER NOT NULL DEFAULT 1,
+			pre_group_enabled BOOLEAN,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
