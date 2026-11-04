@@ -29,22 +29,42 @@ export function serializeSessionCookie(req: Request, sceneId: string, token: str
  * the page, so another site framing or calling sceneManager never sends it,
  * which is the protection `Strict` gave.
  *
- * `Secure` is refused on plain HTTP, so there it stays `SameSite=Strict`, and
- * only same-site pages can use the session.
+ * Browsers also accept `Secure` from a loopback host over plain HTTP, which is
+ * how the desktop app's bundled engine is reached, so loopback gets the same
+ * attributes. Anywhere else on plain HTTP `Secure` is refused, so there it
+ * stays `SameSite=Strict`, and only same-site pages can use the session.
  */
 export function serializeCookie(req: Request, name: string, token: string, maxAgeSeconds: number): string {
-  const crossSite = requestIsHttps(req) ? ["SameSite=None", "Secure", "Partitioned"] : ["SameSite=Strict"];
+  const crossSite = acceptsSecureCookie(req) ? ["SameSite=None", "Secure", "Partitioned"] : ["SameSite=Strict"];
   return [`${name}=${token}`, "Path=/", "HttpOnly", ...crossSite, `Max-Age=${maxAgeSeconds}`].join("; ");
 }
 
 /**
- * Whether the browser reached this request over HTTPS. An edge terminating TLS
- * says so in `X-Forwarded-Proto`, and the first entry is the client's hop. A
+ * Whether the browser will keep a `Secure` cookie from this response: it
+ * reached the request over HTTPS, or directly at a loopback host. An edge
+ * terminating TLS says so in `X-Forwarded-Proto`, and the first entry is the
+ * client's hop; behind such an edge the request URL's host is the edge's
+ * upstream, not what the browser saw, so the loopback rule does not apply. A
  * client forging the header only misconfigures its own cookie.
  */
-function requestIsHttps(req: Request): boolean {
+function acceptsSecureCookie(req: Request): boolean {
   const forwarded = req.headers.get("X-Forwarded-Proto")?.split(",")[0]?.trim().toLowerCase();
-  return forwarded ? forwarded === "https" : new URL(req.url).protocol === "https:";
+  if (forwarded) {
+    return forwarded === "https";
+  }
+  const url = new URL(req.url);
+  return url.protocol === "https:" || isLoopbackHost(url.hostname);
+}
+
+/** The hosts browsers treat as potentially trustworthy over plain HTTP. */
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "[::1]" ||
+    /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)
+  );
 }
 
 export function readSessionCookie(req: Request, sceneId: string): string | null {
