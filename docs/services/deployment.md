@@ -25,7 +25,14 @@ apps are reachable at one origin.
 
 A release archive (not the image) ships `Caddyfile.edge` but not Caddy. The
 orchestrator skips a `binary` service whose file is not installed, so an archive
-runs its services directly and is reached on their own ports.
+runs its services directly and is reached on their own ports. Its `.woofx3.json`
+points `sceneManagerUrl` at sceneManager's own port, `http://127.0.0.1:9101`,
+which is how the desktop app's bundled engine is reached; an engine served at
+another address sets `WOOFX3_SCENE_MANAGER_URL`. Before tagging, the release
+workflow starts the Linux archive with only the settings the desktop app passes
+(`.github/scripts/release-local-start-check.sh`) and requires it to report
+ready, so every other required setting has to come from the packaged file or
+the orchestrator's generated secrets.
 
 ## Everything else stays on loopback
 

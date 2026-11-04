@@ -159,6 +159,7 @@ jobs:
           test -x linux-amd64/orchestrator
           test "$(jq -r .version linux-amd64/.woofx3.json)" = "$TAG"
           test "$(jq -r .twitchPublicClientId linux-amd64/.woofx3.json)" = "$TWITCH_PUBLIC_CLIENT_ID"
+          .github/scripts/release-local-start-check.sh linux-amd64
           ARCHIVE="woofx3-${TAG}-linux-amd64.zip"
           zip -r --symlinks "$ARCHIVE" linux-amd64
           ls -lh "$ARCHIVE"
