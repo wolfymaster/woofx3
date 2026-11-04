@@ -825,7 +825,7 @@ holds only descriptive facts that are safe for anyone to read:
   "uptimeSeconds": 3725,
   "capabilities": {
     "schema": 1,
-    "enabled": ["alerts.queueControls", "analytics.aggregates", "analytics.gauges"]
+    "enabled": ["clients.pairing"]
   }
 }
 ```
@@ -843,8 +843,8 @@ holds only descriptive facts that are safe for anyone to read:
   `getEngineCapabilities` returns (see
   [engine-capabilities.md](engine-capabilities.md)), readable without a
   registered client. `schema` is `ENGINE_CAPABILITIES_SCHEMA`. The example
-  above is shortened; a real engine lists every id it supports.
-  It includes the hosting ids for `WOOFX3_HOSTING`, as below.
+  is a self-hosted engine: it includes the hosting ids for `WOOFX3_HOSTING`,
+  as below.
 
 `WOOFX3_HOSTING` declares how the engine is run: `managed`, `self` or `local`.
 Both the api and connectors read it, so set it where both read their

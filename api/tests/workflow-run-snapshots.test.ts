@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { ENGINE_CAPABILITIES, WORKFLOW_RUN_SNAPSHOT_MAX_LIMIT } from "@woofx3/api";
+import { WORKFLOW_RUN_SNAPSHOT_MAX_LIMIT } from "@woofx3/api";
 import type { WorkflowRunSnapshot } from "@woofx3/api/webhooks";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import { RPC_METHODS } from "../src/api-session";
-import { engineRoutes } from "../src/routes/engine";
 import { workflowsExecutionRoutes } from "../src/routes/workflows-execution";
 import { runSnapshotFromRow } from "../src/stored-snapshots";
 
@@ -129,13 +128,7 @@ describe("listWorkflowRunSnapshots", () => {
     await expect(result).rejects.toThrow("db-proxy unavailable");
   });
 
-  test("is advertised and reachable over RPC", async () => {
-    const getEngineCapabilities = engineRoutes.getEngineCapabilities as unknown as () => Promise<{
-      capabilities: string[];
-    }>;
-    const { capabilities } = await getEngineCapabilities.call({ hosting: null });
-
-    expect(capabilities).toContain(ENGINE_CAPABILITIES.workflowRunSnapshots);
+  test("is reachable over RPC", () => {
     expect(RPC_METHODS).toContain("listWorkflowRunSnapshots");
   });
 });

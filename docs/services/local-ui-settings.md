@@ -6,7 +6,7 @@ The engine stores the values and never interprets them. What a namespace holds, 
 
 ## The table
 
-Only the db proxy reads or writes it (`LocalUISettingService`, `db/proto/v1/local_ui_setting.proto`). The api serves it to the dashboard over the authenticated capnweb session, behind the `ui.settings` [capability](./engine-capabilities.md).
+Only the db proxy reads or writes it (`LocalUISettingService`, `db/proto/v1/local_ui_setting.proto`). The api serves it to the dashboard over the authenticated capnweb session.
 
 | Column | Type | Meaning |
 |---|---|---|

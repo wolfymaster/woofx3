@@ -15,10 +15,8 @@ endpoint through it: the **bridge**.
 OBS ◀─ws 127.0.0.1:4455─ companion ══(outbound wss)══ relay ◀══wss /bridge/…══ companion gateway ◀─ connectors (obs adapter)
 ```
 
-Everything here needs the `modules.localEndpoints` capability
-([Engine capabilities](./engine-capabilities.md)). An engine the dashboard
-never sent a relay configuration behaves exactly as without it: every endpoint
-is dialed directly.
+An engine the dashboard never sent a relay configuration dials every endpoint
+directly.
 
 ## The companion gateway
 

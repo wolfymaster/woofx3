@@ -18,45 +18,6 @@ import type { EngineHosting } from "./api";
  */
 export const ENGINE_CAPABILITIES = {
   /**
-   * An Alert step's inline `layout` may be a composition (`{ layout, widgets,
-   * behaviors }`: the canvas, placements keyed by id, and behaviors keyed by
-   * id) as well as the list shape (`{ width, height, widgets: [] }`).
-   */
-  alertsCompositionLayout: "alerts.compositionLayout",
-  /**
-   * Ending the alert playing on every open overlay and dropping every alert
-   * still waiting, each answered with a count: `skipCurrentAlert`, `clearAlertQueue`.
-   */
-  alertsQueueControls: "alerts.queueControls",
-  /** The engine's recorded alerts, newest first, by page or by workflow run: `listAlerts`. */
-  alertsHistory: "alerts.history",
-  /** What the open overlays are playing and what waits behind it: `getAlertQueue`. */
-  alertsQueueState: "alerts.queueState",
-  /** Alert totals by outcome and per-hour counts over a window of up to a week: `getAlertOverview`. */
-  alertsOverview: "alerts.overview",
-  /**
-   * Upload grants that admit exactly the declared length: `requestUploadUrl`
-   * requires `size`, `requestPosterUploadUrl` takes it, every grant's headers
-   * carry `Content-Length`, and `getResourceUsage` totals what file
-   * resources hold.
-   */
-  assetsSizedUploads: "assets.sizedUploads",
-  /** Stream session history: `listStreamSessions`, `getStreamSession`, `getStreamSessionTotals`. */
-  analyticsSessions: "analytics.sessions",
-  /** Per-minute viewer/follower/subscriber series for a session: `getStreamSessionGauges`. */
-  analyticsGauges: "analytics.gauges",
-  /** Lifetime and per-session viewer totals and leaderboards: `getViewerTotals`, `getLeaderboard`. */
-  analyticsAggregates: "analytics.aggregates",
-  /** A session's counted events in time order, for its timeline: `getStreamSessionEvents`. */
-  analyticsSessionEvents: "analytics.sessionEvents",
-  /**
-   * The engine's event log, the history behind `subscribeStreamEvents`:
-   * `listEvents`, the event-type selection that decides what it logs
-   * (`getEventLogSettings`, `setEventLogSelection`), and `subscribeStreamEvents`
-   * taking the event types to push.
-   */
-  eventsLog: "events.log",
-  /**
    * This engine runs on the streamer's own machine under the desktop app
    * (`getEngineInfo().hosting` is `local`). Advertised only by such an engine;
    * see HOSTING_ENGINE_CAPABILITIES.
@@ -71,229 +32,6 @@ export const ENGINE_CAPABILITIES = {
    * HOSTING_ENGINE_CAPABILITIES.
    */
   clientsPairing: "clients.pairing",
-  /**
-   * The engine event stream over the capnweb session: `subscribeEngineEvents`
-   * pushes the webhook envelopes and engine requests, and `answerEngineRequest`
-   * answers a request. A client with no callback URL is asked over it.
-   */
-  engineEventStream: "engine.eventStream",
-  /** Configuration bundle export, dry-run preview and import: `exportConfig`, `previewImport`, `importConfig`. */
-  configBundles: "config.bundles",
-  /**
-   * The `ctx.obs` host extension and the `obs.control` manifest permission, which
-   * a module that changes OBS or lists its names needs to install and run.
-   */
-  obsControl: "obs.control",
-  /** The OBS connection's state and last failure: `getObsStatus`. */
-  obsStatus: "obs.status",
-  /**
-   * A manifest's `local[]` endpoints, `setRelayConfig`, the
-   * `relay.credential.requested` callback, and the connectors host's endpoint dialer
-   * reaching OBS through the companion's bridge.
-   */
-  modulesLocalEndpoints: "modules.localEndpoints",
-  /**
-   * The `ctx.local` host extension: module code sends to, and requests from,
-   * its own declared websocket `local[]` endpoints through the connectors
-   * host's companion gateway.
-   */
-  modulesLocalEndpointCalls: "modules.localEndpointCalls",
-  /**
-   * A manifest's `oauth[]` integrations, `ctx.oauth.request`, and finishing a
-   * connect with `completeModuleOAuth`.
-   */
-  modulesOAuth: "modules.oauth",
-  /** Reading an installed module's files for a read-only viewer: `listModuleFiles`, `getModuleFile`. */
-  modulesFiles: "modules.files",
-  /** Every resource kind the installed modules' manifests declare: `listResourceKinds`. */
-  modulesResourceKinds: "modules.resourceKinds",
-  /** What module storage holds across every module, in bytes: `getModuleStorageUsage`. */
-  modulesStorageUsage: "modules.storageUsage",
-  /**
-   * Installing from the marketplace by listing id, with the engine fetching
-   * and verifying the archive itself: `installMarketplaceListing`,
-   * `inspectMarketplaceListing`, `installMarketplaceBundle`.
-   */
-  modulesMarketplaceInstall: "modules.marketplaceInstall",
-  /**
-   * Installing a module from a custom module archive stored as a resource
-   * (`requestUploadUrl` with kind `custom_module`), with the same approval
-   * checks as a marketplace install: `installModuleFromResource`.
-   */
-  modulesResourceInstall: "modules.resourceInstall",
-  /**
-   * Marketplace catalog reads through the engine, answered with the
-   * marketplace's JSON unchanged: `marketplaceSearch`, `marketplaceCounts`,
-   * `marketplaceGetListing`, `marketplaceGetAuthor`, `marketplaceQuote`.
-   */
-  marketplaceCatalog: "marketplace.catalog",
-  /**
-   * A Twitch token that carries the app's `clientId` is renewed by asking the
-   * dashboard that sent it (`twitch.token.requested`), not with a refresh
-   * token, so the dashboard need not send one.
-   */
-  twitchDashboardTokens: "twitch.dashboardTokens",
-  /**
-   * Linking Twitch from the engine with Twitch's Device Code Grant and the
-   * engine's public Twitch app: `startTwitchDeviceLogin`,
-   * `getTwitchDeviceLogin`, `cancelTwitchDeviceLogin`.
-   */
-  twitchDeviceLogin: "twitch.deviceLogin",
-  /**
-   * Reading the linked Twitch account without its tokens, `getTwitchLink`,
-   * and the `twitch.link.changed` webhook sent whenever the link changes.
-   */
-  twitchLinkRead: "twitch.linkRead",
-  /**
-   * The Stream info widget's Helix calls, made by the engine as the linked
-   * broadcaster and answered with Twitch's own result:
-   * `twitchGetChannelInformation`, `twitchGetGames`, `twitchSearchCategories`,
-   * `twitchModifyChannelInformation`, `twitchCreateStreamMarker`.
-   */
-  twitchStreamInfo: "twitch.streamInfo",
-  /**
-   * The Ad breaks widget's Helix calls, made and answered like
-   * `twitch.streamInfo`'s: `twitchGetAdSchedule`, `twitchSnoozeNextAd`.
-   */
-  twitchAds: "twitch.ads",
-  /**
-   * The Moderation widget's Helix calls, made and answered like
-   * `twitch.streamInfo`'s: `twitchGetUsers`, `twitchGetBlockedTerms`,
-   * `twitchAddBlockedTerm`, `twitchRemoveBlockedTerm`, `twitchBanUser`,
-   * `twitchUnbanUser`, `twitchGetChatSettings`, `twitchUpdateChatSettings`.
-   */
-  twitchModeration: "twitch.moderation",
-  /**
-   * The Broadcast controls' and Shoutouts widget's Helix calls, made and
-   * answered like `twitch.streamInfo`'s: `twitchSendChatMessage`,
-   * `twitchSendChatAnnouncement`, `twitchSendShoutout`, `twitchGetChatters`.
-   * Their user lookups are `twitchGetUsers`, which every engine with this id
-   * also serves (`twitch.moderation`).
-   */
-  twitchChat: "twitch.chat",
-  /**
-   * The Pins widget's Helix calls (Twitch beta), made and answered like
-   * `twitch.streamInfo`'s: `twitchGetChatPins`, `twitchPinChatMessage`,
-   * `twitchUnpinChatMessage`, and `pin` on `twitchSendChatMessage`.
-   */
-  twitchPins: "twitch.pins",
-  /**
-   * One platform-neutral send through the platform gateway in connectors,
-   * answered with each platform's own outcome: `sendToPlatforms`. Coexists
-   * with the Twitch-only `twitch*` methods.
-   */
-  platformGateway: "platform.gateway",
-  /** The Clip button's Helix call, made and answered like `twitch.streamInfo`'s: `twitchCreateClip`. */
-  twitchClips: "twitch.clips",
-  /**
-   * Editing a scene live with sceneManager over editor socket protocol 1:
-   * `getSceneEditorSession`, sequenced json0 ops per version, and autosave in
-   * place of `updateScene`. No longer served; declared so a client can
-   * recognise an engine that only speaks it.
-   */
-  scenesEditorSessions: "scenes.editorSessions",
-  /**
-   * Editing a scene live with sceneManager over editor socket protocol 2
-   * (`@woofx3/api/scene-editor`): one ordered queue of items per editor across
-   * the draft and the published scene, publish and discard as items, every
-   * item answered exactly once, and reconnects that catch up from the
-   * server's log or rebase onto a snapshot. The socket is opened with the
-   * token `getSceneEditorSession` gives, and `protocol=2`.
-   */
-  scenesEditorSync: "scenes.editorSync",
-  /**
-   * A composition's behaviors (transitions, effects, activity windows) are
-   * stored with it, published and draft, so they survive sceneManager
-   * restarts and saves made elsewhere. Without it an engine keeps behaviors
-   * only while sceneManager holds the scene, and a client should not offer
-   * them.
-   */
-  scenesBehaviors: "scenes.behaviors",
-  /**
-   * Stored scene data sceneManager cannot read is reported and can be
-   * repaired: the editor socket's `not_found` refusal and its welcome carry
-   * `unread` (`@woofx3/api/scene-editor`), and `repairScene` sets what cannot
-   * be read aside in the db's `scene_backups` before writing back the rest.
-   */
-  scenesRepair: "scenes.repair",
-  /**
-   * Reading scenes as their whole stored record, the `SceneSnapshot` the
-   * `scene.*` webhooks carry, for a client that keeps no mirror of those
-   * webhooks: `listSceneSnapshots`, `getSceneSnapshot`.
-   */
-  scenesSnapshots: "scenes.snapshots",
-  /**
-   * Alert compositions stored in the engine: `listAlertCompositions`,
-   * `getAlertComposition`, `createAlertComposition`,
-   * `updateAlertComposition`, `deleteAlertComposition`, editing one with
-   * `getSceneEditorSession`, and `kind` in the `scene.*` webhook snapshots.
-   * An alert step never plays one by id: a client copies it into the step's
-   * own layout.
-   */
-  compositionsAlerts: "compositions.alerts",
-  /**
-   * The alert editor's live preview: `getCompositionPreviewUrl`, and
-   * sceneManager's `/preview/composition` page driven by the protocol in
-   * `@woofx3/scene/runtime` (`preview-protocol.ts`).
-   */
-  compositionsPreview: "compositions.preview",
-  /**
-   * The dashboard's own data kept by the engine, with engine-wide revisions,
-   * tombstones and conflict checks for a later sync: `listUISettings`,
-   * `getUISetting`, `setUISetting`, `deleteUISetting`,
-   * `listUISettingChangesSince`, and the `ui.setting.changed` webhook.
-   */
-  uiSettings: "ui.settings",
-  /**
-   * Taking form submissions from public user pages: `deliverUserPageSubmission`,
-   * and the `userpage.form.submitted` trigger of the bundled module.
-   */
-  userPagesFormSubmissions: "userPages.formSubmissions",
-  /** Theme presets a widget declares, for the theme settings picker: `listWidgetThemes`. */
-  widgetsThemes: "widgets.themes",
-  /**
-   * The `scene.widget.visibility` workflow action, which saves a placement's
-   * `visible` on the published scene, and the `scenes` / `scenePlacements`
-   * field sources its form uses.
-   */
-  workflowWidgetVisibility: "workflow.widgetVisibility",
-  /** The values `${viewer.*}` can resolve in a workflow, for a condition editor: `listViewerFacts`. */
-  workflowViewerFacts: "workflow.viewerFacts",
-  /** One recorded run with its steps' inputs, outputs and timings, and the alerts it fired: `getWorkflowRun`. */
-  workflowRunDetail: "workflow.runDetail",
-  /**
-   * Recorded runs listed as the whole `WorkflowRunSnapshot` the run callbacks
-   * carry, newest first, by workflow or across all: `listWorkflowRunSnapshots`.
-   */
-  workflowRunSnapshots: "workflow.runSnapshots",
-  /** The triggers, actions and module functions a workflow can use, in one read: `getWorkflowCatalog`. */
-  workflowCatalog: "workflow.catalog",
-  /**
-   * Each item of a condition's list value (an `in` or `not_in` item, a
-   * `between` bound) is resolved, so it may be a `${...}` reference.
-   */
-  workflowConditionListReferences: "workflow.conditionListReferences",
-  /**
-   * A `wait` task of type `delay` pausing the run for `durationMs`, and a
-   * wait's `timeout` fired by a timer rather than only by the next event.
-   */
-  workflowDelayWait: "workflow.delayWait",
-  /**
-   * `${…}` expressions may call the fixed functions in `@woofx3/api/expression`,
-   * such as `${round(trigger.data.amount, 2)}`.
-   */
-  workflowExpressionFunctions: "workflow.expressionFunctions",
-  /**
-   * `triggerWorkflowByName` options: sample `triggerData`, `platform` and
-   * `skipConditions`, answered with the started run or the unmet conditions.
-   */
-  workflowTestRunOptions: "workflow.testRunOptions",
-  /** `triggerWorkflowByName` with `dryRun`: steps with side effects record what they would do instead. */
-  workflowDryRun: "workflow.dryRun",
-  /** `cancelWorkflow` stops a running run and answers with an `outcome`, not only a history mark. */
-  workflowRealCancel: "workflow.realCancel",
-  /** `getWorkflowHealth`, and the `workflow.health.changed` and `workflow.health.snapshot` webhooks. */
-  workflowHealth: "workflow.health",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];
@@ -316,13 +54,11 @@ export interface EngineCapabilities {
 
 /**
  * Ids declared here that this build does not advertise, so clients can name
- * them before or after the engine supports them. sceneManager serves only
- * editor socket protocol 2 (`scenes.editorSync`), and answers a protocol 1
- * socket (`scenes.editorSessions`) with HTTP 426.
+ * them before or after the engine supports them: a shared contract that lands
+ * before the engine implements it, or an older protocol the engine no longer
+ * serves. None today.
  */
-export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = new Set<EngineCapability>([
-  ENGINE_CAPABILITIES.scenesEditorSessions,
-]);
+export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = new Set<EngineCapability>([]);
 
 /**
  * Ids that describe how an engine is run rather than what its build can do,
@@ -365,10 +101,6 @@ export function supportedEngineCapabilities(hosting: EngineHosting | null = null
  * Throws on an answer that is not the schema-1 shape. A different `schema`
  * means the answer is no longer a flat id list, and guessing at it could
  * offer a feature the engine does not have.
- *
- * An engine older than the method rejects the call instead of answering;
- * `isMissingRpcMethod(err, "getEngineCapabilities")` from `./rpc` recognises
- * that, and such an engine supports none of the ids.
  */
 export function parseEngineCapabilities(raw: unknown): EngineCapabilities {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {

@@ -1775,8 +1775,7 @@ address from the endpoint's settings or goes through the woofx3 companion,
 keeps the connection open between calls and writes the message. Module code
 never supplies an address, never names a module and never holds a socket.
 The streamer approved the endpoint when they installed the module, so there
-is no permission to declare; an engine with `ctx.local` advertises the
-`modules.localEndpointCalls` capability.
+is no permission to declare.
 
 | Call | Returns | Notes |
 |---|---|---|

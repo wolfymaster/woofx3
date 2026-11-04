@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { ENGINE_CAPABILITIES, supportedEngineCapabilities } from "@woofx3/api";
 import {
   type GatewayReply,
   type GatewayRequest,
@@ -238,10 +237,8 @@ describe("sendToPlatforms route", () => {
   });
 });
 
-describe("the platform.gateway capability", () => {
-  test("is advertised and its method is on the RPC surface", () => {
-    expect(supportedEngineCapabilities(null)).toContain(ENGINE_CAPABILITIES.platformGateway);
-    expect(ENGINE_CAPABILITIES.platformGateway).toBe("platform.gateway");
+describe("the platform gateway", () => {
+  test("has its method on the RPC surface", () => {
     expect(RPC_METHODS).toContain("sendToPlatforms");
   });
 });

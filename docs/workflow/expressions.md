@@ -87,8 +87,6 @@ the editor, held to the engine's by a shared conformance file).
 `{` and `}` cannot appear inside a string literal, because an expression ends
 at its first `}`.
 
-Engines advertise functions as the `workflow.expressionFunctions` capability.
-
 **Examples:**
 
 ```jsonc

@@ -2,7 +2,7 @@
 
 The engine can read the marketplace catalog for a caller: search, the per-type counts, one listing, an author page, and a buyer's quote. Each method answers with the marketplace's JSON **unchanged**, so a caller that already parses the marketplace's answers parses the engine's the same way. Moving a caller's reads behind the engine changes where they come from and nothing else.
 
-The methods are behind capability `marketplace.catalog` (see [Engine capabilities](./engine-capabilities.md)):
+The methods:
 
 ```ts
 marketplaceSearch(query: MarketplaceCatalogQuery, buyerToken?): Promise<unknown>           // GET /catalog

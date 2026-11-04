@@ -308,9 +308,8 @@ write an empty list rather than `null` when there is nothing to list.
 ### Sending from the dashboard
 
 The api serves one platform-neutral RPC, `sendToPlatforms`, so the dashboard
-sends a chat line without knowing which platform carries it. It is advertised
-by the `platform.gateway` capability and sits beside the `twitch*` methods,
-which stay.
+sends a chat line without knowing which platform carries it. It sits beside
+the `twitch*` methods, which stay.
 
 ```ts
 sendToPlatforms({

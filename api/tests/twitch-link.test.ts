@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { ENGINE_CAPABILITIES, supportedEngineCapabilities, type Woofx3EngineApi } from "@woofx3/api";
+import type { Woofx3EngineApi } from "@woofx3/api";
 import { type CallbackEvent, EngineEventType } from "@woofx3/api/webhooks";
 import { TwitchOAuthClient } from "@woofx3/twitch/oauth";
 import { Api, type ApiOptions } from "../src/api";
@@ -232,7 +232,6 @@ describe("twitch.link.changed", () => {
   });
 });
 
-test("advertises twitch.linkRead, and getTwitchLink is reachable over RPC", () => {
-  expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchLinkRead);
+test("getTwitchLink is reachable over RPC", () => {
   expect(RPC_METHODS as readonly string[]).toContain("getTwitchLink");
 });

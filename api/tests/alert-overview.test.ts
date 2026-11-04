@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  ALERT_OVERVIEW_MAX_HOURS,
-  type AlertOutcome,
-  ENGINE_CAPABILITIES,
-  supportedEngineCapabilities,
-} from "@woofx3/api";
+import { ALERT_OVERVIEW_MAX_HOURS, type AlertOutcome } from "@woofx3/api";
 import type * as alert from "@woofx3/db/alert.pb";
 import {
   ALERT_UNCONFIRMED_AFTER_MS,
@@ -166,8 +161,7 @@ describe("getAlertOverview", () => {
     expect(requests).toEqual([]);
   });
 
-  test("is advertised as alerts.overview and reachable over RPC", () => {
-    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.alertsOverview);
+  test("is reachable over RPC", () => {
     expect(RPC_METHODS as readonly string[]).toContain("getAlertOverview");
   });
 });
