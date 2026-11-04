@@ -257,3 +257,44 @@ describe("built-in lottie widget", () => {
     expect(animations).toHaveLength(0);
   });
 });
+
+describe("built-in record widget", () => {
+  const DATABASE = "woofx3:database:games";
+  const ROW = "5f0c6b2e-4a51-4f43-9d3b-1d2f6c1c9a10";
+  const row = (values: Record<string, unknown>) => ({ id: ROW, databaseId: DATABASE, revision: 1, values });
+
+  it("shows a column of the newest row, and follows it as rows change", async () => {
+    const { el, mock } = run("record", {
+      settings: { database: DATABASE, column: "game", which: "newest" },
+      storage: { [`records:${DATABASE}`]: [row({ game: "Celeste" }), row({ game: "Hades" })] },
+    });
+    await tick();
+    expect(el.textContent).toBe("Celeste");
+
+    mock.setStorage(`records:${DATABASE}`, [row({ game: "Tunic" })]);
+    await tick();
+    expect(el.textContent).toBe("Tunic");
+
+    mock.setStorage(`records:${DATABASE}`, []);
+    await tick();
+    expect(el.textContent).toBe("");
+  });
+
+  it("shows a row picked by id, nothing once it is deleted, and an empty cell as nothing", async () => {
+    const key = `record:${DATABASE}:${ROW}`;
+    const { el, mock } = run("record", {
+      settings: { database: DATABASE, column: "vod", which: "record", record: ROW },
+      storage: { [key]: row({ vod: "https://example.com/v/1" }) },
+    });
+    await tick();
+    expect(el.textContent).toBe("https://example.com/v/1");
+
+    mock.setSettings({ database: DATABASE, column: "game", which: "record", record: ROW });
+    await tick();
+    expect(el.textContent).toBe("");
+
+    mock.setStorage(key, null);
+    await tick();
+    expect(el.textContent).toBe("");
+  });
+});
