@@ -61,6 +61,9 @@ export function parsePattern(raw: string): ModerationParseResult<Pattern> {
   if ([...raw].length > MODERATION_LIMITS.maxPatternChars) {
     return failed(`must be at most ${MODERATION_LIMITS.maxPatternChars} characters`);
   }
+  if (hasNonBoundaryEscape(raw)) {
+    return failed("\\B is not an escape; only \\b, a word boundary, is");
+  }
   const chars = [...normaliseForMatching(raw)];
   if (chars.length === 0) {
     return failed("must not be empty");
@@ -108,6 +111,24 @@ export function parsePattern(raw: string): ModerationParseResult<Pattern> {
     );
   }
   return { ok: true, value: { items } };
+}
+
+/**
+ * Whether `raw` has an unescaped `\B` before lower-casing folds it into `\b`.
+ * In a regular expression `\B` means the opposite, not a word boundary, so
+ * reading it as one would match what the streamer meant to exclude.
+ */
+function hasNonBoundaryEscape(raw: string): boolean {
+  const chars = [...raw.normalize("NFKC")];
+  for (let index = 0; index < chars.length; index++) {
+    if (chars[index] === "\\") {
+      if (chars[index + 1] === "B") {
+        return true;
+      }
+      index++;
+    }
+  }
+  return false;
 }
 
 /** A class starting after its `[`: the item and the index after its `]`. */

@@ -33,6 +33,13 @@ describe("parsePattern", () => {
     { name: "an empty class", input: "[]", ok: false, error: "empty []" },
     { name: "a reversed range", input: "[z-a]x", ok: false, error: "reversed range z-a" },
     { name: "an unknown escape", input: "foo\\q", ok: false, error: "\\q is not an escape" },
+    {
+      name: "a non-boundary escape, which lower case would turn into \\b",
+      input: "\\Bfoo",
+      ok: false,
+      error: "\\B is not an escape",
+    },
+    { name: "an escaped backslash before a capital B", input: "a\\\\Bc", ok: true },
     { name: "a lone backslash at the end", input: "foo\\", ok: false, error: "lone \\" },
     { name: "a group with alternation", input: "(a|b)", ok: false, error: "escape it with \\" },
     { name: "a plus", input: "a+", ok: false, error: '"+" has no meaning here' },
