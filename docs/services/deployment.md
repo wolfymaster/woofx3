@@ -148,8 +148,8 @@ log file then live under it. Unset, it has no effect on any path. See
 
 ## Engine secrets
 
-Three secrets keep the engine's services honest with each other and with
-browsers:
+These secrets keep the engine's services honest with each other and with
+browsers, and keep secret module settings sealed at rest:
 
 | Setting | Signs or authenticates |
 |---------|------------------------|
@@ -157,6 +157,7 @@ browsers:
 | `sceneManagerTokenSecret` / `WOOFX3_SCENE_MANAGER_TOKEN_SECRET` | Overlay session and scene editor tokens. |
 | `messagebusToken` / `WOOFX3_MESSAGEBUS_TOKEN` | Every connection to the message bus (see [Message bus hardening](#message-bus-hardening)). |
 | `dbProxyToken` / `WOOFX3_DB_PROXY_TOKEN` | Every service's requests to db-proxy (see [The db proxy](#the-db-proxy)). |
+| `secretsKey` / `WOOFX3_SECRETS_KEY` | Neither: it is the AES-256 key db-proxy seals `secret` module settings with (see [Secret settings](./module-settings-ui.md#secret-settings)). |
 
 None ships in `.woofx3.json`. Before it starts any service, the orchestrator
 resolves each one from the first of these that holds a usable value:
@@ -166,17 +167,20 @@ resolves each one from the first of these that holds a usable value:
 3. the file the orchestrator wrote on an earlier run: `data/secrets/<name>`
    under the [data directory](./runtime.md#the-data-directory), or under the
    working directory when `WOOFX3_DATA_DIR` is unset (`barkloader-key`,
-   `scene-manager-token-secret`, `messagebus-token`, `db-proxy-token`). It sits beside the database, so it lives on
+   `scene-manager-token-secret`, `messagebus-token`, `db-proxy-token`,
+   `secrets-key`). It sits beside the database, so it lives on
    the production image's `/app/data` volume and is copied along with the
    rest of `data/` when a data directory is first set;
-4. a new random 32-byte value, hex-encoded, written to that file with mode
-   `0600` in a `0700` directory.
+4. a new random 32-byte value written to that file with mode `0600` in a
+   `0700` directory: hex-encoded for the tokens, standard base64 for
+   `secretsKey`.
 
 Every service it starts then gets the resolved values in its environment, over
 whatever it inherited. So a fresh install needs no secrets configured, and the
 values stay the same across restarts as long as `data/` persists.
 
-A usable secret is at least 32 bytes once trimmed and is not a well-known
+A usable `secretsKey` is standard base64 that decodes to exactly 32 bytes.
+Any other usable secret is at least 32 bytes once trimmed and is not a well-known
 placeholder (`CHANGE_ME`, `changeme`, `change-me`, `secret`, `password`,
 `placeholder`, `todo`, `xxx`, `test`, in any case). The orchestrator logs a
 warning naming the setting and passes over a value that fails the rule, so an

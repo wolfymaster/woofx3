@@ -1199,9 +1199,10 @@ func (s *Supervisor) checkHealthOverHTTP(ctx context.Context, endpoint string) b
 // orchestrator.
 func engineSecretSpecs() []SecretSpec {
 	return []SecretSpec{
-		{Name: "barkloader-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey"},
-		{Name: "scene-manager-token-secret", EnvKey: "WOOFX3_SCENE_MANAGER_TOKEN_SECRET", ConfigKey: "sceneManagerTokenSecret"},
-		{Name: "messagebus-token", EnvKey: "WOOFX3_MESSAGEBUS_TOKEN", ConfigKey: "messagebusToken"},
-		{Name: "db-proxy-token", EnvKey: "WOOFX3_DB_PROXY_TOKEN", ConfigKey: "dbProxyToken"},
+		{Name: "barkloader-key", EnvKey: "WOOFX3_BARKLOADER_KEY", ConfigKey: "barkloaderKey", Kind: SecretToken},
+		{Name: "scene-manager-token-secret", EnvKey: "WOOFX3_SCENE_MANAGER_TOKEN_SECRET", ConfigKey: "sceneManagerTokenSecret", Kind: SecretToken},
+		{Name: "messagebus-token", EnvKey: "WOOFX3_MESSAGEBUS_TOKEN", ConfigKey: "messagebusToken", Kind: SecretToken},
+		{Name: "db-proxy-token", EnvKey: "WOOFX3_DB_PROXY_TOKEN", ConfigKey: "dbProxyToken", Kind: SecretToken},
+		{Name: "secrets-key", EnvKey: "WOOFX3_SECRETS_KEY", ConfigKey: "secretsKey", Kind: SecretAESKey},
 	}
 }
