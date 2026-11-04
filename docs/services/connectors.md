@@ -279,7 +279,7 @@ it for the host:
 ### Chat egress
 
 The Twitch adapter performs the [platform gateway](./platform-gateway.md)'s
-chat actions (`egress.ts`), each as one Helix call made as the broadcaster
+chat and moderation actions (`egress.ts`), each as one Helix call made as the broadcaster
 through the same `helix` path the dashboard uses:
 
 | Action | Helix call | Delivered when |
@@ -287,6 +287,15 @@ through the same `helix` path the dashboard uses:
 | `chat.send` | Send Chat Message, with `reply_parent_message_id` from `replyToMessageId` | Twitch posts the line; the outcome carries its `messageId`. A line Twitch did not post (AutoMod, a blocked term, a chat mode) is `dropped` with Twitch's reason. |
 | `chat.announce` | Send Chat Announcement | Twitch answers 2xx (it sends 204). `options.twitch` is `{ color? }`, one of `primary`, `blue`, `green`, `orange` or `purple`; `primary` when absent. Any other key or colour fails the request for Twitch as `invalid`. |
 | `chat.pin` | Pin Chat Message for `{ messageId }`; Send Chat Message then Pin Chat Message for `{ message, durationSeconds? }`, with `durationSeconds` as `duration` | Twitch pins the line. A line posted but not pinned is `failed` with the message "posted but not pinned: ..." and still carries its `messageId`, so a caller can pin it again instead of posting it twice. |
+| `chat.delete` | Delete Chat Messages with `message_id` (scope `moderator:manage:chat_messages`) | Twitch removes the line (204). A blank id is refused before the call, since Twitch clears the whole chat without one. A line Twitch will not delete, older than 6 hours, already gone (404) or the broadcaster's or another moderator's (400), is `invalid`. |
+| `moderation.warn` | Warn Chat User with `user_id` and `reason` (scope `moderator:manage:warnings`) | Twitch records the warning, which the viewer must acknowledge before chatting again. A 409 (another change to the viewer's warning state raced it) is tried once more, then `upstream`. A reason over 500 characters is `invalid` before the call. A link without the scope gets 401, so `forbidden`. |
+| `moderation.timeout` | Ban User with `user_id` and `duration` (scope `moderator:manage:banned_users`) | Twitch times the viewer out. 1 second to 2 weeks; a reason up to 500 characters. |
+| `moderation.ban` | Ban User with `user_id` and no `duration` | Twitch bans the viewer. |
+
+The moderation actions refuse the broadcaster as `invalid` without a call:
+the adapter acts with the broadcaster's own token, and no rule may punish the
+channel's owner. Only the adapter knows its broadcaster's id, so this check is
+here rather than in the gateway.
 
 Every line goes through `guardChatLine`: a line that starts with the command
 prefix (`!`, from `connectors/src/chat/command-prefix.ts`) gets a zero-width
