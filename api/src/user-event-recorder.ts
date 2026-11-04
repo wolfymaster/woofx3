@@ -1,3 +1,4 @@
+import { MODERATION_SUBJECTS } from "@woofx3/api/moderation-config";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { RecordUserEventRequest } from "@woofx3/db/user_event.pb";
@@ -65,6 +66,23 @@ const ATTRIBUTIONS: Readonly<Record<string, (data: Payload) => Attribution>> = {
 export const ANALYTICS_EVENT_TYPES: readonly string[] = Object.keys(ATTRIBUTIONS);
 
 /**
+ * Engine events recorded whatever the selection, because a dashboard page
+ * reads them back from the log: moderation's "recent actions". They are not
+ * viewer activity, so they stay out of ANALYTICS_EVENT_TYPES.
+ */
+const ENGINE_LOG_ATTRIBUTIONS: Readonly<Record<string, (data: Payload) => Attribution>> = {
+  [MODERATION_SUBJECTS.actionTaken]: (data) => viewer(data.viewer, data.chatterLogin),
+};
+
+/** Every type recorded whatever the selection, each with how it is attributed. */
+const ALWAYS_RECORDED: Readonly<Record<string, (data: Payload) => Attribution>> = {
+  ...ATTRIBUTIONS,
+  ...ENGINE_LOG_ATTRIBUTIONS,
+};
+
+export const ALWAYS_RECORDED_EVENT_TYPES: readonly string[] = Object.keys(ALWAYS_RECORDED);
+
+/**
  * The api republishes dashboard simulations under this source with the real
  * platform stamped, byte-identical to a platform event otherwise. A simulated
  * cheer is not a fact, so nothing it publishes is recorded.
@@ -97,7 +115,7 @@ interface CloudEventEnvelope {
 
 /**
  * Writes the event types the streamer selected (`EventLogSelectionSource`)
- * and the `ANALYTICS_EVENT_TYPES` to the `user_events` log: the history the
+ * and the `ALWAYS_RECORDED_EVENT_TYPES` to the `user_events` log: the history the
  * dashboard's event feed reads, and what Analytics aggregates
  * (docs/services/analytics.md).
  *
@@ -130,7 +148,7 @@ export class UserEventRecorder {
   }
 
   /**
-   * Records the enabled types and the analytics types from now on, following
+   * Records the enabled types and the always-recorded types from now on, following
    * the selection and the installed triggers as they change.
    */
   async start(): Promise<void> {
@@ -140,7 +158,7 @@ export class UserEventRecorder {
   }
 
   private follow(enabled: readonly string[]): Promise<void> {
-    this.recorded = new Set([...enabled, ...ANALYTICS_EVENT_TYPES]);
+    this.recorded = new Set([...enabled, ...ALWAYS_RECORDED_EVENT_TYPES]);
     return this.subscriptions.sync(this.recorded);
   }
 
@@ -213,7 +231,7 @@ export function toRequest(logged: LoggedEvent, ce: CloudEventEnvelope): RecordUs
     return null;
   }
   const data = isPayload(ce.data) ? ce.data : {};
-  const attribute = ATTRIBUTIONS[subject];
+  const attribute = ALWAYS_RECORDED[subject];
   const { platformUserId, userName, amount } =
     attribute !== undefined ? attribute(data) : identityAttribution(logged.identity, data);
   const sessionId = text(ce.sessionId);

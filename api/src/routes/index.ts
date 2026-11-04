@@ -17,6 +17,7 @@ import { groupsRoutes } from "./groups";
 import { inboundWebhooksRoutes } from "./inbound-webhooks";
 import { marketplaceRoutes } from "./marketplace";
 import { marketplaceCatalogRoutes } from "./marketplace-catalog";
+import { moderationRoutes } from "./moderation";
 import { moduleOAuthRoutes } from "./module-oauth";
 import { moduleUploadsRoutes } from "./module-uploads";
 import { modulesRoutes } from "./modules";
@@ -82,7 +83,8 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof uiSettingsRoutes &
   typeof twitchDeviceLoginRoutes &
   typeof twitchLinkRoutes &
-  typeof pairingRoutes;
+  typeof pairingRoutes &
+  typeof moderationRoutes;
 
 type RouteMethod = (this: ApiRouteHost, ...args: unknown[]) => unknown;
 
@@ -115,6 +117,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     host,
     instrumentRoutes(engineRoutes),
     instrumentRoutes(pairingRoutes),
+    instrumentRoutes(moderationRoutes),
     instrumentRoutes(subscriptionsRoutes),
     instrumentRoutes(triggerSubscriptionRoutes),
     instrumentRoutes(streamEventsRoutes),

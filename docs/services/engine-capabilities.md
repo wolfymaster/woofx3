@@ -39,6 +39,7 @@ Since is the first release whose engine advertised the id, and `unreleased` unti
 |---|---|---|
 | `clients.pairing` | v0.50.1 | Browser pairing for a local or self-hosted engine: the gateway's `startPairing`, `claimPairing` and `cancelPairing`, `ping().pairing`, an approver's `lookupPairing`, `decidePairing` and `listPendingPairings`, the `client.pairing.started` event, and paired clients bound to the origin they paired from. Advertised only when `WOOFX3_HOSTING` is `local` or `self` (see `HOSTING_ENGINE_CAPABILITIES` above). See [Browser pairing](./pairing.md) |
 | `engine.localMode` | v0.35.0 | This engine runs on the streamer's own machine under the desktop app: its deployment sets `WOOFX3_HOSTING=local`, and `getEngineInfo().hosting` is `local`. Advertised only by such an engine (see `HOSTING_ENGINE_CAPABILITIES` above) |
+| `moderation.config` | unreleased | Chat moderation: `getModerationConfig`, `setModerationConfig` and `listModerationActions`, and a connectors host that runs the config on chat. See [Chat moderation](./moderation.md) |
 
 A test in `api/tests/engine-capabilities.test.ts` fails if an id in `ENGINE_CAPABILITIES` has no row here, or its row has no Since value (a release tag or `unreleased`).
 

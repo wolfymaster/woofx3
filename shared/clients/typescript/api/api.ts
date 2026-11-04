@@ -11,6 +11,7 @@ import type {
 } from "./config-bundle";
 import type { EngineEventSubscribeOptions, EngineEventSubscriber, EngineRequestAnswer } from "./engine-events";
 import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "./marketplace-catalog";
+import type { ModerationActionRecord, ModerationConfig } from "./moderation-config";
 import type {
   DecidePairingRequest,
   DecidePairingResponse,
@@ -2916,6 +2917,20 @@ export interface Woofx3EngineApi {
    *  newly enabled type starts before this resolves. Rejects a malformed
    *  selection: not two lists of event types, or more than 500 in a list. */
   setEventLogSelection(selection: EventLogSelection): Promise<EventLogSettings>;
+
+  /** The chat moderation config the engine runs; see `@woofx3/api/moderation-config`. An engine
+   *  that has none stored, or one that no longer parses, answers the default: moderation off.
+   *  Needs the `moderation.config` capability. */
+  getModerationConfig(): Promise<ModerationConfig>;
+
+  /** Replace the chat moderation config. Rejects with the first problem, in words a streamer
+   *  can act on, when `parseModerationConfig` refuses it; otherwise stores it, the engine starts
+   *  running it within moments, and the stored (normalised) config is returned. */
+  setModerationConfig(config: ModerationConfig): Promise<ModerationConfig>;
+
+  /** The most recent moderated lines, newest first: 1 to 100, 50 by default. Read from the
+   *  engine's event log, so they last as long as it keeps events. */
+  listModerationActions(limit?: number): Promise<ModerationActionRecord[]>;
 
   getUserProfile(userId: string): Promise<{
     id: string;

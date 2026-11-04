@@ -606,3 +606,15 @@ export interface ModerationActionTaken {
   dryRun: boolean;
   steps: Array<{ kind: ModerationActionKind; outcome: ModerationStepOutcome }>;
 }
+
+/** One logged `moderation.action.taken`, newest first in `listModerationActions`. */
+export interface ModerationActionRecord extends ModerationActionTaken {
+  /** The event's id. */
+  id: string;
+  /** ISO 8601. */
+  time: string;
+}
+
+/** How many recent actions `listModerationActions` returns by default, and at most. */
+export const MODERATION_ACTIONS_DEFAULT_LIMIT = 50;
+export const MODERATION_ACTIONS_MAX_LIMIT = 100;

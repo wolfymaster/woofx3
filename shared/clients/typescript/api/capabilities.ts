@@ -32,6 +32,12 @@ export const ENGINE_CAPABILITIES = {
    * HOSTING_ENGINE_CAPABILITIES.
    */
   clientsPairing: "clients.pairing",
+  /**
+   * Chat moderation (./moderation-config.ts): `getModerationConfig`,
+   * `setModerationConfig` and `listModerationActions`, and a connectors host
+   * that runs the config on chat.
+   */
+  moderationConfig: "moderation.config",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];
