@@ -2222,7 +2222,6 @@ fn validate_operators(field: &ManifestConfigField, context: &str) -> Result<()> 
     }
 }
 
-/// A `list` field declares the fields of one row, and only a `list` does.
 /// A `databaseColumns` source lists the columns of the database a sibling
 /// `resource_ref` field chooses, so it names that sibling in `databaseField`.
 /// A `database_values` field is filled per column and needs the source to
@@ -2278,6 +2277,7 @@ fn validate_database_columns_source(
     Ok(())
 }
 
+/// A `list` field declares the fields of one row, and only a `list` does.
 fn validate_item_fields(field: &ManifestConfigField, context: &str) -> Result<()> {
     validate_list_rows(&field.field_type, field.item_fields.as_deref(), context)
 }
