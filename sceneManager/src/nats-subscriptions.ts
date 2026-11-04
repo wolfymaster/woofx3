@@ -27,10 +27,10 @@ import { type AlertEnvelope, dispatchAlert } from "./events/alert-dispatch";
 import type { DeliveryStore } from "./events/delivery-store";
 import { handleStatusReport } from "./events/handlers";
 import { closeDeliveriesToRemovedPlacements } from "./events/removed-placements";
+import type { AlertFraming } from "./scene/frame-catalog";
 import { errorText } from "./scene/held-scene";
 import type { ModuleStateWatch } from "./scene/module-state";
 import { answerSceneCommand, type SceneCommandDeps } from "./scene/scene-command";
-import type { AlertFraming } from "./scene/frame-catalog";
 import type { OverlayHost } from "./scene/scene-host";
 import type { OverlayTokenResolver } from "./scene/token-resolver";
 
@@ -91,6 +91,10 @@ export function notifySceneUpdated(
 
 interface ResourceInstanceUpdatedEnvelope {
   data?: { canonical_id?: unknown };
+}
+
+interface DatabaseRecordChangedEnvelope {
+  data?: { databaseId?: unknown; recordId?: unknown };
 }
 
 interface WidgetEventEnvelope {
@@ -226,6 +230,18 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       await moduleState.resourceUpdated(canonicalId);
     }
   );
+
+  // Published by the db proxy in the transaction that changed a database row,
+  // on the subject equal to its type (SubjectDatabaseRecordChanged).
+  await subscribeJson<DatabaseRecordChangedEnvelope>(nats, logger, "database.record.changed", async (envelope, msg) => {
+    const databaseId = typeof envelope.data?.databaseId === "string" ? envelope.data.databaseId : "";
+    const recordId = typeof envelope.data?.recordId === "string" ? envelope.data.recordId : "";
+    if (!databaseId || !recordId) {
+      logger.warn("database.record.changed: missing databaseId or recordId; dropping", { subject: msg.subject });
+      return;
+    }
+    await moduleState.databaseRecordChanged(databaseId, recordId);
+  });
 
   // The api asks for this when a dashboard opens the scene editor; only the
   // api's requests are answered (see `answer`).
