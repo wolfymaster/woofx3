@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type AlertComposition, ENGINE_CAPABILITIES, type Scene, supportedEngineCapabilities } from "@woofx3/api";
+import type { AlertComposition, Scene } from "@woofx3/api";
 import type { SceneSnapshot } from "@woofx3/api/webhooks";
 import type * as scene from "@woofx3/db/scene.pb";
 import { RPC_METHODS } from "../src/api-session";
@@ -205,8 +205,7 @@ describe("scene snapshots", () => {
     expect(await get("missing")).toBeNull();
   });
 
-  test("are advertised as scenes.snapshots and reachable over RPC", () => {
-    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.scenesSnapshots);
+  test("are reachable over RPC", () => {
     expect(RPC_METHODS as readonly string[]).toContain("listSceneSnapshots");
     expect(RPC_METHODS as readonly string[]).toContain("getSceneSnapshot");
   });

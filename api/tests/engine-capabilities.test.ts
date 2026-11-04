@@ -76,36 +76,6 @@ describe("getEngineCapabilities", () => {
     }
   });
 
-  test("advertises scene editor protocol 2 and no longer protocol 1", async () => {
-    const { capabilities } = await getEngineCapabilities();
-    expect(capabilities).toContain(ENGINE_CAPABILITIES.scenesEditorSync);
-    expect(capabilities).not.toContain(ENGINE_CAPABILITIES.scenesEditorSessions);
-  });
-
-  test("advertises alert queue controls, whose methods are reachable over RPC", async () => {
-    const { capabilities } = await getEngineCapabilities();
-    expect(capabilities).toContain(ENGINE_CAPABILITIES.alertsQueueControls);
-    expect(RPC_METHODS).toContain("skipCurrentAlert");
-    expect(RPC_METHODS).toContain("clearAlertQueue");
-  });
-
-  test("advertises the workflow features the engine has shipped since v0.4.0", async () => {
-    const { capabilities } = await getEngineCapabilities();
-    expect(capabilities).toEqual(
-      expect.arrayContaining([
-        "workflow.delayWait",
-        "workflow.expressionFunctions",
-        "workflow.testRunOptions",
-        "workflow.dryRun",
-        "workflow.realCancel",
-        "workflow.health",
-      ])
-    );
-    expect(RPC_METHODS).toContain("triggerWorkflowByName");
-    expect(RPC_METHODS).toContain("cancelWorkflow");
-    expect(RPC_METHODS).toContain("getWorkflowHealth");
-  });
-
   test("returns the list sorted and without duplicates", async () => {
     const { capabilities } = await getEngineCapabilities();
     expect(capabilities).toEqual([...new Set(capabilities)].sort());

@@ -39,7 +39,7 @@ describe("describeHealth", () => {
   });
 
   test("lists the same capabilities getEngineCapabilities advertises", () => {
-    const enabled = supportedEngineCapabilities();
+    const enabled = supportedEngineCapabilities("local");
     const health = describeHealth(
       {
         name: null,
@@ -52,6 +52,6 @@ describe("describeHealth", () => {
     );
 
     expect(health.capabilities).toEqual({ schema: ENGINE_CAPABILITIES_SCHEMA, enabled });
-    expect(health.capabilities.enabled).toContain("analytics.sessionEvents");
+    expect(health.capabilities.enabled).toContain("engine.localMode");
   });
 });

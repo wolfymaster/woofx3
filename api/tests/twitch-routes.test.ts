@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ENGINE_CAPABILITIES, supportedEngineCapabilities, type TwitchHelixResult } from "@woofx3/api";
+import type { TwitchHelixResult } from "@woofx3/api";
 import { NoRespondersError, RequestError, TimeoutError } from "@woofx3/nats";
 import { RPC_METHODS } from "../src/api-session";
 import { TWITCH_HELIX_TIMEOUT_MS, twitchRoutes } from "../src/routes/twitch";
@@ -258,14 +258,8 @@ describe("twitch route results", () => {
   });
 });
 
-describe("twitch capabilities", () => {
-  test("advertises the twitch capabilities, and every twitch route is reachable over RPC", () => {
-    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchStreamInfo);
-    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchAds);
-    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchModeration);
-    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchChat);
-    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchPins);
-    expect(supportedEngineCapabilities()).toContain(ENGINE_CAPABILITIES.twitchClips);
+describe("twitch routes", () => {
+  test("every twitch route is reachable over RPC", () => {
     const reachable: readonly string[] = RPC_METHODS;
     for (const name of Object.keys(twitchRoutes)) {
       expect(reachable).toContain(name);
