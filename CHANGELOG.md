@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.63.0](https://github.com/wolfymaster/woofx3/compare/v0.62.0...v0.63.0) (2026-11-04)
+
+### Features
+
+* **api:** end a stream session at its last segment past the grace window ([1dbeae8](https://github.com/wolfymaster/woofx3/commit/1dbeae82f859eafd9fb63b552c1041392f97e6da))
+
 ## [0.62.0](https://github.com/wolfymaster/woofx3/compare/v0.61.2...v0.62.0) (2026-11-04)
 
 ### ⚠ BREAKING CHANGES
