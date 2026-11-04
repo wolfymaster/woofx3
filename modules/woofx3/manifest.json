@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.45.0",
+  "version": "0.46.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -2464,7 +2464,7 @@
     {
       "id": "image",
       "name": "Image",
-      "description": "An image, or an animated GIF or WebP.",
+      "description": "An image, or an animated GIF, WebP or SVG.",
       "entry": "widgets/image/index.html",
       "assets": "widgets/image",
       "surfaces": [
