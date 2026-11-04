@@ -92,7 +92,7 @@ func TestCoerceValues(t *testing.T) {
 }
 
 type recordFixture struct {
-	svc     client.DatabaseRecordService
+	svc     *DatabaseRecordService
 	db      *gorm.DB
 	columns *databaseFixture
 }

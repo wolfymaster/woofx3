@@ -45,11 +45,11 @@ type databaseRecordChangedEvent struct {
 	PublicValues map[string]any `json:"publicValues"`
 }
 
-// databaseRecordService implements `client.DatabaseRecordService`.
+// DatabaseRecordService implements `client.DatabaseRecordService`.
 //
 // Nothing here logs a value: cells can hold viewer-written text and viewer
 // identity, so only ids reach a log or an error.
-type databaseRecordService struct {
+type DatabaseRecordService struct {
 	modules   *repo.ModuleRepository
 	instances *repo.ModuleResourceInstanceRepository
 	records   *repo.DatabaseRecordRepository
@@ -63,11 +63,11 @@ func NewDatabaseRecordService(
 	records *repo.DatabaseRecordRepository,
 	publisher *workers.EventPublisher,
 	limits DatabaseLimits,
-) (client.DatabaseRecordService, error) {
+) (*DatabaseRecordService, error) {
 	if modules == nil || instances == nil || records == nil || publisher == nil {
 		return nil, errors.New("database record service: a dependency is nil")
 	}
-	return &databaseRecordService{modules: modules, instances: instances, records: records, publisher: publisher, limits: limits}, nil
+	return &DatabaseRecordService{modules: modules, instances: instances, records: records, publisher: publisher, limits: limits}, nil
 }
 
 // databaseTarget is a resolved database: its instance, canonical id and
@@ -78,7 +78,7 @@ type databaseTarget struct {
 	columns     []DatabaseColumn
 }
 
-func (s *databaseRecordService) resolveDatabase(canonicalID string) (*databaseTarget, error) {
+func (s *DatabaseRecordService) resolveDatabase(canonicalID string) (*databaseTarget, error) {
 	if strings.TrimSpace(canonicalID) == "" {
 		return nil, twirp.RequiredArgumentError("database_id")
 	}
@@ -119,7 +119,7 @@ func requestValues(target *databaseTarget, typedJSON *string, text *client.Datab
 	}
 }
 
-func (s *databaseRecordService) CreateDatabaseRecord(ctx context.Context, req *client.CreateDatabaseRecordRequest) (*client.CreateDatabaseRecordResponse, error) {
+func (s *DatabaseRecordService) CreateDatabaseRecord(ctx context.Context, req *client.CreateDatabaseRecordRequest) (*client.CreateDatabaseRecordResponse, error) {
 	target, err := s.resolveDatabase(req.DatabaseId)
 	if err != nil {
 		return nil, err
@@ -216,7 +216,7 @@ func checkInsertKey(key string) error {
 	return nil
 }
 
-func (s *databaseRecordService) UpdateDatabaseRecord(ctx context.Context, req *client.UpdateDatabaseRecordRequest) (*client.UpdateDatabaseRecordResponse, error) {
+func (s *DatabaseRecordService) UpdateDatabaseRecord(ctx context.Context, req *client.UpdateDatabaseRecordRequest) (*client.UpdateDatabaseRecordResponse, error) {
 	target, err := s.resolveDatabase(req.DatabaseId)
 	if err != nil {
 		return nil, err
@@ -255,7 +255,7 @@ func (s *databaseRecordService) UpdateDatabaseRecord(ctx context.Context, req *c
 	return &client.UpdateDatabaseRecordResponse{Status: okStatus("Record updated"), Updated: true, Record: protoRecord}, nil
 }
 
-func (s *databaseRecordService) DeleteDatabaseRecord(ctx context.Context, req *client.DeleteDatabaseRecordRequest) (*client.DeleteDatabaseRecordResponse, error) {
+func (s *DatabaseRecordService) DeleteDatabaseRecord(ctx context.Context, req *client.DeleteDatabaseRecordRequest) (*client.DeleteDatabaseRecordResponse, error) {
 	target, err := s.resolveDatabase(req.DatabaseId)
 	if err != nil {
 		return nil, err
@@ -283,7 +283,7 @@ func (s *databaseRecordService) DeleteDatabaseRecord(ctx context.Context, req *c
 	return &client.DeleteDatabaseRecordResponse{Status: okStatus("Record deleted"), Deleted: true}, nil
 }
 
-func (s *databaseRecordService) GetDatabaseRecord(ctx context.Context, req *client.GetDatabaseRecordRequest) (*client.GetDatabaseRecordResponse, error) {
+func (s *DatabaseRecordService) GetDatabaseRecord(ctx context.Context, req *client.GetDatabaseRecordRequest) (*client.GetDatabaseRecordResponse, error) {
 	target, err := s.resolveDatabase(req.DatabaseId)
 	if err != nil {
 		return nil, err
@@ -306,7 +306,7 @@ func (s *databaseRecordService) GetDatabaseRecord(ctx context.Context, req *clie
 	return &client.GetDatabaseRecordResponse{Status: okStatus("Record found"), Found: true, Record: protoRecord}, nil
 }
 
-func (s *databaseRecordService) ListDatabaseRecords(ctx context.Context, req *client.ListDatabaseRecordsRequest) (*client.ListDatabaseRecordsResponse, error) {
+func (s *DatabaseRecordService) ListDatabaseRecords(ctx context.Context, req *client.ListDatabaseRecordsRequest) (*client.ListDatabaseRecordsResponse, error) {
 	target, err := s.resolveDatabase(req.DatabaseId)
 	if err != nil {
 		return nil, err
@@ -314,7 +314,7 @@ func (s *databaseRecordService) ListDatabaseRecords(ctx context.Context, req *cl
 	if err := s.checkPage(req.Offset, req.Limit); err != nil {
 		return nil, err
 	}
-	if req.SortBy != "" && !hasColumn(target.columns, req.SortBy) {
+	if _, ok := findColumn(target.columns, req.SortBy); req.SortBy != "" && !ok {
 		return nil, twirp.InvalidArgumentError("sort_by", fmt.Sprintf("the database has no column %q", req.SortBy))
 	}
 	sort := repo.DatabaseRecordSort{ColumnID: req.SortBy, Descending: req.Descending}
@@ -329,7 +329,7 @@ func (s *databaseRecordService) ListDatabaseRecords(ctx context.Context, req *cl
 	return &client.ListDatabaseRecordsResponse{Status: okStatus(fmt.Sprintf("Found %d record(s)", len(out))), Records: out, Total: total}, nil
 }
 
-func (s *databaseRecordService) FindDatabaseRecord(ctx context.Context, req *client.FindDatabaseRecordRequest) (*client.FindDatabaseRecordResponse, error) {
+func (s *DatabaseRecordService) FindDatabaseRecord(ctx context.Context, req *client.FindDatabaseRecordRequest) (*client.FindDatabaseRecordResponse, error) {
 	target, err := s.resolveDatabase(req.DatabaseId)
 	if err != nil {
 		return nil, err
@@ -345,11 +345,15 @@ func (s *databaseRecordService) FindDatabaseRecord(ctx context.Context, req *cli
 		}
 		record, err = s.records.Get(ctx, target.instance.ID, recordID)
 	} else {
-		values, coerceErr := coerceValues(target.columns, map[string]any{req.ColumnId: req.Match}, databaseValuesText)
+		column, ok := findColumn(target.columns, req.ColumnId)
+		if !ok {
+			return nil, twirp.InvalidArgumentError("column_id", fmt.Sprintf("the database has no column %q", req.ColumnId))
+		}
+		match, coerceErr := coerceTextCell(column, req.Match)
 		if coerceErr != nil {
 			return nil, coerceErr
 		}
-		record, err = s.records.FindFirstByColumnValue(ctx, target.instance.ID, req.ColumnId, values[req.ColumnId])
+		record, err = s.records.FindFirstByColumnValue(ctx, target.instance.ID, column.ID, match)
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &client.FindDatabaseRecordResponse{Status: okStatus("No such record"), Found: false}, nil
@@ -364,7 +368,7 @@ func (s *databaseRecordService) FindDatabaseRecord(ctx context.Context, req *cli
 	return &client.FindDatabaseRecordResponse{Status: okStatus("Record found"), Found: true, Record: protoRecord}, nil
 }
 
-func (s *databaseRecordService) ListPublicDatabaseRecords(ctx context.Context, req *client.ListPublicDatabaseRecordsRequest) (*client.ListPublicDatabaseRecordsResponse, error) {
+func (s *DatabaseRecordService) ListPublicDatabaseRecords(ctx context.Context, req *client.ListPublicDatabaseRecordsRequest) (*client.ListPublicDatabaseRecordsResponse, error) {
 	target, err := s.resolveDatabase(req.DatabaseId)
 	if err != nil {
 		return nil, err
@@ -387,7 +391,7 @@ func (s *databaseRecordService) ListPublicDatabaseRecords(ctx context.Context, r
 	return &client.ListPublicDatabaseRecordsResponse{Status: okStatus(fmt.Sprintf("Found %d record(s)", len(out))), Records: out, Total: total}, nil
 }
 
-func (s *databaseRecordService) checkPage(offset, limit int32) error {
+func (s *DatabaseRecordService) checkPage(offset, limit int32) error {
 	if offset < 0 {
 		return twirp.InvalidArgumentError("offset", "must not be negative")
 	}
@@ -397,7 +401,7 @@ func (s *databaseRecordService) checkPage(offset, limit int32) error {
 	return nil
 }
 
-func (s *databaseRecordService) page(ctx context.Context, target *databaseTarget, sort repo.DatabaseRecordSort, offset, limit int32) ([]*models.DatabaseRecord, int64, error) {
+func (s *DatabaseRecordService) page(ctx context.Context, target *databaseTarget, sort repo.DatabaseRecordSort, offset, limit int32) ([]*models.DatabaseRecord, int64, error) {
 	records, err := s.records.List(ctx, target.instance.ID, sort, int(offset), int(limit))
 	if err != nil {
 		return nil, 0, twirp.InternalErrorWith(fmt.Errorf("list records of %s: %w", target.canonicalID, err))
@@ -411,7 +415,7 @@ func (s *databaseRecordService) page(ctx context.Context, target *databaseTarget
 
 // publishChange queues `database.record.changed` in the transaction that
 // changed the record.
-func (s *databaseRecordService) publishChange(tx *gorm.DB, target *databaseTarget, record *models.DatabaseRecord, op databaseRecordOp) error {
+func (s *DatabaseRecordService) publishChange(tx *gorm.DB, target *databaseTarget, record *models.DatabaseRecord, op databaseRecordOp) error {
 	event := databaseRecordChangedEvent{
 		DatabaseID: target.canonicalID,
 		RecordID:   record.ID.String(),
@@ -440,13 +444,13 @@ func parseRecordID(raw string) (uuid.UUID, error) {
 	return id, nil
 }
 
-func hasColumn(columns []DatabaseColumn, id string) bool {
+func findColumn(columns []DatabaseColumn, id string) (DatabaseColumn, bool) {
 	for _, column := range columns {
 		if column.ID == id {
-			return true
+			return column, true
 		}
 	}
-	return false
+	return DatabaseColumn{}, false
 }
 
 func publicColumns(columns []DatabaseColumn) []DatabaseColumn {
