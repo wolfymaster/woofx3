@@ -2,10 +2,12 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/go-gormigrate/gormigrate/v2"
+	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -149,8 +151,11 @@ func TestStreamSessionReadsCarryTheirSegments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListStreamSessions: %v", err)
 	}
-	if len(listed.Sessions) != 2 || listed.Sessions[0].Id != neverLive {
-		t.Fatalf("listed sessions = %v, want the new session first", listed.Sessions)
+	if len(listed.Sessions) != 1 || listed.Sessions[0].Id != wasLive {
+		t.Fatalf("listed sessions = %v, want only the session that was live", listed.Sessions)
+	}
+	if listed.TotalCount != 1 {
+		t.Fatalf("total count = %d, want 1: a session that was never live is not a stream", listed.TotalCount)
 	}
 	if len(listed.Segments) != 2 {
 		t.Fatalf("listed segments = %d, want 2", len(listed.Segments))
@@ -165,8 +170,36 @@ func TestStreamSessionReadsCarryTheirSegments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListStreamSessions: %v", err)
 	}
-	if len(paged.Sessions) != 1 || len(paged.Segments) != 0 {
-		t.Fatalf("first page = %d sessions and %d segments, want the never-live session alone",
+	if len(paged.Sessions) != 1 || len(paged.Segments) != 2 {
+		t.Fatalf("first page = %d sessions and %d segments, want the live session and its segments",
 			len(paged.Sessions), len(paged.Segments))
+	}
+}
+
+// Compaction's window constraint could never hold for a session that ended
+// before it began.
+func TestStreamSessionSplitBeforeItsStartIsRefused(t *testing.T) {
+	ctx := context.Background()
+	svc := newStreamSessionSvc(t)
+
+	state, err := svc.EnsureCurrentStreamSession(ctx, &client.EnsureCurrentStreamSessionRequest{})
+	if err != nil {
+		t.Fatalf("EnsureCurrentStreamSession: %v", err)
+	}
+
+	_, err = svc.SplitStreamSession(ctx, &client.SplitStreamSessionRequest{
+		At: timestamppb.New(state.Session.StartedAt.AsTime().Add(-time.Minute)),
+	})
+	var twerr twirp.Error
+	if !errors.As(err, &twerr) || twerr.Code() != twirp.InvalidArgument {
+		t.Fatalf("split before the session's start: err = %v, want invalid_argument", err)
+	}
+
+	after, err := svc.EnsureCurrentStreamSession(ctx, &client.EnsureCurrentStreamSessionRequest{})
+	if err != nil {
+		t.Fatalf("EnsureCurrentStreamSession: %v", err)
+	}
+	if after.Session.Id != state.Session.Id {
+		t.Fatalf("session = %s after a refused split, want %s still open", after.Session.Id, state.Session.Id)
 	}
 }

@@ -2,12 +2,18 @@ package repository
 
 import (
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
 )
+
+// ErrSplitBeforeSessionStart is returned for a split that would end the open
+// session before it began. Compaction's window constraint could never hold for
+// such a session, which would keep it out of the raw log's pruning forever.
+var ErrSplitBeforeSessionStart = errors.New("split is before the session's start")
 
 // StreamSessionRepository wraps gorm.DB with stream-session helpers.
 //
@@ -79,6 +85,9 @@ func (r *StreamSessionRepository) SplitSession(at time.Time) (*models.StreamSess
 			First(&current).Error; err != nil {
 			return err
 		}
+		if at.Before(current.StartedAt) {
+			return fmt.Errorf("%w: split at %s, session started %s", ErrSplitBeforeSessionStart, at, current.StartedAt)
+		}
 
 		res := tx.Model(&models.StreamSession{}).
 			Where("id = ? AND status = ?", current.ID, models.StreamSessionStatusOpen).
@@ -126,11 +135,21 @@ func (r *StreamSessionRepository) GetSessionByID(id uuid.UUID) (*models.StreamSe
 	return &session, err
 }
 
-// ListSessions returns sessions newest-first, backed by
-// `idx_stream_sessions_started_at`. `limit <= 0` means no limit.
-func (r *StreamSessionRepository) ListSessions(limit, offset int) ([]*models.StreamSession, error) {
+// everLive narrows a stream_sessions query to broadcasts. A session with no
+// segments only holds offline time: its events count toward lifetime totals, but
+// it is not a stream anyone can look back on.
+func (r *StreamSessionRepository) everLive() *gorm.DB {
+	return r.db.Model(&models.StreamSession{}).Where("EXISTS (?)",
+		r.db.Model(&models.StreamSessionSegment{}).
+			Select("1").
+			Where("stream_session_segments.stream_session_id = stream_sessions.id"))
+}
+
+// ListLiveSessions returns the sessions that have been live, newest-first,
+// backed by `idx_stream_sessions_started_at`. `limit <= 0` means no limit.
+func (r *StreamSessionRepository) ListLiveSessions(limit, offset int) ([]*models.StreamSession, error) {
 	var sessions []*models.StreamSession
-	q := r.db.Order("started_at DESC")
+	q := r.everLive().Order("started_at DESC")
 	if limit > 0 {
 		q = q.Limit(limit).Offset(offset)
 	}
@@ -138,9 +157,9 @@ func (r *StreamSessionRepository) ListSessions(limit, offset int) ([]*models.Str
 	return sessions, err
 }
 
-func (r *StreamSessionRepository) CountSessions() (int64, error) {
+func (r *StreamSessionRepository) CountLiveSessions() (int64, error) {
 	var n int64
-	err := r.db.Model(&models.StreamSession{}).Count(&n).Error
+	err := r.everLive().Count(&n).Error
 	return n, err
 }
 

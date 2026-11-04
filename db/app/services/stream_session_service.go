@@ -74,6 +74,9 @@ func (s *streamSessionService) SplitStreamSession(ctx context.Context, req *clie
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, twirp.NotFoundError("no open stream session to split")
 		}
+		if errors.Is(err, repo.ErrSplitBeforeSessionStart) {
+			return nil, twirp.InvalidArgumentError("at", err.Error())
+		}
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to split stream session: %w", err))
 	}
 
@@ -167,11 +170,11 @@ func (s *streamSessionService) ListStreamSessions(ctx context.Context, req *clie
 		offset = 0
 	}
 
-	sessions, err := s.repo.ListSessions(limit, offset)
+	sessions, err := s.repo.ListLiveSessions(limit, offset)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list stream sessions: %w", err))
 	}
-	total, err := s.repo.CountSessions()
+	total, err := s.repo.CountLiveSessions()
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to count stream sessions: %w", err))
 	}
