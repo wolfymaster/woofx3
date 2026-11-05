@@ -6,6 +6,11 @@
  * its own limits again when it acts.
  */
 
+import { MODERATION_LIMITS, type ModerationParseResult } from "./moderation-limits";
+import { asWholeWord, type Pattern, parsePattern } from "./moderation-pattern";
+
+export { MODERATION_LIMITS, type ModerationParseResult };
+
 /** A chat filter, in the order the engine evaluates them: cheap and most severe first. */
 export const FILTER_IDS = ["banned_phrases", "links", "repetition", "caps", "symbols"] as const;
 export type FilterId = (typeof FILTER_IDS)[number];
@@ -57,36 +62,6 @@ export interface ModerationConfig {
   rules: Partial<Record<FilterId, ModerationRule>>;
 }
 
-/**
- * Ceilings enforced on save and on load. They sit at or below every
- * supported platform's own limits, so a valid config never asks a platform
- * for more than it takes; each platform adapter still checks its own.
- */
-export const MODERATION_LIMITS = {
-  /** Two weeks. */
-  maxTimeoutSeconds: 1_209_600,
-  maxWarnReasonChars: 200,
-  maxAllowLogins: 200,
-  maxLoginChars: 50,
-  maxAllowDomains: 200,
-  maxDomainChars: 253,
-  /** One hour: a permit is meant for the next link, not the rest of the stream. */
-  maxPermitSeconds: 3_600,
-  maxPhrases: 200,
-  maxPatternChars: 100,
-  maxTotalPatternChars: 4_000,
-  maxClassItems: 20,
-  /** A pattern needs this many literal or class items, so it never matches nearly everything. */
-  minPatternLiterals: 2,
-  /** A line is scanned in its first this-many characters, above any platform's message length. */
-  maxScanChars: 1_000,
-  /** Bounds the repetition window, and so how long a chatter's lines are remembered. */
-  maxRepetitionWindowSeconds: 600,
-  maxRepeats: 20,
-  /** A length threshold above this could never trip on a chat line. */
-  maxMinLength: 500,
-} as const;
-
 /** Moderators, VIPs and subscribers are exempt until the streamer says otherwise. */
 export const DEFAULT_EXEMPTIONS: Exemptions = {
   broadcaster: true,
@@ -107,8 +82,6 @@ export const DEFAULT_MODERATION_CONFIG: ModerationConfig = {
   exempt: DEFAULT_EXEMPTIONS,
   rules: {},
 };
-
-export type ModerationParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
 
 function failed<T>(error: string): ModerationParseResult<T> {
   return { ok: false, error };
@@ -199,4 +172,127 @@ export function parseLinksParams(raw: unknown): ModerationParseResult<LinksParam
     return seconds;
   }
   return { ok: true, value: { allowDomains: domains, permitSeconds: seconds.value } };
+}
+
+/** A share of a line's characters: caps among its letters, or symbols among its characters. */
+export interface ShareParams {
+  /** Lines shorter than this (in counted characters) never trip the rule, so "LOL" is fine. */
+  minLength: number;
+  /** Trips above this percentage. */
+  maxPercent: number;
+}
+
+export const DEFAULT_CAPS_PARAMS: ShareParams = { minLength: 15, maxPercent: 70 };
+export const DEFAULT_SYMBOLS_PARAMS: ShareParams = { minLength: 15, maxPercent: 50 };
+
+export function parseShareParams(raw: unknown): ModerationParseResult<ShareParams> {
+  const fields = readFields(raw, ["minLength", "maxPercent"]);
+  if (!fields.ok) {
+    return fields;
+  }
+  const minLength = readInteger(fields.value.minLength, "minLength", 1, MODERATION_LIMITS.maxMinLength);
+  if (!minLength.ok) {
+    return minLength;
+  }
+  const maxPercent = readInteger(fields.value.maxPercent, "maxPercent", 1, 99);
+  if (!maxPercent.ok) {
+    return maxPercent;
+  }
+  return { ok: true, value: { minLength: minLength.value, maxPercent: maxPercent.value } };
+}
+
+export interface RepetitionParams {
+  windowSeconds: number;
+  /** The same line this many times in the window is fine; once more trips the rule. */
+  maxRepeats: number;
+  /** Lines shorter than this, after folding case and spaces, are never counted. */
+  minLength: number;
+}
+
+export const DEFAULT_REPETITION_PARAMS: RepetitionParams = { windowSeconds: 30, maxRepeats: 3, minLength: 5 };
+
+export function parseRepetitionParams(raw: unknown): ModerationParseResult<RepetitionParams> {
+  const fields = readFields(raw, ["windowSeconds", "maxRepeats", "minLength"]);
+  if (!fields.ok) {
+    return fields;
+  }
+  const windowSeconds = readInteger(
+    fields.value.windowSeconds,
+    "windowSeconds",
+    1,
+    MODERATION_LIMITS.maxRepetitionWindowSeconds
+  );
+  if (!windowSeconds.ok) {
+    return windowSeconds;
+  }
+  const maxRepeats = readInteger(fields.value.maxRepeats, "maxRepeats", 1, MODERATION_LIMITS.maxRepeats);
+  if (!maxRepeats.ok) {
+    return maxRepeats;
+  }
+  const minLength = readInteger(fields.value.minLength, "minLength", 1, MODERATION_LIMITS.maxMinLength);
+  if (!minLength.ok) {
+    return minLength;
+  }
+  return {
+    ok: true,
+    value: { windowSeconds: windowSeconds.value, maxRepeats: maxRepeats.value, minLength: minLength.value },
+  };
+}
+
+export interface BannedPhrase {
+  /** In the grammar of ./moderation-pattern.ts. */
+  pattern: string;
+  /** Match only whole words; otherwise inside words too. */
+  wholeWord: boolean;
+}
+
+export interface BannedPhrasesParams {
+  phrases: BannedPhrase[];
+}
+
+export const DEFAULT_BANNED_PHRASES_PARAMS: BannedPhrasesParams = { phrases: [] };
+
+/** Refuses a bad pattern by its position, never echoing the phrase list. */
+export function parseBannedPhrasesParams(raw: unknown): ModerationParseResult<BannedPhrasesParams> {
+  const fields = readFields(raw, ["phrases"]);
+  if (!fields.ok) {
+    return fields;
+  }
+  const { phrases } = fields.value;
+  if (!Array.isArray(phrases) || phrases.length > MODERATION_LIMITS.maxPhrases) {
+    return failed(`phrases must be a list of at most ${MODERATION_LIMITS.maxPhrases}`);
+  }
+  const parsed: BannedPhrase[] = [];
+  let totalChars = 0;
+  for (const [index, entry] of phrases.entries()) {
+    const phrase = readFields(entry, ["pattern", "wholeWord"]);
+    if (!phrase.ok) {
+      return failed(`phrases[${index}]: ${phrase.error}`);
+    }
+    const { pattern, wholeWord } = phrase.value;
+    if (typeof pattern !== "string" || typeof wholeWord !== "boolean") {
+      return failed(`phrases[${index}] must be { pattern: text, wholeWord: true or false }`);
+    }
+    const compiled = parsePattern(pattern);
+    if (!compiled.ok) {
+      return failed(`phrases[${index}] ${compiled.error}`);
+    }
+    totalChars += [...pattern].length;
+    parsed.push({ pattern, wholeWord });
+  }
+  if (totalChars > MODERATION_LIMITS.maxTotalPatternChars) {
+    return failed(`phrases add up to more than ${MODERATION_LIMITS.maxTotalPatternChars} characters`);
+  }
+  return { ok: true, value: { phrases: parsed } };
+}
+
+/** Each phrase compiled. Only for params `parseBannedPhrasesParams` accepted, so a failure is a bug. */
+export function compilePhrases(params: BannedPhrasesParams): Pattern[] {
+  return params.phrases.map((phrase) => {
+    const compiled = parsePattern(phrase.pattern);
+    if (!compiled.ok) {
+      throw new Error(`a banned phrase that passed its parser no longer compiles: ${compiled.error}`);
+    }
+    return phrase.wholeWord ? asWholeWord(compiled.value) : compiled.value;
+  });
 }

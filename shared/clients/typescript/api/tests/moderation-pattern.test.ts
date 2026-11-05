@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { MODERATION_LIMITS } from "../moderation-config";
+import { MODERATION_LIMITS } from "../moderation-limits";
 import { asWholeWord, matches, matchWithSteps, type Pattern, parsePattern } from "../moderation-pattern";
 
 function compiled(raw: string): Pattern {
