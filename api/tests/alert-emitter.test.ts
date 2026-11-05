@@ -74,6 +74,7 @@ describe("Alert mappers", () => {
     expect(
       mapSubscribe({
         isGift: false,
+        isCommunityGift: false,
         tier: "1000",
         userId: "u1",
         userName: "alice",

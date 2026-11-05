@@ -188,6 +188,12 @@ export interface StreamOffline {
 
 export interface Subscribe {
   isGift: boolean;
+  /**
+   * A gifted sub that is one of a community gift, which also arrives whole as
+   * `SubscriptionGift`. False for a sub the viewer bought and for a gift to one
+   * named viewer, which has no other event.
+   */
+  isCommunityGift: boolean;
   tier: string;
   userId: string | null;
   userName: string | null;
