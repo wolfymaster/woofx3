@@ -1,3 +1,4 @@
+import type { LinksParams, ModerationConfig } from "@woofx3/api/moderation-config";
 import type { PlatformId } from "@woofx3/api/platform-gateway";
 import { BoundedMap } from "../chat/bounded-map";
 import type { Clock } from "../host/deps";
@@ -37,4 +38,30 @@ export class MemoryPermitStore implements PermitStore {
 
 function key(platform: PlatformId, login: string): string {
   return `${platform}:${login.toLowerCase()}`;
+}
+
+/** What `!permit` needs: a grant that answers how long it lasts. */
+export interface LinkPermits {
+  /** Seconds granted, or null when links are not being filtered, so a permit would mean nothing. */
+  permit(platform: PlatformId, login: string): number | null;
+}
+
+/** Grants permits for as long as the running config's links rule says. */
+export function linkPermits(config: { current(): ModerationConfig }, permits: PermitStore): LinkPermits {
+  return {
+    permit(platform, login) {
+      const current = config.current();
+      const links = current.rules.links;
+      if (!current.enabled || links === undefined || !links.enabled) {
+        return null;
+      }
+      // The config parser checked these params with the links filter's own parser.
+      const { permitSeconds } = links.params as LinksParams;
+      if (permitSeconds === 0) {
+        return null;
+      }
+      permits.grant(platform, login, permitSeconds);
+      return permitSeconds;
+    },
+  };
 }

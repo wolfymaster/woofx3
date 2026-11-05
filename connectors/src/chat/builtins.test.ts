@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import type { PlatformId } from "@woofx3/api/platform-gateway";
 import { RecordingLogger } from "../host/testing";
+import type { LinkPermits } from "../moderation/permit-store";
 import { builtinCommands, formatStreamPosition, VANISH_MAX_SECONDS } from "./builtins";
 import { type CommandDefinition, type CommandInvocation, CommandTable } from "./commands";
 import { BROADCASTER, chatLine, FakeDispatcherDb, MODERATOR } from "./testing";
@@ -24,11 +26,25 @@ class FakeTwitchApi implements TwitchApiPort {
   }
 }
 
+/** Permits that last `seconds`, or none when null, recording who got one. */
+class FakePermits implements LinkPermits {
+  readonly granted: Array<{ platform: string; login: string }> = [];
+  seconds: number | null = 60;
+
+  permit(platform: PlatformId, login: string): number | null {
+    if (this.seconds !== null) {
+      this.granted.push({ platform, login });
+    }
+    return this.seconds;
+  }
+}
+
 function setup(randomValue = 0) {
   const db = new FakeDispatcherDb();
   const twitchApi = new FakeTwitchApi();
+  const permits = new FakePermits();
   const logger = new RecordingLogger();
-  const commands = builtinCommands({ db, twitchApi, random: { next: () => randomValue }, logger });
+  const commands = builtinCommands({ db, twitchApi, permits, random: { next: () => randomValue }, logger });
   const byName = (name: string): CommandDefinition => {
     const found = commands.find((command) => command.name === name);
     if (found === undefined) {
@@ -48,7 +64,7 @@ function setup(randomValue = 0) {
     };
     return byName(name).handler(invocation);
   };
-  return { db, twitchApi, logger, commands, byName, run };
+  return { db, twitchApi, permits, logger, commands, byName, run };
 }
 
 const refused: TwitchApiFailure = { kind: "refused", message: "needs scope", code: "missing_scope" };
@@ -61,6 +77,7 @@ describe("built-in commands", () => {
       "grantcommands",
       "revokecommands",
       "vanish",
+      "permit",
       "category",
       "title",
       "marker",
@@ -252,5 +269,53 @@ describe("built-in commands", () => {
     expect(formatStreamPosition(0)).toBe("0:00:00");
     expect(formatStreamPosition(59.9)).toBe("0:00:59");
     expect(formatStreamPosition(3600)).toBe("1:00:00");
+  });
+});
+
+describe("!permit", () => {
+  test("lets a named viewer post a link for the configured time, ignoring @ and case", async () => {
+    const { permits, run } = setup();
+    expect(await run("permit", chatLine({ membership: MODERATOR }), "@Some_Viewer")).toBe(
+      "@some_viewer may post a link for the next 60 seconds"
+    );
+    expect(permits.granted).toEqual([{ platform: "twitch", login: "some_viewer" }]);
+  });
+
+  test("may be run by the broadcaster and moderators only", () => {
+    const { byName } = setup();
+    expect(byName("permit").allowRoles).toEqual(["broadcaster", "moderator"]);
+  });
+
+  test("says so when links are not being filtered", async () => {
+    const { permits, run } = setup();
+    permits.seconds = null;
+    expect(await run("permit", chatLine({ membership: BROADCASTER }), "someone")).toBe(
+      "Links are not being filtered right now"
+    );
+  });
+
+  const usage: Array<[name: string, args: string]> = [
+    ["no login", ""],
+    ["two logins", "one two"],
+    ["a login with symbols", "not-a-login!"],
+  ];
+  for (const [name, args] of usage) {
+    test(`answers with its usage for ${name}`, async () => {
+      const { permits, run } = setup();
+      expect(await run("permit", chatLine({ membership: MODERATOR }), args)).toBe("Usage: !permit <login>");
+      expect(permits.granted).toHaveLength(0);
+    });
+  }
+
+  test("ignores a permit for oneself", async () => {
+    const { permits, run } = setup();
+    expect(await run("permit", chatLine({ membership: MODERATOR, chatterLogin: "mod_one" }), "mod_one")).toBe("");
+    expect(permits.granted).toHaveLength(0);
+  });
+
+  test("refuses a line that is not from the platform", async () => {
+    const { permits, run } = setup();
+    expect(await run("permit", chatLine({ trusted: false, membership: undefined }), "someone")).toBe("");
+    expect(permits.granted).toHaveLength(0);
   });
 });

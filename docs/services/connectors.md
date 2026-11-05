@@ -512,6 +512,7 @@ itself: a simulated line is ignored and logged.
 | `!grantcommands <login>` | all | a grant on the command | Gives the login the moderator role on every command. |
 | `!revokecommands <login>` | all | a grant on the command | Takes it back. |
 | `!vanish` | Twitch | a grant on the command | Times the speaker out for 1 to 600 seconds. A broadcaster or moderator is spared. |
+| `!permit <login>` | all | broadcaster, moderator, or a grant | Lets the login post links past chat moderation's links rule for that rule's permit time. Answers that links are not filtered when the rule is off; a permit for oneself is ignored. Permits are in memory and end with a restart. |
 | `!title <text>` | Twitch | broadcaster, moderator, or a grant | Sets the stream title. |
 | `!category <name>` | Twitch | broadcaster, moderator, or a grant | Sets the stream category. |
 | `!marker [text]` | Twitch | broadcaster, moderator, or a grant | Places a stream marker and says its position. |
