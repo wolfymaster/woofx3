@@ -1108,6 +1108,10 @@ export class DbClient {
     return clientPb.GetClient({ clientId }, this.config);
   }
 
+  async setClientEventsTarget(req: clientPb.SetClientEventsTargetRequest): Promise<clientPb.ClientResponse> {
+    return clientPb.SetClientEventsTarget(req, this.config);
+  }
+
   async deleteClient(id: string): Promise<common.ResponseStatus> {
     return clientPb.DeleteClient({ id }, this.config);
   }

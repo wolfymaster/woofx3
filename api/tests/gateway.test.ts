@@ -1,5 +1,10 @@
 import { describe, expect, it, mock } from "bun:test";
-import { type ApiGatewayContract, AUTHENTICATION_REFUSED, isAuthenticationRefused } from "@woofx3/api/rpc";
+import {
+  type ApiGatewayContract,
+  AUTHENTICATION_REFUSED,
+  isAuthenticationRefused,
+  isRegistrationRefused,
+} from "@woofx3/api/rpc";
 import { newMessagePortRpcSession } from "capnweb";
 import { Api } from "../src/api";
 import { ApiSession } from "../src/api-session";
@@ -9,6 +14,13 @@ import { EngineEventStream } from "../src/engine-event-stream";
 import { ApiGateway, AuthenticationRefused, AuthUnavailable } from "../src/gateway";
 import { type ConnectionInfo, GatewayConnection } from "../src/gateway-connection";
 import { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient } from "../src/webhook-client";
+
+/** For clients without an events target, which never reach the shipper. */
+const NO_SHIPPER = {
+  ship: () => {
+    throw new Error("no client in this test has an events target");
+  },
+};
 
 const OPEN = { mode: "open", token: null } as const;
 
@@ -48,7 +60,13 @@ describe("ApiGateway.registerClient", () => {
     const db = { createClient, listClients } as any;
     const logger = fakeLogger();
     const api = newApi(db, logger);
-    const webhook = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
+    const webhook = new WebhookClient(
+      db,
+      logger,
+      new EngineEventStream(logger),
+      DEFAULT_WEBHOOK_CLIENT_CONFIG,
+      NO_SHIPPER
+    );
     api.setWebhookClient(webhook);
     const auth = {
       validate: mock(async () => ({ kind: "accepted", description: "test-ui", boundOrigin: null })),
@@ -68,6 +86,8 @@ describe("ApiGateway.registerClient", () => {
       callbackToken: "tok",
       kind: "CLIENT_KIND_REGISTERED",
       origin: "",
+      eventsUrl: "",
+      eventsToken: "",
     });
     // The new callback is picked up without a restart.
     expect(listClients).toHaveBeenCalledTimes(1);
@@ -81,7 +101,13 @@ describe("ApiGateway.registerClient", () => {
     } as any;
     const logger = fakeLogger();
     const api = newApi(db, logger);
-    const webhook = new WebhookClient(db, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
+    const webhook = new WebhookClient(
+      db,
+      logger,
+      new EngineEventStream(logger),
+      DEFAULT_WEBHOOK_CLIENT_CONFIG,
+      NO_SHIPPER
+    );
     api.setWebhookClient(webhook);
     const gateway = new ApiGateway(
       api,
@@ -99,6 +125,62 @@ describe("ApiGateway.registerClient", () => {
     expect(res).toEqual({ clientId: "c2", clientSecret: "s2" });
     expect(listClients).not.toHaveBeenCalled();
   });
+
+  it("stores an events target given at registration and picks it up at once", async () => {
+    const createClient = mock(async () => ({ client: { clientId: "c3", clientSecret: "s3" } }));
+    const listClients = mock(async () => ({ clients: [] }));
+    const db = { createClient, listClients } as any;
+    const logger = fakeLogger();
+    const api = newApi(db, logger);
+    const webhook = new WebhookClient(
+      db,
+      logger,
+      new EngineEventStream(logger),
+      DEFAULT_WEBHOOK_CLIENT_CONFIG,
+      NO_SHIPPER
+    );
+    const gateway = new ApiGateway(api, {} as any, db, logger, OPEN, new ClientSessions(logger), null);
+    gateway.setWebhookClient(webhook);
+
+    await gateway.registerClient("test-ui", {
+      callbackUrl: "https://cb.example",
+      callbackToken: "tok",
+      eventsUrl: "https://queue.example/v1/engine-events",
+      eventsToken: "events-token",
+    });
+
+    expect(createClient).toHaveBeenCalledWith(
+      expect.objectContaining({ eventsUrl: "https://queue.example/v1/engine-events", eventsToken: "events-token" })
+    );
+    expect(listClients).toHaveBeenCalledTimes(1);
+  });
+
+  const refusedTargets: [string, Record<string, string>, string][] = [
+    ["a URL without a token", { eventsUrl: "https://queue.example" }, "must be given together"],
+    ["a token without a URL", { eventsToken: "events-token" }, "must be given together"],
+    [
+      "a plain http URL to another host",
+      { eventsUrl: "http://queue.example", eventsToken: "events-token" },
+      "The events URL is refused",
+    ],
+  ];
+  for (const [name, options, message] of refusedTargets) {
+    it(`refuses ${name} without creating a client`, async () => {
+      const createClient = mock(async () => ({ client: { clientId: "c4", clientSecret: "s4" } }));
+      const db = { createClient, listClients: mock(async () => ({ clients: [] })) } as any;
+      const logger = fakeLogger();
+      const gateway = new ApiGateway(newApi(db, logger), {} as any, db, logger, OPEN, new ClientSessions(logger), null);
+
+      const error = await gateway.registerClient("test-ui", options).then(
+        () => null,
+        (err: unknown) => err
+      );
+
+      expect(isRegistrationRefused(error)).toBe(true);
+      expect(String(error)).toContain(message);
+      expect(createClient).not.toHaveBeenCalled();
+    });
+  }
 
   it("fails when db-proxy returns no client", async () => {
     const db = { createClient: mock(async () => ({})) } as any;

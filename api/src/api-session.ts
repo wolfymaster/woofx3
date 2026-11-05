@@ -4,6 +4,7 @@ import type {
   EngineEventSubscribeOptions,
   EngineEventSubscriber,
   EngineRequestAnswer,
+  EventsTarget,
   MarketplaceInstallRequest,
   RelayConfig,
   StreamEventSubscriber,
@@ -122,6 +123,10 @@ export class ApiSession extends RpcTarget {
   /** A client answers only the requests sent to it, so the session supplies its client id. */
   async answerEngineRequest(requestId: string, answer: EngineRequestAnswer) {
     return this.api.answerEngineRequest(requestId, answer, { clientId: this.clientId });
+  }
+
+  async setEventsTarget(target: EventsTarget | null) {
+    return this.api.setEventsTarget(target, { clientId: this.clientId });
   }
 
   async setRelayConfig(config: RelayConfig | null) {
@@ -278,6 +283,7 @@ export const RPC_METHODS = [
   "requestProcessing",
   "setTwitchToken",
   "setRelayConfig",
+  "setEventsTarget",
   "sendToPlatforms",
   "deleteTwitchToken",
   "getTwitchLink",

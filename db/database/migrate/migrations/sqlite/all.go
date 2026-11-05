@@ -87,5 +87,6 @@ func All() []*gormigrate.Migration {
 		AddWorkflowRevision(),
 		AddWorkflowGroups(),
 		AddDatabaseRecords(),
+		AddClientEventsTarget(),
 	}
 }

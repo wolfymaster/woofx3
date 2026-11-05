@@ -15,6 +15,13 @@ import { createHttpServer } from "../src/http";
 import { resolveRegistrationPolicy } from "../src/registration";
 import { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient } from "../src/webhook-client";
 
+/** For clients without an events target, which never reach the shipper. */
+const NO_SHIPPER = {
+  ship: () => {
+    throw new Error("no client in this test has an events target");
+  },
+};
+
 /*
  * Deleting a client ends the sessions it already holds: an open WebSocket is
  * closed, any call still arriving is refused, and a session that was
@@ -107,7 +114,7 @@ function engine() {
   const auth = new ClientAuth(db as never, logger, { ttlMs: DEFAULT_AUTH_CACHE_TTL_MS });
   const sessions = new ClientSessions(logger);
   const stream = new EngineEventStream(logger);
-  const webhooks = new WebhookClient(db as never, logger, stream, DEFAULT_WEBHOOK_CLIENT_CONFIG);
+  const webhooks = new WebhookClient(db as never, logger, stream, DEFAULT_WEBHOOK_CLIENT_CONFIG, NO_SHIPPER);
   api.setWebhookClient(webhooks);
   api.setClientRevocation(new ClientRevoker(auth, sessions, stream, webhooks, api));
   const gateway = new ApiGateway(api, auth, db as never, logger, resolveRegistrationPolicy({}), sessions, null);

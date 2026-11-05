@@ -44,11 +44,6 @@ interface Registration {
  * would queue unbounded in the engine's memory. The catalog never offers chat,
  * the engine's one high-volume subject, so what a subscriber can ask for fires
  * at human pace, which this fan-out can carry as-is.
- *
- * A second consumer of these subjects alongside AlertEmitter rather than a hook
- * into it: core NATS delivers to every subscriber, so the extra subscription is
- * free, and AlertEmitter's job is mapping to Convex alert webhooks — it
- * discards the CloudEvent envelope this needs.
  */
 export class StreamEventBroadcaster {
   /** Keyed by the session that registered, so a session holds one registration. */
@@ -222,8 +217,8 @@ export class StreamEventBroadcaster {
 }
 
 /**
- * The publisher wraps payloads in a CloudEvent, but `ce.data ?? ce` mirrors
- * AlertEmitter: some producers publish the payload bare. The subject is the
+ * The publisher wraps payloads in a CloudEvent, but `ce.data ?? ce` covers
+ * producers that publish the payload bare. The subject is the
  * fallback for `type` because the EventType value is both. A module event
  * that names no platform gets its module's id, as the event log records it,
  * so a live frame and its logged copy read the same.

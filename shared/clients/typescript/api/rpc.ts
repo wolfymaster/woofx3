@@ -42,6 +42,11 @@ export interface GatewayPingResponse {
  * only for headless consumers (CLI tests, smoke checks) that don't need
  * to receive engine callbacks.
  *
+ * `eventsUrl` + `eventsToken`, both or neither, are an events target: the
+ * engine ships this client's events there in batches instead of POSTing each
+ * one to `callbackUrl`, which then carries requests only. See
+ * `setEventsTarget` to change it later. Gated on `callbacks.eventsTarget`.
+ *
  * `registrationToken` is required when the engine was deployed with
  * `WOOFX3_REGISTRATION_TOKEN` set (every managed engine is): without it
  * anyone who reaches the engine first could register and claim it. An
@@ -51,6 +56,8 @@ export interface GatewayPingResponse {
 export interface RegisterClientOptions {
   callbackUrl?: string;
   callbackToken?: string;
+  eventsUrl?: string;
+  eventsToken?: string;
   registrationToken?: string;
 }
 

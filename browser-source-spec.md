@@ -213,7 +213,7 @@ A barkloader module declares widgets in its `manifest.json`:
 }
 ```
 
-Engine-internal validation resolves `acceptedEvents` (canonical trigger ids) against the trigger graph at install time. The wire-format `alertTypes` is derived from `acceptedEvents` via the same NATS-subject → `AlertContext.type` mapping the api/ `AlertEmitter` uses (see `api/src/alert-emitter.ts`). Authors can override by declaring `alertTypes` directly when the derivation isn't right.
+Engine-internal validation resolves `acceptedEvents` (canonical trigger ids) against the trigger graph at install time. The wire-format `alertTypes` is derived from `acceptedEvents` via the NATS-subject → `AlertContext.type` mapping. Authors can override by declaring `alertTypes` directly when the derivation isn't right.
 
 ### Reference module
 

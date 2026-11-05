@@ -8,6 +8,13 @@ import { resolveRegistrationPolicy } from "../src/registration";
 import { TwitchTokenSource } from "../src/twitch-token-source";
 import { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient } from "../src/webhook-client";
 
+/** For clients without an events target, which never reach the shipper. */
+const NO_SHIPPER = {
+  ship: () => {
+    throw new Error("no client in this test has an events target");
+  },
+};
+
 /*
  * A desktop shell registers with its local engine as a dashboard client whose
  * callback URL is a loopback address, and answers `twitch.token.requested`
@@ -89,7 +96,13 @@ async function registerShell(callbackUrl: string) {
     new ClientSessions(logger),
     null
   );
-  const webhooks = new WebhookClient(db as never, logger, new EngineEventStream(logger), DEFAULT_WEBHOOK_CLIENT_CONFIG);
+  const webhooks = new WebhookClient(
+    db as never,
+    logger,
+    new EngineEventStream(logger),
+    DEFAULT_WEBHOOK_CLIENT_CONFIG,
+    NO_SHIPPER
+  );
   gateway.setWebhookClient(webhooks);
   const registered = await gateway.registerClient("desktop shell", { callbackUrl, callbackToken: "shell-token" });
   return { db, webhooks, registered };
@@ -107,6 +120,8 @@ describe("a dashboard client with a loopback callback URL", () => {
       callbackToken: "shell-token",
       kind: "CLIENT_KIND_REGISTERED",
       origin: "",
+      eventsUrl: "",
+      eventsToken: "",
     });
     expect(webhooks.clientIds()).toEqual(["shell"]);
   });

@@ -26,6 +26,11 @@ pub struct Client {
     /// Unset until an authentication is recorded.
     #[prost(message, optional, tag="11")]
     pub last_authenticated_at: ::core::option::Option<::pbjson_types::Timestamp>,
+    /// Where events go instead of callback_url; both empty when unset.
+    #[prost(string, tag="12")]
+    pub events_url: ::prost::alloc::string::String,
+    #[prost(string, tag="13")]
+    pub events_token: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateClientRequest {
@@ -40,6 +45,11 @@ pub struct CreateClientRequest {
     pub kind: i32,
     #[prost(string, tag="6")]
     pub origin: ::prost::alloc::string::String,
+    /// Both set or both empty.
+    #[prost(string, tag="7")]
+    pub events_url: ::prost::alloc::string::String,
+    #[prost(string, tag="8")]
+    pub events_token: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetClientRequest {
@@ -59,6 +69,16 @@ pub struct UpdateClientRequest {
     pub callback_url: ::prost::alloc::string::String,
     #[prost(string, tag="4")]
     pub callback_token: ::prost::alloc::string::String,
+}
+/// Both fields set to set the target, both empty to clear it.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetClientEventsTargetRequest {
+    #[prost(string, tag="1")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub events_url: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub events_token: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct DeleteClientRequest {

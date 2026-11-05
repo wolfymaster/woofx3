@@ -8,6 +8,7 @@ import type DbService from "./db-service";
 import type { EngineEventStream } from "./engine-event-stream";
 import type { EventCatalog } from "./event-catalog";
 import type { EventLogSelectionSource } from "./event-log-selection";
+import type { EventShipper } from "./event-shipper";
 import type { StreamGaugeSampler } from "./stream-gauge-sampler";
 import type { StreamSessionResolver } from "./stream-session-resolver";
 
@@ -46,6 +47,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   private eventCatalog: EventCatalog | null = null;
   private eventLogSelection: EventLogSelectionSource | null = null;
   private api: Api | null = null;
+  private eventShipper: EventShipper | null = null;
 
   constructor(runtimeConfig: ApiConfig) {
     this.context = { runtimeConfig };
@@ -55,14 +57,12 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     const [
       { createMessageBus },
       { initAlertLogHandlers },
-      { AlertEmitter },
       { Api },
       { ClientAuth },
       { ClientRevoker, ClientSessions },
       { PairingRegistry, pairedClientCreator },
       { DEFAULT_PAIRING_CONFIG },
       { RequestGuard },
-      { ConvexWebhookClient },
       { EngineEventStream },
       { EventCatalog },
       { EventLogSelectionSource },
@@ -84,6 +84,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { serveShoutoutQueue },
       { UserEventRecorder },
       { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient },
+      { EventShipper, sleep },
+      { DEFAULT_EVENT_SHIPPER_CONFIG },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
       { initWorkflowGroupHandlers },
@@ -99,14 +101,12 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     ] = await Promise.all([
       import("@woofx3/nats"),
       import("./alert-log-handlers"),
-      import("./alert-emitter"),
       import("./api"),
       import("./auth"),
       import("./client-sessions"),
       import("./pairing"),
       import("./pairing-config"),
       import("@woofx3/common/http/request-guard"),
-      import("./convex-webhook-client"),
       import("./engine-event-stream"),
       import("./event-catalog"),
       import("./event-log-selection"),
@@ -128,6 +128,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./shoutout-queue"),
       import("./user-event-recorder"),
       import("./webhook-client"),
+      import("./event-shipper"),
+      import("./config"),
       import("./widget-status-handlers"),
       import("./workflow-event-handlers"),
       import("./workflow-group-event-handlers"),
@@ -222,7 +224,21 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     const engineEventStream = new EngineEventStream(logger);
     this.engineEventStream = engineEventStream;
     api.setEngineEventStream(engineEventStream);
-    const webhookClient = new WebhookClient(db, logger, engineEventStream, DEFAULT_WEBHOOK_CLIENT_CONFIG);
+    this.eventShipper = new EventShipper({
+      logger,
+      config: DEFAULT_EVENT_SHIPPER_CONFIG,
+      random: { next: Math.random },
+      sleep,
+      fetch,
+    });
+    this.eventShipper.start();
+    const webhookClient = new WebhookClient(
+      db,
+      logger,
+      engineEventStream,
+      DEFAULT_WEBHOOK_CLIENT_CONFIG,
+      this.eventShipper
+    );
     api.setWebhookClient(webhookClient);
     try {
       await webhookClient.refreshCallbackUrls();
@@ -231,9 +247,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
         error: err instanceof Error ? err.message : String(err),
       });
     }
-
-    const convexWebhookClient = new ConvexWebhookClient({ db, logger });
-    await convexWebhookClient.loadConfig();
 
     // api.initSubscriptions() covers only the module.trigger.* and
     // twitch stream lifecycle subscriptions — the ones that need more
@@ -244,9 +257,6 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     await api.initSubscriptions();
 
     if (natsClient) {
-      const alertEmitter = new AlertEmitter(natsClient, convexWebhookClient, logger);
-      await alertEmitter.start();
-
       const storageChangeEmitter = new StorageChangeEmitter(natsClient, webhookClient, logger);
       await storageChangeEmitter.start();
 
@@ -386,6 +396,9 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
   }
 
   async terminate(): Promise<void> {
+    // First, while the rest of the engine still runs, so its drain is not cut short.
+    await this.eventShipper?.stop();
+    this.eventShipper = null;
     this.api?.twitchDeviceLogins.stop();
     this.api = null;
     this.gaugeSampler?.stop();

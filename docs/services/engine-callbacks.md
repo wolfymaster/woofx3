@@ -3,6 +3,7 @@
 The engine tells its clients when its state changes (a workflow saved, a scene deleted, a module installed, an alert played), and sometimes needs a client to answer a question (a fresh Twitch token, a relay credential, a place in the shoutout queue). Both travel as CloudEvents 1.0 envelopes defined in `shared/clients/typescript/api/webhooks.ts`, over one of two transports:
 
 - **Webhooks**: an HTTP POST to the `callbackUrl` a client gave when it registered (`registerClient`). This is how a cloud dashboard hears from its engine, whether or not anyone has the dashboard open.
+- **An events target**: batched HTTP POSTs to the `eventsUrl` a client set at registration or with `setEventsTarget`. A client with one gets its events there instead of on its callback URL, which then carries requests only. See [Events targets](#events-targets).
 - **The event stream**: a push over the client's own capnweb WebSocket session, after it calls `subscribeEngineEvents`. This is how a client with no callback URL, such as the desktop app driving a local engine, hears from its engine.
 
 Both transports carry the same envelopes. The api builds each envelope once, in `WebhookClient` (`api/src/webhook-client.ts`), and hands it to both: the HTTP delivery in that file, and `EngineEventStream` (`api/src/engine-event-stream.ts`) for the stream. So a handler written for webhook bodies works unchanged on stream frames.
@@ -11,7 +12,7 @@ Both transports carry the same envelopes. The api builds each envelope once, in 
 
 An event is a `CallbackEnvelope` whose `type` is an `EngineEventType` (`workflow.*`, `workflow.run.*`, `scene.*`, `command.*`, `group.*`, `alert.*`, `module.*`, `engine.response.received` and the rest). Most events go to every client, among them `client.pairing.started`, which tells approvers a browser is waiting to pair (see [Browser pairing](./pairing.md)) and never carries the code. A few report on one client's call and go only to that client: the results of a module install it started (`module.installed`, `module.install_failed`, and the triggers that install registered).
 
-A client gets each event on every transport it has: a POST to its callback URL, if it registered one, and a push on each of its event stream subscriptions. A client with both receives every event twice, with the same envelope `id`. That is deliberate. The two transports serve different readers: the webhook reaches a backend that keeps state whether or not a browser is open, and a subscription reaches one open session that wants to show changes live. Letting a subscription replace the webhook would make the backend's state depend on whether a tab happened to be open, and would lose events whenever it closed. Consumers are idempotent on the envelope `id` already, as webhook retries require.
+A client gets each event on every transport it has: a POST to its callback URL, if it registered one (or to its events target instead, if it set one), and a push on each of its event stream subscriptions. A client with both receives every event twice, with the same envelope `id`. That is deliberate. The two transports serve different readers: the webhook reaches a backend that keeps state whether or not a browser is open, and a subscription reaches one open session that wants to show changes live. Letting a subscription replace the webhook would make the backend's state depend on whether a tab happened to be open, and would lose events whenever it closed. Consumers are idempotent on the envelope `id` already, as webhook retries require.
 
 ## Requests
 
@@ -37,6 +38,28 @@ Then the transport is chosen for that client:
 
 The engine waits 5 seconds for an answer on either transport. Over the stream, a request also fails at once when the subscription drops before it is answered, or when the frame is dropped unsent because the client fell behind. A request whose caller has already stopped waiting is not pushed at all. A request is never retried. `answerEngineRequest` rejects a request id that is not waiting for the calling client: one that timed out, was answered already, or was sent to someone else.
 
+## Events targets
+
+```ts
+registerClient(description, { callbackUrl, callbackToken, eventsUrl, eventsToken, registrationToken })
+setEventsTarget(target: { url: string; token: string } | null): Promise<{ ok: true }>
+```
+
+Both gated on the `callbacks.eventsTarget` capability. `eventsUrl` and `eventsToken` are given together or not at all, and `eventsUrl` passes the same check as a callback URL. `setEventsTarget` changes the calling client's own target without registering again; null sends its events back to its callback URL. The target is stored by db-proxy with the client, so it survives a restart.
+
+The token is separate from the callback token for least privilege: whoever holds the events token can only receive events, never answer a request.
+
+`EventShipper` (`api/src/event-shipper.ts`) delivers to a target:
+
+- It POSTs `{ "events": [CallbackEnvelope, ...] }`, up to 50 envelopes, with `Authorization: Bearer <eventsToken>`, and any 2xx accepts the batch.
+- Each target has one FIFO with one POST in flight, so envelopes arrive in the order the engine emitted them.
+- A network error, timeout (10 seconds), 408, 429 or 5xx retries the same batch after an exponential backoff with full jitter, from 1 second up to a cap of 60 seconds, reset on success.
+- A 401 or 403 drops the batch with an error, since the target was revoked; any other 4xx drops it as refused.
+- The FIFO holds 10,000 envelopes per target. Past that the oldest are dropped, with an error naming how many.
+- On shutdown the engine waits up to 5 seconds for buffered envelopes to be delivered. What remains is lost and logged, so an engine that restarts while its target is unreachable loses what it held.
+
+The tunables are `DEFAULT_EVENT_SHIPPER_CONFIG` in `api/src/config.ts`. An event projected from a db-proxy outbox row carries the row's id as its envelope id, so a redelivered row arrives with the same id and the receiver deduplicates it.
+
 ## Subscribing
 
 ```ts
@@ -56,4 +79,4 @@ Delivery on the stream is **not gapless**. It is at most once, in order per subs
 - Each subscription has its own queue, and the engine waits for each `onEngineEvent` call to return before pushing the next frame. Publishing never waits on a subscriber, and a slow subscriber holds up only itself. Its queue holds 256 frames; past that the oldest is dropped. `seq` starts at 1 and rises by one for every frame due to the subscription, delivered or not, so a jump of more than one tells the client it missed frames and should read its state again.
 - An `onEngineEvent` call that rejects, or that has not settled within 10 seconds, ends the subscription, and the engine logs why. A handler catches its own errors, and a client whose subscription ends this way reconnects and subscribes again.
 
-Webhook delivery is also at most once: an event POST is retried once after a second on a network error or 5xx, and then dropped.
+Webhook delivery is also at most once: an event POST is retried once after a second on a network error or 5xx, and then dropped. An events target retries until it accepts, within the limits above.

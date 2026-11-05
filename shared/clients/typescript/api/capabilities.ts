@@ -33,6 +33,12 @@ export const ENGINE_CAPABILITIES = {
    */
   clientsPairing: "clients.pairing",
   /**
+   * Events targets: `registerClient`'s `eventsUrl` and `eventsToken`, and
+   * `setEventsTarget`. A client with a target gets its events in batches
+   * there instead of on its callback URL.
+   */
+  callbacksEventsTarget: "callbacks.eventsTarget",
+  /**
    * Databases (./databases.ts): the `database` resource kind, the
    * `listDatabaseRecords`, `getDatabaseRecord`, `createDatabaseRecord`,
    * `updateDatabaseRecord`, `deleteDatabaseRecord` and

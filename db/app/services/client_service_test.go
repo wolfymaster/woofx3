@@ -256,3 +256,73 @@ func TestClientServiceConcurrentDeletesOfOneClientBothSucceedAndRecordOnce(t *te
 		}
 	})
 }
+
+func TestClientServiceSetClientEventsTarget(t *testing.T) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		svc := newClientSvc(t, db)
+		registered := createClient(t, svc, &client.CreateClientRequest{
+			Description: "dashboard", Kind: client.ClientKind_CLIENT_KIND_REGISTERED,
+			CallbackUrl: "https://cb", CallbackToken: "callback-token",
+		})
+
+		cases := []struct {
+			name       string
+			id         string
+			url, token string
+			wantCode   client.ResponseStatus_Code
+		}{
+			{"sets a target", registered.Id, "https://events", "events-token", client.ResponseStatus_OK},
+			{"replaces it", registered.Id, "https://events-2", "events-token-2", client.ResponseStatus_OK},
+			{"clears it", registered.Id, "", "", client.ResponseStatus_OK},
+			{"sets on an unknown id", "999999", "https://events", "events-token", client.ResponseStatus_NOT_FOUND},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				resp, err := svc.SetClientEventsTarget(context.Background(), &client.SetClientEventsTargetRequest{
+					Id: tc.id, EventsUrl: tc.url, EventsToken: tc.token,
+				})
+				if err != nil {
+					t.Fatalf("SetClientEventsTarget: %v", err)
+				}
+				if resp.Status.Code != tc.wantCode {
+					t.Fatalf("code = %v, want %v", resp.Status.Code, tc.wantCode)
+				}
+				if tc.wantCode != client.ResponseStatus_OK {
+					return
+				}
+				if resp.Client.EventsUrl != tc.url || resp.Client.EventsToken != tc.token {
+					t.Errorf("target = %q %q, want %q %q", resp.Client.EventsUrl, resp.Client.EventsToken, tc.url, tc.token)
+				}
+				if resp.Client.CallbackUrl != "https://cb" || resp.Client.CallbackToken != "callback-token" {
+					t.Errorf("callback changed to %q %q", resp.Client.CallbackUrl, resp.Client.CallbackToken)
+				}
+			})
+		}
+	})
+}
+
+func TestClientServiceRefusesAHalfEventsTarget(t *testing.T) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		svc := newClientSvc(t, db)
+		registered := createClient(t, svc, &client.CreateClientRequest{
+			Description: "dashboard", Kind: client.ClientKind_CLIENT_KIND_REGISTERED,
+			EventsUrl: "https://events", EventsToken: "events-token",
+		})
+		if registered.EventsUrl != "https://events" || registered.EventsToken != "events-token" {
+			t.Errorf("created target = %q %q", registered.EventsUrl, registered.EventsToken)
+		}
+
+		_, createErr := svc.CreateClient(context.Background(), &client.CreateClientRequest{
+			Description: "half", Kind: client.ClientKind_CLIENT_KIND_REGISTERED, EventsUrl: "https://events",
+		})
+		_, setErr := svc.SetClientEventsTarget(context.Background(), &client.SetClientEventsTargetRequest{
+			Id: registered.Id, EventsToken: "events-token",
+		})
+		for name, err := range map[string]error{"create": createErr, "set": setErr} {
+			var twerr twirp.Error
+			if !errors.As(err, &twerr) || twerr.Code() != twirp.InvalidArgument {
+				t.Errorf("%s with half a target: err = %v, want InvalidArgument", name, err)
+			}
+		}
+	})
+}
