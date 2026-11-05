@@ -565,3 +565,44 @@ export function parseModerationConfig(raw: unknown): ModerationParseResult<Moder
     value: { version: 1, enabled: enabled.value, dryRun: dryRun.value, exempt: exempt.value, rules },
   };
 }
+
+/**
+ * How one step of a rule ended:
+ * - done: the platform did it; unconfirmed: it may have, its answer never came;
+ * - skipped: not attempted. cooldown: the chatter was warned moments ago; dry_run: test mode;
+ *   protected: a timeout or ban aimed at the broadcaster, a moderator, a VIP or an unknown role;
+ *   busy: a warn dropped because the platform was already refusing writes as rate limited;
+ * - failed: attempted and refused, by the platform's failure code, or unsupported or
+ *   unavailable on that platform.
+ */
+export const MODERATION_STEP_OUTCOMES = [
+  "done",
+  "unconfirmed",
+  "skipped:cooldown",
+  "skipped:dry_run",
+  "skipped:protected",
+  "skipped:busy",
+  "failed:invalid",
+  "failed:rate_limited",
+  "failed:forbidden",
+  "failed:upstream",
+  "failed:unsupported",
+  "failed:unavailable",
+] as const;
+export type ModerationStepOutcome = (typeof MODERATION_STEP_OUTCOMES)[number];
+
+/** The data of a `moderation.action.taken` event: one moderated line. */
+export interface ModerationActionTaken {
+  platform: string;
+  /** The platform's user id of the chatter. */
+  viewer: string;
+  chatterLogin: string;
+  messageId: string;
+  filter: FilterId;
+  reason: string;
+  score?: number;
+  /** The line's first characters only. */
+  text: string;
+  dryRun: boolean;
+  steps: Array<{ kind: ModerationActionKind; outcome: ModerationStepOutcome }>;
+}

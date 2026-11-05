@@ -70,8 +70,16 @@ describe("readChatLine", () => {
         trusted: true,
         membership: MODERATOR,
         sharedChat: false,
+        paid: false,
       },
     });
+  });
+
+  test("a trusted line says whether it carried a payment; an untrusted one never does", () => {
+    const paid = (reading: ReturnType<typeof readChatLine>) => (reading.kind === "line" ? reading.line.paid : null);
+    expect(paid(readChatLine(envelope({}, { isPaid: true })))).toBe(true);
+    expect(paid(readChatLine(envelope({}, { isPaid: false })))).toBe(false);
+    expect(paid(readChatLine(envelope({ source: "api" }, { isPaid: true })))).toBe(false);
   });
 
   test("a line from any other source is untrusted: no membership, no platform message id", () => {

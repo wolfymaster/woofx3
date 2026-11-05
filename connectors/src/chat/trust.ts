@@ -43,6 +43,8 @@ export interface ChatLine {
    * partner channel, so they are not written to the derived groups.
    */
   sharedChat: boolean;
+  /** The line carried a payment, such as cheered bits. Only a trusted line says so. */
+  paid: boolean;
 }
 
 /**
@@ -111,6 +113,7 @@ export function readChatLine(envelope: unknown): LineReading {
       trusted,
       membership: trusted ? reportedMembership(data.membership, sharedChat) : undefined,
       sharedChat,
+      paid: trusted && data.isPaid === true,
     },
   };
 }
