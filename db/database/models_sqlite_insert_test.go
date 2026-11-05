@@ -64,6 +64,7 @@ func uuidIDModels() map[string]any {
 		"WorkflowDefinition":     &models.WorkflowDefinition{},
 		"WorkflowExecution":      &models.WorkflowExecution{},
 		"WorkflowExecutionStep":  &models.WorkflowExecutionStep{},
+		"WorkflowGroup":          &models.WorkflowGroup{},
 	}
 }
 

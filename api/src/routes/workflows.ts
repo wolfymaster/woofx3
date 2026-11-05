@@ -148,7 +148,8 @@ export const workflowsRoutes = routeModule({
         id,
         name: data.definition.name,
         description: data.definition.description ?? "",
-        enabled: existing.enabled ?? false,
+        // No `enabled`: an edit is not a switch, and sending the current value
+        // would make a group-held workflow's forced state its saved one.
         stepsJson: JSON.stringify(data.definition.tasks ?? []),
         triggerJson: JSON.stringify(data.definition.trigger),
         expectedRevision: data.expectedRevision,
@@ -193,6 +194,7 @@ export const workflowsRoutes = routeModule({
         createdAt,
         updatedAt,
         taxonomy: response.taxonomy ?? [],
+        groupIds: response.groupIds ?? [],
       },
     });
 
@@ -251,16 +253,17 @@ export const workflowsRoutes = routeModule({
         workflow: {
           id,
           definition,
-          isEnabled,
+          isEnabled: response.enabled ?? false,
           revision: response.revision,
           createdAt,
           updatedAt,
           taxonomy: response.taxonomy ?? [],
+          groupIds: response.groupIds ?? [],
         },
       });
     }
 
-    return { id, isEnabled };
+    return { id, isEnabled: response.enabled ?? false };
   },
 
   /**

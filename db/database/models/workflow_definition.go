@@ -47,6 +47,14 @@ type WorkflowDefinition struct {
 	// editor's copy of the steps is still current after that.
 	Revision int32 `gorm:"column:revision;not null;default:1"`
 
+	// PreGroupEnabled is the Enabled value to restore once no workflow group
+	// that is on contains this workflow, and nil while none does. The group
+	// that first takes the workflow from no group on to one sets it, and only
+	// the last one to let go clears it, so a later group never saves a state
+	// an earlier one forced. Invariant: non-nil iff some group that is on
+	// contains the workflow.
+	PreGroupEnabled *bool `gorm:"column:pre_group_enabled"`
+
 	// Managed by gorm: set on insert, and `UpdatedAt` on every write.
 	// WorkflowRepository.Upsert writes raw SQL and sets both itself.
 	CreatedAt time.Time

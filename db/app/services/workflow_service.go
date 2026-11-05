@@ -177,12 +177,18 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 
 	s.syncWorkflowEdges(wf, wf.CreatedByType, wf.CreatedByRef)
 
+	// A module upgrade upserts a row that may already be in groups.
+	groupIDs, err := s.groupIDsOf(wf.ID)
+	if err != nil {
+		return nil, err
+	}
 	if s.publisher != nil {
+		// stylegate:ignore WFX-API-002 reason="CreateWorkflow writes its row outside a transaction; moving it is a separate change"
 		s.publisher.Publish(workers.PublishOptions{
 			EntityType:      "workflow",
 			EntityID:        wf.ID.String(),
 			Operation:       "created",
-			Data:            buildWorkflowChangeData(wf),
+			Data:            buildWorkflowChangeData(wf, groupIDs),
 			AutoAcknowledge: true,
 		})
 	}
@@ -192,7 +198,7 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 			Code:    client.ResponseStatus_OK,
 			Message: "Workflow created successfully",
 		},
-		Workflow: s.workflowToProto(wf),
+		Workflow: s.workflowToProto(wf, groupIDs),
 	}, nil
 }
 
@@ -206,13 +212,17 @@ func (s *workflowService) GetWorkflow(ctx context.Context, req *client.GetWorkfl
 	if err != nil {
 		return nil, lookupError("workflow", err)
 	}
+	groupIDs, err := s.groupIDsOf(wf.ID)
+	if err != nil {
+		return nil, err
+	}
 
 	return &client.WorkflowResponse{
 		Status: &client.ResponseStatus{
 			Code:    client.ResponseStatus_OK,
 			Message: "Workflow retrieved successfully",
 		},
-		Workflow: s.workflowToProto(wf),
+		Workflow: s.workflowToProto(wf, groupIDs),
 	}, nil
 }
 
@@ -269,13 +279,56 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 		wf.Steps = req.StepsJson
 	}
 	wf.Trigger = triggerJSON
-	if req.Enabled != nil {
-		wf.Enabled = *req.Enabled
-	}
 
-	err = s.workflowRepo.UpdateAtRevision(wf, baseRevision)
+	var groupIDs []uuid.UUID
+	err = s.executionRepo.Transaction(func(tx *gorm.DB) error {
+		groups := repo.NewWorkflowGroupRepository(tx)
+		// The switch is read again under the row lock, so a group that switched
+		// this workflow since it was read above is neither lost nor undone.
+		locked, err := groups.LockWorkflows([]uuid.UUID{wf.ID})
+		if err != nil {
+			return fmt.Errorf("lock workflow: %w", err)
+		}
+		if len(locked) != 1 {
+			return twirp.NotFoundError("workflow not found")
+		}
+		wf.Enabled, wf.PreGroupEnabled = locked[0].Enabled, locked[0].PreGroupEnabled
+		if req.Enabled != nil {
+			// While a group holds the workflow, a manual switch is also the
+			// state it goes back to once the groups let go.
+			wf.Enabled, wf.PreGroupEnabled = manualState(*req.Enabled, wf.PreGroupEnabled)
+		}
+		if err := wf.UpdateAtRevision(tx, baseRevision); err != nil {
+			return err
+		}
+		if req.Enabled != nil && wf.PreGroupEnabled != nil {
+			if err := tx.Model(&models.WorkflowDefinition{}).Where("id = ?", wf.ID).
+				Update("pre_group_enabled", wf.PreGroupEnabled).Error; err != nil {
+				return fmt.Errorf("save the state to restore: %w", err)
+			}
+		}
+		byWorkflow, err := groups.GroupIDsByWorkflow([]uuid.UUID{wf.ID})
+		if err != nil {
+			return fmt.Errorf("read groups: %w", err)
+		}
+		groupIDs = byWorkflow[wf.ID]
+		if s.publisher == nil {
+			return nil
+		}
+		return s.publisher.PublishIn(tx, workers.PublishOptions{
+			EntityType:      "workflow",
+			EntityID:        wf.ID.String(),
+			Operation:       "updated",
+			Data:            buildWorkflowChangeData(wf, groupIDs),
+			AutoAcknowledge: true,
+		})
+	})
 	if errors.Is(err, models.ErrWorkflowRevisionStale) {
 		return nil, staleRevisionError()
+	}
+	var twerr twirp.Error
+	if errors.As(err, &twerr) {
+		return nil, twerr
 	}
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to update workflow: %w", err))
@@ -286,16 +339,6 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 	// using whatever the row already has, so module-owned workflows keep
 	// their MODULE attribution after an update.
 	s.syncWorkflowEdges(wf, wf.CreatedByType, wf.CreatedByRef)
-
-	if s.publisher != nil {
-		s.publisher.Publish(workers.PublishOptions{
-			EntityType:      "workflow",
-			EntityID:        wf.ID.String(),
-			Operation:       "updated",
-			Data:            buildWorkflowChangeData(wf),
-			AutoAcknowledge: true,
-		})
-	}
 
 	// The save has already succeeded, so a merge that can't happen leaves the
 	// workflows apart and is tried again at the next save or start.
@@ -311,7 +354,7 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 			Code:    client.ResponseStatus_OK,
 			Message: "Workflow updated successfully",
 		},
-		Workflow: s.workflowToProto(wf),
+		Workflow: s.workflowToProto(wf, groupIDs),
 	}, nil
 }
 
@@ -335,18 +378,19 @@ func (s *workflowService) DeleteWorkflow(ctx context.Context, req *client.Delete
 
 	workflowID := wf.ID.String()
 
-	err = s.workflowRepo.Delete(wf)
-	if err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete workflow: %w", err))
-	}
-
-	if s.refRepo != nil {
-		if err := s.refRepo.DeleteEdgesBySource("workflow", wf.ID); err != nil {
-			log.Printf("workflow_service: DeleteEdgesBySource failed for workflow %s: %v", workflowID, err)
+	err = s.executionRepo.Transaction(func(tx *gorm.DB) error {
+		// Its saved state goes with the row; the groups it was in simply have
+		// one member fewer, and say so.
+		leftGroups, err := leaveWorkflowGroups(tx, wf.ID)
+		if err != nil {
+			return err
 		}
-	}
-
-	if s.publisher != nil {
+		if err := tx.Delete(wf).Error; err != nil {
+			return err
+		}
+		if s.publisher == nil {
+			return nil
+		}
 		// Echo projectionKey on deletes too so the UI can dedupe a delete
 		// that arrives from multiple engine instances pointing at the same
 		// projection row. Empty for USER-authored workflows (no projection).
@@ -354,13 +398,26 @@ func (s *workflowService) DeleteWorkflow(ctx context.Context, req *client.Delete
 		if pk := projectionKeyFor(wf.CreatedByType, wf.CreatedByRef, "workflow", wf.ManifestID); pk != "" {
 			deletePayload["projection_key"] = pk
 		}
-		s.publisher.Publish(workers.PublishOptions{
+		if err := s.publisher.PublishIn(tx, workers.PublishOptions{
 			EntityType:      "workflow",
 			EntityID:        workflowID,
 			Operation:       "deleted",
 			Data:            deletePayload,
 			AutoAcknowledge: true,
-		})
+		}); err != nil {
+			return err
+		}
+		return announceWorkflowGroupsIn(tx, s.publisher, leftGroups)
+	})
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to delete workflow: %w", err))
+	}
+
+	if s.refRepo != nil {
+		if err := s.refRepo.DeleteEdgesBySource("workflow", wf.ID); err != nil {
+			// stylegate:ignore GO-LAY-002 reason="workflowService has no injected logger; the edge cleanup log is unchanged"
+			log.Printf("workflow_service: DeleteEdgesBySource failed for workflow %s: %v", workflowID, err)
+		}
 	}
 
 	return &client.ResponseStatus{
@@ -383,9 +440,13 @@ func (s *workflowService) ListWorkflows(ctx context.Context, req *client.ListWor
 		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list workflows: %w", err))
 	}
 
+	groupIDs, err := repo.NewWorkflowGroupRepository(s.executionRepo).GroupIDsByWorkflow(nil)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("failed to list workflow groups: %w", err))
+	}
 	protoWorkflows := make([]*client.Workflow, len(workflows))
 	for i, wf := range workflows {
-		protoWorkflows[i] = s.workflowToProto(wf)
+		protoWorkflows[i] = s.workflowToProto(wf, groupIDs[wf.ID])
 	}
 
 	return &client.ListWorkflowsResponse{
@@ -781,7 +842,16 @@ func jsonOrEmptyObject(raw string) string {
 
 // Helper functions to convert between database models and protobuf messages
 
-func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client.Workflow {
+// groupIDsOf returns the workflow groups workflowID belongs to.
+func (s *workflowService) groupIDsOf(workflowID uuid.UUID) ([]uuid.UUID, error) {
+	byWorkflow, err := repo.NewWorkflowGroupRepository(s.executionRepo).GroupIDsByWorkflow([]uuid.UUID{workflowID})
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("read groups of workflow %s: %w", workflowID, err))
+	}
+	return byWorkflow[workflowID], nil
+}
+
+func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition, groupIDs []uuid.UUID) *client.Workflow {
 	var taxonomy []string
 	if wf.Taxonomy != "" {
 		json.Unmarshal([]byte(wf.Taxonomy), &taxonomy)
@@ -806,6 +876,7 @@ func (s *workflowService) workflowToProto(wf *models.WorkflowDefinition) *client
 		CreatedByRef:  wf.CreatedByRef,
 		ManifestId:    wf.ManifestID,
 		Taxonomy:      taxonomy,
+		GroupIds:      uuidStrings(groupIDs),
 	}
 }
 
