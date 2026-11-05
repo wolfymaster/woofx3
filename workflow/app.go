@@ -64,6 +64,7 @@ type WorkflowApp struct {
 	moduleDbClient dbv1.ModuleService
 	alertDbClient  dbv1.AlertService
 	factDbClient   dbv1.ViewerFactService
+	recordDbClient dbv1.DatabaseRecordService
 	scheduleReg    *triggers.ScheduleTriggerRegistrar
 	deliveries     *recentDeliveries
 	// runRecorder is nil when there is no db proxy to write run history to.
@@ -104,6 +105,7 @@ func (a *WorkflowApp) SetServices(
 	dbClient *dbv1.DbProxyClient,
 	alertClient dbv1.AlertService,
 	factClient dbv1.ViewerFactService,
+	recordClient dbv1.DatabaseRecordService,
 	sceneManagerURL string,
 ) {
 	a.natsSvc = natsSvc
@@ -111,6 +113,7 @@ func (a *WorkflowApp) SetServices(
 	a.moduleDbClient = dbClient.Module
 	a.alertDbClient = alertClient
 	a.factDbClient = factClient
+	a.recordDbClient = recordClient
 	a.manager.SetDbClient(dbClient.Workflow)
 	a.engine.SetAssetURLResolver(NewSceneManagerURLResolver(dbClient.Setting, sceneManagerURL, a.logger))
 }
@@ -148,6 +151,10 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	alertDbClient := a.alertDbClient
 	registerService("alertLog", func() dbv1.AlertService {
 		return alertDbClient
+	})
+	recordDbClient := a.recordDbClient
+	registerService("databaseRecords", func() dbv1.DatabaseRecordService {
+		return recordDbClient
 	})
 	platformGateway := NewNATSPlatformGateway(natsClient, a.logger)
 	registerService("platformGateway", func() PlatformGateway {
@@ -297,6 +304,9 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 		{"chat.announce", WithServices(appServices, NewChatAnnounceAction()), chatAnnounceActionSpec},
 		{"chat.pin", WithServices(appServices, NewChatPinAction()), chatPinActionSpec},
 		{"scene.widget.visibility", WithServices(appServices, NewWidgetVisibilityAction()), widgetVisibilityActionSpec},
+		{"database.insert", WithServices(appServices, NewDatabaseInsertAction()), databaseInsertActionSpec},
+		{"database.update", WithServices(appServices, NewDatabaseUpdateAction()), databaseUpdateActionSpec},
+		{"database.get", WithServices(appServices, NewDatabaseGetAction()), databaseGetActionSpec},
 		{"print", func(ctx tasks.ActionContext[AppServices], params map[string]any) (map[string]any, error) {
 			a.logger.Info("Action: print", "params", params)
 			return params, nil

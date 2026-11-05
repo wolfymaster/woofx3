@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.44.0",
+  "version": "0.45.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -205,7 +205,7 @@
     {
       "kind": "form",
       "name": "Form",
-      "description": "Questions viewers answer on your public page. Each submission can run workflows, so answers can join a queue, post to chat or anything else.",
+      "description": "Questions viewers answer on your public page. Each submission can run workflows, so answers can save to a database, post to chat or anything else.",
       "icon": "ClipboardList",
       "schema": [
         {
@@ -223,6 +223,13 @@
           "description": "What the send button says."
         }
       ]
+    },
+    {
+      "kind": "database",
+      "name": "Database",
+      "description": "A table you keep: one row per entry, one column per detail. Form answers, games you played, giveaway entrants. Columns you mark can show on your public page.",
+      "icon": "Table",
+      "schema": []
     }
   ],
   "functions": [
@@ -653,6 +660,196 @@
       ],
       "taxonomy": [
         "overlay.scenes"
+      ]
+    },
+    {
+      "id": "database.insert",
+      "name": "Add a row",
+      "description": "Add a row to a database. With a key, running again with the same key adds nothing, so a repeated event never makes a second row.",
+      "sentence": "Add a row to {target}",
+      "type": "native",
+      "handler": "database.insert",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Database",
+          "type": "resource_ref",
+          "resourceKind": "database",
+          "required": true,
+          "description": "Which database to use."
+        },
+        {
+          "id": "values",
+          "label": "Values",
+          "type": "database_values",
+          "source": {
+            "kind": "databaseColumns",
+            "databaseField": "target"
+          },
+          "description": "What to put in each column. Columns left empty stay empty."
+        },
+        {
+          "id": "key",
+          "label": "Only once per",
+          "type": "text",
+          "description": "Optional. A value that is the same each time the same thing happens, such as a submission id. A row already added with it is not added again."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The database."
+          },
+          {
+            "path": "recordId",
+            "type": "string",
+            "description": "The row added, or the row already added with the same key. Empty when the database is full."
+          },
+          {
+            "path": "inserted",
+            "type": "boolean",
+            "description": "Whether a new row was added."
+          },
+          {
+            "path": "reason",
+            "type": "string",
+            "description": "Why not: `duplicate` or `full`. Empty when it was added."
+          }
+        ]
+      },
+      "taxonomy": [
+        "tools.database"
+      ]
+    },
+    {
+      "id": "database.update",
+      "name": "Change a row",
+      "description": "Change some columns of one row in a database. Columns you leave out keep their value; an empty value clears a column.",
+      "sentence": "Change a row in {target}",
+      "type": "native",
+      "handler": "database.update",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Database",
+          "type": "resource_ref",
+          "resourceKind": "database",
+          "required": true,
+          "description": "Which database to use."
+        },
+        {
+          "id": "record",
+          "label": "Row",
+          "type": "text",
+          "required": true,
+          "description": "The id of the row to change, for example from an earlier Read a row or Add a row step."
+        },
+        {
+          "id": "values",
+          "label": "Values",
+          "type": "database_values",
+          "source": {
+            "kind": "databaseColumns",
+            "databaseField": "target"
+          },
+          "description": "The new value of each column to change."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The database."
+          },
+          {
+            "path": "recordId",
+            "type": "string",
+            "description": "The row."
+          },
+          {
+            "path": "updated",
+            "type": "boolean",
+            "description": "Whether the row was changed."
+          },
+          {
+            "path": "reason",
+            "type": "string",
+            "description": "Why not: `missing` when there is no such row. Empty when it was changed."
+          }
+        ]
+      },
+      "taxonomy": [
+        "tools.database"
+      ]
+    },
+    {
+      "id": "database.get",
+      "name": "Read a row",
+      "description": "Find one row of a database, by its id or by a value in one column, so later steps can use its columns.",
+      "sentence": "Read a row from {target}",
+      "type": "native",
+      "handler": "database.get",
+      "schema": [
+        {
+          "id": "target",
+          "label": "Database",
+          "type": "resource_ref",
+          "resourceKind": "database",
+          "required": true,
+          "description": "Which database to use."
+        },
+        {
+          "id": "matchColumn",
+          "label": "Find by",
+          "type": "select",
+          "source": {
+            "kind": "databaseColumns",
+            "databaseField": "target"
+          },
+          "description": "The column to look in. Leave it empty to find the row by its id."
+        },
+        {
+          "id": "match",
+          "label": "Value",
+          "type": "text",
+          "required": true,
+          "description": "What to look for. When several rows hold it, the oldest is read."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "target",
+            "type": "string",
+            "description": "The database."
+          },
+          {
+            "path": "found",
+            "type": "boolean",
+            "description": "Whether a row was found."
+          },
+          {
+            "path": "recordId",
+            "type": "string",
+            "description": "The row found. Empty when none was."
+          },
+          {
+            "path": "createdAt",
+            "type": "string",
+            "description": "When the row was added."
+          },
+          {
+            "path": "values",
+            "type": "object",
+            "description": "The row's columns by column id, such as values.game."
+          }
+        ]
+      },
+      "taxonomy": [
+        "tools.database"
       ]
     },
     {

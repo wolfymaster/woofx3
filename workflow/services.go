@@ -45,6 +45,7 @@ type AppServices struct {
 	barkloader *barkloader.Client
 	messageBus *natsclient.Client
 	alertLog   dbv1.AlertService
+	records    dbv1.DatabaseRecordService
 	gateway    PlatformGateway
 }
 
@@ -61,6 +62,11 @@ func (s AppServices) MessageBus() *natsclient.Client {
 // tolerate rather than treat as fatal: an alert is worth more than its log.
 func (s AppServices) AlertLog() dbv1.AlertService {
 	return s.alertLog
+}
+
+// DatabaseRecords reads and writes the rows of database resource instances.
+func (s AppServices) DatabaseRecords() dbv1.DatabaseRecordService {
+	return s.records
 }
 
 // PlatformGateway is the one way an action produces an effect on a streaming
@@ -82,11 +88,15 @@ func buildAppServices() (AppServices, error) {
 	if err != nil {
 		return AppServices{}, err
 	}
+	records, err := resolveService[dbv1.DatabaseRecordService]("databaseRecords")
+	if err != nil {
+		return AppServices{}, err
+	}
 	gateway, err := resolveService[PlatformGateway]("platformGateway")
 	if err != nil {
 		return AppServices{}, err
 	}
-	return AppServices{barkloader: bark, messageBus: bus, alertLog: alertLog, gateway: gateway}, nil
+	return AppServices{barkloader: bark, messageBus: bus, alertLog: alertLog, records: records, gateway: gateway}, nil
 }
 
 func WithServices[TServices any](services TServices, action tasks.ActionFunc[TServices]) tasks.ActionFunc[TServices] {
