@@ -32,6 +32,12 @@ export const ENGINE_CAPABILITIES = {
    * HOSTING_ENGINE_CAPABILITIES.
    */
   clientsPairing: "clients.pairing",
+  /**
+   * Events targets: `registerClient`'s `eventsUrl` and `eventsToken`, and
+   * `setEventsTarget`. A client with a target gets its events in batches
+   * there instead of on its callback URL.
+   */
+  callbacksEventsTarget: "callbacks.eventsTarget",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];

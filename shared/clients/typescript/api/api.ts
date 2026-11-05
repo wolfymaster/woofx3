@@ -1060,6 +1060,12 @@ export interface ObsStatus {
   route?: "direct" | "companion";
 }
 
+/** Where a client's events go instead of its callback URL; see `setEventsTarget`. */
+export interface EventsTarget {
+  url: string;
+  token: string;
+}
+
 // ==================== Local endpoints ====================
 
 /** Where a cloud engine reaches the companion's bridge, and which endpoints go through it. */
@@ -2713,6 +2719,15 @@ export interface Woofx3EngineApi {
    * `relay.credential.requested` request.
    */
   setRelayConfig(config: RelayConfig | null): Promise<{ ok: true }>;
+
+  /**
+   * Ship the calling client's events to `target` in batches instead of
+   * POSTing each to its callback URL, or go back to the callback URL (null).
+   * Requests stay on the callback URL either way. `target.url` must pass the
+   * same check as a callback URL, and `target.token` is sent as its Bearer
+   * token. Gated on `callbacks.eventsTarget`.
+   */
+  setEventsTarget(target: EventsTarget | null): Promise<{ ok: true }>;
 
   /**
    * Send one chat action (`chat.send`, `chat.announce`, `chat.pin`) to the

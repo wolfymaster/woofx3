@@ -169,6 +169,15 @@ export class ApiGateway {
         throw new RegistrationRefused(`The callback URL is refused: ${refusal}.`);
       }
     }
+    if (Boolean(options.eventsUrl) !== Boolean(options.eventsToken)) {
+      throw new RegistrationRefused("The events URL and events token must be given together.");
+    }
+    if (options.eventsUrl) {
+      const refusal = callbackUrlRefusal(options.eventsUrl);
+      if (refusal !== null) {
+        throw new RegistrationRefused(`The events URL is refused: ${refusal}.`);
+      }
+    }
     if (this.registration.mode !== "first") {
       this.admit(options.registrationToken, this.registration.mode === "token");
       return this.createClient(description, options);
@@ -195,7 +204,7 @@ export class ApiGateway {
     description: string,
     options: RegisterClientOptions
   ): Promise<{ clientId: string; clientSecret: string }> {
-    const { callbackUrl, callbackToken } = options;
+    const { callbackUrl, callbackToken, eventsUrl, eventsToken } = options;
     this.logger.info("Registering client", { description, mode: this.registration.mode });
 
     const resp = await this.db.createClient({
@@ -204,14 +213,14 @@ export class ApiGateway {
       callbackToken: callbackToken ?? "",
       kind: "CLIENT_KIND_REGISTERED",
       origin: "",
-      eventsUrl: "",
-      eventsToken: "",
+      eventsUrl: eventsUrl ?? "",
+      eventsToken: eventsToken ?? "",
     });
     if (!resp.client) {
       throw new Error("Failed to create client");
     }
 
-    if (this.webhookClient && callbackUrl) {
+    if (this.webhookClient && (callbackUrl || eventsUrl)) {
       await this.webhookClient.refreshCallbackUrls();
     }
 

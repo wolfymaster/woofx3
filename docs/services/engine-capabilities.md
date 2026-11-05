@@ -37,6 +37,7 @@ Since is the first release whose engine advertised the id, and `unreleased` unti
 
 | Id | Since | Feature |
 |---|---|---|
+| `callbacks.eventsTarget` | unreleased | Events targets: `registerClient`'s `eventsUrl` and `eventsToken`, and `setEventsTarget`. A client with a target gets its events in batches there instead of on its callback URL. See [Events targets](./engine-callbacks.md#events-targets) |
 | `clients.pairing` | v0.50.1 | Browser pairing for a local or self-hosted engine: the gateway's `startPairing`, `claimPairing` and `cancelPairing`, `ping().pairing`, an approver's `lookupPairing`, `decidePairing` and `listPendingPairings`, the `client.pairing.started` event, and paired clients bound to the origin they paired from. Advertised only when `WOOFX3_HOSTING` is `local` or `self` (see `HOSTING_ENGINE_CAPABILITIES` above). See [Browser pairing](./pairing.md) |
 | `engine.localMode` | v0.35.0 | This engine runs on the streamer's own machine under the desktop app: its deployment sets `WOOFX3_HOSTING=local`, and `getEngineInfo().hosting` is `local`. Advertised only by such an engine (see `HOSTING_ENGINE_CAPABILITIES` above) |
 

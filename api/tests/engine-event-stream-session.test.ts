@@ -12,6 +12,13 @@ import { resolveRegistrationPolicy } from "../src/registration";
 import { TwitchTokenSource } from "../src/twitch-token-source";
 import { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient } from "../src/webhook-client";
 
+/** For clients without an events target, which never reach the shipper. */
+const NO_SHIPPER = {
+  ship: () => {
+    throw new Error("no client in this test has an events target");
+  },
+};
+
 /*
  * The event stream end to end, over a real capnweb WebSocket session: what a
  * desktop client registered without a callback URL relies on.
@@ -55,7 +62,7 @@ async function startEngine() {
   });
   const stream = new EngineEventStream(logger);
   api.setEngineEventStream(stream);
-  const webhooks = new WebhookClient(db as never, logger, stream, DEFAULT_WEBHOOK_CLIENT_CONFIG);
+  const webhooks = new WebhookClient(db as never, logger, stream, DEFAULT_WEBHOOK_CLIENT_CONFIG, NO_SHIPPER);
   api.setWebhookClient(webhooks);
   await webhooks.refreshCallbackUrls();
   const auth = { validate: async () => ({ ok: true, value: { description: "desktop", boundOrigin: null } }) };

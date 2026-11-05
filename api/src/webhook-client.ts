@@ -5,6 +5,7 @@ import { isLoopbackHostname } from "@woofx3/common/http/request-guard";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type { DbClient } from "./db-client";
 import type { EngineEventStream } from "./engine-event-stream";
+import type { EventShipper } from "./event-shipper";
 
 // Re-export the shared webhook types so existing engine-side importers
 // (./webhook-client) keep working without churn. External clients should
@@ -46,8 +47,12 @@ export { EngineEventType, makeCallbackEnvelope } from "@woofx3/api/webhooks";
 interface RegisteredInstance {
   clientId: string;
   instanceName: string;
+  /** Empty for a client reached only through its events target. */
   callbackUrl: string;
   callbackToken: string;
+  /** Empty, with `eventsToken`, when the client takes events on its callback URL. */
+  eventsUrl: string;
+  eventsToken: string;
 }
 
 export interface WebhookClientConfig {
@@ -116,6 +121,15 @@ export function callbackUrlRefusal(url: string): string | null {
   return `the ${parsed.protocol} scheme is not allowed; use https`;
 }
 
+/** Why a stored client's callback or events URL is no longer accepted, or null when both are (or are empty). */
+function storedUrlsRefusal(callbackUrl: string, eventsUrl: string | undefined): string | null {
+  const callbackRefusal = callbackUrl ? callbackUrlRefusal(callbackUrl) : null;
+  if (callbackRefusal !== null) {
+    return callbackRefusal;
+  }
+  return eventsUrl ? callbackUrlRefusal(eventsUrl) : null;
+}
+
 /** Reads at most `maxBytes` of `response`'s body, cancelling the rest of the stream past that. */
 async function readCapped(response: Response, maxBytes: number): Promise<{ body: string; overflowed: boolean }> {
   if (response.body === null) {
@@ -146,9 +160,11 @@ async function readCapped(response: Response, maxBytes: number): Promise<{ body:
  * event stream subscriptions (`EngineEventStream`).
  *
  * Events go both ways: a client that has a callback URL and a subscription
- * gets each one on both, and is idempotent on the envelope id. A request goes
- * one way, chosen per client: its callback URL when it registered one, else
- * its newest event stream subscription.
+ * gets each one on both, and is idempotent on the envelope id. A client with
+ * an events target gets its events through the `EventShipper` instead of its
+ * callback URL, never on both. A request goes one way, chosen per client: its
+ * callback URL when it registered one, else its newest event stream
+ * subscription.
  */
 export class WebhookClient {
   private instances: RegisteredInstance[] = [];
@@ -165,7 +181,8 @@ export class WebhookClient {
     private db: DbClient,
     private logger: SharedLogger,
     private stream: EngineEventStream,
-    private readonly config: WebhookClientConfig
+    private readonly config: WebhookClientConfig,
+    private readonly shipper: Pick<EventShipper, "ship">
   ) {}
 
   /**
@@ -205,8 +222,8 @@ export class WebhookClient {
     const newInstances: RegisteredInstance[] = [];
 
     for (const client of resp.clients ?? []) {
-      if (client.callbackUrl && !this.deleted.has(client.clientId)) {
-        const refusal = callbackUrlRefusal(client.callbackUrl);
+      if ((client.callbackUrl || client.eventsUrl) && !this.deleted.has(client.clientId)) {
+        const refusal = storedUrlsRefusal(client.callbackUrl, client.eventsUrl);
         if (refusal !== null) {
           this.logger.warn("Skipping a client whose stored callback URL is no longer accepted", {
             clientId: client.clientId,
@@ -219,6 +236,8 @@ export class WebhookClient {
           instanceName: client.description || client.clientId,
           callbackUrl: client.callbackUrl,
           callbackToken: client.callbackToken,
+          eventsUrl: client.eventsUrl ?? "",
+          eventsToken: client.eventsToken ?? "",
         });
       }
     }
@@ -264,11 +283,25 @@ export class WebhookClient {
       targets: targets.map((i) => i.instanceName),
     });
 
-    const results = await Promise.allSettled(targets.map((instance) => this.sendToUrl(instance, envelope)));
+    const posted: RegisteredInstance[] = [];
+    for (const instance of targets) {
+      if (instance.eventsUrl) {
+        this.shipper.ship({ url: instance.eventsUrl, token: instance.eventsToken }, envelope);
+      } else {
+        posted.push(instance);
+      }
+    }
+    const results = await Promise.allSettled(posted.map((instance) => this.sendToUrl(instance, envelope)));
 
     const fulfilled = results.filter((r) => r.status === "fulfilled").length;
     const rejected = results.filter((r) => r.status === "rejected").length;
-    this.logger.info("WebhookClient dispatch complete", { eventType, envelopeId: envelope.id, fulfilled, rejected });
+    this.logger.info("WebhookClient dispatch complete", {
+      eventType,
+      envelopeId: envelope.id,
+      fulfilled,
+      rejected,
+      shipped: targets.length - posted.length,
+    });
   }
 
   /**
@@ -281,7 +314,7 @@ export class WebhookClient {
    */
   async request(request: EngineRequest, targetClientId: string): Promise<unknown> {
     const envelope = makeRequestEnvelope(request);
-    const instance = this.instances.find((i) => i.clientId === targetClientId);
+    const instance = this.instances.find((i) => i.clientId === targetClientId && i.callbackUrl !== "");
     if (instance) {
       return this.requestOverHttp(instance, envelope);
     }

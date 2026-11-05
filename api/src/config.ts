@@ -13,6 +13,7 @@ import { DB_PROXY_TOKEN_CONFIG_KEY } from "@woofx3/db/service-auth";
 import { z } from "zod";
 import { DEFAULT_AUTH_CACHE_TTL_MS } from "./auth";
 import { type BarkloaderWebhookAuth, parseBarkloaderWebhookAuth } from "./barkloader-webhook-auth";
+import type { EventShipperConfig } from "./event-shipper";
 import { downloadOrigin } from "./guarded-download";
 import { DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS, DEFAULT_MARKETPLACE_URL } from "./marketplace-client";
 import { assertRegistrationExposure, type RegistrationPolicy, resolveRegistrationPolicy } from "./registration";
@@ -299,6 +300,20 @@ export function resolveAuthCacheTtlMs(value: unknown): number {
   }
   return ttlMs;
 }
+
+/**
+ * How the api ships events to a client's events target. `timeoutMs` bounds
+ * one POST of up to `maxPostEvents` envelopes; at `maxBuffered` per target a
+ * long outage costs a bounded amount of memory and drops the oldest.
+ */
+export const DEFAULT_EVENT_SHIPPER_CONFIG: EventShipperConfig = {
+  maxBuffered: 10_000,
+  maxPostEvents: 50,
+  timeoutMs: 10_000,
+  backoffBaseMs: 1_000,
+  backoffMaxMs: 60_000,
+  drainTimeoutMs: 5_000,
+};
 
 /**
  * Above the companion gateway's budget for storing a relay configuration, so

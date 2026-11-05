@@ -1,5 +1,11 @@
-import type { EngineEventSubscribeOptions, EngineEventSubscriber, EngineRequestAnswer } from "@woofx3/api";
+import type {
+  EngineEventSubscribeOptions,
+  EngineEventSubscriber,
+  EngineRequestAnswer,
+  EventsTarget,
+} from "@woofx3/api";
 import { EngineEventType } from "@woofx3/api/webhooks";
+import { callbackUrlRefusal } from "../webhook-client";
 import { routeModule } from "./context";
 
 export const engineEventsRoutes = routeModule({
@@ -34,7 +40,56 @@ export const engineEventsRoutes = routeModule({
     }
     this.engineEventStream.answer(context.clientId, requestId, readAnswer(answer));
   },
+
+  /**
+   * Point the session's client's events at `target`, or back at its callback
+   * URL (null). Stored by db-proxy, then picked up by the webhook client at
+   * once, so the next event already goes the new way.
+   */
+  async setEventsTarget(target: EventsTarget | null, context: { clientId: string }): Promise<{ ok: true }> {
+    if (!this.webhookClient) {
+      throw new Error("The webhook client is unavailable");
+    }
+    const parsed = readEventsTarget(target);
+    const found = await this.db.getClientByClientID(context.clientId);
+    if (found.status?.code !== "OK" || !found.client) {
+      throw new Error(`setEventsTarget: client ${context.clientId} not found`);
+    }
+    const set = await this.db.setClientEventsTarget({
+      id: found.client.id,
+      eventsUrl: parsed?.url ?? "",
+      eventsToken: parsed?.token ?? "",
+    });
+    if (set.status?.code !== "OK") {
+      throw new Error(`setEventsTarget: db-proxy answered ${set.status?.code}: ${set.status?.message ?? ""}`);
+    }
+    await this.webhookClient.refreshCallbackUrls();
+    this.logger.info(parsed ? "Events target set" : "Events target cleared", {
+      clientId: context.clientId,
+      url: parsed?.url,
+    });
+    return { ok: true };
+  },
 });
+
+/** The target as the contract types it, refusing anything else: it arrives from a client. */
+function readEventsTarget(target: unknown): EventsTarget | null {
+  if (target === null) {
+    return null;
+  }
+  if (typeof target !== "object") {
+    throw new Error("target must be { url, token } or null");
+  }
+  const { url, token } = target as { url?: unknown; token?: unknown };
+  if (typeof url !== "string" || typeof token !== "string" || token === "") {
+    throw new Error("target must be { url, token } with a non-empty token, or null");
+  }
+  const refusal = callbackUrlRefusal(url);
+  if (refusal !== null) {
+    throw new Error(`The events URL is refused: ${refusal}.`);
+  }
+  return { url, token };
+}
 
 const ENGINE_EVENT_TYPES: ReadonlySet<string> = new Set(Object.values(EngineEventType));
 
