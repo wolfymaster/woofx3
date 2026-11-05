@@ -356,3 +356,19 @@ describe("initWorkflowHandlers", () => {
     expect(webhook.sentEvents).toHaveLength(0);
   });
 });
+
+describe("workflow groups on workflow events", () => {
+  test("carries group_ids when db-proxy sends them", () => {
+    const { event } = parseWorkflowUpdated({
+      data: { id: "wf-g", name: "n", trigger_json: sampleTrigger, steps_json: "[]", group_ids: ["g-1", "g-2"] },
+    });
+    expect(event?.workflow.groupIds).toEqual(["g-1", "g-2"]);
+  });
+
+  test("leaves groupIds absent for a db-proxy without groups", () => {
+    const { event } = parseWorkflowUpdated({
+      data: { id: "wf-g", name: "n", trigger_json: sampleTrigger, steps_json: "[]" },
+    });
+    expect(event?.workflow).not.toHaveProperty("groupIds");
+  });
+});

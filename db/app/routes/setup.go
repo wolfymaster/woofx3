@@ -41,5 +41,8 @@ func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middle
 		return err
 	}
 	LocalUISettingRoutes(mux, app, casbinMiddleware)
+	if err := WorkflowGroupRoutes(mux, app, casbinMiddleware); err != nil {
+		return err
+	}
 	return nil
 }

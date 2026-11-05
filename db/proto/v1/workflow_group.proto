@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package workflow_group;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+
+// WorkflowGroupService manages alert groups: named sets of workflows switched
+// on and off together. A group moves its members' own `enabled` switch, which
+// stays the only one the runtime reads:
+//
+//   - Switching a group on switches on every member, first saving how each
+//     one was unless another group that is on already holds it.
+//   - Switching it off puts each member back how it was, unless another group
+//     that is on still contains it ("on always wins").
+//   - Adding a workflow to a group that is on switches it on; removing it, or
+//     deleting the group, lets go of it as switching the group off would.
+//
+// Every change, and the events announcing it, commits in one transaction.
+service WorkflowGroupService {
+    rpc ListWorkflowGroups(ListWorkflowGroupsRequest) returns (ListWorkflowGroupsResponse);
+    rpc CreateWorkflowGroup(CreateWorkflowGroupRequest) returns (CreateWorkflowGroupResponse);
+    // Writes the name and description. The switch and the members have their own calls.
+    rpc UpdateWorkflowGroup(UpdateWorkflowGroupRequest) returns (UpdateWorkflowGroupResponse);
+    rpc DeleteWorkflowGroup(DeleteWorkflowGroupRequest) returns (DeleteWorkflowGroupResponse);
+    // Setting a group to the state it is already in changes nothing.
+    rpc SetWorkflowGroupEnabled(SetWorkflowGroupEnabledRequest) returns (SetWorkflowGroupEnabledResponse);
+    // Refuses a chat command's workflow, which its command owns. A workflow
+    // already in the group is left as it is.
+    rpc AddWorkflowGroupMembers(AddWorkflowGroupMembersRequest) returns (AddWorkflowGroupMembersResponse);
+    // A workflow not in the group is left as it is.
+    rpc RemoveWorkflowGroupMembers(RemoveWorkflowGroupMembersRequest) returns (RemoveWorkflowGroupMembersResponse);
+}
+
+message WorkflowGroup {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    bool enabled = 4;
+    // The workflows in the group, ordered by id.
+    repeated string member_ids = 5;
+}
+
+message ListWorkflowGroupsRequest {}
+
+message ListWorkflowGroupsResponse {
+    common.ResponseStatus status = 1;
+    // Ordered by name.
+    repeated WorkflowGroup groups = 2;
+}
+
+// A new group starts off and empty, so creating one changes no workflow.
+message CreateWorkflowGroupRequest {
+    string name = 1;
+    string description = 2;
+}
+
+message CreateWorkflowGroupResponse {
+    common.ResponseStatus status = 1;
+    WorkflowGroup group = 2;
+}
+
+message UpdateWorkflowGroupRequest {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+}
+
+message UpdateWorkflowGroupResponse {
+    common.ResponseStatus status = 1;
+    WorkflowGroup group = 2;
+}
+
+message DeleteWorkflowGroupRequest {
+    string id = 1;
+}
+
+message DeleteWorkflowGroupResponse {
+    common.ResponseStatus status = 1;
+}
+
+message SetWorkflowGroupEnabledRequest {
+    string id = 1;
+    bool enabled = 2;
+}
+
+message SetWorkflowGroupEnabledResponse {
+    common.ResponseStatus status = 1;
+    WorkflowGroup group = 2;
+}
+
+message AddWorkflowGroupMembersRequest {
+    string group_id = 1;
+    repeated string workflow_ids = 2;
+}
+
+message AddWorkflowGroupMembersResponse {
+    common.ResponseStatus status = 1;
+    WorkflowGroup group = 2;
+}
+
+message RemoveWorkflowGroupMembersRequest {
+    string group_id = 1;
+    repeated string workflow_ids = 2;
+}
+
+message RemoveWorkflowGroupMembersResponse {
+    common.ResponseStatus status = 1;
+    WorkflowGroup group = 2;
+}

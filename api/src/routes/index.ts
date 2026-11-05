@@ -40,6 +40,7 @@ import { uiSettingsRoutes } from "./ui-settings";
 import { userActionsRoutes } from "./user-actions";
 import { userPagesRoutes } from "./user-pages";
 import { viewerFactsRoutes } from "./viewer-facts";
+import { workflowGroupsRoutes } from "./workflow-groups";
 import { workflowsRoutes } from "./workflows";
 import { workflowsExecutionRoutes } from "./workflows-execution";
 
@@ -52,6 +53,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof actionsRoutes &
   typeof commandsRoutes &
   typeof groupsRoutes &
+  typeof workflowGroupsRoutes &
   typeof fieldOptionsRoutes &
   typeof userActionsRoutes &
   typeof eventsRoutes &
@@ -124,6 +126,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(workflowsExecutionRoutes),
     instrumentRoutes(commandsRoutes),
     instrumentRoutes(groupsRoutes),
+    instrumentRoutes(workflowGroupsRoutes),
     instrumentRoutes(actionsRoutes),
     instrumentRoutes(fieldOptionsRoutes),
     instrumentRoutes(userActionsRoutes),

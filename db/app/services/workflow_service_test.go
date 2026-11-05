@@ -192,7 +192,7 @@ func TestWorkflowService_ModuleReinstallMovesOnlyTheUpdateTime(t *testing.T) {
 func TestBuildWorkflowChangeData_CarriesTheWorkflowsTimes(t *testing.T) {
 	created := time.Date(2026, 1, 2, 3, 4, 5, 600, time.UTC)
 	updated := created.Add(time.Hour)
-	data := buildWorkflowChangeData(&models.WorkflowDefinition{ID: uuid.New(), CreatedAt: created, UpdatedAt: updated})
+	data := buildWorkflowChangeData(&models.WorkflowDefinition{ID: uuid.New(), CreatedAt: created, UpdatedAt: updated}, nil)
 	if data["created_at"] != "2026-01-02T03:04:05.0000006Z" || data["updated_at"] != "2026-01-02T04:04:05.0000006Z" {
 		t.Fatalf("times not carried: %v, %v", data["created_at"], data["updated_at"])
 	}

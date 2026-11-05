@@ -86,6 +86,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { DEFAULT_WEBHOOK_CLIENT_CONFIG, WebhookClient },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
+      { initWorkflowGroupHandlers },
       { WorkflowHealthEmitter },
       { WorkflowRunEmitter },
       { initWorkflowRunHandlers },
@@ -129,6 +130,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./webhook-client"),
       import("./widget-status-handlers"),
       import("./workflow-event-handlers"),
+      import("./workflow-group-event-handlers"),
       import("./workflow-health-emitter"),
       import("./workflow-run-emitter"),
       import("./workflow-run-handlers"),
@@ -292,6 +294,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       );
       await initModuleHandlers(natsClient, webhookClient, logger);
       await initWorkflowHandlers(natsClient, webhookClient, logger);
+      await initWorkflowGroupHandlers(natsClient, webhookClient, logger);
       await initSceneHandlers(natsClient, webhookClient, logger);
       await initCommandHandlers(natsClient, webhookClient, logger);
       await initAlertLogHandlers(natsClient, webhookClient, logger);

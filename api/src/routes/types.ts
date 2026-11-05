@@ -15,4 +15,5 @@ export interface WorkflowItem {
   createdAt: string;
   updatedAt: string;
   taxonomy: string[];
+  groupIds: string[];
 }

@@ -2661,7 +2661,7 @@
     {
       "id": "image",
       "name": "Image",
-      "description": "An image or animated GIF.",
+      "description": "An image, or an animated GIF, WebP or SVG.",
       "entry": "widgets/image/index.html",
       "assets": "widgets/image",
       "surfaces": [

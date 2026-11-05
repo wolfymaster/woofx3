@@ -28,6 +28,7 @@ import * as user_page_submission from "@woofx3/db/user_page_submission.pb";
 import * as viewer_fact from "@woofx3/db/viewer_fact.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
 import * as workflow from "@woofx3/db/workflow.pb";
+import * as workflow_group from "@woofx3/db/workflow_group.pb";
 
 /**
  * A failure from db-proxy, carrying the reason as data.
@@ -281,6 +282,47 @@ export class DbClient {
   async listGroupMembers(req: group.ListGroupMembersRequest): Promise<string[]> {
     const response = await group.ListGroupMembers(req, this.config);
     return unwrap("listGroupMembers", response, response.usernames ?? []);
+  }
+
+  async listWorkflowGroups(): Promise<workflow_group.WorkflowGroup[]> {
+    const response = await workflow_group.ListWorkflowGroups({}, this.config);
+    unwrapVoid("listWorkflowGroups", response);
+    return response.groups ?? [];
+  }
+
+  async createWorkflowGroup(req: workflow_group.CreateWorkflowGroupRequest): Promise<workflow_group.WorkflowGroup> {
+    const response = await workflow_group.CreateWorkflowGroup(req, this.config);
+    return unwrap("createWorkflowGroup", response, response.group);
+  }
+
+  async updateWorkflowGroup(req: workflow_group.UpdateWorkflowGroupRequest): Promise<workflow_group.WorkflowGroup> {
+    const response = await workflow_group.UpdateWorkflowGroup(req, this.config);
+    return unwrap("updateWorkflowGroup", response, response.group);
+  }
+
+  async deleteWorkflowGroup(req: workflow_group.DeleteWorkflowGroupRequest): Promise<void> {
+    unwrapVoid("deleteWorkflowGroup", await workflow_group.DeleteWorkflowGroup(req, this.config));
+  }
+
+  async setWorkflowGroupEnabled(
+    req: workflow_group.SetWorkflowGroupEnabledRequest
+  ): Promise<workflow_group.WorkflowGroup> {
+    const response = await workflow_group.SetWorkflowGroupEnabled(req, this.config);
+    return unwrap("setWorkflowGroupEnabled", response, response.group);
+  }
+
+  async addWorkflowGroupMembers(
+    req: workflow_group.AddWorkflowGroupMembersRequest
+  ): Promise<workflow_group.WorkflowGroup> {
+    const response = await workflow_group.AddWorkflowGroupMembers(req, this.config);
+    return unwrap("addWorkflowGroupMembers", response, response.group);
+  }
+
+  async removeWorkflowGroupMembers(
+    req: workflow_group.RemoveWorkflowGroupMembersRequest
+  ): Promise<workflow_group.WorkflowGroup> {
+    const response = await workflow_group.RemoveWorkflowGroupMembers(req, this.config);
+    return unwrap("removeWorkflowGroupMembers", response, response.group);
   }
 
   async listUserGroupsForUser(req: group.ListUserGroupsForUserRequest): Promise<group.Group[]> {

@@ -242,6 +242,8 @@ export interface Workflow {
   stats: WorkflowStats;
   createdAt: string;
   updatedAt: string;
+  /** The workflow groups it belongs to. Absent from an engine without `workflows.groups`. */
+  groupIds?: string[];
 }
 
 export interface WorkflowsQuery {
@@ -624,6 +626,46 @@ export interface UpdateCommandInput {
   /** See `CommandSnapshot.argumentPattern`. */
   argumentPattern?: string;
   /** Echoed back on the `command.updated` webhook. */
+  correlationKey?: string;
+}
+
+// ==================== Workflow groups ====================
+
+/**
+ * A workflow group, shown to streamers as an alert group: a named set of
+ * triggers switched on and off together. A group moves its members' own
+ * switches, which stay the only ones that decide whether a trigger runs:
+ *
+ * - Switching a group on switches on every trigger in it, first saving how
+ *   each one was unless another group that is on already holds it.
+ * - Switching it off puts each trigger back how it was, unless another group
+ *   that is on still includes it.
+ * - Adding a trigger to a group that is on switches it on; removing it, or
+ *   deleting the group, lets go of it as switching the group off would.
+ * - Switching a held trigger by hand also changes the state it goes back to.
+ *
+ * Needs the `workflows.groups` capability.
+ */
+export interface WorkflowGroup {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  /** Workflow ids, ordered by id. */
+  memberIds: string[];
+}
+
+export interface CreateWorkflowGroupInput {
+  name: string;
+  description?: string;
+  /** Echoed back on the `workflow_group.created` webhook. */
+  correlationKey?: string;
+}
+
+export interface UpdateWorkflowGroupInput {
+  name: string;
+  description?: string;
+  /** Echoed back on the `workflow_group.updated` webhook. */
   correlationKey?: string;
 }
 
@@ -2298,6 +2340,20 @@ export interface Woofx3EngineApi {
   removeUserFromGroup(groupId: string, username: string): Promise<{ ok: true }>;
   /** Every group the user belongs to, for rendering a user's effective access. */
   listGroupsForUser(username: string): Promise<GroupSnapshot[]>;
+
+  // Workflow groups (alert groups); see WorkflowGroup. Each change echoes a
+  // `workflow_group.*` webhook carrying the call's correlationKey; members
+  // whose switch moved arrive as their own `workflow.updated`.
+  listWorkflowGroups(): Promise<WorkflowGroup[]>;
+  createWorkflowGroup(data: CreateWorkflowGroupInput): Promise<WorkflowGroup>;
+  /** Writes the name and description only. */
+  updateWorkflowGroup(id: string, data: UpdateWorkflowGroupInput): Promise<WorkflowGroup>;
+  deleteWorkflowGroup(id: string, correlationKey?: string): Promise<{ deleted: boolean }>;
+  /** Setting a group to the state it is already in changes nothing. */
+  setWorkflowGroupEnabled(id: string, enabled: boolean, correlationKey?: string): Promise<WorkflowGroup>;
+  /** Refuses a chat command's workflow. Workflows already in the group are left as they are. */
+  addWorkflowGroupMembers(groupId: string, workflowIds: string[], correlationKey?: string): Promise<WorkflowGroup>;
+  removeWorkflowGroupMembers(groupId: string, workflowIds: string[], correlationKey?: string): Promise<WorkflowGroup>;
 
   // Permissions — read-only view of the derived Casbin policy rows. Useful
   // for a debugging/inspection panel; day-to-day management goes through the

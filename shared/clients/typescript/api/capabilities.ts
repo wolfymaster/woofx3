@@ -41,6 +41,13 @@ export const ENGINE_CAPABILITIES = {
    * workflow actions.
    */
   databases: "databases.records",
+  /**
+   * Workflow groups (alert groups): `listWorkflowGroups`, `createWorkflowGroup`,
+   * `updateWorkflowGroup`, `deleteWorkflowGroup`, `setWorkflowGroupEnabled`,
+   * `addWorkflowGroupMembers`, `removeWorkflowGroupMembers`, the
+   * `workflow_group.*` events, and `groupIds` on workflows.
+   */
+  workflowsGroups: "workflows.groups",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];

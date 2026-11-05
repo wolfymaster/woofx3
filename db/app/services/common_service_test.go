@@ -79,8 +79,23 @@ func newTestDB(t *testing.T) *gorm.DB {
 			taxonomy TEXT NOT NULL DEFAULT '[]',
 			enabled BOOLEAN NOT NULL DEFAULT 0,
 			revision INTEGER NOT NULL DEFAULT 1,
+			pre_group_enabled BOOLEAN,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE workflow_groups (
+			id TEXT PRIMARY KEY,
+			name VARCHAR(100) NOT NULL UNIQUE,
+			description VARCHAR(500) NOT NULL DEFAULT '',
+			enabled BOOLEAN NOT NULL DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE TABLE workflow_group_members (
+			group_id TEXT NOT NULL,
+			workflow_id TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (group_id, workflow_id)
 		)`,
 		`CREATE TABLE command_groups (
 			command_id TEXT NOT NULL,

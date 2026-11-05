@@ -303,7 +303,8 @@ func (c *commandWorkflowChange) announceIn(tx *gorm.DB, publisher *workers.Event
 	if c == nil || publisher == nil {
 		return nil
 	}
-	data := buildWorkflowChangeData(c.workflow)
+	// A command's workflow never joins a group (AddWorkflowGroupMembers refuses it).
+	data := buildWorkflowChangeData(c.workflow, nil)
 	if c.operation == "deleted" {
 		data = map[string]any{"id": c.workflow.ID.String()}
 	}
