@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.65.0](https://github.com/wolfymaster/woofx3/compare/v0.64.0...v0.65.0) (2026-11-05)
+
+### Features
+
+* **api:** workflow group methods and capability ([23a611f](https://github.com/wolfymaster/woofx3/commit/23a611fde6cc42cec5e2471f5acd5f409a667c8c))
+* **db:** manual toggles and merges respect held triggers ([d9edde5](https://github.com/wolfymaster/woofx3/commit/d9edde5150ccffa4b13cf219539ccb3dafb0a594))
+* **db:** workflow group proto and group_ids on workflows ([8b9fca5](https://github.com/wolfymaster/woofx3/commit/8b9fca508a831395b9781fd8a64a9eafb031ea72))
+* **db:** workflow group service ([c2c904f](https://github.com/wolfymaster/woofx3/commit/c2c904f4d568204b4ae6aeb059eefefcf79cfa5c))
+* **db:** workflow group tables and saved-state column ([c886a6f](https://github.com/wolfymaster/woofx3/commit/c886a6fc7d3c2c3a9ed8e5247629df75e4c6e450))
+
 ## [0.64.0](https://github.com/wolfymaster/woofx3/compare/v0.63.2...v0.64.0) (2026-11-05)
 
 ### Features
