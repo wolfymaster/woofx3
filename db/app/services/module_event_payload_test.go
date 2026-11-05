@@ -170,7 +170,7 @@ func TestBuildWorkflowChangeData(t *testing.T) {
 			Taxonomy:      `["platform.twitch"]`,
 		}
 
-		row := buildWorkflowChangeData(wf)
+		row := buildWorkflowChangeData(wf, nil)
 
 		if got := row["enabled"]; got != true {
 			t.Errorf("enabled = %v, want true", got)
@@ -195,7 +195,7 @@ func TestBuildWorkflowChangeData(t *testing.T) {
 			Enabled:       false,
 			CreatedByType: "USER",
 		}
-		row := buildWorkflowChangeData(wf)
+		row := buildWorkflowChangeData(wf, nil)
 		if got := row["enabled"]; got != false {
 			t.Errorf("enabled = %v, want false", got)
 		}
