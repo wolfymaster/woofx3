@@ -49,6 +49,7 @@ function notificationEvent(
     case "sub": {
       return twitch.subscribe({
         isGift: false,
+        isCommunityGift: false,
         tier: event.tier,
         userId: event.chatterId,
         userName: event.chatterDisplayName,
@@ -71,6 +72,7 @@ function notificationEvent(
     case "sub_gift": {
       return twitch.subscribe({
         isGift: true,
+        isCommunityGift: event.communityGiftId !== null,
         tier: event.tier,
         userId: event.recipientId,
         userName: event.recipientDisplayName,
@@ -141,6 +143,7 @@ function notificationEvent(
       return twitch.sharedSubscribe({
         ...base,
         isGift: false,
+        isCommunityGift: false,
         tier: event.tier,
         userId: event.chatterId,
         userName: event.chatterDisplayName,
@@ -164,6 +167,7 @@ function notificationEvent(
       return twitch.sharedSubscribe({
         ...base,
         isGift: true,
+        isCommunityGift: event.communityGiftId !== null,
         tier: event.tier,
         userId: event.recipientId,
         userName: event.recipientDisplayName,
