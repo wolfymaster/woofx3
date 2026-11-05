@@ -63,6 +63,11 @@ export interface Workflow {
    * the revision it read as `UpdateWorkflowRequest.expected_revision`.
    */
   revision: number;
+  /**
+   * The workflow groups (alert groups) the workflow belongs to, ordered by
+   * id. See workflow_group.proto.
+   */
+  groupIds: string[];
 }
 
 export declare namespace Workflow {
@@ -1086,6 +1091,7 @@ export const Workflow = {
       manifestId: "",
       taxonomy: [],
       revision: 0,
+      groupIds: [],
       ...msg,
     };
   },
@@ -1165,6 +1171,9 @@ export const Workflow = {
     }
     if (msg.revision) {
       writer.writeInt32(21, msg.revision);
+    }
+    if (msg.groupIds?.length) {
+      writer.writeRepeatedString(22, msg.groupIds);
     }
     return writer;
   },
@@ -1251,6 +1260,10 @@ export const Workflow = {
         }
         case 21: {
           msg.revision = reader.readInt32();
+          break;
+        }
+        case 22: {
+          msg.groupIds.push(reader.readString());
           break;
         }
         default: {
@@ -3903,6 +3916,7 @@ export const WorkflowJSON = {
       manifestId: "",
       taxonomy: [],
       revision: 0,
+      groupIds: [],
       ...msg,
     };
   },
@@ -3975,6 +3989,9 @@ export const WorkflowJSON = {
     }
     if (msg.revision) {
       json["revision"] = msg.revision;
+    }
+    if (msg.groupIds?.length) {
+      json["groupIds"] = msg.groupIds;
     }
     return json;
   },
@@ -4059,6 +4076,10 @@ export const WorkflowJSON = {
     const _revision_ = json["revision"];
     if (_revision_) {
       msg.revision = protoscript.parseNumber(_revision_);
+    }
+    const _groupIds_ = json["groupIds"] ?? json["group_ids"];
+    if (_groupIds_) {
+      msg.groupIds = _groupIds_;
     }
     return msg;
   },

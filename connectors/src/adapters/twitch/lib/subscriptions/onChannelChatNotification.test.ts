@@ -57,6 +57,22 @@ describe("onChannelChatNotification", () => {
     expect(publishedTopics()).toEqual([EventType.Subscribe]);
   });
 
+  test("a gifted sub says whether it is one of a community gift", async () => {
+    const recipient = { tier: "1000", recipientId: "r-1", recipientDisplayName: "R" };
+    await handler(notice("sub_gift", null, { ...recipient, communityGiftId: "community-1" }));
+    await handler(notice("sub_gift", null, { ...recipient, communityGiftId: null }));
+    await handler(notice("sub", null, { tier: "1000" }));
+
+    const published = publish.mock.calls.map(
+      (call) => JSON.parse(new TextDecoder().decode(call[1] as Uint8Array)).data
+    );
+    expect(published.map((data) => [data.isGift, data.isCommunityGift])).toEqual([
+      [true, true],
+      [true, false],
+      [false, false],
+    ]);
+  });
+
   test("a partner's subs, gifts and raids during shared chat are published as shared events", async () => {
     await handler(notice("shared_chat_sub", PARTNER, { tier: "1000" }));
     await handler(

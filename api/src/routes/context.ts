@@ -15,6 +15,9 @@ import type {
   SceneUpdatedEvent,
   WorkflowCreatedEvent,
   WorkflowDeletedEvent,
+  WorkflowGroupCreatedEvent,
+  WorkflowGroupDeletedEvent,
+  WorkflowGroupUpdatedEvent,
   WorkflowUpdatedEvent,
 } from "@woofx3/api/webhooks";
 import { EngineEventType } from "@woofx3/api/webhooks";
@@ -203,6 +206,7 @@ export class ApiRouteHost extends RpcTarget {
     createdAt?: { seconds?: bigint; nanos?: number };
     updatedAt?: { seconds?: bigint; nanos?: number };
     taxonomy?: string[];
+    groupIds?: string[];
   }): WorkflowItem {
     return {
       id: wf.id ?? "",
@@ -215,6 +219,7 @@ export class ApiRouteHost extends RpcTarget {
       createdAt: timestampToIso(wf.createdAt),
       updatedAt: timestampToIso(wf.updatedAt),
       taxonomy: wf.taxonomy ?? [],
+      groupIds: wf.groupIds ?? [],
     };
   }
 
@@ -264,6 +269,12 @@ export class ApiRouteHost extends RpcTarget {
 
   protected async emitGroupWebhook(
     event: GroupCreatedEvent | GroupUpdatedEvent | GroupDeletedEvent | GroupMemberAddedEvent | GroupMemberRemovedEvent
+  ): Promise<void> {
+    await this.emitWebhook(event, {});
+  }
+
+  protected async emitWorkflowGroupWebhook(
+    event: WorkflowGroupCreatedEvent | WorkflowGroupUpdatedEvent | WorkflowGroupDeletedEvent
   ): Promise<void> {
     await this.emitWebhook(event, {});
   }

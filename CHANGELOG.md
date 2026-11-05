@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.65.0](https://github.com/wolfymaster/woofx3/compare/v0.64.0...v0.65.0) (2026-11-05)
+
+### Features
+
+* **api:** workflow group methods and capability ([23a611f](https://github.com/wolfymaster/woofx3/commit/23a611fde6cc42cec5e2471f5acd5f409a667c8c))
+* **db:** manual toggles and merges respect held triggers ([d9edde5](https://github.com/wolfymaster/woofx3/commit/d9edde5150ccffa4b13cf219539ccb3dafb0a594))
+* **db:** workflow group proto and group_ids on workflows ([8b9fca5](https://github.com/wolfymaster/woofx3/commit/8b9fca508a831395b9781fd8a64a9eafb031ea72))
+* **db:** workflow group service ([c2c904f](https://github.com/wolfymaster/woofx3/commit/c2c904f4d568204b4ae6aeb059eefefcf79cfa5c))
+* **db:** workflow group tables and saved-state column ([c886a6f](https://github.com/wolfymaster/woofx3/commit/c886a6fc7d3c2c3a9ed8e5247629df75e4c6e450))
+
+## [0.64.0](https://github.com/wolfymaster/woofx3/compare/v0.63.2...v0.64.0) (2026-11-05)
+
+### Features
+
+* **connectors:** say whether a gifted sub is part of a community gift ([7206da1](https://github.com/wolfymaster/woofx3/commit/7206da11d19d37adb43bb26c57a3b0ded5cb5b79))
+* **woofx3:** add default alert animations to the image widget ([7a0697e](https://github.com/wolfymaster/woofx3/commit/7a0697e2093fd58fbc8b1b8d67798fadfc70d802))
+* **woofx3:** replace the default alert art with generic vector loops ([e6ed2d2](https://github.com/wolfymaster/woofx3/commit/e6ed2d2023c9d269cdfc8fd297d3e8699ed87de2))
+* **woofx3:** ship the default alert animations, manifest 0.45.0 ([95c3400](https://github.com/wolfymaster/woofx3/commit/95c34008a4fc7e0b30b49083ce5ae09cf0f1a501))
+* **woofx3:** ship the vector alert art, manifest 0.46.0 ([d93e3f5](https://github.com/wolfymaster/woofx3/commit/d93e3f5beb79c6d2b66b8c76b0801400d9a21182))
+
+## [0.63.2](https://github.com/wolfymaster/woofx3/compare/v0.63.1...v0.63.2) (2026-11-04)
+
+### Bug Fixes
+
+* **build:** default sceneManagerUrl in packaged releases ([d18e117](https://github.com/wolfymaster/woofx3/commit/d18e117aa59e79c064608c3075a6192785e1a997))
+
 ## [0.63.1](https://github.com/wolfymaster/woofx3/compare/v0.63.0...v0.63.1) (2026-11-04)
 
 ### Bug Fixes
