@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.45.0",
+  "version": "0.46.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -3139,6 +3139,68 @@
       ],
       "taxonomy": [
         "data.queue"
+      ]
+    },
+    {
+      "id": "record",
+      "name": "Database value",
+      "description": "One value from a database row: the newest row, or one you pick. Kept up to date as the row changes.",
+      "entry": "widgets/record/index.html",
+      "assets": "widgets/record",
+      "surfaces": [
+        "scene"
+      ],
+      "settingsSchema": [
+        {
+          "id": "database",
+          "label": "Database",
+          "type": "resource_ref",
+          "resourceKind": "database",
+          "required": true,
+          "description": "The database to show a value from."
+        },
+        {
+          "id": "column",
+          "label": "Column",
+          "type": "select",
+          "required": true,
+          "source": {
+            "kind": "databaseColumns",
+            "databaseField": "database"
+          },
+          "description": "The column whose value to show."
+        },
+        {
+          "id": "which",
+          "label": "Row",
+          "type": "select",
+          "defaultValue": "newest",
+          "options": [
+            {
+              "value": "newest",
+              "label": "The newest row"
+            },
+            {
+              "value": "record",
+              "label": "A row I pick"
+            }
+          ]
+        },
+        {
+          "id": "record",
+          "label": "Row id",
+          "type": "text",
+          "visibleWhen": {
+            "field": "which",
+            "oneOf": [
+              "record"
+            ]
+          },
+          "description": "The id of the row to show."
+        }
+      ],
+      "taxonomy": [
+        "data.database"
       ]
     }
   ],
