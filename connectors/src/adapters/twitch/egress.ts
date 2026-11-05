@@ -1,8 +1,12 @@
 import {
+  type ChatDeletePayload,
   type ChatPinPayload,
   type ChatSendPayload,
   type FailureCode,
   isTwitchAnnouncementColor,
+  type ModerationBanPayload,
+  type ModerationTimeoutPayload,
+  type ModerationWarnPayload,
   type PlatformOutcome,
   TWITCH_ANNOUNCEMENT_COLORS,
   type TwitchAnnouncementColor,
@@ -14,7 +18,7 @@ import { type Clock, errorMessage } from "../../host/deps";
 import { type ParseResult, parsed, parseFailed } from "../../host/host-requests";
 import { HELIX_DEADLINE_MS, HelixNoAnswer, readSentChatMessage } from "./lib/helix";
 import type { SendQueue } from "./lib/send-queue";
-import type { TwitchApiCall } from "./lib/twitch";
+import { TIMEOUT_MAX_SECONDS, TIMEOUT_REASON_MAX_LENGTH, type TwitchApiCall } from "./lib/twitch";
 import { TwitchApiError } from "./lib/twitchApiError";
 
 /** Used when a `chat.announce` request carries no Twitch options: the channel's accent colour. */
@@ -48,13 +52,34 @@ export function helixFailureCode(status: number): FailureCode {
   return HELIX_STATUS_FAILURES[status] ?? "upstream";
 }
 
+/** Twitch's Warn Chat User refuses a reason longer than this. */
+export const TWITCH_WARN_REASON_MAX_LENGTH = 500;
+
+/**
+ * Delete Chat Messages answers 404 for a message that is gone or older than
+ * 6 hours, and 400 for one Twitch will not delete (the broadcaster's or
+ * another moderator's). Neither is Twitch failing: the line is not deletable.
+ */
+const DELETE_STATUS_FAILURES: Readonly<Partial<Record<number, FailureCode>>> = { 404: "invalid" };
+
+/**
+ * Warn Chat User answers 409 when another update to the viewer's warning
+ * state raced it. Worth exactly one more attempt; a second 409 is upstream.
+ */
+const WARN_CONFLICT_STATUS = 409;
+
 /**
  * Where egress sends its Helix calls: the running adapter's Twitch client,
  * or why there is none. Read when a write's turn comes, not when it is
  * queued, so a write never goes out on a connection that has since closed.
  */
 export type TwitchEgressSession =
-  | { kind: "ready"; helix(args: HelixCommandArgs, call: TwitchApiCall): Promise<HelixCommandResult> }
+  | {
+      kind: "ready";
+      /** The linked broadcaster's user id, whom no moderation action may target. */
+      broadcasterId: string;
+      helix(args: HelixCommandArgs, call: TwitchApiCall): Promise<HelixCommandResult>;
+    }
   | { kind: "unavailable"; reason: Extract<UnavailableReason, "stopped" | "starting"> };
 
 export interface TwitchEgressDeps {
@@ -79,7 +104,100 @@ export function twitchEgress(deps: TwitchEgressDeps): EgressHandlers {
     "chat.pin": {
       handle: (payload, _options, ctx) => queued(deps, ctx, () => pin(deps, ctx, payload)),
     },
+    "chat.delete": {
+      handle: (payload, _options, ctx) => queued(deps, ctx, () => deleteMessage(deps, ctx, payload)),
+    },
+    "moderation.warn": {
+      handle: (payload, _options, ctx) => queued(deps, ctx, () => warn(deps, ctx, payload)),
+    },
+    "moderation.timeout": {
+      handle: (payload, _options, ctx) => queued(deps, ctx, () => ban(deps, ctx, payload)),
+    },
+    "moderation.ban": {
+      handle: (payload, _options, ctx) => queued(deps, ctx, () => ban(deps, ctx, payload)),
+    },
   };
+}
+
+async function deleteMessage(
+  deps: TwitchEgressDeps,
+  ctx: EgressContext,
+  payload: ChatDeletePayload
+): Promise<PlatformOutcome> {
+  if (payload.messageId.trim() === "") {
+    return refusedHere("a delete needs the message id; without one Twitch clears the whole chat");
+  }
+  const attempt = await attemptHelix(
+    deps,
+    ctx,
+    { operation: "deleteChatMessage", params: { message_id: payload.messageId } },
+    DELETE_STATUS_FAILURES
+  );
+  return attempt.kind === "answered" ? { status: "delivered" } : attempt.outcome;
+}
+
+/** Twitch's own warning, which the viewer must acknowledge before chatting again. A 409 is tried once more. */
+async function warn(
+  deps: TwitchEgressDeps,
+  ctx: EgressContext,
+  payload: ModerationWarnPayload
+): Promise<PlatformOutcome> {
+  if ([...payload.reason].length > TWITCH_WARN_REASON_MAX_LENGTH) {
+    return refusedHere(`a warning reason is at most ${TWITCH_WARN_REASON_MAX_LENGTH} characters on Twitch`);
+  }
+  const args: HelixCommandArgs = {
+    operation: "warnChatUser",
+    params: { user_id: payload.viewer, reason: payload.reason },
+  };
+  return moderate(deps, payload.viewer, async () => {
+    const first = await attemptHelix(deps, ctx, args);
+    const conflicted = first.kind === "ended" && first.status === WARN_CONFLICT_STATUS;
+    const attempt = conflicted ? await attemptHelix(deps, ctx, args) : first;
+    return attempt.kind === "answered" ? { status: "delivered" } : attempt.outcome;
+  });
+}
+
+/** Ban User: a timeout when the payload carries a duration, else a ban. */
+async function ban(
+  deps: TwitchEgressDeps,
+  ctx: EgressContext,
+  payload: ModerationTimeoutPayload | ModerationBanPayload
+): Promise<PlatformOutcome> {
+  const params: Record<string, unknown> = { user_id: payload.viewer };
+  if ("durationSeconds" in payload) {
+    if (payload.durationSeconds < 1 || payload.durationSeconds > TIMEOUT_MAX_SECONDS) {
+      return refusedHere(`a timeout is 1 to ${TIMEOUT_MAX_SECONDS} seconds on Twitch`);
+    }
+    params.duration = payload.durationSeconds;
+  }
+  if (payload.reason !== undefined) {
+    if ([...payload.reason].length > TIMEOUT_REASON_MAX_LENGTH) {
+      return refusedHere(`a ban or timeout reason is at most ${TIMEOUT_REASON_MAX_LENGTH} characters on Twitch`);
+    }
+    params.reason = payload.reason;
+  }
+  return moderate(deps, payload.viewer, () => write(deps, ctx, { operation: "banUser", params }));
+}
+
+/**
+ * Runs a moderation write against `viewer`, unless the viewer is the
+ * broadcaster, whose own token performs it: Twitch refuses that anyway, and
+ * no rule may punish the channel's owner.
+ */
+async function moderate(
+  deps: TwitchEgressDeps,
+  viewer: string,
+  act: () => Promise<PlatformOutcome>
+): Promise<PlatformOutcome> {
+  const session = deps.session();
+  if (session.kind === "ready" && session.broadcasterId === viewer) {
+    return refusedHere("the broadcaster cannot be warned, timed out or banned");
+  }
+  return act();
+}
+
+function refusedHere(message: string): PlatformOutcome {
+  return { status: "failed", code: "invalid", message };
 }
 
 function announce(deps: TwitchEgressDeps): EgressHandlerSpec<"chat.announce", AnnounceOptions> {
@@ -214,8 +332,11 @@ async function write(deps: TwitchEgressDeps, ctx: EgressContext, args: HelixComm
   return attempt.kind === "answered" ? { status: "delivered" } : attempt.outcome;
 }
 
-/** A Helix call that Twitch answered with a 2xx, or the outcome it ended with instead. */
-type HelixAttempt = { kind: "answered"; body: unknown } | { kind: "ended"; outcome: PlatformOutcome };
+/**
+ * A Helix call that Twitch answered with a 2xx, or the outcome it ended with
+ * instead, with Twitch's status when it answered one.
+ */
+type HelixAttempt = { kind: "answered"; body: unknown } | { kind: "ended"; outcome: PlatformOutcome; status?: number };
 
 /**
  * One Helix call as the broadcaster, bounded by the request's deadline and
@@ -223,7 +344,12 @@ type HelixAttempt = { kind: "answered"; body: unknown } | { kind: "ended"; outco
  * it leaves, so the gateway reports a deadline after that as unconfirmed, and
  * hands on the request's workflow chain, which a chat line's echo carries.
  */
-async function attemptHelix(deps: TwitchEgressDeps, ctx: EgressContext, args: HelixCommandArgs): Promise<HelixAttempt> {
+async function attemptHelix(
+  deps: TwitchEgressDeps,
+  ctx: EgressContext,
+  args: HelixCommandArgs,
+  statusFailures: Readonly<Partial<Record<number, FailureCode>>> = {}
+): Promise<HelixAttempt> {
   const session = deps.session();
   if (session.kind === "unavailable") {
     return { kind: "ended", outcome: { status: "unavailable", reason: session.reason } };
@@ -241,9 +367,11 @@ async function attemptHelix(deps: TwitchEgressDeps, ctx: EgressContext, args: He
     return { kind: "ended", outcome: thrownOutcome(err) };
   }
   if (!result.ok) {
+    const code = statusFailures[result.status] ?? helixFailureCode(result.status);
     return {
       kind: "ended",
-      outcome: { status: "failed", code: helixFailureCode(result.status), message: helixErrorMessage(result) },
+      status: result.status,
+      outcome: { status: "failed", code, message: helixErrorMessage(result) },
     };
   }
   return { kind: "answered", body: result.body };

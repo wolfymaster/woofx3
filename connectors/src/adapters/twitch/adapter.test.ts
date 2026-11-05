@@ -1,6 +1,7 @@
 import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
+import { EgressActionId } from "@woofx3/api/platform-gateway";
 import { TWITCHAPI_SERVED_BUDGET_MS } from "@woofx3/common/cloudevents/Twitch/commands";
 import { EventType as TwitchEventType } from "@woofx3/common/cloudevents/Twitch/events";
 import {
@@ -171,8 +172,8 @@ describe("TwitchAdapter manifest", () => {
     ]);
   });
 
-  test("performs every platform gateway chat action", () => {
-    expect(Object.keys(manifest.egress ?? {}).sort()).toEqual(["chat.announce", "chat.pin", "chat.send"]);
+  test("performs every platform gateway action", () => {
+    expect(Object.keys(manifest.egress ?? {}).sort()).toEqual([...Object.values(EgressActionId)].sort());
   });
 
   test("gives a Helix call room to report its own timeout inside the served budget", () => {
