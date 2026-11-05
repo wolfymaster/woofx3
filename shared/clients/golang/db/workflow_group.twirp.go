@@ -2193,7 +2193,7 @@ func (s *workflowGroupServiceServer) serveRemoveWorkflowGroupMembersProtobuf(ctx
 }
 
 func (s *workflowGroupServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor24, 0
+	return twirpFileDescriptor25, 0
 }
 
 func (s *workflowGroupServiceServer) ProtocGenTwirpVersion() string {
@@ -2207,7 +2207,7 @@ func (s *workflowGroupServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "workflow_group", "WorkflowGroupService")
 }
 
-var twirpFileDescriptor24 = []byte{
+var twirpFileDescriptor25 = []byte{
 	// 586 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbc, 0x56, 0x4d, 0x6f, 0xd3, 0x40,
 	0x10, 0x95, 0x9d, 0x36, 0x6d, 0x26, 0xa5, 0x87, 0x6d, 0x05, 0xae, 0xa3, 0x96, 0x74, 0x2f, 0xa4,

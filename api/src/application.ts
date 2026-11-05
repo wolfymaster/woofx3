@@ -90,6 +90,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { WorkflowHealthEmitter },
       { WorkflowRunEmitter },
       { initWorkflowRunHandlers },
+      { initDatabaseRecordHandlers },
       { default: BarkloaderClient },
       { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
       { connectMessageBus },
@@ -133,6 +134,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./workflow-health-emitter"),
       import("./workflow-run-emitter"),
       import("./workflow-run-handlers"),
+      import("./database-record-handlers"),
       import("@woofx3/barkloader"),
       import("./readiness"),
       import("./message-bus"),
@@ -301,6 +303,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       // WorkflowRunEmitter below, which forwards live lifecycle for a caller
       // waiting on one run: this carries persisted rows for the history.
       await initWorkflowRunHandlers(natsClient, webhookClient, logger);
+      await initDatabaseRecordHandlers(natsClient, webhookClient, logger);
 
       const workflowRunEmitter = new WorkflowRunEmitter(natsClient, webhookClient, logger);
       await workflowRunEmitter.start();

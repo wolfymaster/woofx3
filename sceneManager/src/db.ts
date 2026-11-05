@@ -1,6 +1,7 @@
 import * as alert from "@woofx3/db/alert.pb";
 import type * as common from "@woofx3/db/common.pb";
 import { Ping } from "@woofx3/db/common.pb";
+import * as database_record from "@woofx3/db/database_record.pb";
 import { GetResourceInstance, ListWidgets, RegisterWidgets } from "@woofx3/db/module.pb";
 import type * as module_resource_instance from "@woofx3/db/module_resource_instance.pb";
 import * as module_setting from "@woofx3/db/module_setting.pb";
@@ -165,6 +166,27 @@ export class DbClient {
       return undefined;
     }
     return JSON.parse(response.item.value);
+  }
+
+  /** A database row, or `null` when the database holds no row with that id. */
+  async getDatabaseRecord(databaseId: string, recordId: string): Promise<database_record.DatabaseRecord | null> {
+    const response = await database_record.GetDatabaseRecord({ databaseId, recordId }, this.config);
+    if (response.status?.code !== "OK") {
+      throw new Error(`getDatabaseRecord: ${response.status?.code ?? "unknown"} ${response.status?.message ?? ""}`);
+    }
+    return response.found ? (response.record ?? null) : null;
+  }
+
+  /** A database's newest `limit` rows, newest first. */
+  async listNewestDatabaseRecords(databaseId: string, limit: number): Promise<database_record.DatabaseRecord[]> {
+    const response = await database_record.ListDatabaseRecords(
+      { databaseId, sortBy: "", descending: true, offset: 0, limit },
+      this.config
+    );
+    if (response.status?.code !== "OK") {
+      throw new Error(`listDatabaseRecords: ${response.status?.code ?? "unknown"} ${response.status?.message ?? ""}`);
+    }
+    return response.records;
   }
 
   /** A resource instance by canonical id, or `null` when there is none. */

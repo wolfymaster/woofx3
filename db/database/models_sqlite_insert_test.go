@@ -37,6 +37,7 @@ func uuidIDModels() map[string]any {
 		"Asset":                  &models.Asset{},
 		"BackgroundTask":         &models.BackgroundTask{},
 		"Command":                &models.Command{},
+		"DatabaseRecord":         &models.DatabaseRecord{Values: "{}"},
 		"Group":                  &models.Group{},
 		"Module":                 &models.Module{},
 		"ModuleFunction":         &models.ModuleFunction{},

@@ -86,5 +86,6 @@ func All() []*gormigrate.Migration {
 		OrderModuleWorkflows(),
 		AddWorkflowRevision(),
 		AddWorkflowGroups(),
+		AddDatabaseRecords(),
 	}
 }

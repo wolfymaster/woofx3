@@ -319,7 +319,7 @@ pub struct ManifestConfigFieldOption {
 /// `theme` is in the list because consumers render it, but no manifest may
 /// declare one: the engine adds it to a widget that declares a `theme`
 /// contract (see `THEME_SETTING_ID`).
-pub const CONFIG_FIELD_TYPES: [&str; 14] = [
+pub const CONFIG_FIELD_TYPES: [&str; 15] = [
     "number",
     "range",
     "text",
@@ -334,7 +334,24 @@ pub const CONFIG_FIELD_TYPES: [&str; 14] = [
     "layout",
     "list",
     "theme",
+    "database_values",
 ];
+
+/// The field type of an action parameter holding one value per column of a
+/// database the action targets: `{ <columnId>: "<text or ${...}>" }`. Its
+/// `source` names the sibling field choosing the database (see
+/// `DATABASE_COLUMNS_SOURCE`).
+pub const DATABASE_VALUES_FIELD_TYPE: &str = "database_values";
+
+/// The `source` kind listing the columns of the database a sibling
+/// `resource_ref` field holds: `{ "kind": "databaseColumns", "databaseField":
+/// "<field id>" }`. Mirrors `DatabaseColumnsConfigFieldSource` in
+/// `shared/clients/typescript/api/ui-schema.ts`.
+pub const DATABASE_COLUMNS_SOURCE: &str = "databaseColumns";
+
+/// The resource kind a `databaseColumns` source reads, declared by the
+/// bundled woofx3 module.
+pub const DATABASE_RESOURCE_KIND: &str = "database";
 
 /// The comparisons a `number` field's `operators` may offer: the ones that
 /// read as a phrase beside an amount ("at least 100 bits"). Mirrors

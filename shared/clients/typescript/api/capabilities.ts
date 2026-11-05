@@ -33,6 +33,15 @@ export const ENGINE_CAPABILITIES = {
    */
   clientsPairing: "clients.pairing",
   /**
+   * Databases (./databases.ts): the `database` resource kind, the
+   * `listDatabaseRecords`, `getDatabaseRecord`, `createDatabaseRecord`,
+   * `updateDatabaseRecord`, `deleteDatabaseRecord` and
+   * `listPublicDatabaseRecords` methods, the `database.record.changed`
+   * event, and the `database.insert`, `database.update` and `database.get`
+   * workflow actions.
+   */
+  databases: "databases.records",
+  /**
    * Chat moderation (./moderation-config.ts): `getModerationConfig`,
    * `setModerationConfig` and `listModerationActions`, and a connectors host
    * that runs the config on chat.

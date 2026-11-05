@@ -21,6 +21,7 @@ import type {
   WorkflowHealth,
 } from "./api";
 import type { CommandSnapshot } from "./command";
+import type { DatabaseRecordChange } from "./databases";
 /**
  * Canonical event-type strings for every engine callback. Prefer
  * `EngineEventType.MODULE_INSTALLED` over the raw string in application
@@ -48,6 +49,7 @@ export const EngineEventType = {
   MODULE_RESOURCE_INSTANCE_UPDATED: "module.resource.instance.updated",
   MODULE_RESOURCE_INSTANCE_DELETED: "module.resource.instance.deleted",
   MODULE_STORAGE_CHANGED: "module.storage.changed",
+  DATABASE_RECORD_CHANGED: "database.record.changed",
   ENGINE_RESPONSE_RECEIVED: "engine.response.received",
   WORKFLOW_CREATED: "workflow.created",
   WORKFLOW_UPDATED: "workflow.updated",
@@ -670,6 +672,14 @@ export interface ModuleStorageChangedEvent {
   value: unknown;
   previousValue?: unknown;
   occurredAt: string;
+}
+
+/**
+ * Fired when a row of a database is created, updated or deleted. Carries only
+ * the columns public at the time; see `DatabaseRecordChange`.
+ */
+export interface DatabaseRecordChangedEvent extends DatabaseRecordChange {
+  type: typeof EngineEventType.DATABASE_RECORD_CHANGED;
 }
 
 /**
@@ -1580,6 +1590,7 @@ export type CallbackEvent =
   | ModuleResourceInstanceUpdatedEvent
   | ModuleResourceInstanceDeletedEvent
   | ModuleStorageChangedEvent
+  | DatabaseRecordChangedEvent
   | ModuleInstalledEvent
   | ModuleInstallFailedEvent
   | ModuleDeletedEvent
@@ -1648,6 +1659,7 @@ export type CallbackEventByType = {
   [EngineEventType.MODULE_RESOURCE_INSTANCE_UPDATED]: ModuleResourceInstanceUpdatedEvent;
   [EngineEventType.MODULE_RESOURCE_INSTANCE_DELETED]: ModuleResourceInstanceDeletedEvent;
   [EngineEventType.MODULE_STORAGE_CHANGED]: ModuleStorageChangedEvent;
+  [EngineEventType.DATABASE_RECORD_CHANGED]: DatabaseRecordChangedEvent;
   [EngineEventType.MODULE_INSTALLED]: ModuleInstalledEvent;
   [EngineEventType.MODULE_INSTALL_FAILED]: ModuleInstallFailedEvent;
   [EngineEventType.MODULE_DELETED]: ModuleDeletedEvent;

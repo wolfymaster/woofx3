@@ -16,7 +16,9 @@ func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middle
 	SettingsRoutes(mux, app)
 	CommandRoutes(mux, app, casbinMiddleware)
 	GroupRoutes(mux, app, casbinMiddleware)
-	ModuleRoutes(mux, app)
+	if err := ModuleRoutes(mux, app); err != nil {
+		return err
+	}
 	ModuleSettingRoutes(mux, app)
 	StorageRoutes(mux, app)
 	if err := ClientRoutes(mux, app); err != nil {
@@ -35,6 +37,9 @@ func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middle
 	StreamGaugeRoutes(mux, app, casbinMiddleware)
 	ViewerFactRoutes(mux, app, casbinMiddleware)
 	UserPageSubmissionRoutes(mux, app, casbinMiddleware)
+	if err := DatabaseRecordRoutes(mux, app); err != nil {
+		return err
+	}
 	LocalUISettingRoutes(mux, app, casbinMiddleware)
 	if err := WorkflowGroupRoutes(mux, app, casbinMiddleware); err != nil {
 		return err

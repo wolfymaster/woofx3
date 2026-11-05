@@ -22,6 +22,7 @@
     "./client": "./client.ts",
     "./command": "./command.ts",
     "./config-bundle": "./config-bundle.ts",
+    "./databases": "./databases.ts",
     "./google-fonts": "./google-fonts.ts",
     "./marketplace-catalog": "./marketplace-catalog.ts",
     "./moderation-config": "./moderation-config.ts",

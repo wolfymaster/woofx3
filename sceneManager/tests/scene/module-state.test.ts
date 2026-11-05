@@ -1,5 +1,8 @@
 import { describe, expect, it, mock } from "bun:test";
+import type { DatabaseRecordWire } from "@woofx3/api/databases";
+import type { StreamFrame } from "../../contract/overlay-stream";
 import {
+  databaseKeyParts,
   linkedResources,
   listSettingRows,
   type ModuleStateDb,
@@ -7,7 +10,6 @@ import {
   resourceKeyInstance,
   storageModuleFor,
 } from "../../src/scene/module-state";
-import type { StreamFrame } from "../../contract/overlay-stream";
 import { eventAndData } from "../helpers/stream-frames";
 
 const logger = {
@@ -27,9 +29,17 @@ type SettingRow = { key: string; value: string; valueType: string };
 function fakeDb(
   stored: Record<string, unknown>,
   instances: Record<string, { settingsJson: string }>,
-  settings: Record<string, SettingRow[]> = {}
+  settings: Record<string, SettingRow[]> = {},
+  records: DatabaseRecordWire[] = []
 ) {
   const db: ModuleStateDb = {
+    getDatabaseRecord: mock(
+      async (databaseId: string, recordId: string) =>
+        records.find((r) => r.databaseId === databaseId && r.id === recordId) ?? null
+    ),
+    listNewestDatabaseRecords: mock(async (databaseId: string, limit: number) =>
+      records.filter((r) => r.databaseId === databaseId).slice(0, limit)
+    ),
     getModuleStorageValue: mock(async (namespace: string, key: string) => {
       return stored[`${namespace}/${key}`];
     }),
@@ -366,5 +376,103 @@ describe("ModuleStateWatch list settings", () => {
     await watch.publish(WHEEL, "setting:items", "spoofed");
 
     expect(scenes.pushed).toEqual([]);
+  });
+});
+
+const GAMES = "woofx3:database:games";
+const ROW_ID = "5f0c6b2e-4a51-4f43-9d3b-1d2f6c1c9a10";
+
+function row(values: Record<string, unknown>, revision = 1n): DatabaseRecordWire {
+  return {
+    id: ROW_ID,
+    databaseId: GAMES,
+    revision,
+    createdAt: { seconds: 1_793_000_000n, nanos: 0 },
+    updatedAt: { seconds: 1_793_000_000n, nanos: 0 },
+    valuesJson: JSON.stringify(values),
+  };
+}
+
+describe("database keys", () => {
+  const cases: { key: string; parts: { databaseId: string; recordId: string | null } | null }[] = [
+    { key: `record:${GAMES}:${ROW_ID}`, parts: { databaseId: GAMES, recordId: ROW_ID } },
+    { key: `records:${GAMES}`, parts: { databaseId: GAMES, recordId: null } },
+    { key: "record:", parts: null },
+    { key: "record:woofx3", parts: null },
+    { key: `record:${GAMES}:`, parts: null },
+    { key: "records:", parts: null },
+    { key: `state:${GAMES}`, parts: null },
+  ];
+  for (const { key, parts } of cases) {
+    it(`${JSON.stringify(key)} -> ${JSON.stringify(parts)}`, () => {
+      expect(databaseKeyParts(key)).toEqual(parts);
+    });
+  }
+
+  it("scopes a database key to the database it names", async () => {
+    expect(resourceKeyInstance(`record:${GAMES}:${ROW_ID}`)).toBe(GAMES);
+    const linked = { listModuleSettings: async () => [{ key: "database", value: GAMES, valueType: "resource_ref" }] };
+    const unlinked = { listModuleSettings: async () => [] };
+    expect(await storageModuleFor(linked, "games_board", `records:${GAMES}`)).toBe("woofx3");
+    expect(await storageModuleFor(unlinked, "games_board", `records:${GAMES}`)).toBe("games_board");
+  });
+});
+
+describe("ModuleStateWatch database rows", () => {
+  it("reads a row with every column, and the newest rows", async () => {
+    const db = fakeDb({}, {}, {}, [row({ game: "Celeste", viewer: "wolfy" })]);
+    const watch = watchOf(db);
+    expect(await watch.read("scene-1", "woofx3", `record:${GAMES}:${ROW_ID}`)).toMatchObject({
+      id: ROW_ID,
+      databaseId: GAMES,
+      revision: 1,
+      values: { game: "Celeste", viewer: "wolfy" },
+    });
+    expect(await watch.read("scene-1", "woofx3", `records:${GAMES}`)).toHaveLength(1);
+    expect(db.listNewestDatabaseRecords).toHaveBeenCalledWith(GAMES, 50);
+  });
+
+  it("refuses a database another module owns, as an unlinked widget reads it from its own storage", async () => {
+    const db = fakeDb({}, {}, {}, [row({ game: "Celeste" })]);
+    const watch = watchOf(db);
+    expect(await watch.read("scene-1", "games_board", `records:${GAMES}`)).toBeNull();
+    expect(await watch.read("scene-1", "games_board", `record:${GAMES}:${ROW_ID}`)).toBeNull();
+    expect(db.getDatabaseRecord).not.toHaveBeenCalled();
+  });
+
+  it("pushes the row and the newest rows again after a change, and null once the row is deleted", async () => {
+    const records = [row({ game: "Celeste" })];
+    const db = fakeDb({}, {}, {}, records);
+    const scenes = fakeScenes(["scene-1"]);
+    const watch = watchOf(db, scenes);
+    await watch.read("scene-1", "woofx3", `record:${GAMES}:${ROW_ID}`, "games_board");
+    await watch.read("scene-1", "woofx3", `records:${GAMES}`, "games_board");
+
+    records[0] = row({ game: "Hades" }, 2n);
+    await watch.databaseRecordChanged(GAMES, ROW_ID);
+    expect(scenes.pushed).toHaveLength(2);
+    expect(scenes.pushed[0]).toMatchObject({
+      sceneId: "scene-1",
+      event: "module-state",
+      data: {
+        moduleId: "games_board",
+        key: `record:${GAMES}:${ROW_ID}`,
+        value: { revision: 2, values: { game: "Hades" } },
+      },
+    });
+    expect(scenes.pushed[1]).toMatchObject({ data: { key: `records:${GAMES}` } });
+
+    records.length = 0;
+    await watch.databaseRecordChanged(GAMES, ROW_ID);
+    expect(scenes.pushed[2]).toMatchObject({ data: { key: `record:${GAMES}:${ROW_ID}`, value: null } });
+    expect(scenes.pushed[3]).toMatchObject({ data: { key: `records:${GAMES}`, value: [] } });
+  });
+
+  it("ignores a storage write that uses a database key", async () => {
+    const scenes = fakeScenes(["scene-1"]);
+    const watch = watchOf(fakeDb({}, {}, {}, [row({})]), scenes);
+    await watch.read("scene-1", "woofx3", `records:${GAMES}`);
+    await watch.publish("woofx3", `records:${GAMES}`, ["forged"]);
+    expect(scenes.pushed).toHaveLength(0);
   });
 });

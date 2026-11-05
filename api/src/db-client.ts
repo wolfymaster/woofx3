@@ -3,6 +3,7 @@ import * as clientPb from "@woofx3/db/client.pb";
 import * as command from "@woofx3/db/command.pb";
 import type * as common from "@woofx3/db/common.pb";
 import { MigrationStatus, Ping } from "@woofx3/db/common.pb";
+import * as database_record from "@woofx3/db/database_record.pb";
 import * as group from "@woofx3/db/group.pb";
 import * as local_ui_setting from "@woofx3/db/local_ui_setting.pb";
 import * as module from "@woofx3/db/module.pb";
@@ -700,6 +701,55 @@ export class DbClient {
     const response = await user_page_submission.RecordUserPageSubmission(req, this.config);
     unwrapVoid("recordUserPageSubmission", response);
     return response.created;
+  }
+
+  // Database records. Values are refused with `invalid_argument`, naming the
+  // column; a stale `expectedRevision` is refused with `aborted`.
+
+  async createDatabaseRecord(
+    req: database_record.CreateDatabaseRecordRequest
+  ): Promise<database_record.CreateDatabaseRecordResponse> {
+    const response = await database_record.CreateDatabaseRecord(req, this.config);
+    unwrapVoid("createDatabaseRecord", response);
+    return response;
+  }
+
+  async updateDatabaseRecord(
+    req: database_record.UpdateDatabaseRecordRequest
+  ): Promise<database_record.UpdateDatabaseRecordResponse> {
+    const response = await database_record.UpdateDatabaseRecord(req, this.config);
+    unwrapVoid("updateDatabaseRecord", response);
+    return response;
+  }
+
+  /** Whether a row was deleted: false when the database held no row with that id. */
+  async deleteDatabaseRecord(databaseId: string, recordId: string): Promise<boolean> {
+    const response = await database_record.DeleteDatabaseRecord({ databaseId, recordId }, this.config);
+    unwrapVoid("deleteDatabaseRecord", response);
+    return response.deleted;
+  }
+
+  /** The row, or null when the database holds no row with that id. */
+  async getDatabaseRecord(databaseId: string, recordId: string): Promise<database_record.DatabaseRecord | null> {
+    const response = await database_record.GetDatabaseRecord({ databaseId, recordId }, this.config);
+    unwrapVoid("getDatabaseRecord", response);
+    return response.found ? (response.record ?? null) : null;
+  }
+
+  async listDatabaseRecords(
+    req: database_record.ListDatabaseRecordsRequest
+  ): Promise<database_record.ListDatabaseRecordsResponse> {
+    const response = await database_record.ListDatabaseRecords(req, this.config);
+    unwrapVoid("listDatabaseRecords", response);
+    return response;
+  }
+
+  async listPublicDatabaseRecords(
+    req: database_record.ListPublicDatabaseRecordsRequest
+  ): Promise<database_record.ListPublicDatabaseRecordsResponse> {
+    const response = await database_record.ListPublicDatabaseRecords(req, this.config);
+    unwrapVoid("listPublicDatabaseRecords", response);
+    return response;
   }
 
   /**
