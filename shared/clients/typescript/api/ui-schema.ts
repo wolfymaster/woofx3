@@ -40,8 +40,15 @@ import type { ConditionOperator } from "./workflow-definition";
  * `theme` is never declared by a manifest: barkloader adds it, as the field
  * `THEME_SETTING_ID`, to a widget that declares a theme contract. Its value is
  * a theme's canonical id (`{moduleId}:theme:{id}`), or absent for the widget's
- * own look. Mirrors `CONFIG_FIELD_TYPES` in barkloader's module_manifest.rs,
- * which checks the two lists match.
+ * own look.
+ *
+ * `database_values` is an action parameter holding one value per column of
+ * the database a sibling `resource_ref` field chooses, as
+ * `{ <columnId>: "<text or ${...}>" }`. Its `source` is a
+ * `databaseColumns` one naming that sibling.
+ *
+ * Mirrors `CONFIG_FIELD_TYPES` in barkloader's module_manifest.rs, which
+ * checks the two lists match.
  */
 export const CONFIG_FIELD_TYPES = [
   "number",
@@ -58,6 +65,7 @@ export const CONFIG_FIELD_TYPES = [
   "layout",
   "list",
   "theme",
+  "database_values",
 ] as const;
 
 export type ConfigFieldType = (typeof CONFIG_FIELD_TYPES)[number];
@@ -135,12 +143,25 @@ export interface ScenePlacementsConfigFieldSource {
   sceneField: string;
 }
 
+/**
+ * The columns of the database a sibling `resource_ref` field of kind
+ * `database` holds, named by `databaseField`; the value is a column id. On a
+ * `select` it picks one column, on a `database_values` field it lays out one
+ * input per column. Top-level fields only. Mirrors `DATABASE_COLUMNS_SOURCE`
+ * in barkloader's module_manifest.rs.
+ */
+export interface DatabaseColumnsConfigFieldSource {
+  kind: "databaseColumns";
+  databaseField: string;
+}
+
 export type ConfigFieldSource =
   | { kind: "commands" }
   | InternalConfigFieldSource
   | AlertWidgetsConfigFieldSource
   | ScenesConfigFieldSource
-  | ScenePlacementsConfigFieldSource;
+  | ScenePlacementsConfigFieldSource
+  | DatabaseColumnsConfigFieldSource;
 
 /**
  * Shows a field only while the top-level sibling `field` holds one of the

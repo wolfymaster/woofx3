@@ -29,6 +29,7 @@ export function controlKind(field: ConfigField): ControlKind | null {
     case "resource_ref":
     case "layout":
     case "list":
+    case "database_values":
       return "json";
     case "button":
     case "theme":
