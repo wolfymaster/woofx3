@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.67.0](https://github.com/wolfymaster/woofx3/compare/v0.66.0...v0.67.0) (2026-11-05)
+
+### Features
+
+* **api:** database records over the engine api ([ffb7303](https://github.com/wolfymaster/woofx3/commit/ffb7303eb576a80b99ab830279522fb4463a1ac1))
+* **barkloader:** database_values field type and databaseColumns source ([a4f8b23](https://github.com/wolfymaster/woofx3/commit/a4f8b23002861f10f9cdbc431ae2b9b5e9141892))
+* **cloudevents:** reserve the database. subject prefix ([179c3e5](https://github.com/wolfymaster/woofx3/commit/179c3e58d3dbcbd27f0322b93eb51977a2ee44fd))
+* **db:** database_records table ([bf3f5a4](https://github.com/wolfymaster/woofx3/commit/bf3f5a442d56c1d61f677b884cc9095c6db455b5))
+* **db:** DatabaseRecordService ([1441661](https://github.com/wolfymaster/woofx3/commit/14416613ef69f46f11ef1adc1a4dd22b4f1b6cfc))
+* **db:** DatabaseRecordService proto ([95fceea](https://github.com/wolfymaster/woofx3/commit/95fceeab97ca282189af7d12c759ab5ac70399e2))
+* **db:** validate database column definitions ([4b30a3b](https://github.com/wolfymaster/woofx3/commit/4b30a3ba86c75e2f040f95c58971001a1ac0e33b))
+* **scene-manager:** widgets read database records ([7857849](https://github.com/wolfymaster/woofx3/commit/7857849dc603c01f488872952c683f192b576f11))
+* **woofx3:** database kind and record actions, manifest 0.45.0 ([b247137](https://github.com/wolfymaster/woofx3/commit/b247137273e99954888a202ccc5236d34f961855))
+* **woofx3:** record widget, manifest 0.46.0 ([68a990a](https://github.com/wolfymaster/woofx3/commit/68a990ae729db1a6c49801226961694ae2c9f81d))
+
+### Bug Fixes
+
+* **db:** declare okStatus once in the services package ([8f21008](https://github.com/wolfymaster/woofx3/commit/8f21008709bb43825ed96300ec343c230061de85))
+
 ## [0.66.0](https://github.com/wolfymaster/woofx3/compare/v0.65.0...v0.66.0) (2026-11-05)
 
 ### Features
