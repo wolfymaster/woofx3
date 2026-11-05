@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.66.0](https://github.com/wolfymaster/woofx3/compare/v0.65.0...v0.66.0) (2026-11-05)
+
+### Features
+
+* **api:** moderation config and recent-actions RPC ([38fe459](https://github.com/wolfymaster/woofx3/commit/38fe459a4f8274de744c33a2a6a58aec992ebd1d))
+* **gateway:** chat.delete and moderation.warn/timeout/ban in the catalog ([7aec95e](https://github.com/wolfymaster/woofx3/commit/7aec95ea71630026e98192747c115e8768ccf27d))
+* **gateway:** refuse blank ids and multi-platform moderation targets ([1de8cf4](https://github.com/wolfymaster/woofx3/commit/1de8cf4bf2c8725ef64100341c06d28768ef19c2))
+* **moderation:** !permit built-in ([a4aab78](https://github.com/wolfymaster/woofx3/commit/a4aab788e152c7f117cad5fa34f779612dbff9f8))
+* **moderation:** caps, repetition, symbols and banned-phrase filters ([e30d4db](https://github.com/wolfymaster/woofx3/commit/e30d4dbbed25bc55e14019f99eca5debe733c77e))
+* **moderation:** config schema, parse and store ([3229c58](https://github.com/wolfymaster/woofx3/commit/3229c58f92b811d021832ed8f6fa2e4bdcde4bbc))
+* **moderation:** filter interface, registry and evaluator ([b2f85e7](https://github.com/wolfymaster/woofx3/commit/b2f85e7307ba58bec3406855f73c739b5843d4bc))
+* **moderation:** links filter and permit store ([43fae8b](https://github.com/wolfymaster/woofx3/commit/43fae8bf80cddab81627a89265177cc4f72aa49b))
+* **moderation:** ModerationService on the chat dispatcher ([cc72dc0](https://github.com/wolfymaster/woofx3/commit/cc72dc030b1587eb35e16ee55bae8a2caaf3c50e))
+* **moderation:** safe banned-phrase pattern grammar ([328f519](https://github.com/wolfymaster/woofx3/commit/328f51957bff9dcf2d8298bb123e0f74ad55c511))
+* **twitch:** egress for delete, warn, timeout and ban ([087b8d7](https://github.com/wolfymaster/woofx3/commit/087b8d768ddea5334d90a43a3c6dc23bf0213087))
+* **twitch:** request moderator:manage:warnings ([30d5256](https://github.com/wolfymaster/woofx3/commit/30d5256fbe0c30a9b589d0684a71442d77b1ac56))
+
+### Bug Fixes
+
+* **moderation:** refuse \B in banned-phrase patterns ([9f2c5aa](https://github.com/wolfymaster/woofx3/commit/9f2c5aa39df39a229cc6a890ec7d5690a17810b5))
+
 ## [0.65.0](https://github.com/wolfymaster/woofx3/compare/v0.64.0...v0.65.0) (2026-11-05)
 
 ### Features
