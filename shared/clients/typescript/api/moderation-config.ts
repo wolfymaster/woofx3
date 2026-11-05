@@ -296,3 +296,272 @@ export function compilePhrases(params: BannedPhrasesParams): Pattern[] {
     return phrase.wholeWord ? asWholeWord(compiled.value) : compiled.value;
   });
 }
+
+/** The engine setting the config is stored under, as JSON. */
+export const MODERATION_CONFIG_SETTING_KEY = "moderation.config";
+
+/** Bus subjects, which are also the CloudEvent types published on them. */
+export const MODERATION_SUBJECTS = {
+  /** Published after the stored config changes; the engine reloads it. */
+  configUpdated: "moderation.config.updated",
+  /** One per moderated line, with each step's outcome. */
+  actionTaken: "moderation.action.taken",
+} as const;
+
+/** Each filter's params parser: the only list of them, so a new filter cannot be left out. */
+export const FILTER_PARAM_PARSERS: { readonly [F in FilterId]: (raw: unknown) => ModerationParseResult<unknown> } = {
+  banned_phrases: parseBannedPhrasesParams,
+  links: parseLinksParams,
+  repetition: parseRepetitionParams,
+  caps: parseShareParams,
+  symbols: parseShareParams,
+};
+
+/** Each filter's params when a streamer first turns it on. */
+export const DEFAULT_FILTER_PARAMS: { readonly [F in FilterId]: unknown } = {
+  banned_phrases: DEFAULT_BANNED_PHRASES_PARAMS,
+  links: DEFAULT_LINKS_PARAMS,
+  repetition: DEFAULT_REPETITION_PARAMS,
+  caps: DEFAULT_CAPS_PARAMS,
+  symbols: DEFAULT_SYMBOLS_PARAMS,
+};
+
+const LOGIN = /^[\p{L}\p{N}_.-]+$/u;
+
+function readBoolean(value: unknown, name: string): ModerationParseResult<boolean> {
+  return typeof value === "boolean" ? { ok: true, value } : failed(`${name} must be true or false`);
+}
+
+function readLogins(value: unknown, name: string): ModerationParseResult<string[]> {
+  if (!Array.isArray(value) || value.length > MODERATION_LIMITS.maxAllowLogins) {
+    return failed(`${name} must be a list of at most ${MODERATION_LIMITS.maxAllowLogins} names`);
+  }
+  const logins: string[] = [];
+  for (const [index, entry] of value.entries()) {
+    const login = typeof entry === "string" ? entry.trim().replace(/^@/, "").toLowerCase() : "";
+    if (!LOGIN.test(login) || [...login].length > MODERATION_LIMITS.maxLoginChars) {
+      return failed(`${name}[${index}] must be a chat name`);
+    }
+    if (!logins.includes(login)) {
+      logins.push(login);
+    }
+  }
+  return { ok: true, value: logins };
+}
+
+const ROLE_FLAGS = ["moderators", "vips", "subscribers"] as const;
+
+function parseExemptions(raw: unknown): ModerationParseResult<Exemptions> {
+  if (!isRecord(raw)) {
+    return failed("exempt must be an object");
+  }
+  if (raw.broadcaster !== undefined && raw.broadcaster !== true) {
+    return failed("exempt.broadcaster is always true: the broadcaster is never moderated");
+  }
+  const { broadcaster: _always, ...rest } = raw;
+  const fields = readFields(rest, [...ROLE_FLAGS, "allowLogins"]);
+  if (!fields.ok) {
+    return failed(`exempt: ${fields.error}`);
+  }
+  const exempt: Exemptions = { ...DEFAULT_EXEMPTIONS, allowLogins: [] };
+  for (const flag of ROLE_FLAGS) {
+    const value = readBoolean(fields.value[flag], `exempt.${flag}`);
+    if (!value.ok) {
+      return value;
+    }
+    exempt[flag] = value.value;
+  }
+  const logins = readLogins(fields.value.allowLogins, "exempt.allowLogins");
+  if (!logins.ok) {
+    return logins;
+  }
+  exempt.allowLogins = logins.value;
+  return { ok: true, value: exempt };
+}
+
+function parseRuleExemptions(raw: unknown, name: string): ModerationParseResult<RuleExemptions> {
+  if (!isRecord(raw)) {
+    return failed(`${name} must be an object`);
+  }
+  const exempt: RuleExemptions = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (key === "allowLogins") {
+      const logins = readLogins(value, `${name}.allowLogins`);
+      if (!logins.ok) {
+        return logins;
+      }
+      exempt.allowLogins = logins.value;
+    } else if ((ROLE_FLAGS as readonly string[]).includes(key)) {
+      const flag = readBoolean(value, `${name}.${key}`);
+      if (!flag.ok) {
+        return flag;
+      }
+      exempt[key as (typeof ROLE_FLAGS)[number]] = flag.value;
+    } else {
+      return failed(`${name}: unknown field "${key}"`);
+    }
+  }
+  return { ok: true, value: exempt };
+}
+
+/** A warning reason is shown to the chatter as plain text; one starting with "/" could read as a chat command. */
+export function warnReasonProblem(reason: string): string | null {
+  const trimmed = reason.trim();
+  if (trimmed === "") {
+    return "a warning needs a reason";
+  }
+  if ([...trimmed].length > MODERATION_LIMITS.maxWarnReasonChars) {
+    return `a warning reason is at most ${MODERATION_LIMITS.maxWarnReasonChars} characters`;
+  }
+  if (trimmed.startsWith("/")) {
+    return 'a warning reason must not start with "/"';
+  }
+  return null;
+}
+
+function parseAction(raw: unknown, name: string): ModerationParseResult<ModerationAction> {
+  if (!isRecord(raw)) {
+    return failed(`${name} must be an object`);
+  }
+  switch (raw.kind) {
+    case "delete":
+    case "ban": {
+      const fields = readFields(raw, ["kind"]);
+      return fields.ok ? { ok: true, value: { kind: raw.kind } } : failed(`${name}: ${fields.error}`);
+    }
+    case "warn": {
+      const fields = readFields(raw, ["kind", "reason"]);
+      if (!fields.ok) {
+        return failed(`${name}: ${fields.error}`);
+      }
+      if (typeof raw.reason !== "string") {
+        return failed(`${name}.reason must be text`);
+      }
+      const problem = warnReasonProblem(raw.reason);
+      return problem === null
+        ? { ok: true, value: { kind: "warn", reason: raw.reason.trim() } }
+        : failed(`${name}: ${problem}`);
+    }
+    case "timeout": {
+      const fields = readFields(raw, ["kind", "durationSeconds"]);
+      if (!fields.ok) {
+        return failed(`${name}: ${fields.error}`);
+      }
+      const duration = readInteger(
+        raw.durationSeconds,
+        `${name}.durationSeconds`,
+        1,
+        MODERATION_LIMITS.maxTimeoutSeconds
+      );
+      return duration.ok ? { ok: true, value: { kind: "timeout", durationSeconds: duration.value } } : duration;
+    }
+    default: {
+      return failed(`${name}.kind must be one of ${MODERATION_ACTION_KINDS.join(", ")}`);
+    }
+  }
+}
+
+/** Non-empty, one of each kind, at most one of timeout and ban, kept in the order they run. */
+function parseActions(raw: unknown, name: string): ModerationParseResult<ModerationAction[]> {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return failed(`${name} must list at least one action`);
+  }
+  const actions: ModerationAction[] = [];
+  for (const [index, entry] of raw.entries()) {
+    const action = parseAction(entry, `${name}[${index}]`);
+    if (!action.ok) {
+      return action;
+    }
+    if (actions.some((taken) => taken.kind === action.value.kind)) {
+      return failed(`${name} lists ${action.value.kind} twice`);
+    }
+    actions.push(action.value);
+  }
+  if (actions.some((a) => a.kind === "timeout") && actions.some((a) => a.kind === "ban")) {
+    return failed(`${name} may time out or ban, not both`);
+  }
+  actions.sort((a, b) => MODERATION_ACTION_KINDS.indexOf(a.kind) - MODERATION_ACTION_KINDS.indexOf(b.kind));
+  return { ok: true, value: actions };
+}
+
+function parseRule(filter: FilterId, raw: unknown): ModerationParseResult<ModerationRule> {
+  const name = `rules.${filter}`;
+  if (!isRecord(raw)) {
+    return failed(`${name} must be an object`);
+  }
+  const { exempt: rawExempt, ...rest } = raw;
+  const fields = readFields(rest, ["enabled", "actions", "params"]);
+  if (!fields.ok) {
+    return failed(`${name}: ${fields.error}`);
+  }
+  const enabled = readBoolean(fields.value.enabled, `${name}.enabled`);
+  if (!enabled.ok) {
+    return enabled;
+  }
+  const actions = parseActions(fields.value.actions, `${name}.actions`);
+  if (!actions.ok) {
+    return actions;
+  }
+  const params = FILTER_PARAM_PARSERS[filter](fields.value.params);
+  if (!params.ok) {
+    return failed(`${name}.params: ${params.error}`);
+  }
+  const rule: ModerationRule = { enabled: enabled.value, actions: actions.value, params: params.value };
+  if (rawExempt !== undefined) {
+    const exempt = parseRuleExemptions(rawExempt, `${name}.exempt`);
+    if (!exempt.ok) {
+      return exempt;
+    }
+    rule.exempt = exempt.value;
+  }
+  return { ok: true, value: rule };
+}
+
+/**
+ * The config, checked field by field against MODERATION_LIMITS and each
+ * filter's params parser, or the first problem in words a streamer can act
+ * on. The engine runs it on save and on load; the dashboard runs it as the
+ * streamer edits. An unknown version is refused, not guessed at.
+ */
+export function parseModerationConfig(raw: unknown): ModerationParseResult<ModerationConfig> {
+  if (!isRecord(raw)) {
+    return failed("the moderation config must be an object");
+  }
+  if (raw.version !== 1) {
+    return failed(`version ${JSON.stringify(raw.version)} is not one this engine reads; expected 1`);
+  }
+  const fields = readFields(raw, ["version", "enabled", "dryRun", "exempt", "rules"]);
+  if (!fields.ok) {
+    return fields;
+  }
+  const enabled = readBoolean(fields.value.enabled, "enabled");
+  if (!enabled.ok) {
+    return enabled;
+  }
+  const dryRun = readBoolean(fields.value.dryRun, "dryRun");
+  if (!dryRun.ok) {
+    return dryRun;
+  }
+  const exempt = parseExemptions(fields.value.exempt);
+  if (!exempt.ok) {
+    return exempt;
+  }
+  if (!isRecord(fields.value.rules)) {
+    return failed("rules must be an object");
+  }
+  const rules: Partial<Record<FilterId, ModerationRule>> = {};
+  for (const [key, value] of Object.entries(fields.value.rules)) {
+    if (!isFilterId(key)) {
+      return failed(`rules: "${key}" is not a filter; expected one of ${FILTER_IDS.join(", ")}`);
+    }
+    const rule = parseRule(key, value);
+    if (!rule.ok) {
+      return rule;
+    }
+    rules[key] = rule.value;
+  }
+  return {
+    ok: true,
+    value: { version: 1, enabled: enabled.value, dryRun: dryRun.value, exempt: exempt.value, rules },
+  };
+}
