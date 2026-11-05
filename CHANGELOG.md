@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.68.0](https://github.com/wolfymaster/woofx3/compare/v0.67.0...v0.68.0) (2026-11-05)
+
+### Features
+
+* **api:** ship engine events to the client's events target ([53dd2ee](https://github.com/wolfymaster/woofx3/commit/53dd2eefb3cd5c78eb6b0e644d6b885560e5de25))
+* **db:** store an events target on engine clients ([3827423](https://github.com/wolfymaster/woofx3/commit/3827423f89864059496f05d6399726d534b4092b))
+
+### Bug Fixes
+
+* **api:** reuse the outbox event id as the webhook envelope id ([c8acd66](https://github.com/wolfymaster/woofx3/commit/c8acd66d9d3b147c672c2aa7d73e8963e456dce9))
+
 ## [0.67.0](https://github.com/wolfymaster/woofx3/compare/v0.66.0...v0.67.0) (2026-11-05)
 
 ### Features
