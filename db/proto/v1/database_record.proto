@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package database_record;
+option go_package = "github.com/wolfymaster/woofx3/db/gen/v1";
+
+import "common.proto";
+import "google/protobuf/timestamp.proto";
+
+// The rows of `woofx3:database` resource instances. A database is addressed
+// by its canonical id (`woofx3:database:<instance>`); its columns are the
+// instance's `columns` setting, and every write is checked against them.
+//
+// Every write that changes a row also queues the `database.record.changed`
+// event in the same transaction, carrying only the public columns.
+//
+// Values may hold viewer-written text: errors name the column, never the value.
+service DatabaseRecordService {
+  // Fails with `invalid_argument` for a value that does not fit its column.
+  rpc CreateDatabaseRecord(CreateDatabaseRecordRequest) returns (CreateDatabaseRecordResponse);
+  // Changes only the columns given. Fails with `aborted` when
+  // `expected_revision` is set and the row holds another revision.
+  rpc UpdateDatabaseRecord(UpdateDatabaseRecordRequest) returns (UpdateDatabaseRecordResponse);
+  rpc DeleteDatabaseRecord(DeleteDatabaseRecordRequest) returns (DeleteDatabaseRecordResponse);
+  rpc GetDatabaseRecord(GetDatabaseRecordRequest) returns (GetDatabaseRecordResponse);
+  rpc ListDatabaseRecords(ListDatabaseRecordsRequest) returns (ListDatabaseRecordsResponse);
+  // The earliest-created row holding a value in a column, or the row with an id.
+  rpc FindDatabaseRecord(FindDatabaseRecordRequest) returns (FindDatabaseRecordResponse);
+  // Rows with only their public columns, newest first, for the public user page.
+  rpc ListPublicDatabaseRecords(ListPublicDatabaseRecordsRequest) returns (ListPublicDatabaseRecordsResponse);
+}
+
+message DatabaseRecord {
+  string id = 1;
+  // The database's canonical id.
+  string database_id = 2;
+  int64 revision = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  // A JSON object of the row's cells by column id; an empty cell is absent.
+  // Values are strings, numbers or booleans.
+  string values_json = 6;
+}
+
+// Cells as text, each converted to its column's type: what workflow actions
+// send, since their parameters are expressions. An empty text is an empty cell.
+message DatabaseTextValues {
+  map<string, string> values = 1;
+}
+
+message CreateDatabaseRecordRequest {
+  string database_id = 1;
+  oneof values {
+    // A JSON object of typed values by column id; null is an empty cell.
+    string typed_values_json = 2;
+    DatabaseTextValues text_values = 3;
+  }
+  // The writer's idempotency key: a repeat answers DUPLICATE with the row
+  // the first write stored.
+  optional string insert_key = 4;
+}
+
+enum CreateDatabaseRecordOutcome {
+  CREATE_DATABASE_RECORD_OUTCOME_UNSPECIFIED = 0;
+  CREATE_DATABASE_RECORD_OUTCOME_CREATED = 1;
+  CREATE_DATABASE_RECORD_OUTCOME_DUPLICATE = 2;
+  // The database holds its maximum number of rows; nothing was written.
+  CREATE_DATABASE_RECORD_OUTCOME_FULL = 3;
+}
+
+message CreateDatabaseRecordResponse {
+  common.ResponseStatus status = 1;
+  CreateDatabaseRecordOutcome outcome = 2;
+  // The stored row: absent when the outcome is FULL.
+  optional DatabaseRecord record = 3;
+}
+
+message UpdateDatabaseRecordRequest {
+  string database_id = 1;
+  string record_id = 2;
+  oneof values {
+    string typed_values_json = 3;
+    DatabaseTextValues text_values = 4;
+  }
+  optional int64 expected_revision = 5;
+}
+
+message UpdateDatabaseRecordResponse {
+  common.ResponseStatus status = 1;
+  // False when the database holds no row with that id.
+  bool updated = 2;
+  optional DatabaseRecord record = 3;
+}
+
+message DeleteDatabaseRecordRequest {
+  string database_id = 1;
+  string record_id = 2;
+}
+
+message DeleteDatabaseRecordResponse {
+  common.ResponseStatus status = 1;
+  // False when the database holds no row with that id.
+  bool deleted = 2;
+}
+
+message GetDatabaseRecordRequest {
+  string database_id = 1;
+  string record_id = 2;
+}
+
+message GetDatabaseRecordResponse {
+  common.ResponseStatus status = 1;
+  bool found = 2;
+  optional DatabaseRecord record = 3;
+}
+
+message ListDatabaseRecordsRequest {
+  string database_id = 1;
+  // A column id, or empty for creation time.
+  string sort_by = 2;
+  bool descending = 3;
+  int32 offset = 4;
+  // 1 to the page size limit.
+  int32 limit = 5;
+}
+
+message ListDatabaseRecordsResponse {
+  common.ResponseStatus status = 1;
+  repeated DatabaseRecord records = 2;
+  int64 total = 3;
+}
+
+message FindDatabaseRecordRequest {
+  string database_id = 1;
+  // The column to match in, or empty to match `match` as a row id.
+  string column_id = 2;
+  // Text, converted to the column's type like a text value.
+  string match = 3;
+}
+
+message FindDatabaseRecordResponse {
+  common.ResponseStatus status = 1;
+  bool found = 2;
+  optional DatabaseRecord record = 3;
+}
+
+message ListPublicDatabaseRecordsRequest {
+  string database_id = 1;
+  int32 offset = 2;
+  int32 limit = 3;
+}
+
+message ListPublicDatabaseRecordsResponse {
+  common.ResponseStatus status = 1;
+  // Each row's values hold only the columns public now. Empty when the
+  // database has no public column.
+  repeated DatabaseRecord records = 2;
+  int64 total = 3;
+}

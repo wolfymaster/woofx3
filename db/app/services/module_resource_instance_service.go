@@ -354,22 +354,25 @@ func (s *moduleService) ListAllResourceInstances(ctx context.Context, req *clien
 	return s.respondWithInstances(instances)
 }
 
-// resolveInstanceFromCanonical parses a canonical id and looks up the
-// owning module + instance row in one shot. Returns Twirp errors so
-// callers can return them directly.
 func (s *moduleService) resolveInstanceFromCanonical(canonicalID string) (*models.Module, *models.ModuleResourceInstance, error) {
+	return resolveInstance(s.repo, s.instanceRepo, canonicalID)
+}
+
+// resolveInstance parses a canonical id and looks up the owning module and
+// the instance row, answering with Twirp errors callers return as they are.
+func resolveInstance(modules *repo.ModuleRepository, instances *repo.ModuleResourceInstanceRepository, canonicalID string) (*models.Module, *models.ModuleResourceInstance, error) {
 	moduleSeg, kind, instanceID, err := parseCanonicalID(canonicalID)
 	if err != nil {
 		return nil, nil, twirp.InvalidArgumentError("canonical_id", err.Error())
 	}
-	module, err := s.repo.GetByName(moduleSeg)
+	module, err := modules.GetByName(moduleSeg)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil, twirp.NotFoundError(fmt.Sprintf("module %q not found", moduleSeg))
 		}
 		return nil, nil, twirp.InternalErrorWith(fmt.Errorf("load module: %w", err))
 	}
-	inst, err := s.instanceRepo.GetByModuleKindInstance(module.ID, kind, instanceID)
+	inst, err := instances.GetByModuleKindInstance(module.ID, kind, instanceID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil, twirp.NotFoundError(fmt.Sprintf("instance %q not found", canonicalID))

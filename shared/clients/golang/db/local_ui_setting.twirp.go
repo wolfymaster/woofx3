@@ -1636,7 +1636,7 @@ func (s *localUISettingServiceServer) serveListLocalUISettingChangesProtobuf(ctx
 }
 
 func (s *localUISettingServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor5, 0
+	return twirpFileDescriptor6, 0
 }
 
 func (s *localUISettingServiceServer) ProtocGenTwirpVersion() string {
@@ -1650,7 +1650,7 @@ func (s *localUISettingServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "local_ui_setting", "LocalUISettingService")
 }
 
-var twirpFileDescriptor5 = []byte{
+var twirpFileDescriptor6 = []byte{
 	// 646 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcc, 0x56, 0xcb, 0x6e, 0xd3, 0x4c,
 	0x14, 0xfe, 0xa7, 0xe9, 0x25, 0x3d, 0xfd, 0xa9, 0xda, 0xa1, 0x54, 0x8e, 0x5b, 0x84, 0xb1, 0x84,

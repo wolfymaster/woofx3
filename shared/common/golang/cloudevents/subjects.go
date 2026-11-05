@@ -212,6 +212,14 @@ const (
 	// displayName: "anonymous", roles: [] }.
 	SubjectUserPageFormSubmitted Subject = "userpage.form.submitted"
 
+	// A row of a database resource instance was created, updated or deleted,
+	// published by the db proxy inside the transaction that changed it. Only
+	// public columns are carried, since the event feeds the public user page.
+	// Data: { databaseId, recordId, op: "created" | "updated" | "deleted",
+	//         revision, createdAt, publicValues: { <columnId>: value } | null }
+	// where publicValues is null on delete and revision orders a row's events.
+	SubjectDatabaseRecordChanged Subject = "database.record.changed"
+
 	// System events
 	SubjectHeartbeat      Subject = "HEARTBEAT"
 	SubjectMessageBusInit Subject = "MESSAGEBUS_INIT"
