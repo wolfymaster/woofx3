@@ -43,6 +43,11 @@ export interface Client {
    * Unset until an authentication is recorded.
    */
   lastAuthenticatedAt: protoscript.Timestamp;
+  /**
+   * Where events go instead of callback_url; both empty when unset.
+   */
+  eventsUrl: string;
+  eventsToken: string;
 }
 
 export interface CreateClientRequest {
@@ -54,6 +59,11 @@ export interface CreateClientRequest {
    */
   kind: ClientKind;
   origin: string;
+  /**
+   * Both set or both empty.
+   */
+  eventsUrl: string;
+  eventsToken: string;
 }
 
 export interface GetClientRequest {
@@ -67,6 +77,15 @@ export interface UpdateClientRequest {
   description: string;
   callbackUrl: string;
   callbackToken: string;
+}
+
+/**
+ * Both fields set to set the target, both empty to clear it.
+ */
+export interface SetClientEventsTargetRequest {
+  id: string;
+  eventsUrl: string;
+  eventsToken: string;
 }
 
 export interface DeleteClientRequest {
@@ -180,6 +199,22 @@ export async function RecordClientAuthentication(
   return common.ResponseStatus.decode(response);
 }
 
+/**
+ * Sets or clears where the engine ships a client's events, leaving every
+ * other field alone (UpdateClient overwrites them all).
+ */
+export async function SetClientEventsTarget(
+  setClientEventsTargetRequest: SetClientEventsTargetRequest,
+  config?: ClientConfiguration,
+): Promise<ClientResponse> {
+  const response = await PBrequest(
+    "/client.ClientService/SetClientEventsTarget",
+    SetClientEventsTargetRequest.encode(setClientEventsTargetRequest),
+    config,
+  );
+  return ClientResponse.decode(response);
+}
+
 //========================================//
 //       ClientService JSON Client        //
 //========================================//
@@ -270,6 +305,22 @@ export async function RecordClientAuthenticationJSON(
   return common.ResponseStatusJSON.decode(response);
 }
 
+/**
+ * Sets or clears where the engine ships a client's events, leaving every
+ * other field alone (UpdateClient overwrites them all).
+ */
+export async function SetClientEventsTargetJSON(
+  setClientEventsTargetRequest: SetClientEventsTargetRequest,
+  config?: ClientConfiguration,
+): Promise<ClientResponse> {
+  const response = await JSONrequest(
+    "/client.ClientService/SetClientEventsTarget",
+    SetClientEventsTargetRequestJSON.encode(setClientEventsTargetRequest),
+    config,
+  );
+  return ClientResponseJSON.decode(response);
+}
+
 //========================================//
 //             ClientService              //
 //========================================//
@@ -303,6 +354,14 @@ export interface ClientService<Context = unknown> {
     recordClientAuthenticationRequest: RecordClientAuthenticationRequest,
     context: Context,
   ) => Promise<common.ResponseStatus> | common.ResponseStatus;
+  /**
+   * Sets or clears where the engine ships a client's events, leaving every
+   * other field alone (UpdateClient overwrites them all).
+   */
+  SetClientEventsTarget: (
+    setClientEventsTargetRequest: SetClientEventsTargetRequest,
+    context: Context,
+  ) => Promise<ClientResponse> | ClientResponse;
 }
 
 export function createClientService<Context>(service: ClientService<Context>) {
@@ -365,6 +424,15 @@ export function createClientService<Context>(service: ClientService<Context>) {
           protobuf: common.ResponseStatus,
           json: common.ResponseStatusJSON,
         },
+      },
+      SetClientEventsTarget: {
+        name: "SetClientEventsTarget",
+        handler: service.SetClientEventsTarget,
+        input: {
+          protobuf: SetClientEventsTargetRequest,
+          json: SetClientEventsTargetRequestJSON,
+        },
+        output: { protobuf: ClientResponse, json: ClientResponseJSON },
       },
     },
   } as const;
@@ -462,6 +530,8 @@ export const Client = {
       origin: "",
       createdAt: protoscript.Timestamp.initialize(),
       lastAuthenticatedAt: protoscript.Timestamp.initialize(),
+      eventsUrl: "",
+      eventsToken: "",
       ...msg,
     };
   },
@@ -510,6 +580,12 @@ export const Client = {
         msg.lastAuthenticatedAt,
         protoscript.Timestamp._writeMessage,
       );
+    }
+    if (msg.eventsUrl) {
+      writer.writeString(12, msg.eventsUrl);
+    }
+    if (msg.eventsToken) {
+      writer.writeString(13, msg.eventsToken);
     }
     return writer;
   },
@@ -567,6 +643,14 @@ export const Client = {
           );
           break;
         }
+        case 12: {
+          msg.eventsUrl = reader.readString();
+          break;
+        }
+        case 13: {
+          msg.eventsToken = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -610,6 +694,8 @@ export const CreateClientRequest = {
       callbackToken: "",
       kind: ClientKind._fromInt(0),
       origin: "",
+      eventsUrl: "",
+      eventsToken: "",
       ...msg,
     };
   },
@@ -635,6 +721,12 @@ export const CreateClientRequest = {
     }
     if (msg.origin) {
       writer.writeString(6, msg.origin);
+    }
+    if (msg.eventsUrl) {
+      writer.writeString(7, msg.eventsUrl);
+    }
+    if (msg.eventsToken) {
+      writer.writeString(8, msg.eventsToken);
     }
     return writer;
   },
@@ -667,6 +759,14 @@ export const CreateClientRequest = {
         }
         case 6: {
           msg.origin = reader.readString();
+          break;
+        }
+        case 7: {
+          msg.eventsUrl = reader.readString();
+          break;
+        }
+        case 8: {
+          msg.eventsToken = reader.readString();
           break;
         }
         default: {
@@ -874,6 +974,94 @@ export const UpdateClientRequest = {
         }
         case 4: {
           msg.callbackToken = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
+export const SetClientEventsTargetRequest = {
+  /**
+   * Serializes SetClientEventsTargetRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<SetClientEventsTargetRequest>,
+  ): Uint8Array {
+    return SetClientEventsTargetRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes SetClientEventsTargetRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): SetClientEventsTargetRequest {
+    return SetClientEventsTargetRequest._readMessage(
+      SetClientEventsTargetRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes SetClientEventsTargetRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<SetClientEventsTargetRequest>,
+  ): SetClientEventsTargetRequest {
+    return {
+      id: "",
+      eventsUrl: "",
+      eventsToken: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SetClientEventsTargetRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.id) {
+      writer.writeString(1, msg.id);
+    }
+    if (msg.eventsUrl) {
+      writer.writeString(2, msg.eventsUrl);
+    }
+    if (msg.eventsToken) {
+      writer.writeString(3, msg.eventsToken);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: SetClientEventsTargetRequest,
+    reader: protoscript.BinaryReader,
+  ): SetClientEventsTargetRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.id = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.eventsUrl = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.eventsToken = reader.readString();
           break;
         }
         default: {
@@ -1348,6 +1536,8 @@ export const ClientJSON = {
       origin: "",
       createdAt: protoscript.TimestampJSON.initialize(),
       lastAuthenticatedAt: protoscript.TimestampJSON.initialize(),
+      eventsUrl: "",
+      eventsToken: "",
       ...msg,
     };
   },
@@ -1391,6 +1581,12 @@ export const ClientJSON = {
       json["lastAuthenticatedAt"] = protoscript.serializeTimestamp(
         msg.lastAuthenticatedAt,
       );
+    }
+    if (msg.eventsUrl) {
+      json["eventsUrl"] = msg.eventsUrl;
+    }
+    if (msg.eventsToken) {
+      json["eventsToken"] = msg.eventsToken;
     }
     return json;
   },
@@ -1442,6 +1638,14 @@ export const ClientJSON = {
         _lastAuthenticatedAt_,
       );
     }
+    const _eventsUrl_ = json["eventsUrl"] ?? json["events_url"];
+    if (_eventsUrl_) {
+      msg.eventsUrl = _eventsUrl_;
+    }
+    const _eventsToken_ = json["eventsToken"] ?? json["events_token"];
+    if (_eventsToken_) {
+      msg.eventsToken = _eventsToken_;
+    }
     return msg;
   },
 };
@@ -1476,6 +1680,8 @@ export const CreateClientRequestJSON = {
       callbackToken: "",
       kind: ClientKind._fromInt(0),
       origin: "",
+      eventsUrl: "",
+      eventsToken: "",
       ...msg,
     };
   },
@@ -1501,6 +1707,12 @@ export const CreateClientRequestJSON = {
     }
     if (msg.origin) {
       json["origin"] = msg.origin;
+    }
+    if (msg.eventsUrl) {
+      json["eventsUrl"] = msg.eventsUrl;
+    }
+    if (msg.eventsToken) {
+      json["eventsToken"] = msg.eventsToken;
     }
     return json;
   },
@@ -1531,6 +1743,14 @@ export const CreateClientRequestJSON = {
     const _origin_ = json["origin"];
     if (_origin_) {
       msg.origin = _origin_;
+    }
+    const _eventsUrl_ = json["eventsUrl"] ?? json["events_url"];
+    if (_eventsUrl_) {
+      msg.eventsUrl = _eventsUrl_;
+    }
+    const _eventsToken_ = json["eventsToken"] ?? json["events_token"];
+    if (_eventsToken_) {
+      msg.eventsToken = _eventsToken_;
     }
     return msg;
   },
@@ -1710,6 +1930,80 @@ export const UpdateClientRequestJSON = {
     const _callbackToken_ = json["callbackToken"] ?? json["callback_token"];
     if (_callbackToken_) {
       msg.callbackToken = _callbackToken_;
+    }
+    return msg;
+  },
+};
+
+export const SetClientEventsTargetRequestJSON = {
+  /**
+   * Serializes SetClientEventsTargetRequest to JSON.
+   */
+  encode: function (msg: PartialDeep<SetClientEventsTargetRequest>): string {
+    return JSON.stringify(SetClientEventsTargetRequestJSON._writeMessage(msg));
+  },
+
+  /**
+   * Deserializes SetClientEventsTargetRequest from JSON.
+   */
+  decode: function (json: string): SetClientEventsTargetRequest {
+    return SetClientEventsTargetRequestJSON._readMessage(
+      SetClientEventsTargetRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes SetClientEventsTargetRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<SetClientEventsTargetRequest>,
+  ): SetClientEventsTargetRequest {
+    return {
+      id: "",
+      eventsUrl: "",
+      eventsToken: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SetClientEventsTargetRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.id) {
+      json["id"] = msg.id;
+    }
+    if (msg.eventsUrl) {
+      json["eventsUrl"] = msg.eventsUrl;
+    }
+    if (msg.eventsToken) {
+      json["eventsToken"] = msg.eventsToken;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: SetClientEventsTargetRequest,
+    json: any,
+  ): SetClientEventsTargetRequest {
+    const _id_ = json["id"];
+    if (_id_) {
+      msg.id = _id_;
+    }
+    const _eventsUrl_ = json["eventsUrl"] ?? json["events_url"];
+    if (_eventsUrl_) {
+      msg.eventsUrl = _eventsUrl_;
+    }
+    const _eventsToken_ = json["eventsToken"] ?? json["events_token"];
+    if (_eventsToken_) {
+      msg.eventsToken = _eventsToken_;
     }
     return msg;
   },

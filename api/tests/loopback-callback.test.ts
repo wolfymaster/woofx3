@@ -107,6 +107,8 @@ describe("a dashboard client with a loopback callback URL", () => {
       callbackToken: "shell-token",
       kind: "CLIENT_KIND_REGISTERED",
       origin: "",
+      eventsUrl: "",
+      eventsToken: "",
     });
     expect(webhooks.clientIds()).toEqual(["shell"]);
   });

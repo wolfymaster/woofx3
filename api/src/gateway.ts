@@ -204,6 +204,8 @@ export class ApiGateway {
       callbackToken: callbackToken ?? "",
       kind: "CLIENT_KIND_REGISTERED",
       origin: "",
+      eventsUrl: "",
+      eventsToken: "",
     });
     if (!resp.client) {
       throw new Error("Failed to create client");

@@ -30,10 +30,14 @@ type Client struct {
 	// it before db-proxy serves, so it is nil for every client then.
 	ClientSecret *string `gorm:"column:client_secret;type:varchar(100)"`
 	// ClientSecretHash is the lowercase hex SHA-256 of the secret.
-	ClientSecretHash *string    `gorm:"column:client_secret_hash"`
-	CallbackUrl      string     `gorm:"column:callback_url;type:varchar(255)"`
-	CallbackToken    string     `gorm:"column:callback_token;type:varchar(255)"`
-	Kind             ClientKind `gorm:"column:kind;not null"`
+	ClientSecretHash *string `gorm:"column:client_secret_hash"`
+	CallbackUrl      string  `gorm:"column:callback_url;type:varchar(255)"`
+	CallbackToken    string  `gorm:"column:callback_token;type:varchar(255)"`
+	// EventsUrl and EventsToken are set or empty together (the
+	// clients_events_target_paired constraint).
+	EventsUrl   string     `gorm:"column:events_url;type:varchar(255);not null;default:''"`
+	EventsToken string     `gorm:"column:events_token;type:varchar(255);not null;default:''"`
+	Kind        ClientKind `gorm:"column:kind;not null"`
 	// Origin is set for a paired client and nil for a registered one.
 	Origin              *string    `gorm:"column:origin"`
 	CreatedAt           time.Time  `gorm:"column:created_at;not null"`
