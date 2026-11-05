@@ -23,6 +23,8 @@ type moduleService struct {
 	refRepo      *repo.ResourceReferenceRepository
 	instanceRepo *repo.ModuleResourceInstanceRepository
 	publisher    *workers.EventPublisher
+	// kindValidators check the settings of the kinds the db service owns.
+	kindValidators *KindSettingsValidators
 	// reconcileSegments runs after triggers are registered or removed, which
 	// can make the facts viewer segments read active or not. Optional.
 	reconcileSegments func() error
@@ -52,12 +54,14 @@ func NewModuleService(
 	refRepo *repo.ResourceReferenceRepository,
 	instanceRepo *repo.ModuleResourceInstanceRepository,
 	publisher *workers.EventPublisher,
+	kindValidators *KindSettingsValidators,
 ) *moduleService {
 	return &moduleService{
-		repo:         moduleRepo,
-		refRepo:      refRepo,
-		instanceRepo: instanceRepo,
-		publisher:    publisher,
+		repo:           moduleRepo,
+		refRepo:        refRepo,
+		instanceRepo:   instanceRepo,
+		publisher:      publisher,
+		kindValidators: kindValidators,
 	}
 }
 

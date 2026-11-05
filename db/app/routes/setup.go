@@ -16,7 +16,9 @@ func SetupAllRoutes(mux *http.ServeMux, app *types.App, casbinMiddleware *middle
 	SettingsRoutes(mux, app)
 	CommandRoutes(mux, app, casbinMiddleware)
 	GroupRoutes(mux, app, casbinMiddleware)
-	ModuleRoutes(mux, app)
+	if err := ModuleRoutes(mux, app); err != nil {
+		return err
+	}
 	ModuleSettingRoutes(mux, app)
 	StorageRoutes(mux, app)
 	if err := ClientRoutes(mux, app); err != nil {

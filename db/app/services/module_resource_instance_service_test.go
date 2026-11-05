@@ -50,6 +50,7 @@ func newInstanceSvc(t *testing.T) (*moduleService, *gorm.DB) {
 		repo.NewResourceReferenceRepository(db),
 		repo.NewModuleResourceInstanceRepository(db),
 		publisher,
+		NewKindSettingsValidators(),
 	)
 	return svc, db
 }

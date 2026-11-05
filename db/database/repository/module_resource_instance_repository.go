@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,6 +19,16 @@ type ModuleResourceInstanceRepository struct {
 
 func NewModuleResourceInstanceRepository(db *gorm.DB) *ModuleResourceInstanceRepository {
 	return &ModuleResourceInstanceRepository{db: db}
+}
+
+// Transaction runs fn in one transaction, bound to ctx.
+func (r *ModuleResourceInstanceRepository) Transaction(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	return r.db.WithContext(ctx).Transaction(fn)
+}
+
+// WithTx is the repository running on tx, such as one Transaction opened.
+func (r *ModuleResourceInstanceRepository) WithTx(tx *gorm.DB) *ModuleResourceInstanceRepository {
+	return &ModuleResourceInstanceRepository{db: tx}
 }
 
 func (r *ModuleResourceInstanceRepository) Create(instance *models.ModuleResourceInstance) error {
