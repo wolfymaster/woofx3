@@ -1,5 +1,5 @@
 import {
-  type EgressActionId,
+  EgressActionId,
   type FailureCode,
   type GatewayReply,
   type GatewayRequest,
@@ -16,8 +16,8 @@ import {
 } from "@woofx3/api/platform-gateway";
 import type { GatewayConfig } from "../config/gateway";
 import { platformAdapterId } from "../host/adapter";
-import type { Clock, Logger } from "../host/deps";
 import { boundedBySignal } from "../host/bounded";
+import type { Clock, Logger } from "../host/deps";
 import { errorMessage } from "../host/deps";
 import {
   type HostRequestErrorCode,
@@ -141,6 +141,11 @@ export class PlatformGateway {
   }
 
   private async send(request: GatewayRequest, ctx: RequestContext): Promise<GatewayReply> {
+    const problem = accountScopedProblem(request);
+    if (problem !== null) {
+      this.log("refused", request, { problem });
+      return refusal("invalid", problem);
+    }
     const resolution = resolveTarget(request.target, request.action, this.view);
     if (!resolution.ok) {
       this.log("refused", request, { problem: resolution.problem });
@@ -327,6 +332,39 @@ export class PlatformGateway {
       ...detail,
     });
   }
+}
+
+/**
+ * Why a request naming one platform's message or account cannot be sent, or
+ * null. Those ids mean nothing on another platform, so the target must be a
+ * single platform, and a blank id is refused before any adapter sees it: on
+ * Twitch, a delete without a message id clears the whole chat.
+ */
+export function accountScopedProblem(request: GatewayRequest): string | null {
+  let id: { field: string; value: string };
+  switch (request.action) {
+    case EgressActionId.CHAT_DELETE: {
+      id = { field: "messageId", value: request.payload.messageId };
+      break;
+    }
+    case EgressActionId.MODERATION_WARN:
+    case EgressActionId.MODERATION_TIMEOUT:
+    case EgressActionId.MODERATION_BAN: {
+      id = { field: "viewer", value: request.payload.viewer };
+      break;
+    }
+    default: {
+      return null;
+    }
+  }
+  const target = request.target;
+  if (target.kind === "all" || (target.kind === "platforms" && target.ids.length !== 1)) {
+    return `${request.action} names one platform's ids, so its target must be origin or a single platform`;
+  }
+  if (id.value.trim() === "") {
+    return `payload.${id.field} must not be blank`;
+  }
+  return null;
 }
 
 const decoder = new TextDecoder();

@@ -46,6 +46,32 @@
           ]
         }
       ]
+    },
+    {
+      "id": "chat.delete",
+      "fields": [{ "name": "messageId", "type": "string", "required": true, "maxLength": 200 }]
+    },
+    {
+      "id": "moderation.warn",
+      "fields": [
+        { "name": "viewer", "type": "string", "required": true, "maxLength": 200 },
+        { "name": "reason", "type": "string", "required": true, "maxLength": 500 }
+      ]
+    },
+    {
+      "id": "moderation.timeout",
+      "fields": [
+        { "name": "viewer", "type": "string", "required": true, "maxLength": 200 },
+        { "name": "durationSeconds", "type": "integer", "required": true, "min": 1, "max": 1209600 },
+        { "name": "reason", "type": "string", "required": false, "maxLength": 500 }
+      ]
+    },
+    {
+      "id": "moderation.ban",
+      "fields": [
+        { "name": "viewer", "type": "string", "required": true, "maxLength": 200 },
+        { "name": "reason", "type": "string", "required": false, "maxLength": 500 }
+      ]
     }
   ]
 }

@@ -18,7 +18,15 @@
             "state": "connected",
             "connected": true,
             "enabled": true,
-            "actions": ["chat.send", "chat.announce", "chat.pin"]
+            "actions": [
+              "chat.send",
+              "chat.announce",
+              "chat.pin",
+              "chat.delete",
+              "moderation.warn",
+              "moderation.timeout",
+              "moderation.ban"
+            ]
           }
         ]
       }
