@@ -11,7 +11,7 @@ export const NOBODY: ChatterMembership = {
 };
 
 /** Any platform will do: filters never look at which one a line came from. */
-const PLATFORM = PLATFORM_IDS[0];
+export const PLATFORM = PLATFORM_IDS[0];
 
 /** A trusted line from an ordinary viewer, with `overrides` applied. */
 export function moderationLine(overrides: Partial<ModerationLine> = {}): ModerationLine {

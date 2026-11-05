@@ -109,3 +109,94 @@ export const DEFAULT_MODERATION_CONFIG: ModerationConfig = {
 };
 
 export type ModerationParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+function failed<T>(error: string): ModerationParseResult<T> {
+  return { ok: false, error };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** `raw` as an object with exactly `keys`, each present. */
+function readFields<K extends string>(raw: unknown, keys: readonly K[]): ModerationParseResult<Record<K, unknown>> {
+  if (!isRecord(raw)) {
+    return failed("must be an object");
+  }
+  const unknownKey = Object.keys(raw).find((key) => !(keys as readonly string[]).includes(key));
+  if (unknownKey !== undefined) {
+    return failed(`unknown field "${unknownKey}"`);
+  }
+  const missing = keys.find((key) => raw[key] === undefined);
+  if (missing !== undefined) {
+    return failed(`${missing} is required`);
+  }
+  return { ok: true, value: raw as Record<K, unknown> };
+}
+
+function readInteger(value: unknown, name: string, min: number, max: number): ModerationParseResult<number> {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
+    return failed(`${name} must be a whole number from ${min} to ${max}`);
+  }
+  return { ok: true, value };
+}
+
+/** One DNS label: letters or digits in any script, inner hyphens. */
+const DOMAIN_LABEL = /^[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?$/u;
+
+/**
+ * `text` as a lower-case host name in its ASCII (punycode) form, or null when
+ * it is not one: at least two labels, none empty. Shared by the allowlist
+ * parser and the links filter so both compare the same form.
+ */
+export function normaliseHost(text: string): string | null {
+  const host = text.trim().toLowerCase().replace(/\.$/, "");
+  const labels = host.split(".");
+  if (labels.length < 2 || !labels.every((label) => DOMAIN_LABEL.test(label))) {
+    return null;
+  }
+  try {
+    return new URL(`http://${host}`).hostname;
+  } catch {
+    return null;
+  }
+}
+
+export interface LinksParams {
+  /** Hosts in ASCII form; each allows itself and its subdomains. */
+  allowDomains: string[];
+  /** How long `!permit` lets a viewer post links. */
+  permitSeconds: number;
+}
+
+export const DEFAULT_LINKS_PARAMS: LinksParams = { allowDomains: [], permitSeconds: 60 };
+
+export function parseLinksParams(raw: unknown): ModerationParseResult<LinksParams> {
+  const fields = readFields(raw, ["allowDomains", "permitSeconds"]);
+  if (!fields.ok) {
+    return fields;
+  }
+  const { allowDomains, permitSeconds } = fields.value;
+  if (!Array.isArray(allowDomains) || allowDomains.length > MODERATION_LIMITS.maxAllowDomains) {
+    return failed(`allowDomains must be a list of at most ${MODERATION_LIMITS.maxAllowDomains} websites`);
+  }
+  const domains: string[] = [];
+  for (const [index, entry] of allowDomains.entries()) {
+    if (typeof entry !== "string" || entry.length > MODERATION_LIMITS.maxDomainChars) {
+      return failed(`allowDomains[${index}] must be a website name`);
+    }
+    const withoutScheme = entry.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/^www\./i, "");
+    const host = normaliseHost(withoutScheme.split(/[/?#]/, 1)[0] ?? "");
+    if (host === null) {
+      return failed(`allowDomains[${index}]: "${entry}" is not a website name like example.com`);
+    }
+    if (!domains.includes(host)) {
+      domains.push(host);
+    }
+  }
+  const seconds = readInteger(permitSeconds, "permitSeconds", 0, MODERATION_LIMITS.maxPermitSeconds);
+  if (!seconds.ok) {
+    return seconds;
+  }
+  return { ok: true, value: { allowDomains: domains, permitSeconds: seconds.value } };
+}
