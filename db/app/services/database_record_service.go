@@ -98,6 +98,38 @@ func (s *DatabaseRecordService) resolveDatabase(canonicalID string) (*databaseTa
 	return &databaseTarget{instance: instance, canonicalID: canonicalID, columns: columns}, nil
 }
 
+// lockDatabase reads a resolved database's columns again inside a write
+// transaction and locks its instance row until the transaction ends. A
+// settings write that deletes a column strips the column's values in its own
+// transaction; checking a row's values against columns read before the lock
+// could keep a value for a column just deleted, which a later column with the
+// same id would then show.
+func (s *DatabaseRecordService) lockDatabase(ctx context.Context, tx *gorm.DB, target *databaseTarget) (*databaseTarget, error) {
+	instance, err := s.instances.WithTx(tx).GetByIDForUpdate(ctx, target.instance.ID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, twirp.NotFoundError(fmt.Sprintf("instance %q not found", target.canonicalID))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("lock database %s: %w", target.canonicalID, err)
+	}
+	columns, err := parseDatabaseColumns(instance.Settings, s.limits)
+	if err != nil {
+		return nil, fmt.Errorf("read columns of %s: %w", target.canonicalID, err)
+	}
+	return &databaseTarget{instance: instance, canonicalID: target.canonicalID, columns: columns}, nil
+}
+
+// recordWriteError passes on a Twirp error a write transaction refused with,
+// such as a value that does not fit its column, and reports anything else as
+// internal.
+func recordWriteError(doing string, err error) error {
+	var refused twirp.Error
+	if errors.As(err, &refused) {
+		return refused
+	}
+	return twirp.InternalErrorWith(fmt.Errorf("%s: %w", doing, err))
+}
+
 // requestValues decodes and checks the values of a write, given as the
 // request's typed JSON or text values.
 func requestValues(target *databaseTarget, typedJSON *string, text *client.DatabaseTextValues) (map[string]any, error) {
@@ -124,25 +156,35 @@ func (s *DatabaseRecordService) CreateDatabaseRecord(ctx context.Context, req *c
 	if err != nil {
 		return nil, err
 	}
-	typedJSON, text := createValues(req)
-	values, err := requestValues(target, typedJSON, text)
-	if err != nil {
-		return nil, err
-	}
-	for id, value := range values {
-		if value == nil {
-			delete(values, id)
-		}
-	}
+	return s.createRecord(ctx, target, req)
+}
+
+// createRecord writes a row into a resolved database, checking its values
+// against the columns as they are inside the writing transaction.
+func (s *DatabaseRecordService) createRecord(ctx context.Context, target *databaseTarget, req *client.CreateDatabaseRecordRequest) (*client.CreateDatabaseRecordResponse, error) {
 	if req.InsertKey != nil {
 		if err := checkInsertKey(*req.InsertKey); err != nil {
 			return nil, err
 		}
 	}
+	typedJSON, text := createValues(req)
 
 	outcome := client.CreateDatabaseRecordOutcome_CREATE_DATABASE_RECORD_OUTCOME_CREATED
 	var record *models.DatabaseRecord
-	err = s.records.Transaction(ctx, func(tx *gorm.DB) error {
+	err := s.records.Transaction(ctx, func(tx *gorm.DB) error {
+		locked, err := s.lockDatabase(ctx, tx, target)
+		if err != nil {
+			return err
+		}
+		values, err := requestValues(locked, typedJSON, text)
+		if err != nil {
+			return err
+		}
+		for id, value := range values {
+			if value == nil {
+				delete(values, id)
+			}
+		}
 		records := s.records.WithTx(tx)
 		if req.InsertKey != nil {
 			existing, err := records.FindByInsertKey(ctx, target.instance.ID, *req.InsertKey)
@@ -154,9 +196,8 @@ func (s *DatabaseRecordService) CreateDatabaseRecord(ctx context.Context, req *c
 				return err
 			}
 		}
-		// Counted in the writing transaction: on SQLite writers are serial;
-		// on Postgres two racing inserts can each see room for one more and
-		// pass the cap by one, which an integrity bound tolerates.
+		// Counted under the database's lock (see lockDatabase), so racing
+		// inserts cannot pass the cap.
 		count, err := records.Count(ctx, target.instance.ID)
 		if err != nil {
 			return err
@@ -174,10 +215,10 @@ func (s *DatabaseRecordService) CreateDatabaseRecord(ctx context.Context, req *c
 			outcome = client.CreateDatabaseRecordOutcome_CREATE_DATABASE_RECORD_OUTCOME_DUPLICATE
 			return nil
 		}
-		return s.publishChange(tx, target, record, databaseRecordCreated)
+		return s.publishChange(tx, locked, record, databaseRecordCreated)
 	})
 	if err != nil {
-		return nil, twirp.InternalErrorWith(fmt.Errorf("create record in %s: %w", target.canonicalID, err))
+		return nil, recordWriteError(fmt.Sprintf("create record in %s", target.canonicalID), err)
 	}
 	response := &client.CreateDatabaseRecordResponse{Status: okStatus("Record created"), Outcome: outcome}
 	if record != nil {
@@ -221,32 +262,45 @@ func (s *DatabaseRecordService) UpdateDatabaseRecord(ctx context.Context, req *c
 	if err != nil {
 		return nil, err
 	}
+	return s.updateRecord(ctx, target, req)
+}
+
+// updateRecord changes a row of a resolved database, checking its values
+// against the columns as they are inside the writing transaction.
+func (s *DatabaseRecordService) updateRecord(ctx context.Context, target *databaseTarget, req *client.UpdateDatabaseRecordRequest) (*client.UpdateDatabaseRecordResponse, error) {
 	recordID, err := parseRecordID(req.RecordId)
 	if err != nil {
 		return nil, err
 	}
 	typedJSON, text := updateValues(req)
-	patch, err := requestValues(target, typedJSON, text)
-	if err != nil {
-		return nil, err
-	}
 
 	var record *models.DatabaseRecord
 	err = s.records.Transaction(ctx, func(tx *gorm.DB) error {
+		locked, err := s.lockDatabase(ctx, tx, target)
+		if err != nil {
+			return err
+		}
+		patch, err := requestValues(locked, typedJSON, text)
+		if err != nil {
+			return err
+		}
 		updated, err := s.records.WithTx(tx).Update(ctx, target.instance.ID, recordID, patch, req.ExpectedRevision)
 		if err != nil {
 			return err
 		}
 		record = updated
-		return s.publishChange(tx, target, record, databaseRecordUpdated)
+		return s.publishChange(tx, locked, record, databaseRecordUpdated)
 	})
+	var refused twirp.Error
 	switch {
+	case errors.As(err, &refused):
+		return nil, refused
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return &client.UpdateDatabaseRecordResponse{Status: okStatus("No such record"), Updated: false}, nil
 	case errors.Is(err, repo.ErrDatabaseRecordRevisionConflict):
 		return nil, twirp.NewError(twirp.Aborted, "the record changed since it was read")
 	case err != nil:
-		return nil, twirp.InternalErrorWith(fmt.Errorf("update record %s in %s: %w", recordID, target.canonicalID, err))
+		return nil, recordWriteError(fmt.Sprintf("update record %s in %s", recordID, target.canonicalID), err)
 	}
 	protoRecord, err := recordToProto(target.canonicalID, record, nil)
 	if err != nil {
