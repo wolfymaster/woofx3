@@ -56,6 +56,12 @@ const ChatPinDurationSecondsMin = 30
 // ChatPinDurationSecondsMax is the max of chat.pin.durationSeconds.
 const ChatPinDurationSecondsMax = 1200
 
+// ModerationTimeoutDurationSecondsMin is the min of moderation.timeout.durationSeconds.
+const ModerationTimeoutDurationSecondsMin = 1
+
+// ModerationTimeoutDurationSecondsMax is the max of moderation.timeout.durationSeconds.
+const ModerationTimeoutDurationSecondsMax = 1209600
+
 // PlatformID names a streaming platform the gateway can reach.
 type PlatformID string
 
@@ -81,20 +87,24 @@ func (v PlatformID) Valid() bool {
 type ActionID string
 
 const (
-	ActionChatSend     ActionID = "chat.send"
-	ActionChatAnnounce ActionID = "chat.announce"
-	ActionChatPin      ActionID = "chat.pin"
+	ActionChatSend          ActionID = "chat.send"
+	ActionChatAnnounce      ActionID = "chat.announce"
+	ActionChatPin           ActionID = "chat.pin"
+	ActionChatDelete        ActionID = "chat.delete"
+	ActionModerationWarn    ActionID = "moderation.warn"
+	ActionModerationTimeout ActionID = "moderation.timeout"
+	ActionModerationBan     ActionID = "moderation.ban"
 )
 
 // ActionIDs returns every ActionID in contract order.
 func ActionIDs() []ActionID {
-	return []ActionID{ActionChatSend, ActionChatAnnounce, ActionChatPin}
+	return []ActionID{ActionChatSend, ActionChatAnnounce, ActionChatPin, ActionChatDelete, ActionModerationWarn, ActionModerationTimeout, ActionModerationBan}
 }
 
 // Valid reports whether v is one of the contract's values.
 func (v ActionID) Valid() bool {
 	switch v {
-	case ActionChatSend, ActionChatAnnounce, ActionChatPin:
+	case ActionChatSend, ActionChatAnnounce, ActionChatPin, ActionChatDelete, ActionModerationWarn, ActionModerationTimeout, ActionModerationBan:
 		return true
 	}
 	return false
@@ -347,6 +357,70 @@ func checkChatPinNewPayload(fields map[string]json.RawMessage) error {
 	return nil
 }
 
+// ChatDeletePayload is the payload of chat.delete.
+type ChatDeletePayload struct {
+	MessageID string `json:"messageId"`
+}
+
+func checkChatDeletePayload(fields map[string]json.RawMessage) error {
+	if err := checkString(fields, "messageId", true, 200); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ModerationWarnPayload is the payload of moderation.warn.
+type ModerationWarnPayload struct {
+	Viewer string `json:"viewer"`
+	Reason string `json:"reason"`
+}
+
+func checkModerationWarnPayload(fields map[string]json.RawMessage) error {
+	if err := checkString(fields, "viewer", true, 200); err != nil {
+		return err
+	}
+	if err := checkString(fields, "reason", true, 500); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ModerationTimeoutPayload is the payload of moderation.timeout.
+type ModerationTimeoutPayload struct {
+	Viewer          string `json:"viewer"`
+	DurationSeconds int    `json:"durationSeconds"`
+	Reason          string `json:"reason,omitempty"`
+}
+
+func checkModerationTimeoutPayload(fields map[string]json.RawMessage) error {
+	if err := checkString(fields, "viewer", true, 200); err != nil {
+		return err
+	}
+	if err := checkInteger(fields, "durationSeconds", true, ModerationTimeoutDurationSecondsMin, ModerationTimeoutDurationSecondsMax); err != nil {
+		return err
+	}
+	if err := checkString(fields, "reason", false, 500); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ModerationBanPayload is the payload of moderation.ban.
+type ModerationBanPayload struct {
+	Viewer string `json:"viewer"`
+	Reason string `json:"reason,omitempty"`
+}
+
+func checkModerationBanPayload(fields map[string]json.RawMessage) error {
+	if err := checkString(fields, "viewer", true, 200); err != nil {
+		return err
+	}
+	if err := checkString(fields, "reason", false, 500); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ValidatePayload checks a request payload against its action's fields: it
 // must be a JSON object holding only declared fields, of exactly one variant
 // when the action has several, with every value of the declared type and
@@ -359,6 +433,14 @@ func ValidatePayload(action ActionID, payload json.RawMessage) error {
 		return validateForms(payload, [][]string{{"message"}}, checkChatAnnouncePayload)
 	case ActionChatPin:
 		return validateForms(payload, [][]string{{"messageId"}, {"message", "durationSeconds"}}, checkChatPinExistingPayload, checkChatPinNewPayload)
+	case ActionChatDelete:
+		return validateForms(payload, [][]string{{"messageId"}}, checkChatDeletePayload)
+	case ActionModerationWarn:
+		return validateForms(payload, [][]string{{"viewer", "reason"}}, checkModerationWarnPayload)
+	case ActionModerationTimeout:
+		return validateForms(payload, [][]string{{"viewer", "durationSeconds", "reason"}}, checkModerationTimeoutPayload)
+	case ActionModerationBan:
+		return validateForms(payload, [][]string{{"viewer", "reason"}}, checkModerationBanPayload)
 	}
 	return invalid("action", "unknown action %q", action)
 }

@@ -25,6 +25,8 @@
     "./databases": "./databases.ts",
     "./google-fonts": "./google-fonts.ts",
     "./marketplace-catalog": "./marketplace-catalog.ts",
+    "./moderation-config": "./moderation-config.ts",
+    "./moderation-pattern": "./moderation-pattern.ts",
     "./module-manifest": "./module-manifest.ts",
     "./resource-values": "./resource-values.ts",
     "./twitch-helix-bodies": "./twitch-helix-bodies.ts",

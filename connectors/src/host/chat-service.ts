@@ -1,13 +1,22 @@
+import { MODERATION_LIMITS } from "@woofx3/api/moderation-config";
 import { builtinCommands } from "../chat/builtins";
 import { type DispatcherDb, dbProxyDispatcherDb } from "../chat/db-client";
 import { CHAT_DISPATCHER_GRANTS, ChatDispatcher, type DispatcherCounters } from "../chat/dispatcher";
 import { GatewayReplier, type ReplierCounters } from "../chat/replier";
 import { TwitchApiClient } from "../chat/twitchapi-client";
 import type { ChatConfig } from "../config/chat";
+import { ModerationConfigStore } from "../moderation/config-store";
+import { MODERATION_TUNABLES } from "../moderation/defaults";
+import { MODERATION_FILTERS } from "../moderation/filters";
+import { MemoryChatterHistory } from "../moderation/history";
+import { linkPermits, MemoryPermitStore } from "../moderation/permit-store";
+import { filterRegistry } from "../moderation/registry";
+import { MODERATION_GRANTS, ModerationService } from "../moderation/service";
 import type { DbProxyClientConfig } from "../services/db-proxy";
 import { bounded } from "./bounded";
 import { type Clock, errorMessage, type Logger, type RandomSource, type Timers } from "./deps";
-import { type BusClient, ScopeCounters, ScopedBus, type SubscriptionLimits } from "./scoped-bus";
+import type { LinkStore } from "./link-readers";
+import { type BusClient, ScopeCounters, ScopedBus, type SubjectGrants, type SubscriptionLimits } from "./scoped-bus";
 
 /** The scope name of the dispatcher's bus use, in refusals and log lines. */
 export const CHAT_SCOPE = "chat";
@@ -17,6 +26,8 @@ export interface ChatServiceDeps {
   dbProxy: DbProxyClientConfig;
   /** Replaces the db-proxy client; tests pass an in-memory fake. */
   db?: DispatcherDb;
+  /** Where the moderation config setting is read. */
+  settings: Pick<LinkStore, "getSetting">;
   bus: BusClient;
   limits: SubscriptionLimits;
   /** How long drain waits for lines still being handled. */
@@ -33,10 +44,18 @@ export interface ChatSnapshot extends DispatcherCounters {
   bus: ReturnType<ScopeCounters["snapshot"]>;
 }
 
+/** The chat scope's grants: the dispatcher's and moderation's, each subject once. */
+export const CHAT_SCOPE_GRANTS: SubjectGrants = {
+  publishes: [...new Set([...CHAT_DISPATCHER_GRANTS.publishes, ...MODERATION_GRANTS.publishes])],
+  subscribes: [...new Set([...CHAT_DISPATCHER_GRANTS.subscribes, ...MODERATION_GRANTS.subscribes])],
+  requests: [...new Set([...CHAT_DISPATCHER_GRANTS.requests, ...MODERATION_GRANTS.requests])],
+};
+
 /**
  * Runs the chat dispatcher inside the host: it gives the dispatcher its own
- * bus scope (the dispatcher's grants and nothing more), the db-proxy client
- * and the built-in commands. The host starts it once the platform gateway
+ * bus scope (the dispatcher's and moderation's grants and nothing more), the
+ * db-proxy client and the built-in commands. Chat moderation watches the
+ * same lines. The host starts it once the platform gateway
  * answers. It stops in two steps around the adapters: `drain` stops reading
  * lines and lets those in flight finish while the gateway and the adapters
  * still answer, and `close` ends the scope once they are gone.
@@ -46,12 +65,13 @@ export class ChatService {
   private readonly scope: ScopedBus;
   private readonly replier: GatewayReplier;
   private readonly dispatcher: ChatDispatcher;
+  private readonly moderationConfig: ModerationConfigStore;
 
   constructor(private readonly deps: ChatServiceDeps) {
     this.scope = new ScopedBus({
       scope: CHAT_SCOPE,
       client: deps.bus,
-      grants: CHAT_DISPATCHER_GRANTS,
+      grants: CHAT_SCOPE_GRANTS,
       limits: deps.limits,
       logger: deps.logger.child({ scope: CHAT_SCOPE }),
       counters: this.counters,
@@ -63,6 +83,13 @@ export class ChatService {
       timeoutMs: deps.config.replyTimeoutMs,
       logger: deps.logger,
     });
+    const moderationLogger = deps.logger.child({ component: "moderation" });
+    this.moderationConfig = new ModerationConfigStore({
+      settings: deps.settings,
+      bus: this.scope,
+      logger: moderationLogger,
+    });
+    const permits = new MemoryPermitStore(MODERATION_TUNABLES.permitCapacity, deps.clock);
     this.dispatcher = new ChatDispatcher({
       config: deps.config,
       db,
@@ -70,6 +97,7 @@ export class ChatService {
       builtins: builtinCommands({
         db,
         twitchApi: new TwitchApiClient({ bus: this.scope, timeoutMs: deps.config.twitchApi.timeoutMs }),
+        permits: linkPermits(this.moderationConfig, permits),
         random: deps.random,
         logger: deps.logger,
       }),
@@ -78,6 +106,28 @@ export class ChatService {
       logger: deps.logger,
       replier: this.replier,
     });
+    const moderation = new ModerationService({
+      config: this.moderationConfig,
+      registry: filterRegistry(MODERATION_FILTERS),
+      env: {
+        clock: deps.clock,
+        history: new MemoryChatterHistory(
+          {
+            chatters: MODERATION_TUNABLES.historyChatters,
+            linesPerChatter: MODERATION_TUNABLES.historyLinesPerChatter,
+            retainMs: MODERATION_LIMITS.maxRepetitionWindowSeconds * 1_000,
+          },
+          deps.clock
+        ),
+        permits,
+      },
+      bus: this.scope,
+      clock: deps.clock,
+      logger: moderationLogger,
+      tunables: MODERATION_TUNABLES,
+      gatewayTimeoutMs: deps.config.replyTimeoutMs,
+    });
+    this.dispatcher.watch((line) => moderation.handle(line).then(() => undefined));
   }
 
   /**
@@ -86,6 +136,7 @@ export class ChatService {
    */
   async start(): Promise<void> {
     try {
+      await this.moderationConfig.start();
       await this.dispatcher.start();
     } catch (error) {
       await this.drain();

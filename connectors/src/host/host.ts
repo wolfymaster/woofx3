@@ -206,6 +206,7 @@ export class Host {
       config: deps.chat,
       dbProxy: deps.dbProxy,
       db: deps.dispatcherDb,
+      settings: deps.linkStore,
       bus: deps.bus,
       limits: deps.config.subscriptionLimits,
       drainMs: deps.chat.drainMs,

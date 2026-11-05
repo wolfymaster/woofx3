@@ -53,6 +53,7 @@ export function chatLine(
     trusted: true,
     membership: NO_ROLES,
     sharedChat: false,
+    paid: false,
     ...rest,
   };
 }

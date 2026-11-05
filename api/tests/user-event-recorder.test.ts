@@ -1,11 +1,17 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { EventLogSettings } from "@woofx3/api";
+import { MODERATION_SUBJECTS } from "@woofx3/api/moderation-config";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { Msg } from "@woofx3/nats/src/types";
 import { DbError } from "../src/db-client";
 import type { EventCatalog, LoggedEvent } from "../src/event-catalog";
 import type { EventLogSelectionSource } from "../src/event-log-selection";
-import { ANALYTICS_EVENT_TYPES, toRequest, UserEventRecorder } from "../src/user-event-recorder";
+import {
+  ALWAYS_RECORDED_EVENT_TYPES,
+  ANALYTICS_EVENT_TYPES,
+  toRequest,
+  UserEventRecorder,
+} from "../src/user-event-recorder";
 
 const SESSION_ID = "7f0c5a1e-0000-4000-8000-000000000001";
 const TIME = "2026-09-27T20:00:00.000Z";
@@ -291,18 +297,37 @@ describe("toRequest", () => {
 });
 
 describe("UserEventRecorder", () => {
-  test("subscribes to the enabled types and the analytics types, and follows the selection", async () => {
+  test("subscribes to the enabled types and the always-recorded types, and follows the selection", async () => {
     const goal: LoggedEvent = { subject: "goal.reached", moduleId: "woofx3", onByDefault: false };
     const wheel: LoggedEvent = { subject: "wheel.landed", moduleId: "woofx3", onByDefault: false };
     const { recorder, nats, change, unsubscribed } = setup(async () => ({}), [goal, wheel], ["goal.reached"]);
     await recorder.start();
 
     const subjects = () => nats.subscribe.mock.calls.map(([subject]: [string]) => subject);
-    expect(subjects()).toEqual(["goal.reached", ...ANALYTICS_EVENT_TYPES]);
+    expect(subjects()).toEqual(["goal.reached", ...ALWAYS_RECORDED_EVENT_TYPES]);
 
     await change([goal, wheel], ["wheel.landed"]);
-    expect(subjects()).toEqual(["goal.reached", ...ANALYTICS_EVENT_TYPES, "wheel.landed"]);
+    expect(subjects()).toEqual(["goal.reached", ...ALWAYS_RECORDED_EVENT_TYPES, "wheel.landed"]);
     expect(unsubscribed).toEqual(["goal.reached"]);
+  });
+
+  test("records moderation actions whatever the selection, attributed to the chatter, outside analytics", async () => {
+    const { recorder, db } = setup(async () => ({}), [], []);
+    await recorder.start();
+    const subject = MODERATION_SUBJECTS.actionTaken;
+    await recorder.handle(
+      subject,
+      makeMsg(
+        subject,
+        envelope(subject, { viewer: "v-1", chatterLogin: "viewer_one" }, { source: "connectors.moderation" })
+      )
+    );
+    expect(db.recordUserEvent.mock.calls[0]?.[0]).toMatchObject({
+      eventType: subject,
+      platformUserId: "v-1",
+      userName: "viewer_one",
+    });
+    expect(ANALYTICS_EVENT_TYPES).not.toContain(subject);
   });
 
   test("records an analytics type whatever the selection, even with no trigger for it", async () => {

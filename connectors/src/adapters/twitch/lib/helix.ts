@@ -190,6 +190,24 @@ export const HELIX_OPERATIONS: Readonly<Record<HelixOperationName, HelixOperatio
     broadcasterQuery: ["broadcaster_id", "moderator_id"],
     broadcasterBody: [],
   },
+  // Without message_id Twitch removes every message in the chat, so it is
+  // required here and validateHelixParams refuses a blank one.
+  deleteChatMessage: {
+    method: "DELETE",
+    path: "moderation/chat",
+    params: { message_id: { type: "string", required: true } },
+    paramsIn: "query",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
+  warnChatUser: {
+    method: "POST",
+    path: "moderation/warnings",
+    params: { user_id: { type: "string", required: true }, reason: { type: "string", required: true } },
+    paramsIn: "bodyData",
+    broadcasterQuery: ["broadcaster_id", "moderator_id"],
+    broadcasterBody: [],
+  },
   getChatSettings: {
     method: "GET",
     path: "chat/settings",
@@ -316,7 +334,9 @@ function matchesShape(value: unknown, shape: ParamShape): boolean {
 /**
  * The caller's parameters, checked against the operation's declaration:
  * nothing undeclared, every required one present, each of its declared
- * shape. An undefined value counts as absent.
+ * shape. An undefined value counts as absent, and a required string must not
+ * be blank: no Helix id or text means anything empty, and an empty
+ * `message_id` on Delete Chat Messages would clear the whole chat.
  */
 export function validateHelixParams(
   operation: HelixOperationName,
@@ -342,7 +362,8 @@ export function validateHelixParams(
     validated[name] = value as string | number | boolean | string[];
   }
   for (const [name, shape] of Object.entries(declared)) {
-    if (shape.required && validated[name] === undefined) {
+    const value = validated[name];
+    if (shape.required && (value === undefined || (typeof value === "string" && value.trim() === ""))) {
       throw invalid(operation, `"${name}" is required`);
     }
   }

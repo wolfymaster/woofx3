@@ -43,6 +43,8 @@ import { SendQueue } from "./lib/send-queue";
 import type { TwitchApiCall } from "./lib/twitch";
 import { TwitchApiError } from "./lib/twitchApiError";
 
+const BROADCASTER_ID = "b-1";
+
 /** What a fake Helix call does: answer with a result, or throw. */
 type HelixAnswer = HelixCommandResult | Error;
 
@@ -56,6 +58,7 @@ function scriptedSession(...answers: HelixAnswer[]) {
   const calls: HelixCall[] = [];
   const session: TwitchEgressSession = {
     kind: "ready",
+    broadcasterId: BROADCASTER_ID,
     helix: async (args, call) => {
       calls.push({ args, call });
       const answer = answers[calls.length - 1];
@@ -122,6 +125,10 @@ const SINGLE_WRITE_ACTIONS: Array<[action: EgressActionId, payload: EgressPayloa
   ["chat.send", { message: "hello chat" }],
   ["chat.announce", { message: "giveaway at 9" }],
   ["chat.pin", { messageId: "m-9" }],
+  ["chat.delete", { messageId: "m-9" }],
+  ["moderation.warn", { viewer: "v-1", reason: "no links please" }],
+  ["moderation.timeout", { viewer: "v-1", durationSeconds: 600 }],
+  ["moderation.ban", { viewer: "v-1" }],
 ];
 
 /** How every action maps a Helix answer it cannot use, whichever action it was. */
@@ -353,11 +360,111 @@ describe("twitch egress, chat.pin of a new line", () => {
   });
 });
 
+describe("twitch egress, moderation", () => {
+  const ok: HelixCommandResult = { ok: true, body: { data: [{}] } };
+
+  test("each action makes its Helix call as the broadcaster, by the viewer's user id", async () => {
+    const { session, calls } = scriptedSession(noContent, ok, ok, ok);
+
+    expect(await perform(session, "chat.delete", { messageId: "m-1" })).toEqual({ status: "delivered" });
+    expect(await perform(session, "moderation.warn", { viewer: "v-1", reason: "no links" })).toEqual({
+      status: "delivered",
+    });
+    expect(
+      await perform(session, "moderation.timeout", { viewer: "v-1", durationSeconds: 600, reason: "spam" })
+    ).toEqual({ status: "delivered" });
+    expect(await perform(session, "moderation.ban", { viewer: "v-1" })).toEqual({ status: "delivered" });
+    expect(calls.map((call) => call.args)).toEqual([
+      { operation: "deleteChatMessage", params: { message_id: "m-1" } },
+      { operation: "warnChatUser", params: { user_id: "v-1", reason: "no links" } },
+      { operation: "banUser", params: { user_id: "v-1", duration: 600, reason: "spam" } },
+      { operation: "banUser", params: { user_id: "v-1" } },
+    ]);
+  });
+
+  // Delete Chat Messages without a message id clears the whole chat.
+  test("chat.delete refuses a blank message id without calling Twitch", async () => {
+    const { session, calls } = scriptedSession();
+    for (const messageId of ["", "   "]) {
+      const outcome = await perform(session, "chat.delete", { messageId });
+      expect(outcome).toMatchObject({ status: "failed", code: "invalid" });
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  const notDeletable: Array<[name: string, answer: HelixCommandResult]> = [
+    ["a message older than 6 hours or already gone (404)", refused(404, "message not found")],
+    ["another moderator's message (400)", refused(400, "You may not delete another moderator's messages")],
+  ];
+  for (const [name, answer] of notDeletable) {
+    test(`chat.delete reports ${name} as invalid, not as Twitch failing`, async () => {
+      const { session } = scriptedSession(answer);
+      expect(await perform(session, "chat.delete", { messageId: "m-1" })).toMatchObject({
+        status: "failed",
+        code: "invalid",
+      });
+    });
+  }
+
+  test("moderation.warn without the warnings scope is forbidden", async () => {
+    const { session } = scriptedSession(refused(401, "Missing scope: moderator:manage:warnings"));
+    expect(await perform(session, "moderation.warn", { viewer: "v-1", reason: "no links" })).toEqual({
+      status: "failed",
+      code: "forbidden",
+      message: "Twitch answered 401: Missing scope: moderator:manage:warnings",
+    });
+  });
+
+  test("moderation.warn tries once more after a 409, and delivers when the second attempt lands", async () => {
+    const { session, calls } = scriptedSession(refused(409, "conflict"), ok);
+    expect(await perform(session, "moderation.warn", { viewer: "v-1", reason: "no links" })).toEqual({
+      status: "delivered",
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  test("moderation.warn reports a second 409 as upstream, without a third attempt", async () => {
+    const { session, calls } = scriptedSession(refused(409, "conflict"), refused(409, "conflict"));
+    expect(await perform(session, "moderation.warn", { viewer: "v-1", reason: "no links" })).toEqual({
+      status: "failed",
+      code: "upstream",
+      message: "Twitch answered 409: conflict",
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  test("moderation.timeout and ban do not retry a 409", async () => {
+    const { session, calls } = scriptedSession(refused(409, "conflict"));
+    expect(await perform(session, "moderation.ban", { viewer: "v-1" })).toMatchObject({ code: "upstream" });
+    expect(calls).toHaveLength(1);
+  });
+
+  const refusedBeforeTwitch: Array<[name: string, action: EgressActionId, payload: unknown]> = [
+    ["a warning reason over 500 characters", "moderation.warn", { viewer: "v-1", reason: "a".repeat(501) }],
+    ["a timeout over two weeks", "moderation.timeout", { viewer: "v-1", durationSeconds: 1_209_601 }],
+    ["a ban reason over 500 characters", "moderation.ban", { viewer: "v-1", reason: "a".repeat(501) }],
+    ["a warning for the broadcaster", "moderation.warn", { viewer: BROADCASTER_ID, reason: "hi" }],
+    ["a timeout for the broadcaster", "moderation.timeout", { viewer: BROADCASTER_ID, durationSeconds: 60 }],
+    ["a ban for the broadcaster", "moderation.ban", { viewer: BROADCASTER_ID }],
+  ];
+  for (const [name, action, payload] of refusedBeforeTwitch) {
+    test(`refuses ${name} as invalid without calling Twitch`, async () => {
+      const { session, calls } = scriptedSession();
+      expect(await perform(session, action, payload as EgressPayloads[typeof action])).toMatchObject({
+        status: "failed",
+        code: "invalid",
+      });
+      expect(calls).toHaveLength(0);
+    });
+  }
+});
+
 describe("twitch egress, send queue", () => {
   test("refuses a write as rate limited when the queue is full", async () => {
     let release!: (result: HelixCommandResult) => void;
     const session: TwitchEgressSession = {
       kind: "ready",
+      broadcasterId: BROADCASTER_ID,
       helix: () =>
         new Promise<HelixCommandResult>((resolve) => {
           release = resolve;
@@ -380,6 +487,7 @@ describe("twitch egress, send queue", () => {
     const calls: HelixCommandArgs[] = [];
     const session: TwitchEgressSession = {
       kind: "ready",
+      broadcasterId: BROADCASTER_ID,
       helix: (args) => {
         calls.push(args);
         return new Promise<HelixCommandResult>((resolve) => {
@@ -488,6 +596,7 @@ describe("twitch egress through the platform gateway", () => {
     const selfSent = new SelfSentRegistry({ capacity: 8, ttlMs: 30_000 }, time);
     const session: TwitchEgressSession = {
       kind: "ready",
+      broadcasterId: BROADCASTER_ID,
       helix: (args, call) =>
         runHelixOperation(auth, BROADCASTER_ID, args, {
           deadlineMs: call.helixDeadlineMs,

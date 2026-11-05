@@ -150,6 +150,8 @@ describe("a device login", () => {
       expiresAt: new Date(NOW + 1_800_000).toISOString(),
     });
     expect(twitch.deviceForms[0]).toEqual({ client_id: "public-app", scopes: TWITCH_ENGINE_SCOPES.join(" ") });
+    // Chat moderation's warn action needs it; the other moderation actions have their scopes already.
+    expect(twitch.deviceForms[0]?.scopes.split(" ")).toContain("moderator:manage:warnings");
 
     const result = await settled(manager, login.loginId);
     expect(result).toEqual({
