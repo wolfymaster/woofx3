@@ -224,6 +224,36 @@ func TestDatabaseRecordCreateUpdateDeleteOnEveryDialect(t *testing.T) {
 	})
 }
 
+// A write resolves its database before its transaction; a column deleted in
+// between must not keep a value in the row written. The target here is
+// resolved, then the column is deleted, as a concurrent settings write would.
+func TestDatabaseRecordWritesCheckColumnsInsideTheirTransactionOnEveryDialect(t *testing.T) {
+	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
+		f := newRecordFixture(t, db, recordColumns, DefaultDatabaseLimits())
+		ctx := context.Background()
+		existing := f.create(t, map[string]string{"game": "Celeste"}, nil)
+		stale, err := f.svc.resolveDatabase(fixtureDatabaseID)
+		if err != nil {
+			t.Fatalf("resolveDatabase: %v", err)
+		}
+		withoutViewer := `[{"id":"game","label":"Game","type":"text","public":true},{"id":"score","label":"Score","type":"number","public":true}]`
+		if err := f.columns.update(withoutViewer); err != nil {
+			t.Fatalf("delete the viewer column: %v", err)
+		}
+
+		_, err = f.svc.createRecord(ctx, stale, &client.CreateDatabaseRecordRequest{
+			DatabaseId: fixtureDatabaseID,
+			Values:     &client.CreateDatabaseRecordRequest_TextValues{TextValues: &client.DatabaseTextValues{Values: map[string]string{"game": "Hades", "viewer": "wolfy"}}},
+		})
+		wantInvalidArgument(t, err, `no column "viewer"`)
+		_, err = f.svc.updateRecord(ctx, stale, &client.UpdateDatabaseRecordRequest{
+			DatabaseId: fixtureDatabaseID, RecordId: existing.Record.Id,
+			Values: &client.UpdateDatabaseRecordRequest_TypedValuesJson{TypedValuesJson: `{"viewer":"wolfy"}`},
+		})
+		wantInvalidArgument(t, err, `no column "viewer"`)
+	})
+}
+
 func TestDatabaseRecordCreateStopsAtTheLimitOnEveryDialect(t *testing.T) {
 	dbtest.ForEachDialect(t, func(t *testing.T, db *gorm.DB) {
 		limits := DefaultDatabaseLimits()
