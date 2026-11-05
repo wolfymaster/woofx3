@@ -99,6 +99,22 @@ Unicode code points, the same in both languages.
 | `chat.send` | `message` (required, up to 500), `replyToMessageId` (up to 200) |
 | `chat.announce` | `message` (required, up to 500) |
 | `chat.pin` | `{ messageId }` to pin an existing line, or `{ message, durationSeconds? }` to post and pin one; `durationSeconds` is 30 to 1200 |
+| `chat.delete` | `messageId` (required, up to 200): removes one chat line |
+| `moderation.warn` | `viewer` (required, up to 200), `reason` (required, up to 500): the platform's own formal warning |
+| `moderation.timeout` | `viewer` (required, up to 200), `durationSeconds` (required, 1 to 1209600), `reason` (up to 500) |
+| `moderation.ban` | `viewer` (required, up to 200), `reason` (up to 500) |
+
+`viewer` is the platform's own user id of the account acted on, the
+`platformUserId` of a connectors `ViewerKey`; the platform half of the key is
+the request's target. It is never a login or display name, which can change.
+The moderation actions name one platform's ids, so a caller targets `origin`
+or a single platform, never `all`.
+
+The gateway refuses a `chat.delete` or moderation request whose `messageId` or
+`viewer` is blank before any adapter sees it: on Twitch, a delete without a
+message id clears the whole chat. Whether an account may be acted on (the
+broadcaster never may) is the adapter's to say, since only it knows its own
+account; it answers `failed` with code `invalid`.
 
 A payload is refused when it is not an object, carries a field its action does
 not declare, mixes fields of two variants, matches no variant, or has a value

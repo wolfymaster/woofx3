@@ -334,6 +334,25 @@ const REQUESTS: [HelixOperationName, Record<string, unknown>, HelixRequest][] = 
       query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID, message_id: "m-1" },
     },
   ],
+  [
+    "deleteChatMessage",
+    { message_id: "m-1" },
+    {
+      method: "DELETE",
+      url: "moderation/chat",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID, message_id: "m-1" },
+    },
+  ],
+  [
+    "warnChatUser",
+    { user_id: "42", reason: "no links" },
+    {
+      method: "POST",
+      url: "moderation/warnings",
+      query: { broadcaster_id: BROADCASTER_ID, moderator_id: BROADCASTER_ID },
+      jsonBody: { data: { user_id: "42", reason: "no links" } },
+    },
+  ],
   ["createClip", {}, { method: "POST", url: "clips", query: { broadcaster_id: BROADCASTER_ID } }],
 ];
 
@@ -450,6 +469,18 @@ describe("validateHelixParams", () => {
   test("refuses a missing required parameter", () => {
     expect(() => validateHelixParams("getGames", {})).toThrow('"id" is required');
     expect(() => validateHelixParams("searchCategories", { first: 10 })).toThrow('"query" is required');
+  });
+
+  // An empty message_id on Delete Chat Messages clears the whole chat.
+  test("refuses a delete without a message id, or with a blank one", () => {
+    expect(() => validateHelixParams("deleteChatMessage", {})).toThrow('"message_id" is required');
+    expect(() => validateHelixParams("deleteChatMessage", { message_id: "" })).toThrow('"message_id" is required');
+    expect(() => validateHelixParams("deleteChatMessage", { message_id: "  " })).toThrow('"message_id" is required');
+  });
+
+  test("refuses a warning without a reason", () => {
+    expect(() => validateHelixParams("warnChatUser", { user_id: "42" })).toThrow('"reason" is required');
+    expect(() => validateHelixParams("warnChatUser", { user_id: "42", reason: "" })).toThrow('"reason" is required');
   });
 
   test("refuses a value of the wrong shape", () => {

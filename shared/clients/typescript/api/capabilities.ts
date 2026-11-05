@@ -33,6 +33,12 @@ export const ENGINE_CAPABILITIES = {
    */
   clientsPairing: "clients.pairing",
   /**
+   * Chat moderation (./moderation-config.ts): `getModerationConfig`,
+   * `setModerationConfig` and `listModerationActions`, and a connectors host
+   * that runs the config on chat.
+   */
+  moderationConfig: "moderation.config",
+  /**
    * Workflow groups (alert groups): `listWorkflowGroups`, `createWorkflowGroup`,
    * `updateWorkflowGroup`, `deleteWorkflowGroup`, `setWorkflowGroupEnabled`,
    * `addWorkflowGroupMembers`, `removeWorkflowGroupMembers`, the

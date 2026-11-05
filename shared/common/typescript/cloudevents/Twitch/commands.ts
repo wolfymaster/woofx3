@@ -153,6 +153,8 @@ export type HelixOperationName =
   | "removeBlockedTerm"
   | "banUser"
   | "unbanUser"
+  | "deleteChatMessage"
+  | "warnChatUser"
   | "getChatSettings"
   | "updateChatSettings"
   | "sendChatMessage"

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
-import { parseShoutoutEnqueueReply, type ShoutoutEnqueueReply } from "./commands";
 import type { ParseResult } from "../utils";
+import { parseShoutoutEnqueueReply, type ShoutoutEnqueueReply } from "./commands";
 
 describe("parseShoutoutEnqueueReply", () => {
   const cases: [name: string, body: unknown, expected: ParseResult<ShoutoutEnqueueReply>][] = [

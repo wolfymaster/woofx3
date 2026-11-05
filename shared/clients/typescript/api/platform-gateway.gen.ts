@@ -45,6 +45,12 @@ export const CHAT_PIN_DURATION_SECONDS_MIN = 30;
 /** CHAT_PIN_DURATION_SECONDS_MAX is the max of chat.pin.durationSeconds. */
 export const CHAT_PIN_DURATION_SECONDS_MAX = 1200;
 
+/** MODERATION_TIMEOUT_DURATION_SECONDS_MIN is the min of moderation.timeout.durationSeconds. */
+export const MODERATION_TIMEOUT_DURATION_SECONDS_MIN = 1;
+
+/** MODERATION_TIMEOUT_DURATION_SECONDS_MAX is the max of moderation.timeout.durationSeconds. */
+export const MODERATION_TIMEOUT_DURATION_SECONDS_MAX = 1209600;
+
 /** A streaming platform the gateway can reach. */
 export const PLATFORM_IDS = ["twitch"] as const;
 export type PlatformId = (typeof PLATFORM_IDS)[number];
@@ -119,6 +125,10 @@ export const EgressActionId = {
   CHAT_SEND: "chat.send",
   CHAT_ANNOUNCE: "chat.announce",
   CHAT_PIN: "chat.pin",
+  CHAT_DELETE: "chat.delete",
+  MODERATION_WARN: "moderation.warn",
+  MODERATION_TIMEOUT: "moderation.timeout",
+  MODERATION_BAN: "moderation.ban",
 } as const;
 export type EgressActionId = (typeof EgressActionId)[keyof typeof EgressActionId];
 
@@ -150,11 +160,39 @@ export interface ChatPinNewPayload {
 
 export type ChatPinPayload = ChatPinExistingPayload | ChatPinNewPayload;
 
+/** The payload of `chat.delete`. */
+export interface ChatDeletePayload {
+  messageId: string;
+}
+
+/** The payload of `moderation.warn`. */
+export interface ModerationWarnPayload {
+  viewer: string;
+  reason: string;
+}
+
+/** The payload of `moderation.timeout`. */
+export interface ModerationTimeoutPayload {
+  viewer: string;
+  durationSeconds: number;
+  reason?: string;
+}
+
+/** The payload of `moderation.ban`. */
+export interface ModerationBanPayload {
+  viewer: string;
+  reason?: string;
+}
+
 /** Each action's payload, so `EgressPayloads[A]` narrows with the action id. */
 export interface EgressPayloads {
   "chat.send": ChatSendPayload;
   "chat.announce": ChatAnnouncePayload;
   "chat.pin": ChatPinPayload;
+  "chat.delete": ChatDeletePayload;
+  "moderation.warn": ModerationWarnPayload;
+  "moderation.timeout": ModerationTimeoutPayload;
+  "moderation.ban": ModerationBanPayload;
 }
 
 /** The platform event a request answers. */
@@ -363,10 +401,78 @@ const CHAT_PIN_FORMS: readonly PayloadForm<ChatPinPayload>[] = [
   { fields: ["message", "durationSeconds"], parse: parseChatPinNewPayload },
 ];
 
+function parseChatDeletePayload(object: JsonObject): GatewayParseResult<ChatDeletePayload> {
+  const messageId = readRequiredString(object, "messageId", 200);
+  if (!messageId.ok) {
+    return messageId;
+  }
+  return ok({ messageId: messageId.value });
+}
+
+const CHAT_DELETE_FORMS: readonly PayloadForm<ChatDeletePayload>[] = [
+  { fields: ["messageId"], parse: parseChatDeletePayload },
+];
+
+function parseModerationWarnPayload(object: JsonObject): GatewayParseResult<ModerationWarnPayload> {
+  const viewer = readRequiredString(object, "viewer", 200);
+  if (!viewer.ok) {
+    return viewer;
+  }
+  const reason = readRequiredString(object, "reason", 500);
+  if (!reason.ok) {
+    return reason;
+  }
+  return ok({ viewer: viewer.value, reason: reason.value });
+}
+
+const MODERATION_WARN_FORMS: readonly PayloadForm<ModerationWarnPayload>[] = [
+  { fields: ["viewer", "reason"], parse: parseModerationWarnPayload },
+];
+
+function parseModerationTimeoutPayload(object: JsonObject): GatewayParseResult<ModerationTimeoutPayload> {
+  const viewer = readRequiredString(object, "viewer", 200);
+  if (!viewer.ok) {
+    return viewer;
+  }
+  const durationSeconds = readRequiredInteger(object, "durationSeconds", MODERATION_TIMEOUT_DURATION_SECONDS_MIN, MODERATION_TIMEOUT_DURATION_SECONDS_MAX);
+  if (!durationSeconds.ok) {
+    return durationSeconds;
+  }
+  const reason = readOptionalString(object, "reason", 500);
+  if (!reason.ok) {
+    return reason;
+  }
+  return ok({ viewer: viewer.value, durationSeconds: durationSeconds.value, ...(reason.value === undefined ? {} : { reason: reason.value }) });
+}
+
+const MODERATION_TIMEOUT_FORMS: readonly PayloadForm<ModerationTimeoutPayload>[] = [
+  { fields: ["viewer", "durationSeconds", "reason"], parse: parseModerationTimeoutPayload },
+];
+
+function parseModerationBanPayload(object: JsonObject): GatewayParseResult<ModerationBanPayload> {
+  const viewer = readRequiredString(object, "viewer", 200);
+  if (!viewer.ok) {
+    return viewer;
+  }
+  const reason = readOptionalString(object, "reason", 500);
+  if (!reason.ok) {
+    return reason;
+  }
+  return ok({ viewer: viewer.value, ...(reason.value === undefined ? {} : { reason: reason.value }) });
+}
+
+const MODERATION_BAN_FORMS: readonly PayloadForm<ModerationBanPayload>[] = [
+  { fields: ["viewer", "reason"], parse: parseModerationBanPayload },
+];
+
 const PAYLOAD_FORMS: { readonly [A in EgressActionId]: readonly PayloadForm<EgressPayloads[A]>[] } = {
   "chat.send": CHAT_SEND_FORMS,
   "chat.announce": CHAT_ANNOUNCE_FORMS,
   "chat.pin": CHAT_PIN_FORMS,
+  "chat.delete": CHAT_DELETE_FORMS,
+  "moderation.warn": MODERATION_WARN_FORMS,
+  "moderation.timeout": MODERATION_TIMEOUT_FORMS,
+  "moderation.ban": MODERATION_BAN_FORMS,
 };
 
 /**
@@ -440,6 +546,16 @@ function readOptionalString(object: JsonObject, name: string, maxLength: number)
     return fail(`payload.${name}`, `is longer than ${maxLength} characters`);
   }
   return ok(value);
+}
+function readRequiredInteger(object: JsonObject, name: string, minimum: number, maximum: number): GatewayParseResult<number> {
+  const value = readOptionalInteger(object, name, minimum, maximum);
+  if (!value.ok) {
+    return value;
+  }
+  if (value.value === undefined) {
+    return fail(`payload.${name}`, "is required");
+  }
+  return ok(value.value);
 }
 function readOptionalInteger(
   object: JsonObject,

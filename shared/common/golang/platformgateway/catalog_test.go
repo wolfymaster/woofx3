@@ -216,7 +216,7 @@ func TestGatewayRequestValidate(t *testing.T) {
 			r.Target = Target{Kind: "everywhere"}
 		}, field("target.kind")},
 		{"unknown action", func(t *testing.T, r *GatewayRequest) {
-			r.Action = "chat.delete"
+			r.Action = "chat.shout"
 		}, field("action")},
 		{"500 characters", func(t *testing.T, r *GatewayRequest) {
 			r.Payload = mustPayload(t, ChatSendPayload{Message: strings.Repeat("a", 500)})
