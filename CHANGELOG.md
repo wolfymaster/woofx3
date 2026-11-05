@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.68.1](https://github.com/wolfymaster/woofx3/compare/v0.68.0...v0.68.1) (2026-11-05)
+
+### Bug Fixes
+
+* **db:** check record values against columns read under the instance lock ([27f9da4](https://github.com/wolfymaster/woofx3/commit/27f9da41c224e9546de38455a87e691b5a65ba43))
+
 ## [0.68.0](https://github.com/wolfymaster/woofx3/compare/v0.67.0...v0.68.0) (2026-11-05)
 
 ### Features
