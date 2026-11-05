@@ -9,13 +9,12 @@ import {
   type DatabaseRecordsQuery,
   type DatabaseRecordUpdate,
   type DatabaseRecordUpdateResult,
-  type DatabaseValue,
+  databaseRecordFromWire,
 } from "@woofx3/api";
 import type * as database_record from "@woofx3/db/database_record.pb";
 import { z } from "zod";
 import { DbError } from "../db-client";
 import { routeModule } from "./context";
-import { timestampToIso } from "./helpers";
 
 // The db service checks every value against the database's columns; these
 // schemas only keep what cannot be a valid request from crossing the boundary.
@@ -65,28 +64,8 @@ function parse<T>(schema: z.ZodType<T>, input: unknown): T {
   return parsed.data;
 }
 
-export function recordFromProto(record: database_record.DatabaseRecord): DatabaseRecord {
-  const decoded: unknown = JSON.parse(record.valuesJson || "{}");
-  const values: Record<string, DatabaseValue> = {};
-  if (decoded !== null && typeof decoded === "object" && !Array.isArray(decoded)) {
-    for (const [id, value] of Object.entries(decoded)) {
-      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-        values[id] = value;
-      }
-    }
-  }
-  return {
-    id: record.id,
-    databaseId: record.databaseId,
-    revision: Number(record.revision),
-    createdAt: timestampToIso(record.createdAt),
-    updatedAt: timestampToIso(record.updatedAt),
-    values,
-  };
-}
-
 function pageFromProto(response: { records: database_record.DatabaseRecord[]; total: bigint }): DatabaseRecordPage {
-  return { records: response.records.map(recordFromProto), total: Number(response.total) };
+  return { records: response.records.map(databaseRecordFromWire), total: Number(response.total) };
 }
 
 /** The stored row of a create that answered with one; every outcome but FULL does. */
@@ -94,7 +73,7 @@ function storedRecord(response: database_record.CreateDatabaseRecordResponse): D
   if (!response.record) {
     throw new Error(`db.createDatabaseRecord answered ${response.outcome} without the row`);
   }
-  return recordFromProto(response.record);
+  return databaseRecordFromWire(response.record);
 }
 
 export function createResultOf(response: database_record.CreateDatabaseRecordResponse): DatabaseRecordCreateResult {
@@ -125,7 +104,7 @@ export const databasesRoutes = routeModule({
 
   async getDatabaseRecord(database: string, record: string): Promise<DatabaseRecord | null> {
     const found = await this.db.getDatabaseRecord(parse(databaseId, database), parse(recordId, record));
-    return found ? recordFromProto(found) : null;
+    return found ? databaseRecordFromWire(found) : null;
   },
 
   async createDatabaseRecord(create: DatabaseRecordCreate): Promise<DatabaseRecordCreateResult> {
@@ -150,7 +129,7 @@ export const databasesRoutes = routeModule({
       if (!response.updated || !response.record) {
         return { status: "missing" };
       }
-      return { status: "updated", record: recordFromProto(response.record) };
+      return { status: "updated", record: databaseRecordFromWire(response.record) };
     } catch (err) {
       if (err instanceof DbError && err.code === "aborted") {
         return { status: "conflict" };

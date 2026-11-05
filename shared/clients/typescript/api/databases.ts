@@ -128,3 +128,49 @@ export interface DatabaseRecordChange {
   createdAt: string;
   publicValues: Record<string, DatabaseValue> | null;
 }
+
+/**
+ * A row as the db proxy's DatabaseRecordService sends it: the fields of its
+ * `DatabaseRecord` message, read structurally so this package needs no
+ * generated client.
+ */
+export interface DatabaseRecordWire {
+  id: string;
+  databaseId: string;
+  revision: bigint;
+  createdAt?: { seconds: bigint; nanos: number } | null;
+  updatedAt?: { seconds: bigint; nanos: number } | null;
+  valuesJson: string;
+}
+
+function isoOf(timestamp: { seconds: bigint; nanos: number } | null | undefined): string {
+  if (!timestamp) {
+    return new Date(0).toISOString();
+  }
+  return new Date(Number(timestamp.seconds) * 1000 + Math.floor(timestamp.nanos / 1_000_000)).toISOString();
+}
+
+/**
+ * A row from the db proxy as clients read it. Cells that are not a string,
+ * number or boolean are dropped: the db service never stores one, so one here
+ * is a row from a build that broke that rule, not data to pass on.
+ */
+export function databaseRecordFromWire(wire: DatabaseRecordWire): DatabaseRecord {
+  const decoded: unknown = JSON.parse(wire.valuesJson || "{}");
+  const values: Record<string, DatabaseValue> = {};
+  if (decoded !== null && typeof decoded === "object" && !Array.isArray(decoded)) {
+    for (const [id, value] of Object.entries(decoded)) {
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        values[id] = value;
+      }
+    }
+  }
+  return {
+    id: wire.id,
+    databaseId: wire.databaseId,
+    revision: Number(wire.revision),
+    createdAt: isoOf(wire.createdAt),
+    updatedAt: isoOf(wire.updatedAt),
+    values,
+  };
+}

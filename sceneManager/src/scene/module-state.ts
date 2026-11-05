@@ -1,3 +1,4 @@
+import { type DatabaseRecord, type DatabaseRecordWire, databaseRecordFromWire } from "@woofx3/api/databases";
 import {
   canonicalIdForStorageKey,
   RESOURCE_VALUE_KEY_PREFIX,
@@ -31,6 +32,13 @@ import type { ModuleStateFrame, StreamFrame } from "../../contract/overlay-strea
  * storage, and pushed again whenever db-proxy announces the setting written.
  * Only `list` settings are served; any other reads as nothing, so a secret or
  * a url setting never reaches a page.
+ *
+ * A database's rows are not storage either: the db proxy keeps them, and a
+ * widget reads one at `record:<canonicalId>:<recordId>` (a `DatabaseRecord`,
+ * or null) and the newest at `records:<canonicalId>`. Both are scoped like
+ * `resource:` keys, and pushed again when the db proxy announces a row
+ * changed. Widgets read every column: an overlay is the streamer's own
+ * surface, unlike the public user page.
  */
 
 /** The slice of DbClient this depends on (injectable for tests). */
@@ -38,6 +46,8 @@ export interface ModuleStateDb {
   getModuleStorageValue(namespace: string, key: string): Promise<unknown>;
   getResourceInstance(canonicalId: string): Promise<{ settingsJson: string } | null>;
   listModuleSettings(moduleId: string): Promise<{ key: string; value: string; valueType: string }[]>;
+  getDatabaseRecord(databaseId: string, recordId: string): Promise<DatabaseRecordWire | null>;
+  listNewestDatabaseRecords(databaseId: string, limit: number): Promise<DatabaseRecordWire[]>;
 }
 
 /** Where changes are pushed: the scenes with an open event stream. `DeliveryStore` implements it. */
@@ -48,6 +58,31 @@ export interface ModuleStateScenes {
 
 const RESOURCE_PREFIX = "resource:";
 const MODULE_SETTING_PREFIX = "setting:";
+const RECORD_PREFIX = "record:";
+const RECORDS_PREFIX = "records:";
+/** How many rows `records:<canonicalId>` holds, newest first. */
+export const NEWEST_DATABASE_RECORDS = 50;
+
+/**
+ * The database and row a `record:` or `records:` key names (`recordId` null
+ * for `records:`), or null for any other key. A canonical id holds colons
+ * and a row id none, so the row id is what follows the last one.
+ */
+export function databaseKeyParts(key: string): { databaseId: string; recordId: string | null } | null {
+  if (key.startsWith(RECORDS_PREFIX)) {
+    const databaseId = key.slice(RECORDS_PREFIX.length);
+    return databaseId === "" ? null : { databaseId, recordId: null };
+  }
+  if (key.startsWith(RECORD_PREFIX)) {
+    const rest = key.slice(RECORD_PREFIX.length);
+    const split = rest.lastIndexOf(":");
+    if (split <= 0 || split === rest.length - 1) {
+      return null;
+    }
+    return { databaseId: rest.slice(0, split), recordId: rest.slice(split + 1) };
+  }
+  return null;
+}
 /** The only setting type served to widgets (see the note at the top). */
 const LIST_SETTING = "list";
 
@@ -104,6 +139,10 @@ function parseSettings(settingsJson: string): Record<string, unknown> {
  * including a bare prefix (as `canonicalIdForStorageKey` reads one).
  */
 export function resourceKeyInstance(key: string): string | null {
+  const database = databaseKeyParts(key);
+  if (database !== null) {
+    return database.databaseId;
+  }
   for (const prefix of [RESOURCE_VALUE_KEY_PREFIX, RESOURCE_PREFIX]) {
     if (key.startsWith(prefix)) {
       const canonicalId = key.slice(prefix.length);
@@ -141,7 +180,8 @@ export async function linkedResources(db: LinkedResourcesDb, moduleId: string): 
 /**
  * Whose storage a widget of `moduleId` reads `key` from: its own module's,
  * unless the key is a resource instance the module's settings link (its
- * `state:` or `resource:` key), which lives in the instance owner's storage.
+ * `state:`, `resource:`, `record:` or `records:` key), which lives in the
+ * instance owner's storage.
  *
  * Checked against the settings at every read, so a widget can never name its
  * way into another module's storage: an instance its module does not link
@@ -212,6 +252,10 @@ export class ModuleStateWatch {
     if (key.startsWith(RESOURCE_PREFIX)) {
       return this.resourceReading(moduleId, key.slice(RESOURCE_PREFIX.length));
     }
+    const database = databaseKeyParts(key);
+    if (database !== null) {
+      return this.databaseReading(moduleId, database.databaseId, database.recordId);
+    }
     return (await this.db.getModuleStorageValue(moduleId, key)) ?? null;
   }
 
@@ -220,9 +264,10 @@ export class ModuleStateWatch {
    * the key, and, for an instance's value, to every one watching the instance.
    */
   async publish(moduleId: string, key: string, value: unknown): Promise<void> {
-    // `setting:` and `resource:` keys are not storage: a storage write that
-    // happens to use either prefix changes nothing a widget reads.
-    if (key.startsWith(MODULE_SETTING_PREFIX) || key.startsWith(RESOURCE_PREFIX)) {
+    // `setting:`, `resource:` and database keys are not storage: a storage
+    // write that happens to use one of those prefixes changes nothing a
+    // widget reads.
+    if (key.startsWith(MODULE_SETTING_PREFIX) || key.startsWith(RESOURCE_PREFIX) || databaseKeyParts(key) !== null) {
       return;
     }
     this.push(moduleId, key, this.watchingScenes(moduleId, key), value ?? null);
@@ -270,6 +315,37 @@ export class ModuleStateWatch {
       return;
     }
     this.push(moduleId, key, watching, reading);
+  }
+
+  /**
+   * A row of a database changed. The announcement carries only public
+   * columns, so each watched key is read again from the db proxy: the row
+   * itself (null once deleted) and the database's newest rows.
+   */
+  async databaseRecordChanged(databaseId: string, recordId: string): Promise<void> {
+    const moduleId = databaseId.split(":")[0] ?? "";
+    const keys: { key: string; recordId: string | null }[] = [
+      { key: `${RECORD_PREFIX}${databaseId}:${recordId}`, recordId },
+      { key: `${RECORDS_PREFIX}${databaseId}`, recordId: null },
+    ];
+    for (const { key, recordId: row } of keys) {
+      const watching = this.watchingScenes(moduleId, key);
+      if (watching.length === 0) {
+        continue;
+      }
+      let reading: DatabaseRecord | DatabaseRecord[] | null;
+      try {
+        reading = await this.databaseReading(moduleId, databaseId, row);
+      } catch (err) {
+        this.logger.warn("module state: re-read of a changed database row failed", {
+          databaseId,
+          recordId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        continue;
+      }
+      this.push(moduleId, key, watching, reading);
+    }
   }
 
   /**
@@ -328,6 +404,26 @@ export class ModuleStateWatch {
         this.scenes.broadcast(sceneId, { kind: "module-state", frame });
       }
     }
+  }
+
+  /**
+   * A database row, or its newest rows when `recordId` is null, or null when
+   * `moduleId` does not own the database (the canonical id's first segment).
+   */
+  private async databaseReading(
+    moduleId: string,
+    databaseId: string,
+    recordId: string | null
+  ): Promise<DatabaseRecord | DatabaseRecord[] | null> {
+    if (databaseId.split(":")[0] !== moduleId) {
+      return null;
+    }
+    if (recordId === null) {
+      const rows = await this.db.listNewestDatabaseRecords(databaseId, NEWEST_DATABASE_RECORDS);
+      return rows.map(databaseRecordFromWire);
+    }
+    const row = await this.db.getDatabaseRecord(databaseId, recordId);
+    return row === null ? null : databaseRecordFromWire(row);
   }
 
   /**
