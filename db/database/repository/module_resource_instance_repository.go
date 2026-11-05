@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ModuleResourceInstanceRepository wraps gorm.DB with helpers for the
@@ -61,6 +62,17 @@ func (r *ModuleResourceInstanceRepository) GetByID(id uuid.UUID) (*models.Module
 	var inst models.ModuleResourceInstance
 	err := r.db.Where("id = ?", id).First(&inst).Error
 	return &inst, err
+}
+
+// GetByIDForUpdate reads an instance and, on Postgres, locks its row until the
+// transaction ends, so a settings write to it waits for the caller. SQLite has
+// no row locks; its writers are serial anyway.
+func (r *ModuleResourceInstanceRepository) GetByIDForUpdate(ctx context.Context, id uuid.UUID) (*models.ModuleResourceInstance, error) {
+	var inst models.ModuleResourceInstance
+	if err := r.db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).Take(&inst).Error; err != nil {
+		return nil, err
+	}
+	return &inst, nil
 }
 
 // GetByModuleKindInstance resolves the unique (module_id, kind, instance_id)
