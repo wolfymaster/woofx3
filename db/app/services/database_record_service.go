@@ -463,10 +463,6 @@ func publicColumns(columns []DatabaseColumn) []DatabaseColumn {
 	return public
 }
 
-func okStatus(message string) *client.ResponseStatus {
-	return &client.ResponseStatus{Code: client.ResponseStatus_OK, Message: message}
-}
-
 // recordToProto converts a stored record. With only set, its values keep just
 // those columns.
 func recordToProto(canonicalID string, record *models.DatabaseRecord, only []DatabaseColumn) (*client.DatabaseRecord, error) {
