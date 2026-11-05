@@ -182,6 +182,7 @@ interface StreamOnline {}   // no additional payload
 ```typescript
 interface Subscribe {
     isGift: boolean;
+    isCommunityGift: boolean; // one recipient of a community gift, also sent whole as SubscriptionGift
     tier: string;         // e.g. "1000", "2000", "3000"
     userId: string | null;
     userName: string | null;
