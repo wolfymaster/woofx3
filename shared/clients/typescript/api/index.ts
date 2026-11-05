@@ -2,6 +2,7 @@ export * from "./api";
 export * from "./capabilities";
 export * from "./client";
 export * from "./config-bundle";
+export * from "./databases";
 export * from "./engine-events";
 export * from "./marketplace-catalog";
 export * from "./module-manifest";

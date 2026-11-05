@@ -9,8 +9,19 @@ import type {
   ConfigImportPlan,
   ConfigImportResult,
 } from "./config-bundle";
+import type {
+  DatabaseRecord,
+  DatabaseRecordCreate,
+  DatabaseRecordCreateResult,
+  DatabaseRecordDeleteResult,
+  DatabaseRecordPage,
+  DatabaseRecordsQuery,
+  DatabaseRecordUpdate,
+  DatabaseRecordUpdateResult,
+} from "./databases";
 import type { EngineEventSubscribeOptions, EngineEventSubscriber, EngineRequestAnswer } from "./engine-events";
 import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "./marketplace-catalog";
+import type { ModerationActionRecord, ModerationConfig } from "./moderation-config";
 import type {
   DecidePairingRequest,
   DecidePairingResponse,
@@ -232,6 +243,8 @@ export interface Workflow {
   stats: WorkflowStats;
   createdAt: string;
   updatedAt: string;
+  /** The workflow groups it belongs to. Absent from an engine without `workflows.groups`. */
+  groupIds?: string[];
 }
 
 export interface WorkflowsQuery {
@@ -614,6 +627,46 @@ export interface UpdateCommandInput {
   /** See `CommandSnapshot.argumentPattern`. */
   argumentPattern?: string;
   /** Echoed back on the `command.updated` webhook. */
+  correlationKey?: string;
+}
+
+// ==================== Workflow groups ====================
+
+/**
+ * A workflow group, shown to streamers as an alert group: a named set of
+ * triggers switched on and off together. A group moves its members' own
+ * switches, which stay the only ones that decide whether a trigger runs:
+ *
+ * - Switching a group on switches on every trigger in it, first saving how
+ *   each one was unless another group that is on already holds it.
+ * - Switching it off puts each trigger back how it was, unless another group
+ *   that is on still includes it.
+ * - Adding a trigger to a group that is on switches it on; removing it, or
+ *   deleting the group, lets go of it as switching the group off would.
+ * - Switching a held trigger by hand also changes the state it goes back to.
+ *
+ * Needs the `workflows.groups` capability.
+ */
+export interface WorkflowGroup {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  /** Workflow ids, ordered by id. */
+  memberIds: string[];
+}
+
+export interface CreateWorkflowGroupInput {
+  name: string;
+  description?: string;
+  /** Echoed back on the `workflow_group.created` webhook. */
+  correlationKey?: string;
+}
+
+export interface UpdateWorkflowGroupInput {
+  name: string;
+  description?: string;
+  /** Echoed back on the `workflow_group.updated` webhook. */
   correlationKey?: string;
 }
 
@@ -2213,6 +2266,23 @@ export interface Woofx3EngineApi {
    */
   listViewerFacts(): Promise<ViewerFact[]>;
 
+  // Databases (capability `databases.records`). The engine checks every
+  // value against the database's columns and rejects one that does not fit,
+  // naming the column. Each change emits `database.record.changed`.
+
+  /** One page of a database's rows, in the order asked for, and how many it holds. */
+  listDatabaseRecords(query: DatabaseRecordsQuery): Promise<DatabaseRecordPage>;
+  /** One row, or null when the database holds no row with that id. */
+  getDatabaseRecord(databaseId: string, recordId: string): Promise<DatabaseRecord | null>;
+  createDatabaseRecord(create: DatabaseRecordCreate): Promise<DatabaseRecordCreateResult>;
+  updateDatabaseRecord(update: DatabaseRecordUpdate): Promise<DatabaseRecordUpdateResult>;
+  deleteDatabaseRecord(databaseId: string, recordId: string): Promise<DatabaseRecordDeleteResult>;
+  /**
+   * Rows newest first with only the columns public now, for the public user
+   * page's projection. Empty for a database with no public column.
+   */
+  listPublicDatabaseRecords(databaseId: string, offset: number, limit: number): Promise<DatabaseRecordPage>;
+
   /**
    * Hands the engine one form submission from a public user page. The answer
    * means the submission and the event that queues its workflows are committed
@@ -2277,6 +2347,20 @@ export interface Woofx3EngineApi {
   removeUserFromGroup(groupId: string, username: string): Promise<{ ok: true }>;
   /** Every group the user belongs to, for rendering a user's effective access. */
   listGroupsForUser(username: string): Promise<GroupSnapshot[]>;
+
+  // Workflow groups (alert groups); see WorkflowGroup. Each change echoes a
+  // `workflow_group.*` webhook carrying the call's correlationKey; members
+  // whose switch moved arrive as their own `workflow.updated`.
+  listWorkflowGroups(): Promise<WorkflowGroup[]>;
+  createWorkflowGroup(data: CreateWorkflowGroupInput): Promise<WorkflowGroup>;
+  /** Writes the name and description only. */
+  updateWorkflowGroup(id: string, data: UpdateWorkflowGroupInput): Promise<WorkflowGroup>;
+  deleteWorkflowGroup(id: string, correlationKey?: string): Promise<{ deleted: boolean }>;
+  /** Setting a group to the state it is already in changes nothing. */
+  setWorkflowGroupEnabled(id: string, enabled: boolean, correlationKey?: string): Promise<WorkflowGroup>;
+  /** Refuses a chat command's workflow. Workflows already in the group are left as they are. */
+  addWorkflowGroupMembers(groupId: string, workflowIds: string[], correlationKey?: string): Promise<WorkflowGroup>;
+  removeWorkflowGroupMembers(groupId: string, workflowIds: string[], correlationKey?: string): Promise<WorkflowGroup>;
 
   // Permissions — read-only view of the derived Casbin policy rows. Useful
   // for a debugging/inspection panel; day-to-day management goes through the
@@ -2931,6 +3015,20 @@ export interface Woofx3EngineApi {
    *  newly enabled type starts before this resolves. Rejects a malformed
    *  selection: not two lists of event types, or more than 500 in a list. */
   setEventLogSelection(selection: EventLogSelection): Promise<EventLogSettings>;
+
+  /** The chat moderation config the engine runs; see `@woofx3/api/moderation-config`. An engine
+   *  that has none stored, or one that no longer parses, answers the default: moderation off.
+   *  Needs the `moderation.config` capability. */
+  getModerationConfig(): Promise<ModerationConfig>;
+
+  /** Replace the chat moderation config. Rejects with the first problem, in words a streamer
+   *  can act on, when `parseModerationConfig` refuses it; otherwise stores it, the engine starts
+   *  running it within moments, and the stored (normalised) config is returned. */
+  setModerationConfig(config: ModerationConfig): Promise<ModerationConfig>;
+
+  /** The most recent moderated lines, newest first: 1 to 100, 50 by default. Read from the
+   *  engine's event log, so they last as long as it keeps events. */
+  listModerationActions(limit?: number): Promise<ModerationActionRecord[]>;
 
   getUserProfile(userId: string): Promise<{
     id: string;

@@ -9,6 +9,7 @@ import { configBundlesRoutes } from "./config-bundles";
 import type { ApiRouteHost } from "./context";
 import { dashboardRoutes } from "./dashboard";
 import { dashboardStatsRoutes } from "./dashboard-stats";
+import { databasesRoutes } from "./databases";
 import { engineRoutes } from "./engine";
 import { engineEventsRoutes } from "./engine-events";
 import { eventsRoutes } from "./events";
@@ -17,6 +18,7 @@ import { groupsRoutes } from "./groups";
 import { inboundWebhooksRoutes } from "./inbound-webhooks";
 import { marketplaceRoutes } from "./marketplace";
 import { marketplaceCatalogRoutes } from "./marketplace-catalog";
+import { moderationRoutes } from "./moderation";
 import { moduleOAuthRoutes } from "./module-oauth";
 import { moduleUploadsRoutes } from "./module-uploads";
 import { modulesRoutes } from "./modules";
@@ -39,6 +41,7 @@ import { uiSettingsRoutes } from "./ui-settings";
 import { userActionsRoutes } from "./user-actions";
 import { userPagesRoutes } from "./user-pages";
 import { viewerFactsRoutes } from "./viewer-facts";
+import { workflowGroupsRoutes } from "./workflow-groups";
 import { workflowsRoutes } from "./workflows";
 import { workflowsExecutionRoutes } from "./workflows-execution";
 
@@ -51,6 +54,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof actionsRoutes &
   typeof commandsRoutes &
   typeof groupsRoutes &
+  typeof workflowGroupsRoutes &
   typeof fieldOptionsRoutes &
   typeof userActionsRoutes &
   typeof eventsRoutes &
@@ -78,11 +82,13 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof platformRoutes &
   typeof viewerFactsRoutes &
   typeof userPagesRoutes &
+  typeof databasesRoutes &
   typeof twitchRoutes &
   typeof uiSettingsRoutes &
   typeof twitchDeviceLoginRoutes &
   typeof twitchLinkRoutes &
-  typeof pairingRoutes;
+  typeof pairingRoutes &
+  typeof moderationRoutes;
 
 type RouteMethod = (this: ApiRouteHost, ...args: unknown[]) => unknown;
 
@@ -115,6 +121,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     host,
     instrumentRoutes(engineRoutes),
     instrumentRoutes(pairingRoutes),
+    instrumentRoutes(moderationRoutes),
     instrumentRoutes(subscriptionsRoutes),
     instrumentRoutes(triggerSubscriptionRoutes),
     instrumentRoutes(streamEventsRoutes),
@@ -122,6 +129,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(workflowsExecutionRoutes),
     instrumentRoutes(commandsRoutes),
     instrumentRoutes(groupsRoutes),
+    instrumentRoutes(workflowGroupsRoutes),
     instrumentRoutes(actionsRoutes),
     instrumentRoutes(fieldOptionsRoutes),
     instrumentRoutes(userActionsRoutes),
@@ -150,6 +158,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(platformRoutes),
     instrumentRoutes(viewerFactsRoutes),
     instrumentRoutes(userPagesRoutes),
+    instrumentRoutes(databasesRoutes),
     instrumentRoutes(twitchRoutes),
     instrumentRoutes(uiSettingsRoutes),
     instrumentRoutes(twitchDeviceLoginRoutes),

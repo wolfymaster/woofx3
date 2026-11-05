@@ -88,9 +88,11 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { DEFAULT_EVENT_SHIPPER_CONFIG },
       { initWidgetStatusHandlers },
       { initWorkflowHandlers },
+      { initWorkflowGroupHandlers },
       { WorkflowHealthEmitter },
       { WorkflowRunEmitter },
       { initWorkflowRunHandlers },
+      { initDatabaseRecordHandlers },
       { default: BarkloaderClient },
       { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
       { connectMessageBus },
@@ -130,9 +132,11 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./config"),
       import("./widget-status-handlers"),
       import("./workflow-event-handlers"),
+      import("./workflow-group-event-handlers"),
       import("./workflow-health-emitter"),
       import("./workflow-run-emitter"),
       import("./workflow-run-handlers"),
+      import("./database-record-handlers"),
       import("@woofx3/barkloader"),
       import("./readiness"),
       import("./message-bus"),
@@ -300,6 +304,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       );
       await initModuleHandlers(natsClient, webhookClient, logger);
       await initWorkflowHandlers(natsClient, webhookClient, logger);
+      await initWorkflowGroupHandlers(natsClient, webhookClient, logger);
       await initSceneHandlers(natsClient, webhookClient, logger);
       await initCommandHandlers(natsClient, webhookClient, logger);
       await initAlertLogHandlers(natsClient, webhookClient, logger);
@@ -308,6 +313,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       // WorkflowRunEmitter below, which forwards live lifecycle for a caller
       // waiting on one run: this carries persisted rows for the history.
       await initWorkflowRunHandlers(natsClient, webhookClient, logger);
+      await initDatabaseRecordHandlers(natsClient, webhookClient, logger);
 
       const workflowRunEmitter = new WorkflowRunEmitter(natsClient, webhookClient, logger);
       await workflowRunEmitter.start();

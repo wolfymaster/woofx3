@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  type EgressActionId,
   type GatewayReply,
   PLATFORM_DISPLAY_NAMES,
   PLATFORM_GATEWAY_REPLY_TYPES,
@@ -29,7 +30,7 @@ import {
   unlinked,
 } from "../host/testing";
 import { EgressRegistry } from "./egress-registry";
-import { type GatewayAdapters, PlatformGateway } from "./platform-gateway";
+import { accountScopedProblem, type GatewayAdapters, PlatformGateway } from "./platform-gateway";
 
 const SEND = PLATFORM_GATEWAY_SUBJECTS.send;
 const DEADLINE_MS = GATEWAY_DEFAULTS.adapterDeadlineMs;
@@ -80,7 +81,7 @@ interface Call {
 }
 
 /** An egress handler that records its calls and answers with `answer`. */
-function recording<A extends "chat.send" | "chat.announce" | "chat.pin">(
+function recording<A extends EgressActionId>(
   answer: (ctx: EgressContext) => Promise<PlatformOutcome> = async () => ({ status: "delivered", messageId: "m-1" }),
   parseOptions?: EgressHandlerSpec<A>["parseOptions"]
 ): { spec: EgressHandlerSpec<A>; calls: Call[] } {
@@ -622,6 +623,101 @@ describe("PlatformGateway whole-request refusals", () => {
     const reply = await send(request());
     expect(reply.ok).toBe(false);
     expect(reply.error).toEqual({ code: "upstream", message: "link store broke" });
+  });
+});
+
+describe("PlatformGateway account-scoped actions", () => {
+  const origin = { kind: "origin", origin: { platform: "twitch", messageId: "chat-1" } };
+  const refused: Array<[name: string, overrides: Record<string, unknown>, message: string]> = [
+    [
+      "a delete with a blank message id",
+      { action: "chat.delete", target: origin, payload: { messageId: "  " } },
+      "payload.messageId must not be blank",
+    ],
+    [
+      "a delete with an empty message id",
+      { action: "chat.delete", target: origin, payload: { messageId: "" } },
+      "payload.messageId: is required",
+    ],
+    [
+      "a warn with a blank viewer",
+      { action: "moderation.warn", target: origin, payload: { viewer: " ", reason: "be kind" } },
+      "payload.viewer must not be blank",
+    ],
+    [
+      "a timeout with no viewer",
+      { action: "moderation.timeout", target: origin, payload: { durationSeconds: 60 } },
+      "payload.viewer: is required",
+    ],
+    [
+      "a timeout over its bound",
+      { action: "moderation.timeout", target: origin, payload: { viewer: "u-1", durationSeconds: 1_209_601 } },
+      "payload.durationSeconds",
+    ],
+    [
+      "a ban sent to every platform",
+      { action: "moderation.ban", target: { kind: "all" }, payload: { viewer: "u-1" } },
+      "moderation.ban names one platform's ids",
+    ],
+  ];
+  for (const [name, overrides, message] of refused) {
+    test(`refuses ${name} before any adapter sees it`, async () => {
+      const handlers = {
+        "chat.delete": recording<"chat.delete">(),
+        "moderation.warn": recording<"moderation.warn">(),
+        "moderation.timeout": recording<"moderation.timeout">(),
+        "moderation.ban": recording<"moderation.ban">(),
+      };
+      const { platforms, send } = await setup([
+        manifest("twitch", {
+          "chat.delete": handlers["chat.delete"].spec,
+          "moderation.warn": handlers["moderation.warn"].spec,
+          "moderation.timeout": handlers["moderation.timeout"].spec,
+          "moderation.ban": handlers["moderation.ban"].spec,
+        }),
+      ]);
+      platforms.running("twitch");
+
+      const reply = await send(request(overrides));
+      expect(reply.ok).toBe(false);
+      expect(reply.results).toEqual({});
+      expect(reply.error?.code).toBe("invalid");
+      expect(reply.error?.message).toContain(message);
+      for (const handler of Object.values(handlers)) {
+        expect(handler.calls).toHaveLength(0);
+      }
+    });
+  }
+
+  test("a delete naming two platforms is refused", () => {
+    const problem = accountScopedProblem({
+      action: "chat.delete",
+      target: { kind: "platforms", ids: ["twitch", KICK] },
+      payload: { messageId: "m-1" },
+      idempotencyKey: "key",
+      requestedBy: { kind: "dispatcher", ref: "moderation" },
+    });
+    expect(problem).toContain("chat.delete names one platform's ids");
+  });
+
+  test("a delete to the origin reaches its platform's handler", async () => {
+    const twitch = recording<"chat.delete">(async () => ({ status: "delivered" }));
+    const { platforms, send } = await setup([manifest("twitch", { "chat.delete": twitch.spec })]);
+    platforms.running("twitch");
+
+    const reply = await send(request({ action: "chat.delete", target: origin, payload: { messageId: "chat-1" } }));
+    expect(reply).toEqual({ ok: true, results: { twitch: { status: "delivered" } } });
+    expect(twitch.calls[0]?.payload).toEqual({ messageId: "chat-1" });
+  });
+
+  test("a platform that does not declare an action answers unsupported for the origin", async () => {
+    const { platforms, send } = await setup([manifest("twitch", { "chat.send": recording<"chat.send">().spec })]);
+    platforms.running("twitch");
+
+    const reply = await send(
+      request({ action: "moderation.warn", target: origin, payload: { viewer: "u-1", reason: "be kind" } })
+    );
+    expect(reply).toEqual({ ok: false, results: { twitch: { status: "unsupported" } } });
   });
 });
 

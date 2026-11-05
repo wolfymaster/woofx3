@@ -1,4 +1,5 @@
 import { errorMessage, type Logger, type RandomSource } from "../host/deps";
+import type { LinkPermits } from "../moderation/permit-store";
 import type { ChatRole, CommandDefinition, CommandHandler } from "./commands";
 import type { DispatcherDb } from "./db-client";
 import { failureReply, type TwitchApiPort } from "./twitchapi-client";
@@ -19,6 +20,7 @@ const CHANNEL_EDITOR_ROLES: readonly ChatRole[] = ["broadcaster", "moderator"];
 export interface BuiltinDeps {
   db: Pick<DispatcherDb, "addUserToResource" | "removeUserFromResource">;
   twitchApi: TwitchApiPort;
+  permits: LinkPermits;
   random: RandomSource;
   logger: Logger;
 }
@@ -118,6 +120,27 @@ export function builtinCommands(deps: BuiltinDeps): CommandDefinition[] {
           durationSeconds: 1 + Math.floor(deps.random.next() * VANISH_MAX_SECONDS),
         });
         return result.ok ? `*poof* ${who} is gone` : failureReply(`make ${who} vanish`, result.failure);
+      }),
+    },
+    {
+      name: "permit",
+      visibility: "restricted",
+      cooldownSeconds: 0,
+      variables: [],
+      allowRoles: CHANNEL_EDITOR_ROLES,
+      handler: guard("permit", async ({ line, args }) => {
+        const login = parseLogin(args);
+        if (login === null) {
+          return "Usage: !permit <login>";
+        }
+        // A moderator posting a link is exempt or not by the rules; a permit for oneself changes nothing.
+        if (login === line.chatterLogin) {
+          return "";
+        }
+        const seconds = deps.permits.permit(line.platform, login);
+        return seconds === null
+          ? "Links are not being filtered right now"
+          : `@${login} may post a link for the next ${seconds} seconds`;
       }),
     },
     channelEditor("category", async ({ text }) => {

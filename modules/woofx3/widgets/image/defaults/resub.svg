@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400" role="img"><title>Resub</title><style>
+.k{fill:none;stroke:#1B1530;stroke-width:30;stroke-linejoin:round;stroke-linecap:round}
+.w{fill:none;stroke:#fff;stroke-width:20;stroke-linejoin:round;stroke-linecap:round}
+.f{stroke:#1B1530;stroke-width:7;stroke-linejoin:round;stroke-linecap:round}
+.a{transform-box:fill-box;transform-origin:center;animation-duration:2.4s;animation-iteration-count:infinite}
+.o{transform-origin:200px 200px}
+@keyframes beat{0%{transform:scale(1)}6%{transform:scale(1.14)}14%{transform:scale(.95)}22%{transform:scale(1.03)}30%,100%{transform:scale(1)}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+@keyframes ring{0%{transform:scale(.55);opacity:0}4%{opacity:.95}38%{transform:scale(1.18);opacity:0}100%{transform:scale(1.18);opacity:0}}
+@keyframes spin45{to{transform:rotate(45deg)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes twinkle{0%,100%{transform:scale(0) rotate(0);opacity:0}12%{transform:scale(1.1) rotate(20deg);opacity:1}26%{transform:scale(0) rotate(45deg);opacity:0}}
+@keyframes rise{0%{transform:translate(0,0) scale(.4);opacity:0}8%{opacity:1}55%{transform:translate(var(--dx),-130px) scale(1);opacity:0}100%{opacity:0}}
+@keyframes sweep{0%{transform:translateX(-260px) skewX(-20deg)}34%,100%{transform:translateX(260px) skewX(-20deg)}}
+@keyframes hop{0%,100%{transform:translate(0,0) rotate(0)}7%{transform:translate(-6px,-46px) rotate(-10deg)}16%{transform:translate(0,4px) rotate(2deg)}22%{transform:translate(0,0) rotate(0)}}
+@keyframes burst{0%{transform:translate(0,0) rotate(0) scale(.3);opacity:0}5%{opacity:1}30%{opacity:1}48%{transform:translate(var(--dx),var(--dy)) rotate(var(--r)) scale(1);opacity:0}100%{opacity:0}}
+@keyframes bounce{0%,100%{transform:translateY(0)}8%{transform:translateY(-38px)}16%{transform:translateY(3px)}22%{transform:translateY(0)}}
+@keyframes climb{0%{transform:translateY(110px);opacity:0}10%{opacity:1}50%{transform:translateY(-130px);opacity:0}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style><circle cx="200" cy="200" r="168" fill="none" stroke="#1B1530" stroke-width="22" opacity=".55"/><circle cx="200" cy="200" r="168" fill="none" stroke="#fff" stroke-width="8"/><g class="o" style="animation:spin 2.4s linear infinite"><circle cx="368.0" cy="200.0" r="20" fill="#FFC21A" stroke="#1B1530" stroke-width="6"/><circle cx="345.5" cy="284.0" r="13" fill="#2EE6A6" stroke="#1B1530" stroke-width="6"/><circle cx="284.0" cy="345.5" r="13" fill="#2EE6A6" stroke="#1B1530" stroke-width="6"/><circle cx="200.0" cy="368.0" r="13" fill="#2EE6A6" stroke="#1B1530" stroke-width="6"/><circle cx="116.0" cy="345.5" r="13" fill="#2EE6A6" stroke="#1B1530" stroke-width="6"/><circle cx="54.5" cy="284.0" r="13" fill="#2EE6A6" stroke="#1B1530" stroke-width="6"/><circle cx="32.0" cy="200.0" r="13" fill="#2EE6A6" stroke="#1B1530" stroke-width="6"/><circle cx="54.5" cy="116.0" r="13" fill="#2EE6A6" stroke="#1B1530" stroke-width="6"/><circle cx="116.0" cy="54.5" r="13" fill="#2EE6A6" stroke="#1B1530" stroke-width="6"/><circle cx="200.0" cy="32.0" r="13" fill="#2EE6A6" stroke="#1B1530" stroke-width="6"/><circle cx="284.0" cy="54.5" r="13" fill="#2EE6A6" stroke="#1B1530" stroke-width="6"/><circle cx="345.5" cy="116.0" r="13" fill="#2EE6A6" stroke="#1B1530" stroke-width="6"/></g><g class="a" style="animation-name:beat"><path class="k" d="M200.0 78.0 L234.1 159.1 L321.7 166.4 L255.2 223.9 L275.2 309.6 L200.0 264.0 L124.8 309.6 L144.8 223.9 L78.3 166.4 L165.9 159.1 Z"/><path class="w" d="M200.0 78.0 L234.1 159.1 L321.7 166.4 L255.2 223.9 L275.2 309.6 L200.0 264.0 L124.8 309.6 L144.8 223.9 L78.3 166.4 L165.9 159.1 Z"/><path class="f" fill="#FFC21A" d="M200.0 78.0 L234.1 159.1 L321.7 166.4 L255.2 223.9 L275.2 309.6 L200.0 264.0 L124.8 309.6 L144.8 223.9 L78.3 166.4 L165.9 159.1 Z"/><path d="M200.0 134.0 L219.4 179.3 L268.5 183.8 L231.4 216.2 L242.3 264.2 L200.0 239.0 L157.7 264.2 L168.6 216.2 L131.5 183.8 L180.6 179.3 Z" fill="#FFE58A"/></g></svg>

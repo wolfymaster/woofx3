@@ -55,6 +55,10 @@ pub struct Workflow {
     /// the revision it read as `UpdateWorkflowRequest.expected_revision`.
     #[prost(int32, tag="21")]
     pub revision: i32,
+    /// The workflow groups (alert groups) the workflow belongs to, ordered by
+    /// id. See workflow_group.proto.
+    #[prost(string, repeated, tag="22")]
+    pub group_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// Workflow execution
 #[derive(Clone, PartialEq, ::prost::Message)]

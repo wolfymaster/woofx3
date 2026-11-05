@@ -91,6 +91,8 @@ func All() []*gormigrate.Migration {
 		AddUserPageSubmissions(),
 		OrderModuleWorkflows(),
 		AddWorkflowRevision(),
+		AddWorkflowGroups(),
+		AddDatabaseRecords(),
 		AddClientEventsTarget(),
 	}
 }

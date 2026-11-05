@@ -1,5 +1,71 @@
 # Changelog
 
+## [0.67.0](https://github.com/wolfymaster/woofx3/compare/v0.66.0...v0.67.0) (2026-11-05)
+
+### Features
+
+* **api:** database records over the engine api ([ffb7303](https://github.com/wolfymaster/woofx3/commit/ffb7303eb576a80b99ab830279522fb4463a1ac1))
+* **barkloader:** database_values field type and databaseColumns source ([a4f8b23](https://github.com/wolfymaster/woofx3/commit/a4f8b23002861f10f9cdbc431ae2b9b5e9141892))
+* **cloudevents:** reserve the database. subject prefix ([179c3e5](https://github.com/wolfymaster/woofx3/commit/179c3e58d3dbcbd27f0322b93eb51977a2ee44fd))
+* **db:** database_records table ([bf3f5a4](https://github.com/wolfymaster/woofx3/commit/bf3f5a442d56c1d61f677b884cc9095c6db455b5))
+* **db:** DatabaseRecordService ([1441661](https://github.com/wolfymaster/woofx3/commit/14416613ef69f46f11ef1adc1a4dd22b4f1b6cfc))
+* **db:** DatabaseRecordService proto ([95fceea](https://github.com/wolfymaster/woofx3/commit/95fceeab97ca282189af7d12c759ab5ac70399e2))
+* **db:** validate database column definitions ([4b30a3b](https://github.com/wolfymaster/woofx3/commit/4b30a3ba86c75e2f040f95c58971001a1ac0e33b))
+* **scene-manager:** widgets read database records ([7857849](https://github.com/wolfymaster/woofx3/commit/7857849dc603c01f488872952c683f192b576f11))
+* **woofx3:** database kind and record actions, manifest 0.45.0 ([b247137](https://github.com/wolfymaster/woofx3/commit/b247137273e99954888a202ccc5236d34f961855))
+* **woofx3:** record widget, manifest 0.46.0 ([68a990a](https://github.com/wolfymaster/woofx3/commit/68a990ae729db1a6c49801226961694ae2c9f81d))
+
+### Bug Fixes
+
+* **db:** declare okStatus once in the services package ([8f21008](https://github.com/wolfymaster/woofx3/commit/8f21008709bb43825ed96300ec343c230061de85))
+
+## [0.66.0](https://github.com/wolfymaster/woofx3/compare/v0.65.0...v0.66.0) (2026-11-05)
+
+### Features
+
+* **api:** moderation config and recent-actions RPC ([38fe459](https://github.com/wolfymaster/woofx3/commit/38fe459a4f8274de744c33a2a6a58aec992ebd1d))
+* **gateway:** chat.delete and moderation.warn/timeout/ban in the catalog ([7aec95e](https://github.com/wolfymaster/woofx3/commit/7aec95ea71630026e98192747c115e8768ccf27d))
+* **gateway:** refuse blank ids and multi-platform moderation targets ([1de8cf4](https://github.com/wolfymaster/woofx3/commit/1de8cf4bf2c8725ef64100341c06d28768ef19c2))
+* **moderation:** !permit built-in ([a4aab78](https://github.com/wolfymaster/woofx3/commit/a4aab788e152c7f117cad5fa34f779612dbff9f8))
+* **moderation:** caps, repetition, symbols and banned-phrase filters ([e30d4db](https://github.com/wolfymaster/woofx3/commit/e30d4dbbed25bc55e14019f99eca5debe733c77e))
+* **moderation:** config schema, parse and store ([3229c58](https://github.com/wolfymaster/woofx3/commit/3229c58f92b811d021832ed8f6fa2e4bdcde4bbc))
+* **moderation:** filter interface, registry and evaluator ([b2f85e7](https://github.com/wolfymaster/woofx3/commit/b2f85e7307ba58bec3406855f73c739b5843d4bc))
+* **moderation:** links filter and permit store ([43fae8b](https://github.com/wolfymaster/woofx3/commit/43fae8bf80cddab81627a89265177cc4f72aa49b))
+* **moderation:** ModerationService on the chat dispatcher ([cc72dc0](https://github.com/wolfymaster/woofx3/commit/cc72dc030b1587eb35e16ee55bae8a2caaf3c50e))
+* **moderation:** safe banned-phrase pattern grammar ([328f519](https://github.com/wolfymaster/woofx3/commit/328f51957bff9dcf2d8298bb123e0f74ad55c511))
+* **twitch:** egress for delete, warn, timeout and ban ([087b8d7](https://github.com/wolfymaster/woofx3/commit/087b8d768ddea5334d90a43a3c6dc23bf0213087))
+* **twitch:** request moderator:manage:warnings ([30d5256](https://github.com/wolfymaster/woofx3/commit/30d5256fbe0c30a9b589d0684a71442d77b1ac56))
+
+### Bug Fixes
+
+* **moderation:** refuse \B in banned-phrase patterns ([9f2c5aa](https://github.com/wolfymaster/woofx3/commit/9f2c5aa39df39a229cc6a890ec7d5690a17810b5))
+
+## [0.65.0](https://github.com/wolfymaster/woofx3/compare/v0.64.0...v0.65.0) (2026-11-05)
+
+### Features
+
+* **api:** workflow group methods and capability ([23a611f](https://github.com/wolfymaster/woofx3/commit/23a611fde6cc42cec5e2471f5acd5f409a667c8c))
+* **db:** manual toggles and merges respect held triggers ([d9edde5](https://github.com/wolfymaster/woofx3/commit/d9edde5150ccffa4b13cf219539ccb3dafb0a594))
+* **db:** workflow group proto and group_ids on workflows ([8b9fca5](https://github.com/wolfymaster/woofx3/commit/8b9fca508a831395b9781fd8a64a9eafb031ea72))
+* **db:** workflow group service ([c2c904f](https://github.com/wolfymaster/woofx3/commit/c2c904f4d568204b4ae6aeb059eefefcf79cfa5c))
+* **db:** workflow group tables and saved-state column ([c886a6f](https://github.com/wolfymaster/woofx3/commit/c886a6fc7d3c2c3a9ed8e5247629df75e4c6e450))
+
+## [0.64.0](https://github.com/wolfymaster/woofx3/compare/v0.63.2...v0.64.0) (2026-11-05)
+
+### Features
+
+* **connectors:** say whether a gifted sub is part of a community gift ([7206da1](https://github.com/wolfymaster/woofx3/commit/7206da11d19d37adb43bb26c57a3b0ded5cb5b79))
+* **woofx3:** add default alert animations to the image widget ([7a0697e](https://github.com/wolfymaster/woofx3/commit/7a0697e2093fd58fbc8b1b8d67798fadfc70d802))
+* **woofx3:** replace the default alert art with generic vector loops ([e6ed2d2](https://github.com/wolfymaster/woofx3/commit/e6ed2d2023c9d269cdfc8fd297d3e8699ed87de2))
+* **woofx3:** ship the default alert animations, manifest 0.45.0 ([95c3400](https://github.com/wolfymaster/woofx3/commit/95c34008a4fc7e0b30b49083ce5ae09cf0f1a501))
+* **woofx3:** ship the vector alert art, manifest 0.46.0 ([d93e3f5](https://github.com/wolfymaster/woofx3/commit/d93e3f5beb79c6d2b66b8c76b0801400d9a21182))
+
+## [0.63.2](https://github.com/wolfymaster/woofx3/compare/v0.63.1...v0.63.2) (2026-11-04)
+
+### Bug Fixes
+
+* **build:** default sceneManagerUrl in packaged releases ([d18e117](https://github.com/wolfymaster/woofx3/commit/d18e117aa59e79c064608c3075a6192785e1a997))
+
 ## [0.63.1](https://github.com/wolfymaster/woofx3/compare/v0.63.0...v0.63.1) (2026-11-04)
 
 ### Bug Fixes

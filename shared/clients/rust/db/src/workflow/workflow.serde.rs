@@ -3091,6 +3091,9 @@ impl serde::Serialize for Workflow {
         if self.revision != 0 {
             len += 1;
         }
+        if !self.group_ids.is_empty() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("workflow.Workflow", len)?;
         if !self.id.is_empty() {
             struct_ser.serialize_field("id", &self.id)?;
@@ -3146,6 +3149,9 @@ impl serde::Serialize for Workflow {
         if self.revision != 0 {
             struct_ser.serialize_field("revision", &self.revision)?;
         }
+        if !self.group_ids.is_empty() {
+            struct_ser.serialize_field("groupIds", &self.group_ids)?;
+        }
         struct_ser.end()
     }
 }
@@ -3185,6 +3191,8 @@ impl<'de> serde::Deserialize<'de> for Workflow {
             "manifestId",
             "taxonomy",
             "revision",
+            "group_ids",
+            "groupIds",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -3207,6 +3215,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
             ManifestId,
             Taxonomy,
             Revision,
+            GroupIds,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -3246,6 +3255,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                             "manifestId" | "manifest_id" => Ok(GeneratedField::ManifestId),
                             "taxonomy" => Ok(GeneratedField::Taxonomy),
                             "revision" => Ok(GeneratedField::Revision),
+                            "groupIds" | "group_ids" => Ok(GeneratedField::GroupIds),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -3283,6 +3293,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                 let mut manifest_id__ = None;
                 let mut taxonomy__ = None;
                 let mut revision__ = None;
+                let mut group_ids__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Id => {
@@ -3401,6 +3412,12 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                                 Some(map_.next_value::<::pbjson::private::NumberDeserialize<_>>()?.0)
                             ;
                         }
+                        GeneratedField::GroupIds => {
+                            if group_ids__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("groupIds"));
+                            }
+                            group_ids__ = Some(map_.next_value()?);
+                        }
                     }
                 }
                 Ok(Workflow {
@@ -3422,6 +3439,7 @@ impl<'de> serde::Deserialize<'de> for Workflow {
                     manifest_id: manifest_id__.unwrap_or_default(),
                     taxonomy: taxonomy__.unwrap_or_default(),
                     revision: revision__.unwrap_or_default(),
+                    group_ids: group_ids__.unwrap_or_default(),
                 })
             }
         }

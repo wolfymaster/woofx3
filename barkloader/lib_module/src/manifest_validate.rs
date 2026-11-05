@@ -33,6 +33,7 @@ use super::local_endpoint::LocalDiscover;
 use super::module_manifest::{
     COMPARISON_OPERATORS, CONFIG_FIELD_TYPES, DATA_SHAPE_DETAILS_MAX, DATA_SHAPE_FIELD_TYPES,
     DATA_SHAPE_IDENTITIES, DATA_SHAPE_IDENTITY_FIELD_TYPES, DATA_SHAPE_OPTION_FIELD_TYPES,
+    DATABASE_COLUMNS_SOURCE, DATABASE_RESOURCE_KIND, DATABASE_VALUES_FIELD_TYPE,
     DEADLINES_MAX_PENDING_CAP, HOST_EFFECT_KINDS, HOST_TRANSITION_KINDS, LIST_ITEM_FIELD_TYPES,
     ManifestAction, ManifestActionImpl, ManifestAsset, ManifestCommand, ManifestConfigField,
     ManifestDataShape, ManifestDataShapeField, ManifestFunction, ManifestResourceKind,
@@ -2142,6 +2143,7 @@ fn validate_field_list(fields: &[ManifestConfigField], context: &str) -> Result<
                 &format!("{context} field #{i} ({id}): `resourceKind`"),
             )?;
         }
+        validate_database_columns_source(field, fields, &format!("{context} field #{i} ({id})"))?;
         if field.field_type == "button" && field.action.is_none() {
             return Err(anyhow!(
                 "{context} field #{i} ({id}): `button` needs an `action`"
@@ -2220,6 +2222,61 @@ fn validate_operators(field: &ManifestConfigField, context: &str) -> Result<()> 
     }
 }
 
+/// A `databaseColumns` source lists the columns of the database a sibling
+/// `resource_ref` field chooses, so it names that sibling in `databaseField`.
+/// A `database_values` field is filled per column and needs the source to
+/// know them; only it and a `select` can show columns.
+///
+/// The sibling's `resourceKind` must be `database` or `woofx3:database`. A
+/// bare `database` in another module would name that module's own kind,
+/// which the db service refuses at run time as not a database.
+fn validate_database_columns_source(
+    field: &ManifestConfigField,
+    siblings: &[ManifestConfigField],
+    context: &str,
+) -> Result<()> {
+    let source = field.source.as_ref().filter(|s| {
+        s.get("kind").and_then(serde_json::Value::as_str) == Some(DATABASE_COLUMNS_SOURCE)
+    });
+    let Some(source) = source else {
+        if field.field_type == DATABASE_VALUES_FIELD_TYPE {
+            return Err(anyhow!(
+                "{context}: `{DATABASE_VALUES_FIELD_TYPE}` needs a `source` of kind {DATABASE_COLUMNS_SOURCE:?}"
+            ));
+        }
+        return Ok(());
+    };
+    if field.field_type != "select" && field.field_type != DATABASE_VALUES_FIELD_TYPE {
+        return Err(anyhow!(
+            "{context}: a {DATABASE_COLUMNS_SOURCE:?} source fits only a `select` or `{DATABASE_VALUES_FIELD_TYPE}` field"
+        ));
+    }
+    let Some(database_field) = source
+        .get("databaseField")
+        .and_then(serde_json::Value::as_str)
+    else {
+        return Err(anyhow!(
+            "{context}: a {DATABASE_COLUMNS_SOURCE:?} source needs `databaseField`, the field choosing the database"
+        ));
+    };
+    let Some(target) = siblings.iter().find(|s| s.id == database_field) else {
+        return Err(anyhow!(
+            "{context}: `databaseField` {database_field:?} is not a field of this list"
+        ));
+    };
+    let names_database = target.field_type == "resource_ref"
+        && target.resource_kind.as_deref().is_some_and(|kind| {
+            kind == DATABASE_RESOURCE_KIND
+                || kind == format!("{SYSTEM_MODULE_ID}:{DATABASE_RESOURCE_KIND}")
+        });
+    if !names_database {
+        return Err(anyhow!(
+            "{context}: `databaseField` {database_field:?} must be a `resource_ref` field of kind {DATABASE_RESOURCE_KIND:?}"
+        ));
+    }
+    Ok(())
+}
+
 /// A `list` field declares the fields of one row, and only a `list` does.
 fn validate_item_fields(field: &ManifestConfigField, context: &str) -> Result<()> {
     validate_list_rows(&field.field_type, field.item_fields.as_deref(), context)
@@ -2250,6 +2307,18 @@ fn validate_list_rows(
         if item.visible_when.is_some() {
             return Err(anyhow!(
                 "{context}: item field #{i} ({}) has `visibleWhen`, which a list row does not take",
+                item.id
+            ));
+        }
+        if item
+            .source
+            .as_ref()
+            .and_then(|s| s.get("kind"))
+            .and_then(serde_json::Value::as_str)
+            == Some(DATABASE_COLUMNS_SOURCE)
+        {
+            return Err(anyhow!(
+                "{context}: item field #{i} ({}) lists database columns; sources in a list row are not resolved",
                 item.id
             ));
         }
@@ -2402,6 +2471,11 @@ fn validate_settings(settings: &[ManifestSetting]) -> Result<()> {
         } else {
             validate_field_type(&setting.setting_type, &format!("setting #{i} ({id})"))?;
             reject_theme_field(&setting.setting_type, &format!("setting #{i} ({id})"))?;
+            if setting.setting_type == DATABASE_VALUES_FIELD_TYPE {
+                return Err(anyhow!(
+                    "setting #{i} ({id}): `{DATABASE_VALUES_FIELD_TYPE}` is an action parameter; a module setting has no database to fill"
+                ));
+            }
         }
         validate_list_setting(setting, &format!("setting #{i} ({id})"))?;
         if setting.setting_type == "button" && setting.action.is_null() {
@@ -3893,6 +3967,99 @@ mod tests {
             .expect_err("the system module's rows are resolved the same way")
             .to_string();
         assert!(err.contains("only supported on top-level fields"), "{err}");
+    }
+
+    fn action_with_database_fields(fields: &str) -> ModuleManifest {
+        parse(&format!(
+            r#"{{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "functions": [{{ "id": "f", "name": "F", "runtime": "js", "path": "f.js" }}],
+            "actions": [{{ "id": "a", "name": "A", "type": "function", "function": "f",
+                "schema": [{fields}] }}]}}"#
+        ))
+    }
+
+    const DATABASE_TARGET: &str = r#"{ "id": "target", "label": "Database", "type": "resource_ref", "resourceKind": "woofx3:database" }"#;
+
+    #[test]
+    fn accepts_database_values_and_a_column_select_beside_a_database_picker() {
+        let fields = format!(
+            r#"{DATABASE_TARGET},
+            {{ "id": "values", "label": "Values", "type": "database_values",
+                "source": {{ "kind": "databaseColumns", "databaseField": "target" }} }},
+            {{ "id": "column", "label": "Column", "type": "select",
+                "source": {{ "kind": "databaseColumns", "databaseField": "target" }} }}"#
+        );
+        validate(&action_with_database_fields(&fields))
+            .expect("both fields read the sibling database");
+    }
+
+    #[test]
+    fn rejects_database_columns_without_a_database_sibling() {
+        let cases = [
+            (
+                r#"{ "id": "values", "label": "Values", "type": "database_values" }"#.to_string(),
+                "needs a `source` of kind \"databaseColumns\"",
+            ),
+            (
+                r#"{ "id": "values", "label": "Values", "type": "database_values",
+                    "source": { "kind": "databaseColumns" } }"#
+                    .to_string(),
+                "needs `databaseField`",
+            ),
+            (
+                r#"{ "id": "values", "label": "Values", "type": "database_values",
+                    "source": { "kind": "databaseColumns", "databaseField": "missing" } }"#
+                    .to_string(),
+                "is not a field of this list",
+            ),
+            (
+                r#"{ "id": "queue", "label": "Queue", "type": "resource_ref", "resourceKind": "queue" },
+                { "id": "values", "label": "Values", "type": "database_values",
+                    "source": { "kind": "databaseColumns", "databaseField": "queue" } }"#
+                    .to_string(),
+                "must be a `resource_ref` field of kind \"database\"",
+            ),
+            (
+                format!(
+                    r#"{DATABASE_TARGET}, {{ "id": "n", "label": "N", "type": "number",
+                    "source": {{ "kind": "databaseColumns", "databaseField": "target" }} }}"#
+                ),
+                "fits only a `select` or `database_values` field",
+            ),
+        ];
+        for (fields, problem) in cases {
+            let err = validate(&action_with_database_fields(&fields))
+                .expect_err("a database column field needs its database")
+                .to_string();
+            assert!(err.contains(problem), "{problem}: {err}");
+        }
+    }
+
+    #[test]
+    fn rejects_database_columns_inside_a_list_row() {
+        let m = action_with_list_row(
+            r#"{ "id": "column", "label": "Column", "type": "select",
+                "source": { "kind": "databaseColumns", "databaseField": "target" } }"#,
+        );
+        let err = validate(&m)
+            .expect_err("a row source is not resolved")
+            .to_string();
+        assert!(
+            err.contains("sources in a list row are not resolved"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn rejects_a_database_values_module_setting() {
+        let m = parse(
+            r#"{"id": "mod", "name": "Mod", "version": "1.0.0",
+            "settings": [{ "id": "values", "label": "Values", "type": "database_values" }]}"#,
+        );
+        let err = validate(&m)
+            .expect_err("a module setting has no database")
+            .to_string();
+        assert!(err.contains("is an action parameter"), "{err}");
     }
 
     #[test]

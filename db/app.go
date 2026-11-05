@@ -212,6 +212,17 @@ func (a *DatabaseApp) Init(ctx context.Context) error {
 			a.logger.Info("Linked commands to workflows", "linked", linked, "failed", failed)
 		}
 
+		// Before merging, which leaves held workflows apart and so relies on
+		// every saved state being right.
+		repaired, err := svc.RepairHeldWorkflows(a.db, a.eventPublisher, a.logger)
+		if err != nil {
+			a.logger.Error("Failed to check the saved states of grouped workflows", "error", err)
+			return err
+		}
+		if repaired > 0 {
+			a.logger.Info("Repaired the saved states of grouped workflows", "count", repaired)
+		}
+
 		merged, unmerged := svc.MergeOwnWorkflows(
 			repository.NewWorkflowRepository(a.db, database.RandomIDs{}),
 			a.db,

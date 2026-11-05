@@ -149,10 +149,11 @@ export class TwitchAdapter implements Adapter {
       return { kind: "unavailable", reason: "stopped" };
     }
     const twitchApi = run.ctx.twitchApi;
-    if (twitchApi === undefined) {
+    const broadcaster = run.ctx.broadcaster;
+    if (twitchApi === undefined || broadcaster === undefined) {
       return { kind: "unavailable", reason: "starting" };
     }
-    return { kind: "ready", helix: (args, call) => twitchApi.helix(args, call) };
+    return { kind: "ready", broadcasterId: broadcaster.id, helix: (args, call) => twitchApi.helix(args, call) };
   }
 
   private async handle(request: Uint8Array, ctx: ServedRequestContext): Promise<Uint8Array> {

@@ -3,6 +3,7 @@ import * as clientPb from "@woofx3/db/client.pb";
 import * as command from "@woofx3/db/command.pb";
 import type * as common from "@woofx3/db/common.pb";
 import { MigrationStatus, Ping } from "@woofx3/db/common.pb";
+import * as database_record from "@woofx3/db/database_record.pb";
 import * as group from "@woofx3/db/group.pb";
 import * as local_ui_setting from "@woofx3/db/local_ui_setting.pb";
 import * as module from "@woofx3/db/module.pb";
@@ -27,6 +28,7 @@ import * as user_page_submission from "@woofx3/db/user_page_submission.pb";
 import * as viewer_fact from "@woofx3/db/viewer_fact.pb";
 import * as widget_status from "@woofx3/db/widget_status.pb";
 import * as workflow from "@woofx3/db/workflow.pb";
+import * as workflow_group from "@woofx3/db/workflow_group.pb";
 
 /**
  * A failure from db-proxy, carrying the reason as data.
@@ -280,6 +282,47 @@ export class DbClient {
   async listGroupMembers(req: group.ListGroupMembersRequest): Promise<string[]> {
     const response = await group.ListGroupMembers(req, this.config);
     return unwrap("listGroupMembers", response, response.usernames ?? []);
+  }
+
+  async listWorkflowGroups(): Promise<workflow_group.WorkflowGroup[]> {
+    const response = await workflow_group.ListWorkflowGroups({}, this.config);
+    unwrapVoid("listWorkflowGroups", response);
+    return response.groups ?? [];
+  }
+
+  async createWorkflowGroup(req: workflow_group.CreateWorkflowGroupRequest): Promise<workflow_group.WorkflowGroup> {
+    const response = await workflow_group.CreateWorkflowGroup(req, this.config);
+    return unwrap("createWorkflowGroup", response, response.group);
+  }
+
+  async updateWorkflowGroup(req: workflow_group.UpdateWorkflowGroupRequest): Promise<workflow_group.WorkflowGroup> {
+    const response = await workflow_group.UpdateWorkflowGroup(req, this.config);
+    return unwrap("updateWorkflowGroup", response, response.group);
+  }
+
+  async deleteWorkflowGroup(req: workflow_group.DeleteWorkflowGroupRequest): Promise<void> {
+    unwrapVoid("deleteWorkflowGroup", await workflow_group.DeleteWorkflowGroup(req, this.config));
+  }
+
+  async setWorkflowGroupEnabled(
+    req: workflow_group.SetWorkflowGroupEnabledRequest
+  ): Promise<workflow_group.WorkflowGroup> {
+    const response = await workflow_group.SetWorkflowGroupEnabled(req, this.config);
+    return unwrap("setWorkflowGroupEnabled", response, response.group);
+  }
+
+  async addWorkflowGroupMembers(
+    req: workflow_group.AddWorkflowGroupMembersRequest
+  ): Promise<workflow_group.WorkflowGroup> {
+    const response = await workflow_group.AddWorkflowGroupMembers(req, this.config);
+    return unwrap("addWorkflowGroupMembers", response, response.group);
+  }
+
+  async removeWorkflowGroupMembers(
+    req: workflow_group.RemoveWorkflowGroupMembersRequest
+  ): Promise<workflow_group.WorkflowGroup> {
+    const response = await workflow_group.RemoveWorkflowGroupMembers(req, this.config);
+    return unwrap("removeWorkflowGroupMembers", response, response.group);
   }
 
   async listUserGroupsForUser(req: group.ListUserGroupsForUserRequest): Promise<group.Group[]> {
@@ -658,6 +701,55 @@ export class DbClient {
     const response = await user_page_submission.RecordUserPageSubmission(req, this.config);
     unwrapVoid("recordUserPageSubmission", response);
     return response.created;
+  }
+
+  // Database records. Values are refused with `invalid_argument`, naming the
+  // column; a stale `expectedRevision` is refused with `aborted`.
+
+  async createDatabaseRecord(
+    req: database_record.CreateDatabaseRecordRequest
+  ): Promise<database_record.CreateDatabaseRecordResponse> {
+    const response = await database_record.CreateDatabaseRecord(req, this.config);
+    unwrapVoid("createDatabaseRecord", response);
+    return response;
+  }
+
+  async updateDatabaseRecord(
+    req: database_record.UpdateDatabaseRecordRequest
+  ): Promise<database_record.UpdateDatabaseRecordResponse> {
+    const response = await database_record.UpdateDatabaseRecord(req, this.config);
+    unwrapVoid("updateDatabaseRecord", response);
+    return response;
+  }
+
+  /** Whether a row was deleted: false when the database held no row with that id. */
+  async deleteDatabaseRecord(databaseId: string, recordId: string): Promise<boolean> {
+    const response = await database_record.DeleteDatabaseRecord({ databaseId, recordId }, this.config);
+    unwrapVoid("deleteDatabaseRecord", response);
+    return response.deleted;
+  }
+
+  /** The row, or null when the database holds no row with that id. */
+  async getDatabaseRecord(databaseId: string, recordId: string): Promise<database_record.DatabaseRecord | null> {
+    const response = await database_record.GetDatabaseRecord({ databaseId, recordId }, this.config);
+    unwrapVoid("getDatabaseRecord", response);
+    return response.found ? (response.record ?? null) : null;
+  }
+
+  async listDatabaseRecords(
+    req: database_record.ListDatabaseRecordsRequest
+  ): Promise<database_record.ListDatabaseRecordsResponse> {
+    const response = await database_record.ListDatabaseRecords(req, this.config);
+    unwrapVoid("listDatabaseRecords", response);
+    return response;
+  }
+
+  async listPublicDatabaseRecords(
+    req: database_record.ListPublicDatabaseRecordsRequest
+  ): Promise<database_record.ListPublicDatabaseRecordsResponse> {
+    const response = await database_record.ListPublicDatabaseRecords(req, this.config);
+    unwrapVoid("listPublicDatabaseRecords", response);
+    return response;
   }
 
   /**

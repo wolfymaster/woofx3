@@ -109,7 +109,7 @@ export class GatewayReplier implements ChatReplier {
       });
       return false;
     }
-    const reply = readReply(raw.data);
+    const reply = readGatewayReply(raw.data);
     if (!reply.ok) {
       this.deps.logger.error("the platform gateway answered a command reply with something unreadable", {
         command: commandName,
@@ -133,9 +133,10 @@ export class GatewayReplier implements ChatReplier {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-type ReadReply = { ok: true; value: GatewayReply } | { ok: false; problem: string };
+export type ReadReply = { ok: true; value: GatewayReply } | { ok: false; problem: string };
 
-function readReply(data: Uint8Array): ReadReply {
+/** A platform.gateway.send reply as it arrives: a CloudEvent whose data is a GatewayReply. */
+export function readGatewayReply(data: Uint8Array): ReadReply {
   let envelope: unknown;
   try {
     envelope = JSON.parse(decoder.decode(data));

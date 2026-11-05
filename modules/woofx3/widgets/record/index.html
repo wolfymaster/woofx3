@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <title>record</title>
+  <style>
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+    }
+
+    #box {
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+      padding: 8px;
+    }
+
+    #text {
+      width: 100%;
+      color: #ffffff;
+      font-family: Roboto, system-ui, sans-serif;
+      font-size: 48px;
+      text-align: center;
+      font-weight: bold;
+      line-height: 1.2;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+    }
+  </style>
+</head>
+
+<body>
+  <div id="box">
+    <div id="text"></div>
+  </div>
+
+  <script>
+    (function () {
+      const host = window.widgetHost;
+      if (!host) {
+        return;
+      }
+      const el = document.getElementById("text");
+
+      // The key followed, how to stop following it, and the last row read
+      // from it. Nothing shows until the first reading arrives.
+      let following = null;
+      let stopFollowing = null;
+      let row = null;
+
+      function draw() {
+        const column = str(host.settings.column, "");
+        const value = row !== null && row.values && column !== "" ? row.values[column] : undefined;
+        // A url column shows the link's text, like any other value.
+        el.textContent = value === undefined || value === null ? "" : String(value);
+      }
+
+      // The row the settings name: the newest one, or one by its id.
+      function keyOf() {
+        const database = str(host.settings.database, "");
+        if (database === "") {
+          return "";
+        }
+        if (host.settings.which === "record") {
+          const record = str(host.settings.record, "").trim();
+          return record === "" ? "" : "record:" + database + ":" + record;
+        }
+        return "records:" + database;
+      }
+
+      function follow() {
+        const key = keyOf();
+        if (key === following) {
+          draw();
+          return;
+        }
+        if (stopFollowing !== null) {
+          stopFollowing();
+          stopFollowing = null;
+        }
+        following = key;
+        row = null;
+        el.textContent = "";
+        if (key === "") {
+          return;
+        }
+        stopFollowing = host.storage.subscribe(key, (next) => {
+          if (Array.isArray(next)) {
+            row = next.length > 0 ? next[0] : null;
+          } else {
+            row = next !== null && typeof next === "object" ? next : null;
+          }
+          draw();
+        });
+      }
+
+      // On a scene, an edit to the settings redraws in place rather than
+      // reloading the widget. A host without the call reloads it.
+      if (host.surface !== "alert" && typeof host.onSettingsChange === "function") {
+        host.onSettingsChange(follow);
+      }
+      follow();
+    })();
+
+    function str(value, fallback) {
+      return typeof value === "string" && value.trim() !== "" ? value : fallback;
+    }
+  </script>
+</body>
+
+</html>

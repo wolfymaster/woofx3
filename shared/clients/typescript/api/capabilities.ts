@@ -38,6 +38,28 @@ export const ENGINE_CAPABILITIES = {
    * there instead of on its callback URL.
    */
   callbacksEventsTarget: "callbacks.eventsTarget",
+  /**
+   * Databases (./databases.ts): the `database` resource kind, the
+   * `listDatabaseRecords`, `getDatabaseRecord`, `createDatabaseRecord`,
+   * `updateDatabaseRecord`, `deleteDatabaseRecord` and
+   * `listPublicDatabaseRecords` methods, the `database.record.changed`
+   * event, and the `database.insert`, `database.update` and `database.get`
+   * workflow actions.
+   */
+  databases: "databases.records",
+  /**
+   * Chat moderation (./moderation-config.ts): `getModerationConfig`,
+   * `setModerationConfig` and `listModerationActions`, and a connectors host
+   * that runs the config on chat.
+   */
+  moderationConfig: "moderation.config",
+  /**
+   * Workflow groups (alert groups): `listWorkflowGroups`, `createWorkflowGroup`,
+   * `updateWorkflowGroup`, `deleteWorkflowGroup`, `setWorkflowGroupEnabled`,
+   * `addWorkflowGroupMembers`, `removeWorkflowGroupMembers`, the
+   * `workflow_group.*` events, and `groupIds` on workflows.
+   */
+  workflowsGroups: "workflows.groups",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];

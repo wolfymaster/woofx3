@@ -12,8 +12,16 @@
 // shared/common/golang/cloudevents/subjects.go — keep them in sync when
 // adding or renaming event types.
 
-import type { RelayConfig, StreamSession, StreamSessionTotals, UISettingValue, WorkflowHealth } from "./api";
+import type {
+  RelayConfig,
+  StreamSession,
+  StreamSessionTotals,
+  UISettingValue,
+  WorkflowGroup,
+  WorkflowHealth,
+} from "./api";
 import type { CommandSnapshot } from "./command";
+import type { DatabaseRecordChange } from "./databases";
 /**
  * Canonical event-type strings for every engine callback. Prefer
  * `EngineEventType.MODULE_INSTALLED` over the raw string in application
@@ -41,6 +49,7 @@ export const EngineEventType = {
   MODULE_RESOURCE_INSTANCE_UPDATED: "module.resource.instance.updated",
   MODULE_RESOURCE_INSTANCE_DELETED: "module.resource.instance.deleted",
   MODULE_STORAGE_CHANGED: "module.storage.changed",
+  DATABASE_RECORD_CHANGED: "database.record.changed",
   ENGINE_RESPONSE_RECEIVED: "engine.response.received",
   WORKFLOW_CREATED: "workflow.created",
   WORKFLOW_UPDATED: "workflow.updated",
@@ -83,6 +92,9 @@ export const EngineEventType = {
   GROUP_DELETED: "group.deleted",
   GROUP_MEMBER_ADDED: "group.member_added",
   GROUP_MEMBER_REMOVED: "group.member_removed",
+  WORKFLOW_GROUP_CREATED: "workflow_group.created",
+  WORKFLOW_GROUP_UPDATED: "workflow_group.updated",
+  WORKFLOW_GROUP_DELETED: "workflow_group.deleted",
   UI_SETTING_CHANGED: "ui.setting.changed",
   TWITCH_LINK_CHANGED: "twitch.link.changed",
   CLIENT_PAIRING_STARTED: "client.pairing.started",
@@ -663,6 +675,14 @@ export interface ModuleStorageChangedEvent {
 }
 
 /**
+ * Fired when a row of a database is created, updated or deleted. Carries only
+ * the columns public at the time; see `DatabaseRecordChange`.
+ */
+export interface DatabaseRecordChangedEvent extends DatabaseRecordChange {
+  type: typeof EngineEventType.DATABASE_RECORD_CHANGED;
+}
+
+/**
  * Generic reply envelope: the engine forwards a response to a request it
  * dispatched on behalf of a Convex action. Carried through to the UI via
  * the transientEvents row keyed on `correlationKey`.
@@ -791,6 +811,12 @@ export interface WorkflowSnapshot {
   projectionKey?: string;
   /** See TriggerDefinition.taxonomy. Set at creation time only. */
   taxonomy: string[];
+  /**
+   * The workflow groups (alert groups) the workflow belongs to. Absent from
+   * an engine without `workflows.groups`, and from a callback that does not
+   * know them; a mirror then keeps what it has.
+   */
+  groupIds?: string[];
 }
 
 export interface WorkflowCreatedEvent {
@@ -957,6 +983,33 @@ export interface GroupMemberRemovedEvent {
   correlationKey?: string;
   groupId: string;
   username: string;
+}
+
+// ---------------------------------------------------------------------------
+// Workflow group (alert group) events
+// ---------------------------------------------------------------------------
+
+/**
+ * Fired when a workflow group is created, renamed, switched, or gains or loses
+ * members, and when it is deleted. The members' own switches arrive as their
+ * `workflow.updated` events.
+ */
+export interface WorkflowGroupCreatedEvent {
+  type: typeof EngineEventType.WORKFLOW_GROUP_CREATED;
+  correlationKey?: string;
+  group: WorkflowGroup;
+}
+
+export interface WorkflowGroupUpdatedEvent {
+  type: typeof EngineEventType.WORKFLOW_GROUP_UPDATED;
+  correlationKey?: string;
+  group: WorkflowGroup;
+}
+
+export interface WorkflowGroupDeletedEvent {
+  type: typeof EngineEventType.WORKFLOW_GROUP_DELETED;
+  correlationKey?: string;
+  groupId: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1537,6 +1590,7 @@ export type CallbackEvent =
   | ModuleResourceInstanceUpdatedEvent
   | ModuleResourceInstanceDeletedEvent
   | ModuleStorageChangedEvent
+  | DatabaseRecordChangedEvent
   | ModuleInstalledEvent
   | ModuleInstallFailedEvent
   | ModuleDeletedEvent
@@ -1544,6 +1598,9 @@ export type CallbackEvent =
   | EngineResponseReceivedEvent
   | WorkflowCreatedEvent
   | WorkflowUpdatedEvent
+  | WorkflowGroupCreatedEvent
+  | WorkflowGroupUpdatedEvent
+  | WorkflowGroupDeletedEvent
   | WorkflowDeletedEvent
   | WorkflowRunStartedEvent
   | WorkflowRunCompletedEvent
@@ -1602,6 +1659,7 @@ export type CallbackEventByType = {
   [EngineEventType.MODULE_RESOURCE_INSTANCE_UPDATED]: ModuleResourceInstanceUpdatedEvent;
   [EngineEventType.MODULE_RESOURCE_INSTANCE_DELETED]: ModuleResourceInstanceDeletedEvent;
   [EngineEventType.MODULE_STORAGE_CHANGED]: ModuleStorageChangedEvent;
+  [EngineEventType.DATABASE_RECORD_CHANGED]: DatabaseRecordChangedEvent;
   [EngineEventType.MODULE_INSTALLED]: ModuleInstalledEvent;
   [EngineEventType.MODULE_INSTALL_FAILED]: ModuleInstallFailedEvent;
   [EngineEventType.MODULE_DELETED]: ModuleDeletedEvent;
@@ -1644,6 +1702,9 @@ export type CallbackEventByType = {
   [EngineEventType.GROUP_DELETED]: GroupDeletedEvent;
   [EngineEventType.GROUP_MEMBER_ADDED]: GroupMemberAddedEvent;
   [EngineEventType.GROUP_MEMBER_REMOVED]: GroupMemberRemovedEvent;
+  [EngineEventType.WORKFLOW_GROUP_CREATED]: WorkflowGroupCreatedEvent;
+  [EngineEventType.WORKFLOW_GROUP_UPDATED]: WorkflowGroupUpdatedEvent;
+  [EngineEventType.WORKFLOW_GROUP_DELETED]: WorkflowGroupDeletedEvent;
   [EngineEventType.UI_SETTING_CHANGED]: UISettingChangedEvent;
   [EngineEventType.TWITCH_LINK_CHANGED]: TwitchLinkChangedEvent;
   [EngineEventType.CLIENT_PAIRING_STARTED]: ClientPairingStartedEvent;

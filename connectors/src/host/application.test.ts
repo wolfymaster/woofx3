@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/integration-settings";
-import { connectorsConfig } from "../config";
 import { ListCommandsResponse } from "@woofx3/db/command.pb";
+import { SettingResponse } from "@woofx3/db/setting.pb";
+import { connectorsConfig } from "../config";
 import ConnectorsApplication, { type ConnectorsContext, type ConnectorsServices } from "./application";
 import {
   countingIds,
@@ -36,15 +37,20 @@ function setup() {
   });
   // The host reaches the bus only through the BusClient half of the service's client.
   const messageBus = { client: bus, isUp: () => true } as unknown as ConnectorsServices["messageBus"];
-  // Answers the one db-proxy call a start makes before the settings watcher: the chat dispatcher's first listing.
+  // Answers the db-proxy calls a start makes before the settings watcher: the
+  // moderation config read (no setting stored) and the chat dispatcher's first listing.
   const dbProxy = {
     client: {
       baseURL: config.dbProxyUrl,
       rpcTransport: async (url: string) => {
-        if (!url.endsWith("/ListCommands")) {
+        let body: Uint8Array;
+        if (url.endsWith("/GetSetting")) {
+          body = SettingResponse.encode({ status: { code: "OK", message: "" } });
+        } else if (url.endsWith("/ListCommands")) {
+          body = ListCommandsResponse.encode({ status: { code: "OK", message: "" }, commands: [] });
+        } else {
           throw new Error(`unexpected db-proxy call ${url}`);
         }
-        const body = ListCommandsResponse.encode({ status: { code: "OK", message: "" }, commands: [] });
         // fetch's types take only ArrayBuffer-backed views.
         return new Response(new Uint8Array(body));
       },

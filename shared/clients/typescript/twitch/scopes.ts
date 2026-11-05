@@ -31,6 +31,7 @@ export const TWITCH_ENGINE_SCOPES: readonly string[] = [
   "moderator:manage:banned_users",
   "moderator:manage:chat_messages",
   "moderator:manage:chat_settings",
+  "moderator:manage:warnings",
   "moderator:read:chatters",
   "moderator:read:chat_messages",
   "moderator:read:chat_settings",

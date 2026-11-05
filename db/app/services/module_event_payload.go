@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 )
 
@@ -339,9 +340,12 @@ func buildAssetDeregisteredData(modulePrefix, moduleKey string, assets []*models
 // MODULE-owned rows so user-authored workflows project as themselves
 // (no synthetic key).
 //
+// groupIDs are the workflow groups the row belongs to; nil sends an empty list.
+//
 // The deleted event is built inline (it carries only id + projectionKey,
 // not the full row) — see workflow_service.DeleteWorkflow.
-func buildWorkflowChangeData(wf *models.WorkflowDefinition) map[string]any {
+func buildWorkflowChangeData(wf *models.WorkflowDefinition, groupIDs []uuid.UUID) map[string]any {
+	// stylegate:ignore GO-ABS-002 reason="existing payload builder shared by many callers and tests; converting it to a struct is a separate change"
 	row := map[string]any{
 		"id":              wf.ID.String(),
 		"name":            wf.Name,
@@ -353,6 +357,7 @@ func buildWorkflowChangeData(wf *models.WorkflowDefinition) map[string]any {
 		"created_by_ref":  wf.CreatedByRef,
 		"manifest_id":     wf.ManifestID,
 		"taxonomy":        parseTaxonomy(wf.Taxonomy),
+		"group_ids":       uuidStrings(groupIDs),
 		"created_at":      wf.CreatedAt.UTC().Format(time.RFC3339Nano),
 		"updated_at":      wf.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}

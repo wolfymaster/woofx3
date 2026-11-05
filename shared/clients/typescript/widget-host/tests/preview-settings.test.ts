@@ -26,6 +26,7 @@ describe("controlKind", () => {
     ["resource_ref", "json"],
     ["layout", "json"],
     ["list", "json"],
+    ["database_values", "json"],
     ["button", null],
     ["theme", null],
   ] as Array<[ConfigFieldType, ControlKind | null]>)("edits a %s field with %p", (type, kind) => {

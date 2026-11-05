@@ -2738,7 +2738,7 @@ func (s *groupServiceServer) serveListUserGroupsForUserProtobuf(ctx context.Cont
 }
 
 func (s *groupServiceServer) ServiceDescriptor() ([]byte, int) {
-	return twirpFileDescriptor4, 0
+	return twirpFileDescriptor5, 0
 }
 
 func (s *groupServiceServer) ProtocGenTwirpVersion() string {
@@ -2752,7 +2752,7 @@ func (s *groupServiceServer) PathPrefix() string {
 	return baseServicePath(s.pathPrefix, "group", "GroupService")
 }
 
-var twirpFileDescriptor4 = []byte{
+var twirpFileDescriptor5 = []byte{
 	// 652 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x55, 0x6f, 0x4f, 0xd4, 0x4e,
 	0x10, 0x4e, 0x7b, 0x7f, 0x7e, 0x77, 0x53, 0x7e, 0x88, 0xab, 0x62, 0x69, 0x10, 0xce, 0x4a, 0xe2,

@@ -324,6 +324,31 @@ Returns:
 | `placementId` | `string` | The placement changed |
 | `visible` | `boolean` | Whether it is now shown |
 
+#### `database.insert`, `database.update`, `database.get`
+
+Read and write the rows of a database (the bundled `database` resource kind). The db proxy owns the rows and checks every value against the database's columns, so the steps send each value as text and the db proxy converts it to its column's type: `"12"` to a number, `"true"`/`"false"` to a boolean, `YYYY-MM-DD` or an RFC 3339 time (as its UTC date) to a date, and an `http(s)` link to a url. A value that does not fit fails the step with the column named; the value itself is never quoted, since it may be a viewer's text.
+
+```json
+{
+  "id": "save-answers",
+  "type": "action",
+  "action": "database.insert",
+  "parameters": {
+    "target": "woofx3:database:games",
+    "values": { "game": "${trigger.data.answers.game}", "viewer": "${trigger.data.viewer.displayName}" },
+    "key": "${trigger.data.submissionId}"
+  }
+}
+```
+
+| Action | Parameters | Returns |
+|--------|------------|---------|
+| `database.insert` | `target` (database id), `values` (column id to text), `key` (optional idempotency key) | `target`, `recordId`, `inserted`, `reason`: `duplicate` when a row was already added with `key` (its id is returned), `full` when the database holds its 10,000 rows |
+| `database.update` | `target`, `record` (row id), `values` | `target`, `recordId`, `updated`, `reason`: `missing` when there is no such row. Only the columns given change; an empty value clears one |
+| `database.get` | `target`, `matchColumn` (optional column id), `match` | `target`, `found`, `recordId`, `createdAt`, `values` (by column id, so `${steps.<id>.values.game}`). Without `matchColumn`, `match` is a row id; with it, the oldest row holding `match` in that column |
+
+A dry run checks the parameters and writes nothing; whether the values fit the columns is only known when the step runs.
+
 #### `publish_event`
 
 Publishes an event to the NATS message bus.
@@ -359,7 +384,7 @@ The event type is the subject the event goes out on, so a workflow could otherwi
 Reserved names, defined in `shared/common/contracts/reserved-subjects.json`. An entry ending in `.` reserves that whole namespace; any other entry reserves exactly that name.
 
 - **Commands** (also refused as events declared by an uploaded module): `webhook.`, `db.`, `engine.`, `twitchapi`, `message.send` (retired: nothing publishes or consumes it any more, and the name stays reserved), `ui.notify.`, `ui.alert.`, `platform.gateway.`, `widget.queue.`, `workflow.execute`, `workflow.replay`, `workflow.cancel`, `workflow.command.execute`, `action.execute`.
-- **Engine events**: `HEARTBEAT`, `MESSAGEBUS_INIT`, `barkloader.`, `channel.`, `channelpoints.`, `chat.command.`, `command.`, `module.`, `session.`, `setting.`, `stream.offline`, `stream.online`, `user.message`, `userpage.`, `viewer.`, `widget.event`, `workflow.health.`, `workflow.run.`.
+- **Engine events**: `HEARTBEAT`, `MESSAGEBUS_INIT`, `barkloader.`, `channel.`, `channelpoints.`, `chat.command.`, `command.`, `database.`, `module.`, `session.`, `setting.`, `stream.offline`, `stream.online`, `user.message`, `userpage.`, `viewer.`, `widget.event`, `workflow.health.`, `workflow.run.`.
 
 Pick an event name of the workflow's own, such as `badge.awarded`. To test a workflow against a platform event (`channel.*`, `stream.online`, ...), fire it with the api's `simulateTwitchEvent` rather than publishing it.
 

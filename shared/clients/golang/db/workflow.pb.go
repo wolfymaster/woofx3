@@ -57,7 +57,10 @@ type Workflow struct {
 	Taxonomy []string `protobuf:"bytes,20,rep,name=taxonomy,proto3" json:"taxonomy,omitempty"`
 	// Counts changes to the steps and trigger. A caller saving an edit sends
 	// the revision it read as `UpdateWorkflowRequest.expected_revision`.
-	Revision      int32 `protobuf:"varint,21,opt,name=revision,proto3" json:"revision,omitempty"`
+	Revision int32 `protobuf:"varint,21,opt,name=revision,proto3" json:"revision,omitempty"`
+	// The workflow groups (alert groups) the workflow belongs to, ordered by
+	// id. See workflow_group.proto.
+	GroupIds      []string `protobuf:"bytes,22,rep,name=group_ids,json=groupIds,proto3" json:"group_ids,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -216,6 +219,13 @@ func (x *Workflow) GetRevision() int32 {
 		return x.Revision
 	}
 	return 0
+}
+
+func (x *Workflow) GetGroupIds() []string {
+	if x != nil {
+		return x.GroupIds
+	}
+	return nil
 }
 
 // Workflow execution
@@ -1930,7 +1940,7 @@ var File_workflow_proto protoreflect.FileDescriptor
 
 const file_workflow_proto_rawDesc = "" +
 	"\n" +
-	"\x0eworkflow.proto\x12\bworkflow\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x85\x06\n" +
+	"\x0eworkflow.proto\x12\bworkflow\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa2\x06\n" +
 	"\bWorkflow\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
@@ -1957,7 +1967,8 @@ const file_workflow_proto_rawDesc = "" +
 	"\vmanifest_id\x18\x13 \x01(\tR\n" +
 	"manifestId\x12\x1a\n" +
 	"\btaxonomy\x18\x14 \x03(\tR\btaxonomy\x12\x1a\n" +
-	"\brevision\x18\x15 \x01(\x05R\brevision\x1a<\n" +
+	"\brevision\x18\x15 \x01(\x05R\brevision\x12\x1b\n" +
+	"\tgroup_ids\x18\x16 \x03(\tR\bgroupIds\x1a<\n" +
 	"\x0eVariablesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\a\x10\bR\x0eapplication_idR\n" +

@@ -44,6 +44,7 @@ interface RawWorkflowRow {
   created_at?: unknown;
   UpdatedAt?: unknown;
   updated_at?: unknown;
+  group_ids?: unknown;
 }
 
 // Taxonomy arrives either as a real array (the snake_case map built by
@@ -118,6 +119,10 @@ function buildSnapshot(ce: Record<string, unknown>): WorkflowSnapshot | null {
   }
   if (typeof row.revision === "number") {
     snapshot.revision = row.revision;
+  }
+  // Absent from a db-proxy without workflow groups; the mirror then keeps what it has.
+  if (Array.isArray(row.group_ids)) {
+    snapshot.groupIds = row.group_ids.filter((x): x is string => typeof x === "string");
   }
   return snapshot;
 }

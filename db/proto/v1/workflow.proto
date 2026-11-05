@@ -92,6 +92,9 @@ message Workflow {
     // Counts changes to the steps and trigger. A caller saving an edit sends
     // the revision it read as `UpdateWorkflowRequest.expected_revision`.
     int32 revision = 21;
+    // The workflow groups (alert groups) the workflow belongs to, ordered by
+    // id. See workflow_group.proto.
+    repeated string group_ids = 22;
 }
 
 // Workflow execution

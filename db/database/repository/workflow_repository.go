@@ -91,17 +91,6 @@ func (r *WorkflowRepository) Update(wf *models.WorkflowDefinition) error {
 	return r.db.Save(wf).Error
 }
 
-// UpdateAtRevision updates a WorkflowDefinition still at baseRevision, or
-// returns models.ErrWorkflowRevisionStale.
-func (r *WorkflowRepository) UpdateAtRevision(wf *models.WorkflowDefinition, baseRevision int32) error {
-	return wf.UpdateAtRevision(r.db, baseRevision)
-}
-
-// Delete deletes a WorkflowDefinition
-func (r *WorkflowRepository) Delete(wf *models.WorkflowDefinition) error {
-	return r.db.Delete(wf).Error
-}
-
 // GetByID retrieves a WorkflowDefinition by ID
 func (r *WorkflowRepository) GetByID(id uuid.UUID) (*models.WorkflowDefinition, error) {
 	var wf models.WorkflowDefinition
