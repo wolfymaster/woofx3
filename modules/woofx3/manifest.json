@@ -1962,6 +1962,34 @@
       "taxonomy": [
         "system.chat"
       ],
+      "emits": {
+        "summary": "{chatter} used !{command}",
+        "details": [
+          "{text}"
+        ],
+        "fields": [
+          {
+            "path": "command",
+            "type": "string",
+            "description": "The command word, without its prefix."
+          },
+          {
+            "path": "chatter",
+            "type": "string",
+            "description": "Who ran the command."
+          },
+          {
+            "path": "text",
+            "type": "string",
+            "description": "What they wrote after the command."
+          },
+          {
+            "path": "platform",
+            "type": "string",
+            "description": "The platform the command was used on."
+          }
+        ]
+      },
       "schema": [
         {
           "id": "command",
