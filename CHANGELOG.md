@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.68.2](https://github.com/wolfymaster/woofx3/compare/v0.68.1...v0.68.2) (2026-11-06)
+
+### Bug Fixes
+
+* **sceneManager:** admit Origin: null on the overlay page ([a3821e8](https://github.com/wolfymaster/woofx3/commit/a3821e8f4b29f26b7eb649b958602026469e690f))
+
 ## [0.68.1](https://github.com/wolfymaster/woofx3/compare/v0.68.0...v0.68.1) (2026-11-05)
 
 ### Bug Fixes
