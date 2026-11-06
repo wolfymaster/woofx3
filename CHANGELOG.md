@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.68.3](https://github.com/wolfymaster/woofx3/compare/v0.68.2...v0.68.3) (2026-11-06)
+
+### Bug Fixes
+
+* **modules:** give the chat command trigger an alert summary ([4533d03](https://github.com/wolfymaster/woofx3/commit/4533d037ec64b912b8d3f5cd106449ea3ad39232))
+* **sceneManager:** switch the editor preview's version in place ([9aee203](https://github.com/wolfymaster/woofx3/commit/9aee2038f584c0f763f7b453c3718edc64666f66))
+
 ## [0.68.2](https://github.com/wolfymaster/woofx3/compare/v0.68.1...v0.68.2) (2026-11-06)
 
 ### Bug Fixes
