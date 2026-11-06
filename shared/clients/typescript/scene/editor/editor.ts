@@ -81,7 +81,7 @@ import {
   type KeyInput,
 } from "./keymap";
 import { applyCompositionOps, diffCompositions, type Ops } from "./ops";
-import { buildPreviewLayoutMessage, type PreviewFrame, type PreviewLayoutMessage } from "./preview";
+import { buildPreviewLayoutMessage, type PreviewFrame, type PreviewLayoutMessage, type PreviewView } from "./preview";
 import type { ApplyResult, DocumentSource, Peer } from "./source";
 
 export interface CompositionEditorOptions {
@@ -317,7 +317,7 @@ export interface CompositionEditor {
   readonly preview: {
     frame(): PreviewFrame | null;
     /** The `woofx3.scene-preview.layout` message the overlay preview takes. */
-    layoutMessage(options?: { placements?: boolean }): PreviewLayoutMessage | null;
+    layoutMessage(options?: { placements?: boolean; view?: PreviewView }): PreviewLayoutMessage | null;
   };
   /** Stop listening to the source. */
   destroy(): void;

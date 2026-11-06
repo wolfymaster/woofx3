@@ -93,6 +93,22 @@ export function parsePreviewPlacements(data: unknown): unknown[] | null {
 }
 
 /**
+ * The version a layout message asks the page to follow, or null when it
+ * names none (an editor that chooses the version by the page's URL) or is
+ * not a layout message.
+ */
+export function parsePreviewView(data: unknown): "published" | "draft" | null {
+  if (typeof data !== "object" || data === null) {
+    return null;
+  }
+  const message = data as Record<string, unknown>;
+  if (message.type !== PREVIEW_LAYOUT_MESSAGE) {
+    return null;
+  }
+  return message.view === "published" || message.view === "draft" ? message.view : null;
+}
+
+/**
  * What decides the frames of a set of placements: which widgets there are and
  * their themes. A drag changes only positions, which the layout applies on its
  * own, and other settings are handed to the widgets directly, so only a change

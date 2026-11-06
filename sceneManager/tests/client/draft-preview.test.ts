@@ -90,4 +90,17 @@ describe("DraftPreview", () => {
     h.preview.handleMessage({ type: "something-else", placements: [] });
     expect(h.preview.placements()).toEqual([text({})]);
   });
+
+  it("stops previewing placements when the editor sends a layout without them, and resyncs once", () => {
+    const h = harness();
+    h.send([text({ text: "hi" })]);
+    h.settle();
+    h.updates.length = 0;
+    h.preview.handleMessage({ type: PREVIEW_LAYOUT_MESSAGE, widgets: [] });
+    expect(h.preview.placements()).toBeNull();
+    expect(h.updates).toHaveLength(1);
+    expect(h.timers.size).toBe(0);
+    h.preview.handleMessage({ type: PREVIEW_LAYOUT_MESSAGE, widgets: [] });
+    expect(h.updates).toHaveLength(1);
+  });
 });

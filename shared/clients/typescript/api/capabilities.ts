@@ -60,6 +60,13 @@ export const ENGINE_CAPABILITIES = {
    * `workflow_group.*` events, and `groupIds` on workflows.
    */
   workflowsGroups: "workflows.groups",
+  /**
+   * Scene preview version switching: the scene overlay framed by the editor
+   * follows the `view` its layout messages name (`PreviewLayoutMessage` in
+   * @woofx3/scene/editor), switching between the published scene and the
+   * draft in place instead of being reloaded at another URL.
+   */
+  scenesPreviewView: "scenes.previewView",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];

@@ -747,6 +747,9 @@ describe("preview", () => {
     const frame = editor.preview.frame();
     expect(frame).not.toBeNull();
     expect(buildPreviewLayoutMessage(frame!, { placements: false }).placements).toBeUndefined();
+    expect(buildPreviewLayoutMessage(frame!, { placements: false }).view).toBeUndefined();
+    expect(buildPreviewLayoutMessage(frame!, { placements: false, view: "draft" }).view).toBe("draft");
+    expect(buildPreviewLayoutMessage(frame!, { view: "published" }).view).toBe("published");
   });
 
   test("each widget's layout carries its rotation, opacity, visibility and rank, mid-gesture included", () => {

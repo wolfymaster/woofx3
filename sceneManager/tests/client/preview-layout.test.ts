@@ -1,10 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import {
   draftFrameKey,
-  parsePreviewPlacements,
-  transientOfPreviewLayout,
   PREVIEW_LAYOUT_MESSAGE,
   parsePreviewLayout,
+  parsePreviewPlacements,
+  parsePreviewView,
+  transientOfPreviewLayout,
 } from "../../public/scene-manager/preview-layout";
 
 describe("parsePreviewLayout", () => {
@@ -50,6 +51,16 @@ describe("parsePreviewLayout", () => {
       ],
     });
     expect(layout).toEqual([{ id: "w3", x: 1, y: 2, width: 3, height: 4 }]);
+  });
+});
+
+describe("parsePreviewView", () => {
+  it("reads the version a layout message names, and nothing else", () => {
+    expect(parsePreviewView({ type: PREVIEW_LAYOUT_MESSAGE, widgets: [], view: "draft" })).toBe("draft");
+    expect(parsePreviewView({ type: PREVIEW_LAYOUT_MESSAGE, widgets: [], view: "published" })).toBe("published");
+    expect(parsePreviewView({ type: PREVIEW_LAYOUT_MESSAGE, widgets: [] })).toBeNull();
+    expect(parsePreviewView({ type: PREVIEW_LAYOUT_MESSAGE, widgets: [], view: "other" })).toBeNull();
+    expect(parsePreviewView({ type: "something-else", view: "draft" })).toBeNull();
   });
 });
 

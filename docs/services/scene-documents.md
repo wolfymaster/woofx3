@@ -304,7 +304,11 @@ before it, and each always commits an entry, even with nothing to change.
 An editor can instead edit the published scene directly (live editing): its
 ops then reach OBS as they are made, and in the same entry each is copied
 into the draft field by field, so a later publish cannot undo it and the
-draft keeps its other edits.
+draft keeps its other edits. The editor's preview follows whichever version
+its editor is editing: each layout message the editor posts names it
+(`view`), and the overlay switches in place, fetching that version's
+document and applying it like any save, so widgets it shares with what was
+on screen are not reloaded.
 
 ## Writing back
 
