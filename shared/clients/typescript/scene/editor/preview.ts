@@ -59,11 +59,19 @@ export interface PreviewWidgetLayout {
   zIndex: number;
 }
 
+/** Which version of the scene the overlay follows between the editor's messages. */
+export type PreviewView = "published" | "draft";
+
 export interface PreviewLayoutMessage {
   type: typeof PREVIEW_LAYOUT_MESSAGE;
   widgets: PreviewWidgetLayout[];
   /** Absent when the overlay follows the draft from the engine instead. */
   placements?: PreviewPlacement[];
+  /**
+   * The version the overlay switches to in place, without reloading. Absent
+   * from an editor that chooses the version by the overlay's URL instead.
+   */
+  view?: PreviewView;
 }
 
 /**
@@ -72,7 +80,7 @@ export interface PreviewLayoutMessage {
  */
 export function buildPreviewLayoutMessage(
   frame: Pick<PreviewFrame, "doc" | "order">,
-  options: { placements?: boolean } = {}
+  options: { placements?: boolean; view?: PreviewView } = {}
 ): PreviewLayoutMessage {
   const placed = frame.order.flatMap((id) => {
     const placement = frame.doc.widgets[id];
@@ -89,12 +97,14 @@ export function buildPreviewLayoutMessage(
     visible: placement.visible,
     zIndex,
   }));
+  const view = options.view === undefined ? {} : { view: options.view };
   if (options.placements === false) {
-    return { type: PREVIEW_LAYOUT_MESSAGE, widgets };
+    return { type: PREVIEW_LAYOUT_MESSAGE, widgets, ...view };
   }
   return {
     type: PREVIEW_LAYOUT_MESSAGE,
     widgets,
+    ...view,
     placements: placed.map(({ id, placement }, zIndex) => ({
       id,
       widgetCanonicalId: placement.widget,

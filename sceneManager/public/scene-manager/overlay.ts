@@ -33,7 +33,7 @@ import { DraftPreview } from "./draft-preview";
 import { SceneEventSource } from "./event-source";
 import { swapFrameIn } from "./frame-swap";
 import { ModuleStateCache } from "./module-state";
-import { transientOfPreviewLayout } from "./preview-layout";
+import { parsePreviewView, transientOfPreviewLayout } from "./preview-layout";
 import type { ReconnectCoordinator } from "./reconnect-coordinator";
 import { applySceneBackground } from "./scene-background";
 import { compositionOfConfig, parseSnapshot } from "./scene-document";
@@ -103,7 +103,8 @@ export function createOverlay(env: OverlayEnv): void {
   // trailing slash, so a `./`-relative URL would resolve against /scene/ and
   // drop the scene id.
   const sceneBase = `/scene/${encodeURIComponent(sceneId)}`;
-  // The editor's preview shows the draft; every other overlay what is published.
+  // The editor's preview shows the draft at first, and may switch versions
+  // by message; every other overlay shows what is published.
   const view: SceneView = new URLSearchParams(env.location.search).get("view") === "draft" ? "draft" : "published";
   const fetchFn = (url: string, init?: RequestInit) => env.fetch(url, init);
   const { host } = env;
@@ -515,6 +516,10 @@ export function createOverlay(env: OverlayEnv): void {
   if (env.framed) {
     env.window.addEventListener("message", (event) => {
       if (event.source === env.window.parent) {
+        const view = parsePreviewView(event.data);
+        if (view !== null) {
+          sync.setView(view);
+        }
         draft.handleMessage(event.data);
       }
     });

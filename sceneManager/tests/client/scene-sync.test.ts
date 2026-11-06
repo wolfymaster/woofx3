@@ -187,3 +187,56 @@ describe("SceneSync and a fetch overtaken by the stream", () => {
     expect(h.requests).toHaveLength(2);
   });
 });
+
+describe("SceneSync switching versions", () => {
+  it("fetches the other version's document and applies it in place, then follows its ops", async () => {
+    const h = harness();
+    h.responses.push(async () => Response.json(sceneBody({ document: snapshot(1) })));
+    h.sync.setView("draft");
+    await Bun.sleep(0);
+    expect(h.requests.map((r) => r.url)).toEqual(["/scene/s1/config?view=draft"]);
+    expect(h.sync.document()?.seq).toBe(1);
+    expect(h.applied).toHaveLength(1);
+    expect(h.reloads()).toBe(0);
+    h.sync.applyOps({ seq: 4, ops: [], meta: {} } as never);
+    h.sync.applyOps({ seq: 2, version: "draft", ops: [], meta: {} } as never);
+    expect(h.sync.document()?.seq).toBe(2);
+    expect(h.requests).toHaveLength(1);
+  });
+
+  it("does nothing when asked for the version it already shows", () => {
+    const h = harness();
+    h.sync.setView("published");
+    expect(h.requests).toHaveLength(0);
+  });
+
+  it("fetches the version's document even while the editor previews placements", async () => {
+    const h = harness({ draftPlacements: () => [{ id: "a" }] });
+    h.responses.push(async () => Response.json(sceneBody({ document: snapshot(1) })));
+    h.sync.setView("draft");
+    await Bun.sleep(0);
+    expect(h.requests.map((r) => r.url)).toEqual(["/scene/s1/config?view=draft"]);
+    expect(h.applied[0]!.fromDraft).toBe(true);
+    await h.sync.update();
+    expect(h.requests[1]!.url).toBe("/scene/s1/draft-config");
+  });
+
+  it("drops an answer for the version it switched away from while the fetch was in flight", async () => {
+    const h = harness();
+    let release: (() => void) | null = null;
+    h.responses.push(
+      () =>
+        new Promise<Response>((resolve) => {
+          release = () => resolve(Response.json(sceneBody({ document: snapshot(9) })));
+        })
+    );
+    h.responses.push(async () => Response.json(sceneBody({ document: snapshot(1) })));
+    const updating = h.sync.update();
+    h.sync.setView("draft");
+    release!();
+    await updating;
+    expect(h.requests.map((r) => r.url)).toEqual(["/scene/s1/config", "/scene/s1/config?view=draft"]);
+    expect(h.sync.document()?.seq).toBe(1);
+    expect(h.applied).toHaveLength(1);
+  });
+});

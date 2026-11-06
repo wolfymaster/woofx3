@@ -5,8 +5,8 @@
 // expires. What the page then does with a scene config is the page's
 // (`apply`); this unit decides when there is a new one and what it is.
 
-import { configOfSnapshot, parseSceneConfig, type SceneConfig } from "../../contract/scene-config";
 import { mediaRefreshDelay } from "../../contract/media-url";
+import { configOfSnapshot, parseSceneConfig, type SceneConfig } from "../../contract/scene-config";
 import { applyOps, mergeMeta, parseSnapshot, type SceneOpsEvent, type SceneSnapshot } from "./scene-document";
 
 export type SceneView = "published" | "draft";
@@ -21,7 +21,7 @@ export interface SceneSyncDeps {
   sceneId: string;
   /** `/scene/{sceneId}`, which the page's own requests go under. */
   sceneBase: string;
-  /** The version this page shows: the editor's preview shows the draft. */
+  /** The version this page shows at first: the editor's preview shows the draft. */
   view: SceneView;
   /** The document the shell was rendered with, if any. */
   initialDocument: SceneSnapshot | null;
@@ -44,9 +44,11 @@ type Target =
   | { kind: "apply"; config: SceneConfig; fromDraft: boolean }
   | { kind: "reload" }
   | { kind: "keep" }
-  | { kind: "stale" };
+  | { kind: "stale" }
+  | { kind: "superseded" };
 
 export class SceneSync {
+  private view: SceneView;
   private doc: SceneSnapshot | null;
   private updating = false;
   private updateRequested = false;
@@ -56,7 +58,23 @@ export class SceneSync {
   private mediaRefreshFailures = 0;
 
   constructor(private readonly deps: SceneSyncDeps) {
+    this.view = deps.view;
     this.doc = deps.initialDocument;
+  }
+
+  /**
+   * Follow `view` from now on, in place: the page fetches that version's
+   * document and applies it like any save, so widgets it shares with what is
+   * on screen keep their frames. The versions number their sequences
+   * separately, so the document held for the other one is dropped.
+   */
+  setView(view: SceneView): void {
+    if (view === this.view) {
+      return;
+    }
+    this.view = view;
+    this.doc = null;
+    void this.update();
   }
 
   /** The scene's sequenced document as this page holds it. */
@@ -70,7 +88,7 @@ export class SceneSync {
    * this page missed some: it resyncs.
    */
   applyOps(event: SceneOpsEvent): void {
-    if ((event.version ?? "published") !== this.deps.view) {
+    if ((event.version ?? "published") !== this.view) {
       return;
     }
     const doc = this.doc;
@@ -108,7 +126,7 @@ export class SceneSync {
    * server stopped holding keep this page's numbering: either resyncs.
    */
   onStreamOpened(publishedSeq: number, draftSeq: number): void {
-    const seq = this.deps.view === "draft" ? draftSeq : publishedSeq;
+    const seq = this.view === "draft" ? draftSeq : publishedSeq;
     if (!this.doc || seq !== this.doc.seq) {
       void this.update();
     }
@@ -133,6 +151,9 @@ export class SceneSync {
         if (target.kind === "reload") {
           this.deps.reload();
           return;
+        }
+        if (target.kind === "superseded") {
+          continue;
         }
         if (target.kind === "stale") {
           // The stream applied ops after the server built this answer; one
@@ -184,9 +205,13 @@ export class SceneSync {
   // session when a lapsed one is why it failed. A failed draft fetch keeps
   // what is on screen instead: the editor posts its draft again on every
   // load, so reloading for a draft the server keeps refusing would loop.
+  //
+  // A page without the version's document fetches the document first, even
+  // while it previews the editor's placements: ops apply only to it.
   private async fetchTarget(): Promise<Target> {
-    const { sceneBase, view } = this.deps;
-    const draft = this.deps.draftPlacements();
+    const { sceneBase } = this.deps;
+    const view = this.view;
+    const draft = this.doc === null ? null : this.deps.draftPlacements();
     let resp: Response;
     try {
       resp = draft
@@ -205,6 +230,11 @@ export class SceneSync {
       return draft ? { kind: "keep" } : { kind: "reload" };
     }
     const body: unknown = resp.ok ? await resp.json().catch(() => null) : null;
+    // The page switched versions while this was in flight: its answer
+    // describes the other one, and `setView` already asked for a fetch.
+    if (view !== this.view) {
+      return { kind: "superseded" };
+    }
     const config = parseSceneConfig(body);
     if (draft && config) {
       this.deps.onDraftAnswered(body);
@@ -218,7 +248,7 @@ export class SceneSync {
         }
         this.doc = snapshot;
       }
-      return { kind: "apply", config, fromDraft: draft !== null };
+      return { kind: "apply", config, fromDraft: this.deps.draftPlacements() !== null };
     }
     if (draft && resp.status !== 401) {
       this.deps.warn("[scene-manager] draft preview refused; showing the last one", { status: resp.status });

@@ -11,9 +11,9 @@
 import { externalMediaUrls, parseMediaUrls, replaceMediaUrls } from "../../contract/media-url";
 import {
   draftFrameKey,
+  type PreviewWidgetLayout,
   parsePreviewLayout,
   parsePreviewPlacements,
-  type PreviewWidgetLayout,
   settingsOf,
 } from "./preview-layout";
 
@@ -67,6 +67,11 @@ export class DraftPreview {
     }
     const placements = parsePreviewPlacements(data);
     if (!placements) {
+      // An editor that stops sending placements has the page follow the
+      // scene's ops again; what it showed came from the old placements.
+      if (layout && this.placementsState !== null) {
+        this.stopPreviewingPlacements();
+      }
       return;
     }
     this.placementsState = placements;
@@ -83,6 +88,17 @@ export class DraftPreview {
       this.timer = null;
       this.deps.requestUpdate();
     }, this.deps.settleMs ?? DRAFT_SETTLE_MS);
+  }
+
+  private stopPreviewingPlacements(): void {
+    this.placementsState = null;
+    this.key = "";
+    this.proxied = new Map();
+    if (this.timer !== null) {
+      this.deps.timers.clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.deps.requestUpdate();
   }
 
   /** The server answered the draft: the media URLs it signed, per placement. */
