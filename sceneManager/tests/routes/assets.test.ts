@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { tmpdir } from "node:os";
-import { handleStaticAssetRoute, versionedAssetUrl } from "../../src/routes/assets";
+import { handleStaticAssetRoute, isWithinDir, versionedAssetUrl } from "../../src/routes/assets";
 
 async function withPublicDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = join(tmpdir(), `scene-manager-assets-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -108,4 +108,24 @@ describe("handleStaticAssetRoute", () => {
       }
     });
   });
+});
+
+describe("isWithinDir", () => {
+  const cases: [string, typeof win32, string, string, boolean][] = [
+    ["a posix file inside", posix, "/srv/public", "/srv/public/scene-manager/index.js", true],
+    ["the posix root itself", posix, "/srv/public", "/srv/public", true],
+    ["a posix sibling sharing the prefix", posix, "/srv/public", "/srv/public-other/x.js", false],
+    ["a posix parent", posix, "/srv/public", "/srv", false],
+    ["a posix file named with leading dots", posix, "/srv/public", "/srv/public/..hidden.js", true],
+    ["a windows file inside", win32, "C:\\app\\public", "C:\\app\\public\\scene-manager\\index.js", true],
+    ["the windows root itself", win32, "C:\\app\\public", "C:\\app\\public", true],
+    ["a windows sibling sharing the prefix", win32, "C:\\app\\public", "C:\\app\\public-other\\x.js", false],
+    ["a windows parent", win32, "C:\\app\\public", "C:\\app", false],
+    ["another windows drive", win32, "C:\\app\\public", "D:\\app\\public\\x.js", false],
+  ];
+  for (const [name, paths, root, target, expected] of cases) {
+    it(name, () => {
+      expect(isWithinDir(root, target, paths)).toBe(expected);
+    });
+  }
 });
