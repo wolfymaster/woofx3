@@ -153,11 +153,17 @@ describe("sceneManager request guard set", () => {
     }
   });
 
+  test("the overlay page admits a null origin, as a browser's navigation may send it", async () => {
+    const base = start(policy);
+    const res = await fetch(`${base}/scene/s1?token=t`, { headers: { origin: "null" } });
+    // The page's dependencies are absent here, so it may fail, but never as the guard's refusal.
+    expect(res.status === 403 && (await res.text()) === "Forbidden").toBe(false);
+  });
+
   test("a listed null is refused on every route frames do not load from", async () => {
     const base = start(policy);
     const refused: [string, string][] = [
       ["GET", "/health"],
-      ["GET", "/scene/s1"],
       ["GET", "/scene/s1/events"],
       ["OPTIONS", "/scene/s1/events/e1/delivered"],
       ["OPTIONS", "/scene/s1/widget/w1/status"],

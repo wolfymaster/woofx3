@@ -195,7 +195,10 @@ const ROUTES = routeTable<HttpDeps>([
     path: "/scene/:sceneId",
     methods: ["GET"],
     cors: "open",
-    opaqueOrigin: "refuse",
+    // The page itself, opened by a browser tab or a browser source, some of
+    // which send `Origin: null` on the navigation. The token in its URL is
+    // what authorizes it, so admitting the opaque origin grants nothing more.
+    opaqueOrigin: "allow",
     handle: (req, { url, params, deps }) => handleSceneRoute(req, url, params.sceneId!, deps),
   },
   {

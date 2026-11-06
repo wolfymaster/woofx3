@@ -355,10 +355,11 @@ none either. What an overlay sends to sceneManager:
   so list it in `WOOFX3_SCENE_MANAGER_ALLOWED_ORIGINS` (with the rest of
   sceneManager's origins), never in `WOOFX3_ALLOWED_ORIGINS`.
 
-  An admitted `null` is admitted only on those paths; every other
-  route, the overlay page, its session and event routes, frame documents,
-  uploads, the editor WebSocket and `/health` included, answers `Origin: null`
-  with `403`. An admitted `null` cannot tell one sandboxed page from another,
+  An admitted `null` is admitted only on those paths and on the overlay page
+  itself (`/scene/{id}?token=...`), whose navigation some browsers send with
+  `Origin: null` and which its token authorizes. Every other route, the
+  overlay page's session and event routes, frame documents, uploads, the
+  editor WebSocket and `/health` included, answers `Origin: null` with `403`. An admitted `null` cannot tell one sandboxed page from another,
   though, and apart from the media proxy those paths take no token: any
   sandboxed page, on any site,
   opened in a browser that can reach sceneManager's Host can read a module's
