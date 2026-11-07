@@ -1,4 +1,4 @@
-import { join, normalize } from "node:path";
+import path, { join, normalize } from "node:path";
 import type { BunFile } from "bun";
 
 /**
@@ -55,11 +55,21 @@ export async function versionedAssetUrl(path: string, publicDir: string): Promis
  * stale version still gets the current file, uncached. Every response carries
  * the version as its `ETag`, so a revalidation costs no body.
  */
+/**
+ * Whether `target` is `root` or lies under it, both already normalized by
+ * `paths`. Compared through `relative`, so it holds for either separator:
+ * a prefix test against `root + "/"` refuses every file on Windows.
+ */
+export function isWithinDir(root: string, target: string, paths: typeof path = path): boolean {
+  const rel = paths.relative(root, target);
+  return rel !== ".." && !rel.startsWith(`..${paths.sep}`) && !paths.isAbsolute(rel);
+}
+
 export async function handleStaticAssetRoute(req: Request, url: URL, publicDir: string): Promise<Response> {
   const root = normalize(publicDir);
   const rel = url.pathname.slice("/assets/".length);
   const safe = normalize(join(root, rel));
-  if (safe !== root && !safe.startsWith(root + "/")) {
+  if (!isWithinDir(root, safe)) {
     return new Response("Forbidden", { status: 403 });
   }
   const file = Bun.file(safe);
