@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.68.4](https://github.com/wolfymaster/woofx3/compare/v0.68.3...v0.68.4) (2026-11-07)
+
+### Bug Fixes
+
+* **sceneManager:** serve static assets on Windows ([4fae2ba](https://github.com/wolfymaster/woofx3/commit/4fae2baac7aef26c05e92b82c7fd50411116bc43))
+
 ## [0.68.3](https://github.com/wolfymaster/woofx3/compare/v0.68.2...v0.68.3) (2026-11-06)
 
 ### Bug Fixes
