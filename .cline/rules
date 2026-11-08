@@ -1,0 +1,76 @@
+# Cline Rules - Follow Claude's Patterns
+
+## Project Overview
+This project is a monorepo consisting of various services that together form woofx3, a unified streaming control plane. The project uses Rust, Go, TypeScript, and other technologies with a focus on local execution without third-party dependencies.
+
+## Reading CLAUDE.md
+Always read and follow the patterns outlined in CLAUDE.md when working on this project. This includes:
+- Understanding the architecture (microservices, message bus, database proxy)
+- Following the development workflow with worktrees
+- Adhering to the coding standards and best practices described
+- Understanding the module system and engine integrity principles
+
+## Key Principles from CLAUDE.md
+
+### Architecture
+- Microservices communicating via events over NATS message bus using CloudEvents specification
+- Database proxy service that generates gRPC clients (no direct database access)
+- Shared clients and libraries kept in 'shared' directory
+- Modules request, the engine acts - module code must not drive the engine directly
+
+### Development Workflow
+- Work happens in paired worktrees created by `scripts/worktree.sh`
+- Each task gets its own slot with dedicated ports and resources
+- Use `scripts/check.sh` to verify changes before committing
+
+### Coding Standards
+- Optimize for readers: clarity and straightforward flow beat cleverness
+- Block bodies everywhere: use braces for all branches and loop bodies
+- Composition over inheritance: prefer small units composed together
+- Proven patterns: use reliable, industry-standard design patterns
+- Less code, more foresight: design boundaries that stay stable as requirements shift
+
+## Technology Stack
+- Rust-based module/plugin system
+- Go services 
+- TypeScript/JavaScript for various components
+- Database: Postgres/SQLite (system database) and SQLite (module storage)
+- Build tools: Bun, mise, protoc, biome, sccache, buf, process-compose
+
+## File Structure Understanding
+Always understand the project structure before making changes:
+- `api/` - API services
+- `db/` - Database proxy service  
+- `barkloader/` - Module system
+- `workflow/` - Workflow engine
+- `twitch/` - Twitch integration
+- `shared/` - Shared clients and libraries
+- `docs/` - Documentation (VitePress site)
+- `scripts/` - Development scripts
+
+## Skills and Conventions
+When encountering skills or conventions, follow Claude's approach:
+- Use the project's toolchains as defined in mise.toml
+- Follow the established patterns for service communication
+- Understand that services should only communicate via events over the message bus
+- Respect the module sandboxing and engine integrity principles
+
+## Testing and Quality
+- Run relevant test suites after substantive changes
+- Keep tests passing before layering new features
+- Use `scripts/check.sh` to run CI checks for touched packages
+- Follow the styleguide and formatting standards
+
+## Communication
+When working on this project, remember that:
+- The system is designed for local execution without third-party services
+- All communication happens through events over the message bus
+- Module code must not directly publish to the event bus or dispatch workflows
+- Only the engine can drive the system - modules provide values that the engine validates and acts upon
+
+## Key Documentation
+Always refer to these key documents:
+- CLAUDE.md (this file) - Overall project documentation and conventions
+- README.md - Basic project information
+- SPEC.md - Detailed specifications
+- docs/ directory - VitePress documentation site

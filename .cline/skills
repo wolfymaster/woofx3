@@ -1,0 +1,29 @@
+{
+  "skills": [
+    {
+      "name": "read_claude_md",
+      "description": "Read and understand CLAUDE.md patterns for this project",
+      "priority": "high"
+    },
+    {
+      "name": "understand_architecture",
+      "description": "Understand the microservices architecture with NATS message bus",
+      "priority": "high"
+    },
+    {
+      "name": "worktree_workflow",
+      "description": "Follow the worktree development workflow",
+      "priority": "medium"
+    },
+    {
+      "name": "module_system",
+      "description": "Understand module system and engine integrity principles",
+      "priority": "high"
+    },
+    {
+      "name": "coding_standards",
+      "description": "Follow Claude's coding standards and best practices",
+      "priority": "high"
+    }
+  ]
+}

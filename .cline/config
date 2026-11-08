@@ -1,0 +1,35 @@
+{
+  "name": "woofx3-project",
+  "description": "Configuration for woofx3 project following Claude's patterns",
+  "rules": [
+    {
+      "type": "readme",
+      "path": "CLAUDE.md",
+      "priority": "high"
+    },
+    {
+      "type": "architecture",
+      "description": "Microservices with NATS message bus and CloudEvents specification"
+    },
+    {
+      "type": "development",
+      "workflow": "worktrees",
+      "scripts": ["scripts/worktree.sh", "scripts/check.sh"]
+    },
+    {
+      "type": "coding_standards",
+      "principles": [
+        "Optimize for the reader",
+        "Block bodies everywhere",
+        "Composition over inheritance",
+        "Proven patterns"
+      ]
+    }
+  ],
+  "patterns": {
+    "communication": "via events over NATS message bus using CloudEvents specification",
+    "database": "Database proxy with gRPC clients, no direct database access",
+    "modules": "Modules request, the engine acts - module code must not drive the engine",
+    "development": "Work in paired worktrees with dedicated ports and resources"
+  }
+}
