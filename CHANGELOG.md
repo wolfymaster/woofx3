@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.69.0](https://github.com/wolfymaster/woofx3/compare/v0.68.4...v0.69.0) (2026-11-08)
+
+### Features
+
+* Add Cline configuration files (new branch) ([76cfb22](https://github.com/wolfymaster/woofx3/commit/76cfb22d07e49fc6de22a94749eb37ed600370d9))
+
 ## [0.68.4](https://github.com/wolfymaster/woofx3/compare/v0.68.3...v0.68.4) (2026-11-07)
 
 ### Bug Fixes
