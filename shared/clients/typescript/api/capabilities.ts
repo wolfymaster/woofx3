@@ -67,6 +67,14 @@ export const ENGINE_CAPABILITIES = {
    * draft in place instead of being reloaded at another URL.
    */
   scenesPreviewView: "scenes.previewView",
+  /**
+   * Licensed marketplace installs: `installMarketplaceListing` takes a
+   * `licenseKey`, or claims the listing itself (anonymously when it is free
+   * and there is no `buyerToken`), downloads with the key and the engine's
+   * install id, keeps the key on the installed module, and answers
+   * `payment_required` with the purchase `intent`.
+   */
+  marketplaceLicenseKeys: "marketplace.licenseKeys",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];
@@ -91,9 +99,11 @@ export interface EngineCapabilities {
  * Ids declared here that this build does not advertise, so clients can name
  * them before or after the engine supports them: a shared contract that lands
  * before the engine implements it, or an older protocol the engine no longer
- * serves. None today.
+ * serves.
  */
-export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = new Set<EngineCapability>([]);
+export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = new Set<EngineCapability>([
+  ENGINE_CAPABILITIES.marketplaceLicenseKeys,
+]);
 
 /**
  * Ids that describe how an engine is run rather than what its build can do,
