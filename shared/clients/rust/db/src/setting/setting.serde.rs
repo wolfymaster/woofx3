@@ -599,6 +599,9 @@ impl serde::Serialize for SetSettingRequest {
         if !self.user_id.is_empty() {
             len += 1;
         }
+        if self.only_if_absent.is_some() {
+            len += 1;
+        }
         let mut struct_ser = serializer.serialize_struct("setting.SetSettingRequest", len)?;
         if !self.key.is_empty() {
             struct_ser.serialize_field("key", &self.key)?;
@@ -608,6 +611,9 @@ impl serde::Serialize for SetSettingRequest {
         }
         if !self.user_id.is_empty() {
             struct_ser.serialize_field("userId", &self.user_id)?;
+        }
+        if let Some(v) = self.only_if_absent.as_ref() {
+            struct_ser.serialize_field("onlyIfAbsent", v)?;
         }
         struct_ser.end()
     }
@@ -623,6 +629,8 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
             "value",
             "user_id",
             "userId",
+            "only_if_absent",
+            "onlyIfAbsent",
         ];
 
         #[allow(clippy::enum_variant_names)]
@@ -630,6 +638,7 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
             Key,
             Value,
             UserId,
+            OnlyIfAbsent,
         }
         impl<'de> serde::Deserialize<'de> for GeneratedField {
             fn deserialize<D>(deserializer: D) -> std::result::Result<GeneratedField, D::Error>
@@ -654,6 +663,7 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
                             "key" => Ok(GeneratedField::Key),
                             "value" => Ok(GeneratedField::Value),
                             "userId" | "user_id" => Ok(GeneratedField::UserId),
+                            "onlyIfAbsent" | "only_if_absent" => Ok(GeneratedField::OnlyIfAbsent),
                             _ => Err(serde::de::Error::unknown_field(value, FIELDS)),
                         }
                     }
@@ -676,6 +686,7 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
                 let mut key__ = None;
                 let mut value__ = None;
                 let mut user_id__ = None;
+                let mut only_if_absent__ = None;
                 while let Some(k) = map_.next_key()? {
                     match k {
                         GeneratedField::Key => {
@@ -696,12 +707,19 @@ impl<'de> serde::Deserialize<'de> for SetSettingRequest {
                             }
                             user_id__ = Some(map_.next_value()?);
                         }
+                        GeneratedField::OnlyIfAbsent => {
+                            if only_if_absent__.is_some() {
+                                return Err(serde::de::Error::duplicate_field("onlyIfAbsent"));
+                            }
+                            only_if_absent__ = map_.next_value()?;
+                        }
                     }
                 }
                 Ok(SetSettingRequest {
                     key: key__.unwrap_or_default(),
                     value: value__,
                     user_id: user_id__.unwrap_or_default(),
+                    only_if_absent: only_if_absent__,
                 })
             }
         }

@@ -1,12 +1,46 @@
 package services
 
 import (
+	"bytes"
+	"encoding/base64"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/libtnb/sqlite"
+	"github.com/wolfymaster/woofx3/db/app/secrets"
+	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database"
+	repo "github.com/wolfymaster/woofx3/db/database/repository"
 	"gorm.io/gorm"
 )
+
+// testSecretsBox is a secrets box under a fixed key.
+func testSecretsBox(t *testing.T) *secrets.Box {
+	t.Helper()
+	box, err := secrets.NewBox(base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32)))
+	if err != nil {
+		t.Fatalf("NewBox: %v", err)
+	}
+	return box
+}
+
+// newTestModuleService is NewModuleService with testSecretsBox and a logger that discards.
+func newTestModuleService(
+	t *testing.T,
+	moduleRepo *repo.ModuleRepository,
+	refRepo *repo.ResourceReferenceRepository,
+	instanceRepo *repo.ModuleResourceInstanceRepository,
+	publisher *workers.EventPublisher,
+	kindValidators *KindSettingsValidators,
+) *moduleService {
+	t.Helper()
+	svc, err := NewModuleService(moduleRepo, refRepo, instanceRepo, publisher, kindValidators, testSecretsBox(t), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewModuleService: %v", err)
+	}
+	return svc
+}
 
 // newTestDB creates an in-memory SQLite database with SQLite-compatible
 // schemas for tables that tests touch. The production gorm tags rely on

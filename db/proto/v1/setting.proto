@@ -73,6 +73,10 @@ message SetSettingRequest {
     reserved 4;
     reserved "application_id";
     string user_id = 5;        // Optional user scope. For twitch_token, the broadcaster's Twitch user id.
+    // Write only when no setting has this key yet, and answer with the stored
+    // setting either way: concurrent first writers all read back the value
+    // that won.
+    optional bool only_if_absent = 6;
 }
 
 // Request to set multiple settings at once

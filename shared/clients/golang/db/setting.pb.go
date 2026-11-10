@@ -314,10 +314,14 @@ func (x *GetSettingsResponse) GetSettings() []*Setting {
 
 // Request to set a setting value
 type SetSettingRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                     // Setting key
-	Value         *structpb.Value        `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`                 // New value for the setting
-	UserId        string                 `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // Optional user scope. For twitch_token, the broadcaster's Twitch user id.
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Key    string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`                     // Setting key
+	Value  *structpb.Value        `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`                 // New value for the setting
+	UserId string                 `protobuf:"bytes,5,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // Optional user scope. For twitch_token, the broadcaster's Twitch user id.
+	// Write only when no setting has this key yet, and answer with the stored
+	// setting either way: concurrent first writers all read back the value
+	// that won.
+	OnlyIfAbsent  *bool `protobuf:"varint,6,opt,name=only_if_absent,json=onlyIfAbsent,proto3,oneof" json:"only_if_absent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -371,6 +375,13 @@ func (x *SetSettingRequest) GetUserId() string {
 		return x.UserId
 	}
 	return ""
+}
+
+func (x *SetSettingRequest) GetOnlyIfAbsent() bool {
+	if x != nil && x.OnlyIfAbsent != nil {
+		return *x.OnlyIfAbsent
+	}
+	return false
 }
 
 // Request to set multiple settings at once
@@ -691,11 +702,13 @@ const file_setting_proto_rawDesc = "" +
 	"\x04keys\x18\x01 \x03(\tR\x04keysJ\x04\b\x02\x10\x03R\x0eapplication_id\"s\n" +
 	"\x13GetSettingsResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
-	"\bsettings\x18\x02 \x03(\v2\x10.setting.SettingR\bsettings\"\x82\x01\n" +
+	"\bsettings\x18\x02 \x03(\v2\x10.setting.SettingR\bsettings\"\xc0\x01\n" +
 	"\x11SetSettingRequest\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12,\n" +
 	"\x05value\x18\x02 \x01(\v2\x16.google.protobuf.ValueR\x05value\x12\x17\n" +
-	"\auser_id\x18\x05 \x01(\tR\x06userIdJ\x04\b\x04\x10\x05R\x0eapplication_id\"\xc2\x01\n" +
+	"\auser_id\x18\x05 \x01(\tR\x06userId\x12)\n" +
+	"\x0eonly_if_absent\x18\x06 \x01(\bH\x00R\fonlyIfAbsent\x88\x01\x01B\x11\n" +
+	"\x0f_only_if_absentJ\x04\b\x04\x10\x05R\x0eapplication_id\"\xc2\x01\n" +
 	"\x12SetSettingsRequest\x12E\n" +
 	"\bsettings\x18\x01 \x03(\v2).setting.SetSettingsRequest.SettingUpdateR\bsettings\x1aO\n" +
 	"\rSettingUpdate\x12\x10\n" +
@@ -796,6 +809,7 @@ func file_setting_proto_init() {
 		return
 	}
 	file_common_proto_init()
+	file_setting_proto_msgTypes[5].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

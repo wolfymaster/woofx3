@@ -1019,6 +1019,11 @@ pub struct Module {
     /// most one origin: this or the marketplace listing, never both.
     #[prost(string, optional, tag="16")]
     pub upload_resource_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// The license key the marketplace listing was downloaded with. A bearer
+    /// credential: sealed at rest and opened here, so it must never be logged.
+    /// Unset for any other install and for one made without a key.
+    #[prost(string, optional, tag="17")]
+    pub marketplace_license_key: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ModuleFunction {
@@ -1077,6 +1082,11 @@ pub struct CreateModuleRequest {
     /// together with the marketplace fields.
     #[prost(string, optional, tag="12")]
     pub upload_resource_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// The license key the marketplace listing was downloaded with; see Module.
+    /// Only with marketplace_listing_id. An install that names a marketplace
+    /// listing without a key leaves the module with none.
+    #[prost(string, optional, tag="13")]
+    pub marketplace_license_key: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateModuleFunctionRequest {

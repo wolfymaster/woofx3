@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/db/app/secrets"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -23,6 +25,9 @@ type moduleService struct {
 	refRepo      *repo.ResourceReferenceRepository
 	instanceRepo *repo.ModuleResourceInstanceRepository
 	publisher    *workers.EventPublisher
+	// secrets seals each module's marketplace license key at rest.
+	secrets *secrets.Box
+	logger  *slog.Logger
 	// kindValidators check the settings of the kinds the db service owns.
 	kindValidators *KindSettingsValidators
 	// reconcileSegments runs after triggers are registered or removed, which
@@ -55,14 +60,24 @@ func NewModuleService(
 	instanceRepo *repo.ModuleResourceInstanceRepository,
 	publisher *workers.EventPublisher,
 	kindValidators *KindSettingsValidators,
-) *moduleService {
+	box *secrets.Box,
+	logger *slog.Logger,
+) (*moduleService, error) {
+	if box == nil {
+		return nil, errors.New("modules need a secrets box: marketplace license keys must never be stored in plain text")
+	}
+	if logger == nil {
+		return nil, errors.New("modules need a logger")
+	}
 	return &moduleService{
 		repo:           moduleRepo,
 		refRepo:        refRepo,
 		instanceRepo:   instanceRepo,
 		publisher:      publisher,
+		secrets:        box,
+		logger:         logger,
 		kindValidators: kindValidators,
-	}
+	}, nil
 }
 
 func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModuleRequest) (*client.ModuleResponse, error) {
@@ -76,6 +91,10 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 	if err := validateUploadProvenance(req); err != nil {
 		return nil, err
 	}
+	sealedLicenseKey, err := s.sealLicenseKey(manifestModuleID, req.MarketplaceLicenseKey)
+	if err != nil {
+		return nil, err
+	}
 
 	// Idempotency layer 1: same composite module_key already installed → return as-is.
 	if req.ModuleKey != "" {
@@ -86,7 +105,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 					Code:    client.ResponseStatus_OK,
 					Message: "Module already installed",
 				},
-				Module: moduleToProto(existing),
+				Module: s.moduleToProto(existing),
 			}, nil
 		}
 	}
@@ -106,7 +125,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 		return nil, err
 	}
 	if existing != nil {
-		if err := s.replaceModule(existing, manifestModuleID, req); err != nil {
+		if err := s.replaceModule(existing, manifestModuleID, req, sealedLicenseKey); err != nil {
 			return nil, err
 		}
 		return &client.ModuleResponse{
@@ -114,7 +133,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 				Code:    client.ResponseStatus_OK,
 				Message: "Module replaced",
 			},
-			Module: moduleToProto(existing),
+			Module: s.moduleToProto(existing),
 		}, nil
 	}
 
@@ -129,9 +148,10 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 		CreatedByType: req.CreatedByType,
 		CreatedByRef:  req.CreatedByRef,
 
-		MarketplaceListingID: req.MarketplaceListingId,
-		MarketplaceEdition:   req.MarketplaceEdition,
-		UploadResourceID:     req.UploadResourceId,
+		MarketplaceListingID:        req.MarketplaceListingId,
+		MarketplaceEdition:          req.MarketplaceEdition,
+		MarketplaceLicenseKeySealed: sealedLicenseKey,
+		UploadResourceID:            req.UploadResourceId,
 	}
 
 	for _, f := range req.Functions {
@@ -163,7 +183,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 			Code:    client.ResponseStatus_OK,
 			Message: "Module created successfully",
 		},
-		Module: moduleToProto(&m),
+		Module: s.moduleToProto(&m),
 	}, nil
 }
 
@@ -172,7 +192,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 // drops, the function upserts and the registration event all commit
 // together or not at all. A failure leaves the previous install exactly as
 // it was, which is what lets barkloader restore it by installing it again.
-func (s *moduleService) replaceModule(existing *models.Module, manifestModuleID string, req *client.CreateModuleRequest) error {
+func (s *moduleService) replaceModule(existing *models.Module, manifestModuleID string, req *client.CreateModuleRequest, sealedLicenseKey *string) error {
 	existing.ModuleKey = req.ModuleKey
 	existing.ModuleID = manifestModuleID
 	if req.Name != "" {
@@ -191,12 +211,14 @@ func (s *moduleService) replaceModule(existing *models.Module, manifestModuleID 
 	if req.MarketplaceListingId != nil {
 		existing.MarketplaceListingID = req.MarketplaceListingId
 		existing.MarketplaceEdition = req.MarketplaceEdition
+		existing.MarketplaceLicenseKeySealed = sealedLicenseKey
 		existing.UploadResourceID = nil
 	}
 	if req.UploadResourceId != nil {
 		existing.UploadResourceID = req.UploadResourceId
 		existing.MarketplaceListingID = nil
 		existing.MarketplaceEdition = nil
+		existing.MarketplaceLicenseKeySealed = nil
 	}
 
 	newManifestIDs := make(map[string]bool, len(req.Functions))
@@ -318,7 +340,7 @@ func (s *moduleService) UpdateModule(ctx context.Context, req *client.UpdateModu
 			Code:    client.ResponseStatus_OK,
 			Message: "Module updated successfully",
 		},
-		Module: moduleToProto(m),
+		Module: s.moduleToProto(m),
 	}, nil
 }
 
@@ -369,7 +391,7 @@ func (s *moduleService) GetModule(ctx context.Context, req *client.GetModuleRequ
 			Code:    client.ResponseStatus_OK,
 			Message: "Module retrieved successfully",
 		},
-		Module: moduleToProto(m),
+		Module: s.moduleToProto(m),
 	}, nil
 }
 
@@ -387,7 +409,7 @@ func (s *moduleService) GetModuleByName(ctx context.Context, req *client.GetModu
 			Code:    client.ResponseStatus_OK,
 			Message: "Module retrieved successfully",
 		},
-		Module: moduleToProto(m),
+		Module: s.moduleToProto(m),
 	}, nil
 }
 
@@ -402,7 +424,7 @@ func (s *moduleService) GetModuleByModuleKey(ctx context.Context, req *client.Ge
 			Code:    client.ResponseStatus_OK,
 			Message: "Module retrieved successfully",
 		},
-		Module: moduleToProto(m),
+		Module: s.moduleToProto(m),
 	}, nil
 }
 
@@ -424,7 +446,7 @@ func (s *moduleService) GetModuleByModuleId(ctx context.Context, req *client.Get
 			Code:    client.ResponseStatus_OK,
 			Message: "Module retrieved successfully",
 		},
-		Module: moduleToProto(m),
+		Module: s.moduleToProto(m),
 	}, nil
 }
 
@@ -444,7 +466,7 @@ func (s *moduleService) ListModules(ctx context.Context, req *client.ListModules
 
 	protoModules := make([]*client.Module, len(modules))
 	for i, m := range modules {
-		protoModules[i] = moduleToProto(m)
+		protoModules[i] = s.moduleToProto(m)
 	}
 
 	return &client.ListModulesResponse{
@@ -478,7 +500,7 @@ func (s *moduleService) SetModuleState(ctx context.Context, req *client.SetModul
 			Code:    client.ResponseStatus_OK,
 			Message: "Module state updated successfully",
 		},
-		Module: moduleToProto(m),
+		Module: s.moduleToProto(m),
 	}, nil
 }
 
@@ -842,6 +864,14 @@ func moduleRegistrationRef(moduleID, moduleKey string) string {
 // edition without a listing id, a blank listing id and an edition below 1: a
 // row records where it came from completely or not at all.
 func validateMarketplaceProvenance(req *client.CreateModuleRequest) error {
+	if req.MarketplaceLicenseKey != nil {
+		if req.MarketplaceListingId == nil {
+			return twirp.InvalidArgumentError("marketplace_license_key", "is only set together with marketplace_listing_id")
+		}
+		if *req.MarketplaceLicenseKey == "" {
+			return twirp.InvalidArgumentError("marketplace_license_key", "must not be blank")
+		}
+	}
 	if req.MarketplaceListingId == nil && req.MarketplaceEdition == nil {
 		return nil
 	}
@@ -952,6 +982,42 @@ func resolveManifestModuleID(req *client.CreateModuleRequest) string {
 		}
 	}
 	return ""
+}
+
+// licenseSealScope is the secrets.Box scope of a module's marketplace license
+// key. With the manifest module id as the name, a sealed key opens only on
+// the module row it was written for.
+const licenseSealScope = "module_license"
+
+// sealLicenseKey is the stored form of a license key for module `moduleID`,
+// or nil without one.
+func (s *moduleService) sealLicenseKey(moduleID string, key *string) (*string, error) {
+	if key == nil {
+		return nil, nil
+	}
+	sealed, err := s.secrets.Seal(licenseSealScope, moduleID, *key)
+	if err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("seal license key of module %q: %w", moduleID, err))
+	}
+	return &sealed, nil
+}
+
+// moduleToProto is the module with its license key opened. A key that does
+// not open (a changed WOOFX3_SECRETS_KEY) reads as no key, as an unreadable
+// secret module setting does: the module itself stays readable, and the key
+// can be claimed again from the marketplace. The key is never logged.
+func (s *moduleService) moduleToProto(m *models.Module) *client.Module {
+	proto := moduleToProto(m)
+	if m.MarketplaceLicenseKeySealed == nil {
+		return proto
+	}
+	key, err := s.secrets.Open(licenseSealScope, m.ModuleID, *m.MarketplaceLicenseKeySealed)
+	if err != nil {
+		s.logger.Warn("Marketplace license key cannot be opened", "module_id", m.ModuleID, "error", err)
+		return proto
+	}
+	proto.MarketplaceLicenseKey = &key
+	return proto
 }
 
 func moduleToProto(m *models.Module) *client.Module {

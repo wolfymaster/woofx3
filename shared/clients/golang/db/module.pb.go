@@ -49,8 +49,12 @@ type Module struct {
 	// was installed from. Unset for any other install. A module records at
 	// most one origin: this or the marketplace listing, never both.
 	UploadResourceId *string `protobuf:"bytes,16,opt,name=upload_resource_id,json=uploadResourceId,proto3,oneof" json:"upload_resource_id,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The license key the marketplace listing was downloaded with. A bearer
+	// credential: sealed at rest and opened here, so it must never be logged.
+	// Unset for any other install and for one made without a key.
+	MarketplaceLicenseKey *string `protobuf:"bytes,17,opt,name=marketplace_license_key,json=marketplaceLicenseKey,proto3,oneof" json:"marketplace_license_key,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *Module) Reset() {
@@ -195,6 +199,13 @@ func (x *Module) GetUploadResourceId() string {
 	return ""
 }
 
+func (x *Module) GetMarketplaceLicenseKey() string {
+	if x != nil && x.MarketplaceLicenseKey != nil {
+		return *x.MarketplaceLicenseKey
+	}
+	return ""
+}
+
 type ModuleFunction struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -321,8 +332,12 @@ type CreateModuleRequest struct {
 	// Set for an install from a stored module archive; see Module. Never set
 	// together with the marketplace fields.
 	UploadResourceId *string `protobuf:"bytes,12,opt,name=upload_resource_id,json=uploadResourceId,proto3,oneof" json:"upload_resource_id,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The license key the marketplace listing was downloaded with; see Module.
+	// Only with marketplace_listing_id. An install that names a marketplace
+	// listing without a key leaves the module with none.
+	MarketplaceLicenseKey *string `protobuf:"bytes,13,opt,name=marketplace_license_key,json=marketplaceLicenseKey,proto3,oneof" json:"marketplace_license_key,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *CreateModuleRequest) Reset() {
@@ -435,6 +450,13 @@ func (x *CreateModuleRequest) GetMarketplaceEdition() int32 {
 func (x *CreateModuleRequest) GetUploadResourceId() string {
 	if x != nil && x.UploadResourceId != nil {
 		return *x.UploadResourceId
+	}
+	return ""
+}
+
+func (x *CreateModuleRequest) GetMarketplaceLicenseKey() string {
+	if x != nil && x.MarketplaceLicenseKey != nil {
+		return *x.MarketplaceLicenseKey
 	}
 	return ""
 }
@@ -1674,7 +1696,7 @@ var File_module_proto protoreflect.FileDescriptor
 
 const file_module_proto_rawDesc = "" +
 	"\n" +
-	"\fmodule.proto\x12\x06module\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14module_trigger.proto\x1a\x13module_action.proto\x1a\x15module_resource.proto\x1a\x1emodule_resource_instance.proto\x1a\x13module_widget.proto\x1a\x12module_asset.proto\x1a\x15background_task.proto\"\xc1\x05\n" +
+	"\fmodule.proto\x12\x06module\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14module_trigger.proto\x1a\x13module_action.proto\x1a\x15module_resource.proto\x1a\x1emodule_resource_instance.proto\x1a\x13module_widget.proto\x1a\x12module_asset.proto\x1a\x15background_task.proto\"\x9a\x06\n" +
 	"\x06Module\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
@@ -1695,10 +1717,12 @@ const file_module_proto_rawDesc = "" +
 	"module_key\x18\f \x01(\tR\tmoduleKey\x129\n" +
 	"\x16marketplace_listing_id\x18\x0e \x01(\tH\x00R\x14marketplaceListingId\x88\x01\x01\x124\n" +
 	"\x13marketplace_edition\x18\x0f \x01(\x05H\x01R\x12marketplaceEdition\x88\x01\x01\x121\n" +
-	"\x12upload_resource_id\x18\x10 \x01(\tH\x02R\x10uploadResourceId\x88\x01\x01B\x19\n" +
+	"\x12upload_resource_id\x18\x10 \x01(\tH\x02R\x10uploadResourceId\x88\x01\x01\x12;\n" +
+	"\x17marketplace_license_key\x18\x11 \x01(\tH\x03R\x15marketplaceLicenseKey\x88\x01\x01B\x19\n" +
 	"\x17_marketplace_listing_idB\x16\n" +
 	"\x14_marketplace_editionB\x15\n" +
-	"\x13_upload_resource_id\"\xe5\x01\n" +
+	"\x13_upload_resource_idB\x1a\n" +
+	"\x18_marketplace_license_key\"\xe5\x01\n" +
 	"\x0eModuleFunction\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tmodule_id\x18\x02 \x01(\tR\bmoduleId\x12\x1f\n" +
@@ -1709,7 +1733,7 @@ const file_module_proto_rawDesc = "" +
 	"\ventry_point\x18\x06 \x01(\tR\n" +
 	"entryPoint\x12\x18\n" +
 	"\aruntime\x18\a \x01(\tR\aruntime\x12\x12\n" +
-	"\x04name\x18\b \x01(\tR\x04name\"\xbb\x04\n" +
+	"\x04name\x18\b \x01(\tR\x04name\"\x94\x05\n" +
 	"\x13CreateModuleRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x1a\n" +
@@ -1725,10 +1749,12 @@ const file_module_proto_rawDesc = "" +
 	"\x16marketplace_listing_id\x18\n" +
 	" \x01(\tH\x00R\x14marketplaceListingId\x88\x01\x01\x124\n" +
 	"\x13marketplace_edition\x18\v \x01(\x05H\x01R\x12marketplaceEdition\x88\x01\x01\x121\n" +
-	"\x12upload_resource_id\x18\f \x01(\tH\x02R\x10uploadResourceId\x88\x01\x01B\x19\n" +
+	"\x12upload_resource_id\x18\f \x01(\tH\x02R\x10uploadResourceId\x88\x01\x01\x12;\n" +
+	"\x17marketplace_license_key\x18\r \x01(\tH\x03R\x15marketplaceLicenseKey\x88\x01\x01B\x19\n" +
 	"\x17_marketplace_listing_idB\x16\n" +
 	"\x14_marketplace_editionB\x15\n" +
-	"\x13_upload_resource_id\"\xc5\x01\n" +
+	"\x13_upload_resource_idB\x1a\n" +
+	"\x18_marketplace_license_key\"\xc5\x01\n" +
 	"\x1bCreateModuleFunctionRequest\x12\x1f\n" +
 	"\vmanifest_id\x18\x01 \x01(\tR\n" +
 	"manifestId\x12\x1b\n" +

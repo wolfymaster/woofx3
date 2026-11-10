@@ -55,6 +55,12 @@ export interface Module {
    * most one origin: this or the marketplace listing, never both.
    */
   uploadResourceId?: string | null | undefined;
+  /**
+   * The license key the marketplace listing was downloaded with. A bearer
+   * credential: sealed at rest and opened here, so it must never be logged.
+   * Unset for any other install and for one made without a key.
+   */
+  marketplaceLicenseKey?: string | null | undefined;
 }
 
 export interface ModuleFunction {
@@ -103,6 +109,12 @@ export interface CreateModuleRequest {
    * together with the marketplace fields.
    */
   uploadResourceId?: string | null | undefined;
+  /**
+   * The license key the marketplace listing was downloaded with; see Module.
+   * Only with marketplace_listing_id. An install that names a marketplace
+   * listing without a key leaves the module with none.
+   */
+  marketplaceLicenseKey?: string | null | undefined;
 }
 
 export interface CreateModuleFunctionRequest {
@@ -2194,6 +2206,7 @@ export const Module = {
       marketplaceListingId: undefined,
       marketplaceEdition: undefined,
       uploadResourceId: undefined,
+      marketplaceLicenseKey: undefined,
       ...msg,
     };
   },
@@ -2264,6 +2277,9 @@ export const Module = {
     }
     if (msg.uploadResourceId != undefined) {
       writer.writeString(16, msg.uploadResourceId);
+    }
+    if (msg.marketplaceLicenseKey != undefined) {
+      writer.writeString(17, msg.marketplaceLicenseKey);
     }
     return writer;
   },
@@ -2345,6 +2361,10 @@ export const Module = {
         }
         case 16: {
           msg.uploadResourceId = reader.readString();
+          break;
+        }
+        case 17: {
+          msg.marketplaceLicenseKey = reader.readString();
           break;
         }
         default: {
@@ -2521,6 +2541,7 @@ export const CreateModuleRequest = {
       marketplaceListingId: undefined,
       marketplaceEdition: undefined,
       uploadResourceId: undefined,
+      marketplaceLicenseKey: undefined,
       ...msg,
     };
   },
@@ -2571,6 +2592,9 @@ export const CreateModuleRequest = {
     }
     if (msg.uploadResourceId != undefined) {
       writer.writeString(12, msg.uploadResourceId);
+    }
+    if (msg.marketplaceLicenseKey != undefined) {
+      writer.writeString(13, msg.marketplaceLicenseKey);
     }
     return writer;
   },
@@ -2633,6 +2657,10 @@ export const CreateModuleRequest = {
         }
         case 12: {
           msg.uploadResourceId = reader.readString();
+          break;
+        }
+        case 13: {
+          msg.marketplaceLicenseKey = reader.readString();
           break;
         }
         default: {
@@ -4455,6 +4483,7 @@ export const ModuleJSON = {
       marketplaceListingId: undefined,
       marketplaceEdition: undefined,
       uploadResourceId: undefined,
+      marketplaceLicenseKey: undefined,
       ...msg,
     };
   },
@@ -4511,6 +4540,9 @@ export const ModuleJSON = {
     }
     if (msg.uploadResourceId != undefined) {
       json["uploadResourceId"] = msg.uploadResourceId;
+    }
+    if (msg.marketplaceLicenseKey != undefined) {
+      json["marketplaceLicenseKey"] = msg.marketplaceLicenseKey;
     }
     return json;
   },
@@ -4589,6 +4621,11 @@ export const ModuleJSON = {
       json["uploadResourceId"] ?? json["upload_resource_id"];
     if (_uploadResourceId_) {
       msg.uploadResourceId = _uploadResourceId_;
+    }
+    const _marketplaceLicenseKey_ =
+      json["marketplaceLicenseKey"] ?? json["marketplace_license_key"];
+    if (_marketplaceLicenseKey_) {
+      msg.marketplaceLicenseKey = _marketplaceLicenseKey_;
     }
     return msg;
   },
@@ -4740,6 +4777,7 @@ export const CreateModuleRequestJSON = {
       marketplaceListingId: undefined,
       marketplaceEdition: undefined,
       uploadResourceId: undefined,
+      marketplaceLicenseKey: undefined,
       ...msg,
     };
   },
@@ -4788,6 +4826,9 @@ export const CreateModuleRequestJSON = {
     }
     if (msg.uploadResourceId != undefined) {
       json["uploadResourceId"] = msg.uploadResourceId;
+    }
+    if (msg.marketplaceLicenseKey != undefined) {
+      json["marketplaceLicenseKey"] = msg.marketplaceLicenseKey;
     }
     return json;
   },
@@ -4853,6 +4894,11 @@ export const CreateModuleRequestJSON = {
       json["uploadResourceId"] ?? json["upload_resource_id"];
     if (_uploadResourceId_) {
       msg.uploadResourceId = _uploadResourceId_;
+    }
+    const _marketplaceLicenseKey_ =
+      json["marketplaceLicenseKey"] ?? json["marketplace_license_key"];
+    if (_marketplaceLicenseKey_) {
+      msg.marketplaceLicenseKey = _marketplaceLicenseKey_;
     }
     return msg;
   },
