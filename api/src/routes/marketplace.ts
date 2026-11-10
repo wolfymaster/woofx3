@@ -8,6 +8,7 @@ import type {
   MarketplacePurchaseIntent,
 } from "@woofx3/api";
 import { manifestLocalEndpoints, manifestPermissions } from "@woofx3/api/module-manifest";
+import type { DbClient } from "../db-client";
 import {
   type MarketplaceClient,
   type MarketplaceDownload,
@@ -142,6 +143,16 @@ async function claimLicense(
   }
 }
 
+/** The key an installed module of this listing holds, or null. */
+async function heldLicenseKey(
+  db: Pick<DbClient, "findModuleByModuleId">,
+  moduleId: string,
+  listingId: string
+): Promise<string | null> {
+  const installed = await db.findModuleByModuleId(moduleId);
+  return installed?.marketplaceListingId === listingId ? (installed.marketplaceLicenseKey ?? null) : null;
+}
+
 /**
  * The listing's archive, verified. `onFailure` runs before the error is
  * rethrown, so an install can report a download that never arrived.
@@ -189,10 +200,16 @@ export const marketplaceRoutes = routeModule({
       hasLicense: licenseKey !== undefined,
     });
 
+    // An anonymous claim mints a new entitlement every time, so a reinstall
+    // reuses the key this engine already holds for the listing.
+    const heldKey =
+      licenseKey === undefined && buyerToken === undefined
+        ? await heldLicenseKey(this.db, listing.moduleId, listingId)
+        : null;
     const license: InstallLicense =
-      licenseKey === undefined
-        ? await withMarketplaceErrors(() => claimLicense(marketplace, listingId, buyerToken))
-        : { status: "licensed", key: licenseKey };
+      licenseKey !== undefined || heldKey !== null
+        ? { status: "licensed", key: licenseKey ?? heldKey }
+        : await withMarketplaceErrors(() => claimLicense(marketplace, listingId, buyerToken));
     if (license.status === "payment_required") {
       return license.intent === null
         ? { status: "payment_required", name, version }

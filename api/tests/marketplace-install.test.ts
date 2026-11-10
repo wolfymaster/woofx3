@@ -360,6 +360,22 @@ describe("installMarketplaceListing", () => {
     expect(requestsTo("/files/")[0].licenseKey).toBeNull();
   });
 
+  test("reuses the key an installed module holds instead of claiming again, only without a buyer token", async () => {
+    addModuleListing("obs_scenes", OBS_MANIFEST);
+    const modulesById = {
+      obs_scenes: { marketplaceListingId: "obs_scenes", marketplaceLicenseKey: "W3X-HELD" },
+    };
+
+    await install(host({ modulesById }), "obs_scenes", APPROVED);
+
+    expect(requestsTo("/catalog/obs_scenes/acquire")).toHaveLength(0);
+    expect(requestsTo("/modules/obs_scenes/download")[0].licenseKey).toBe("W3X-HELD");
+
+    seen.length = 0;
+    await install(host({ modulesById }), "obs_scenes", { ...APPROVED, buyerToken: "tok" });
+    expect(requestsTo("/catalog/obs_scenes/acquire")).toHaveLength(1);
+  });
+
   test("records the listing and edition 1 on the module when the listing names no edition", async () => {
     addModuleListing("obs_scenes", OBS_MANIFEST);
     const h = host();
