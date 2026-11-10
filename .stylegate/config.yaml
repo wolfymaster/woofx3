@@ -7,11 +7,25 @@ provider: claude_code
 
 # Decision gate, in shadow mode: a Cloudflare Workers AI clef model scores
 # how likely each rule is to be violated before the Claude review runs. In
-# shadow mode every check still runs and the run reports how many skipped
-# checks would have found something. The key is STYLEGATE_GATE_API_KEY in
-# the environment.
+# shadow mode every check still runs, and each review's scores are kept in
+# stylegate's usage ledger; `scripts/stylegate.sh gate report` replays them
+# against these thresholds. rule_thresholds come from `gate calibrate` on the
+# rules' eval corpora; a rule without one is never skipped once the mode is
+# enforce. The key is STYLEGATE_GATE_API_KEY in the environment.
 gate:
   mode: shadow
+  rule_thresholds:
+    ANY-ABS-005: 0.30
+    ANY-ABS-010: 0.25
+    ANY-COM-005: 0.10
+    ANY-CON-001: 0.17
+    ANY-CON-003: 0.27
+    ANY-ERR-003: 0.13
+    ANY-ERR-004: 0.27
+    ANY-LAY-005: 0.25
+    ANY-VRB-002: 0.22
+    ANY-VRB-003: 0.28
+    TS-API-001: 0.27
   endpoint: https://api.cloudflare.com/client/v4/accounts/f35f44146e8730089a795954e32183e8/ai/run/@cf/cloudflare/clef
 
 # Generated clients and servers (buf, twirp, prost) and contract outputs,
