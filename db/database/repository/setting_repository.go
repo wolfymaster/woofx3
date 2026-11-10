@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type SettingRepository struct {
@@ -70,6 +71,13 @@ func (r *SettingRepository) UpsertSetting(key, value string, userID *uuid.UUID) 
 	return r.db.Where("key = ?", key).
 		Assign(map[string]any{"value": value, "user_id": userID}).
 		FirstOrCreate(&setting).Error
+}
+
+// CreateIfAbsent writes `key` only when no row has it, relying on the unique
+// key index so concurrent writers cannot both create it.
+func (r *SettingRepository) CreateIfAbsent(key, value string, userID *uuid.UUID) error {
+	return r.db.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "key"}}, DoNothing: true}).
+		Create(&models.Setting{Key: key, Value: value, UserID: userID}).Error
 }
 
 func (r *SettingRepository) Create(setting *models.Setting) error {

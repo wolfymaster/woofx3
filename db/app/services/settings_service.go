@@ -108,6 +108,12 @@ func (s *settingService) SetSetting(ctx context.Context, req *client.SetSettingR
 	if err != nil {
 		return nil, err
 	}
+	if req.GetOnlyIfAbsent() {
+		if err := s.repo.CreateIfAbsent(req.Key, stored, userID); err != nil {
+			return nil, err
+		}
+		return s.GetSetting(ctx, &client.GetSettingRequest{Key: req.Key})
+	}
 	if err := s.repo.UpsertSetting(req.Key, stored, userID); err != nil {
 		return nil, err
 	}
