@@ -30,7 +30,7 @@ func newProvenanceSvc(t *testing.T) *moduleService {
 	if err := gormigrate.New(db, gormigrate.DefaultOptions, sqliteChain(t)).Migrate(); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return NewModuleService(
+	return newTestModuleService(t,
 		repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }),
 		repo.NewResourceReferenceRepository(db),
 		repo.NewModuleResourceInstanceRepository(db),

@@ -45,7 +45,7 @@ func newInstanceSvc(t *testing.T) (*moduleService, *gorm.DB) {
 		t.Fatalf("install module: %v", err)
 	}
 	publisher := workers.NewEventPublisher(repo.NewDbEventRepository(db), slog.New(slog.DiscardHandler))
-	svc := NewModuleService(
+	svc := newTestModuleService(t,
 		repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }),
 		repo.NewResourceReferenceRepository(db),
 		repo.NewModuleResourceInstanceRepository(db),

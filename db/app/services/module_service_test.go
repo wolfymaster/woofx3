@@ -20,7 +20,7 @@ import (
 func newModuleSvc(t *testing.T) (*moduleService, *gorm.DB) {
 	t.Helper()
 	db := migratedModuleDB(t)
-	return moduleSvcOn(db, nil), db
+	return moduleSvcOn(t, db, nil), db
 }
 
 // newPublishingModuleSvc writes its events to the outbox table of the same
@@ -29,11 +29,11 @@ func newPublishingModuleSvc(t *testing.T) (*moduleService, *gorm.DB) {
 	t.Helper()
 	db := migratedModuleDB(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return moduleSvcOn(db, workers.NewEventPublisher(repo.NewDbEventRepository(db), logger)), db
+	return moduleSvcOn(t, db, workers.NewEventPublisher(repo.NewDbEventRepository(db), logger)), db
 }
 
-func moduleSvcOn(db *gorm.DB, publisher *workers.EventPublisher) *moduleService {
-	return NewModuleService(
+func moduleSvcOn(t *testing.T, db *gorm.DB, publisher *workers.EventPublisher) *moduleService {
+	return newTestModuleService(t,
 		repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }),
 		repo.NewResourceReferenceRepository(db),
 		repo.NewModuleResourceInstanceRepository(db),
