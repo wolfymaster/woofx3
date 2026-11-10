@@ -66,6 +66,12 @@ export interface SetSettingRequest {
   key: string;
   value: protoscript.Value;
   userId: string;
+  /**
+   * Write only when no setting has this key yet, and answer with the stored
+   * setting either way: concurrent first writers all read back the value
+   * that won.
+   */
+  onlyIfAbsent?: boolean | null | undefined;
 }
 
 /**
@@ -870,6 +876,7 @@ export const SetSettingRequest = {
       key: "",
       value: protoscript.Value.initialize(),
       userId: "",
+      onlyIfAbsent: undefined,
       ...msg,
     };
   },
@@ -889,6 +896,9 @@ export const SetSettingRequest = {
     }
     if (msg.userId) {
       writer.writeString(5, msg.userId);
+    }
+    if (msg.onlyIfAbsent != undefined) {
+      writer.writeBool(6, msg.onlyIfAbsent);
     }
     return writer;
   },
@@ -913,6 +923,10 @@ export const SetSettingRequest = {
         }
         case 5: {
           msg.userId = reader.readString();
+          break;
+        }
+        case 6: {
+          msg.onlyIfAbsent = reader.readBool();
           break;
         }
         default: {
@@ -1816,6 +1830,7 @@ export const SetSettingRequestJSON = {
       key: "",
       value: protoscript.ValueJSON.initialize(),
       userId: "",
+      onlyIfAbsent: undefined,
       ...msg,
     };
   },
@@ -1839,6 +1854,9 @@ export const SetSettingRequestJSON = {
     if (msg.userId) {
       json["userId"] = msg.userId;
     }
+    if (msg.onlyIfAbsent != undefined) {
+      json["onlyIfAbsent"] = msg.onlyIfAbsent;
+    }
     return json;
   },
 
@@ -1860,6 +1878,10 @@ export const SetSettingRequestJSON = {
     const _userId_ = json["userId"] ?? json["user_id"];
     if (_userId_) {
       msg.userId = _userId_;
+    }
+    const _onlyIfAbsent_ = json["onlyIfAbsent"] ?? json["only_if_absent"];
+    if (_onlyIfAbsent_) {
+      msg.onlyIfAbsent = _onlyIfAbsent_;
     }
     return msg;
   },
