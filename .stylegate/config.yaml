@@ -5,6 +5,15 @@
 # stylegate runs locally only, on the logged-in claude CLI's subscription.
 provider: claude_code
 
+# Decision gate, in shadow mode: a Cloudflare Workers AI clef model scores
+# how likely each rule is to be violated before the Claude review runs. In
+# shadow mode every check still runs and the run reports how many skipped
+# checks would have found something. The key is STYLEGATE_GATE_API_KEY in
+# the environment.
+gate:
+  mode: shadow
+  endpoint: https://api.cloudflare.com/client/v4/accounts/f35f44146e8730089a795954e32183e8/ai/run/@cf/cloudflare/clef
+
 # Generated clients and servers (buf, twirp, prost) and contract outputs,
 # the fixtures that break rules on purpose, and the rule calibration corpus.
 exclude:
