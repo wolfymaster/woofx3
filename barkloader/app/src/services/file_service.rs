@@ -3,6 +3,7 @@ use actix_multipart::{Field, Multipart};
 use actix_web::Error;
 use anyhow::{Context, Result};
 use futures::{StreamExt, TryStreamExt};
+use lib_module::LicenseKey;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{Read, Seek, Write};
@@ -37,6 +38,9 @@ pub struct FileMetadata {
     /// uploader sent them. Read, not validated: see `marketplace_origin`.
     pub marketplace_listing_id: Option<String>,
     pub marketplace_edition: Option<String>,
+    /// The license key the listing was downloaded with. Kept as the
+    /// redacting `LicenseKey` so the derived `Debug` never prints it.
+    pub marketplace_license_key: Option<LicenseKey>,
     /// The stored resource the archive was read from, as the uploader sent
     /// it. Read, not validated: see `install_origin`.
     pub upload_resource_id: Option<String>,
@@ -205,6 +209,7 @@ impl FileService {
                 meta.module_key = fields.module_key;
                 meta.marketplace_listing_id = fields.marketplace_listing_id;
                 meta.marketplace_edition = fields.marketplace_edition;
+                meta.marketplace_license_key = fields.marketplace_license_key;
                 meta.upload_resource_id = fields.upload_resource_id;
                 Ok(meta)
             }
@@ -265,6 +270,7 @@ impl FileService {
                 | "module_key"
                 | "marketplace_listing_id"
                 | "marketplace_edition"
+                | "marketplace_license_key"
                 | "upload_resource_id" => {
                     let value = read_text_field(&mut field, &field_name, &mut extras_left).await?;
                     match field_name.as_str() {
@@ -273,6 +279,9 @@ impl FileService {
                         "module_key" => fields.module_key = Some(value),
                         "marketplace_listing_id" => fields.marketplace_listing_id = Some(value),
                         "marketplace_edition" => fields.marketplace_edition = Some(value),
+                        "marketplace_license_key" => {
+                            fields.marketplace_license_key = Some(LicenseKey::new(value))
+                        }
                         "upload_resource_id" => fields.upload_resource_id = Some(value),
                         _ => {}
                     }
@@ -348,6 +357,7 @@ impl FileService {
                         module_key: metadata.module_key.clone(),
                         marketplace_listing_id: metadata.marketplace_listing_id.clone(),
                         marketplace_edition: metadata.marketplace_edition.clone(),
+                        marketplace_license_key: metadata.marketplace_license_key.clone(),
                         upload_resource_id: metadata.upload_resource_id.clone(),
                     });
                 }
@@ -431,6 +441,7 @@ impl FileService {
             module_key: None,
             marketplace_listing_id: None,
             marketplace_edition: None,
+            marketplace_license_key: None,
             upload_resource_id: None,
         })
     }
@@ -479,6 +490,7 @@ struct TextFields {
     module_key: Option<String>,
     marketplace_listing_id: Option<String>,
     marketplace_edition: Option<String>,
+    marketplace_license_key: Option<LicenseKey>,
     upload_resource_id: Option<String>,
 }
 
@@ -938,6 +950,7 @@ mod tests {
             module_key: None,
             marketplace_listing_id: None,
             marketplace_edition: None,
+            marketplace_license_key: None,
             upload_resource_id: None,
         };
 

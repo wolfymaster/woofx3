@@ -16,8 +16,8 @@ use lib_module::db_proxy_client::{HttpDbProxyClient, ModuleDbProxy};
 use lib_module::module_delete::{DeleteError, notify_delete, resolve_module, run_delete_resolved};
 use lib_module::registry_loader;
 use lib_module::{
-    InstallOrigin, MarketplaceOrigin, ModuleFileKind, ModuleService, ModuleServiceConfig,
-    SandboxRegistryRefresher,
+    InstallOrigin, LicenseKey, MarketplaceOrigin, ModuleFileKind, ModuleService,
+    ModuleServiceConfig, SandboxRegistryRefresher,
 };
 
 #[derive(Serialize)]
@@ -58,20 +58,28 @@ pub(crate) fn upload_dir() -> PathBuf {
 }
 
 /// The marketplace listing an upload says it came from, from the
-/// `marketplace_listing_id` and `marketplace_edition` form fields. A blank
-/// field counts as absent, and a listing without an edition is edition 1.
-/// An edition without a listing, or one that is not a whole number of 1 or
-/// more, is refused rather than dropped, so an install never records half
-/// of where it came from.
+/// `marketplace_listing_id`, `marketplace_edition` and
+/// `marketplace_license_key` form fields. A blank field counts as absent, and
+/// a listing without an edition is edition 1. An edition or a key without a
+/// listing, or an edition that is not a whole number of 1 or more, is refused
+/// rather than dropped, so an install never records half of where it came
+/// from.
 fn marketplace_origin(
     listing_id: Option<&str>,
     edition: Option<&str>,
+    license_key: Option<&str>,
 ) -> Result<Option<MarketplaceOrigin>, String> {
     let listing_id = listing_id.map(str::trim).filter(|s| !s.is_empty());
     let edition = edition.map(str::trim).filter(|s| !s.is_empty());
+    let license_key = license_key.map(str::trim).filter(|s| !s.is_empty());
     let Some(listing_id) = listing_id else {
         if edition.is_some() {
             return Err("marketplace_edition was sent without marketplace_listing_id".to_string());
+        }
+        if license_key.is_some() {
+            return Err(
+                "marketplace_license_key was sent without marketplace_listing_id".to_string(),
+            );
         }
         return Ok(None);
     };
@@ -89,6 +97,7 @@ fn marketplace_origin(
     Ok(Some(MarketplaceOrigin {
         listing_id: listing_id.to_string(),
         edition,
+        license_key: license_key.map(|key| LicenseKey::new(key.to_string())),
     }))
 }
 
@@ -100,9 +109,10 @@ fn marketplace_origin(
 fn install_origin(
     listing_id: Option<&str>,
     edition: Option<&str>,
+    license_key: Option<&str>,
     upload_resource_id: Option<&str>,
 ) -> Result<Option<InstallOrigin>, String> {
-    let marketplace = marketplace_origin(listing_id, edition)?;
+    let marketplace = marketplace_origin(listing_id, edition, license_key)?;
     let upload_resource_id = upload_resource_id.map(str::trim).filter(|s| !s.is_empty());
     match (marketplace, upload_resource_id) {
         (Some(_), Some(_)) => Err(
@@ -147,6 +157,10 @@ async fn upload_handler(
     let origin = install_origin(
         metadata.marketplace_listing_id.as_deref(),
         metadata.marketplace_edition.as_deref(),
+        metadata
+            .marketplace_license_key
+            .as_ref()
+            .map(LicenseKey::expose),
         metadata.upload_resource_id.as_deref(),
     )
     .map_err(actix_web::error::ErrorBadRequest)?;
@@ -1080,54 +1094,114 @@ mod tests {
         Some(MarketplaceOrigin {
             listing_id: listing_id.to_string(),
             edition,
+            license_key: None,
         })
     }
 
     #[test]
     fn an_upload_names_at_most_one_origin() {
-        assert_eq!(install_origin(None, None, None), Ok(None));
-        assert_eq!(install_origin(None, None, Some(" ")), Ok(None));
+        assert_eq!(install_origin(None, None, None, None), Ok(None));
+        assert_eq!(install_origin(None, None, None, Some(" ")), Ok(None));
         assert_eq!(
-            install_origin(Some("cozy-v2"), Some("2"), None),
+            install_origin(Some("cozy-v2"), Some("2"), None, None),
             Ok(Some(InstallOrigin::Marketplace(MarketplaceOrigin {
                 listing_id: "cozy-v2".to_string(),
                 edition: 2,
+                license_key: None,
             })))
         );
         assert_eq!(
-            install_origin(None, None, Some("0b7c-11")),
+            install_origin(None, None, None, Some("0b7c-11")),
             Ok(Some(InstallOrigin::Upload {
                 resource_id: "0b7c-11".to_string(),
             }))
         );
-        assert!(install_origin(Some("cozy"), Some("1"), Some("0b7c-11")).is_err());
-        assert!(install_origin(None, None, Some("../x")).is_err());
-        assert!(install_origin(None, Some("2"), Some("0b7c-11")).is_err());
+        let refusals = [
+            (
+                install_origin(Some("cozy"), Some("1"), None, Some("0b7c-11")),
+                "an install has one origin",
+            ),
+            (
+                install_origin(None, None, None, Some("../x")),
+                "must be a resource id",
+            ),
+            (
+                install_origin(None, Some("2"), None, Some("0b7c-11")),
+                "marketplace_edition was sent without",
+            ),
+            (
+                install_origin(None, None, Some("W3X-AAAA"), Some("0b7c-11")),
+                "marketplace_license_key was sent without",
+            ),
+        ];
+        for (refused, reason) in refusals {
+            let err = refused.expect_err(reason);
+            assert!(err.contains(reason), "{err:?} does not say {reason:?}");
+        }
     }
 
     #[test]
     fn an_upload_without_marketplace_fields_has_no_origin() {
-        assert_eq!(marketplace_origin(None, None), Ok(None));
-        assert_eq!(marketplace_origin(Some(" "), Some("")), Ok(None));
+        assert_eq!(marketplace_origin(None, None, None), Ok(None));
+        assert_eq!(marketplace_origin(Some(" "), Some(""), Some(" ")), Ok(None));
     }
 
     #[test]
     fn a_listing_carries_its_edition_or_edition_one() {
         assert_eq!(
-            marketplace_origin(Some("cozy-v2"), Some("2")),
+            marketplace_origin(Some("cozy-v2"), Some("2"), None),
             Ok(origin("cozy-v2", 2))
         );
         assert_eq!(
-            marketplace_origin(Some("cozy"), None),
+            marketplace_origin(Some("cozy"), None, Some("")),
             Ok(origin("cozy", 1))
         );
     }
 
     #[test]
+    fn a_listing_carries_the_license_key_it_was_downloaded_with() {
+        let listed = marketplace_origin(Some("cozy"), Some("1"), Some(" W3X-AAAA "))
+            .expect("origin")
+            .expect("a listing");
+        assert_eq!(
+            listed.license_key.as_ref().map(LicenseKey::expose),
+            Some("W3X-AAAA")
+        );
+    }
+
+    #[test]
+    fn a_license_key_never_shows_in_debug_output() {
+        let listed = marketplace_origin(Some("cozy"), Some("1"), Some("W3X-AAAA")).expect("origin");
+        assert!(!format!("{listed:?}").contains("W3X-AAAA"));
+    }
+
+    #[test]
     fn an_incomplete_or_malformed_origin_is_refused() {
-        assert!(marketplace_origin(None, Some("2")).is_err());
-        assert!(marketplace_origin(Some("cozy"), Some("0")).is_err());
-        assert!(marketplace_origin(Some("cozy"), Some("two")).is_err());
-        assert!(marketplace_origin(Some("cozy"), Some("1.5")).is_err());
+        let refusals = [
+            (
+                marketplace_origin(None, Some("2"), None),
+                "marketplace_edition was sent without",
+            ),
+            (
+                marketplace_origin(None, None, Some("W3X-AAAA")),
+                "marketplace_license_key was sent without",
+            ),
+            (
+                marketplace_origin(Some("cozy"), Some("0"), None),
+                "a whole number of 1 or more",
+            ),
+            (
+                marketplace_origin(Some("cozy"), Some("two"), None),
+                "a whole number of 1 or more",
+            ),
+            (
+                marketplace_origin(Some("cozy"), Some("1.5"), None),
+                "a whole number of 1 or more",
+            ),
+        ];
+        for (refused, reason) in refusals {
+            let err = refused.expect_err(reason);
+            assert!(err.contains(reason), "{err:?} does not say {reason:?}");
+        }
     }
 }

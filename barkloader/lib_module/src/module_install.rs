@@ -7,7 +7,7 @@ use tracing::{error, info, warn};
 
 use super::canonical_id::CanonicalId;
 use super::db_proxy::{
-    CreateModuleFunctionJson, InstallOrigin, MarketplaceOrigin, ModuleFunctionRecord,
+    CreateModuleFunctionJson, InstallOrigin, LicenseKey, MarketplaceOrigin, ModuleFunctionRecord,
     provenance_from_created_by_type,
 };
 use super::db_proxy_client::ModuleDbProxy;
@@ -254,6 +254,8 @@ struct PreviousInstall {
     #[serde(default)]
     marketplace_edition: Option<i32>,
     #[serde(default)]
+    marketplace_license_key: Option<LicenseKey>,
+    #[serde(default)]
     upload_resource_id: Option<String>,
     #[serde(default)]
     functions: Vec<ModuleFunctionRecord>,
@@ -316,6 +318,7 @@ impl PreviousInstall {
                 Some(InstallOrigin::Marketplace(MarketplaceOrigin {
                     listing_id: listing_id.clone(),
                     edition,
+                    license_key: self.marketplace_license_key.clone(),
                 }))
             }
             _ => None,
@@ -1841,12 +1844,38 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_restored_install_keeps_its_license_key() {
+        let body = serde_json::json!({"module": {
+            "name": "Cozy",
+            "module_id": "cozy",
+            "module_key": "cozy:1.0.0:abcdef0",
+            "version": "1.0.0",
+            "created_by_type": "CLIENT",
+            "marketplace_listing_id": "cozy",
+            "marketplace_edition": 1,
+            "marketplace_license_key": "W3X-AAAA"
+        }})
+        .to_string();
+        let previous = PreviousInstall::from_response("cozy", &body).expect("previous install");
+        assert_eq!(
+            previous.origin(),
+            Some(InstallOrigin::Marketplace(MarketplaceOrigin {
+                listing_id: "cozy".to_string(),
+                edition: 1,
+                license_key: Some(LicenseKey::new("W3X-AAAA".to_string())),
+            }))
+        );
+        assert!(!format!("{previous:?}").contains("W3X-AAAA"));
+    }
+
     #[tokio::test]
     async fn the_install_origin_reaches_the_module_row() {
         let origins = [
             InstallOrigin::Marketplace(MarketplaceOrigin {
                 listing_id: "cozy-v2".to_string(),
                 edition: 2,
+                license_key: Some(LicenseKey::new("W3X-AAAA".to_string())),
             }),
             InstallOrigin::Upload {
                 resource_id: "00000000-0000-0000-0000-0000000000a1".to_string(),

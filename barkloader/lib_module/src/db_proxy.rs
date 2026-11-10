@@ -650,10 +650,36 @@ fn resolve_built_in_group_ids(groups: &[GroupJson], names: &[&str]) -> Result<Ve
 /// The marketplace listing an install came from, and that listing's
 /// edition. Stored on the module row because its key cannot say: the key's
 /// first segment is the manifest id, which every edition of a listing shares.
+/// `license_key` is the key the listing was downloaded with, when there was
+/// one; the db seals it at rest.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MarketplaceOrigin {
     pub listing_id: String,
     pub edition: i32,
+    pub license_key: Option<LicenseKey>,
+}
+
+/// A marketplace license key: a credential that downloads the listing, so
+/// its `Debug` form is redacted and it never reaches a log through one.
+#[derive(Clone, PartialEq, Eq, Deserialize)]
+#[serde(transparent)]
+pub struct LicenseKey(String);
+
+impl LicenseKey {
+    pub fn new(key: String) -> Self {
+        Self(key)
+    }
+
+    /// The key itself, for the one place it is sent: the db proxy.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for LicenseKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("LicenseKey(<redacted>)")
+    }
 }
 
 /// Where an install's archive came from, recorded on the module row. An
@@ -739,6 +765,9 @@ pub async fn create_module(
         Some(InstallOrigin::Marketplace(listing)) => {
             body["marketplace_listing_id"] = serde_json::json!(listing.listing_id);
             body["marketplace_edition"] = serde_json::json!(listing.edition);
+            if let Some(key) = &listing.license_key {
+                body["marketplace_license_key"] = serde_json::json!(key.expose());
+            }
         }
         Some(InstallOrigin::Upload { resource_id }) => {
             body["upload_resource_id"] = serde_json::json!(resource_id);
