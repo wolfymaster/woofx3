@@ -1403,6 +1403,15 @@ export interface MarketplaceListingInspection {
 }
 
 /**
+ * The license key an installed marketplace module was downloaded with, and
+ * the listing it unlocks, as `getInstalledModuleLicense` answers.
+ */
+export interface MarketplaceModuleLicense {
+  listingId: string;
+  key: string;
+}
+
+/**
  * The outcome of `installMarketplaceBundle`. An overlay listing becomes a
  * scene and an alert listing an alert composition; `engineId` is the new
  * one's id.
@@ -2056,6 +2065,16 @@ export interface Woofx3EngineApi {
    * would review. Claims nothing.
    */
   inspectMarketplaceListing(listingId: string, buyerToken?: string): Promise<MarketplaceListingInspection>;
+
+  /**
+   * The license key the installed module `moduleId` (the manifest module id,
+   * `EngineModuleSummary.moduleId`) was downloaded with, or null when it has
+   * none: it did not come from the marketplace, or came without a key. The
+   * key is the engine's only copy for an install made without an account;
+   * uninstalling the module forgets it. Throws for a module that is not
+   * installed. Needs the `marketplace.licenseKeys` capability.
+   */
+  getInstalledModuleLicense(moduleId: string): Promise<MarketplaceModuleLicense | null>;
 
   /**
    * Install an overlay or alert listing: its bundle becomes a new scene or

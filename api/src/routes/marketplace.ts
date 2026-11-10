@@ -4,6 +4,7 @@ import type {
   MarketplaceInstallRequest,
   MarketplaceInstallResult,
   MarketplaceListingInspection,
+  MarketplaceModuleLicense,
   MarketplacePurchaseIntent,
 } from "@woofx3/api";
 import { manifestLocalEndpoints, manifestPermissions } from "@woofx3/api/module-manifest";
@@ -245,7 +246,7 @@ export const marketplaceRoutes = routeModule({
       fileName: `${name}-${version}.zip`,
       clientId,
       moduleKey,
-      origin: { kind: "marketplace", listingId, edition: listing.edition },
+      origin: { kind: "marketplace", listingId, edition: listing.edition, licenseKey: license.key },
     });
     return { status: "installed", moduleKey };
   },
@@ -283,6 +284,20 @@ export const marketplaceRoutes = routeModule({
       localEndpoints: manifestLocalEndpoints(manifest),
       files: contents.files,
     };
+  },
+
+  async getInstalledModuleLicense(moduleId: string): Promise<MarketplaceModuleLicense | null> {
+    if (typeof moduleId !== "string" || moduleId === "") {
+      throw new Error("getInstalledModuleLicense: moduleId is required");
+    }
+    const installed = await this.db.findModuleByModuleId(moduleId);
+    if (!installed) {
+      throw new Error(`getInstalledModuleLicense: module ${moduleId} is not installed`);
+    }
+    if (!installed.marketplaceListingId || !installed.marketplaceLicenseKey) {
+      return null;
+    }
+    return { listingId: installed.marketplaceListingId, key: installed.marketplaceLicenseKey };
   },
 
   async installMarketplaceBundle(listingId: string, buyerToken?: string): Promise<MarketplaceBundleInstallResult> {
