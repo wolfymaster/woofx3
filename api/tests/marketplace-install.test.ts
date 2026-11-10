@@ -218,7 +218,12 @@ interface Host {
   scenes: Array<Record<string, unknown>>;
 }
 
-function host(options: { installed?: Record<string, { moduleId: string; name: string; version: string }> } = {}): Host {
+function host(
+  options: {
+    installed?: Record<string, { moduleId: string; name: string; version: string }>;
+    modulesById?: Record<string, Record<string, unknown>>;
+  } = {}
+): Host {
   const webhooks: Sent[] = [];
   const barkloaderUploads: FormData[] = [];
   const scenes: Array<Record<string, unknown>> = [];
@@ -239,6 +244,9 @@ function host(options: { installed?: Record<string, { moduleId: string; name: st
     db: {
       async getModuleByModuleKey(moduleKey: string) {
         return options.installed?.[moduleKey] ?? null;
+      },
+      async findModuleByModuleId(moduleId: string) {
+        return options.modulesById?.[moduleId] ?? null;
       },
       async createScene(req: Record<string, unknown>) {
         scenes.push(req);
@@ -909,11 +917,65 @@ describe("installMarketplaceListing with license keys", () => {
     expect(logged).toContain('"hasLicense":true');
   });
 
+  test("hands barkloader the key it downloaded with, beside the provenance", async () => {
+    addModuleListing("obs_scenes", OBS_MANIFEST);
+    const h = host();
+
+    await install(h, "obs_scenes", APPROVED);
+
+    const upload = h.barkloaderUploads[0];
+    expect(upload.get("marketplace_listing_id")).toBe("obs_scenes");
+    expect(upload.get("marketplace_license_key")).toBe(licenseKeyFor("obs_scenes"));
+  });
+
+  test("hands barkloader no key when it downloaded without one", async () => {
+    addModuleListing("obs_scenes", OBS_MANIFEST, {
+      acquireAnswer: () => Response.json({ entitled: true, source: "free" }, { status: 201 }),
+    });
+    const h = host();
+
+    await install(h, "obs_scenes", APPROVED);
+
+    expect(h.barkloaderUploads[0].get("marketplace_license_key")).toBeNull();
+  });
+
   test("refuses a licenseKey that is not a string", async () => {
     addModuleListing("obs_scenes", OBS_MANIFEST);
     await expect(install(host(), "obs_scenes", { ...APPROVED, licenseKey: 7 as unknown as string })).rejects.toThrow(
       "licenseKey must be a string"
     );
+  });
+});
+
+describe("getInstalledModuleLicense", () => {
+  function licenseOf(h: Host, moduleId: string): Promise<unknown> {
+    const route = marketplaceRoutes.getInstalledModuleLicense as unknown as (id: string) => Promise<unknown>;
+    return route.call(h.self, moduleId);
+  }
+
+  test("answers the stored key and the listing it unlocks", async () => {
+    const h = host({
+      modulesById: {
+        obs_scenes: { moduleId: "obs_scenes", marketplaceListingId: "obs_scenes-v2", marketplaceLicenseKey: "W3X-1" },
+      },
+    });
+    expect(await licenseOf(h, "obs_scenes")).toEqual({ listingId: "obs_scenes-v2", key: "W3X-1" });
+  });
+
+  test("answers null for a module with no key", async () => {
+    const h = host({
+      modulesById: {
+        from_marketplace: { moduleId: "from_marketplace", marketplaceListingId: "from_marketplace" },
+        uploaded: { moduleId: "uploaded", uploadResourceId: "res-1" },
+      },
+    });
+    expect(await licenseOf(h, "from_marketplace")).toBeNull();
+    expect(await licenseOf(h, "uploaded")).toBeNull();
+  });
+
+  test("refuses a module that is not installed, and a blank id", async () => {
+    await expect(licenseOf(host(), "ghost")).rejects.toThrow("module ghost is not installed");
+    await expect(licenseOf(host(), "")).rejects.toThrow("moduleId is required");
   });
 });
 

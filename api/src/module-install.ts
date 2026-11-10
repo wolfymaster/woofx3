@@ -92,11 +92,21 @@ export async function sendInstallFailed(
 
 /**
  * Where an archive came from, recorded on the module row: a marketplace
- * listing and its edition, or the custom module resource it was read from.
+ * listing, its edition and the license key it was downloaded with (null
+ * without one), or the custom module resource it was read from.
  */
 export type ArchiveOrigin =
-  | { kind: "marketplace"; listingId: string; edition: number }
+  | { kind: "marketplace"; listingId: string; edition: number; licenseKey: string | null }
   | { kind: "upload"; resourceId: string };
+
+/** `origin` as it may be logged: the license key is a credential, so only whether there is one. */
+function loggableOrigin(origin: ArchiveOrigin | undefined): Record<string, unknown> | undefined {
+  if (origin?.kind !== "marketplace") {
+    return origin;
+  }
+  const { licenseKey, ...rest } = origin;
+  return { ...rest, hasLicense: licenseKey !== null };
+}
 
 /**
  * Gives barkloader an archive to install under `moduleKey`. Barkloader
@@ -129,6 +139,9 @@ export async function handArchiveToBarkloader(
   if (archive.origin?.kind === "marketplace") {
     formData.append("marketplace_listing_id", archive.origin.listingId);
     formData.append("marketplace_edition", String(archive.origin.edition));
+    if (archive.origin.licenseKey !== null) {
+      formData.append("marketplace_license_key", archive.origin.licenseKey);
+    }
   }
   if (archive.origin?.kind === "upload") {
     formData.append("upload_resource_id", archive.origin.resourceId);
@@ -140,7 +153,7 @@ export async function handArchiveToBarkloader(
     clientId: archive.clientId,
     moduleKey: archive.moduleKey,
     fileName: archive.fileName,
-    origin: archive.origin,
+    origin: loggableOrigin(archive.origin),
     message: json.message,
   });
   return json.message ?? "Module uploaded";

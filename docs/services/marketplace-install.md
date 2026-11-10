@@ -7,6 +7,7 @@ The methods:
 ```ts
 installMarketplaceListing(listingId, { approvedPermissions, approvedLocalEndpoints, buyerToken?, licenseKey? }): Promise<MarketplaceInstallResult>
 inspectMarketplaceListing(listingId, buyerToken?): Promise<MarketplaceListingInspection>
+getInstalledModuleLicense(moduleId): Promise<{ listingId, key } | null>
 installMarketplaceBundle(listingId, buyerToken?): Promise<MarketplaceBundleInstallResult>
 ```
 
@@ -27,7 +28,7 @@ A blank value never overrides a non-blank one from a lower source (see [Runtime]
 
 The engine has no marketplace credential of its own. A caller acting for a buyer passes the buyer token that the dashboard minted. An install sends it as a bearer token on `POST /catalog/{id}/acquire`, `GET /modules/{id}/download` and `GET /catalog/{id}/bundle`, and reads the listing itself (`GET /catalog/{id}`) anonymously. The [catalog reads](./marketplace-catalog.md) forward it on the browse routes and the quote. The engine never sends the token on any other route, because the marketplace answers a buyer token there with 401, and it never parses, logs or stores the token.
 
-Without a token, the engine claims the listing anonymously and downloads with the key the claim answers with. Only a free listing can be claimed that way; a paid one is refused with `account_required`. Each anonymous claim is a new entitlement with a key of its own, so a caller that already has the key should pass it instead.
+Without a token, the engine claims the listing anonymously and downloads with the key the claim answers with. Only a free listing can be claimed that way; a paid one is refused with `account_required`. Each anonymous claim is a new entitlement with a key of its own, so a caller that already has the key (for example from `getInstalledModuleLicense`) should pass it instead.
 
 ## License keys and the install id
 
@@ -36,6 +37,10 @@ Every module download carries a license key once the marketplace issues them. Th
 The install id is a random UUID the engine makes the first time it downloads with a key and keeps in its settings under `engine.install_id`. The marketplace counts the distinct install ids a key has downloaded to and refuses a new one past its limit (`activation_limit`). A repeat download from the same engine is not a new install. A fresh database gets a new id, and so counts as a new install.
 
 The key is a credential. The engine never logs it; its logs say only whether an install had one (`hasLicense`).
+
+The key an install downloaded with is kept on the installed module, next to its marketplace provenance, sealed with the engine's secrets key (`WOOFX3_SECRETS_KEY`) like secret module settings. The api hands it to barkloader as the `marketplace_license_key` form field, and barkloader passes it to the db proxy with the listing and edition. `getInstalledModuleLicense(moduleId)` reads it back for the module whose manifest id is `moduleId`: `{ listingId, key }`, or null when the module came from elsewhere or without a key. It throws for a module that is not installed. For an install made without an account this is the only copy of the key. Uninstalling the module deletes its row, and the key with it. A key that no longer opens (the secrets key changed) reads as none.
+
+An install that names a listing replaces the kept key with its own, or with none when it had none; an upload clears it; an install that names no origin keeps it.
 
 Two marketplaces from before license keys are still served: one whose claim answers with no `license`, and one that refuses an anonymous claim with 401 `unauthorized`. Against either the engine downloads without a key, as before, which works for a free listing and for a listing the buyer token's buyer holds.
 
@@ -96,7 +101,7 @@ For edition 1 the listing id and the module id are the same, so its keys are the
 
 Installing edition 2 over edition 1 is an upgrade: the key differs, so the install proceeds, and barkloader replaces the installed module in place, as it does for any new version of a module. The module row keeps its id, the streamer's setting values are kept because settings are keyed by module id (see [Install-time registration](../barkloader/modules.md#install-time-registration)), resources the new manifest no longer declares are pruned, and functions it drops are archived. Installing the same edition and build again is caught by the already-installed check, because its key is unchanged.
 
-Which listing and edition is installed is never read from the key. It is the module's marketplace provenance (`marketplaceListingId`, `marketplaceEdition` on the module), which every marketplace install sends and which replaces the recorded values on an upgrade. An install that sends no provenance, such as a manual upload, keeps the recorded values.
+Which listing and edition is installed is never read from the key. It is the module's marketplace provenance (`marketplaceListingId`, `marketplaceEdition` on the module), which every marketplace install sends, together with its license key, and which replaces the recorded values on an upgrade. An install that sends no provenance, such as a manual upload, keeps the recorded values.
 
 ## Inspecting a module
 
