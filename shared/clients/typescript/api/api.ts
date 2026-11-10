@@ -2017,14 +2017,19 @@ export interface Woofx3EngineApi {
 
   /**
    * Install a marketplace module or theme listing by id. The engine reads the
-   * listing, claims it for the buyer when given a `buyerToken` (a listing
-   * that must be bought first answers `payment_required`), downloads the
-   * archive only from an allowed host, refuses it unless its size and
-   * SHA-256 match what the marketplace recorded, and checks the manifest's
+   * listing, claims it unless given a `licenseKey` (for the buyer when given a
+   * `buyerToken`, anonymously otherwise; a listing that must be bought first
+   * answers `payment_required`), downloads the archive with the license key
+   * and only from an allowed host, refuses it unless its size and SHA-256
+   * match what the marketplace recorded, and checks the manifest's
    * permissions and `local[]` endpoints against the approval before handing
    * it to barkloader. Install webhooks the engine sends itself carry
    * `source: "marketplace"`. `clientId` is injected by the session.
    *
+   * A marketplace refusal of the claim or the download throws in the
+   * `formatMarketplaceCatalogError` format, so `parseMarketplaceCatalogError`
+   * reads its status and code (`activation_limit`, `not_entitled`,
+   * `account_required`, ...) back.
    */
   installMarketplaceListing(listingId: string, request: MarketplaceInstallRequest): Promise<MarketplaceInstallResult>;
 

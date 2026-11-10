@@ -1,4 +1,4 @@
-import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "@woofx3/api";
+import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery, MarketplacePurchaseIntent } from "@woofx3/api";
 import {
   DEFAULT_GUARDED_DOWNLOAD_CONFIG,
   type DownloadExpectation,
@@ -19,6 +19,12 @@ import {
  * listings. On any other route it answers a buyer token with 401, so the
  * client never sends one there. Without a token every request is anonymous,
  * which is enough for a free, public listing.
+ *
+ * A module download may also carry a license key (`X-License-Key`) with the
+ * engine's install id (`X-Install-Id`), which the marketplace counts the
+ * key's installs by. They are headers rather than `Authorization: License`
+ * because a key from a purchase also needs the buyer token, which already
+ * holds `Authorization`.
  */
 
 /** The public marketplace the engine uses unless `marketplaceUrl` says otherwise. */
@@ -84,26 +90,54 @@ export interface MarketplaceDownload extends ArchiveDownload {
   sizeBytes?: number;
 }
 
-/** The outcome of `POST /catalog/{id}/acquire`. */
-export type MarketplaceAcquireResult = { status: "entitled"; source: string } | { status: "payment_required" };
+/** The key a listing is downloaded with, as `acquire` hands it out. */
+export interface MarketplaceLicense {
+  key: string;
+  listingId: string;
+  edition: number;
+}
+
+/**
+ * The outcome of `POST /catalog/{id}/acquire`. `license` is null and `intent`
+ * is null from a marketplace that issues neither.
+ */
+export type MarketplaceAcquireResult =
+  | { status: "entitled"; source: string; license: MarketplaceLicense | null }
+  | { status: "payment_required"; intent: MarketplacePurchaseIntent | null };
+
+/**
+ * How a module download proves the caller may have the archive. With a
+ * `license`, the key and the install id it is counted against; a key from a
+ * purchase, an upgrade or a gift also needs the buyer's `buyerToken`. Without
+ * one, the marketplace serves a free listing to anyone and any other listing
+ * only to a buyer token whose buyer holds it.
+ */
+export interface MarketplaceDownloadCredentials {
+  buyerToken?: string;
+  license?: { key: string; installId: string };
+}
 
 /**
  * A marketplace API answer that was not a 2xx. `code` is the marketplace's
  * error envelope code (`{"error": {"code", "message"}}`), or empty when the
  * body was not one, and `detail` is the envelope's message, which the
- * marketplace writes for people, or empty.
+ * marketplace writes for people, or empty. `body` is the whole answer when it
+ * was a JSON object, for the fields some refusals carry beside the envelope
+ * (a 402's purchase intent), and empty otherwise.
  */
 export class MarketplaceError extends Error {
   readonly status: number;
   readonly code: string;
   readonly detail: string;
+  readonly body: Record<string, unknown>;
 
-  constructor(message: string, status: number, code: string, detail = "") {
+  constructor(message: string, status: number, code: string, detail = "", body: Record<string, unknown> = {}) {
     super(message);
     this.name = "MarketplaceError";
     this.status = status;
     this.code = code;
     this.detail = detail;
+    this.body = body;
   }
 }
 
@@ -342,11 +376,18 @@ export class MarketplaceClient {
   }
 
   /**
-   * Claims the listing for the token's buyer, or confirms they hold it.
-   * 402 means the buyer has to pay first; any other refusal (an unpriced,
-   * unpublished or superseded listing) throws.
+   * Claims the listing for the token's buyer, or confirms they hold it, and
+   * answers with the license key it downloads with. Without a token the claim
+   * is anonymous, which the marketplace allows only for a free listing, and
+   * each anonymous claim is a new entitlement with a key of its own.
+   *
+   * 402 means the buyer has to pay first, and carries the purchase intent to
+   * pay. Any other refusal throws a `MarketplaceError`: `account_required` (a
+   * paid listing with no token), `entitlement_revoked`, `downloads_blocked`,
+   * `rate_limited` (anonymous claims), `listing_unavailable` (unpriced,
+   * unpublished, superseded or delisted).
    */
-  async acquire(listingId: string, buyerToken: string): Promise<MarketplaceAcquireResult> {
+  async acquire(listingId: string, buyerToken?: string): Promise<MarketplaceAcquireResult> {
     try {
       const payload = await this.request("POST", `/catalog/${encodeURIComponent(listingId)}/acquire`, {
         bearer: buyerToken,
@@ -356,10 +397,10 @@ export class MarketplaceClient {
       if (obj.entitled !== true) {
         throw new Error(`Marketplace acquire for ${listingId} did not entitle the buyer`);
       }
-      return { status: "entitled", source: asString(obj.source) };
+      return { status: "entitled", source: asString(obj.source), license: parseLicense(listingId, obj.license) };
     } catch (err) {
       if (err instanceof MarketplaceError && err.status === 402) {
-        return { status: "payment_required" };
+        return { status: "payment_required", intent: parseIntent(listingId, err.body.intent) };
       }
       throw err;
     }
@@ -367,11 +408,30 @@ export class MarketplaceClient {
 
   /**
    * A presigned download for a module's archive. Refused when the answer has
-   * no SHA-256: an archive that cannot be checked is never installed.
+   * no SHA-256: an archive that cannot be checked is never installed. A
+   * refusal throws a `MarketplaceError`; with a license key that includes
+   * `not_entitled` (the key does not unlock this listing, or is revoked),
+   * `account_required` and `buyer_mismatch` (a bought key without its
+   * buyer's token, or with another buyer's), `activation_limit` (the key is
+   * on as many installs as it allows) and `downloads_blocked`.
    */
-  async getModuleDownload(listingId: string, buyerToken?: string): Promise<MarketplaceDownload> {
+  async getModuleDownload(
+    listingId: string,
+    credentials: MarketplaceDownloadCredentials = {}
+  ): Promise<MarketplaceDownload> {
+    const headers: Record<string, string> = {};
+    if (credentials.license) {
+      if (credentials.license.key === "" || credentials.license.installId === "") {
+        throw new Error(`A licensed download of ${listingId} needs both a license key and an install id`);
+      }
+      headers["X-License-Key"] = credentials.license.key;
+      headers["X-Install-Id"] = credentials.license.installId;
+    }
     const payload = asObject(
-      await this.request("GET", `/modules/${encodeURIComponent(listingId)}/download`, { bearer: buyerToken })
+      await this.request("GET", `/modules/${encodeURIComponent(listingId)}/download`, {
+        bearer: credentials.buyerToken,
+        headers,
+      })
     );
     const url = asString(payload.url);
     if (url === "") {
@@ -422,9 +482,9 @@ export class MarketplaceClient {
   private async request(
     method: "GET" | "POST",
     path: string,
-    options: { bearer?: string; body?: unknown } = {}
+    options: { bearer?: string; body?: unknown; headers?: Record<string, string> } = {}
   ): Promise<unknown> {
-    const headers: Record<string, string> = { Accept: "application/json" };
+    const headers: Record<string, string> = { ...options.headers, Accept: "application/json" };
     if (options.bearer) {
       headers.Authorization = `Bearer ${options.bearer}`;
     }
@@ -479,20 +539,67 @@ export class MarketplaceClient {
 
 /** A non-2xx answer as an error, reading the marketplace's JSON error envelope when there is one. */
 function marketplaceError(method: string, path: string, status: number, body: string): MarketplaceError {
-  let code = "";
-  let detail = "";
+  let parsed: Record<string, unknown> = {};
   try {
-    const envelope = asObject(asObject(JSON.parse(body)).error);
-    code = asString(envelope.code);
-    detail = asString(envelope.message);
+    parsed = asObject(JSON.parse(body));
   } catch {
-    // Not the envelope; the status is all there is to report.
+    // Not JSON; the status is all there is to report.
   }
+  const envelope = asObject(parsed.error);
+  const code = asString(envelope.code);
+  const detail = asString(envelope.message);
   const reason = [code, detail].filter((part) => part !== "").join(": ");
   return new MarketplaceError(
     `Marketplace ${method} ${path} failed with ${status}${reason ? ` (${reason})` : ""}`,
     status,
     code,
-    detail
+    detail,
+    parsed
   );
+}
+
+/**
+ * `acquire`'s `license`, or null when the answer has none (a marketplace that
+ * issues no keys). One that is there but malformed, or for another listing,
+ * is refused rather than dropped: installing with it would fail at download,
+ * further from the cause.
+ */
+function parseLicense(listingId: string, raw: unknown): MarketplaceLicense | null {
+  if (raw === undefined || raw === null) {
+    return null;
+  }
+  const obj = asObject(raw);
+  const key = asString(obj.key);
+  const edition = obj.edition;
+  if (key === "" || obj.listingId !== listingId) {
+    throw new Error(`Marketplace acquire for ${listingId} answered with a malformed license`);
+  }
+  if (typeof edition !== "number" || !Number.isSafeInteger(edition) || edition < 1) {
+    throw new Error(`Marketplace acquire for ${listingId} answered with a license of an invalid edition`);
+  }
+  return { key, listingId, edition };
+}
+
+/** A 402's purchase `intent`, or null when it has none; refused when malformed, as `parseLicense`. */
+function parseIntent(listingId: string, raw: unknown): MarketplacePurchaseIntent | null {
+  if (raw === undefined || raw === null) {
+    return null;
+  }
+  const obj = asObject(raw);
+  const { id, amountCents, currency, kind, expiresAt } = obj;
+  const valid =
+    typeof id === "string" &&
+    id !== "" &&
+    typeof amountCents === "number" &&
+    Number.isSafeInteger(amountCents) &&
+    amountCents >= 0 &&
+    typeof currency === "string" &&
+    currency !== "" &&
+    (kind === "full" || kind === "upgrade") &&
+    typeof expiresAt === "string" &&
+    expiresAt !== "";
+  if (!valid) {
+    throw new Error(`Marketplace acquire for ${listingId} answered 402 with a malformed purchase intent`);
+  }
+  return { id, amountCents, currency, kind, expiresAt };
 }
