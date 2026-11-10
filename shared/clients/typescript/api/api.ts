@@ -1308,13 +1308,34 @@ export interface UninstallModuleResponse {
  *
  * `buyerToken` is the short-lived marketplace token the dashboard minted for
  * the buyer. The engine forwards it to the marketplace unread and keeps
- * nothing. Without one the listing is read and downloaded anonymously, which
- * only a free, public listing allows, and it is not claimed for anyone.
+ * nothing.
+ *
+ * `licenseKey` is the listing's license key, from an earlier `acquire` or the
+ * buyer's entitlements. With one the engine downloads with it and claims
+ * nothing; without one it claims the listing itself, for the buyer when there
+ * is a `buyerToken` and anonymously when there is not (only a free listing
+ * can be claimed that way). A key from a purchase, upgrade or gift also needs
+ * the buyer's `buyerToken`. Needs the `marketplace.licenseKeys` capability;
+ * an engine without it ignores the key.
  */
 export interface MarketplaceInstallRequest {
   approvedPermissions: string[];
   approvedLocalEndpoints: string[];
   buyerToken?: string;
+  licenseKey?: string;
+}
+
+/**
+ * What the marketplace asks to be paid before a listing can be held, as its
+ * `acquire` answers with 402. `id` is what a checkout is started with.
+ * `expiresAt` is an ISO 8601 timestamp.
+ */
+export interface MarketplacePurchaseIntent {
+  id: string;
+  amountCents: number;
+  currency: string;
+  kind: "full" | "upgrade";
+  expiresAt: string;
 }
 
 /**
@@ -1332,7 +1353,9 @@ export interface MarketplaceInstallRequest {
  *   outside the approval, e.g. because the listing was republished after the
  *   streamer reviewed it. Nothing was installed.
  * - `payment_required`: the buyer must buy the listing first. Nothing was
- *   downloaded.
+ *   downloaded. `intent` is the purchase to pay, from an engine with the
+ *   `marketplace.licenseKeys` capability talking to a marketplace that opens
+ *   one.
  */
 export type MarketplaceInstallResult =
   | { status: "installed"; moduleKey: string; alreadyInstalled?: boolean }
@@ -1344,7 +1367,7 @@ export type MarketplaceInstallResult =
       /** Ids of `local[]` endpoints outside the approval. */
       unapprovedLocalEndpoints: string[];
     }
-  | { status: "payment_required"; name: string; version: string };
+  | { status: "payment_required"; name: string; version: string; intent?: MarketplacePurchaseIntent };
 
 /** A `local[]` endpoint as an install review shows it: what the module reaches on the streamer's network. */
 export interface MarketplaceLocalEndpoint {
