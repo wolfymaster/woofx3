@@ -1,10 +1,12 @@
 import { afterAll, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import type {
-  MarketplaceBundleInstallResult,
-  MarketplaceInstallRequest,
-  MarketplaceInstallResult,
-  MarketplaceListingInspection,
+import {
+  type MarketplaceBundleInstallResult,
+  type MarketplaceInstallRequest,
+  type MarketplaceInstallResult,
+  type MarketplaceListingInspection,
+  type MarketplacePurchaseIntent,
+  parseMarketplaceCatalogError,
 } from "@woofx3/api";
 import { strToU8, zipSync } from "fflate";
 import { resolveMarketplaceConfig } from "../src/config";
@@ -12,6 +14,7 @@ import {
   DEFAULT_MARKETPLACE_DOWNLOAD_HOSTS,
   DEFAULT_MARKETPLACE_URL,
   MarketplaceClient,
+  MarketplaceError,
 } from "../src/marketplace-client";
 import { marketplaceModuleKey, marketplaceRoutes } from "../src/routes/marketplace";
 
@@ -21,6 +24,10 @@ interface FakeListing {
   listing: Record<string, unknown>;
   /** Answer to POST /catalog/{id}/acquire. */
   acquireStatus?: number;
+  /** Replaces the acquire answer built from `acquireStatus`. */
+  acquireAnswer?: () => Response;
+  /** Refuses GET /modules/{id}/download with this answer instead of serving it. */
+  downloadRefusal?: () => Response;
   /** Answer to GET /modules/{id}/download; built from `archive` when absent. */
   download?: (base: string) => Record<string, unknown>;
   archive?: Uint8Array;
@@ -31,6 +38,8 @@ interface Seen {
   method: string;
   path: string;
   authorization: string | null;
+  licenseKey: string | null;
+  installId: string | null;
 }
 
 const listings = new Map<string, FakeListing>();
@@ -45,12 +54,33 @@ function errorEnvelope(status: number, code: string, message: string): Response 
   return Response.json({ error: { code, message } }, { status });
 }
 
+/** The key the fake marketplace issues for a listing. */
+function licenseKeyFor(listingId: string): string {
+  return `W3X-KEY-${listingId}`;
+}
+
+const PAID_INTENT: MarketplacePurchaseIntent = {
+  id: "intent-1",
+  kind: "full",
+  amountCents: 500,
+  currency: "usd",
+  expiresAt: "2030-01-01T00:00:00Z",
+};
+
+const INSTALL_ID = "8d0f3c1e-2b4a-4c55-9e1d-0a7b6c5d4e3f";
+
 const server = Bun.serve({
   port: 0,
   hostname: "127.0.0.1",
   async fetch(req): Promise<Response> {
     const url = new URL(req.url);
-    seen.push({ method: req.method, path: url.pathname, authorization: req.headers.get("authorization") });
+    seen.push({
+      method: req.method,
+      path: url.pathname,
+      authorization: req.headers.get("authorization"),
+      licenseKey: req.headers.get("x-license-key"),
+      installId: req.headers.get("x-install-id"),
+    });
     const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
 
     if (parts[0] === "files" && parts.length === 2) {
@@ -68,19 +98,41 @@ const server = Bun.serve({
       return Response.json({ listing: entry.listing });
     }
     if (parts[0] === "catalog" && parts[2] === "acquire" && req.method === "POST") {
+      if (entry.acquireAnswer) {
+        return entry.acquireAnswer();
+      }
       const status = entry.acquireStatus ?? 201;
       if (status === 402) {
-        return errorEnvelope(402, "payment_required", "this listing costs 500 usd for this buyer; open a checkout");
+        return Response.json(
+          {
+            error: {
+              code: "payment_required",
+              message: "this listing costs 500 usd for this buyer; pay the purchase intent",
+            },
+            intent: PAID_INTENT,
+          },
+          { status: 402 }
+        );
       }
       if (status >= 400) {
         return errorEnvelope(status, "listing_unavailable", "this listing cannot be acquired");
       }
-      return Response.json({ entitled: true, source: status === 200 ? "purchase" : "free" }, { status });
+      return Response.json(
+        {
+          entitled: true,
+          source: status === 200 ? "purchase" : "free",
+          license: { key: licenseKeyFor(parts[1]), listingId: parts[1], edition: 1 },
+        },
+        { status }
+      );
     }
     if (parts[0] === "catalog" && parts[2] === "bundle") {
       return Response.json({ bundle: entry.bundle, requires: [] });
     }
     if (parts[0] === "modules" && parts[2] === "download") {
+      if (entry.downloadRefusal) {
+        return entry.downloadRefusal();
+      }
       const base = `http://127.0.0.1:${server.port}`;
       if (entry.download) {
         return Response.json(entry.download(base));
@@ -131,6 +183,8 @@ function addModuleListing(
     },
     archive,
     acquireStatus: options.acquireStatus,
+    acquireAnswer: options.acquireAnswer,
+    downloadRefusal: options.downloadRefusal,
     download: options.download,
   });
   return archive;
@@ -157,6 +211,8 @@ interface Sent {
 
 interface Host {
   self: Record<string, unknown>;
+  /** Every log line, as `[message, fields]`. */
+  logs: unknown[][];
   webhooks: Sent[];
   barkloaderUploads: FormData[];
   scenes: Array<Record<string, unknown>>;
@@ -166,9 +222,14 @@ function host(options: { installed?: Record<string, { moduleId: string; name: st
   const webhooks: Sent[] = [];
   const barkloaderUploads: FormData[] = [];
   const scenes: Array<Record<string, unknown>> = [];
-  const logger = { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} };
+  const logs: unknown[][] = [];
+  const log = (...line: unknown[]) => {
+    logs.push(line);
+  };
+  const logger = { debug: log, info: log, warn: log, error: log };
   const self = {
     logger,
+    installId: { get: async () => INSTALL_ID },
     marketplace: new MarketplaceClient({ baseUrl: BASE, downloadHosts: [BASE] }),
     webhookClient: {
       async send(event: Record<string, unknown>, clientId?: string) {
@@ -191,7 +252,7 @@ function host(options: { installed?: Record<string, { moduleId: string; name: st
     },
     async emitSceneWebhook() {},
   };
-  return { self, webhooks, barkloaderUploads, scenes };
+  return { self, logs, webhooks, barkloaderUploads, scenes };
 }
 
 function install(h: Host, listingId: string, request: MarketplaceInstallRequest): Promise<MarketplaceInstallResult> {
@@ -261,7 +322,7 @@ describe("marketplaceModuleKey", () => {
 });
 
 describe("installMarketplaceListing", () => {
-  test("installs a free listing anonymously under the pinned key", async () => {
+  test("claims a free listing anonymously and installs it with the key, under the pinned key", async () => {
     const archive = addModuleListing("obs_scenes", OBS_MANIFEST);
     const h = host();
 
@@ -277,8 +338,18 @@ describe("installMarketplaceListing", () => {
     expect(file.name).toBe("obs_scenes name-1.2.0.zip");
     expect(sha256(new Uint8Array(await file.arrayBuffer()))).toBe(sha256(archive));
     expect(h.webhooks).toEqual([]);
-    expect(requestsTo("/catalog/obs_scenes/acquire")).toEqual([]);
+    expect(requestsTo("/catalog/obs_scenes/acquire")).toHaveLength(1);
+    expect(requestsTo("/modules/obs_scenes/download")).toEqual([
+      {
+        method: "GET",
+        path: "/modules/obs_scenes/download",
+        authorization: null,
+        licenseKey: licenseKeyFor("obs_scenes"),
+        installId: INSTALL_ID,
+      },
+    ]);
     expect(seen.every((s) => s.authorization === null)).toBe(true);
+    expect(requestsTo("/files/")[0].licenseKey).toBeNull();
   });
 
   test("records the listing and edition 1 on the module when the listing names no edition", async () => {
@@ -402,20 +473,31 @@ describe("installMarketplaceListing", () => {
 
     expect(result.status).toBe("installed");
     expect(requestsTo("/catalog/obs_scenes/acquire")).toEqual([
-      { method: "POST", path: "/catalog/obs_scenes/acquire", authorization: "Bearer buyer.jws.token" },
+      {
+        method: "POST",
+        path: "/catalog/obs_scenes/acquire",
+        authorization: "Bearer buyer.jws.token",
+        licenseKey: null,
+        installId: null,
+      },
     ]);
     expect(requestsTo("/modules/obs_scenes/download")[0].authorization).toBe("Bearer buyer.jws.token");
     expect(seen.find((s) => s.path === "/catalog/obs_scenes")?.authorization).toBeNull();
     expect(requestsTo("/files/")[0].authorization).toBeNull();
   });
 
-  test("answers payment_required on 402 and downloads nothing", async () => {
+  test("answers payment_required with the purchase intent on 402 and downloads nothing", async () => {
     addModuleListing("paid_mod", OBS_MANIFEST, { acquireStatus: 402 });
     const h = host();
 
     const result = await install(h, "paid_mod", { ...APPROVED, buyerToken: "t" });
 
-    expect(result).toEqual({ status: "payment_required", name: "paid_mod name", version: "1.2.0" });
+    expect(result).toEqual({
+      status: "payment_required",
+      name: "paid_mod name",
+      version: "1.2.0",
+      intent: PAID_INTENT,
+    });
     expect(requestsTo("/modules/")).toEqual([]);
     expect(h.barkloaderUploads).toEqual([]);
   });
@@ -423,7 +505,7 @@ describe("installMarketplaceListing", () => {
   test("throws on any other acquire refusal", async () => {
     addModuleListing("gone", OBS_MANIFEST, { acquireStatus: 409 });
     await expect(install(host(), "gone", { ...APPROVED, buyerToken: "t" })).rejects.toThrow(
-      "Marketplace POST /catalog/gone/acquire failed with 409 (listing_unavailable: this listing cannot be acquired)"
+      "marketplace_http status=409 code=listing_unavailable: this listing cannot be acquired"
     );
   });
 
@@ -551,6 +633,290 @@ describe("installMarketplaceListing", () => {
   });
 });
 
+describe("MarketplaceClient.acquire", () => {
+  const client = () => new MarketplaceClient({ baseUrl: BASE, downloadHosts: [BASE] });
+  const refusal = (status: number, code: string) => () => errorEnvelope(status, code, `${code} refusal`);
+
+  const answers: Array<{
+    name: string;
+    listing: Partial<FakeListing>;
+    expected: unknown;
+  }> = [
+    {
+      name: "a free claim (201) answers the license",
+      listing: { acquireStatus: 201 },
+      expected: {
+        status: "entitled",
+        source: "free",
+        license: { key: licenseKeyFor("mod"), listingId: "mod", edition: 1 },
+      },
+    },
+    {
+      name: "a listing already held (200) answers the license",
+      listing: { acquireStatus: 200 },
+      expected: {
+        status: "entitled",
+        source: "purchase",
+        license: { key: licenseKeyFor("mod"), listingId: "mod", edition: 1 },
+      },
+    },
+    {
+      name: "a marketplace that issues no keys answers a null license",
+      listing: { acquireAnswer: () => Response.json({ entitled: true, source: "free" }, { status: 201 }) },
+      expected: { status: "entitled", source: "free", license: null },
+    },
+    {
+      name: "402 answers payment_required with the intent",
+      listing: { acquireStatus: 402 },
+      expected: { status: "payment_required", intent: PAID_INTENT },
+    },
+    {
+      name: "402 from a marketplace that opens no intent answers a null intent",
+      listing: { acquireAnswer: refusal(402, "payment_required") },
+      expected: { status: "payment_required", intent: null },
+    },
+  ];
+  for (const answer of answers) {
+    test(answer.name, async () => {
+      addModuleListing("mod", OBS_MANIFEST, answer.listing);
+      expect(await client().acquire("mod", "buyer-token")).toEqual(answer.expected as never);
+    });
+  }
+
+  const refusals: Array<{ status: number; code: string }> = [
+    { status: 401, code: "account_required" },
+    { status: 403, code: "entitlement_revoked" },
+    { status: 409, code: "listing_unavailable" },
+    { status: 410, code: "downloads_blocked" },
+    { status: 429, code: "rate_limited" },
+  ];
+  for (const { status, code } of refusals) {
+    test(`${status} ${code} throws a MarketplaceError with that status and code`, async () => {
+      addModuleListing("mod", OBS_MANIFEST, { acquireAnswer: refusal(status, code) });
+      const err = await client()
+        .acquire("mod")
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(MarketplaceError);
+      expect(err).toMatchObject({ status, code, detail: `${code} refusal` });
+    });
+  }
+
+  test("claims anonymously without a token, sending no Authorization header", async () => {
+    addModuleListing("mod", OBS_MANIFEST);
+    await client().acquire("mod");
+    expect(requestsTo("/catalog/mod/acquire")).toEqual([
+      { method: "POST", path: "/catalog/mod/acquire", authorization: null, licenseKey: null, installId: null },
+    ]);
+  });
+
+  const malformed: Array<{ name: string; body: Record<string, unknown>; status: number; message: string }> = [
+    {
+      name: "a license without a key",
+      body: { entitled: true, source: "free", license: { listingId: "mod", edition: 1 } },
+      status: 201,
+      message: "malformed license",
+    },
+    {
+      name: "a license for another listing",
+      body: { entitled: true, source: "free", license: { key: "k", listingId: "other", edition: 1 } },
+      status: 201,
+      message: "malformed license",
+    },
+    {
+      name: "a license of edition 0",
+      body: { entitled: true, source: "free", license: { key: "k", listingId: "mod", edition: 0 } },
+      status: 201,
+      message: "invalid edition",
+    },
+    {
+      name: "an intent of an unknown kind",
+      body: { error: { code: "payment_required", message: "pay" }, intent: { ...PAID_INTENT, kind: "rental" } },
+      status: 402,
+      message: "malformed purchase intent",
+    },
+  ];
+  for (const { name, body, status, message } of malformed) {
+    test(`refuses ${name}`, async () => {
+      addModuleListing("mod", OBS_MANIFEST, { acquireAnswer: () => Response.json(body, { status }) });
+      await expect(client().acquire("mod", "t")).rejects.toThrow(message);
+    });
+  }
+});
+
+describe("MarketplaceClient.getModuleDownload", () => {
+  const client = () => new MarketplaceClient({ baseUrl: BASE, downloadHosts: [BASE] });
+
+  test("sends the license key, the install id and the buyer token", async () => {
+    addModuleListing("mod", OBS_MANIFEST);
+    await client().getModuleDownload("mod", { buyerToken: "t", license: { key: "W3X-1", installId: INSTALL_ID } });
+    expect(requestsTo("/modules/mod/download")).toEqual([
+      {
+        method: "GET",
+        path: "/modules/mod/download",
+        authorization: "Bearer t",
+        licenseKey: "W3X-1",
+        installId: INSTALL_ID,
+      },
+    ]);
+  });
+
+  test("sends no license headers without a license", async () => {
+    addModuleListing("mod", OBS_MANIFEST);
+    await client().getModuleDownload("mod");
+    expect(requestsTo("/modules/mod/download")[0]).toMatchObject({
+      authorization: null,
+      licenseKey: null,
+      installId: null,
+    });
+  });
+
+  test("refuses a license with a blank key or install id before asking", async () => {
+    addModuleListing("mod", OBS_MANIFEST);
+    await expect(client().getModuleDownload("mod", { license: { key: "W3X-1", installId: "" } })).rejects.toThrow(
+      "needs both a license key and an install id"
+    );
+    expect(requestsTo("/modules/")).toEqual([]);
+  });
+
+  const refusals: Array<{ status: number; code: string }> = [
+    { status: 400, code: "install_id_required" },
+    { status: 401, code: "account_required" },
+    { status: 403, code: "not_entitled" },
+    { status: 403, code: "buyer_mismatch" },
+    { status: 409, code: "activation_limit" },
+    { status: 410, code: "downloads_blocked" },
+  ];
+  for (const { status, code } of refusals) {
+    test(`${status} ${code} throws a MarketplaceError with that status and code`, async () => {
+      addModuleListing("mod", OBS_MANIFEST, { downloadRefusal: () => errorEnvelope(status, code, `${code} refusal`) });
+      const err = await client()
+        .getModuleDownload("mod", { license: { key: "W3X-1", installId: INSTALL_ID } })
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(MarketplaceError);
+      expect(err).toMatchObject({ status, code, detail: `${code} refusal` });
+    });
+  }
+});
+
+describe("installMarketplaceListing with license keys", () => {
+  test("downloads with a given key and claims nothing", async () => {
+    addModuleListing("obs_scenes", OBS_MANIFEST);
+    const h = host();
+
+    const result = await install(h, "obs_scenes", { ...APPROVED, buyerToken: "t", licenseKey: "W3X-GIVEN" });
+
+    expect(result.status).toBe("installed");
+    expect(requestsTo("/catalog/obs_scenes/acquire")).toEqual([]);
+    expect(requestsTo("/modules/obs_scenes/download")[0]).toMatchObject({
+      authorization: "Bearer t",
+      licenseKey: "W3X-GIVEN",
+      installId: INSTALL_ID,
+    });
+  });
+
+  test("downloads with the key its own claim answered with, for the buyer", async () => {
+    addModuleListing("obs_scenes", OBS_MANIFEST, { acquireStatus: 200 });
+
+    await install(host(), "obs_scenes", { ...APPROVED, buyerToken: "t" });
+
+    expect(requestsTo("/modules/obs_scenes/download")[0]).toMatchObject({
+      authorization: "Bearer t",
+      licenseKey: licenseKeyFor("obs_scenes"),
+      installId: INSTALL_ID,
+    });
+  });
+
+  test("downloads without a key from a marketplace that issues none", async () => {
+    addModuleListing("obs_scenes", OBS_MANIFEST, {
+      acquireAnswer: () => Response.json({ entitled: true, source: "free" }, { status: 201 }),
+    });
+
+    expect((await install(host(), "obs_scenes", APPROVED)).status).toBe("installed");
+    expect(requestsTo("/modules/obs_scenes/download")[0]).toMatchObject({ licenseKey: null, installId: null });
+  });
+
+  test("downloads anonymously without a key from a marketplace that refuses anonymous claims", async () => {
+    addModuleListing("obs_scenes", OBS_MANIFEST, {
+      acquireAnswer: () => errorEnvelope(401, "unauthorized", "a valid bearer token is required for this request"),
+    });
+
+    expect((await install(host(), "obs_scenes", APPROVED)).status).toBe("installed");
+    expect(requestsTo("/modules/obs_scenes/download")[0]).toMatchObject({
+      authorization: null,
+      licenseKey: null,
+      installId: null,
+    });
+  });
+
+  test("still refuses a buyer's claim the marketplace answers 401 unauthorized", async () => {
+    addModuleListing("obs_scenes", OBS_MANIFEST, {
+      acquireAnswer: () => errorEnvelope(401, "unauthorized", "a valid bearer token is required for this request"),
+    });
+    await expect(install(host(), "obs_scenes", { ...APPROVED, buyerToken: "expired" })).rejects.toThrow(
+      "marketplace_http status=401 code=unauthorized"
+    );
+    expect(requestsTo("/modules/")).toEqual([]);
+  });
+
+  test("answers a paid listing claimed without an account with account_required", async () => {
+    addModuleListing("paid_mod", OBS_MANIFEST, {
+      acquireAnswer: () => errorEnvelope(401, "account_required", "this listing is paid; sign in to buy it"),
+    });
+    await expect(install(host(), "paid_mod", APPROVED)).rejects.toThrow(
+      "marketplace_http status=401 code=account_required: this listing is paid; sign in to buy it"
+    );
+    expect(requestsTo("/modules/")).toEqual([]);
+  });
+
+  const downloadRefusals: Array<{ status: number; code: string; message: string }> = [
+    {
+      status: 409,
+      code: "activation_limit",
+      message: "this license key has been used on as many installs as it allows; ask the marketplace to reset it",
+    },
+    { status: 403, code: "not_entitled", message: "this license key does not unlock this listing" },
+    {
+      status: 401,
+      code: "account_required",
+      message: "this license key belongs to an account; present that account's token",
+    },
+    { status: 410, code: "downloads_blocked", message: "this module's downloads have been blocked by the marketplace" },
+  ];
+  for (const refusal of downloadRefusals) {
+    test(`reports a ${refusal.code} download in a form the caller can read the code back from`, async () => {
+      addModuleListing("obs_scenes", OBS_MANIFEST, {
+        downloadRefusal: () => errorEnvelope(refusal.status, refusal.code, refusal.message),
+      });
+      const h = host();
+
+      const err = await install(h, "obs_scenes", { ...APPROVED, licenseKey: "W3X-GIVEN" }).catch((e: unknown) => e);
+
+      expect(parseMarketplaceCatalogError((err as Error).message)).toEqual({ kind: "http", ...refusal });
+      expect(h.barkloaderUploads).toEqual([]);
+    });
+  }
+
+  test("never logs the license key", async () => {
+    addModuleListing("obs_scenes", OBS_MANIFEST);
+    const h = host();
+
+    await install(h, "obs_scenes", { ...APPROVED, licenseKey: "W3X-SECRET-KEY" });
+    await install(h, "obs_scenes", APPROVED);
+
+    const logged = JSON.stringify(h.logs);
+    expect(logged).not.toContain("W3X-SECRET-KEY");
+    expect(logged).not.toContain(licenseKeyFor("obs_scenes"));
+    expect(logged).toContain('"hasLicense":true');
+  });
+
+  test("refuses a licenseKey that is not a string", async () => {
+    addModuleListing("obs_scenes", OBS_MANIFEST);
+    await expect(install(host(), "obs_scenes", { ...APPROVED, licenseKey: 7 as unknown as string })).rejects.toThrow(
+      "licenseKey must be a string"
+    );
+  });
+});
+
 describe("inspectMarketplaceListing", () => {
   test("reports the verified build's manifest, permissions, local endpoints and files", async () => {
     const archive = moduleZip(OBS_MANIFEST, { "main.js": "x", "README.md": "# hi", "__MACOSX/junk": "j" }, "obs/");
@@ -578,6 +944,7 @@ describe("inspectMarketplaceListing", () => {
       ],
     });
     expect(requestsTo("/catalog/obs_scenes/acquire")).toEqual([]);
+    expect(requestsTo("/modules/obs_scenes/download")[0]).toMatchObject({ licenseKey: null, installId: null });
   });
 
   test("reports a later edition's listing id, module id and the key it installs under", async () => {

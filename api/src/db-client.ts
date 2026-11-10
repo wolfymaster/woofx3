@@ -1071,6 +1071,22 @@ export class DbClient {
     );
   }
 
+  /**
+   * Write a setting only when its key has none yet, and answer with the stored
+   * value either way: concurrent first writers all get the value that won.
+   */
+  async setSettingIfAbsent(key: string, value: string): Promise<string> {
+    const response = await setting.SetSetting(
+      { userId: "", key, value: { stringValue: value }, onlyIfAbsent: true },
+      this.config
+    );
+    const stored = response.setting?.value?.stringValue;
+    if (!stored) {
+      throw new Error(`setSettingIfAbsent: setting ${key} has no value after the write`);
+    }
+    return stored;
+  }
+
   /** Remove a setting. Removing one that does not exist succeeds. */
   async deleteSetting(key: string): Promise<void> {
     unwrapVoid("deleteSetting", { status: await setting.DeleteSetting({ key }, this.config) });
