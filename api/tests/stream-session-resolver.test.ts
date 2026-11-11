@@ -145,6 +145,47 @@ describe("StreamSessionResolver.start", () => {
   });
 });
 
+describe("StreamSessionResolver.isLive", () => {
+  test("is unknown before the stored session is read, then follows the stream", async () => {
+    const { resolver, handlers } = setup();
+    expect(resolver.isLive()).toBeNull();
+
+    await resolver.start();
+    expect(resolver.isLive()).toBe(false);
+
+    await handlers.get(EventType.StreamOnline)?.(
+      makeMsg(EventType.StreamOnline, { startedAt: "2026-01-01T00:00:00.000Z" })
+    );
+    expect(resolver.isLive()).toBe(true);
+
+    await handlers.get(EventType.StreamOffline)?.(makeMsg(EventType.StreamOffline, {}));
+    expect(resolver.isLive()).toBe(false);
+  });
+
+  test("is live after a restart that finds a segment still open", async () => {
+    const { resolver } = setup({
+      ensureCurrentStreamSession: mock(async () => ({
+        status: { code: "OK" },
+        session: session("session-1"),
+        isSegmentOpen: true,
+        lastSegmentEndedAt: ABSENT_TIMESTAMP,
+      })),
+    });
+    await resolver.start();
+    expect(resolver.isLive()).toBe(true);
+  });
+
+  test("stays unknown when the stored session cannot be read", async () => {
+    const { resolver } = setup({
+      ensureCurrentStreamSession: mock(async () => {
+        throw new Error("db down");
+      }),
+    });
+    await resolver.start();
+    expect(resolver.isLive()).toBeNull();
+  });
+});
+
 describe("the end of a broadcast", () => {
   const WENT_DOWN = "2026-03-01T20:00:00.000Z";
   const offlineSession = () =>

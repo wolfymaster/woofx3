@@ -835,6 +835,7 @@ holds only descriptive facts that are safe for anyone to read:
   "version": "v0.1.0",
   "startedAt": "2026-10-01T12:00:00.000Z",
   "uptimeSeconds": 3725,
+  "live": false,
   "capabilities": {
     "schema": 1,
     "enabled": ["clients.pairing"]
@@ -851,6 +852,10 @@ holds only descriptive facts that are safe for anyone to read:
 - `startedAt` — when the api process started. A deploy starts a new process,
   so this is the last deploy or the last restart, whichever came later.
 - `uptimeSeconds` — whole seconds since then, from a monotonic clock.
+- `live` — whether the streamer is live now, from the engine's own stream
+  session; `null` until the engine has read its session after a start, which
+  means unknown, not offline. Operators use it to leave a live engine alone
+  when upgrading a fleet.
 - `capabilities` — the feature ids this build supports, sorted: the same list
   `getEngineCapabilities` returns (see
   [engine-capabilities.md](engine-capabilities.md)), readable without a
