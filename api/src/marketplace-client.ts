@@ -378,8 +378,13 @@ export class MarketplaceClient {
   /**
    * Claims the listing for the token's buyer, or confirms they hold it, and
    * answers with the license key it downloads with. Without a token the claim
-   * is anonymous, which the marketplace allows only for a free listing, and
-   * each anonymous claim is a new entitlement with a key of its own.
+   * is anonymous, which the marketplace allows only for a free listing. An
+   * anonymous claim sends the engine's install id (`X-Install-Id`), which the
+   * marketplace keys the claim on: claiming the same listing again answers
+   * with the same entitlement and key instead of a new one. A marketplace
+   * from before ignores the header and makes a new entitlement each time.
+   * The install id is not sent with a buyer token, whose account the claim
+   * is for.
    *
    * 402 means the buyer has to pay first, and carries the purchase intent to
    * pay. Any other refusal throws a `MarketplaceError`: `account_required` (a
@@ -387,11 +392,16 @@ export class MarketplaceClient {
    * `rate_limited` (anonymous claims), `listing_unavailable` (unpriced,
    * unpublished, superseded or delisted).
    */
-  async acquire(listingId: string, buyerToken?: string): Promise<MarketplaceAcquireResult> {
+  async acquire(listingId: string, buyerToken?: string, installId?: string): Promise<MarketplaceAcquireResult> {
+    const headers: Record<string, string> = {};
+    if (!buyerToken && installId) {
+      headers["X-Install-Id"] = installId;
+    }
     try {
       const payload = await this.request("POST", `/catalog/${encodeURIComponent(listingId)}/acquire`, {
         bearer: buyerToken,
         body: {},
+        headers,
       });
       const obj = asObject(payload);
       if (obj.entitled !== true) {
