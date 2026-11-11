@@ -370,6 +370,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
             region: config.engineRegion,
             version: config.version,
             startedAt: performance.timeOrigin,
+            live: this.streamSessionResolver?.isLive() ?? null,
             capabilities: { schema: ENGINE_CAPABILITIES_SCHEMA, enabled: supportedEngineCapabilities(config.hosting) },
           },
           process.uptime()

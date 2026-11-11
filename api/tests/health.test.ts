@@ -12,6 +12,7 @@ describe("describeHealth", () => {
         region: "iad",
         version: "v0.6.2",
         startedAt: Date.UTC(2026, 9, 1, 12, 0, 0),
+        live: true,
         capabilities: CAPABILITIES,
       },
       3725.9
@@ -24,18 +25,27 @@ describe("describeHealth", () => {
       version: "v0.6.2",
       startedAt: "2026-10-01T12:00:00.000Z",
       uptimeSeconds: 3725,
+      live: true,
       capabilities: { schema: 1, enabled: ["analytics.gauges", "analytics.sessionEvents"] },
     });
   });
 
   test("reports a null name and region for an engine nobody named or placed", () => {
     const health = describeHealth(
-      { name: null, region: null, version: "dev", startedAt: 0, capabilities: CAPABILITIES },
+      { name: null, region: null, version: "dev", startedAt: 0, live: null, capabilities: CAPABILITIES },
       0
     );
 
     expect(health.name).toBeNull();
     expect(health.region).toBeNull();
+  });
+
+  test("reports an unknown stream state as null, not offline", () => {
+    const health = describeHealth(
+      { name: null, region: null, version: "dev", startedAt: 0, live: null, capabilities: CAPABILITIES },
+      0
+    );
+    expect(health.live).toBeNull();
   });
 
   test("lists the same capabilities getEngineCapabilities advertises", () => {
@@ -46,6 +56,7 @@ describe("describeHealth", () => {
         region: null,
         version: "dev",
         startedAt: 0,
+        live: false,
         capabilities: { schema: ENGINE_CAPABILITIES_SCHEMA, enabled },
       },
       0

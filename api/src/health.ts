@@ -21,6 +21,12 @@ export interface Health {
   startedAt: string;
   uptimeSeconds: number;
   /**
+   * Whether the streamer is live now, as this engine's own stream session
+   * records it. Null until the engine has read its session after a start, in
+   * which case the answer is unknown, not "offline".
+   */
+  live: boolean | null;
+  /**
    * The feature ids this build supports, the same list
    * `getEngineCapabilities` returns, so a capability can be checked without a
    * registered client.
@@ -41,6 +47,7 @@ export interface HealthFacts {
   version: string;
   /** Wall-clock start of this process, epoch milliseconds. */
   startedAt: number;
+  live: boolean | null;
   capabilities: HealthCapabilities;
 }
 
@@ -57,6 +64,7 @@ export function describeHealth(facts: HealthFacts, uptimeSeconds: number): Healt
     version: facts.version,
     startedAt: new Date(facts.startedAt).toISOString(),
     uptimeSeconds: Math.floor(uptimeSeconds),
+    live: facts.live,
     capabilities: { schema: facts.capabilities.schema, enabled: [...facts.capabilities.enabled] },
   };
 }

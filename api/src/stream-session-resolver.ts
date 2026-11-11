@@ -43,6 +43,8 @@ const BROADCAST_END_CHECK_INTERVAL_MS = 60_000;
 export class StreamSessionResolver {
   private sessionId: string | null = null;
   private checkTimer: ReturnType<typeof setInterval> | null = null;
+  /** Whether a live segment is open; null until the first read of the stored session says. */
+  private live: boolean | null = null;
   /**
    * The tail of the running decisions. Each reads the session's state and then
    * writes, so a broadcast-end check overlapping a `stream.online` could close
@@ -62,6 +64,11 @@ export class StreamSessionResolver {
   /** The session events should be stamped with, or null before `start()` resolved one. */
   currentSessionId(): string | null {
     return this.sessionId;
+  }
+
+  /** Whether the stream is live now, or null before this process has read the stored session. */
+  isLive(): boolean | null {
+    return this.live;
   }
 
   async start(): Promise<void> {
@@ -159,6 +166,7 @@ export class StreamSessionResolver {
         this.logger.warn("StreamSessionResolver: no session resolved; events will publish unstamped");
         return;
       }
+      this.live = decisionState(state).isSegmentOpen;
       await this.adoptSession(state.session.id, timestampToIso(state.session.startedAt));
     } catch (err) {
       this.logger.warn("StreamSessionResolver: could not resolve the current session", {
@@ -251,6 +259,7 @@ export class StreamSessionResolver {
         streamSessionId: sessionId,
         startedAt: timestampFromDate(at),
       });
+      this.live = true;
 
       // An idle session is not a broadcast, so its end is not announced: no
       // recap follows it. Values written while offline must still not carry
@@ -276,8 +285,10 @@ export class StreamSessionResolver {
       await this.db.closeStreamSessionSegment({
         endedAt: timestampFromDate(at),
       });
+      this.live = false;
     } catch (err) {
       if (err instanceof DbError && err.code === "not_found") {
+        this.live = false;
         // A redelivered `stream.offline` finds no open segment because the
         // first one closed it. Not a fault.
         this.logger.debug(`${EventType.StreamOffline}: no open segment to close`);
