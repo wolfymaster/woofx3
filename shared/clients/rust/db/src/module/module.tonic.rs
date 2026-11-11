@@ -942,6 +942,37 @@ pub mod module_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn set_module_marketplace_license_key(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::SetModuleMarketplaceLicenseKeyRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/module.ModuleService/SetModuleMarketplaceLicenseKey",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "module.ModuleService",
+                        "SetModuleMarketplaceLicenseKey",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn complete_module_delete(
             &mut self,
             request: impl tonic::IntoRequest<super::CompleteModuleDeleteRequest>,
@@ -1411,6 +1442,13 @@ pub mod module_service_server {
             request: tonic::Request<super::CheckModuleResourceUsageRequest>,
         ) -> std::result::Result<
             tonic::Response<super::CheckModuleResourceUsageResponse>,
+            tonic::Status,
+        >;
+        async fn set_module_marketplace_license_key(
+            &self,
+            request: tonic::Request<super::SetModuleMarketplaceLicenseKeyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::common::ResponseStatus>,
             tonic::Status,
         >;
         async fn complete_module_delete(
@@ -3207,6 +3245,60 @@ pub mod module_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = CheckModuleResourceUsageSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/module.ModuleService/SetModuleMarketplaceLicenseKey" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetModuleMarketplaceLicenseKeySvc<T: ModuleService>(
+                        pub Arc<T>,
+                    );
+                    impl<
+                        T: ModuleService,
+                    > tonic::server::UnaryService<
+                        super::SetModuleMarketplaceLicenseKeyRequest,
+                    > for SetModuleMarketplaceLicenseKeySvc<T> {
+                        type Response = super::super::common::ResponseStatus;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::SetModuleMarketplaceLicenseKeyRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as ModuleService>::set_module_marketplace_license_key(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SetModuleMarketplaceLicenseKeySvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

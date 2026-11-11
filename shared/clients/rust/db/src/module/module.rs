@@ -1237,6 +1237,19 @@ pub struct CheckModuleResourceUsageResponse {
     #[prost(message, repeated, tag="2")]
     pub in_use: ::prost::alloc::vec::Vec<ResourceUsage>,
 }
+/// Records the license key an install of the module's own marketplace listing
+/// downloaded with, on a module installed without one. Refused unless the
+/// module has marketplace provenance and it is for `marketplace_listing_id`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetModuleMarketplaceLicenseKeyRequest {
+    /// the row id (Module.id)
+    #[prost(string, tag="1")]
+    pub module_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub marketplace_listing_id: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub marketplace_license_key: ::prost::alloc::string::String,
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CompleteModuleDeleteRequest {
     #[prost(string, tag="1")]
