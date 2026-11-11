@@ -42,7 +42,15 @@ The key an install downloaded with is kept on the installed module, next to its 
 
 An install that names a listing replaces the kept key with its own, or with none when it had none; an upload clears it; an install that names no origin keeps it.
 
-Two marketplaces from before license keys are still served: one whose claim answers with no `license`, and one that refuses an anonymous claim with 401 `unauthorized`. Against either the engine downloads without a key, as before, which works for a free listing and for a listing the buyer token's buyer holds.
+### Transitional paths
+
+Three paths exist only to serve a marketplace or an engine from before license keys:
+
+- A claim that answers with no `license` (a marketplace that issues no keys): the install downloads without a key.
+- A claim refused with 401 `unauthorized` when there is no buyer token (a marketplace from before anonymous claims, as opposed to `account_required`, which is a paid listing): the install downloads without a key.
+- The download without a license key, which works for a free listing and for a listing the buyer token's buyer holds. [Inspecting a listing](#inspecting-a-module) depends on it too.
+
+Remove all three together once every engine reports the `marketplace.licenseKeys` capability and the marketplace has dropped its anonymous download for free and paid listings. Coverage of the capability across the fleet is not tracked yet, so the first condition cannot be checked today. Removing them also means the inspection must move to a path that does not download anonymously.
 
 ## Installing a module
 
@@ -56,7 +64,7 @@ Two marketplaces from before license keys are still served: one whose claim answ
 6. The engine reads the manifest that barkloader would install from, using the same name ranking and root rules. Every permission it declares must be in `approvedPermissions`, and every `local[]` endpoint id must be in `approvedLocalEndpoints`. If not, the result is `{ status: "needs_approval", name, version, unapproved, unapprovedLocalEndpoints }` and nothing is installed. A manifest that is not JSON is refused, because nobody could review it.
 7. The manifest's `id` must equal the listing's module id. If not, the engine sends `module.install_failed` and throws, naming the listing, the module id and the manifest id.
 8. The install key is described in [Install keys](#install-keys). The dashboard stores this key and correlates install webhooks by it.
-9. If that key is already installed, the engine sends `module.installed` with `alreadyInstalled: true` and returns `{ status: "installed", moduleKey, alreadyInstalled: true }`. Otherwise it hands the archive to barkloader with the listing id and edition as the install's marketplace provenance, and returns `{ status: "installed", moduleKey }`. Barkloader finishes the install asynchronously and reports it with `module.installed` or `module.install_failed`.
+9. If that key is already installed, the engine sends `module.installed` with `alreadyInstalled: true` and returns `{ status: "installed", moduleKey, alreadyInstalled: true }`. Otherwise it hands the archive to barkloader with the listing id and edition as the install's marketplace provenance, and returns `{ status: "installed", moduleKey }`. Barkloader finishes the install asynchronously and reports it with `module.installed` or `module.install_failed`. When the key is already installed but the module holds no key, or another one, from the same listing, the engine first records the key this install used (sealed, like any kept key), so a later install does not claim again.
 
 A refusal from the claim or the download throws in the `marketplace_http status=<status> code=<code>: <message>` format of the [catalog reads](./marketplace-catalog.md), which `parseMarketplaceCatalogError` reads back. The codes a licensed install can meet:
 
