@@ -5,27 +5,66 @@
 # stylegate runs locally only, on the logged-in claude CLI's subscription.
 provider: claude_code
 
-# Decision gate, in shadow mode: a Cloudflare Workers AI clef model scores
-# how likely each rule is to be violated before the Claude review runs. In
-# shadow mode every check still runs, and each review's scores are kept in
-# stylegate's usage ledger; `scripts/stylegate.sh gate report` replays them
-# against these thresholds. rule_thresholds come from `gate calibrate` on the
-# rules' eval corpora; a rule without one is never skipped once the mode is
-# enforce. The key is STYLEGATE_GATE_API_KEY in the environment.
+# Decision gate: a Cloudflare Workers AI clef model scores how likely each
+# rule is to be violated before the Claude review runs. In enforce mode a
+# check scored below its rule's threshold is not sent, and a rule without a
+# threshold is never skipped. rule_thresholds come from `gate calibrate` on the
+# rules' eval corpora; `scripts/stylegate.sh gate report` replays the scores
+# kept in stylegate's usage ledger against them. Skipped checks never run, so
+# only a review with mode: shadow gives unbiased data for re-tuning. The key is
+# STYLEGATE_GATE_API_KEY in the environment.
 gate:
-  mode: shadow
+  mode: enforce
   rule_thresholds:
+    ANY-ABS-001: 0.06
+    ANY-ABS-002: 0.15
+    ANY-ABS-004: 0.25
     ANY-ABS-005: 0.30
+    ANY-ABS-006: 0.11
+    ANY-ABS-007: 0.18
+    ANY-ABS-008: 0.11
+    ANY-ABS-009: 0.20
     ANY-ABS-010: 0.25
-    ANY-COM-005: 0.10
+    ANY-API-001: 0.22
+    ANY-API-002: 0.24
+    ANY-API-003: 0.20
+    ANY-API-004: 0.15
+    ANY-API-005: 0.24
+    ANY-API-006: 0.22
+    ANY-API-007: 0.16
+    ANY-API-008: 0.16
+    ANY-API-009: 0.19
+    ANY-API-010: 0.21
+    ANY-API-011: 0.09
+    ANY-API-012: 0.25
     ANY-CON-001: 0.17
+    ANY-CON-002: 0.15
     ANY-CON-003: 0.27
+    ANY-CON-004: 0.18
+    ANY-CON-005: 0.23
     ANY-ERR-003: 0.13
-    ANY-ERR-004: 0.27
+    ANY-ERR-004: 0.20
+    ANY-ERR-005: 0.11
+    ANY-LAY-001: 0.09
+    ANY-LAY-002: 0.18
+    ANY-LAY-003: 0.14
+    ANY-LAY-004: 0.12
     ANY-LAY-005: 0.25
+    ANY-LAY-007: 0.20
+    ANY-NAM-007: 0.16
+    ANY-TST-001: 0.20
     ANY-VRB-002: 0.22
     ANY-VRB-003: 0.28
+    ANY-VRB-004: 0.14
+    GO-ABS-003: 0.09
+    GO-TST-001: 0.17
+    RS-API-001: 0.16
+    RS-ERR-001: 0.19
+    TS-ABS-002: 0.26
     TS-API-001: 0.27
+    TS-API-002: 0.20
+    WFX-API-004: 0.25
+    WFX-API-005: 0.21
   endpoint: https://api.cloudflare.com/client/v4/accounts/f35f44146e8730089a795954e32183e8/ai/run/@cf/cloudflare/clef
 
 # Generated clients and servers (buf, twirp, prost) and contract outputs,
