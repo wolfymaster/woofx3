@@ -14,6 +14,9 @@ function settings(initial: Record<string, string> = {}) {
       }
       return values.get(key) ?? null;
     },
+    async setSetting(key, value) {
+      values.set(key, value);
+    },
     async setSettingIfAbsent(key, value) {
       calls.writes++;
       if (!values.has(key)) {
@@ -51,6 +54,13 @@ describe("EngineInstallId", () => {
 
     expect(await new EngineInstallId(store, ids("new")).get()).toBe("kept");
     expect(calls.writes).toBe(0);
+  });
+
+  test("replaces a stored empty value instead of failing on it", async () => {
+    const { store, values } = settings({ [INSTALL_ID_SETTING_KEY]: "" });
+
+    expect(await new EngineInstallId(store, ids("fresh")).get()).toBe("fresh");
+    expect(values.get(INSTALL_ID_SETTING_KEY)).toBe("fresh");
   });
 
   test("shares one read and write between concurrent first calls", async () => {

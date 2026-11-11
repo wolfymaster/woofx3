@@ -197,3 +197,49 @@ func TestLicenseKeyCrossesTheTwirpBoundary(t *testing.T) {
 		t.Fatalf("GetModuleByModuleId body = %s, want the key under its proto name", text)
 	}
 }
+
+func TestSetModuleMarketplaceLicenseKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		listing  string
+		key      string
+		wantCode twirp.ErrorCode
+	}{
+		{name: "the module's own listing", listing: "cozy", key: "W3X-NEW"},
+		{name: "another listing", listing: "other", key: "W3X-NEW", wantCode: twirp.InvalidArgument},
+		{name: "a blank key", listing: "cozy", key: "", wantCode: twirp.InvalidArgument},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newProvenanceSvc(t)
+			created := installCozyLicensed(t, svc, "cozy:1.0.0:abcdef0", "cozy", nil)
+
+			_, err := svc.SetModuleMarketplaceLicenseKey(context.Background(), &client.SetModuleMarketplaceLicenseKeyRequest{
+				ModuleId:              created.Id,
+				MarketplaceListingId:  tc.listing,
+				MarketplaceLicenseKey: tc.key,
+			})
+			stored := storedLicenseKey(t, svc)
+			if tc.wantCode != "" {
+				var twerr twirp.Error
+				if !errors.As(err, &twerr) || twerr.Code() != tc.wantCode {
+					t.Fatalf("err = %v, want %s", err, tc.wantCode)
+				}
+				if stored != nil {
+					t.Fatalf("a refused write stored a key")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("SetModuleMarketplaceLicenseKey: %v", err)
+			}
+			if stored == nil || !secrets.IsSealed(*stored) || strings.Contains(*stored, tc.key) {
+				t.Fatalf("stored key = %v, want it sealed", stored)
+			}
+			got, err := svc.GetModuleByModuleId(context.Background(), &client.GetModuleByModuleIdRequest{ModuleId: "cozy"})
+			if err != nil || got.Module.GetMarketplaceLicenseKey() != tc.key {
+				t.Fatalf("read key = %q (%v), want %q", got.Module.GetMarketplaceLicenseKey(), err, tc.key)
+			}
+		})
+	}
+}

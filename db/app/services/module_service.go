@@ -1248,6 +1248,39 @@ func (s *moduleService) UpdateModuleResourceVersion(ctx context.Context, req *cl
 	}, nil
 }
 
+// SetModuleMarketplaceLicenseKey seals and stores a license key on a module
+// installed from the same listing, for a module that has none or another one.
+// The row must already name `marketplace_listing_id`: a key is never attached
+// to a module of another origin.
+func (s *moduleService) SetModuleMarketplaceLicenseKey(ctx context.Context, req *client.SetModuleMarketplaceLicenseKeyRequest) (*client.ResponseStatus, error) {
+	moduleID, err := uuid.Parse(req.ModuleId)
+	if err != nil {
+		return nil, twirp.InvalidArgumentError("module_id", "must be a module row id")
+	}
+	if req.MarketplaceLicenseKey == "" {
+		return nil, twirp.InvalidArgumentError("marketplace_license_key", "must not be blank")
+	}
+	m, err := s.repo.GetByID(moduleID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, twirp.NotFoundError("module not found")
+		}
+		return nil, twirp.InternalErrorWith(fmt.Errorf("read module %s: %w", req.ModuleId, err))
+	}
+	if m.MarketplaceListingID == nil || *m.MarketplaceListingID != req.MarketplaceListingId {
+		return nil, twirp.InvalidArgumentError("marketplace_listing_id", "is not the listing this module was installed from")
+	}
+	sealed, err := s.sealLicenseKey(m.ModuleID, &req.MarketplaceLicenseKey)
+	if err != nil {
+		return nil, err
+	}
+	m.MarketplaceLicenseKeySealed = sealed
+	if err := s.repo.Update(m); err != nil {
+		return nil, twirp.InternalErrorWith(fmt.Errorf("store license key of module %q: %w", m.ModuleID, err))
+	}
+	return &client.ResponseStatus{Code: client.ResponseStatus_OK, Message: "Module license key stored"}, nil
+}
+
 func (s *moduleService) CompleteModuleInstall(ctx context.Context, req *client.CompleteModuleInstallRequest) (*client.ResponseStatus, error) {
 	operation := "installed"
 	if req.Status == "failed" {

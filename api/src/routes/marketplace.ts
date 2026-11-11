@@ -123,6 +123,8 @@ type InstallLicense =
  * anonymous claims refuses an anonymous claim with 401 `unauthorized` (not
  * `account_required`, which is a paid listing). Either way the install
  * downloads without a key, exactly as it did against such a marketplace.
+ * Both are transitional; see "Transitional paths" in the marketplace install
+ * docs for when they go.
  */
 async function claimLicense(
   marketplace: MarketplaceClient,
@@ -259,6 +261,16 @@ export const marketplaceRoutes = routeModule({
     const existing = await this.db.getModuleByModuleKey(moduleKey);
     if (existing) {
       this.logger.info("Module already installed, skipping upload", { clientId, moduleKey });
+      // The claim and download above already ran; keep the key they used so a
+      // module installed before keys existed, or by an engine that claimed
+      // anonymously, does not claim again on the next install.
+      if (
+        license.key !== null &&
+        existing.marketplaceListingId === listingId &&
+        license.key !== existing.marketplaceLicenseKey
+      ) {
+        await this.db.setModuleMarketplaceLicenseKey(existing.id, listingId, license.key);
+      }
       await sendAlreadyInstalled(this.webhookClient, existing, moduleKey, clientId, MARKETPLACE_EVENT_ORIGIN);
       return { status: "installed", moduleKey, alreadyInstalled: true };
     }
