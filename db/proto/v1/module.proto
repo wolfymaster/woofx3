@@ -49,6 +49,7 @@ service ModuleService {
   rpc UpdateModuleResourceVersion(UpdateModuleResourceVersionRequest) returns (ModuleResourceResponse);
   rpc CompleteModuleInstall(CompleteModuleInstallRequest) returns (common.ResponseStatus);
   rpc CheckModuleResourceUsage(CheckModuleResourceUsageRequest) returns (CheckModuleResourceUsageResponse);
+  rpc SetModuleMarketplaceLicenseKey(SetModuleMarketplaceLicenseKeyRequest) returns (common.ResponseStatus);
   rpc CompleteModuleDelete(CompleteModuleDeleteRequest) returns (common.ResponseStatus);
   // Runtime-created instances of module-declared kinds (counters, etc.).
   // The engine learns identity here; semantics live in the owning module.
@@ -241,6 +242,15 @@ message CheckModuleResourceUsageRequest {
 message CheckModuleResourceUsageResponse {
   common.ResponseStatus status = 1;
   repeated ResourceUsage in_use = 2;
+}
+
+// Records the license key an install of the module's own marketplace listing
+// downloaded with, on a module installed without one. Refused unless the
+// module has marketplace provenance and it is for `marketplace_listing_id`.
+message SetModuleMarketplaceLicenseKeyRequest {
+  string module_id = 1; // the row id (Module.id)
+  string marketplace_listing_id = 2;
+  string marketplace_license_key = 3;
 }
 
 message CompleteModuleDeleteRequest {
