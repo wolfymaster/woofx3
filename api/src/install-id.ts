@@ -16,6 +16,8 @@ export interface InstallIdSettings {
   getSetting(key: string): Promise<string | null>;
   /** Writes only when the key has no value, answering with the stored one either way. */
   setSettingIfAbsent(key: string, value: string): Promise<string>;
+  /** Overwrites the value. */
+  setSetting(key: string, value: string): Promise<void>;
 }
 
 export class EngineInstallId {
@@ -48,6 +50,16 @@ export class EngineInstallId {
     const stored = await this.settings.getSetting(INSTALL_ID_SETTING_KEY);
     if (stored) {
       return stored;
+    }
+    if (stored === "") {
+      // An empty value counts as present to a write-if-absent, so it would
+      // never be replaced; overwrite it and read back what won.
+      await this.settings.setSetting(INSTALL_ID_SETTING_KEY, this.newId());
+      const written = await this.settings.getSetting(INSTALL_ID_SETTING_KEY);
+      if (!written) {
+        throw new Error(`install id: setting ${INSTALL_ID_SETTING_KEY} is still empty after the write`);
+      }
+      return written;
     }
     return await this.settings.setSettingIfAbsent(INSTALL_ID_SETTING_KEY, this.newId());
   }
