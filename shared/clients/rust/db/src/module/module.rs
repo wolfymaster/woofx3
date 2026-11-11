@@ -1019,6 +1019,11 @@ pub struct Module {
     /// most one origin: this or the marketplace listing, never both.
     #[prost(string, optional, tag="16")]
     pub upload_resource_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// The license key the marketplace listing was downloaded with. A bearer
+    /// credential: sealed at rest and opened here, so it must never be logged.
+    /// Unset for any other install and for one made without a key.
+    #[prost(string, optional, tag="17")]
+    pub marketplace_license_key: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ModuleFunction {
@@ -1077,6 +1082,11 @@ pub struct CreateModuleRequest {
     /// together with the marketplace fields.
     #[prost(string, optional, tag="12")]
     pub upload_resource_id: ::core::option::Option<::prost::alloc::string::String>,
+    /// The license key the marketplace listing was downloaded with; see Module.
+    /// Only with marketplace_listing_id. An install that names a marketplace
+    /// listing without a key leaves the module with none.
+    #[prost(string, optional, tag="13")]
+    pub marketplace_license_key: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CreateModuleFunctionRequest {
@@ -1226,6 +1236,19 @@ pub struct CheckModuleResourceUsageResponse {
     pub status: ::core::option::Option<super::common::ResponseStatus>,
     #[prost(message, repeated, tag="2")]
     pub in_use: ::prost::alloc::vec::Vec<ResourceUsage>,
+}
+/// Records the license key an install of the module's own marketplace listing
+/// downloaded with, on a module installed without one. Refused unless the
+/// module has marketplace provenance and it is for `marketplace_listing_id`.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetModuleMarketplaceLicenseKeyRequest {
+    /// the row id (Module.id)
+    #[prost(string, tag="1")]
+    pub module_id: ::prost::alloc::string::String,
+    #[prost(string, tag="2")]
+    pub marketplace_listing_id: ::prost::alloc::string::String,
+    #[prost(string, tag="3")]
+    pub marketplace_license_key: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CompleteModuleDeleteRequest {

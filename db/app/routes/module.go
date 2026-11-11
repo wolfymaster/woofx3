@@ -25,7 +25,10 @@ func ModuleRoutes(mux *http.ServeMux, app *types.App) error {
 	if err := kindValidators.Register(svc.DatabaseKind, databaseColumns); err != nil {
 		return err
 	}
-	moduleService := svc.NewModuleService(moduleRepository, refRepository, instanceRepository, app.EventPublisher, kindValidators)
+	moduleService, err := svc.NewModuleService(moduleRepository, refRepository, instanceRepository, app.EventPublisher, kindValidators, app.Secrets, app.Logger)
+	if err != nil {
+		return err
+	}
 	moduleService.SetSegmentReconciler(svc.NewSegmentReconciler(
 		repo.NewViewerFactRepository(app.Db),
 		repo.NewViewerSegmentRepository(app.Db),

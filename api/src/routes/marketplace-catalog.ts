@@ -51,10 +51,14 @@ function optionalToken(caller: string, value: unknown): string | undefined {
   return value;
 }
 
-/** Runs one marketplace read, rethrowing its failure in the catalog error format. */
-async function passThrough(read: () => Promise<unknown>): Promise<unknown> {
+/**
+ * Runs one marketplace call, rethrowing a marketplace failure in the catalog
+ * error format so the caller can read its status and code back. Any other
+ * error is rethrown as it is.
+ */
+export async function withMarketplaceErrors<T>(call: () => Promise<T>): Promise<T> {
   try {
-    return await read();
+    return await call();
   } catch (err) {
     if (err instanceof MarketplaceError) {
       throw new Error(
@@ -82,13 +86,13 @@ export const marketplaceCatalogRoutes = routeModule({
     const params = catalogSearchParams(caller, query);
     const token = optionalToken(caller, buyerToken);
     const marketplace = requireCatalog(this.marketplace);
-    return await passThrough(() => marketplace.searchCatalog(params, token));
+    return await withMarketplaceErrors(() => marketplace.searchCatalog(params, token));
   },
 
   async marketplaceCounts(buyerToken?: string): Promise<unknown> {
     const token = optionalToken("marketplaceCounts", buyerToken);
     const marketplace = requireCatalog(this.marketplace);
-    return await passThrough(() => marketplace.catalogCounts(token));
+    return await withMarketplaceErrors(() => marketplace.catalogCounts(token));
   },
 
   async marketplaceGetListing(listingId: string, buyerToken?: string): Promise<unknown> {
@@ -96,7 +100,7 @@ export const marketplaceCatalogRoutes = routeModule({
     const id = requireId(caller, "listingId", listingId);
     const token = optionalToken(caller, buyerToken);
     const marketplace = requireCatalog(this.marketplace);
-    return await passThrough(() => marketplace.catalogListing(id, token));
+    return await withMarketplaceErrors(() => marketplace.catalogListing(id, token));
   },
 
   async marketplaceGetAuthor(slug: string, query?: MarketplaceAuthorQuery, buyerToken?: string): Promise<unknown> {
@@ -105,7 +109,7 @@ export const marketplaceCatalogRoutes = routeModule({
     const params = authorSearchParams(caller, query);
     const token = optionalToken(caller, buyerToken);
     const marketplace = requireCatalog(this.marketplace);
-    return await passThrough(() => marketplace.author(id, params, token));
+    return await withMarketplaceErrors(() => marketplace.author(id, params, token));
   },
 
   async marketplaceQuote(listingId: string, buyerToken: string): Promise<unknown> {
@@ -115,6 +119,6 @@ export const marketplaceCatalogRoutes = routeModule({
     // credential of its own to ask on anyone's behalf.
     const token = requireId(caller, "buyerToken", buyerToken);
     const marketplace = requireCatalog(this.marketplace);
-    return await passThrough(() => marketplace.quote(id, token));
+    return await withMarketplaceErrors(() => marketplace.quote(id, token));
   },
 });

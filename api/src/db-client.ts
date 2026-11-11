@@ -990,6 +990,15 @@ export class DbClient {
     }
   }
 
+  /** Stores `key`, sealed, on the module row `id` installed from `listingId`. */
+  async setModuleMarketplaceLicenseKey(id: string, listingId: string, key: string): Promise<void> {
+    const status = await module.SetModuleMarketplaceLicenseKey(
+      { moduleId: id, marketplaceListingId: listingId, marketplaceLicenseKey: key },
+      this.config
+    );
+    unwrapVoid("setModuleMarketplaceLicenseKey", { status });
+  }
+
   /**
    * Resources owned by this module that are still referenced externally
    * (workflows, commands, etc.). `moduleId` is the engine modules.id UUID.
@@ -1069,6 +1078,22 @@ export class DbClient {
       },
       this.config
     );
+  }
+
+  /**
+   * Write a setting only when its key has none yet, and answer with the stored
+   * value either way: concurrent first writers all get the value that won.
+   */
+  async setSettingIfAbsent(key: string, value: string): Promise<string> {
+    const response = await setting.SetSetting(
+      { userId: "", key, value: { stringValue: value }, onlyIfAbsent: true },
+      this.config
+    );
+    const stored = response.setting?.value?.stringValue;
+    if (!stored) {
+      throw new Error(`setSettingIfAbsent: setting ${key} has no value after the write`);
+    }
+    return stored;
   }
 
   /** Remove a setting. Removing one that does not exist succeeds. */

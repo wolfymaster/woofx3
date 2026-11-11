@@ -65,6 +65,11 @@ pub struct SetSettingRequest {
     /// Optional user scope. For twitch_token, the broadcaster's Twitch user id.
     #[prost(string, tag="5")]
     pub user_id: ::prost::alloc::string::String,
+    /// Write only when no setting has this key yet, and answer with the stored
+    /// setting either way: concurrent first writers all read back the value
+    /// that won.
+    #[prost(bool, optional, tag="6")]
+    pub only_if_absent: ::core::option::Option<bool>,
 }
 /// Request to set multiple settings at once
 #[derive(Clone, PartialEq, ::prost::Message)]

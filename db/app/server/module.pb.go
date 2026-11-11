@@ -49,8 +49,12 @@ type Module struct {
 	// was installed from. Unset for any other install. A module records at
 	// most one origin: this or the marketplace listing, never both.
 	UploadResourceId *string `protobuf:"bytes,16,opt,name=upload_resource_id,json=uploadResourceId,proto3,oneof" json:"upload_resource_id,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The license key the marketplace listing was downloaded with. A bearer
+	// credential: sealed at rest and opened here, so it must never be logged.
+	// Unset for any other install and for one made without a key.
+	MarketplaceLicenseKey *string `protobuf:"bytes,17,opt,name=marketplace_license_key,json=marketplaceLicenseKey,proto3,oneof" json:"marketplace_license_key,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *Module) Reset() {
@@ -195,6 +199,13 @@ func (x *Module) GetUploadResourceId() string {
 	return ""
 }
 
+func (x *Module) GetMarketplaceLicenseKey() string {
+	if x != nil && x.MarketplaceLicenseKey != nil {
+		return *x.MarketplaceLicenseKey
+	}
+	return ""
+}
+
 type ModuleFunction struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -321,8 +332,12 @@ type CreateModuleRequest struct {
 	// Set for an install from a stored module archive; see Module. Never set
 	// together with the marketplace fields.
 	UploadResourceId *string `protobuf:"bytes,12,opt,name=upload_resource_id,json=uploadResourceId,proto3,oneof" json:"upload_resource_id,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// The license key the marketplace listing was downloaded with; see Module.
+	// Only with marketplace_listing_id. An install that names a marketplace
+	// listing without a key leaves the module with none.
+	MarketplaceLicenseKey *string `protobuf:"bytes,13,opt,name=marketplace_license_key,json=marketplaceLicenseKey,proto3,oneof" json:"marketplace_license_key,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
 }
 
 func (x *CreateModuleRequest) Reset() {
@@ -435,6 +450,13 @@ func (x *CreateModuleRequest) GetMarketplaceEdition() int32 {
 func (x *CreateModuleRequest) GetUploadResourceId() string {
 	if x != nil && x.UploadResourceId != nil {
 		return *x.UploadResourceId
+	}
+	return ""
+}
+
+func (x *CreateModuleRequest) GetMarketplaceLicenseKey() string {
+	if x != nil && x.MarketplaceLicenseKey != nil {
+		return *x.MarketplaceLicenseKey
 	}
 	return ""
 }
@@ -1359,6 +1381,69 @@ func (x *CheckModuleResourceUsageResponse) GetInUse() []*ResourceUsage {
 	return nil
 }
 
+// Records the license key an install of the module's own marketplace listing
+// downloaded with, on a module installed without one. Refused unless the
+// module has marketplace provenance and it is for `marketplace_listing_id`.
+type SetModuleMarketplaceLicenseKeyRequest struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	ModuleId              string                 `protobuf:"bytes,1,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"` // the row id (Module.id)
+	MarketplaceListingId  string                 `protobuf:"bytes,2,opt,name=marketplace_listing_id,json=marketplaceListingId,proto3" json:"marketplace_listing_id,omitempty"`
+	MarketplaceLicenseKey string                 `protobuf:"bytes,3,opt,name=marketplace_license_key,json=marketplaceLicenseKey,proto3" json:"marketplace_license_key,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *SetModuleMarketplaceLicenseKeyRequest) Reset() {
+	*x = SetModuleMarketplaceLicenseKeyRequest{}
+	mi := &file_module_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetModuleMarketplaceLicenseKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetModuleMarketplaceLicenseKeyRequest) ProtoMessage() {}
+
+func (x *SetModuleMarketplaceLicenseKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_module_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetModuleMarketplaceLicenseKeyRequest.ProtoReflect.Descriptor instead.
+func (*SetModuleMarketplaceLicenseKeyRequest) Descriptor() ([]byte, []int) {
+	return file_module_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *SetModuleMarketplaceLicenseKeyRequest) GetModuleId() string {
+	if x != nil {
+		return x.ModuleId
+	}
+	return ""
+}
+
+func (x *SetModuleMarketplaceLicenseKeyRequest) GetMarketplaceListingId() string {
+	if x != nil {
+		return x.MarketplaceListingId
+	}
+	return ""
+}
+
+func (x *SetModuleMarketplaceLicenseKeyRequest) GetMarketplaceLicenseKey() string {
+	if x != nil {
+		return x.MarketplaceLicenseKey
+	}
+	return ""
+}
+
 type CompleteModuleDeleteRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	ModuleId       string                 `protobuf:"bytes,1,opt,name=module_id,json=moduleId,proto3" json:"module_id,omitempty"`
@@ -1373,7 +1458,7 @@ type CompleteModuleDeleteRequest struct {
 
 func (x *CompleteModuleDeleteRequest) Reset() {
 	*x = CompleteModuleDeleteRequest{}
-	mi := &file_module_proto_msgTypes[19]
+	mi := &file_module_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1385,7 +1470,7 @@ func (x *CompleteModuleDeleteRequest) String() string {
 func (*CompleteModuleDeleteRequest) ProtoMessage() {}
 
 func (x *CompleteModuleDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_proto_msgTypes[19]
+	mi := &file_module_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1398,7 +1483,7 @@ func (x *CompleteModuleDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteModuleDeleteRequest.ProtoReflect.Descriptor instead.
 func (*CompleteModuleDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_module_proto_rawDescGZIP(), []int{19}
+	return file_module_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *CompleteModuleDeleteRequest) GetModuleId() string {
@@ -1470,7 +1555,7 @@ type DeleteByModuleIdRequest struct {
 
 func (x *DeleteByModuleIdRequest) Reset() {
 	*x = DeleteByModuleIdRequest{}
-	mi := &file_module_proto_msgTypes[20]
+	mi := &file_module_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1482,7 +1567,7 @@ func (x *DeleteByModuleIdRequest) String() string {
 func (*DeleteByModuleIdRequest) ProtoMessage() {}
 
 func (x *DeleteByModuleIdRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_proto_msgTypes[20]
+	mi := &file_module_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1495,7 +1580,7 @@ func (x *DeleteByModuleIdRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteByModuleIdRequest.ProtoReflect.Descriptor instead.
 func (*DeleteByModuleIdRequest) Descriptor() ([]byte, []int) {
-	return file_module_proto_rawDescGZIP(), []int{20}
+	return file_module_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DeleteByModuleIdRequest) GetModuleId() string {
@@ -1531,7 +1616,7 @@ type GetByCanonicalIdRequest struct {
 
 func (x *GetByCanonicalIdRequest) Reset() {
 	*x = GetByCanonicalIdRequest{}
-	mi := &file_module_proto_msgTypes[21]
+	mi := &file_module_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1543,7 +1628,7 @@ func (x *GetByCanonicalIdRequest) String() string {
 func (*GetByCanonicalIdRequest) ProtoMessage() {}
 
 func (x *GetByCanonicalIdRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_module_proto_msgTypes[21]
+	mi := &file_module_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1556,7 +1641,7 @@ func (x *GetByCanonicalIdRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetByCanonicalIdRequest.ProtoReflect.Descriptor instead.
 func (*GetByCanonicalIdRequest) Descriptor() ([]byte, []int) {
-	return file_module_proto_rawDescGZIP(), []int{21}
+	return file_module_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *GetByCanonicalIdRequest) GetCanonicalId() string {
@@ -1576,7 +1661,7 @@ type TriggerResponse struct {
 
 func (x *TriggerResponse) Reset() {
 	*x = TriggerResponse{}
-	mi := &file_module_proto_msgTypes[22]
+	mi := &file_module_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1588,7 +1673,7 @@ func (x *TriggerResponse) String() string {
 func (*TriggerResponse) ProtoMessage() {}
 
 func (x *TriggerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_module_proto_msgTypes[22]
+	mi := &file_module_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1601,7 +1686,7 @@ func (x *TriggerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerResponse.ProtoReflect.Descriptor instead.
 func (*TriggerResponse) Descriptor() ([]byte, []int) {
-	return file_module_proto_rawDescGZIP(), []int{22}
+	return file_module_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *TriggerResponse) GetStatus() *ResponseStatus {
@@ -1628,7 +1713,7 @@ type ActionResponse struct {
 
 func (x *ActionResponse) Reset() {
 	*x = ActionResponse{}
-	mi := &file_module_proto_msgTypes[23]
+	mi := &file_module_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1640,7 +1725,7 @@ func (x *ActionResponse) String() string {
 func (*ActionResponse) ProtoMessage() {}
 
 func (x *ActionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_module_proto_msgTypes[23]
+	mi := &file_module_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1653,7 +1738,7 @@ func (x *ActionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionResponse.ProtoReflect.Descriptor instead.
 func (*ActionResponse) Descriptor() ([]byte, []int) {
-	return file_module_proto_rawDescGZIP(), []int{23}
+	return file_module_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ActionResponse) GetStatus() *ResponseStatus {
@@ -1674,7 +1759,7 @@ var File_module_proto protoreflect.FileDescriptor
 
 const file_module_proto_rawDesc = "" +
 	"\n" +
-	"\fmodule.proto\x12\x06module\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14module_trigger.proto\x1a\x13module_action.proto\x1a\x15module_resource.proto\x1a\x1emodule_resource_instance.proto\x1a\x13module_widget.proto\x1a\x12module_asset.proto\x1a\x15background_task.proto\"\xc1\x05\n" +
+	"\fmodule.proto\x12\x06module\x1a\fcommon.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14module_trigger.proto\x1a\x13module_action.proto\x1a\x15module_resource.proto\x1a\x1emodule_resource_instance.proto\x1a\x13module_widget.proto\x1a\x12module_asset.proto\x1a\x15background_task.proto\"\x9a\x06\n" +
 	"\x06Module\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1b\n" +
@@ -1695,10 +1780,12 @@ const file_module_proto_rawDesc = "" +
 	"module_key\x18\f \x01(\tR\tmoduleKey\x129\n" +
 	"\x16marketplace_listing_id\x18\x0e \x01(\tH\x00R\x14marketplaceListingId\x88\x01\x01\x124\n" +
 	"\x13marketplace_edition\x18\x0f \x01(\x05H\x01R\x12marketplaceEdition\x88\x01\x01\x121\n" +
-	"\x12upload_resource_id\x18\x10 \x01(\tH\x02R\x10uploadResourceId\x88\x01\x01B\x19\n" +
+	"\x12upload_resource_id\x18\x10 \x01(\tH\x02R\x10uploadResourceId\x88\x01\x01\x12;\n" +
+	"\x17marketplace_license_key\x18\x11 \x01(\tH\x03R\x15marketplaceLicenseKey\x88\x01\x01B\x19\n" +
 	"\x17_marketplace_listing_idB\x16\n" +
 	"\x14_marketplace_editionB\x15\n" +
-	"\x13_upload_resource_id\"\xe5\x01\n" +
+	"\x13_upload_resource_idB\x1a\n" +
+	"\x18_marketplace_license_key\"\xe5\x01\n" +
 	"\x0eModuleFunction\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tmodule_id\x18\x02 \x01(\tR\bmoduleId\x12\x1f\n" +
@@ -1709,7 +1796,7 @@ const file_module_proto_rawDesc = "" +
 	"\ventry_point\x18\x06 \x01(\tR\n" +
 	"entryPoint\x12\x18\n" +
 	"\aruntime\x18\a \x01(\tR\aruntime\x12\x12\n" +
-	"\x04name\x18\b \x01(\tR\x04name\"\xbb\x04\n" +
+	"\x04name\x18\b \x01(\tR\x04name\"\x94\x05\n" +
 	"\x13CreateModuleRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x1a\n" +
@@ -1725,10 +1812,12 @@ const file_module_proto_rawDesc = "" +
 	"\x16marketplace_listing_id\x18\n" +
 	" \x01(\tH\x00R\x14marketplaceListingId\x88\x01\x01\x124\n" +
 	"\x13marketplace_edition\x18\v \x01(\x05H\x01R\x12marketplaceEdition\x88\x01\x01\x121\n" +
-	"\x12upload_resource_id\x18\f \x01(\tH\x02R\x10uploadResourceId\x88\x01\x01B\x19\n" +
+	"\x12upload_resource_id\x18\f \x01(\tH\x02R\x10uploadResourceId\x88\x01\x01\x12;\n" +
+	"\x17marketplace_license_key\x18\r \x01(\tH\x03R\x15marketplaceLicenseKey\x88\x01\x01B\x19\n" +
 	"\x17_marketplace_listing_idB\x16\n" +
 	"\x14_marketplace_editionB\x15\n" +
-	"\x13_upload_resource_id\"\xc5\x01\n" +
+	"\x13_upload_resource_idB\x1a\n" +
+	"\x18_marketplace_license_key\"\xc5\x01\n" +
 	"\x1bCreateModuleFunctionRequest\x12\x1f\n" +
 	"\vmanifest_id\x18\x01 \x01(\tR\n" +
 	"manifestId\x12\x1b\n" +
@@ -1793,7 +1882,11 @@ const file_module_proto_rawDesc = "" +
 	"\tmodule_id\x18\x01 \x01(\tR\bmoduleIdJ\x04\b\x02\x10\x03R\x0eapplication_id\"\x80\x01\n" +
 	" CheckModuleResourceUsageResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12,\n" +
-	"\x06in_use\x18\x02 \x03(\v2\x15.module.ResourceUsageR\x05inUse\"\x8b\x02\n" +
+	"\x06in_use\x18\x02 \x03(\v2\x15.module.ResourceUsageR\x05inUse\"\xb2\x01\n" +
+	"%SetModuleMarketplaceLicenseKeyRequest\x12\x1b\n" +
+	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\x124\n" +
+	"\x16marketplace_listing_id\x18\x02 \x01(\tR\x14marketplaceListingId\x126\n" +
+	"\x17marketplace_license_key\x18\x03 \x01(\tR\x15marketplaceLicenseKey\"\x8b\x02\n" +
 	"\x1bCompleteModuleDeleteRequest\x12\x1b\n" +
 	"\tmodule_id\x18\x01 \x01(\tR\bmoduleId\x12\x1f\n" +
 	"\vmodule_name\x18\x02 \x01(\tR\n" +
@@ -1814,7 +1907,7 @@ const file_module_proto_rawDesc = "" +
 	"\atrigger\x18\x02 \x01(\v2\x0f.module.TriggerR\atrigger\"h\n" +
 	"\x0eActionResponse\x12.\n" +
 	"\x06status\x18\x01 \x01(\v2\x16.common.ResponseStatusR\x06status\x12&\n" +
-	"\x06action\x18\x02 \x01(\v2\x0e.module.ActionR\x06action2\xb2\x1e\n" +
+	"\x06action\x18\x02 \x01(\v2\x0e.module.ActionR\x06action2\x9b\x1f\n" +
 	"\rModuleService\x12C\n" +
 	"\fCreateModule\x12\x1b.module.CreateModuleRequest\x1a\x16.module.ModuleResponse\x12C\n" +
 	"\fUpdateModule\x12\x1b.module.UpdateModuleRequest\x1a\x16.module.ModuleResponse\x12C\n" +
@@ -1851,7 +1944,8 @@ const file_module_proto_rawDesc = "" +
 	"\x1bArchiveResourceByManifestId\x12*.module.ArchiveResourceByManifestIdRequest\x1a\x16.common.ResponseStatus\x12i\n" +
 	"\x1bUpdateModuleResourceVersion\x12*.module.UpdateModuleResourceVersionRequest\x1a\x1e.module.ModuleResourceResponse\x12U\n" +
 	"\x15CompleteModuleInstall\x12$.module.CompleteModuleInstallRequest\x1a\x16.common.ResponseStatus\x12m\n" +
-	"\x18CheckModuleResourceUsage\x12'.module.CheckModuleResourceUsageRequest\x1a(.module.CheckModuleResourceUsageResponse\x12S\n" +
+	"\x18CheckModuleResourceUsage\x12'.module.CheckModuleResourceUsageRequest\x1a(.module.CheckModuleResourceUsageResponse\x12g\n" +
+	"\x1eSetModuleMarketplaceLicenseKey\x12-.module.SetModuleMarketplaceLicenseKeyRequest\x1a\x16.common.ResponseStatus\x12S\n" +
 	"\x14CompleteModuleDelete\x12#.module.CompleteModuleDeleteRequest\x1a\x16.common.ResponseStatus\x12a\n" +
 	"\x16CreateResourceInstance\x12%.module.CreateResourceInstanceRequest\x1a .module.ResourceInstanceResponse\x12W\n" +
 	"\x16DeleteResourceInstance\x12%.module.DeleteResourceInstanceRequest\x1a\x16.common.ResponseStatus\x12a\n" +
@@ -1874,7 +1968,7 @@ func file_module_proto_rawDescGZIP() []byte {
 	return file_module_proto_rawDescData
 }
 
-var file_module_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_module_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_module_proto_goTypes = []any{
 	(*Module)(nil),                                       // 0: module.Module
 	(*ModuleFunction)(nil),                               // 1: module.ModuleFunction
@@ -1895,72 +1989,73 @@ var file_module_proto_goTypes = []any{
 	(*ResourceUsage)(nil),                                // 16: module.ResourceUsage
 	(*CheckModuleResourceUsageRequest)(nil),              // 17: module.CheckModuleResourceUsageRequest
 	(*CheckModuleResourceUsageResponse)(nil),             // 18: module.CheckModuleResourceUsageResponse
-	(*CompleteModuleDeleteRequest)(nil),                  // 19: module.CompleteModuleDeleteRequest
-	(*DeleteByModuleIdRequest)(nil),                      // 20: module.DeleteByModuleIdRequest
-	(*GetByCanonicalIdRequest)(nil),                      // 21: module.GetByCanonicalIdRequest
-	(*TriggerResponse)(nil),                              // 22: module.TriggerResponse
-	(*ActionResponse)(nil),                               // 23: module.ActionResponse
-	(*timestamppb.Timestamp)(nil),                        // 24: google.protobuf.Timestamp
-	(*ResponseStatus)(nil),                               // 25: common.ResponseStatus
-	(*RequestContext)(nil),                               // 26: common.RequestContext
-	(*Trigger)(nil),                                      // 27: module.Trigger
-	(*Action)(nil),                                       // 28: module.Action
-	(*RegisterTriggersRequest)(nil),                      // 29: module.RegisterTriggersRequest
-	(*ListTriggersRequest)(nil),                          // 30: module.ListTriggersRequest
-	(*RegisterActionsRequest)(nil),                       // 31: module.RegisterActionsRequest
-	(*ListActionsRequest)(nil),                           // 32: module.ListActionsRequest
-	(*RegisterWidgetsRequest)(nil),                       // 33: module.RegisterWidgetsRequest
-	(*ListWidgetsRequest)(nil),                           // 34: module.ListWidgetsRequest
-	(*RegisterBackgroundTasksRequest)(nil),               // 35: module.RegisterBackgroundTasksRequest
-	(*ListBackgroundTasksRequest)(nil),                   // 36: module.ListBackgroundTasksRequest
-	(*RegisterAssetsRequest)(nil),                        // 37: module.RegisterAssetsRequest
-	(*ListAssetsRequest)(nil),                            // 38: module.ListAssetsRequest
-	(*CreateModuleResourceRequest)(nil),                  // 39: module.CreateModuleResourceRequest
-	(*ListModuleResourcesRequest)(nil),                   // 40: module.ListModuleResourcesRequest
-	(*DeleteModuleResourcesRequest)(nil),                 // 41: module.DeleteModuleResourcesRequest
-	(*DeleteResourceByManifestIdRequest)(nil),            // 42: module.DeleteResourceByManifestIdRequest
-	(*ArchiveResourceByManifestIdRequest)(nil),           // 43: module.ArchiveResourceByManifestIdRequest
-	(*UpdateModuleResourceVersionRequest)(nil),           // 44: module.UpdateModuleResourceVersionRequest
-	(*CreateResourceInstanceRequest)(nil),                // 45: module.CreateResourceInstanceRequest
-	(*DeleteResourceInstanceRequest)(nil),                // 46: module.DeleteResourceInstanceRequest
-	(*UpdateResourceInstanceRequest)(nil),                // 47: module.UpdateResourceInstanceRequest
-	(*CompareAndSetResourceInstanceSettingRequest)(nil),  // 48: module.CompareAndSetResourceInstanceSettingRequest
-	(*GetResourceInstanceRequest)(nil),                   // 49: module.GetResourceInstanceRequest
-	(*ListResourceInstancesByKindRequest)(nil),           // 50: module.ListResourceInstancesByKindRequest
-	(*ListResourceInstancesByModuleRequest)(nil),         // 51: module.ListResourceInstancesByModuleRequest
-	(*ListAllResourceInstancesRequest)(nil),              // 52: module.ListAllResourceInstancesRequest
-	(*ListTriggersResponse)(nil),                         // 53: module.ListTriggersResponse
-	(*ListActionsResponse)(nil),                          // 54: module.ListActionsResponse
-	(*ListWidgetsResponse)(nil),                          // 55: module.ListWidgetsResponse
-	(*WidgetResponse)(nil),                               // 56: module.WidgetResponse
-	(*ListBackgroundTasksResponse)(nil),                  // 57: module.ListBackgroundTasksResponse
-	(*ListAssetsResponse)(nil),                           // 58: module.ListAssetsResponse
-	(*ModuleResourceResponse)(nil),                       // 59: module.ModuleResourceResponse
-	(*ListModuleResourcesResponse)(nil),                  // 60: module.ListModuleResourcesResponse
-	(*ResourceInstanceResponse)(nil),                     // 61: module.ResourceInstanceResponse
-	(*CompareAndSetResourceInstanceSettingResponse)(nil), // 62: module.CompareAndSetResourceInstanceSettingResponse
-	(*ListResourceInstancesResponse)(nil),                // 63: module.ListResourceInstancesResponse
+	(*SetModuleMarketplaceLicenseKeyRequest)(nil),        // 19: module.SetModuleMarketplaceLicenseKeyRequest
+	(*CompleteModuleDeleteRequest)(nil),                  // 20: module.CompleteModuleDeleteRequest
+	(*DeleteByModuleIdRequest)(nil),                      // 21: module.DeleteByModuleIdRequest
+	(*GetByCanonicalIdRequest)(nil),                      // 22: module.GetByCanonicalIdRequest
+	(*TriggerResponse)(nil),                              // 23: module.TriggerResponse
+	(*ActionResponse)(nil),                               // 24: module.ActionResponse
+	(*timestamppb.Timestamp)(nil),                        // 25: google.protobuf.Timestamp
+	(*ResponseStatus)(nil),                               // 26: common.ResponseStatus
+	(*RequestContext)(nil),                               // 27: common.RequestContext
+	(*Trigger)(nil),                                      // 28: module.Trigger
+	(*Action)(nil),                                       // 29: module.Action
+	(*RegisterTriggersRequest)(nil),                      // 30: module.RegisterTriggersRequest
+	(*ListTriggersRequest)(nil),                          // 31: module.ListTriggersRequest
+	(*RegisterActionsRequest)(nil),                       // 32: module.RegisterActionsRequest
+	(*ListActionsRequest)(nil),                           // 33: module.ListActionsRequest
+	(*RegisterWidgetsRequest)(nil),                       // 34: module.RegisterWidgetsRequest
+	(*ListWidgetsRequest)(nil),                           // 35: module.ListWidgetsRequest
+	(*RegisterBackgroundTasksRequest)(nil),               // 36: module.RegisterBackgroundTasksRequest
+	(*ListBackgroundTasksRequest)(nil),                   // 37: module.ListBackgroundTasksRequest
+	(*RegisterAssetsRequest)(nil),                        // 38: module.RegisterAssetsRequest
+	(*ListAssetsRequest)(nil),                            // 39: module.ListAssetsRequest
+	(*CreateModuleResourceRequest)(nil),                  // 40: module.CreateModuleResourceRequest
+	(*ListModuleResourcesRequest)(nil),                   // 41: module.ListModuleResourcesRequest
+	(*DeleteModuleResourcesRequest)(nil),                 // 42: module.DeleteModuleResourcesRequest
+	(*DeleteResourceByManifestIdRequest)(nil),            // 43: module.DeleteResourceByManifestIdRequest
+	(*ArchiveResourceByManifestIdRequest)(nil),           // 44: module.ArchiveResourceByManifestIdRequest
+	(*UpdateModuleResourceVersionRequest)(nil),           // 45: module.UpdateModuleResourceVersionRequest
+	(*CreateResourceInstanceRequest)(nil),                // 46: module.CreateResourceInstanceRequest
+	(*DeleteResourceInstanceRequest)(nil),                // 47: module.DeleteResourceInstanceRequest
+	(*UpdateResourceInstanceRequest)(nil),                // 48: module.UpdateResourceInstanceRequest
+	(*CompareAndSetResourceInstanceSettingRequest)(nil),  // 49: module.CompareAndSetResourceInstanceSettingRequest
+	(*GetResourceInstanceRequest)(nil),                   // 50: module.GetResourceInstanceRequest
+	(*ListResourceInstancesByKindRequest)(nil),           // 51: module.ListResourceInstancesByKindRequest
+	(*ListResourceInstancesByModuleRequest)(nil),         // 52: module.ListResourceInstancesByModuleRequest
+	(*ListAllResourceInstancesRequest)(nil),              // 53: module.ListAllResourceInstancesRequest
+	(*ListTriggersResponse)(nil),                         // 54: module.ListTriggersResponse
+	(*ListActionsResponse)(nil),                          // 55: module.ListActionsResponse
+	(*ListWidgetsResponse)(nil),                          // 56: module.ListWidgetsResponse
+	(*WidgetResponse)(nil),                               // 57: module.WidgetResponse
+	(*ListBackgroundTasksResponse)(nil),                  // 58: module.ListBackgroundTasksResponse
+	(*ListAssetsResponse)(nil),                           // 59: module.ListAssetsResponse
+	(*ModuleResourceResponse)(nil),                       // 60: module.ModuleResourceResponse
+	(*ListModuleResourcesResponse)(nil),                  // 61: module.ListModuleResourcesResponse
+	(*ResourceInstanceResponse)(nil),                     // 62: module.ResourceInstanceResponse
+	(*CompareAndSetResourceInstanceSettingResponse)(nil), // 63: module.CompareAndSetResourceInstanceSettingResponse
+	(*ListResourceInstancesResponse)(nil),                // 64: module.ListResourceInstancesResponse
 }
 var file_module_proto_depIdxs = []int32{
 	1,  // 0: module.Module.functions:type_name -> module.ModuleFunction
-	24, // 1: module.Module.installed_at:type_name -> google.protobuf.Timestamp
-	24, // 2: module.Module.updated_at:type_name -> google.protobuf.Timestamp
+	25, // 1: module.Module.installed_at:type_name -> google.protobuf.Timestamp
+	25, // 2: module.Module.updated_at:type_name -> google.protobuf.Timestamp
 	3,  // 3: module.CreateModuleRequest.functions:type_name -> module.CreateModuleFunctionRequest
 	3,  // 4: module.UpdateModuleRequest.functions:type_name -> module.CreateModuleFunctionRequest
-	25, // 5: module.ModuleResponse.status:type_name -> common.ResponseStatus
+	26, // 5: module.ModuleResponse.status:type_name -> common.ResponseStatus
 	0,  // 6: module.ModuleResponse.module:type_name -> module.Module
-	25, // 7: module.ListModulesResponse.status:type_name -> common.ResponseStatus
+	26, // 7: module.ListModulesResponse.status:type_name -> common.ResponseStatus
 	0,  // 8: module.ListModulesResponse.modules:type_name -> module.Module
-	26, // 9: module.CompleteModuleInstallRequest.request_context:type_name -> common.RequestContext
+	27, // 9: module.CompleteModuleInstallRequest.request_context:type_name -> common.RequestContext
 	15, // 10: module.ResourceUsage.used_by:type_name -> module.UsageRef
-	25, // 11: module.CheckModuleResourceUsageResponse.status:type_name -> common.ResponseStatus
+	26, // 11: module.CheckModuleResourceUsageResponse.status:type_name -> common.ResponseStatus
 	16, // 12: module.CheckModuleResourceUsageResponse.in_use:type_name -> module.ResourceUsage
 	16, // 13: module.CompleteModuleDeleteRequest.in_use_resources:type_name -> module.ResourceUsage
-	26, // 14: module.CompleteModuleDeleteRequest.request_context:type_name -> common.RequestContext
-	25, // 15: module.TriggerResponse.status:type_name -> common.ResponseStatus
-	27, // 16: module.TriggerResponse.trigger:type_name -> module.Trigger
-	25, // 17: module.ActionResponse.status:type_name -> common.ResponseStatus
-	28, // 18: module.ActionResponse.action:type_name -> module.Action
+	27, // 14: module.CompleteModuleDeleteRequest.request_context:type_name -> common.RequestContext
+	26, // 15: module.TriggerResponse.status:type_name -> common.ResponseStatus
+	28, // 16: module.TriggerResponse.trigger:type_name -> module.Trigger
+	26, // 17: module.ActionResponse.status:type_name -> common.ResponseStatus
+	29, // 18: module.ActionResponse.action:type_name -> module.Action
 	2,  // 19: module.ModuleService.CreateModule:input_type -> module.CreateModuleRequest
 	4,  // 20: module.ModuleService.UpdateModule:input_type -> module.UpdateModuleRequest
 	5,  // 21: module.ModuleService.DeleteModule:input_type -> module.DeleteModuleRequest
@@ -1970,87 +2065,89 @@ var file_module_proto_depIdxs = []int32{
 	9,  // 25: module.ModuleService.GetModuleByModuleId:input_type -> module.GetModuleByModuleIdRequest
 	10, // 26: module.ModuleService.ListModules:input_type -> module.ListModulesRequest
 	11, // 27: module.ModuleService.SetModuleState:input_type -> module.SetModuleStateRequest
-	29, // 28: module.ModuleService.RegisterTriggers:input_type -> module.RegisterTriggersRequest
-	30, // 29: module.ModuleService.ListTriggers:input_type -> module.ListTriggersRequest
-	21, // 30: module.ModuleService.GetTriggerByCanonicalId:input_type -> module.GetByCanonicalIdRequest
-	20, // 31: module.ModuleService.DeleteTriggersByModuleId:input_type -> module.DeleteByModuleIdRequest
-	31, // 32: module.ModuleService.RegisterActions:input_type -> module.RegisterActionsRequest
-	32, // 33: module.ModuleService.ListActions:input_type -> module.ListActionsRequest
-	21, // 34: module.ModuleService.GetActionByCanonicalId:input_type -> module.GetByCanonicalIdRequest
-	20, // 35: module.ModuleService.DeleteActionsByModuleId:input_type -> module.DeleteByModuleIdRequest
-	33, // 36: module.ModuleService.RegisterWidgets:input_type -> module.RegisterWidgetsRequest
-	34, // 37: module.ModuleService.ListWidgets:input_type -> module.ListWidgetsRequest
-	21, // 38: module.ModuleService.GetWidgetByCanonicalId:input_type -> module.GetByCanonicalIdRequest
-	20, // 39: module.ModuleService.DeleteWidgetsByModuleId:input_type -> module.DeleteByModuleIdRequest
-	35, // 40: module.ModuleService.RegisterBackgroundTasks:input_type -> module.RegisterBackgroundTasksRequest
-	36, // 41: module.ModuleService.ListBackgroundTasks:input_type -> module.ListBackgroundTasksRequest
-	20, // 42: module.ModuleService.DeleteBackgroundTasksByModuleId:input_type -> module.DeleteByModuleIdRequest
-	37, // 43: module.ModuleService.RegisterAssets:input_type -> module.RegisterAssetsRequest
-	38, // 44: module.ModuleService.ListAssets:input_type -> module.ListAssetsRequest
-	20, // 45: module.ModuleService.DeleteAssetsByModuleId:input_type -> module.DeleteByModuleIdRequest
-	39, // 46: module.ModuleService.CreateModuleResource:input_type -> module.CreateModuleResourceRequest
-	40, // 47: module.ModuleService.ListModuleResources:input_type -> module.ListModuleResourcesRequest
-	41, // 48: module.ModuleService.DeleteModuleResources:input_type -> module.DeleteModuleResourcesRequest
-	42, // 49: module.ModuleService.DeleteResourceByManifestId:input_type -> module.DeleteResourceByManifestIdRequest
-	43, // 50: module.ModuleService.ArchiveResourceByManifestId:input_type -> module.ArchiveResourceByManifestIdRequest
-	44, // 51: module.ModuleService.UpdateModuleResourceVersion:input_type -> module.UpdateModuleResourceVersionRequest
+	30, // 28: module.ModuleService.RegisterTriggers:input_type -> module.RegisterTriggersRequest
+	31, // 29: module.ModuleService.ListTriggers:input_type -> module.ListTriggersRequest
+	22, // 30: module.ModuleService.GetTriggerByCanonicalId:input_type -> module.GetByCanonicalIdRequest
+	21, // 31: module.ModuleService.DeleteTriggersByModuleId:input_type -> module.DeleteByModuleIdRequest
+	32, // 32: module.ModuleService.RegisterActions:input_type -> module.RegisterActionsRequest
+	33, // 33: module.ModuleService.ListActions:input_type -> module.ListActionsRequest
+	22, // 34: module.ModuleService.GetActionByCanonicalId:input_type -> module.GetByCanonicalIdRequest
+	21, // 35: module.ModuleService.DeleteActionsByModuleId:input_type -> module.DeleteByModuleIdRequest
+	34, // 36: module.ModuleService.RegisterWidgets:input_type -> module.RegisterWidgetsRequest
+	35, // 37: module.ModuleService.ListWidgets:input_type -> module.ListWidgetsRequest
+	22, // 38: module.ModuleService.GetWidgetByCanonicalId:input_type -> module.GetByCanonicalIdRequest
+	21, // 39: module.ModuleService.DeleteWidgetsByModuleId:input_type -> module.DeleteByModuleIdRequest
+	36, // 40: module.ModuleService.RegisterBackgroundTasks:input_type -> module.RegisterBackgroundTasksRequest
+	37, // 41: module.ModuleService.ListBackgroundTasks:input_type -> module.ListBackgroundTasksRequest
+	21, // 42: module.ModuleService.DeleteBackgroundTasksByModuleId:input_type -> module.DeleteByModuleIdRequest
+	38, // 43: module.ModuleService.RegisterAssets:input_type -> module.RegisterAssetsRequest
+	39, // 44: module.ModuleService.ListAssets:input_type -> module.ListAssetsRequest
+	21, // 45: module.ModuleService.DeleteAssetsByModuleId:input_type -> module.DeleteByModuleIdRequest
+	40, // 46: module.ModuleService.CreateModuleResource:input_type -> module.CreateModuleResourceRequest
+	41, // 47: module.ModuleService.ListModuleResources:input_type -> module.ListModuleResourcesRequest
+	42, // 48: module.ModuleService.DeleteModuleResources:input_type -> module.DeleteModuleResourcesRequest
+	43, // 49: module.ModuleService.DeleteResourceByManifestId:input_type -> module.DeleteResourceByManifestIdRequest
+	44, // 50: module.ModuleService.ArchiveResourceByManifestId:input_type -> module.ArchiveResourceByManifestIdRequest
+	45, // 51: module.ModuleService.UpdateModuleResourceVersion:input_type -> module.UpdateModuleResourceVersionRequest
 	14, // 52: module.ModuleService.CompleteModuleInstall:input_type -> module.CompleteModuleInstallRequest
 	17, // 53: module.ModuleService.CheckModuleResourceUsage:input_type -> module.CheckModuleResourceUsageRequest
-	19, // 54: module.ModuleService.CompleteModuleDelete:input_type -> module.CompleteModuleDeleteRequest
-	45, // 55: module.ModuleService.CreateResourceInstance:input_type -> module.CreateResourceInstanceRequest
-	46, // 56: module.ModuleService.DeleteResourceInstance:input_type -> module.DeleteResourceInstanceRequest
-	47, // 57: module.ModuleService.UpdateResourceInstance:input_type -> module.UpdateResourceInstanceRequest
-	48, // 58: module.ModuleService.CompareAndSetResourceInstanceSetting:input_type -> module.CompareAndSetResourceInstanceSettingRequest
-	49, // 59: module.ModuleService.GetResourceInstance:input_type -> module.GetResourceInstanceRequest
-	50, // 60: module.ModuleService.ListResourceInstancesByKind:input_type -> module.ListResourceInstancesByKindRequest
-	51, // 61: module.ModuleService.ListResourceInstancesByModule:input_type -> module.ListResourceInstancesByModuleRequest
-	52, // 62: module.ModuleService.ListAllResourceInstances:input_type -> module.ListAllResourceInstancesRequest
-	12, // 63: module.ModuleService.CreateModule:output_type -> module.ModuleResponse
-	12, // 64: module.ModuleService.UpdateModule:output_type -> module.ModuleResponse
-	25, // 65: module.ModuleService.DeleteModule:output_type -> common.ResponseStatus
-	12, // 66: module.ModuleService.GetModule:output_type -> module.ModuleResponse
-	12, // 67: module.ModuleService.GetModuleByName:output_type -> module.ModuleResponse
-	12, // 68: module.ModuleService.GetModuleByModuleKey:output_type -> module.ModuleResponse
-	12, // 69: module.ModuleService.GetModuleByModuleId:output_type -> module.ModuleResponse
-	13, // 70: module.ModuleService.ListModules:output_type -> module.ListModulesResponse
-	12, // 71: module.ModuleService.SetModuleState:output_type -> module.ModuleResponse
-	53, // 72: module.ModuleService.RegisterTriggers:output_type -> module.ListTriggersResponse
-	53, // 73: module.ModuleService.ListTriggers:output_type -> module.ListTriggersResponse
-	22, // 74: module.ModuleService.GetTriggerByCanonicalId:output_type -> module.TriggerResponse
-	25, // 75: module.ModuleService.DeleteTriggersByModuleId:output_type -> common.ResponseStatus
-	54, // 76: module.ModuleService.RegisterActions:output_type -> module.ListActionsResponse
-	54, // 77: module.ModuleService.ListActions:output_type -> module.ListActionsResponse
-	23, // 78: module.ModuleService.GetActionByCanonicalId:output_type -> module.ActionResponse
-	25, // 79: module.ModuleService.DeleteActionsByModuleId:output_type -> common.ResponseStatus
-	55, // 80: module.ModuleService.RegisterWidgets:output_type -> module.ListWidgetsResponse
-	55, // 81: module.ModuleService.ListWidgets:output_type -> module.ListWidgetsResponse
-	56, // 82: module.ModuleService.GetWidgetByCanonicalId:output_type -> module.WidgetResponse
-	25, // 83: module.ModuleService.DeleteWidgetsByModuleId:output_type -> common.ResponseStatus
-	57, // 84: module.ModuleService.RegisterBackgroundTasks:output_type -> module.ListBackgroundTasksResponse
-	57, // 85: module.ModuleService.ListBackgroundTasks:output_type -> module.ListBackgroundTasksResponse
-	25, // 86: module.ModuleService.DeleteBackgroundTasksByModuleId:output_type -> common.ResponseStatus
-	58, // 87: module.ModuleService.RegisterAssets:output_type -> module.ListAssetsResponse
-	58, // 88: module.ModuleService.ListAssets:output_type -> module.ListAssetsResponse
-	25, // 89: module.ModuleService.DeleteAssetsByModuleId:output_type -> common.ResponseStatus
-	59, // 90: module.ModuleService.CreateModuleResource:output_type -> module.ModuleResourceResponse
-	60, // 91: module.ModuleService.ListModuleResources:output_type -> module.ListModuleResourcesResponse
-	25, // 92: module.ModuleService.DeleteModuleResources:output_type -> common.ResponseStatus
-	25, // 93: module.ModuleService.DeleteResourceByManifestId:output_type -> common.ResponseStatus
-	25, // 94: module.ModuleService.ArchiveResourceByManifestId:output_type -> common.ResponseStatus
-	59, // 95: module.ModuleService.UpdateModuleResourceVersion:output_type -> module.ModuleResourceResponse
-	25, // 96: module.ModuleService.CompleteModuleInstall:output_type -> common.ResponseStatus
-	18, // 97: module.ModuleService.CheckModuleResourceUsage:output_type -> module.CheckModuleResourceUsageResponse
-	25, // 98: module.ModuleService.CompleteModuleDelete:output_type -> common.ResponseStatus
-	61, // 99: module.ModuleService.CreateResourceInstance:output_type -> module.ResourceInstanceResponse
-	25, // 100: module.ModuleService.DeleteResourceInstance:output_type -> common.ResponseStatus
-	61, // 101: module.ModuleService.UpdateResourceInstance:output_type -> module.ResourceInstanceResponse
-	62, // 102: module.ModuleService.CompareAndSetResourceInstanceSetting:output_type -> module.CompareAndSetResourceInstanceSettingResponse
-	61, // 103: module.ModuleService.GetResourceInstance:output_type -> module.ResourceInstanceResponse
-	63, // 104: module.ModuleService.ListResourceInstancesByKind:output_type -> module.ListResourceInstancesResponse
-	63, // 105: module.ModuleService.ListResourceInstancesByModule:output_type -> module.ListResourceInstancesResponse
-	63, // 106: module.ModuleService.ListAllResourceInstances:output_type -> module.ListResourceInstancesResponse
-	63, // [63:107] is the sub-list for method output_type
-	19, // [19:63] is the sub-list for method input_type
+	19, // 54: module.ModuleService.SetModuleMarketplaceLicenseKey:input_type -> module.SetModuleMarketplaceLicenseKeyRequest
+	20, // 55: module.ModuleService.CompleteModuleDelete:input_type -> module.CompleteModuleDeleteRequest
+	46, // 56: module.ModuleService.CreateResourceInstance:input_type -> module.CreateResourceInstanceRequest
+	47, // 57: module.ModuleService.DeleteResourceInstance:input_type -> module.DeleteResourceInstanceRequest
+	48, // 58: module.ModuleService.UpdateResourceInstance:input_type -> module.UpdateResourceInstanceRequest
+	49, // 59: module.ModuleService.CompareAndSetResourceInstanceSetting:input_type -> module.CompareAndSetResourceInstanceSettingRequest
+	50, // 60: module.ModuleService.GetResourceInstance:input_type -> module.GetResourceInstanceRequest
+	51, // 61: module.ModuleService.ListResourceInstancesByKind:input_type -> module.ListResourceInstancesByKindRequest
+	52, // 62: module.ModuleService.ListResourceInstancesByModule:input_type -> module.ListResourceInstancesByModuleRequest
+	53, // 63: module.ModuleService.ListAllResourceInstances:input_type -> module.ListAllResourceInstancesRequest
+	12, // 64: module.ModuleService.CreateModule:output_type -> module.ModuleResponse
+	12, // 65: module.ModuleService.UpdateModule:output_type -> module.ModuleResponse
+	26, // 66: module.ModuleService.DeleteModule:output_type -> common.ResponseStatus
+	12, // 67: module.ModuleService.GetModule:output_type -> module.ModuleResponse
+	12, // 68: module.ModuleService.GetModuleByName:output_type -> module.ModuleResponse
+	12, // 69: module.ModuleService.GetModuleByModuleKey:output_type -> module.ModuleResponse
+	12, // 70: module.ModuleService.GetModuleByModuleId:output_type -> module.ModuleResponse
+	13, // 71: module.ModuleService.ListModules:output_type -> module.ListModulesResponse
+	12, // 72: module.ModuleService.SetModuleState:output_type -> module.ModuleResponse
+	54, // 73: module.ModuleService.RegisterTriggers:output_type -> module.ListTriggersResponse
+	54, // 74: module.ModuleService.ListTriggers:output_type -> module.ListTriggersResponse
+	23, // 75: module.ModuleService.GetTriggerByCanonicalId:output_type -> module.TriggerResponse
+	26, // 76: module.ModuleService.DeleteTriggersByModuleId:output_type -> common.ResponseStatus
+	55, // 77: module.ModuleService.RegisterActions:output_type -> module.ListActionsResponse
+	55, // 78: module.ModuleService.ListActions:output_type -> module.ListActionsResponse
+	24, // 79: module.ModuleService.GetActionByCanonicalId:output_type -> module.ActionResponse
+	26, // 80: module.ModuleService.DeleteActionsByModuleId:output_type -> common.ResponseStatus
+	56, // 81: module.ModuleService.RegisterWidgets:output_type -> module.ListWidgetsResponse
+	56, // 82: module.ModuleService.ListWidgets:output_type -> module.ListWidgetsResponse
+	57, // 83: module.ModuleService.GetWidgetByCanonicalId:output_type -> module.WidgetResponse
+	26, // 84: module.ModuleService.DeleteWidgetsByModuleId:output_type -> common.ResponseStatus
+	58, // 85: module.ModuleService.RegisterBackgroundTasks:output_type -> module.ListBackgroundTasksResponse
+	58, // 86: module.ModuleService.ListBackgroundTasks:output_type -> module.ListBackgroundTasksResponse
+	26, // 87: module.ModuleService.DeleteBackgroundTasksByModuleId:output_type -> common.ResponseStatus
+	59, // 88: module.ModuleService.RegisterAssets:output_type -> module.ListAssetsResponse
+	59, // 89: module.ModuleService.ListAssets:output_type -> module.ListAssetsResponse
+	26, // 90: module.ModuleService.DeleteAssetsByModuleId:output_type -> common.ResponseStatus
+	60, // 91: module.ModuleService.CreateModuleResource:output_type -> module.ModuleResourceResponse
+	61, // 92: module.ModuleService.ListModuleResources:output_type -> module.ListModuleResourcesResponse
+	26, // 93: module.ModuleService.DeleteModuleResources:output_type -> common.ResponseStatus
+	26, // 94: module.ModuleService.DeleteResourceByManifestId:output_type -> common.ResponseStatus
+	26, // 95: module.ModuleService.ArchiveResourceByManifestId:output_type -> common.ResponseStatus
+	60, // 96: module.ModuleService.UpdateModuleResourceVersion:output_type -> module.ModuleResourceResponse
+	26, // 97: module.ModuleService.CompleteModuleInstall:output_type -> common.ResponseStatus
+	18, // 98: module.ModuleService.CheckModuleResourceUsage:output_type -> module.CheckModuleResourceUsageResponse
+	26, // 99: module.ModuleService.SetModuleMarketplaceLicenseKey:output_type -> common.ResponseStatus
+	26, // 100: module.ModuleService.CompleteModuleDelete:output_type -> common.ResponseStatus
+	62, // 101: module.ModuleService.CreateResourceInstance:output_type -> module.ResourceInstanceResponse
+	26, // 102: module.ModuleService.DeleteResourceInstance:output_type -> common.ResponseStatus
+	62, // 103: module.ModuleService.UpdateResourceInstance:output_type -> module.ResourceInstanceResponse
+	63, // 104: module.ModuleService.CompareAndSetResourceInstanceSetting:output_type -> module.CompareAndSetResourceInstanceSettingResponse
+	62, // 105: module.ModuleService.GetResourceInstance:output_type -> module.ResourceInstanceResponse
+	64, // 106: module.ModuleService.ListResourceInstancesByKind:output_type -> module.ListResourceInstancesResponse
+	64, // 107: module.ModuleService.ListResourceInstancesByModule:output_type -> module.ListResourceInstancesResponse
+	64, // 108: module.ModuleService.ListAllResourceInstances:output_type -> module.ListResourceInstancesResponse
+	64, // [64:109] is the sub-list for method output_type
+	19, // [19:64] is the sub-list for method input_type
 	19, // [19:19] is the sub-list for extension type_name
 	19, // [19:19] is the sub-list for extension extendee
 	0,  // [0:19] is the sub-list for field type_name
@@ -2077,7 +2174,7 @@ func file_module_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_module_proto_rawDesc), len(file_module_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   24,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

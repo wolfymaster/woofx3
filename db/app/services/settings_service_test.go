@@ -114,6 +114,61 @@ func TestSetSettingOverwritesByKey(t *testing.T) {
 	}
 }
 
+// A write made only if the key is absent never replaces a stored value, and
+// answers with the one that is stored, so every first writer reads the same.
+func TestSetSettingOnlyIfAbsentKeepsTheFirstValue(t *testing.T) {
+	db := newSettingsTestDB(t)
+	svc := newEngineSettingService(t, db)
+	ctx := context.Background()
+
+	cases := []struct {
+		name  string
+		write string
+		want  string
+	}{
+		{name: "first write stores its value", write: "first", want: "first"},
+		{name: "a later write is ignored and answers the stored value", write: "second", want: "first"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := svc.SetSetting(ctx, &client.SetSettingRequest{
+				Key:          "engine.install_id",
+				Value:        structpb.NewStringValue(tc.write),
+				OnlyIfAbsent: ptr(true),
+			})
+			if err != nil {
+				t.Fatalf("SetSetting: %v", err)
+			}
+			if v := got.GetSetting().GetValue().GetStringValue(); v != tc.want {
+				t.Fatalf("answered %q, want %q", v, tc.want)
+			}
+			if stored := storedSettingValue(t, db, "engine.install_id"); stored != "first" {
+				t.Fatalf("stored %q, want first", stored)
+			}
+		})
+	}
+}
+
+func TestSetSettingOnlyIfAbsentSealsACredential(t *testing.T) {
+	db := newSettingsTestDB(t)
+	svc := newEngineSettingService(t, db)
+
+	got, err := svc.SetSetting(context.Background(), &client.SetSettingRequest{
+		Key:          TwitchTokenSettingKey,
+		Value:        structpb.NewStringValue(twitchTokenJSON),
+		OnlyIfAbsent: ptr(true),
+	})
+	if err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+	if v := got.GetSetting().GetValue().GetStringValue(); v != twitchTokenJSON {
+		t.Fatalf("answered %q, want the plain token", v)
+	}
+	if stored := storedSettingValue(t, db, TwitchTokenSettingKey); !secrets.IsSealed(stored) {
+		t.Fatalf("stored %q, want it sealed", stored)
+	}
+}
+
 const twitchTokenJSON = `{"accessToken":"a1","refreshToken":"r1","publicClientId":"public-app"}`
 
 func storedSettingValue(t *testing.T, db *gorm.DB, key string) string {

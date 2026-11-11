@@ -213,6 +213,7 @@ export const RPC_METHODS = [
   "installMarketplaceListing",
   "installModuleFromResource",
   "inspectMarketplaceListing",
+  "getInstalledModuleLicense",
   "installMarketplaceBundle",
   "marketplaceSearch",
   "marketplaceCounts",

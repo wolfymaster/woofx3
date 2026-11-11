@@ -49,6 +49,7 @@ service ModuleService {
   rpc UpdateModuleResourceVersion(UpdateModuleResourceVersionRequest) returns (ModuleResourceResponse);
   rpc CompleteModuleInstall(CompleteModuleInstallRequest) returns (common.ResponseStatus);
   rpc CheckModuleResourceUsage(CheckModuleResourceUsageRequest) returns (CheckModuleResourceUsageResponse);
+  rpc SetModuleMarketplaceLicenseKey(SetModuleMarketplaceLicenseKeyRequest) returns (common.ResponseStatus);
   rpc CompleteModuleDelete(CompleteModuleDeleteRequest) returns (common.ResponseStatus);
   // Runtime-created instances of module-declared kinds (counters, etc.).
   // The engine learns identity here; semantics live in the owning module.
@@ -88,6 +89,10 @@ message Module {
   // was installed from. Unset for any other install. A module records at
   // most one origin: this or the marketplace listing, never both.
   optional string upload_resource_id = 16;
+  // The license key the marketplace listing was downloaded with. A bearer
+  // credential: sealed at rest and opened here, so it must never be logged.
+  // Unset for any other install and for one made without a key.
+  optional string marketplace_license_key = 17;
 }
 
 message ModuleFunction {
@@ -126,6 +131,10 @@ message CreateModuleRequest {
   // Set for an install from a stored module archive; see Module. Never set
   // together with the marketplace fields.
   optional string upload_resource_id = 12;
+  // The license key the marketplace listing was downloaded with; see Module.
+  // Only with marketplace_listing_id. An install that names a marketplace
+  // listing without a key leaves the module with none.
+  optional string marketplace_license_key = 13;
 }
 
 message CreateModuleFunctionRequest {
@@ -233,6 +242,15 @@ message CheckModuleResourceUsageRequest {
 message CheckModuleResourceUsageResponse {
   common.ResponseStatus status = 1;
   repeated ResourceUsage in_use = 2;
+}
+
+// Records the license key an install of the module's own marketplace listing
+// downloaded with, on a module installed without one. Refused unless the
+// module has marketplace provenance and it is for `marketplace_listing_id`.
+message SetModuleMarketplaceLicenseKeyRequest {
+  string module_id = 1; // the row id (Module.id)
+  string marketplace_listing_id = 2;
+  string marketplace_license_key = 3;
 }
 
 message CompleteModuleDeleteRequest {

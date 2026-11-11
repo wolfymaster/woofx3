@@ -26,7 +26,7 @@ func TestUpdateModuleReplacesItsFunctionsOnEveryDialect(t *testing.T) {
 		if err := db.Create(module).Error; err != nil {
 			t.Fatalf("install module: %v", err)
 		}
-		svc := NewModuleService(repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }), nil, nil, nil, NewKindSettingsValidators())
+		svc := newTestModuleService(t, repo.NewModuleRepository(db, database.RandomIDs{}, func() time.Time { return time.Now().UTC() }), nil, nil, nil, NewKindSettingsValidators())
 
 		resp, err := svc.UpdateModule(context.Background(), &client.UpdateModuleRequest{
 			Id:      module.ID.String(),

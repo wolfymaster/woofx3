@@ -40,6 +40,7 @@ import type { DbClient } from "../db-client";
 import type { EngineEventStream } from "../engine-event-stream";
 import type { EventLogSelectionSource } from "../event-log-selection";
 import { releaseStub } from "../held-stub";
+import { EngineInstallId } from "../install-id";
 import type { MarketplaceClient } from "../marketplace-client";
 import type { PairingRegistry } from "../pairing";
 import { PlatformGatewayClient } from "../platform-gateway-client";
@@ -142,6 +143,8 @@ export class ApiRouteHost extends RpcTarget {
   readonly twitchProfiles: TwitchProfiles;
   /** The platform gateway in connectors. An instance property for the same reason as `twitchToken`. */
   readonly platformGateway: PlatformGatewayClient;
+  /** What the marketplace counts this engine's license key downloads by. An instance property for the same reason as `twitchToken`. */
+  readonly installId: EngineInstallId;
 
   protected db: DbClient;
   protected nats: NATSClient | null;
@@ -508,6 +511,7 @@ export class ApiRouteHost extends RpcTarget {
       throw new Error("ApiOptions.sceneManagerUrl is required");
     }
     this.db = opts.db;
+    this.installId = new EngineInstallId(this.db);
     const twitchOAuth = opts.twitchOAuth ?? new TwitchOAuthClient();
     this.twitchToken = new TwitchTokenSource({
       db: this.db,

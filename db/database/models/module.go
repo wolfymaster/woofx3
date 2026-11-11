@@ -36,6 +36,11 @@ type Module struct {
 	// MarketplaceListingID is set. While it is set the resource cannot be
 	// deleted (see ResourceRepository.DeleteSubtree).
 	UploadResourceID *string `gorm:"column:upload_resource_id;type:text"`
+
+	// The license key the marketplace listing was downloaded with, sealed
+	// with the engine's secrets key (secrets.Box). Nil for any other install
+	// and for one made without a key. Only set with MarketplaceListingID.
+	MarketplaceLicenseKeySealed *string `gorm:"column:marketplace_license_key_sealed;type:text"`
 }
 
 func (Module) TableName() string { return "modules" }

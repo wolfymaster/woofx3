@@ -127,7 +127,7 @@ func newDatabaseFixture(t *testing.T, db *gorm.DB, columns string) *databaseFixt
 	if err := db.Create(module).Error; err != nil {
 		t.Fatalf("install module: %v", err)
 	}
-	svc := NewModuleService(
+	svc := newTestModuleService(t,
 		repo.NewModuleRepository(db, database.RandomIDs{}, now),
 		repo.NewResourceReferenceRepository(db),
 		repo.NewModuleResourceInstanceRepository(db),

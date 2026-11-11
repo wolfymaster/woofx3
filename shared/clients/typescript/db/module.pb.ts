@@ -55,6 +55,12 @@ export interface Module {
    * most one origin: this or the marketplace listing, never both.
    */
   uploadResourceId?: string | null | undefined;
+  /**
+   * The license key the marketplace listing was downloaded with. A bearer
+   * credential: sealed at rest and opened here, so it must never be logged.
+   * Unset for any other install and for one made without a key.
+   */
+  marketplaceLicenseKey?: string | null | undefined;
 }
 
 export interface ModuleFunction {
@@ -103,6 +109,12 @@ export interface CreateModuleRequest {
    * together with the marketplace fields.
    */
   uploadResourceId?: string | null | undefined;
+  /**
+   * The license key the marketplace listing was downloaded with; see Module.
+   * Only with marketplace_listing_id. An install that names a marketplace
+   * listing without a key leaves the module with none.
+   */
+  marketplaceLicenseKey?: string | null | undefined;
 }
 
 export interface CreateModuleFunctionRequest {
@@ -214,6 +226,17 @@ export interface CheckModuleResourceUsageRequest {
 export interface CheckModuleResourceUsageResponse {
   status: common.ResponseStatus;
   inUse: ResourceUsage[];
+}
+
+/**
+ * Records the license key an install of the module's own marketplace listing
+ * downloaded with, on a module installed without one. Refused unless the
+ * module has marketplace provenance and it is for `marketplace_listing_id`.
+ */
+export interface SetModuleMarketplaceLicenseKeyRequest {
+  moduleId: string;
+  marketplaceListingId: string;
+  marketplaceLicenseKey: string;
 }
 
 export interface CompleteModuleDeleteRequest {
@@ -710,6 +733,20 @@ export async function CheckModuleResourceUsage(
     config,
   );
   return CheckModuleResourceUsageResponse.decode(response);
+}
+
+export async function SetModuleMarketplaceLicenseKey(
+  setModuleMarketplaceLicenseKeyRequest: SetModuleMarketplaceLicenseKeyRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await PBrequest(
+    "/module.ModuleService/SetModuleMarketplaceLicenseKey",
+    SetModuleMarketplaceLicenseKeyRequest.encode(
+      setModuleMarketplaceLicenseKeyRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatus.decode(response);
 }
 
 export async function CompleteModuleDelete(
@@ -1288,6 +1325,20 @@ export async function CheckModuleResourceUsageJSON(
   return CheckModuleResourceUsageResponseJSON.decode(response);
 }
 
+export async function SetModuleMarketplaceLicenseKeyJSON(
+  setModuleMarketplaceLicenseKeyRequest: SetModuleMarketplaceLicenseKeyRequest,
+  config?: ClientConfiguration,
+): Promise<common.ResponseStatus> {
+  const response = await JSONrequest(
+    "/module.ModuleService/SetModuleMarketplaceLicenseKey",
+    SetModuleMarketplaceLicenseKeyRequestJSON.encode(
+      setModuleMarketplaceLicenseKeyRequest,
+    ),
+    config,
+  );
+  return common.ResponseStatusJSON.decode(response);
+}
+
 export async function CompleteModuleDeleteJSON(
   completeModuleDeleteRequest: CompleteModuleDeleteRequest,
   config?: ClientConfiguration,
@@ -1595,6 +1646,10 @@ export interface ModuleService<Context = unknown> {
   ) =>
     | Promise<CheckModuleResourceUsageResponse>
     | CheckModuleResourceUsageResponse;
+  SetModuleMarketplaceLicenseKey: (
+    setModuleMarketplaceLicenseKeyRequest: SetModuleMarketplaceLicenseKeyRequest,
+    context: Context,
+  ) => Promise<common.ResponseStatus> | common.ResponseStatus;
   CompleteModuleDelete: (
     completeModuleDeleteRequest: CompleteModuleDeleteRequest,
     context: Context,
@@ -2033,6 +2088,18 @@ export function createModuleService<Context>(service: ModuleService<Context>) {
           json: CheckModuleResourceUsageResponseJSON,
         },
       },
+      SetModuleMarketplaceLicenseKey: {
+        name: "SetModuleMarketplaceLicenseKey",
+        handler: service.SetModuleMarketplaceLicenseKey,
+        input: {
+          protobuf: SetModuleMarketplaceLicenseKeyRequest,
+          json: SetModuleMarketplaceLicenseKeyRequestJSON,
+        },
+        output: {
+          protobuf: common.ResponseStatus,
+          json: common.ResponseStatusJSON,
+        },
+      },
       CompleteModuleDelete: {
         name: "CompleteModuleDelete",
         handler: service.CompleteModuleDelete,
@@ -2194,6 +2261,7 @@ export const Module = {
       marketplaceListingId: undefined,
       marketplaceEdition: undefined,
       uploadResourceId: undefined,
+      marketplaceLicenseKey: undefined,
       ...msg,
     };
   },
@@ -2264,6 +2332,9 @@ export const Module = {
     }
     if (msg.uploadResourceId != undefined) {
       writer.writeString(16, msg.uploadResourceId);
+    }
+    if (msg.marketplaceLicenseKey != undefined) {
+      writer.writeString(17, msg.marketplaceLicenseKey);
     }
     return writer;
   },
@@ -2345,6 +2416,10 @@ export const Module = {
         }
         case 16: {
           msg.uploadResourceId = reader.readString();
+          break;
+        }
+        case 17: {
+          msg.marketplaceLicenseKey = reader.readString();
           break;
         }
         default: {
@@ -2521,6 +2596,7 @@ export const CreateModuleRequest = {
       marketplaceListingId: undefined,
       marketplaceEdition: undefined,
       uploadResourceId: undefined,
+      marketplaceLicenseKey: undefined,
       ...msg,
     };
   },
@@ -2571,6 +2647,9 @@ export const CreateModuleRequest = {
     }
     if (msg.uploadResourceId != undefined) {
       writer.writeString(12, msg.uploadResourceId);
+    }
+    if (msg.marketplaceLicenseKey != undefined) {
+      writer.writeString(13, msg.marketplaceLicenseKey);
     }
     return writer;
   },
@@ -2633,6 +2712,10 @@ export const CreateModuleRequest = {
         }
         case 12: {
           msg.uploadResourceId = reader.readString();
+          break;
+        }
+        case 13: {
+          msg.marketplaceLicenseKey = reader.readString();
           break;
         }
         default: {
@@ -3984,6 +4067,94 @@ export const CheckModuleResourceUsageResponse = {
   },
 };
 
+export const SetModuleMarketplaceLicenseKeyRequest = {
+  /**
+   * Serializes SetModuleMarketplaceLicenseKeyRequest to protobuf.
+   */
+  encode: function (
+    msg: PartialDeep<SetModuleMarketplaceLicenseKeyRequest>,
+  ): Uint8Array {
+    return SetModuleMarketplaceLicenseKeyRequest._writeMessage(
+      msg,
+      new protoscript.BinaryWriter(),
+    ).getResultBuffer();
+  },
+
+  /**
+   * Deserializes SetModuleMarketplaceLicenseKeyRequest from protobuf.
+   */
+  decode: function (bytes: ByteSource): SetModuleMarketplaceLicenseKeyRequest {
+    return SetModuleMarketplaceLicenseKeyRequest._readMessage(
+      SetModuleMarketplaceLicenseKeyRequest.initialize(),
+      new protoscript.BinaryReader(bytes),
+    );
+  },
+
+  /**
+   * Initializes SetModuleMarketplaceLicenseKeyRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<SetModuleMarketplaceLicenseKeyRequest>,
+  ): SetModuleMarketplaceLicenseKeyRequest {
+    return {
+      moduleId: "",
+      marketplaceListingId: "",
+      marketplaceLicenseKey: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SetModuleMarketplaceLicenseKeyRequest>,
+    writer: protoscript.BinaryWriter,
+  ): protoscript.BinaryWriter {
+    if (msg.moduleId) {
+      writer.writeString(1, msg.moduleId);
+    }
+    if (msg.marketplaceListingId) {
+      writer.writeString(2, msg.marketplaceListingId);
+    }
+    if (msg.marketplaceLicenseKey) {
+      writer.writeString(3, msg.marketplaceLicenseKey);
+    }
+    return writer;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: SetModuleMarketplaceLicenseKeyRequest,
+    reader: protoscript.BinaryReader,
+  ): SetModuleMarketplaceLicenseKeyRequest {
+    while (reader.nextField()) {
+      const field = reader.getFieldNumber();
+      switch (field) {
+        case 1: {
+          msg.moduleId = reader.readString();
+          break;
+        }
+        case 2: {
+          msg.marketplaceListingId = reader.readString();
+          break;
+        }
+        case 3: {
+          msg.marketplaceLicenseKey = reader.readString();
+          break;
+        }
+        default: {
+          reader.skipField();
+          break;
+        }
+      }
+    }
+    return msg;
+  },
+};
+
 export const CompleteModuleDeleteRequest = {
   /**
    * Serializes CompleteModuleDeleteRequest to protobuf.
@@ -4455,6 +4626,7 @@ export const ModuleJSON = {
       marketplaceListingId: undefined,
       marketplaceEdition: undefined,
       uploadResourceId: undefined,
+      marketplaceLicenseKey: undefined,
       ...msg,
     };
   },
@@ -4511,6 +4683,9 @@ export const ModuleJSON = {
     }
     if (msg.uploadResourceId != undefined) {
       json["uploadResourceId"] = msg.uploadResourceId;
+    }
+    if (msg.marketplaceLicenseKey != undefined) {
+      json["marketplaceLicenseKey"] = msg.marketplaceLicenseKey;
     }
     return json;
   },
@@ -4589,6 +4764,11 @@ export const ModuleJSON = {
       json["uploadResourceId"] ?? json["upload_resource_id"];
     if (_uploadResourceId_) {
       msg.uploadResourceId = _uploadResourceId_;
+    }
+    const _marketplaceLicenseKey_ =
+      json["marketplaceLicenseKey"] ?? json["marketplace_license_key"];
+    if (_marketplaceLicenseKey_) {
+      msg.marketplaceLicenseKey = _marketplaceLicenseKey_;
     }
     return msg;
   },
@@ -4740,6 +4920,7 @@ export const CreateModuleRequestJSON = {
       marketplaceListingId: undefined,
       marketplaceEdition: undefined,
       uploadResourceId: undefined,
+      marketplaceLicenseKey: undefined,
       ...msg,
     };
   },
@@ -4788,6 +4969,9 @@ export const CreateModuleRequestJSON = {
     }
     if (msg.uploadResourceId != undefined) {
       json["uploadResourceId"] = msg.uploadResourceId;
+    }
+    if (msg.marketplaceLicenseKey != undefined) {
+      json["marketplaceLicenseKey"] = msg.marketplaceLicenseKey;
     }
     return json;
   },
@@ -4853,6 +5037,11 @@ export const CreateModuleRequestJSON = {
       json["uploadResourceId"] ?? json["upload_resource_id"];
     if (_uploadResourceId_) {
       msg.uploadResourceId = _uploadResourceId_;
+    }
+    const _marketplaceLicenseKey_ =
+      json["marketplaceLicenseKey"] ?? json["marketplace_license_key"];
+    if (_marketplaceLicenseKey_) {
+      msg.marketplaceLicenseKey = _marketplaceLicenseKey_;
     }
     return msg;
   },
@@ -6004,6 +6193,86 @@ export const CheckModuleResourceUsageResponseJSON = {
         ResourceUsageJSON._readMessage(m, item);
         msg.inUse.push(m);
       }
+    }
+    return msg;
+  },
+};
+
+export const SetModuleMarketplaceLicenseKeyRequestJSON = {
+  /**
+   * Serializes SetModuleMarketplaceLicenseKeyRequest to JSON.
+   */
+  encode: function (
+    msg: PartialDeep<SetModuleMarketplaceLicenseKeyRequest>,
+  ): string {
+    return JSON.stringify(
+      SetModuleMarketplaceLicenseKeyRequestJSON._writeMessage(msg),
+    );
+  },
+
+  /**
+   * Deserializes SetModuleMarketplaceLicenseKeyRequest from JSON.
+   */
+  decode: function (json: string): SetModuleMarketplaceLicenseKeyRequest {
+    return SetModuleMarketplaceLicenseKeyRequestJSON._readMessage(
+      SetModuleMarketplaceLicenseKeyRequestJSON.initialize(),
+      JSON.parse(json),
+    );
+  },
+
+  /**
+   * Initializes SetModuleMarketplaceLicenseKeyRequest with all fields set to their default value.
+   */
+  initialize: function (
+    msg?: Partial<SetModuleMarketplaceLicenseKeyRequest>,
+  ): SetModuleMarketplaceLicenseKeyRequest {
+    return {
+      moduleId: "",
+      marketplaceListingId: "",
+      marketplaceLicenseKey: "",
+      ...msg,
+    };
+  },
+
+  /**
+   * @private
+   */
+  _writeMessage: function (
+    msg: PartialDeep<SetModuleMarketplaceLicenseKeyRequest>,
+  ): Record<string, unknown> {
+    const json: Record<string, unknown> = {};
+    if (msg.moduleId) {
+      json["moduleId"] = msg.moduleId;
+    }
+    if (msg.marketplaceListingId) {
+      json["marketplaceListingId"] = msg.marketplaceListingId;
+    }
+    if (msg.marketplaceLicenseKey) {
+      json["marketplaceLicenseKey"] = msg.marketplaceLicenseKey;
+    }
+    return json;
+  },
+
+  /**
+   * @private
+   */
+  _readMessage: function (
+    msg: SetModuleMarketplaceLicenseKeyRequest,
+    json: any,
+  ): SetModuleMarketplaceLicenseKeyRequest {
+    const _moduleId_ = json["moduleId"] ?? json["module_id"];
+    if (_moduleId_) {
+      msg.moduleId = _moduleId_;
+    }
+    const _marketplaceListingId_ =
+      json["marketplaceListingId"] ?? json["marketplace_listing_id"];
+    if (_marketplaceListingId_) {
+      msg.marketplaceListingId = _marketplaceListingId_;
+    }
+    const _marketplaceLicenseKey_ =
+      json["marketplaceLicenseKey"] ?? json["marketplace_license_key"];
+    if (_marketplaceLicenseKey_) {
+      msg.marketplaceLicenseKey = _marketplaceLicenseKey_;
     }
     return msg;
   },

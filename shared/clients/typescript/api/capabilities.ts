@@ -67,6 +67,15 @@ export const ENGINE_CAPABILITIES = {
    * draft in place instead of being reloaded at another URL.
    */
   scenesPreviewView: "scenes.previewView",
+  /**
+   * Licensed marketplace installs: `installMarketplaceListing` takes a
+   * `licenseKey`, or claims the listing itself (anonymously when it is free
+   * and there is no `buyerToken`), downloads with the key and the engine's
+   * install id, keeps the key on the installed module, and answers
+   * `payment_required` with the purchase `intent`.
+   * `getInstalledModuleLicense` reads the kept key back.
+   */
+  marketplaceLicenseKeys: "marketplace.licenseKeys",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];
