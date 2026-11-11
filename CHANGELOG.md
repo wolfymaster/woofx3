@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.71.0](https://github.com/wolfymaster/woofx3/compare/v0.70.0...v0.71.0) (2026-11-11)
+
+### Features
+
+* **api:** report whether the stream is live on GET /health ([17ef30b](https://github.com/wolfymaster/woofx3/commit/17ef30b7ba7ad93734d1663abedfd7f46937e47f))
+
 ## [0.70.0](https://github.com/wolfymaster/woofx3/compare/v0.69.0...v0.70.0) (2026-11-11)
 
 ### Features
