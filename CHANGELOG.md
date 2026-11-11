@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.70.0](https://github.com/wolfymaster/woofx3/compare/v0.69.0...v0.70.0) (2026-11-11)
+
+### Features
+
+* **api:** declare licensed marketplace install types and capability ([ba900ac](https://github.com/wolfymaster/woofx3/commit/ba900ac233fbb38a590834f8625d5a26c2026b21))
+* **api:** install marketplace modules with a license key and install id ([43b82c6](https://github.com/wolfymaster/woofx3/commit/43b82c6ec5fde5b67a22b326809ba8ba1d44dd9d))
+* **api:** keep the license key on installed modules and advertise it ([f6361de](https://github.com/wolfymaster/woofx3/commit/f6361dec238f1df1fe18cb349949585370425de2))
+* **api:** name the engine's install on an anonymous marketplace claim ([3e9c671](https://github.com/wolfymaster/woofx3/commit/3e9c671760bc5028070eb85b10bb9351ca83cf83))
+* **api:** reuse a held license key for anonymous marketplace reinstalls ([bc112ba](https://github.com/wolfymaster/woofx3/commit/bc112ba63f7ee8e71efca10d9c3707a469af9e55))
+* **barkloader:** pass a marketplace module's license key to the db ([a42f9ec](https://github.com/wolfymaster/woofx3/commit/a42f9ec5e8373b14387dcc194457cc2de81c6a54))
+* **db:** add only_if_absent setting writes and module license key to proto ([fc6bb77](https://github.com/wolfymaster/woofx3/commit/fc6bb77743496840bd957996a665d64a51ecc6ec))
+* **db:** add SetModuleMarketplaceLicenseKey rpc to the module proto ([513f2ec](https://github.com/wolfymaster/woofx3/commit/513f2ecf33299052113e35735603a767e0f4550b))
+* **db:** keep a marketplace module's license key, sealed at rest ([4c80acd](https://github.com/wolfymaster/woofx3/commit/4c80acdff17c635a95975aa03838996493693c1e))
+* **db:** store a license key on a module installed from the same listing ([497efe6](https://github.com/wolfymaster/woofx3/commit/497efe65cb56b299b856a06362da4af41c9524e0))
+* **db:** write a setting only if its key is absent ([f3f001c](https://github.com/wolfymaster/woofx3/commit/f3f001c872cddf2561d33ca3935bd5faac35bcaa))
+
+### Bug Fixes
+
+* **api:** keep the license key when the module is already installed ([0c395f2](https://github.com/wolfymaster/woofx3/commit/0c395f2096111469c5ad2686923b04983172bd0c))
+* **api:** replace a stored empty install id instead of failing on it ([bccb23a](https://github.com/wolfymaster/woofx3/commit/bccb23a32fc3a58c55b13419200ec8340ef6a517))
+
 ## [0.69.0](https://github.com/wolfymaster/woofx3/compare/v0.68.4...v0.69.0) (2026-11-08)
 
 ### Features
