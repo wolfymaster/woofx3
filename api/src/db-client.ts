@@ -990,6 +990,15 @@ export class DbClient {
     }
   }
 
+  /** Stores `key`, sealed, on the module row `id` installed from `listingId`. */
+  async setModuleMarketplaceLicenseKey(id: string, listingId: string, key: string): Promise<void> {
+    const status = await module.SetModuleMarketplaceLicenseKey(
+      { moduleId: id, marketplaceListingId: listingId, marketplaceLicenseKey: key },
+      this.config
+    );
+    unwrapVoid("setModuleMarketplaceLicenseKey", { status });
+  }
+
   /**
    * Resources owned by this module that are still referenced externally
    * (workflows, commands, etc.). `moduleId` is the engine modules.id UUID.

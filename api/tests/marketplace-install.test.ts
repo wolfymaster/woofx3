@@ -216,17 +216,20 @@ interface Host {
   webhooks: Sent[];
   barkloaderUploads: FormData[];
   scenes: Array<Record<string, unknown>>;
+  /** Every `[rowId, listingId, key]` the route wrote onto an installed module. */
+  keyWrites: string[][];
 }
 
 function host(
   options: {
-    installed?: Record<string, { moduleId: string; name: string; version: string }>;
+    installed?: Record<string, Record<string, unknown>>;
     modulesById?: Record<string, Record<string, unknown>>;
   } = {}
 ): Host {
   const webhooks: Sent[] = [];
   const barkloaderUploads: FormData[] = [];
   const scenes: Array<Record<string, unknown>> = [];
+  const keyWrites: string[][] = [];
   const logs: unknown[][] = [];
   const log = (...line: unknown[]) => {
     logs.push(line);
@@ -245,6 +248,9 @@ function host(
       async getModuleByModuleKey(moduleKey: string) {
         return options.installed?.[moduleKey] ?? null;
       },
+      async setModuleMarketplaceLicenseKey(id: string, listingId: string, key: string) {
+        keyWrites.push([id, listingId, key]);
+      },
       async findModuleByModuleId(moduleId: string) {
         return options.modulesById?.[moduleId] ?? null;
       },
@@ -260,7 +266,7 @@ function host(
     },
     async emitSceneWebhook() {},
   };
-  return { self, logs, webhooks, barkloaderUploads, scenes };
+  return { self, logs, webhooks, barkloaderUploads, scenes, keyWrites };
 }
 
 function install(h: Host, listingId: string, request: MarketplaceInstallRequest): Promise<MarketplaceInstallResult> {
@@ -437,6 +443,34 @@ describe("installMarketplaceListing", () => {
 
     expect(result).toEqual({ status: "installed", moduleKey, alreadyInstalled: true });
     expect(h.barkloaderUploads).toEqual([]);
+  });
+
+  test("keeps the key it installed with on a module that is already installed without it", async () => {
+    const archive = addModuleListing("obs_scenes", OBS_MANIFEST);
+    const moduleKey = marketplaceModuleKey("obs_scenes", "1.2.0", sha256(archive));
+    const row = { id: "row-1", moduleId: "obs_scenes", name: "OBS Scenes", version: "1.2.0" };
+    const cases = [
+      { name: "no key held", installed: { ...row, marketplaceListingId: "obs_scenes" }, written: true },
+      {
+        name: "another key held",
+        installed: { ...row, marketplaceListingId: "obs_scenes", marketplaceLicenseKey: "W3X-OLD" },
+        written: true,
+      },
+      {
+        name: "the same key held",
+        installed: { ...row, marketplaceListingId: "obs_scenes", marketplaceLicenseKey: licenseKeyFor("obs_scenes") },
+        written: false,
+      },
+      { name: "installed from another origin", installed: row, written: false },
+    ];
+    for (const c of cases) {
+      const h = host({ installed: { [moduleKey]: c.installed } });
+
+      const result = await install(h, "obs_scenes", APPROVED);
+
+      expect(result, c.name).toEqual({ status: "installed", moduleKey, alreadyInstalled: true });
+      expect(h.keyWrites, c.name).toEqual(c.written ? [["row-1", "obs_scenes", licenseKeyFor("obs_scenes")]] : []);
+    }
   });
 
   test("refuses an archive whose manifest id is not the listing's module id, and reports the failure", async () => {
