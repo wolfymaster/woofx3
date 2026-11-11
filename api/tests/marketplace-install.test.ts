@@ -346,7 +346,7 @@ describe("installMarketplaceListing", () => {
     expect(file.name).toBe("obs_scenes name-1.2.0.zip");
     expect(sha256(new Uint8Array(await file.arrayBuffer()))).toBe(sha256(archive));
     expect(h.webhooks).toEqual([]);
-    expect(requestsTo("/catalog/obs_scenes/acquire")).toHaveLength(1);
+    expect(requestsTo("/catalog/obs_scenes/acquire").map((r) => r.installId)).toEqual([INSTALL_ID]);
     expect(requestsTo("/modules/obs_scenes/download")).toEqual([
       {
         method: "GET",
@@ -725,11 +725,27 @@ describe("MarketplaceClient.acquire", () => {
     });
   }
 
-  test("claims anonymously without a token, sending no Authorization header", async () => {
+  test("claims anonymously without a token, sending no Authorization header and no install id it was not given", async () => {
     addModuleListing("mod", OBS_MANIFEST);
     await client().acquire("mod");
     expect(requestsTo("/catalog/mod/acquire")).toEqual([
       { method: "POST", path: "/catalog/mod/acquire", authorization: null, licenseKey: null, installId: null },
+    ]);
+  });
+
+  test("names the install on an anonymous claim, and never beside a buyer token", async () => {
+    addModuleListing("mod", OBS_MANIFEST);
+    await client().acquire("mod", undefined, INSTALL_ID);
+    await client().acquire("mod", "buyer-token", INSTALL_ID);
+    expect(requestsTo("/catalog/mod/acquire")).toEqual([
+      { method: "POST", path: "/catalog/mod/acquire", authorization: null, licenseKey: null, installId: INSTALL_ID },
+      {
+        method: "POST",
+        path: "/catalog/mod/acquire",
+        authorization: "Bearer buyer-token",
+        licenseKey: null,
+        installId: null,
+      },
     ]);
   });
 

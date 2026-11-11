@@ -9,6 +9,7 @@ import type {
 } from "@woofx3/api";
 import { manifestLocalEndpoints, manifestPermissions } from "@woofx3/api/module-manifest";
 import type { DbClient } from "../db-client";
+import type { EngineInstallId } from "../install-id";
 import {
   type MarketplaceClient,
   type MarketplaceDownload,
@@ -116,7 +117,8 @@ type InstallLicense =
 
 /**
  * Claims the listing for the install and takes the key the claim answers
- * with: for the token's buyer, or anonymously without a token. A marketplace
+ * with: for the token's buyer, or anonymously without a token, naming the
+ * engine's install id so the marketplace keys the claim on it. A marketplace
  * that issues no keys answers a claim without one, and one that predates
  * anonymous claims refuses an anonymous claim with 401 `unauthorized` (not
  * `account_required`, which is a paid listing). Either way the install
@@ -125,10 +127,12 @@ type InstallLicense =
 async function claimLicense(
   marketplace: MarketplaceClient,
   listingId: string,
-  buyerToken: string | undefined
+  buyerToken: string | undefined,
+  installId: Pick<EngineInstallId, "get">
 ): Promise<InstallLicense> {
   try {
-    const acquired = await marketplace.acquire(listingId, buyerToken);
+    const anonymousInstallId = buyerToken === undefined ? await installId.get() : undefined;
+    const acquired = await marketplace.acquire(listingId, buyerToken, anonymousInstallId);
     if (acquired.status === "payment_required") {
       return acquired;
     }
@@ -200,8 +204,9 @@ export const marketplaceRoutes = routeModule({
       hasLicense: licenseKey !== undefined,
     });
 
-    // An anonymous claim mints a new entitlement every time, so a reinstall
-    // reuses the key this engine already holds for the listing.
+    // A reinstall reuses the key this engine already holds for the listing:
+    // a marketplace from before install-id-keyed claims mints a new
+    // entitlement for every anonymous claim.
     const heldKey =
       licenseKey === undefined && buyerToken === undefined
         ? await heldLicenseKey(this.db, listing.moduleId, listingId)
@@ -209,7 +214,7 @@ export const marketplaceRoutes = routeModule({
     const license: InstallLicense =
       licenseKey !== undefined || heldKey !== null
         ? { status: "licensed", key: licenseKey ?? heldKey }
-        : await withMarketplaceErrors(() => claimLicense(marketplace, listingId, buyerToken));
+        : await withMarketplaceErrors(() => claimLicense(marketplace, listingId, buyerToken, this.installId));
     if (license.status === "payment_required") {
       return license.intent === null
         ? { status: "payment_required", name, version }
