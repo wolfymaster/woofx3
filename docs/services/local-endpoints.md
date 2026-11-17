@@ -42,10 +42,14 @@ the bridge's host, so the dashboard can tell "your companion is offline" from
 "OBS is closed". A relay answering 429, or the gateway's own cap on bridge
 opens, reads the same way to the streamer and is retried on the same backoff.
 
-The relay closes a bridge with 4401 a minute after the engine credential it
-was opened with expires. That is an ordinary disconnect: OBS's connection
-reconnects through its usual backoff, and the new attempt gets a fresh
-credential (the api renews it a minute before it expires) and a fresh ticket.
+The relay closes a bridge with 4401 once it is 12 hours old, and with 1012
+when the companion's connection goes. Neither is tied to the engine
+credential's five-minute life: a bridge outlives it, since each re-dial
+interrupts OBS on a live stream. See
+[What the relay does with a bridge](#what-the-relay-does-with-a-bridge). Either
+close is an ordinary disconnect: OBS's connection reconnects through its usual
+backoff, and the new attempt gets a fresh credential (the api renews it a
+minute before it expires) and a fresh ticket.
 
 The endpoint's own password (OBS's) is read from the module's settings on
 both routes. Its protocol authentication runs end to end, between
@@ -159,6 +163,89 @@ The relay passes WebSocket subprotocols end to end: the companion offers OBS
 whatever the obs adapter offered, and the relay answers the upgrade with OBS's
 choice. Under Bun, connectors imports obs-websocket-js's msgpack build, so it
 offers `obswebsocket.msgpack` and the bridge carries binary messages.
+
+## What the relay does with a bridge
+
+The relay is a Cloudflare Worker with one Durable Object per engine instance,
+which holds the companion's one outbound socket and every bridge the engine
+opens, and moves messages between them. The engine never talks to the
+companion directly, so these are the relay's behaviours that an engine, or the
+gateway acting for it, can observe. The relay's own design is in the
+maintenance repository's `worker/README.md`.
+
+### Bridge hostname and path
+
+The engine dials the `bridgeOrigin` from `relay.config`, a hostname of the form
+`c-<12 base32 characters>.<domain>`. It serves only
+`/bridge/<moduleId>/<endpointId>`; any other path, a hostname whose route is
+not live, or a plain `GET` without an upgrade is 404. The ids in the path name
+an endpoint, never an address: the companion decides what to dial.
+
+### What the engine sees
+
+The ticket request (`POST`) answers:
+
+| Status | Body | Meaning |
+| --- | --- | --- |
+| 200 | `{ ticket, expiresInMs }` | A ticket for this host, module and endpoint |
+| 401 | `unauthorized` | The credential is invalid, expired, or for another instance or host |
+| 429 | `too_many_tickets` | 16 tickets are outstanding for the instance |
+| 503 | `companion_offline` | No companion is connected |
+| 503 | `relay_unavailable` | The relay has no signing keys configured |
+
+The upgrade (`GET ?ticket=`) answers:
+
+| Status | Body | Meaning |
+| --- | --- | --- |
+| 101 | | Open. The `Sec-WebSocket-Protocol` header is the subprotocol OBS chose |
+| 401 | `unauthorized` | The ticket is unknown, spent, expired or for another target |
+| 400 | `bad_protocols` | The offered subprotocols are malformed, or more than 8 |
+| 503 | `companion_offline` | No companion is connected |
+| 502 | `companion_refused` | The companion would not open the endpoint: disabled, not installed, not a `websocket` endpoint, unreachable, or OBS chose none of the subprotocols the engine offered |
+| 502 | `companion_timeout` | The companion did not answer within 5 seconds |
+| 502 | `companion_disconnected` | The companion went away while the bridge was opening |
+| 502 | `companion_overflow` | The companion sent more than 1 MiB before the stream opened |
+| 502 | `protocol_mismatch` | The subprotocol OBS chose is not one the engine offered, or OBS chose none and the engine offered some |
+
+The gateway sees only the ticket request. Any refusal there is `relay`, except
+429, which is `busy`. A 401 gets one retry with a fresh credential (see
+[Companion gateway → Routes](./companion-gateway.md#routes)). A refused upgrade
+reaches the connection that dialled it, which the obs adapter reports as
+`relay`; it is not retried on the spot, since the ticket is already spent, and
+the next attempt starts again from a fresh ticket.
+
+### Messages and closes once open
+
+- A bridge carries text and binary messages in order, unparsed. A message over
+  1 MiB closes that bridge with 1009 and leaves the others open: there is no
+  flow control, so the relay bounds one message instead. A text message that
+  is not valid UTF-8 closes it with 1007.
+- Messages OBS sends before the relay has finished opening the bridge are held,
+  up to 1 MiB, and delivered first.
+- The companion's close for a stream (it could not reach OBS, the endpoint was
+  turned off or its address changed, or it refused the endpoint with 4403) is
+  forwarded to the engine with its code and reason. A close code the protocol
+  reserves for local use arrives as 1011.
+- The engine closing its socket ends the stream at the companion with the same
+  code.
+
+| Close code | Cause |
+| --- | --- |
+| 1012 | The companion's connection went, or it reconnected |
+| 4401 | The bridge is 12 hours old |
+| 4403 | The companion refused the endpoint |
+| 1009 | A message over 1 MiB, or the companion's 4 MiB queue for the stream is full |
+
+All of them are ordinary disconnects. The gateway's dial, with its fresh
+credential and ticket, is the same on every one.
+
+### Which companion
+
+An instance has one companion at a time. The dashboard mints relay credentials
+only for the current one, and the relay refuses an older one even while the
+current one is offline. A newer companion takes over the instance's socket and
+every open bridge closes with 1012, so after a companion is replaced the next
+dial reaches the new one without the engine doing anything.
 
 ## Overlay recovery
 
