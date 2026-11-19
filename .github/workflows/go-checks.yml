@@ -72,7 +72,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version: "1.26"
           cache-dependency-path: ${{ matrix.module }}/go.sum
 
       - name: Build
@@ -149,7 +149,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version: "1.26"
           cache-dependency-path: ${{ matrix.module }}/go.sum
 
       - name: Install govulncheck
@@ -195,7 +195,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25"
+          go-version: "1.26"
           cache-dependency-path: db/go.sum
 
       # One package at a time: every test in it clears the shared database

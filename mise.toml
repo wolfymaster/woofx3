@@ -1,11 +1,11 @@
 # Toolchains for building and testing every package in this repository.
-# Versions follow CI (.github/workflows): Go 1.25, Rust stable, the Bun pinned
+# Versions follow CI (.github/workflows): Go 1.26, Rust stable, the Bun pinned
 # by the engine image, and the biome pinned by scripts/format.sh.
 #
 #   mise install      # once per machine; worktrees reuse the same installs
 
 [tools]
-go = "1.25"
+go = "1.26"
 rust = { version = "stable", components = "clippy,rustfmt" }
 bun = "1.3.14"
 # prost-build (via shared/clients/rust/db) runs protoc at build time.
