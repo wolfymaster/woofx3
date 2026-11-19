@@ -98,8 +98,9 @@ export interface MarketplaceLicense {
 }
 
 /**
- * The outcome of `POST /catalog/{id}/acquire`. `license` is null and `intent`
- * is null from a marketplace that issues neither.
+ * The outcome of `POST /catalog/{id}/acquire`. `license` is null when the
+ * marketplace entitled the buyer but could not read the key it stored, and
+ * `intent` is null when a 402 names no purchase.
  */
 export type MarketplaceAcquireResult =
   | { status: "entitled"; source: string; license: MarketplaceLicense | null }
@@ -585,8 +586,7 @@ function marketplaceError(method: string, path: string, status: number, body: st
 }
 
 /**
- * `acquire`'s `license`, or null when the answer has none (a marketplace that
- * issues no keys). One that is there but malformed, or for another listing,
+ * `acquire`'s `license`, or null when the answer has none. One that is there but malformed, or for another listing,
  * is refused rather than dropped: installing with it would fail at download,
  * further from the cause.
  */

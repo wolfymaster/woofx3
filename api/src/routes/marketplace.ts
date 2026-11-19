@@ -75,6 +75,9 @@ function requireManifestMatchesListing(listing: MarketplaceListing, manifest: Re
 
 const MARKETPLACE_EVENT_ORIGIN: InstallEventOrigin = { source: "marketplace" };
 
+/** The refusal code of a claim that entitled the buyer but carried no license key. */
+const LICENSE_UNAVAILABLE = "license_unavailable";
+
 function requireMarketplace(marketplace: MarketplaceClient | null): MarketplaceClient {
   if (!marketplace) {
     throw new Error("Marketplace installs are turned off on this engine (marketplaceUrl is blank)");
@@ -106,25 +109,20 @@ function optionalLicenseKey(caller: string, value: unknown): string | undefined 
   return value;
 }
 
-/**
- * What an install downloads with once it may go ahead: the license key, or
- * null to download without one, which the marketplace allows for a free
- * listing and for a listing the buyer token's buyer holds.
- */
+/** What an install downloads with once it may go ahead, or the purchase it waits on. */
 type InstallLicense =
-  | { status: "licensed"; key: string | null }
+  | { status: "licensed"; key: string }
   | { status: "payment_required"; intent: MarketplacePurchaseIntent | null };
 
 /**
  * Claims the listing for the install and takes the key the claim answers
  * with: for the token's buyer, or anonymously without a token, naming the
- * engine's install id so the marketplace keys the claim on it. A marketplace
- * that issues no keys answers a claim without one, and one that predates
- * anonymous claims refuses an anonymous claim with 401 `unauthorized` (not
- * `account_required`, which is a paid listing). Either way the install
- * downloads without a key, exactly as it did against such a marketplace.
- * Both are transitional; see "Transitional paths" in the marketplace install
- * docs for when they go.
+ * engine's install id so the marketplace keys the claim on it.
+ *
+ * The marketplace answers a claim it entitles without a key when the key it
+ * stored cannot be read. Nothing downloads without a key, so that is a
+ * `license_unavailable` refusal, a 503 the caller may retry, in the same form
+ * as the marketplace's own refusals.
  */
 async function claimLicense(
   marketplace: MarketplaceClient,
@@ -132,21 +130,20 @@ async function claimLicense(
   buyerToken: string | undefined,
   installId: Pick<EngineInstallId, "get">
 ): Promise<InstallLicense> {
-  try {
-    const anonymousInstallId = buyerToken === undefined ? await installId.get() : undefined;
-    const acquired = await marketplace.acquire(listingId, buyerToken, anonymousInstallId);
-    if (acquired.status === "payment_required") {
-      return acquired;
-    }
-    return { status: "licensed", key: acquired.license?.key ?? null };
-  } catch (err) {
-    const refusesAnonymousClaims =
-      buyerToken === undefined && err instanceof MarketplaceError && err.status === 401 && err.code === "unauthorized";
-    if (refusesAnonymousClaims) {
-      return { status: "licensed", key: null };
-    }
-    throw err;
+  const anonymousInstallId = buyerToken === undefined ? await installId.get() : undefined;
+  const acquired = await marketplace.acquire(listingId, buyerToken, anonymousInstallId);
+  if (acquired.status === "payment_required") {
+    return acquired;
   }
+  if (acquired.license === null) {
+    throw new MarketplaceError(
+      `Marketplace acquire for ${listingId} entitled the buyer without a license key`,
+      503,
+      LICENSE_UNAVAILABLE,
+      "the marketplace could not hand out this listing's license key; try again shortly"
+    );
+  }
+  return { status: "licensed", key: acquired.license.key };
 }
 
 /** The key an installed module of this listing holds, or null. */
@@ -213,9 +210,10 @@ export const marketplaceRoutes = routeModule({
       licenseKey === undefined && buyerToken === undefined
         ? await heldLicenseKey(this.db, listing.moduleId, listingId)
         : null;
+    const givenKey = licenseKey ?? heldKey;
     const license: InstallLicense =
-      licenseKey !== undefined || heldKey !== null
-        ? { status: "licensed", key: licenseKey ?? heldKey }
+      givenKey !== null
+        ? { status: "licensed", key: givenKey }
         : await withMarketplaceErrors(() => claimLicense(marketplace, listingId, buyerToken, this.installId));
     if (license.status === "payment_required") {
       return license.intent === null
@@ -225,7 +223,7 @@ export const marketplaceRoutes = routeModule({
     const download = await withMarketplaceErrors(async () =>
       marketplace.getModuleDownload(listingId, {
         buyerToken,
-        license: license.key === null ? undefined : { key: license.key, installId: await this.installId.get() },
+        license: { key: license.key, installId: await this.installId.get() },
       })
     );
     const moduleKey = marketplaceModuleKey(listing.moduleId, version, download.sha256);
@@ -264,11 +262,7 @@ export const marketplaceRoutes = routeModule({
       // The claim and download above already ran; keep the key they used so a
       // module installed before keys existed, or by an engine that claimed
       // anonymously, does not claim again on the next install.
-      if (
-        license.key !== null &&
-        existing.marketplaceListingId === listingId &&
-        license.key !== existing.marketplaceLicenseKey
-      ) {
+      if (existing.marketplaceListingId === listingId && license.key !== existing.marketplaceLicenseKey) {
         await this.db.setModuleMarketplaceLicenseKey(existing.id, listingId, license.key);
       }
       await sendAlreadyInstalled(this.webhookClient, existing, moduleKey, clientId, MARKETPLACE_EVENT_ORIGIN);
@@ -352,7 +346,7 @@ export const marketplaceRoutes = routeModule({
     const bundle = await withMarketplaceErrors(async () =>
       marketplace.getBundle(listingId, {
         buyerToken: token,
-        license: license.key === null ? undefined : { key: license.key, installId: await this.installId.get() },
+        license: { key: license.key, installId: await this.installId.get() },
       })
     );
     const layoutJson = JSON.stringify(bundle.layout ?? {});
@@ -361,7 +355,6 @@ export const marketplaceRoutes = routeModule({
       listingId,
       type: listing.type,
       buyer: Boolean(token),
-      hasLicense: license.key !== null,
     });
 
     // The same writes the scene editor and the alert library use, so an

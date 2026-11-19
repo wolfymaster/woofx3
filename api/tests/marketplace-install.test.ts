@@ -919,26 +919,32 @@ describe("installMarketplaceListing with license keys", () => {
     });
   });
 
-  test("downloads without a key from a marketplace that issues none", async () => {
+  test("refuses a claim that entitles without a license key as retryable, downloading nothing", async () => {
     addModuleListing("obs_scenes", OBS_MANIFEST, {
-      acquireAnswer: () => Response.json({ entitled: true, source: "free" }, { status: 201 }),
+      acquireAnswer: () => Response.json({ entitled: true, source: "free" }, { status: 200 }),
     });
+    const h = host();
 
-    expect((await install(host(), "obs_scenes", APPROVED)).status).toBe("installed");
-    expect(requestsTo("/modules/obs_scenes/download")[0]).toMatchObject({ licenseKey: null, installId: null });
+    const err = await install(h, "obs_scenes", APPROVED).catch((e: unknown) => e);
+
+    expect(parseMarketplaceCatalogError((err as Error).message)).toEqual({
+      kind: "http",
+      status: 503,
+      code: "license_unavailable",
+      message: "the marketplace could not hand out this listing's license key; try again shortly",
+    });
+    expect(requestsTo("/modules/")).toEqual([]);
+    expect(h.barkloaderUploads).toEqual([]);
   });
 
-  test("downloads anonymously without a key from a marketplace that refuses anonymous claims", async () => {
+  test("refuses an anonymous claim the marketplace answers 401 unauthorized", async () => {
     addModuleListing("obs_scenes", OBS_MANIFEST, {
       acquireAnswer: () => errorEnvelope(401, "unauthorized", "a valid bearer token is required for this request"),
     });
-
-    expect((await install(host(), "obs_scenes", APPROVED)).status).toBe("installed");
-    expect(requestsTo("/modules/obs_scenes/download")[0]).toMatchObject({
-      authorization: null,
-      licenseKey: null,
-      installId: null,
-    });
+    await expect(install(host(), "obs_scenes", APPROVED)).rejects.toThrow(
+      "marketplace_http status=401 code=unauthorized"
+    );
+    expect(requestsTo("/modules/")).toEqual([]);
   });
 
   test("still refuses a buyer's claim the marketplace answers 401 unauthorized", async () => {
@@ -1011,17 +1017,6 @@ describe("installMarketplaceListing with license keys", () => {
     const upload = h.barkloaderUploads[0];
     expect(upload.get("marketplace_listing_id")).toBe("obs_scenes");
     expect(upload.get("marketplace_license_key")).toBe(licenseKeyFor("obs_scenes"));
-  });
-
-  test("hands barkloader no key when it downloaded without one", async () => {
-    addModuleListing("obs_scenes", OBS_MANIFEST, {
-      acquireAnswer: () => Response.json({ entitled: true, source: "free" }, { status: 201 }),
-    });
-    const h = host();
-
-    await install(h, "obs_scenes", APPROVED);
-
-    expect(h.barkloaderUploads[0].get("marketplace_license_key")).toBeNull();
   });
 
   test("refuses a licenseKey that is not a string", async () => {
@@ -1217,9 +1212,20 @@ describe("installMarketplaceBundle", () => {
 
     await installBundle(h, "cozy");
 
-    const logged = JSON.stringify(h.logs);
-    expect(logged).not.toContain(licenseKeyFor("cozy"));
-    expect(logged).toContain('"hasLicense":true');
+    expect(JSON.stringify(h.logs)).not.toContain(licenseKeyFor("cozy"));
+  });
+
+  test("refuses a claim that entitles without a license key as retryable, creating nothing", async () => {
+    listings.set("cozy", {
+      listing: { id: "cozy", type: "overlay", name: "Cozy", version: "1" },
+      acquireAnswer: () => Response.json({ entitled: true, source: "free" }, { status: 200 }),
+      bundle: { layout: {}, widgets: [] },
+    });
+    const h = host();
+
+    await expect(installBundle(h, "cozy")).rejects.toThrow("marketplace_http status=503 code=license_unavailable");
+    expect(requestsTo("/catalog/cozy/bundle")).toEqual([]);
+    expect(h.scenes).toEqual([]);
   });
 
   test("answers payment_required on 402 and creates nothing", async () => {
