@@ -115,9 +115,12 @@ own.
   `if`/`then`/`else`, no `uniqueItems` on arrays of objects, no `propertyNames`, no
   `nullable`. Optional fields are omitted by their producer, never sent as `null` or empty, and the
   schema refuses both.
-- A union is written with `oneOf` over variants discriminated by a constant string. The generator
-  for Go cannot discriminate on a boolean, so the scene reply is one object whose `error` is
-  present when `ok` is false.
+- A union is written with `oneOf` over variants, each with a single-value string `enum` property
+  (the scene reply's `status`), and a `discriminator` with an explicit `mapping`. The tools read
+  the `mapping`: ogen and typify emit a tagged union, and openapi-typescript the constant enums. Ajv
+  does not take a `mapping`, so the validator generator drops the `discriminator` and validates the
+  plain `oneOf`, which the disjoint enums make equivalent. A boolean cannot discriminate in ogen,
+  which is why the reply carries a string `status` rather than `ok`.
 
 The subject is a generated constant in every language: the `type` enum becomes
 `SceneCommandRequestTypeEngineSceneCommand` in Go (package `messages/scene`), the
@@ -444,10 +447,11 @@ over the separate, read-only `engine.obs.options`. See [OBS control](./obs.md).
 
 The workflow engine's `scene.widget.visibility` action changes a scene with a
 request/reply CloudEvent on `engine.scene.command`, answered by the scene
-manager with `{ ok, error? }`. Its `data` is
+manager with `{ "status": "ok" }` or `{ "status": "failed", "error": "<reason>" }`.
+Its `data` is
 `{ command: "set_placement_visibility", sceneId, placementId, visible }`
 (the `SceneCommand` schema of the [scene contract](#message-contracts)). A
-request that does not fit the contract is answered `{ ok: false, error }` and
+request that does not fit the contract is answered `{ "status": "failed", "error" }` and
 changes nothing, and so is a message with no reply subject. The scene manager applies it as an op on the
 published scene, so it reaches overlays and editors like any other change
 (see [Scene documents](./scene-documents.md)). See
