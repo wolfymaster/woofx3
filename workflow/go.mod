@@ -14,6 +14,7 @@ require (
 	github.com/wolfymaster/woofx3/common/conditions v0.0.0
 	github.com/wolfymaster/woofx3/common/config v0.0.0
 	github.com/wolfymaster/woofx3/common/logging v0.0.0
+	github.com/wolfymaster/woofx3/common/messages v0.0.0
 	github.com/wolfymaster/woofx3/common/platformgateway v0.0.0
 	github.com/wolfymaster/woofx3/common/runtime v0.0.0
 	go.opentelemetry.io/otel v1.47.0
@@ -25,6 +26,9 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudevents/sdk-go/v2 v2.16.2 // indirect
+	github.com/dlclark/regexp2 v1.12.0 // indirect
+	github.com/go-faster/errors v0.8.0 // indirect
+	github.com/go-faster/jx v1.2.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/go-tpm v0.9.6 // indirect
@@ -38,6 +42,9 @@ require (
 	github.com/nats-io/jwt/v2 v2.8.0 // indirect
 	github.com/nats-io/nkeys v0.4.11 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/ogen-go/ogen v1.25.0 // indirect
+	github.com/segmentio/asm v1.2.1 // indirect
+	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/twitchtv/twirp v8.1.3+incompatible // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.21.0 // indirect
@@ -71,6 +78,7 @@ replace (
 	github.com/wolfymaster/woofx3/common/conditions => ../shared/common/golang/conditions
 	github.com/wolfymaster/woofx3/common/config => ../shared/common/golang/config
 	github.com/wolfymaster/woofx3/common/logging => ../shared/common/golang/logging
+	github.com/wolfymaster/woofx3/common/messages => ../shared/common/golang/messages
 	github.com/wolfymaster/woofx3/common/platformgateway => ../shared/common/golang/platformgateway
 	github.com/wolfymaster/woofx3/common/runtime => ../shared/common/golang/runtime
 )

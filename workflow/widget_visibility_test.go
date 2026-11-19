@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/wolfymaster/woofx3/common/messages/scene"
 )
 
 func TestParseWidgetVisibilityParams_ReadsTheStep(t *testing.T) {
@@ -11,7 +13,7 @@ func TestParseWidgetVisibilityParams_ReadsTheStep(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := placementVisibilityCommand{Command: "set_placement_visibility", SceneID: "scene-1", PlacementID: "board-1", Visible: false}
+	want := scene.SceneCommand{Command: scene.SceneCommandCommandSetPlacementVisibility, SceneId: "scene-1", PlacementId: "board-1", Visible: false}
 	if command != want {
 		t.Fatalf("got %+v, want %+v", command, want)
 	}
@@ -63,7 +65,7 @@ func TestParseWidgetVisibilityParams_RefusesAStepItCannotCarryOut(t *testing.T) 
 }
 
 func TestBuildSceneCommandRequest_CarriesTheCommandAsCloudEventData(t *testing.T) {
-	command := placementVisibilityCommand{Command: "set_placement_visibility", SceneID: "scene-1", PlacementID: "board-1", Visible: true}
+	command := scene.SceneCommand{Command: scene.SceneCommandCommandSetPlacementVisibility, SceneId: "scene-1", PlacementId: "board-1", Visible: true}
 	raw, err := buildSceneCommandRequest(command)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
