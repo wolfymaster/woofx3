@@ -6,7 +6,6 @@ The methods:
 
 ```ts
 installMarketplaceListing(listingId, { approvedPermissions, approvedLocalEndpoints, buyerToken?, licenseKey? }): Promise<MarketplaceInstallResult>
-inspectMarketplaceListing(listingId, buyerToken?): Promise<MarketplaceListingInspection>
 getInstalledModuleLicense(moduleId): Promise<{ listingId, key } | null>
 installMarketplaceBundle(listingId, buyerToken?): Promise<MarketplaceBundleInstallResult>
 ```
@@ -42,11 +41,9 @@ The key an install downloaded with is kept on the installed module, next to its 
 
 An install that names a listing replaces the kept key with its own, or with none when it had none; an upload clears it; an install that names no origin keeps it.
 
-### Transitional paths
+### Installs without a key
 
-One path exists only to serve a client from before license keys: the module download without a license key, which works for a free listing and for a listing the buyer token's buyer holds. [Inspecting a listing](#inspecting-a-module) depends on it, because its review comes before the streamer consents and so claims nothing.
-
-Remove it, with the inspection, once no supported dashboard calls `inspectMarketplaceListing`. An install never downloads without a key: a claim that entitles the buyer without one is refused (`license_unavailable`, below).
+Nothing downloads without a key. A claim that entitles the buyer without one (the marketplace could not read the key it stored) is refused with `license_unavailable`, and the marketplace itself answers a module or bundle request that has neither a key nor an account holding the listing with `license_required`, which is what an engine too old to send a key meets.
 
 ## Installing a module
 
@@ -66,6 +63,7 @@ A refusal from the claim or the download throws in the `marketplace_http status=
 
 | Code | Status | From | Meaning |
 |---|---|---|---|
+| `license_required` | 401 | download | No license key and no account that holds the listing; the engine always sends a key, so this means an engine from before keys |
 | `account_required` | 401 | claim, download | A paid listing claimed with no buyer token, or a bought key downloaded without its buyer's token |
 | `buyer_mismatch` | 403 | download | A bought key with another buyer's token |
 | `not_entitled` | 403 | download | The key does not unlock this listing, or its entitlement was revoked |
@@ -74,7 +72,7 @@ A refusal from the claim or the download throws in the `marketplace_http status=
 | `listing_unavailable` | 409 | claim | The listing is unpriced, unpublished, superseded or delisted |
 | `downloads_blocked` | 410 | claim, download | The marketplace blocked the module |
 | `rate_limited` | 429 | claim | Too many anonymous claims; try again later |
-| `license_unavailable` | 503 | claim | The claim entitled the buyer but carried no license key, because the marketplace could not read the one it stored. Raised by the engine, not the marketplace; try again later |
+| `license_unavailable` | 503 | claim | The claim entitled the buyer but carried no license key, because the marketplace could not read the one it stored. Raised by the engine, not the marketplace. Its message tells the user to try again, and to sign in or update if it keeps failing |
 
 If the download or one of its checks fails after the install key is known, the engine sends `module.install_failed` and then throws. Every install webhook that the api sends itself carries `source: "marketplace"`. Barkloader's own completion events do not have a `source`.
 
@@ -107,15 +105,6 @@ For edition 1 the listing id and the module id are the same, so its keys are the
 Installing edition 2 over edition 1 is an upgrade: the key differs, so the install proceeds, and barkloader replaces the installed module in place, as it does for any new version of a module. The module row keeps its id, the streamer's setting values are kept because settings are keyed by module id (see [Install-time registration](../barkloader/modules.md#install-time-registration)), resources the new manifest no longer declares are pruned, and functions it drops are archived. Installing the same edition and build again is caught by the already-installed check, because its key is unchanged.
 
 Which listing and edition is installed is never read from the key. It is the module's marketplace provenance (`marketplaceListingId`, `marketplaceEdition` on the module), which every marketplace install sends, together with its license key, and which replaces the recorded values on an upgrade. An install that sends no provenance, such as a manual upload, keeps the recorded values.
-
-## Inspecting a module
-
-`inspectMarketplaceListing` runs steps 1, 3, 4, 5 and 7 without claiming the listing. Its review comes before the streamer consents, so it downloads without a license key, with the buyer token when there is one. The marketplace allows that for a listing that is free now and for one the token's buyer holds; a listing that turned paid after an anonymous free claim cannot be inspected this way. It returns what the review shows:
-
-- the module id (`moduleId`), the edition, the install key, `sha256` and size
-- the manifest's id, name, version and description
-- the permissions and local endpoints
-- the files under the module root, listed the way `listModuleFiles` lists them after the install
 
 ## Installing a bundle
 
