@@ -3,11 +3,9 @@ import type {
   MarketplaceBundleInstallResult,
   MarketplaceInstallRequest,
   MarketplaceInstallResult,
-  MarketplaceListingInspection,
   MarketplaceModuleLicense,
   MarketplacePurchaseIntent,
 } from "@woofx3/api";
-import { manifestLocalEndpoints, manifestPermissions } from "@woofx3/api/module-manifest";
 import type { DbClient } from "../db-client";
 import type { EngineInstallId } from "../install-id";
 import {
@@ -140,7 +138,7 @@ async function claimLicense(
       `Marketplace acquire for ${listingId} entitled the buyer without a license key`,
       503,
       LICENSE_UNAVAILABLE,
-      "the marketplace could not hand out this listing's license key; try again shortly"
+      "the marketplace did not hand out a license key for this listing; try again, and if it keeps failing, sign in or update woofx3"
     );
   }
   return { status: "licensed", key: acquired.license.key };
@@ -277,41 +275,6 @@ export const marketplaceRoutes = routeModule({
       origin: { kind: "marketplace", listingId, edition: listing.edition, licenseKey: license.key },
     });
     return { status: "installed", moduleKey };
-  },
-
-  async inspectMarketplaceListing(listingId: string, buyerToken?: string): Promise<MarketplaceListingInspection> {
-    requireListingId("inspectMarketplaceListing", listingId);
-    const marketplace = requireMarketplace(this.marketplace);
-    const listing = await marketplace.getListing(listingId, buyerToken || undefined);
-    requireModuleListing(listing);
-    // Without a license key: the review comes before consent, so nothing is
-    // claimed for it. The marketplace serves a currently free listing
-    // without a key, and any listing to a buyer token whose buyer holds it.
-    const download = await marketplace.getModuleDownload(listingId, { buyerToken: buyerToken || undefined });
-    const { archive, contents } = await fetchVerifiedArchive(marketplace, download, async () => {});
-    const { manifest } = contents;
-    requireManifestMatchesListing(listing, manifest);
-    const text = (value: unknown) => (typeof value === "string" ? value : "");
-    return {
-      listingId,
-      moduleId: listing.moduleId,
-      edition: listing.edition,
-      type: listing.type,
-      name: listing.name,
-      version: listing.version,
-      moduleKey: marketplaceModuleKey(listing.moduleId, listing.version, download.sha256),
-      sha256: download.sha256,
-      sizeBytes: archive.byteLength,
-      manifest: {
-        id: text(manifest.id),
-        name: text(manifest.name),
-        version: text(manifest.version),
-        description: text(manifest.description),
-      },
-      permissions: manifestPermissions(manifest),
-      localEndpoints: manifestLocalEndpoints(manifest),
-      files: contents.files,
-    };
   },
 
   async getInstalledModuleLicense(moduleId: string): Promise<MarketplaceModuleLicense | null> {

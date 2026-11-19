@@ -1377,32 +1377,6 @@ export interface MarketplaceLocalEndpoint {
 }
 
 /**
- * A module listing's current build, read from the archive an install would
- * use, for the review a streamer approves before installing.
- */
-export interface MarketplaceListingInspection {
-  listingId: string;
-  /**
-   * The module the listing installs as: the manifest id every edition
-   * shares (the catalog's `moduleKey`). Equals `listingId` for edition 1.
-   */
-  moduleId: string;
-  /** Which edition of the module the listing is. */
-  edition: number;
-  type: "module" | "theme";
-  name: string;
-  version: string;
-  /** The key an install of this build would use: `{moduleId}:{version}:{first 7 hex of sha256}`. */
-  moduleKey: string;
-  sha256: string;
-  sizeBytes: number;
-  manifest: { id: string; name: string; version: string; description: string };
-  permissions: string[];
-  localEndpoints: MarketplaceLocalEndpoint[];
-  files: ModuleFileEntry[];
-}
-
-/**
  * The license key an installed marketplace module was downloaded with, and
  * the listing it unlocks, as `getInstalledModuleLicense` answers.
  */
@@ -2058,13 +2032,6 @@ export interface Woofx3EngineApi {
     resourceId: string,
     request: { approvedPermissions: string[]; approvedLocalEndpoints: string[] }
   ): Promise<{ moduleKey: string }>;
-
-  /**
-   * A module or theme listing's current build, read from its verified
-   * archive: the manifest, permissions, local endpoints and files an install
-   * would review. Claims nothing.
-   */
-  inspectMarketplaceListing(listingId: string, buyerToken?: string): Promise<MarketplaceListingInspection>;
 
   /**
    * The license key the installed module `moduleId` (the manifest module id,
