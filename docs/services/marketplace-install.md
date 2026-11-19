@@ -6,7 +6,6 @@ The methods:
 
 ```ts
 installMarketplaceListing(listingId, { approvedPermissions, approvedLocalEndpoints, buyerToken?, licenseKey? }): Promise<MarketplaceInstallResult>
-inspectMarketplaceListing(listingId, buyerToken?): Promise<MarketplaceListingInspection>
 getInstalledModuleLicense(moduleId): Promise<{ listingId, key } | null>
 installMarketplaceBundle(listingId, buyerToken?): Promise<MarketplaceBundleInstallResult>
 ```
@@ -26,13 +25,13 @@ A blank value never overrides a non-blank one from a lower source (see [Runtime]
 
 ## Buyer tokens
 
-The engine has no marketplace credential of its own. A caller acting for a buyer passes the buyer token that the dashboard minted. An install sends it as a bearer token on `POST /catalog/{id}/acquire`, `GET /modules/{id}/download` and `GET /catalog/{id}/bundle`, and reads the listing itself (`GET /catalog/{id}`) anonymously. The [catalog reads](./marketplace-catalog.md) forward it on the browse routes and the quote. The engine never sends the token on any other route, because the marketplace answers a buyer token there with 401, and it never parses, logs or stores the token.
+The engine has no marketplace credential of its own. A caller acting for a buyer passes the buyer token that the dashboard minted. An install sends it as a bearer token on `GET /catalog/{id}`, `POST /catalog/{id}/acquire`, `GET /modules/{id}/download` and `GET /catalog/{id}/bundle`. The listing read carries it because only a token with the dev claim sees a dev-tier listing; to anyone else such a listing answers 404. The [catalog reads](./marketplace-catalog.md) forward it on the browse routes and the quote. The engine never sends the token on any other route, because the marketplace answers a buyer token there with 401, and it never parses, logs or stores the token.
 
 Without a token, the engine claims the listing anonymously and downloads with the key the claim answers with. Only a free listing can be claimed that way; a paid one is refused with `account_required`. An anonymous claim sends the engine's install id as `X-Install-Id`, which the marketplace keys the claim on, so claiming the same listing again answers with the same entitlement and key. A marketplace from before ignores the header and makes a new entitlement with a key of its own for each claim, so a caller that already has the key (for example from `getInstalledModuleLicense`) should still pass it, and a reinstall reuses the key the installed module holds. The install id is never sent beside a buyer token.
 
 ## License keys and the install id
 
-Every module download carries a license key once the marketplace issues them. The key comes from the caller (`licenseKey`) or from the engine's own claim (`POST /catalog/{id}/acquire` answers `license: { key, listingId, edition }`). The engine sends it as `X-License-Key`, with its install id as `X-Install-Id`, on `GET /modules/{id}/download`. A key from a free claim works on its own. A key from a purchase, an upgrade or a gift also needs the buyer token of the account that holds it, which the engine sends as usual.
+Every install downloads with a license key. The key comes from the caller (`licenseKey`, modules only) or from the engine's own claim (`POST /catalog/{id}/acquire` answers `license: { key, listingId, edition }`). The engine sends it as `X-License-Key`, with its install id as `X-Install-Id`, on `GET /modules/{id}/download` and `GET /catalog/{id}/bundle`. A key from a free claim works on its own. A key from a purchase, an upgrade or a gift also needs the buyer token of the account that holds it, which the engine sends as usual.
 
 The install id is a random UUID the engine makes the first time it downloads with a key and keeps in its settings under `engine.install_id`. The marketplace counts the distinct install ids a key has downloaded to and refuses a new one past its limit (`activation_limit`). A repeat download from the same engine is not a new install. A fresh database gets a new id, and so counts as a new install.
 
@@ -42,22 +41,16 @@ The key an install downloaded with is kept on the installed module, next to its 
 
 An install that names a listing replaces the kept key with its own, or with none when it had none; an upload clears it; an install that names no origin keeps it.
 
-### Transitional paths
+### Installs without a key
 
-Three paths exist only to serve a marketplace or an engine from before license keys:
-
-- A claim that answers with no `license` (a marketplace that issues no keys): the install downloads without a key.
-- A claim refused with 401 `unauthorized` when there is no buyer token (a marketplace from before anonymous claims, as opposed to `account_required`, which is a paid listing): the install downloads without a key.
-- The download without a license key, which works for a free listing and for a listing the buyer token's buyer holds. [Inspecting a listing](#inspecting-a-module) depends on it too.
-
-Remove all three together once every engine reports the `marketplace.licenseKeys` capability and the marketplace has dropped its anonymous download for free and paid listings. Coverage of the capability across the fleet is not tracked yet, so the first condition cannot be checked today. Removing them also means the inspection must move to a path that does not download anonymously.
+Nothing downloads without a key. A claim that entitles the buyer without one (the marketplace could not read the key it stored) is refused with `license_unavailable`, and the marketplace itself answers a module or bundle request that has neither a key nor an account holding the listing with `license_required`, which is what an engine too old to send a key meets.
 
 ## Installing a module
 
 `installMarketplaceListing` handles module and theme listings:
 
 1. `GET /catalog/{id}` reads the listing's type, name, version, edition and `moduleKey` (the module id). Other listing types are refused.
-2. Without a `licenseKey`, `POST /catalog/{id}/acquire` claims the listing (for the buyer token's buyer, or anonymously) and answers with the key. A 402 returns `{ status: "payment_required", intent }`, where `intent` is the purchase to pay (`{ id, amountCents, currency, kind, expiresAt }`), and nothing is downloaded. Any other refusal throws. With a `licenseKey` nothing is claimed.
+2. Without a `licenseKey`, `POST /catalog/{id}/acquire` claims the listing (for the buyer token's buyer, or anonymously) and answers with the key. A 402 returns `{ status: "payment_required", intent }`, where `intent` is the purchase to pay (`{ id, amountCents, currency, kind, expiresAt }`), and nothing is downloaded. A claim that entitles the buyer but carries no license (the marketplace could not read the key it stored) is refused with `license_unavailable`. Any other refusal throws. With a `licenseKey` nothing is claimed.
 3. `GET /modules/{id}/download` with the key and install id returns a presigned URL. If the response has no valid `sha256`, the engine refuses it.
 4. The engine fetches the archive only from an allowed download host and never follows a redirect. The archive is capped at 50 MiB, counted as the body arrives, so a body that declares no length or a false one is cut off once it passes the cap. The fetch, body included, must finish within 30 seconds.
 5. If `sizeBytes` is present, the archive's length must equal it. Its SHA-256 must always equal `sha256`.
@@ -70,6 +63,7 @@ A refusal from the claim or the download throws in the `marketplace_http status=
 
 | Code | Status | From | Meaning |
 |---|---|---|---|
+| `license_required` | 401 | download | No license key and no account that holds the listing; the engine always sends a key, so this means an engine from before keys |
 | `account_required` | 401 | claim, download | A paid listing claimed with no buyer token, or a bought key downloaded without its buyer's token |
 | `buyer_mismatch` | 403 | download | A bought key with another buyer's token |
 | `not_entitled` | 403 | download | The key does not unlock this listing, or its entitlement was revoked |
@@ -78,6 +72,7 @@ A refusal from the claim or the download throws in the `marketplace_http status=
 | `listing_unavailable` | 409 | claim | The listing is unpriced, unpublished, superseded or delisted |
 | `downloads_blocked` | 410 | claim, download | The marketplace blocked the module |
 | `rate_limited` | 429 | claim | Too many anonymous claims; try again later |
+| `license_unavailable` | 503 | claim | The claim entitled the buyer but carried no license key, because the marketplace could not read the one it stored. Raised by the engine, not the marketplace. Its message tells the user to try again, and to sign in or update if it keeps failing |
 
 If the download or one of its checks fails after the install key is known, the engine sends `module.install_failed` and then throws. Every install webhook that the api sends itself carries `source: "marketplace"`. Barkloader's own completion events do not have a `source`.
 
@@ -111,15 +106,6 @@ Installing edition 2 over edition 1 is an upgrade: the key differs, so the insta
 
 Which listing and edition is installed is never read from the key. It is the module's marketplace provenance (`marketplaceListingId`, `marketplaceEdition` on the module), which every marketplace install sends, together with its license key, and which replaces the recorded values on an upgrade. An install that sends no provenance, such as a manual upload, keeps the recorded values.
 
-## Inspecting a module
-
-`inspectMarketplaceListing` runs steps 1, 3, 4, 5 and 7 without claiming the listing. Its review comes before the streamer consents, so it downloads without a license key, with the buyer token when there is one. The marketplace allows that for a listing that is free now and for one the token's buyer holds; a listing that turned paid after an anonymous free claim cannot be inspected this way. It returns what the review shows:
-
-- the module id (`moduleId`), the edition, the install key, `sha256` and size
-- the manifest's id, name, version and description
-- the permissions and local endpoints
-- the files under the module root, listed the way `listModuleFiles` lists them after the install
-
 ## Installing a bundle
 
-`installMarketplaceBundle` handles overlay and alert listings. If there is a buyer token, it claims the listing first, and a 402 returns `{ status: "payment_required" }`. It then reads `GET /catalog/{id}/bundle`. An overlay becomes a scene through `createScene`, and an alert becomes an alert composition through `createAlertComposition`. Each sends the usual `scene.created` webhook. The result is `{ status: "installed", listingId, engineId, kind }`.
+`installMarketplaceBundle` handles overlay and alert listings. It reads the listing as a module install does, then claims it (for the buyer token's buyer, or anonymously with the install id), and a 402 returns `{ status: "payment_required" }`. It reads `GET /catalog/{id}/bundle` with the key the claim answered with and the install id, and the claim and the bundle read refuse with the codes above, in the same format. A bundle keeps no marketplace provenance, so its key is used for that read only, and installing the bundle again claims again. An overlay becomes a scene through `createScene`, and an alert becomes an alert composition through `createAlertComposition`. Each sends the usual `scene.created` webhook. The result is `{ status: "installed", listingId, engineId, kind }`.
