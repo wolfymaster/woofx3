@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/field-option.json",
+  "title": "FieldOption",
+  "type": "object",
+  "required": ["value", "label"],
+  "properties": { "value": { "$ref": "../common/platform-id.json" }, "label": { "type": "string", "minLength": 1, "maxLength": 100 } },
+  "additionalProperties": false
+}

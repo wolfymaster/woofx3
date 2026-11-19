@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/chat-delete-payload.json",
+  "title": "ChatDeletePayload",
+  "type": "object",
+  "required": ["messageId"],
+  "properties": { "messageId": { "$ref": "../common/ref-string.json" } },
+  "additionalProperties": false
+}

@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/gateway-request.json",
+  "title": "GatewayRequest",
+  "description": "A request for one action on the target's platforms; action picks the variant and so the payload shape.",
+  "oneOf": [{ "$ref": "chat-send-request.json" },{ "$ref": "chat-announce-request.json" },{ "$ref": "chat-pin-request.json" },{ "$ref": "chat-delete-request.json" },{ "$ref": "moderation-warn-request.json" },{ "$ref": "moderation-timeout-request.json" },{ "$ref": "moderation-ban-request.json" }]
+}

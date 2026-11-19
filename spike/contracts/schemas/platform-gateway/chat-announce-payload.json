@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/chat-announce-payload.json",
+  "title": "ChatAnnouncePayload",
+  "type": "object",
+  "required": ["message"],
+  "properties": { "message": { "type": "string", "minLength": 1, "maxLength": 500 } },
+  "additionalProperties": false
+}

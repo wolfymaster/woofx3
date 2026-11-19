@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/platform-outcome.json",
+  "title": "PlatformOutcome",
+  "description": "What happened on one platform; status decides the other fields.",
+  "oneOf": [
+    { "title": "OutcomeDelivered", "type": "object", "required": ["status"], "properties": { "status": { "const": "delivered" }, "messageId": { "type": ["string", "null"], "maxLength": 200 } }, "additionalProperties": false },
+    { "title": "OutcomeDropped", "type": "object", "required": ["status", "reason"], "properties": { "status": { "const": "dropped" }, "reason": { "type": "string", "minLength": 1, "maxLength": 500 } }, "additionalProperties": false },
+    { "title": "OutcomeUnsupported", "type": "object", "required": ["status"], "properties": { "status": { "const": "unsupported" } }, "additionalProperties": false },
+    { "title": "OutcomeUnavailable", "type": "object", "required": ["status", "reason"], "properties": { "status": { "const": "unavailable" }, "reason": { "type": "string", "enum": ["not_linked", "disabled", "stopped", "starting", "parked"] } }, "additionalProperties": false },
+    { "title": "OutcomeUnconfirmed", "type": "object", "required": ["status", "message"], "properties": { "status": { "const": "unconfirmed" }, "message": { "type": "string", "minLength": 1, "maxLength": 500 } }, "additionalProperties": false },
+    { "title": "OutcomeFailed", "type": "object", "required": ["status", "code", "message"], "properties": { "status": { "const": "failed" }, "code": { "$ref": "failure-code.json" }, "message": { "type": "string", "minLength": 1, "maxLength": 500 }, "messageId": { "type": ["string", "null"], "maxLength": 200 } }, "additionalProperties": false }
+  ]
+}

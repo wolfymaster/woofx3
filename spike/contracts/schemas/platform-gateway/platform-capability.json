@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/platform-capability.json",
+  "title": "PlatformCapability",
+  "type": "object",
+  "required": ["id", "displayName", "state", "actions"],
+  "properties": {
+    "id": { "$ref": "../common/platform-id.json" },
+    "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+    "state": { "type": "string", "enum": ["stopped", "starting", "connected", "degraded", "parked", "stopping"] },
+    "connected": { "type": "boolean" },
+    "enabled": { "type": "boolean" },
+    "actions": { "type": "array", "maxItems": 64, "uniqueItems": true, "items": { "$ref": "action-id.json" } }
+  },
+  "additionalProperties": false
+}

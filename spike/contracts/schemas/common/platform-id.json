@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/common/platform-id.json",
+  "title": "PlatformId",
+  "description": "A streaming platform the engine can act on.",
+  "type": "string",
+  "enum": ["twitch"]
+}

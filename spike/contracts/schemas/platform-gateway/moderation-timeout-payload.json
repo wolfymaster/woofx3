@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/moderation-timeout-payload.json",
+  "title": "ModerationTimeoutPayload",
+  "type": "object",
+  "required": ["viewer","durationSeconds"],
+  "properties": { "viewer": { "$ref": "../common/ref-string.json" }, "durationSeconds": { "type": "integer", "minimum": 1, "maximum": 1209600 }, "reason": { "type": ["string","null"], "maxLength": 500 } },
+  "additionalProperties": false
+}

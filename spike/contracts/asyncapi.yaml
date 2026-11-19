@@ -1,0 +1,95 @@
+asyncapi: 3.1.0
+info:
+  title: woofx3 engine messages (spike)
+  version: 0.0.1
+  description: NATS subjects carrying CloudEvents JSON. The CloudEvents envelope is validated once by the bus library; each message payload below is the envelope's data.
+defaultContentType: application/cloudevents+json
+servers:
+  nats:
+    host: localhost:4222
+    protocol: nats
+channels:
+  platformGatewaySend:
+    address: platform.gateway.send
+    messages:
+      request: { $ref: '#/components/messages/GatewayRequest' }
+      reply: { $ref: '#/components/messages/GatewayReply' }
+  platformGatewayCapabilities:
+    address: platform.gateway.capabilities
+    messages:
+      reply: { $ref: '#/components/messages/CapabilitiesReply' }
+  platformGatewayFieldOptions:
+    address: platform.gateway.field_options
+    messages:
+      request: { $ref: '#/components/messages/FieldOptionsRequest' }
+      reply: { $ref: '#/components/messages/FieldOptionsReply' }
+  streamOnline:
+    address: stream.online
+    messages: { event: { $ref: '#/components/messages/StreamOnline' } }
+  streamOffline:
+    address: stream.offline
+    messages: { event: { $ref: '#/components/messages/StreamOffline' } }
+  sessionStarted:
+    address: session.started
+    messages: { event: { $ref: '#/components/messages/SessionStarted' } }
+  overlayTokenMinted:
+    address: overlay.token.minted
+    messages: { event: { $ref: '#/components/messages/OverlayTokenMinted' } }
+  overlayTokenRevoked:
+    address: overlay.token.revoked
+    messages: { event: { $ref: '#/components/messages/OverlayTokenRevoked' } }
+operations:
+  sendToPlatforms:
+    action: send
+    channel: { $ref: '#/channels/platformGatewaySend' }
+    messages: [{ $ref: '#/channels/platformGatewaySend/messages/request' }]
+    reply:
+      channel: { $ref: '#/channels/platformGatewaySend' }
+      messages: [{ $ref: '#/channels/platformGatewaySend/messages/reply' }]
+  serveSend:
+    action: receive
+    channel: { $ref: '#/channels/platformGatewaySend' }
+    messages: [{ $ref: '#/channels/platformGatewaySend/messages/request' }]
+    reply:
+      channel: { $ref: '#/channels/platformGatewaySend' }
+      messages: [{ $ref: '#/channels/platformGatewaySend/messages/reply' }]
+  getCapabilities:
+    action: send
+    channel: { $ref: '#/channels/platformGatewayCapabilities' }
+    reply:
+      channel: { $ref: '#/channels/platformGatewayCapabilities' }
+      messages: [{ $ref: '#/channels/platformGatewayCapabilities/messages/reply' }]
+  getFieldOptions:
+    action: send
+    channel: { $ref: '#/channels/platformGatewayFieldOptions' }
+    messages: [{ $ref: '#/channels/platformGatewayFieldOptions/messages/request' }]
+    reply:
+      channel: { $ref: '#/channels/platformGatewayFieldOptions' }
+      messages: [{ $ref: '#/channels/platformGatewayFieldOptions/messages/reply' }]
+  publishStreamOnline: { action: send, channel: { $ref: '#/channels/streamOnline' } }
+  onStreamOnline: { action: receive, channel: { $ref: '#/channels/streamOnline' } }
+  publishStreamOffline: { action: send, channel: { $ref: '#/channels/streamOffline' } }
+  onStreamOffline: { action: receive, channel: { $ref: '#/channels/streamOffline' } }
+  publishSessionStarted: { action: send, channel: { $ref: '#/channels/sessionStarted' } }
+  onSessionStarted: { action: receive, channel: { $ref: '#/channels/sessionStarted' } }
+  publishOverlayTokenMinted: { action: send, channel: { $ref: '#/channels/overlayTokenMinted' } }
+  onOverlayTokenMinted: { action: receive, channel: { $ref: '#/channels/overlayTokenMinted' } }
+  publishOverlayTokenRevoked: { action: send, channel: { $ref: '#/channels/overlayTokenRevoked' } }
+  onOverlayTokenRevoked: { action: receive, channel: { $ref: '#/channels/overlayTokenRevoked' } }
+components:
+  messages:
+    GatewayRequest: { name: GatewayRequest, contentType: application/json, payload: { schemaFormat: 'application/schema+json;version=draft-2020-12', schema: { $ref: './schemas/platform-gateway/gateway-request.json' } } }
+    GatewayReply: { name: GatewayReply, payload: { schemaFormat: 'application/schema+json;version=draft-2020-12', schema: { $ref: './schemas/platform-gateway/gateway-reply.json' } }, traits: [{ $ref: '#/components/messageTraits/ceReply' }], x-cloudevent-type: platform.gateway.send.result }
+    CapabilitiesReply: { name: CapabilitiesReply, payload: { schemaFormat: 'application/schema+json;version=draft-2020-12', schema: { $ref: './schemas/platform-gateway/capabilities-reply.json' } }, x-cloudevent-type: platform.gateway.capabilities.result }
+    FieldOptionsRequest: { name: FieldOptionsRequest, payload: { schemaFormat: 'application/schema+json;version=draft-2020-12', schema: { $ref: './schemas/platform-gateway/field-options-request.json' } } }
+    FieldOptionsReply: { name: FieldOptionsReply, payload: { schemaFormat: 'application/schema+json;version=draft-2020-12', schema: { $ref: './schemas/platform-gateway/field-options-reply.json' } }, x-cloudevent-type: platform.gateway.field_options.result }
+    StreamOnline: { name: StreamOnline, payload: { schemaFormat: 'application/schema+json;version=draft-2020-12', schema: { $ref: './schemas/events/stream-online.json' } } }
+    StreamOffline: { name: StreamOffline, payload: { schemaFormat: 'application/schema+json;version=draft-2020-12', schema: { $ref: './schemas/events/stream-offline.json' } } }
+    SessionStarted: { name: SessionStarted, payload: { schemaFormat: 'application/schema+json;version=draft-2020-12', schema: { $ref: './schemas/events/session-started.json' } } }
+    OverlayTokenMinted: { name: OverlayTokenMinted, payload: { schemaFormat: 'application/schema+json;version=draft-2020-12', schema: { $ref: './schemas/events/overlay-token-minted.json' } } }
+    OverlayTokenRevoked: { name: OverlayTokenRevoked, payload: { schemaFormat: 'application/schema+json;version=draft-2020-12', schema: { $ref: './schemas/events/overlay-token-revoked.json' } } }
+  messageTraits:
+    ceReply:
+      headers:
+        schemaFormat: 'application/schema+json;version=draft-2020-12'
+        schema: { $ref: './schemas/common/cloudevent.json' }

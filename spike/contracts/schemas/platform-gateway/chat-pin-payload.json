@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/chat-pin-payload.json",
+  "title": "ChatPinPayload",
+  "description": "Pin an existing line, or post and pin a new one. The variants have disjoint required fields, so a payload matches exactly one.",
+  "oneOf": [{ "$ref": "chat-pin-existing-payload.json" }, { "$ref": "chat-pin-new-payload.json" }]
+}

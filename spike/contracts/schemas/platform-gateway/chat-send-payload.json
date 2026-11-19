@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/chat-send-payload.json",
+  "title": "ChatSendPayload",
+  "type": "object",
+  "required": ["message"],
+  "properties": { "message": { "type": "string", "minLength": 1, "maxLength": 500 }, "replyToMessageId": { "type": ["string","null"], "maxLength": 200 } },
+  "additionalProperties": false
+}

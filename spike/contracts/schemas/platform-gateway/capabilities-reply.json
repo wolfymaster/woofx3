@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/capabilities-reply.json",
+  "title": "CapabilitiesReply",
+  "oneOf": [
+    { "title": "CapabilitiesOk", "type": "object", "required": ["platforms"], "properties": { "platforms": { "type": "array", "maxItems": 16, "items": { "$ref": "platform-capability.json" } } }, "additionalProperties": false },
+    { "title": "CapabilitiesError", "type": "object", "required": ["error"], "properties": { "error": { "type": "string", "minLength": 1, "maxLength": 500 } }, "additionalProperties": false }
+  ]
+}

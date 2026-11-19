@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/origin-ref.json",
+  "title": "OriginRef",
+  "description": "The platform event a request answers.",
+  "type": "object",
+  "required": ["platform"],
+  "properties": {
+    "platform": { "$ref": "../common/platform-id.json" },
+    "messageId": { "type": ["string", "null"], "maxLength": 200 },
+    "channelId": { "type": ["string", "null"], "maxLength": 200 }
+  },
+  "additionalProperties": false
+}

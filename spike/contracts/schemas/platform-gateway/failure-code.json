@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/failure-code.json",
+  "title": "FailureCode",
+  "type": "string",
+  "enum": ["invalid", "rate_limited", "forbidden", "upstream"]
+}

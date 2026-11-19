@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/events/overlay-token-revoked.json",
+  "title": "OverlayTokenRevokedEvent",
+  "type": "object",
+  "required": ["type","tokenId","sceneId","label","tokenPrefix"],
+  "properties": { "type": { "const": "overlay.token.revoked" }, "tokenId": { "type": "string", "minLength": 1, "maxLength": 200 }, "sceneId": { "type": "string", "minLength": 1, "maxLength": 200 }, "label": { "type": "string", "maxLength": 200 }, "tokenPrefix": { "type": "string", "minLength": 1, "maxLength": 32 } },
+  "additionalProperties": false
+}
