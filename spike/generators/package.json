@@ -1,0 +1,20 @@
+{
+  "name": "spike-generators",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@apiture/openapi-down-convert": "^0.14.2",
+    "@types/bun": "^1.4.4",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "json-schema-to-typescript": "^16.0.0",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
+    "yaml": "^2.9.1"
+  },
+  "dependencies": {
+    "@asteasolutions/zod-to-openapi": "9.1.0",
+    "ajv-draft-04": "^1.0.0",
+    "zod": "4.6.5"
+  }
+}

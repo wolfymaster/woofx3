@@ -1,0 +1,117 @@
+== oapi-codegen types: 127 cases, 5 valid fixtures mishandled, 73 invalid fixtures accepted
+          LOSSY ROUNDTRIP field-options-requests.json/an unknown key is ignored: ACCEPTED BUT NOT ROUND-TRIPPED: {"action":"chat.send"}
+          LOSSY ROUNDTRIP replies.json/a null error counts as absent: ACCEPTED BUT NOT ROUND-TRIPPED: {"ok":false,"results":{}}
+          LOSSY ROUNDTRIP replies.json/unknown keys are ignored: ACCEPTED BUT NOT ROUND-TRIPPED: {"ok":true,"results":{"twitch":{"status":"delivered","latencyMs":12}}}
+          LOSSY ROUNDTRIP requests.json/null options counts as absent: ACCEPTED BUT NOT ROUND-TRIPPED: {"action":"chat.send","idempotencyKey":"k","payload":{"message":"hi"},"requestedBy":{"kind":"api"
+          LOSSY ROUNDTRIP requests.json/null workflowChain counts as absent: ACCEPTED BUT NOT ROUND-TRIPPED: {"action":"chat.send","idempotencyKey":"k","payload":{"message":"hi"},"requestedBy":{"kind"
+          ACCEPTS INVALID capabilities-replies.json/a platform listed twice
+          ACCEPTS INVALID capabilities-replies.json/an action listed twice
+          ACCEPTS INVALID capabilities-replies.json/an empty error counts as absent
+          ACCEPTS INVALID capabilities-replies.json/an unknown action
+          ACCEPTS INVALID capabilities-replies.json/an unknown platform
+          ACCEPTS INVALID capabilities-replies.json/an unknown state
+          ACCEPTS INVALID capabilities-replies.json/error with platforms
+          ACCEPTS INVALID capabilities-replies.json/neither platforms nor error
+          ACCEPTS INVALID capabilities-replies.json/no actions
+          ACCEPTS INVALID capabilities-replies.json/no display name
+          ACCEPTS INVALID capabilities-replies.json/null platforms
+          ACCEPTS INVALID field-options-replies.json/a platform offered twice
+          ACCEPTS INVALID field-options-replies.json/an empty error
+          ACCEPTS INVALID field-options-replies.json/an object without an error
+          ACCEPTS INVALID field-options-replies.json/an unknown platform
+          ACCEPTS INVALID field-options-replies.json/neither an array nor an object
+          ACCEPTS INVALID field-options-replies.json/no label
+          ACCEPTS INVALID field-options-requests.json/a null action
+          ACCEPTS INVALID field-options-requests.json/an empty action
+          ACCEPTS INVALID field-options-requests.json/an unknown action
+          ACCEPTS INVALID field-options-requests.json/no action
+          ACCEPTS INVALID replies.json/a null ok
+          ACCEPTS INVALID replies.json/a refusal that claims ok
+          ACCEPTS INVALID replies.json/a refusal with an unknown code
+          ACCEPTS INVALID replies.json/a refusal with results
+          ACCEPTS INVALID replies.json/a refusal without a message
+          ACCEPTS INVALID replies.json/an unknown platform
+          ACCEPTS INVALID replies.json/an unknown status
+          ACCEPTS INVALID replies.json/dropped without a reason
+          ACCEPTS INVALID replies.json/failed with an unknown code
+          ACCEPTS INVALID replies.json/failed without a code
+          ACCEPTS INVALID replies.json/failed without a message
+          ACCEPTS INVALID replies.json/missing ok
+          ACCEPTS INVALID replies.json/missing results
+          ACCEPTS INVALID replies.json/unavailable with an unknown reason
+          ACCEPTS INVALID replies.json/unconfirmed without a message
+          ACCEPTS INVALID requests.json/a 201 character idempotency key
+          ACCEPTS INVALID requests.json/a 501 character message
+          ACCEPTS INVALID requests.json/a 501 code point message
+          ACCEPTS INVALID requests.json/a missing idempotency key
+          ACCEPTS INVALID requests.json/a missing message
+          ACCEPTS INVALID requests.json/a missing payload
+          ACCEPTS INVALID requests.json/a null message
+          ACCEPTS INVALID requests.json/a null payload
+          ACCEPTS INVALID requests.json/all with ids
+          ACCEPTS INVALID requests.json/an empty idempotency key
+          ACCEPTS INVALID requests.json/an empty message
+          ACCEPTS INVALID requests.json/an empty requester ref
+          ACCEPTS INVALID requests.json/an unknown payload field
+          ACCEPTS INVALID requests.json/an unknown requester
+          ACCEPTS INVALID requests.json/an unknown target kind
+          ACCEPTS INVALID requests.json/chat.delete with an empty message id
+          ACCEPTS INVALID requests.json/chat.delete without a message id
+          ACCEPTS INVALID requests.json/chat.pin duration above 1200
+          ACCEPTS INVALID requests.json/chat.pin duration as a string
+          ACCEPTS INVALID requests.json/chat.pin duration below 30
+          ACCEPTS INVALID requests.json/chat.pin duration with a fraction
+          ACCEPTS INVALID requests.json/chat.pin existing form missing its id
+          ACCEPTS INVALID requests.json/chat.pin mixing both forms
+          ACCEPTS INVALID requests.json/chat.pin with neither form
+          ACCEPTS INVALID requests.json/moderation.ban without a viewer
+          ACCEPTS INVALID requests.json/moderation.timeout of zero seconds
+          ACCEPTS INVALID requests.json/moderation.timeout without a duration
+          ACCEPTS INVALID requests.json/moderation.warn reason over its bound
+          ACCEPTS INVALID requests.json/moderation.warn without a reason
+          ACCEPTS INVALID requests.json/options for an unknown platform
+          ACCEPTS INVALID requests.json/origin message id over 200 characters
+          ACCEPTS INVALID requests.json/origin on an unknown platform
+          ACCEPTS INVALID requests.json/origin without an origin
+          ACCEPTS INVALID requests.json/platforms naming a platform twice
+          ACCEPTS INVALID requests.json/platforms naming an unknown platform
+          ACCEPTS INVALID requests.json/platforms with no ids
+          ACCEPTS INVALID requests.json/workflowChain over the length limit
+== ogen types+Validate: 127 cases, 8 valid fixtures mishandled, 6 invalid fixtures accepted
+          REJECTS VALID   capabilities-replies.json/an unknown key is ignored: decode: decode CapabilitiesOk: callback: unexpected field "generatedAt"
+          REJECTS VALID   field-options-replies.json/an unknown key on an option is ignored: decode: alias: callback: decode FieldOption: callback: unexpected field "icon"
+          REJECTS VALID   field-options-requests.json/an unknown key is ignored: decode: decode FieldOptionsRequest: callback: unexpected field "fieldId"
+          REJECTS VALID   replies.json/fields of another status are ignored: decode: decode GatewayReply: callback: decode field "results": decode GatewayReplyResults: callback: decode field "twitch":
+          REJECTS VALID   replies.json/unknown keys are ignored: decode: decode GatewayReply: callback: decode field "results": decode GatewayReplyResults: callback: decode field "twitch": decode Outc
+          REJECTS VALID   requests.json/a null origin on a platforms target counts as absent: decode: decode ChatSendRequest: callback: decode field "target": decode TargetPlatforms: callback: unexpec
+          REJECTS VALID   requests.json/an empty ids list on an all target counts as absent: decode: decode ChatSendRequest: callback: decode field "target": decode TargetAll: callback: unexpected fie
+          REJECTS VALID   requests.json/chat.pin duration written as a whole float: decode: decode ChatPinRequest: callback: decode field "payload": decode ChatPinNewPayload: callback: decode field "d
+          ACCEPTS INVALID capabilities-replies.json/a platform listed twice
+          ACCEPTS INVALID field-options-replies.json/a platform offered twice
+          ACCEPTS INVALID replies.json/a refusal that claims ok
+          ACCEPTS INVALID replies.json/a refusal with results
+          ACCEPTS INVALID replies.json/an unknown platform
+          ACCEPTS INVALID requests.json/options for an unknown platform
+== santhosh on 3.1 doc: 127 cases, 3 valid fixtures mishandled, 1 invalid fixtures accepted
+          REJECTS VALID   field-options-requests.json/an unknown key is ignored: jsonschema validation failed with 'file:///home/wolfy/code/wt/contract-spike/spike/generators/fixtures/nats.json#/compo
+          REJECTS VALID   requests.json/a null origin on a platforms target counts as absent: jsonschema validation failed with 'file:///home/wolfy/code/wt/contract-spike/spike/generators/fixtures/nat
+          REJECTS VALID   requests.json/an empty ids list on an all target counts as absent: jsonschema validation failed with 'file:///home/wolfy/code/wt/contract-spike/spike/generators/fixtures/nats
+          ACCEPTS INVALID capabilities-replies.json/a platform listed twice
+== kin-openapi on 3.1 doc: 127 cases, 3 valid fixtures mishandled, 5 invalid fixtures accepted
+          REJECTS VALID   field-options-requests.json/an unknown key is ignored: property "fieldId" is unsupported
+          REJECTS VALID   requests.json/a null origin on a platforms target counts as absent: doesn't match schema due to: Error at "/target": doesn't match schema due to: property "origin" is unsuppo
+          REJECTS VALID   requests.json/an empty ids list on an all target counts as absent: doesn't match schema due to: Error at "/target": doesn't match schema due to: property "ids" is unsupported
+          ACCEPTS INVALID capabilities-replies.json/a platform listed twice
+          ACCEPTS INVALID replies.json/a refusal that claims ok
+          ACCEPTS INVALID replies.json/a refusal with results
+          ACCEPTS INVALID replies.json/an unknown platform
+          ACCEPTS INVALID requests.json/options for an unknown platform
+== kin-openapi on 3.0.3 doc: 127 cases, 3 valid fixtures mishandled, 5 invalid fixtures accepted
+          REJECTS VALID   field-options-requests.json/an unknown key is ignored: property "fieldId" is unsupported
+          REJECTS VALID   requests.json/a null origin on a platforms target counts as absent: doesn't match schema due to: Error at "/target": doesn't match schema due to: property "origin" is unsuppo
+          REJECTS VALID   requests.json/an empty ids list on an all target counts as absent: doesn't match schema due to: Error at "/target": doesn't match schema due to: property "ids" is unsupported
+          ACCEPTS INVALID capabilities-replies.json/a platform listed twice
+          ACCEPTS INVALID replies.json/a refusal that claims ok
+          ACCEPTS INVALID replies.json/a refusal with results
+          ACCEPTS INVALID replies.json/an unknown platform
+          ACCEPTS INVALID requests.json/options for an unknown platform

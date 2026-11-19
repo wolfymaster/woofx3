@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/requested-by.json",
+  "title": "RequestedBy",
+  "description": "The engine component behind a request. Logged, not authenticated.",
+  "type": "object",
+  "required": ["kind", "ref"],
+  "properties": {
+    "kind": { "type": "string", "enum": ["workflow", "dispatcher", "api"] },
+    "ref": { "$ref": "../common/ref-string.json" }
+  },
+  "additionalProperties": false
+}

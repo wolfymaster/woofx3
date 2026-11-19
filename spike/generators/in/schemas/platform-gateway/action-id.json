@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/action-id.json",
+  "title": "ActionId",
+  "type": "string",
+  "enum": ["chat.send", "chat.announce", "chat.pin", "chat.delete", "moderation.warn", "moderation.timeout", "moderation.ban"]
+}

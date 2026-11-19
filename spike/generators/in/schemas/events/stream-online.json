@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/events/stream-online.json",
+  "title": "StreamOnlineEvent",
+  "type": "object",
+  "required": ["type","twitchUserId","startedAt"],
+  "properties": { "type": { "const": "stream.online" }, "twitchUserId": { "type": "string", "minLength": 1, "maxLength": 200 }, "startedAt": { "type": "string", "format": "date-time", "maxLength": 40 }, "streamTitle": { "type": "string", "maxLength": 500 }, "gameName": { "type": "string", "maxLength": 200 }, "viewerCount": { "type": "integer", "minimum": 0, "maximum": 100000000 } },
+  "additionalProperties": false
+}

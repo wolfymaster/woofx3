@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/events/engine-event.json",
+  "title": "EngineEvent",
+  "description": "Any event of the stream and overlay domains; type picks the variant.",
+  "oneOf": [{ "$ref": "overlay-token-minted.json" }, { "$ref": "overlay-token-revoked.json" }, { "$ref": "stream-online.json" }, { "$ref": "stream-offline.json" }, { "$ref": "session-started.json" }]
+}

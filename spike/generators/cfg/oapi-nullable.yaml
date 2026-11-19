@@ -1,0 +1,8 @@
+package: gen
+generate:
+  models: true
+  strict-server: true
+  std-http-server: true
+output-options:
+  nullable-type: true
+  skip-prune: true

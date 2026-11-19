@@ -1,0 +1,2644 @@
+openapi: 3.1.0
+info:
+  title: woofx3 marketplace API
+  version: 1.0.0
+  description: |
+    Every JSON route the marketplace serves: the catalog, acquiring and
+    entitlements, publishing (modules and the light listing types), the
+    billing module's purchase-intent routes and the operator's /admin routes.
+
+    This file is the contract and is written by hand. The service embeds it:
+    it checks at startup that every served route is documented, and it refuses
+    a request to a documented route that does not fit it (unknown body fields
+    included) with 400 invalid_request, after the caller has authenticated.
+    Its tests (internal/httpapi/openapi_test.go and the contract router every
+    handler test goes through) check that every answer the handlers send fits
+    the schema documented for that status. Routes that serve bytes rather than
+    JSON (images, emotes) and /healthz are not described here.
+
+    Every error answers the same envelope (Error) with a code from ErrorCode.
+    Reads are open unless an operation lists a credential under `security`; a
+    read may carry any credential, and one that matches nothing is 401.
+servers:
+  - url: https://marketplace.woofx3.tv
+    description: Production. Local and preview deployments use their own origin.
+tags:
+  - name: catalog
+  - name: commerce
+  - name: billing
+  - name: modules
+  - name: listings
+  - name: admin
+
+security:
+  - {}
+  - devBearer: []
+  - serviceBearer: []
+  - buyerBearer: []
+  - publisherBearer: []
+
+paths:
+  /catalog:
+    get:
+      tags: [catalog]
+      operationId: searchCatalog
+      summary: Search the catalog across every listing type
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: author, in: query, description: An author username., schema: { type: string } }
+        - name: type
+          in: query
+          description: Listing types to include (module, theme, emote, overlay, alert). Repeatable and comma separated. An unknown type is a 400.
+          schema: { type: array, items: { type: string } }
+          style: form
+          explode: true
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [relevance, newest, name, popular, trending]
+            default: relevance
+        - { name: featured, in: query, schema: { type: boolean } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Offset" }
+      responses:
+        "200":
+          description: One page of listings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [listings, total, limit, offset]
+                properties:
+                  listings: { type: array, items: { $ref: "#/components/schemas/CatalogItem" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /catalog/counts:
+    get:
+      tags: [catalog]
+      operationId: catalogCounts
+      summary: How many listings of each type the catalog holds
+      responses:
+        "200":
+          description: Every type is present, including one with nothing in it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [counts, total]
+                properties:
+                  counts:
+                    type: object
+                    required: [module, theme, emote, overlay, alert]
+                    properties:
+                      module: { type: integer }
+                      theme: { type: integer }
+                      emote: { type: integer }
+                      overlay: { type: integer }
+                      alert: { type: integer }
+                  total: { type: integer }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /catalog/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    get:
+      tags: [catalog]
+      operationId: getCatalogEntry
+      summary: One listing with everything its storefront page shows
+      description: |
+        A dev-tier or unpublished listing answers 404 unless the caller carries
+        a credential that reveals them.
+      responses:
+        "200":
+          description: The listing.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [listing]
+                properties:
+                  listing: { $ref: "#/components/schemas/CatalogDetail" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /catalog/{id}/bundle:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    get:
+      tags: [catalog]
+      operationId: getCatalogBundle
+      summary: The scene or alert composition an overlay or alert listing installs
+      description: |
+        Open for a listing priced free. A paid or unpriced listing is served
+        only to a control-plane caller or a buyer token, for an account that
+        holds it; a control-plane caller names the account in `buyerRef`.
+      security:
+        - {}
+        - serviceBearer: []
+        - buyerBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/BuyerRef" }
+      responses:
+        "200":
+          description: The bundle and the modules its widgets come from.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [bundle, requires]
+                properties:
+                  bundle: { type: object, additionalProperties: true }
+                  requires: { type: array, items: { type: string } }
+        "400":
+          description: The listing is not an overlay or an alert (listing_type_mismatch), or buyerRef is missing (invalid_request).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403":
+          description: The account does not hold the listing (not_entitled) or the buyerRef is another account's (buyer_mismatch).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /catalog/{id}/acquire:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    post:
+      tags: [commerce]
+      operationId: acquireListing
+      summary: Settle what an account must do to hold a listing
+      description: |
+        A listing that costs nothing for this account is claimed: the
+        entitlement is recorded and its license is returned (201 for a new
+        claim, 200 for one already held). A paid quote answers 402 with the
+        purchase intent the billing module charges against. A caller with no
+        credential may claim a free listing only, rate limited per client
+        address.
+
+        With a service token the body must name the account in `buyerRef`;
+        with a buyer token the account is the token's, and a different
+        `buyerRef` is refused with 403 buyer_mismatch.
+      security:
+        - {}
+        - serviceBearer: []
+        - buyerBearer: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                buyerRef: { $ref: "#/components/schemas/BuyerRef" }
+      responses:
+        "200":
+          description: The account already held the listing.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Acquired" } } }
+        "201":
+          description: A free listing, or a free upgrade, was claimed.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Acquired" } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401":
+          description: A bad credential (unauthorized), or a paid listing asked for with no account (account_required).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "402":
+          description: The listing costs money for this account. Pay the intent.
+          content: { application/json: { schema: { $ref: "#/components/schemas/PaymentRequired" } } }
+        "403":
+          description: The buyerRef is another account's (buyer_mismatch), or the account's access was revoked (entitlement_revoked).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: The listing cannot be acquired now (listing_unavailable).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "410":
+          description: Downloads of the module are blocked (downloads_blocked).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "429":
+          description: Too many anonymous claims from this address (rate_limited). Retry-After says when to ask again.
+          headers:
+            Retry-After: { schema: { type: integer }, description: Seconds. }
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "500": { $ref: "#/components/responses/Error" }
+  /catalog/{id}/entitlement:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    get:
+      tags: [commerce]
+      operationId: getEntitlement
+      summary: Whether an account holds a listing
+      security:
+        - serviceBearer: []
+        - buyerBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/BuyerRef" }
+      responses:
+        "200":
+          description: Held or not. `source` and `grantedAt` are present only when entitled.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entitled]
+                properties:
+                  entitled: { type: boolean }
+                  source: { $ref: "#/components/schemas/EntitlementSource" }
+                  grantedAt: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /catalog/{id}/quote:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    get:
+      tags: [commerce]
+      operationId: getQuote
+      summary: What an account must do to hold a listing
+      security:
+        - serviceBearer: []
+        - buyerBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/BuyerRef" }
+      responses:
+        "200":
+          description: The quote.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [quote]
+                properties:
+                  quote: { $ref: "#/components/schemas/Quote" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /catalog/{id}/credits:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    put:
+      tags: [catalog]
+      operationId: putCredits
+      summary: Replace the whole list of streamers a listing credits
+      description: |
+        The order is part of the showcase, so the list is replaced as a whole;
+        an empty list clears it. Any listing id is accepted, module or not.
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreditsRequest" }
+      responses:
+        "200":
+          description: The credits as stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreditsResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /catalog/{id}/previews:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    put:
+      tags: [catalog]
+      operationId: putPreviews
+      summary: Replace the whole list of previews a listing shows before install
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PreviewsRequest" }
+      responses:
+        "200":
+          description: The previews as stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [previews]
+                properties:
+                  previews: { type: array, items: { $ref: "#/components/schemas/Preview" } }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /catalog/{id}/pricing:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    put:
+      tags: [catalog]
+      operationId: putPricing
+      summary: Set how a listing is acquired, replacing its pricing whole
+      description: |
+        The amounts are what a purchase intent quotes and billing charges. An
+        emote pack cannot be priced (409 not_sellable). Operators set the same
+        pricing, audited, through /admin/listings/{id}/pricing.
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PricingRequest" }
+      responses:
+        "200":
+          description: The pricing as stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PricingResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /entitlements:
+    get:
+      tags: [commerce]
+      operationId: listEntitlements
+      summary: Every listing an account holds, with its license keys
+      security:
+        - serviceBearer: []
+        - buyerBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/BuyerRef" }
+      responses:
+        "200":
+          description: The held listing ids, and a key for each entitlement whose key could be read.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [listingIds, licenses]
+                properties:
+                  listingIds: { type: array, items: { type: string } }
+                  licenses:
+                    type: array
+                    items:
+                      type: object
+                      required: [listingId, source, key]
+                      properties:
+                        listingId: { type: string }
+                        source: { $ref: "#/components/schemas/EntitlementSource" }
+                        key: { type: string, description: The license key. Secret. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /authors/{slug}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [catalog]
+      operationId: getAuthor
+      summary: An author's page header and one page of their listings
+      parameters:
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Offset" }
+      responses:
+        "200":
+          description: The author, claimed or not, and their listings, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [author, listings, total, limit, offset]
+                properties:
+                  author: { $ref: "#/components/schemas/Author" }
+                  listings: { type: array, items: { $ref: "#/components/schemas/CatalogItem" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [catalog]
+      operationId: putAuthor
+      summary: Claim or update an author profile
+      description: Sets the whole profile, so a field is cleared by leaving it out.
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [displayName]
+              properties:
+                displayName: { type: string }
+                bio: { type: [string, "null"] }
+                avatarUrl: { type: [string, "null"] }
+                links:
+                  type: [array, "null"]
+                  items: { $ref: "#/components/schemas/AuthorLink" }
+      responses:
+        "200":
+          description: The profile as stored.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [author]
+                properties:
+                  author: { $ref: "#/components/schemas/Author" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /modules:
+    get:
+      tags: [modules]
+      operationId: listModules
+      summary: Every ready module and theme
+      responses:
+        "200":
+          description: The modules, with counts of what each carries instead of the full arrays.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [modules]
+                properties:
+                  modules: { type: array, items: { $ref: "#/components/schemas/ModuleListItem" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [modules]
+      operationId: createModule
+      summary: Open a module or a new edition, answering where to PUT its archive
+      description: |
+        For a later edition the id must be `{moduleKey}-v{edition}`. A publisher
+        token publishes only under its own name. A publisher whose builds need
+        review gets a staging key and a `submissionId`.
+      security:
+        - serviceBearer: []
+        - publisherBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateModuleRequest" }
+      responses:
+        "201":
+          description: The module, pending, and where to PUT its archive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleUpload" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /modules/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    get:
+      tags: [modules]
+      operationId: getModule
+      summary: One module or theme with its manifest contents
+      responses:
+        "200":
+          description: The module.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [modules]
+      operationId: updateModule
+      summary: Update a module's editable metadata
+      description: The manifest's contents come from re-uploading, not from here.
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateModuleRequest" }
+      responses:
+        "200":
+          description: The module as stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [modules]
+      operationId: deleteModule
+      summary: Delete a module, its archive and every rendition
+      security:
+        - serviceBearer: []
+      responses:
+        "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /modules/{id}/download:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    get:
+      tags: [modules]
+      operationId: downloadModule
+      summary: A short-lived signed URL for a module's archive
+      description: |
+        A module priced free downloads with no credential. Otherwise the caller
+        presents either an `X-License-Key` (with `X-Install-Id`; a key from a
+        purchase, upgrade or grant also needs the account's buyer token or a
+        service token naming it in `buyerRef`), or a service or buyer token for
+        an account that holds the listing.
+      security:
+        - {}
+        - serviceBearer: []
+        - buyerBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/BuyerRef" }
+        - name: X-License-Key
+          in: header
+          schema: { type: string }
+        - name: X-Install-Id
+          in: header
+          description: Required with X-License-Key; at most 128 characters (otherwise 400 install_id_required).
+          schema: { type: string }
+      responses:
+        "200":
+          description: The signed URL. `sha256` and `sizeBytes` are absent for a module published before they were recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [url, expiresAt]
+                properties:
+                  url: { type: string, format: uri }
+                  expiresAt: { type: string, format: date-time }
+                  sha256: { type: string }
+                  sizeBytes: { type: integer, format: int64 }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: The module is not ready (module_not_ready), or the license key is used on as many installs as it allows (activation_limit).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "410": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /modules/{id}/upload-url:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    post:
+      tags: [modules]
+      operationId: moduleUploadUrl
+      summary: A fresh signed PUT for the module's next build
+      description: |
+        Leaves the row alone, so the current build keeps serving until
+        `complete` swaps it. A publisher whose builds need review gets a
+        staging key and a `submissionId`.
+      security:
+        - serviceBearer: []
+        - publisherBearer: []
+      responses:
+        "200":
+          description: Where to PUT the archive.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleUpload" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /modules/{id}/complete:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    post:
+      tags: [modules]
+      operationId: completeModule
+      summary: Read the uploaded archive and publish it
+      description: |
+        Idempotent on content: bytes already published answer 200 and change
+        nothing. A build from a publisher that needs review is filed for an
+        operator and answers 202.
+      security:
+        - serviceBearer: []
+        - publisherBearer: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                sha256: { type: string, description: The hex SHA-256 of the archive the client uploaded; the server waits until the store returns those bytes. }
+      responses:
+        "200":
+          description: The module as published.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleResponse" }
+        "202":
+          description: The build is waiting for an operator's review.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [submission, module]
+                properties:
+                  submission: { $ref: "#/components/schemas/Submission" }
+                  module: { $ref: "#/components/schemas/ModuleDetail" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /modules/{id}/images/{slot}:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+      - { $ref: "#/components/parameters/ImageSlot" }
+    put:
+      tags: [modules]
+      operationId: putModuleImage
+      summary: Set a module's icon or banner
+      description: "The body is the raw image, or JSON `{\"url\": ...}` for the server to fetch."
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImageUrlRequest" }
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: The module with its renditions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [modules]
+      operationId: deleteModuleImage
+      summary: Clear an uploaded image
+      description: For the icon, the one the current build's manifest declares takes its place.
+      security:
+        - serviceBearer: []
+      responses:
+        "200":
+          description: The module as it stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /modules/{id}/featured:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    put:
+      tags: [modules]
+      operationId: setModuleFeatured
+      summary: Feature a module; lower ranks show first
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FeaturedRequest" }
+      responses:
+        "200":
+          description: The module as it stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [modules]
+      operationId: clearModuleFeatured
+      summary: Remove a module from the featured set
+      security:
+        - serviceBearer: []
+      responses:
+        "200":
+          description: The module as it stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /listings:
+    post:
+      tags: [listings]
+      operationId: createListing
+      summary: Create an emote pack, overlay or alert listing
+      description: |
+        A module or theme is published through /modules. An emote pack comes
+        back pending with a signed PUT for its archive; an overlay or alert
+        carries its bundle and is ready at once.
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateListingRequest" }
+      responses:
+        "201":
+          description: The listing, with the upload URL for an emote pack.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [listing]
+                properties:
+                  listing: { $ref: "#/components/schemas/Listing" }
+                  uploadUrl: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /listings/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    get:
+      tags: [listings]
+      operationId: getListing
+      summary: A light listing as stored
+      description: |
+        Dev-tier and pending listings are 404 to a caller that cannot see
+        them. The stored `payload` is left out unless the caller holds a
+        service token.
+      responses:
+        "200":
+          description: The listing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ListingResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [listings]
+      operationId: updateListing
+      summary: Update a listing's metadata, and an overlay or alert's bundle
+      description: A bundle is replaced only when one is sent. An emote pack's emotes cannot be set here.
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateListingRequest" }
+      responses:
+        "200":
+          description: The listing as stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ListingResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [listings]
+      operationId: deleteListing
+      summary: Delete a listing, its archive, its images and its emotes
+      security:
+        - serviceBearer: []
+      responses:
+        "204": { description: Deleted. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /listings/{id}/upload-url:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    post:
+      tags: [listings]
+      operationId: listingUploadUrl
+      summary: A fresh signed PUT for an emote pack's archive
+      security:
+        - serviceBearer: []
+      responses:
+        "200":
+          description: Where to PUT the archive.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [listing, uploadUrl, expiresAt]
+                properties:
+                  listing: { $ref: "#/components/schemas/Listing" }
+                  uploadUrl: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /listings/{id}/complete:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    post:
+      tags: [listings]
+      operationId: completeListing
+      summary: Render an uploaded emote pack
+      description: Idempotent on content, like completing a module.
+      security:
+        - serviceBearer: []
+      responses:
+        "200":
+          description: The listing, ready.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ListingResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /listings/{id}/images/{slot}:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+      - { $ref: "#/components/parameters/ImageSlot" }
+    put:
+      tags: [listings]
+      operationId: putListingImage
+      summary: Set a listing's icon or banner
+      description: "The body is the raw image, or JSON `{\"url\": ...}` for the server to fetch."
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImageUrlRequest" }
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: The listing with its renditions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ListingResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [listings]
+      operationId: deleteListingImage
+      summary: Clear an uploaded image
+      security:
+        - serviceBearer: []
+      responses:
+        "200":
+          description: The listing as it stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ListingResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /listings/{id}/featured:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    put:
+      tags: [listings]
+      operationId: setListingFeatured
+      summary: Feature a listing; lower ranks show first
+      security:
+        - serviceBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FeaturedRequest" }
+      responses:
+        "200":
+          description: The listing as it stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ListingResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [listings]
+      operationId: clearListingFeatured
+      summary: Remove a listing from the featured set
+      security:
+        - serviceBearer: []
+      responses:
+        "200":
+          description: The listing as it stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ListingResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+
+  /intents/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [billing]
+      operationId: getIntent
+      summary: A purchase intent, read by the billing module for the amount it must charge
+      security:
+        - billingBearer: []
+      responses:
+        "200":
+          description: The intent. Status is as of now, so one past its expiry reads expired.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [intent]
+                properties:
+                  intent: { $ref: "#/components/schemas/BillingIntent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /intents/{id}/redeem:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [billing]
+      operationId: redeemIntent
+      summary: Report a completed payment and record the entitlement
+      description: |
+        A replay of the same payment answers the same way. A buyer who already
+        held the listing keeps that entitlement and the answer is 200 with
+        `alreadyHeld` true, so billing refunds the payment.
+      security:
+        - billingBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [checkoutSessionRef, amountPaidCents, currency]
+              properties:
+                checkoutSessionRef: { type: string }
+                amountPaidCents: { type: integer, format: int64, exclusiveMinimum: 0 }
+                currency: { type: string }
+                purchaserEmail: { type: [string, "null"], maxLength: 320 }
+                paidAt:
+                  type: [string, "null"]
+                  format: date-time
+                  description: When the payment completed. Omitted means now. A time before the intent was created, or more than two minutes ahead, is refused.
+      responses:
+        "200":
+          description: The entitlement the redeem settled on. It carries no license key.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Entitlement"
+                  - type: object
+                    required: [alreadyHeld]
+                    properties:
+                      alreadyHeld: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: The intent was already redeemed by another payment (intent_settled).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "410":
+          description: The intent expired before it was paid (intent_expired).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "422":
+          description: The payment is not for the amount or currency the intent owes (intent_mismatch).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /entitlements/{id}/revoke:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [billing]
+      operationId: revokeEntitlement
+      summary: End an entitlement for a refund or dispute
+      description: |
+        The billing module revokes for a payment: `reason` is refund or
+        dispute and `checkoutSessionRef` names the payment, and only an
+        entitlement that payment wrote is revoked. A refund of a payment that
+        wrote nothing answers 200 with `revoked` false. Repeating a revoke
+        changes nothing. Operators revoke through
+        /admin/entitlements/{id}/revoke, which is audited.
+      security:
+        - billingBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason: { type: string, enum: [refund, dispute, operator], description: "operator is answered 403 reason_not_allowed: an operator revokes through the admin route." }
+                checkoutSessionRef: { type: string, description: The payment the refund or dispute is for. Required for refund and dispute; without it the answer is 400. }
+      responses:
+        "200":
+          description: The entitlement as it stands.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - allOf:
+                      - $ref: "#/components/schemas/Entitlement"
+                      - type: object
+                        required: [revoked]
+                        properties:
+                          revoked: { type: boolean, const: true }
+                  - type: object
+                    required: [entitlementId, revoked]
+                    properties:
+                      entitlementId: { type: string }
+                      revoked: { type: boolean, const: false }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403":
+          description: The billing token asked for an operator's revoke, reason operator (reason_not_allowed).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /admin/entitlements:
+    get:
+      tags: [admin]
+      operationId: adminListEntitlements
+      summary: Page the entitlements of one buyer, one listing or both, revoked ones included
+      security:
+        - adminBearer: []
+      parameters:
+        - { name: buyerRef, in: query, schema: { $ref: "#/components/schemas/BuyerRef" } }
+        - { name: listingId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Offset" }
+      responses:
+        "200":
+          description: Newest grant first. At least one of buyerRef and listingId is required.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entitlements, total, limit, offset]
+                properties:
+                  entitlements: { type: array, items: { $ref: "#/components/schemas/AdminEntitlement" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      operationId: adminGrantEntitlement
+      summary: Give a buyer a listing without a payment, audited
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [listingId, buyerRef]
+              properties:
+                listingId: { type: string }
+                buyerRef: { $ref: "#/components/schemas/BuyerRef" }
+      responses:
+        "200":
+          description: The buyer held the listing already (already_held); nothing changed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminGrant" }
+        "201":
+          description: granted wrote a new entitlement, reinstated brought back a revoked one (keeping its id and key).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdminGrant" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409":
+          description: The listing cannot be acquired by anyone now (listing_unavailable).
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/entitlements/{id}/revoke:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [admin]
+      operationId: adminRevokeEntitlement
+      summary: Revoke an entitlement as an operator, audited
+      description: Revokes whatever paid for the entitlement, with reason operator; takes no body.
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      responses:
+        "200":
+          description: The revoked entitlement.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Entitlement"
+                  - type: object
+                    required: [revoked]
+                    properties:
+                      revoked: { type: boolean, const: true }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /entitlements/{id}/activations/clear:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [admin]
+      operationId: adminClearActivations
+      summary: Forget the installs a license key has downloaded to, audited
+      description: |
+        A customer who reinstalled on new machines past the activation cap
+        starts over. Takes the admin token and nothing else; the actor and
+        reason headers are required.
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      responses:
+        "200":
+          description: How many activations were cleared.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entitlementId, cleared]
+                properties:
+                  entitlementId: { type: string }
+                  cleared: { type: integer, format: int64 }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/modules:
+    get:
+      tags: [admin]
+      operationId: adminListModules
+      summary: Every module row whatever the catalog hides
+      description: Pending, dev-tier, superseded and disabled rows are included, most recently updated first.
+      security:
+        - adminBearer: []
+      responses:
+        "200":
+          description: The rows.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [modules]
+                properties:
+                  modules: { type: array, items: { $ref: "#/components/schemas/AdminModule" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/actions:
+    get:
+      tags: [admin]
+      operationId: adminListActions
+      summary: The audit log, newest first
+      security:
+        - adminBearer: []
+      parameters:
+        - { name: targetType, in: query, description: Narrows the log to one kind of target. Required with targetId., schema: { type: string } }
+        - { name: targetId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Offset" }
+      responses:
+        "200":
+          description: One page of the log. The limit defaults to 50 and is at most 200.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [actions, total, limit, offset]
+                properties:
+                  actions: { type: array, items: { $ref: "#/components/schemas/AdminAction" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/submissions:
+    get:
+      tags: [admin]
+      operationId: adminListSubmissions
+      summary: The review queue, newest first
+      security:
+        - adminBearer: []
+      parameters:
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/SubmissionStatus" }
+        - { name: moduleId, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Offset" }
+      responses:
+        "200":
+          description: One page of submissions. The limit defaults to 50.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [submissions, total, limit, offset]
+                properties:
+                  submissions: { type: array, items: { $ref: "#/components/schemas/Submission" } }
+                  total: { type: integer }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/submissions/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [admin]
+      operationId: adminGetSubmission
+      summary: One submission with what an operator needs to review it
+      description: |
+        For a pending submission, the submitted manifest and README. `live` is
+        the build the module serves now, or null for a first publish.
+        `pricing` is null when approving alone would leave the module
+        uninstallable. 409 archive_changed when the staged archive is not the
+        one submitted.
+      security:
+        - adminBearer: []
+      responses:
+        "200":
+          description: The submission.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SubmissionDetail" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/submissions/{id}/files:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [admin]
+      operationId: adminListSubmissionFiles
+      summary: The files in a pending submission's archive
+      security:
+        - adminBearer: []
+      responses:
+        "200":
+          description: Every file with its size.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [files]
+                properties:
+                  files:
+                    type: array
+                    items:
+                      type: object
+                      required: [path, size]
+                      properties:
+                        path: { type: string }
+                        size: { type: integer, format: int64 }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/submissions/{id}/files/{path}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: path, in: path, required: true, description: The file's path in the archive; it may contain slashes., schema: { type: string } }
+    get:
+      tags: [admin]
+      operationId: adminReadSubmissionFile
+      summary: One file of a pending submission's archive
+      description: UTF-8 text as it is, anything else base64, truncated at 512 KiB.
+      security:
+        - adminBearer: []
+      responses:
+        "200":
+          description: The file.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [path, encoding, content, truncated]
+                properties:
+                  path: { type: string }
+                  encoding: { type: string, enum: [utf-8, base64] }
+                  content: { type: string }
+                  truncated: { type: boolean }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/submissions/{id}/approve:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [admin]
+      operationId: adminApproveSubmission
+      summary: Publish the reviewed build and record the approval
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      responses:
+        "200":
+          description: The decided submission and the module now serving it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [submission, module]
+                properties:
+                  submission: { $ref: "#/components/schemas/Submission" }
+                  module: { $ref: "#/components/schemas/ModuleDetail" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "410": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/submissions/{id}/reject:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [admin]
+      operationId: adminRejectSubmission
+      summary: Record a rejection; the module keeps serving what it served
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      responses:
+        "200":
+          description: The decided submission.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [submission]
+                properties:
+                  submission: { $ref: "#/components/schemas/Submission" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/listings/{id}/pricing:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    get:
+      tags: [admin]
+      operationId: adminGetPricing
+      summary: A listing's pricing, published or not
+      security:
+        - adminBearer: []
+      responses:
+        "200":
+          description: The pricing, or null when nobody has priced the listing, which means nobody can acquire it.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pricing]
+                properties:
+                  pricing:
+                    anyOf:
+                      - $ref: "#/components/schemas/Pricing"
+                      - type: "null"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [admin]
+      operationId: adminPutPricing
+      summary: Set a listing's pricing, audited
+      description: The same body and behaviour as putPricing. A publisher cannot price its own listings, so this is how an approved module is put on sale.
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PricingRequest" }
+      responses:
+        "200":
+          description: The pricing as stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PricingResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/listings/{id}/stats:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    get:
+      tags: [admin]
+      operationId: adminListingStats
+      summary: A listing's downloads, installs, purchases and gross per UTC day
+      security:
+        - adminBearer: []
+      parameters:
+        - name: days
+          in: query
+          description: How many days back, today included.
+          schema: { type: integer, enum: [7, 30, 90], default: 30 }
+      responses:
+        "200":
+          description: One row per day, zero-filled, oldest first, and all-time totals.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [days, totals]
+                properties:
+                  days: { type: array, items: { $ref: "#/components/schemas/DailyStats" } }
+                  totals:
+                    type: object
+                    required: [downloads, installs, purchases, gross]
+                    properties:
+                      downloads: { type: integer }
+                      installs: { type: integer }
+                      purchases: { type: integer }
+                      gross: { $ref: "#/components/schemas/Gross" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/listings/{id}/credits:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    get:
+      tags: [admin]
+      operationId: adminGetCredits
+      summary: A listing's credits, published or not
+      security:
+        - adminBearer: []
+      responses:
+        "200":
+          description: The credits.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreditsResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [admin]
+      operationId: adminPutCredits
+      summary: Replace a listing's credits, audited
+      description: The same body and behaviour as putCredits.
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreditsRequest" }
+      responses:
+        "200":
+          description: The credits as stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreditsResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/modules/{id}/availability:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    put:
+      tags: [admin]
+      operationId: adminSetAvailability
+      summary: List, restrict or delist a module, and block or unblock its downloads
+      description: Both fields are required, so a request always states the state it leaves the module in.
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [availability, downloadsBlocked]
+              properties:
+                availability: { $ref: "#/components/schemas/Availability" }
+                downloadsBlocked: { type: boolean }
+      responses:
+        "200":
+          description: The module as it stands.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [module]
+                properties:
+                  module: { $ref: "#/components/schemas/AdminModule" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/modules/{id}/featured:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+    put:
+      tags: [admin]
+      operationId: adminSetModuleFeatured
+      summary: Feature a module, audited
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FeaturedRequest" }
+      responses:
+        "200":
+          description: The module as it stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      operationId: adminClearModuleFeatured
+      summary: Unfeature a module, audited
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      responses:
+        "200":
+          description: The module as it stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/modules/{id}/images/{slot}:
+    parameters:
+      - { $ref: "#/components/parameters/ListingId" }
+      - { $ref: "#/components/parameters/ImageSlot" }
+    put:
+      tags: [admin]
+      operationId: adminPutModuleImage
+      summary: Set a module's icon or banner, audited
+      description: "The body is the raw image, or JSON `{\"url\": ...}` for the server to fetch."
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImageUrlRequest" }
+          "*/*":
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: The module with its renditions.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      operationId: adminDeleteModuleImage
+      summary: Clear a module's uploaded image, audited
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      responses:
+        "200":
+          description: The module as it stands.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModuleResponse" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/publishers:
+    get:
+      tags: [admin]
+      operationId: adminListPublishers
+      summary: Every publisher, never with a token
+      security:
+        - adminBearer: []
+      responses:
+        "200":
+          description: The publishers.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [publishers]
+                properties:
+                  publishers: { type: array, items: { $ref: "#/components/schemas/Publisher" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [admin]
+      operationId: adminCreatePublisher
+      summary: Create a publisher with its first token
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [slug]
+              properties:
+                slug: { type: string, description: The username the publisher's listings are attributed to. }
+                trusted: { type: boolean, description: Whether public builds publish without review. Defaults to false. }
+      responses:
+        "201":
+          description: The publisher and its token. The token is in this response only.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [publisher, token]
+                properties:
+                  publisher: { $ref: "#/components/schemas/Publisher" }
+                  token: { type: string, description: The publisher token. Secret. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/publishers/{slug}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+    put:
+      tags: [admin]
+      operationId: adminUpdatePublisher
+      summary: Set whether a publisher is trusted and whether its tokens work
+      description: Both fields are required, so a request always states the state it leaves the publisher in.
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [trusted, disabled]
+              properties:
+                trusted: { type: boolean }
+                disabled: { type: boolean }
+      responses:
+        "200":
+          description: The publisher as it stands.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [publisher]
+                properties:
+                  publisher: { $ref: "#/components/schemas/Publisher" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/publishers/{slug}/tokens:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [admin]
+      operationId: adminAddPublisherToken
+      summary: Issue another token, for rotation
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      responses:
+        "201":
+          description: The new token. It is in this response only.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tokenId, token]
+                properties:
+                  tokenId: { type: integer, format: int64 }
+                  token: { type: string, description: The publisher token. Secret. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /admin/publishers/{slug}/tokens/{tokenId}:
+    parameters:
+      - { name: slug, in: path, required: true, schema: { type: string } }
+      - { name: tokenId, in: path, required: true, schema: { type: integer, format: int64 } }
+    delete:
+      tags: [admin]
+      operationId: adminRevokePublisherToken
+      summary: Revoke one publisher token
+      security:
+        - adminBearer: []
+      parameters:
+        - { $ref: "#/components/parameters/AdminActor" }
+        - { $ref: "#/components/parameters/AdminReason" }
+      responses:
+        "204": { description: Revoked. }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+components:
+  securitySchemes:
+    serviceBearer:
+      type: http
+      scheme: bearer
+      description: |
+        A service token held by the control plane or the publishing CLI. It
+        names an account in `buyerRef` on the routes that act for one. Each
+        named caller may call only its own routes: a valid token on any other
+        route answers 403 forbidden.
+    buyerBearer:
+      type: http
+      scheme: bearer
+      description: An Ed25519-signed buyer token minted by the control plane. It acts for its own account only.
+    devBearer:
+      type: http
+      scheme: bearer
+      description: A read-only token that reveals dev-tier listings. It is never accepted on writes.
+    publisherBearer:
+      type: http
+      scheme: bearer
+      description: A publisher's own token (wfxp_...). It publishes under that publisher's name only, on the routes listed with it.
+    billingBearer:
+      type: http
+      scheme: bearer
+      description: The billing module's token. It opens the purchase-intent routes and the refund and dispute revoke, and nothing else.
+    adminBearer:
+      type: http
+      scheme: bearer
+      description: The operator's token. Every change needs the actor and reason headers.
+
+  parameters:
+    ListingId:
+      name: id
+      in: path
+      required: true
+      description: A listing id, which is a slug and never needs escaping.
+      schema: { type: string }
+    BuyerRef:
+      name: buyerRef
+      in: query
+      description: The account a service token acts for, such as `account:<id>`. Required with a service token. Omitted or equal to the account with a buyer token.
+      schema: { $ref: "#/components/schemas/BuyerRef" }
+    Limit:
+      name: limit
+      in: query
+      description: Page size. The server clamps it to what a response can hold.
+      schema: { type: integer, minimum: 1 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0 }
+    ImageSlot:
+      name: slot
+      in: path
+      required: true
+      description: icon or banner. Any other value is 404 invalid_request.
+      schema: { type: string }
+    AdminActor:
+      name: X-Woofx3-Actor
+      in: header
+      required: true
+      description: Who is making the change. At most 200 bytes. Required on every admin write.
+      schema: { type: string, maxLength: 200 }
+    AdminReason:
+      name: X-Woofx3-Reason
+      in: header
+      required: true
+      description: Why, percent-encoded. At most 2000 bytes. Required on every admin write.
+      schema: { type: string, maxLength: 2000 }
+
+  responses:
+    Error:
+      description: An error. The status says the class and `error.code` the cause.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { $ref: "#/components/schemas/Error" }
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code: { $ref: "#/components/schemas/ErrorCode" }
+        message: { type: string }
+    ErrorCode:
+      type: string
+      description: Every code the service answers. Checked against the Go constants by a test.
+      enum:
+        - account_required
+        - activation_limit
+        - admin_not_configured
+        - archive_changed
+        - archive_gone
+        - author_not_found
+        - billing_not_configured
+        - buyer_mismatch
+        - downloads_blocked
+        - edition_conflict
+        - edition_mismatch
+        - entitlement_not_found
+        - entitlement_revoked
+        - forbidden
+        - id_mismatch
+        - image_not_found
+        - install_id_required
+        - intent_expired
+        - intent_mismatch
+        - intent_not_found
+        - intent_settled
+        - internal_error
+        - invalid_image
+        - invalid_manifest
+        - invalid_pack
+        - invalid_request
+        - invalid_signature
+        - listing_conflict
+        - listing_not_found
+        - listing_type_mismatch
+        - listing_unavailable
+        - module_conflict
+        - module_not_found
+        - module_not_ready
+        - no_payment_needed
+        - not_entitled
+        - not_sellable
+        - payment_required
+        - publisher_conflict
+        - publisher_not_found
+        - rate_limited
+        - reason_not_allowed
+        - submission_not_found
+        - submission_not_pending
+        - tier_downgrade
+        - unauthorized
+        - upload_not_found
+        - wrong_publisher
+
+    BuyerRef:
+      type: string
+      description: An opaque account reference, `account:<id>` for an organization.
+    ListingType:
+      type: string
+      enum: [module, theme, emote, overlay, alert]
+    EntitlementSource:
+      type: string
+      enum: [purchase, upgrade, free, grant]
+    ImageSet:
+      type: object
+      description: Rendition URLs by size name, per image slot.
+      properties:
+        icon: { type: object, additionalProperties: { type: string } }
+        banner: { type: object, additionalProperties: { type: string } }
+    Pricing:
+      type: object
+      required: [mode, currency]
+      properties:
+        mode: { type: string, enum: [free, paid] }
+        currency: { type: string }
+        amountCents: { type: integer, format: int64, description: Present on a paid listing. }
+        upgrade:
+          type: object
+          description: What an account holding an earlier edition pays. Present on a paid listing.
+          required: [mode]
+          properties:
+            mode: { type: string, enum: [full, discount, free] }
+            amountCents: { type: integer, format: int64 }
+    Credit:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        role: { type: string }
+        url: { type: string }
+        avatarUrl: { type: string }
+        note: { type: string }
+    Preview:
+      type: object
+      required: [kind, url]
+      properties:
+        kind: { type: string, enum: [image, video, live] }
+        url: { type: string }
+        caption: { type: string }
+    Emote:
+      type: object
+      required: [id, name, animated, sizes, original]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        animated: { type: boolean }
+        sizes: { type: object, additionalProperties: { type: string } }
+        original: { type: string }
+    CatalogItem:
+      type: object
+      required: [id, type, name, tags, images, tier, edition, pricing, credits, installCount, weeklyInstallCount, rating, ratingCount, updatedAt]
+      properties:
+        id: { type: string }
+        type: { $ref: "#/components/schemas/ListingType" }
+        name: { type: string }
+        description: { type: string }
+        version: { type: string }
+        author: { type: string }
+        authorSlug: { type: string }
+        category: { type: string }
+        tags: { type: array, items: { type: string } }
+        iconUrl: { type: string }
+        images: { $ref: "#/components/schemas/ImageSet" }
+        featuredRank: { type: integer }
+        tier: { type: string, enum: [public, dev] }
+        baseModuleId: { type: string, description: The module a theme needs installed first. }
+        moduleKey: { type: string, description: Present for a module or theme. }
+        edition: { type: integer }
+        supersededBy: { type: string, description: The newer edition that replaced this one. }
+        pricing:
+          anyOf:
+            - $ref: "#/components/schemas/Pricing"
+            - type: "null"
+          description: Null for a listing nobody has priced, which no one can install or buy.
+        credits: { type: array, items: { $ref: "#/components/schemas/Credit" } }
+        installCount: { type: integer }
+        weeklyInstallCount: { type: integer }
+        rating: { type: ["number", "null"], description: Always null; nothing rates a listing yet. }
+        ratingCount: { type: integer }
+        authorAvatarUrl: { type: string }
+        updatedAt: { type: string, format: date-time }
+    CatalogDetail:
+      allOf:
+        - $ref: "#/components/schemas/CatalogItem"
+        - type: object
+          required: [previews]
+          properties:
+            previews: { type: array, items: { $ref: "#/components/schemas/Preview" } }
+            emotes: { type: array, items: { $ref: "#/components/schemas/Emote" }, description: Present for an emote pack. }
+            license: { type: string, description: An emote pack's licence as its author declared it. }
+            requires: { type: array, items: { type: string }, description: The modules an overlay or alert bundle's widgets come from. }
+            module:
+              $ref: "#/components/schemas/ModuleDetail"
+    Author:
+      type: object
+      required: [slug, displayName, links, claimed]
+      properties:
+        slug: { type: string }
+        displayName: { type: string }
+        bio: { type: string }
+        avatarUrl: { type: string }
+        links: { type: array, items: { type: object, additionalProperties: true } }
+        claimed: { type: boolean, description: False when the page is built only from the author string on listings. }
+    ModuleListItem:
+      type: object
+      required: [id, moduleKey, edition, name, tags, images, tier, listingType, counts, updatedAt]
+      properties:
+        id: { type: string }
+        moduleKey: { type: string }
+        edition: { type: integer }
+        supersededBy: { type: string }
+        name: { type: string }
+        description: { type: string }
+        version: { type: string }
+        author: { type: string }
+        authorSlug: { type: string }
+        category: { type: string }
+        tags: { type: array, items: { type: string } }
+        iconUrl: { type: string }
+        images: { $ref: "#/components/schemas/ImageSet" }
+        featuredRank: { type: integer }
+        tier: { type: string, enum: [public, dev] }
+        listingType: { type: string, enum: [module, theme] }
+        baseModuleId: { type: string }
+        counts:
+          type: object
+          required: [triggers, actions, functions, widgets, workflows, commands]
+          properties:
+            triggers: { type: integer }
+            actions: { type: integer }
+            functions: { type: integer }
+            widgets: { type: integer }
+            workflows: { type: integer }
+            commands: { type: integer }
+        updatedAt: { type: string, format: date-time }
+    ModuleDetail:
+      type: object
+      description: |
+        A module or theme. The arrays that mirror the manifest (themes,
+        triggers and so on) are documented as open objects: their shape is the
+        engine's manifest schema, not this service's.
+      required: [id, moduleKey, edition, name, tags, images, tier, listingType, themes, themeable, requires, triggers, actions, functions, widgets, workflows, commands, permissions, localEndpoints, status, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        moduleKey: { type: string }
+        edition: { type: integer }
+        supersededBy: { type: string }
+        name: { type: string }
+        description: { type: string }
+        version: { type: string }
+        author: { type: string }
+        authorSlug: { type: string }
+        category: { type: string }
+        tags: { type: array, items: { type: string } }
+        iconUrl: { type: string }
+        images: { $ref: "#/components/schemas/ImageSet" }
+        featuredRank: { type: integer }
+        tier: { type: string, enum: [public, dev] }
+        listingType: { type: string, enum: [module, theme] }
+        baseModuleId: { type: string }
+        themes: { type: array, items: { type: object, additionalProperties: true } }
+        themeable: { type: array, items: { type: object, additionalProperties: true } }
+        requires: { type: object, additionalProperties: { type: string }, description: Module id to semver range. }
+        readme: { type: string }
+        triggers: { type: array, items: { type: object, additionalProperties: true } }
+        actions: { type: array, items: { type: object, additionalProperties: true } }
+        functions: { type: array, items: { type: object, additionalProperties: true } }
+        widgets: { type: array, items: { type: object, additionalProperties: true } }
+        workflows: { type: array, items: { type: object, additionalProperties: true } }
+        commands: { type: array, items: { type: object, additionalProperties: true } }
+        permissions: { type: array, items: { type: string } }
+        localEndpoints: { type: array, items: { type: object, additionalProperties: true } }
+        status: { type: string, enum: [pending, ready] }
+        publishedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Quote:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [owned, free, upgrade_free, upgrade, full, unavailable] }
+        amountCents: { type: integer, format: int64, description: Present when the quote costs money. }
+        currency: { type: string }
+        upgradeFrom: { type: string, description: The earlier edition an upgrade is from. }
+        reason:
+          type: string
+          enum: [not_ready, unpriced, superseded, delisted]
+          description: Present when kind is unavailable.
+    License:
+      type: object
+      required: [key, listingId, edition]
+      properties:
+        key: { type: string, description: The license key. Secret. }
+        listingId: { type: string }
+        edition: { type: integer }
+    Acquired:
+      type: object
+      required: [entitled, source]
+      properties:
+        entitled: { type: boolean, const: true }
+        source: { $ref: "#/components/schemas/EntitlementSource" }
+        license:
+          $ref: "#/components/schemas/License"
+          description: Absent only for a held entitlement whose stored key cannot be opened.
+    BillingIntent:
+      description: The intent as the billing module reads it, whole.
+      allOf:
+        - $ref: "#/components/schemas/Intent"
+        - type: object
+          required: [listingId, buyerRef, status]
+          properties:
+            listingId: { type: string }
+            buyerRef: { type: string }
+            status: { type: string, enum: [open, redeemed, expired] }
+    Intent:
+      type: object
+      required: [id, kind, amountCents, currency, expiresAt]
+      properties:
+        id: { type: string }
+        listingId: { type: string, description: Present when billing reads the intent. }
+        buyerRef: { type: string, description: Present when billing reads the intent. }
+        kind: { type: string, enum: [full, upgrade] }
+        upgradeFrom: { type: string }
+        amountCents: { type: integer, format: int64 }
+        currency: { type: string }
+        status: { type: string, enum: [open, redeemed, expired], description: Present when billing reads the intent. }
+        expiresAt: { type: string, format: date-time }
+    PaymentRequired:
+      type: object
+      required: [error, intent]
+      properties:
+        error: { $ref: "#/components/schemas/Error" }
+        intent: { $ref: "#/components/schemas/Intent" }
+    Entitlement:
+      type: object
+      description: An entitlement as billing and operators see it. It never carries the license key.
+      required: [entitlementId, listingId, buyerRef, source]
+      properties:
+        entitlementId: { type: string }
+        listingId: { type: string }
+        buyerRef: { $ref: "#/components/schemas/BuyerRef" }
+        source: { $ref: "#/components/schemas/EntitlementSource" }
+        revokedAt: { type: string, format: date-time }
+        revokedReason: { type: string, enum: [refund, dispute, operator] }
+    AdminEntitlement:
+      type: object
+      required: [id, listingId, buyerRef, source, grantedAt, revokedAt, revokedReason, paymentAttached, activationCount]
+      properties:
+        id: { type: string }
+        listingId: { type: string }
+        buyerRef: { $ref: "#/components/schemas/BuyerRef" }
+        source: { $ref: "#/components/schemas/EntitlementSource" }
+        grantedAt: { type: string, format: date-time }
+        revokedAt: { type: ["string", "null"], format: date-time }
+        revokedReason: { type: ["string", "null"], enum: [refund, dispute, operator, null] }
+        paymentAttached: { type: boolean }
+        activationCount: { type: integer }
+
+    AuthorLink:
+      type: object
+      additionalProperties: false
+      required: [label, url]
+      properties:
+        label: { type: string }
+        url: { type: string }
+    ImageUrlRequest:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url: { type: string, description: A public https image for the server to fetch. }
+    FeaturedRequest:
+      type: object
+      additionalProperties: false
+      required: [rank]
+      properties:
+        rank: { type: integer, minimum: 0, description: Lower ranks show first. }
+    ModuleResponse:
+      type: object
+      required: [module]
+      properties:
+        module: { $ref: "#/components/schemas/ModuleDetail" }
+    ModuleUpload:
+      type: object
+      required: [module, uploadUrl, expiresAt]
+      properties:
+        module: { $ref: "#/components/schemas/ModuleDetail" }
+        uploadUrl: { type: string, description: A signed PUT for the archive. }
+        expiresAt: { type: string, format: date-time }
+        submissionId: { type: string, description: Present when the build will wait for review. }
+    CreateModuleRequest:
+      type: object
+      additionalProperties: false
+      required: [id, name, authorSlug]
+      properties:
+        id: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,62}$", description: "The listing id. For edition n after the first it is `{moduleKey}-v{n}`." }
+        moduleKey: { type: string, description: The manifest id every edition shares. Defaults to id. }
+        edition: { type: integer, description: Defaults to 1. }
+        name: { type: string, minLength: 1 }
+        authorSlug: { type: string, description: The username the module is published under. A publisher token may only name itself. }
+        description: { type: [string, "null"] }
+        author: { type: [string, "null"] }
+        version: { type: [string, "null"] }
+        category: { type: [string, "null"] }
+    UpdateModuleRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+        authorSlug: { type: [string, "null"], description: Reattributes the module when sent. }
+        description: { type: [string, "null"] }
+        author: { type: [string, "null"] }
+        version: { type: [string, "null"] }
+        category: { type: [string, "null"] }
+    ListingStatus:
+      type: string
+      enum: [pending, ready]
+    Listing:
+      type: object
+      description: A light listing as stored, not the catalog's composed view.
+      required: [id, type, name, tags, images, tier, status, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        type: { $ref: "#/components/schemas/ListingType" }
+        name: { type: string }
+        description: { type: string }
+        version: { type: string }
+        author: { type: string }
+        authorSlug: { type: string }
+        category: { type: string }
+        tags: { type: array, items: { type: string } }
+        payload:
+          type: object
+          additionalProperties: true
+          description: An emote pack's renditions or an overlay or alert's bundle. Only a service token sees it.
+        iconUrl: { type: string }
+        images: { $ref: "#/components/schemas/ImageSet" }
+        featuredRank: { type: integer }
+        tier: { type: string, enum: [public, dev] }
+        sha256: { type: string }
+        sizeBytes: { type: integer, format: int64 }
+        status: { $ref: "#/components/schemas/ListingStatus" }
+        publishedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ListingResponse:
+      type: object
+      required: [listing]
+      properties:
+        listing: { $ref: "#/components/schemas/Listing" }
+    CreateListingRequest:
+      type: object
+      additionalProperties: false
+      required: [id, type, name, authorSlug]
+      properties:
+        id: { type: string, pattern: "^[a-z0-9][a-z0-9_-]{0,62}$" }
+        type: { type: string, enum: [emote, overlay, alert], description: "A module or theme is published through /modules." }
+        name: { type: string, minLength: 1 }
+        authorSlug: { type: string, description: The username the listing is published under. }
+        description: { type: [string, "null"] }
+        author: { type: [string, "null"] }
+        version: { type: [string, "null"] }
+        category: { type: [string, "null"] }
+        tags: { type: [array, "null"], items: { type: string } }
+        tier: { type: string, enum: [public, dev, ""], description: Defaults to public. }
+        bundle: { type: [object, "null"], additionalProperties: true, description: "Required for an overlay or alert: the scenes or alert composition document it installs. Opaque to this service." }
+        requires: { type: [array, "null"], items: { type: string }, description: The modules the bundle's widgets come from. }
+    UpdateListingRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+        authorSlug: { type: [string, "null"], description: Reattributes the listing when sent. }
+        description: { type: [string, "null"] }
+        author: { type: [string, "null"] }
+        version: { type: [string, "null"] }
+        category: { type: [string, "null"] }
+        tags: { type: [array, "null"], items: { type: string } }
+        bundle: { type: [object, "null"], additionalProperties: true, description: Replaces an overlay or alert's bundle when non-empty. }
+        requires: { type: [array, "null"], items: { type: string } }
+    CreditInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+        role: { type: [string, "null"] }
+        url: { type: [string, "null"], description: http or https. }
+        avatarUrl: { type: [string, "null"], description: http or https. }
+        note: { type: [string, "null"] }
+        sortOrder: { type: integer, description: Defaults to the item's position. }
+    CreditsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        credits: { type: [array, "null"], items: { $ref: "#/components/schemas/CreditInput" } }
+    CreditsResponse:
+      type: object
+      required: [credits]
+      properties:
+        credits: { type: array, items: { $ref: "#/components/schemas/Credit" } }
+    PreviewInput:
+      type: object
+      additionalProperties: false
+      required: [kind, url]
+      properties:
+        kind: { type: string, enum: [image, video, live] }
+        url: { type: string, minLength: 1 }
+        caption: { type: [string, "null"] }
+        sortOrder: { type: integer, description: Defaults to the item's position. }
+    PreviewsRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        previews: { type: [array, "null"], items: { $ref: "#/components/schemas/PreviewInput" } }
+    PricingRequest:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [free, paid], description: "Required: a listing is never free by leaving something out." }
+        amountCents: { type: integer, format: int64, description: Required and positive for a paid listing; zero or absent for a free one. }
+        currency: { type: string, description: Only usd is billed. Defaults to usd. }
+        upgrade:
+          type: [object, "null"]
+          additionalProperties: false
+          required: [mode]
+          description: What an account holding an earlier edition pays. Absent means the full price.
+          properties:
+            mode: { type: string, enum: [full, discount, free] }
+            amountCents: { type: integer, format: int64, description: For a discount only; below amountCents. }
+    PricingResponse:
+      type: object
+      required: [pricing]
+      properties:
+        pricing: { $ref: "#/components/schemas/Pricing" }
+    Availability:
+      type: string
+      enum: [listed, dev_only, disabled]
+    AdminModule:
+      type: object
+      description: A module row as operators see it, whatever the catalog hides.
+      required: [id, moduleKey, edition, name, version, author, authorSlug, listingType, tier, availability, downloadsBlocked, status, supersededBy, featuredRank, images, publishedAt, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        moduleKey: { type: string }
+        edition: { type: integer }
+        name: { type: string }
+        version: { type: [string, "null"] }
+        author: { type: [string, "null"] }
+        authorSlug: { type: [string, "null"] }
+        listingType: { type: string, enum: [module, theme] }
+        tier: { type: string, enum: [public, dev] }
+        availability: { $ref: "#/components/schemas/Availability" }
+        downloadsBlocked: { type: boolean }
+        status: { type: string, enum: [pending, ready] }
+        supersededBy: { type: [string, "null"] }
+        featuredRank: { type: [integer, "null"] }
+        images: { $ref: "#/components/schemas/ImageSet" }
+        publishedAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AdminAction:
+      type: object
+      required: [id, at, actor, reason, action, targetType, targetId, detail]
+      properties:
+        id: { type: integer, format: int64 }
+        at: { type: string, format: date-time }
+        actor: { type: string }
+        reason: { type: string }
+        action: { type: string, description: "What was done, such as `module.availability.set`." }
+        targetType: { type: string }
+        targetId: { type: string }
+        detail: { description: "What the handler recorded about the change: any JSON value." }
+    SubmissionStatus:
+      type: string
+      enum: [awaiting_upload, pending, approved, rejected, superseded]
+    Submission:
+      type: object
+      required: [id, moduleId, publisherSlug, status, name, version, tier, sha256, sizeBytes, createdAt, submittedAt, reviewedAt, reviewedBy, reviewReason]
+      properties:
+        id: { type: string }
+        moduleId: { type: string }
+        publisherSlug: { type: string }
+        status: { $ref: "#/components/schemas/SubmissionStatus" }
+        name: { type: [string, "null"] }
+        version: { type: [string, "null"] }
+        tier: { type: [string, "null"], enum: [public, dev, null] }
+        sha256: { type: [string, "null"] }
+        sizeBytes: { type: [integer, "null"], format: int64 }
+        createdAt: { type: string, format: date-time }
+        submittedAt: { type: [string, "null"], format: date-time }
+        reviewedAt: { type: [string, "null"], format: date-time }
+        reviewedBy: { type: [string, "null"] }
+        reviewReason: { type: [string, "null"] }
+    ArchiveManifest:
+      type: object
+      required: [path, text]
+      properties:
+        path: { type: string }
+        text: { type: string }
+    SubmissionDetail:
+      type: object
+      required: [submission, manifest, readme, live, pricing]
+      properties:
+        submission: { $ref: "#/components/schemas/Submission" }
+        module:
+          $ref: "#/components/schemas/AdminModule"
+          description: Absent when the module no longer exists.
+        manifest:
+          description: The submitted manifest of a pending submission, null once decided.
+          anyOf:
+            - $ref: "#/components/schemas/ArchiveManifest"
+            - type: "null"
+        readme: { type: [string, "null"] }
+        live:
+          description: The build the module serves now, or null for a first publish.
+          anyOf:
+            - type: object
+              required: [version, sha256, manifest]
+              properties:
+                version: { type: [string, "null"] }
+                sha256: { type: [string, "null"] }
+                manifest:
+                  anyOf:
+                    - $ref: "#/components/schemas/ArchiveManifest"
+                    - type: "null"
+            - type: "null"
+        pricing:
+          anyOf:
+            - $ref: "#/components/schemas/Pricing"
+            - type: "null"
+    Gross:
+      type: object
+      description: Cents by currency.
+      additionalProperties: { type: integer, format: int64 }
+    DailyStats:
+      type: object
+      required: [day, downloads, installs, purchases, gross]
+      properties:
+        day: { type: string, description: "A UTC date, YYYY-MM-DD." }
+        downloads: { type: integer }
+        installs: { type: integer }
+        purchases: { type: integer }
+        gross: { $ref: "#/components/schemas/Gross" }
+    Publisher:
+      type: object
+      required: [slug, trusted, active, createdAt, disabledAt, tokens]
+      properties:
+        slug: { type: string }
+        trusted: { type: boolean }
+        active: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        disabledAt: { type: [string, "null"], format: date-time }
+        tokens:
+          type: array
+          items:
+            type: object
+            required: [id, createdAt, revokedAt]
+            properties:
+              id: { type: integer, format: int64 }
+              createdAt: { type: string, format: date-time }
+              revokedAt: { type: [string, "null"], format: date-time }
+    AdminGrant:
+      type: object
+      required: [outcome, entitlement]
+      properties:
+        outcome: { type: string, enum: [granted, reinstated, already_held] }
+        entitlement: { $ref: "#/components/schemas/AdminEntitlement" }

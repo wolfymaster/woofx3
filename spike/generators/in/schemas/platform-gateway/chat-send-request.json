@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/chat-send-request.json",
+  "title": "ChatSendRequest",
+  "type": "object",
+  "required": ["action", "target", "payload", "idempotencyKey", "requestedBy"],
+  "properties": {
+    "action": { "const": "chat.send" },
+    "target": { "$ref": "target.json" },
+    "payload": { "$ref": "chat-send-payload.json" },
+    "options": { "type": ["object", "null"], "propertyNames": { "$ref": "../common/platform-id.json" }, "additionalProperties": true },
+    "idempotencyKey": { "$ref": "../common/ref-string.json" },
+    "requestedBy": { "$ref": "requested-by.json" },
+    "workflowChain": { "type": ["string", "null"], "maxLength": 1607 }
+  },
+  "additionalProperties": false
+}

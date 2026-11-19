@@ -1,0 +1,160 @@
+{
+  "cases": [
+    {
+      "name": "delivered with a message id",
+      "invalidField": null,
+      "reply": { "ok": true, "results": { "twitch": { "status": "delivered", "messageId": "msg-1" } } }
+    },
+    {
+      "name": "delivered without a message id",
+      "invalidField": null,
+      "reply": { "ok": true, "results": { "twitch": { "status": "delivered" } } }
+    },
+    {
+      "name": "dropped by the platform",
+      "invalidField": null,
+      "reply": { "ok": false, "results": { "twitch": { "status": "dropped", "reason": "msg_duplicate" } } }
+    },
+    {
+      "name": "unsupported",
+      "invalidField": null,
+      "reply": { "ok": false, "results": { "twitch": { "status": "unsupported" } } }
+    },
+    {
+      "name": "unavailable because not linked",
+      "invalidField": null,
+      "reply": { "ok": false, "results": { "twitch": { "status": "unavailable", "reason": "not_linked" } } }
+    },
+    {
+      "name": "unconfirmed",
+      "invalidField": null,
+      "reply": {
+        "ok": false,
+        "results": { "twitch": { "status": "unconfirmed", "message": "the platform did not answer in time" } }
+      }
+    },
+    {
+      "name": "failed",
+      "invalidField": null,
+      "reply": {
+        "ok": false,
+        "results": { "twitch": { "status": "failed", "code": "rate_limited", "message": "slow down" } }
+      }
+    },
+    {
+      "name": "failed after posting",
+      "invalidField": null,
+      "reply": {
+        "ok": false,
+        "results": {
+          "twitch": { "status": "failed", "code": "upstream", "message": "posted but not pinned", "messageId": "msg-1" }
+        }
+      }
+    },
+    { "name": "no platform resolved", "invalidField": null, "reply": { "ok": false, "results": {} } },
+    {
+      "name": "a refused request",
+      "invalidField": null,
+      "reply": { "ok": false, "results": {}, "error": { "code": "invalid", "message": "twitch cannot chat.pin" } }
+    },
+    {
+      "name": "unknown keys are ignored",
+      "invalidField": null,
+      "reply": {
+        "ok": true,
+        "results": { "twitch": { "status": "delivered", "latencyMs": 12 } },
+        "servedBy": "connectors"
+      }
+    },
+    {
+      "name": "fields of another status are ignored",
+      "invalidField": null,
+      "reply": { "ok": true, "results": { "twitch": { "status": "delivered", "reason": "stray" } } }
+    },
+    {
+      "name": "a null error counts as absent",
+      "invalidField": null,
+      "reply": { "ok": false, "results": {}, "error": null }
+    },
+    {
+      "name": "delivered with a null message id",
+      "invalidField": null,
+      "reply": { "ok": true, "results": { "twitch": { "status": "delivered", "messageId": null } } }
+    },
+    {
+      "name": "failed with a null message id",
+      "invalidField": null,
+      "reply": {
+        "ok": false,
+        "results": { "twitch": { "status": "failed", "code": "upstream", "message": "boom", "messageId": null } }
+      }
+    },
+    { "name": "missing results", "invalidField": "results", "reply": { "ok": true } },
+    { "name": "missing ok", "invalidField": "ok", "reply": { "results": {} } },
+    { "name": "a null ok", "invalidField": "ok", "reply": { "ok": null, "results": {} } },
+    {
+      "name": "an unknown platform",
+      "invalidField": "results.kick",
+      "reply": { "ok": true, "results": { "kick": { "status": "delivered" } } }
+    },
+    {
+      "name": "an unknown status",
+      "invalidField": "results.twitch.status",
+      "reply": { "ok": false, "results": { "twitch": { "status": "exploded" } } }
+    },
+    {
+      "name": "dropped without a reason",
+      "invalidField": "results.twitch.reason",
+      "reply": { "ok": false, "results": { "twitch": { "status": "dropped" } } }
+    },
+    {
+      "name": "unavailable with an unknown reason",
+      "invalidField": "results.twitch.reason",
+      "reply": { "ok": false, "results": { "twitch": { "status": "unavailable", "reason": "asleep" } } }
+    },
+    {
+      "name": "unconfirmed without a message",
+      "invalidField": "results.twitch.message",
+      "reply": { "ok": false, "results": { "twitch": { "status": "unconfirmed" } } }
+    },
+    {
+      "name": "failed without a code",
+      "invalidField": "results.twitch.code",
+      "reply": { "ok": false, "results": { "twitch": { "status": "failed", "message": "boom" } } }
+    },
+    {
+      "name": "failed with an unknown code",
+      "invalidField": "results.twitch.code",
+      "reply": { "ok": false, "results": { "twitch": { "status": "failed", "code": "teapot", "message": "boom" } } }
+    },
+    {
+      "name": "failed without a message",
+      "invalidField": "results.twitch.message",
+      "reply": { "ok": false, "results": { "twitch": { "status": "failed", "code": "upstream" } } }
+    },
+    {
+      "name": "a refusal that claims ok",
+      "invalidField": "ok",
+      "reply": { "ok": true, "results": {}, "error": { "code": "invalid", "message": "no" } }
+    },
+    {
+      "name": "a refusal with results",
+      "invalidField": "results",
+      "reply": {
+        "ok": false,
+        "results": { "twitch": { "status": "delivered" } },
+        "error": { "code": "invalid", "message": "no" }
+      }
+    },
+    {
+      "name": "a refusal with an unknown code",
+      "invalidField": "error.code",
+      "reply": { "ok": false, "results": {}, "error": { "code": "teapot", "message": "no" } }
+    },
+    {
+      "name": "a refusal without a message",
+      "invalidField": "error.message",
+      "reply": { "ok": false, "results": {}, "error": { "code": "invalid" } }
+    }
+  ]
+}

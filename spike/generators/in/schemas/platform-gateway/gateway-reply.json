@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/gateway-reply.json",
+  "title": "GatewayReply",
+  "description": "The reply to a request. error is set, with ok false and no results, when the request was refused as a whole.",
+  "type": "object",
+  "required": [
+    "ok",
+    "results"
+  ],
+  "properties": {
+    "ok": {
+      "type": "boolean"
+    },
+    "results": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "../common/platform-id.json"
+      },
+      "additionalProperties": {
+        "$ref": "platform-outcome.json"
+      }
+    },
+    "error": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "gateway-error.json"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "description": "A refusal as a whole: ok false and no results.",
+      "if": {
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "ok": {
+            "const": false
+          },
+          "results": {
+            "maxProperties": 0
+          }
+        }
+      }
+    }
+  ]
+}

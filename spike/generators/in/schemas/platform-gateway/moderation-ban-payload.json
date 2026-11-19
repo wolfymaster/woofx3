@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/platform-gateway/moderation-ban-payload.json",
+  "title": "ModerationBanPayload",
+  "type": "object",
+  "required": ["viewer"],
+  "properties": { "viewer": { "$ref": "../common/ref-string.json" }, "reason": { "type": ["string","null"], "maxLength": 500 } },
+  "additionalProperties": false
+}

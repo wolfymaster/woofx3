@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.woofx3.tv/contracts/common/cloudevent.json",
+  "title": "CloudEvent",
+  "description": "CloudEvents 1.0 structured-mode envelope. Validated once by the bus library; each message schema describes only data.",
+  "type": "object",
+  "required": ["specversion", "id", "source", "type"],
+  "properties": {
+    "specversion": { "const": "1.0" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "source": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "type": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "time": { "type": "string", "format": "date-time", "maxLength": 40 },
+    "datacontenttype": { "type": "string", "maxLength": 100 },
+    "subject": { "type": "string", "maxLength": 200 },
+    "data": {}
+  },
+  "additionalProperties": true
+}
