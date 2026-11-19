@@ -20,7 +20,7 @@ import {
  * client never sends one there. Without a token every request is anonymous,
  * which is enough for a free, public listing.
  *
- * A module download may also carry a license key (`X-License-Key`) with the
+ * A module or bundle download may also carry a license key (`X-License-Key`) with the
  * engine's install id (`X-Install-Id`), which the marketplace counts the
  * key's installs by. They are headers rather than `Authorization: License`
  * because a key from a purchase also needs the buyer token, which already
@@ -98,8 +98,9 @@ export interface MarketplaceLicense {
 }
 
 /**
- * The outcome of `POST /catalog/{id}/acquire`. `license` is null and `intent`
- * is null from a marketplace that issues neither.
+ * The outcome of `POST /catalog/{id}/acquire`. `license` is null when the
+ * marketplace entitled the buyer but could not read the key it stored, and
+ * `intent` is null when a 402 names no purchase.
  */
 export type MarketplaceAcquireResult =
   | { status: "entitled"; source: string; license: MarketplaceLicense | null }
@@ -348,9 +349,13 @@ export class MarketplaceClient {
 
   // ---------- install ----------
 
-  /** One listing, read anonymously, with the fields an install needs. */
-  async getListing(listingId: string): Promise<MarketplaceListing> {
-    const payload = await this.request("GET", `/catalog/${encodeURIComponent(listingId)}`);
+  /**
+   * One listing, with the fields an install needs. Read with the buyer token
+   * when there is one, because only a token with the dev claim sees a
+   * dev-tier listing; to anyone else it does not exist.
+   */
+  async getListing(listingId: string, buyerToken?: string): Promise<MarketplaceListing> {
+    const payload = await this.request("GET", `/catalog/${encodeURIComponent(listingId)}`, { bearer: buyerToken });
     const raw = asObject(asObject(payload).listing);
     const id = asString(raw.id);
     if (id === "" || !LISTING_TYPES.has(asString(raw.type))) {
@@ -429,18 +434,10 @@ export class MarketplaceClient {
     listingId: string,
     credentials: MarketplaceDownloadCredentials = {}
   ): Promise<MarketplaceDownload> {
-    const headers: Record<string, string> = {};
-    if (credentials.license) {
-      if (credentials.license.key === "" || credentials.license.installId === "") {
-        throw new Error(`A licensed download of ${listingId} needs both a license key and an install id`);
-      }
-      headers["X-License-Key"] = credentials.license.key;
-      headers["X-Install-Id"] = credentials.license.installId;
-    }
     const payload = asObject(
       await this.request("GET", `/modules/${encodeURIComponent(listingId)}/download`, {
         bearer: credentials.buyerToken,
-        headers,
+        headers: licenseHeaders(listingId, credentials),
       })
     );
     const url = asString(payload.url);
@@ -462,10 +459,18 @@ export class MarketplaceClient {
     return download;
   }
 
-  /** An overlay or alert listing's bundle: the scene or alert-composition document. */
-  async getBundle(listingId: string, buyerToken?: string): Promise<Record<string, unknown>> {
+  /**
+   * An overlay or alert listing's bundle: the scene or alert-composition
+   * document. It proves access the way a module download does, and the
+   * marketplace refuses it the same ways.
+   */
+  async getBundle(
+    listingId: string,
+    credentials: MarketplaceDownloadCredentials = {}
+  ): Promise<Record<string, unknown>> {
     const payload = await this.request("GET", `/catalog/${encodeURIComponent(listingId)}/bundle`, {
-      bearer: buyerToken,
+      bearer: credentials.buyerToken,
+      headers: licenseHeaders(listingId, credentials),
     });
     const bundle = asObject(payload).bundle;
     if (!bundle || typeof bundle !== "object" || Array.isArray(bundle)) {
@@ -547,6 +552,18 @@ export class MarketplaceClient {
   }
 }
 
+/** The license headers of a download made with `credentials`, refusing a half-given license. */
+function licenseHeaders(listingId: string, credentials: MarketplaceDownloadCredentials): Record<string, string> {
+  if (!credentials.license) {
+    return {};
+  }
+  const { key, installId } = credentials.license;
+  if (key === "" || installId === "") {
+    throw new Error(`A licensed download of ${listingId} needs both a license key and an install id`);
+  }
+  return { "X-License-Key": key, "X-Install-Id": installId };
+}
+
 /** A non-2xx answer as an error, reading the marketplace's JSON error envelope when there is one. */
 function marketplaceError(method: string, path: string, status: number, body: string): MarketplaceError {
   let parsed: Record<string, unknown> = {};
@@ -569,8 +586,7 @@ function marketplaceError(method: string, path: string, status: number, body: st
 }
 
 /**
- * `acquire`'s `license`, or null when the answer has none (a marketplace that
- * issues no keys). One that is there but malformed, or for another listing,
+ * `acquire`'s `license`, or null when the answer has none. One that is there but malformed, or for another listing,
  * is refused rather than dropped: installing with it would fail at download,
  * further from the cause.
  */

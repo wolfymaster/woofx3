@@ -32,6 +32,10 @@ interface FakeListing {
   download?: (base: string) => Record<string, unknown>;
   archive?: Uint8Array;
   bundle?: Record<string, unknown>;
+  /** Hidden from GET /catalog/{id} unless read with the dev token, like a dev-tier listing. */
+  devTier?: boolean;
+  /** Refuses GET /catalog/{id}/bundle with this answer instead of serving it. */
+  bundleRefusal?: () => Response;
 }
 
 interface Seen {
@@ -95,6 +99,9 @@ const server = Bun.serve({
       return errorEnvelope(404, "listing_not_found", "listing not found");
     }
     if (parts[0] === "catalog" && parts.length === 2 && req.method === "GET") {
+      if (entry.devTier && req.headers.get("authorization") !== "Bearer dev.token") {
+        return errorEnvelope(404, "listing_not_found", "listing not found");
+      }
       return Response.json({ listing: entry.listing });
     }
     if (parts[0] === "catalog" && parts[2] === "acquire" && req.method === "POST") {
@@ -127,6 +134,9 @@ const server = Bun.serve({
       );
     }
     if (parts[0] === "catalog" && parts[2] === "bundle") {
+      if (entry.bundleRefusal) {
+        return entry.bundleRefusal();
+      }
       return Response.json({ bundle: entry.bundle, requires: [] });
     }
     if (parts[0] === "modules" && parts[2] === "download") {
@@ -186,6 +196,7 @@ function addModuleListing(
     acquireAnswer: options.acquireAnswer,
     downloadRefusal: options.downloadRefusal,
     download: options.download,
+    devTier: options.devTier,
   });
   return archive;
 }
@@ -540,8 +551,16 @@ describe("installMarketplaceListing", () => {
       },
     ]);
     expect(requestsTo("/modules/obs_scenes/download")[0].authorization).toBe("Bearer buyer.jws.token");
-    expect(seen.find((s) => s.path === "/catalog/obs_scenes")?.authorization).toBeNull();
+    expect(seen.find((s) => s.path === "/catalog/obs_scenes")?.authorization).toBe("Bearer buyer.jws.token");
     expect(requestsTo("/files/")[0].authorization).toBeNull();
+  });
+
+  test("reads a dev-tier listing with the buyer token, which alone can see it", async () => {
+    addModuleListing("dev_mod", { ...OBS_MANIFEST, id: "dev_mod" }, { devTier: true });
+
+    expect((await install(host(), "dev_mod", { ...APPROVED, buyerToken: "dev.token" })).status).toBe("installed");
+    expect(await inspect(host(), "dev_mod", "dev.token")).toMatchObject({ listingId: "dev_mod" });
+    await expect(install(host(), "dev_mod", APPROVED)).rejects.toThrow("listing_not_found");
   });
 
   test("answers payment_required with the purchase intent on 402 and downloads nothing", async () => {
@@ -900,26 +919,32 @@ describe("installMarketplaceListing with license keys", () => {
     });
   });
 
-  test("downloads without a key from a marketplace that issues none", async () => {
+  test("refuses a claim that entitles without a license key as retryable, downloading nothing", async () => {
     addModuleListing("obs_scenes", OBS_MANIFEST, {
-      acquireAnswer: () => Response.json({ entitled: true, source: "free" }, { status: 201 }),
+      acquireAnswer: () => Response.json({ entitled: true, source: "free" }, { status: 200 }),
     });
+    const h = host();
 
-    expect((await install(host(), "obs_scenes", APPROVED)).status).toBe("installed");
-    expect(requestsTo("/modules/obs_scenes/download")[0]).toMatchObject({ licenseKey: null, installId: null });
+    const err = await install(h, "obs_scenes", APPROVED).catch((e: unknown) => e);
+
+    expect(parseMarketplaceCatalogError((err as Error).message)).toEqual({
+      kind: "http",
+      status: 503,
+      code: "license_unavailable",
+      message: "the marketplace could not hand out this listing's license key; try again shortly",
+    });
+    expect(requestsTo("/modules/")).toEqual([]);
+    expect(h.barkloaderUploads).toEqual([]);
   });
 
-  test("downloads anonymously without a key from a marketplace that refuses anonymous claims", async () => {
+  test("refuses an anonymous claim the marketplace answers 401 unauthorized", async () => {
     addModuleListing("obs_scenes", OBS_MANIFEST, {
       acquireAnswer: () => errorEnvelope(401, "unauthorized", "a valid bearer token is required for this request"),
     });
-
-    expect((await install(host(), "obs_scenes", APPROVED)).status).toBe("installed");
-    expect(requestsTo("/modules/obs_scenes/download")[0]).toMatchObject({
-      authorization: null,
-      licenseKey: null,
-      installId: null,
-    });
+    await expect(install(host(), "obs_scenes", APPROVED)).rejects.toThrow(
+      "marketplace_http status=401 code=unauthorized"
+    );
+    expect(requestsTo("/modules/")).toEqual([]);
   });
 
   test("still refuses a buyer's claim the marketplace answers 401 unauthorized", async () => {
@@ -992,17 +1017,6 @@ describe("installMarketplaceListing with license keys", () => {
     const upload = h.barkloaderUploads[0];
     expect(upload.get("marketplace_listing_id")).toBe("obs_scenes");
     expect(upload.get("marketplace_license_key")).toBe(licenseKeyFor("obs_scenes"));
-  });
-
-  test("hands barkloader no key when it downloaded without one", async () => {
-    addModuleListing("obs_scenes", OBS_MANIFEST, {
-      acquireAnswer: () => Response.json({ entitled: true, source: "free" }, { status: 201 }),
-    });
-    const h = host();
-
-    await install(h, "obs_scenes", APPROVED);
-
-    expect(h.barkloaderUploads[0].get("marketplace_license_key")).toBeNull();
   });
 
   test("refuses a licenseKey that is not a string", async () => {
@@ -1109,6 +1123,18 @@ describe("installMarketplaceBundle", () => {
     const result = await installBundle(h, "cozy");
 
     expect(result).toEqual({ status: "installed", listingId: "cozy", engineId: "scene-1", kind: "scene" });
+    expect(requestsTo("/catalog/cozy/acquire")).toEqual([
+      { method: "POST", path: "/catalog/cozy/acquire", authorization: null, licenseKey: null, installId: INSTALL_ID },
+    ]);
+    expect(requestsTo("/catalog/cozy/bundle")).toEqual([
+      {
+        method: "GET",
+        path: "/catalog/cozy/bundle",
+        authorization: null,
+        licenseKey: licenseKeyFor("cozy"),
+        installId: INSTALL_ID,
+      },
+    ]);
     expect(h.scenes[0]).toMatchObject({
       name: "Cozy",
       description: "warm",
@@ -1133,8 +1159,73 @@ describe("installMarketplaceBundle", () => {
       behaviorsJson: JSON.stringify({ b1: { kind: "fade" } }),
       inputsJson: JSON.stringify([{ id: "who" }]),
     });
-    expect(requestsTo("/catalog/boom/acquire")[0].authorization).toBe("Bearer buyer-token");
-    expect(requestsTo("/catalog/boom/bundle")[0].authorization).toBe("Bearer buyer-token");
+    expect(requestsTo("/catalog/boom/acquire")[0]).toMatchObject({
+      authorization: "Bearer buyer-token",
+      installId: null,
+    });
+    expect(requestsTo("/catalog/boom/bundle")[0]).toMatchObject({
+      authorization: "Bearer buyer-token",
+      licenseKey: licenseKeyFor("boom"),
+      installId: INSTALL_ID,
+    });
+  });
+
+  test("answers a paid listing claimed without an account with account_required, fetching no bundle", async () => {
+    listings.set("pricey", {
+      listing: { id: "pricey", type: "overlay", name: "Pricey", version: "1" },
+      acquireAnswer: () => errorEnvelope(401, "account_required", "this listing is paid; sign in to buy it"),
+      bundle: { layout: {}, widgets: [] },
+    });
+    const h = host();
+
+    await expect(installBundle(h, "pricey")).rejects.toThrow(
+      "marketplace_http status=401 code=account_required: this listing is paid; sign in to buy it"
+    );
+    expect(requestsTo("/catalog/pricey/bundle")).toEqual([]);
+    expect(h.scenes).toEqual([]);
+  });
+
+  test("reports a refused bundle download in a form the caller can read the code back from", async () => {
+    listings.set("cozy", {
+      listing: { id: "cozy", type: "overlay", name: "Cozy", version: "1" },
+      bundleRefusal: () => errorEnvelope(409, "activation_limit", "this license key is on too many installs"),
+    });
+    const h = host();
+
+    const err = await installBundle(h, "cozy").catch((e: unknown) => e);
+
+    expect(parseMarketplaceCatalogError((err as Error).message)).toEqual({
+      kind: "http",
+      status: 409,
+      code: "activation_limit",
+      message: "this license key is on too many installs",
+    });
+    expect(h.scenes).toEqual([]);
+  });
+
+  test("never logs the license key", async () => {
+    listings.set("cozy", {
+      listing: { id: "cozy", type: "overlay", name: "Cozy", version: "1" },
+      bundle: { layout: {}, widgets: [] },
+    });
+    const h = host();
+
+    await installBundle(h, "cozy");
+
+    expect(JSON.stringify(h.logs)).not.toContain(licenseKeyFor("cozy"));
+  });
+
+  test("refuses a claim that entitles without a license key as retryable, creating nothing", async () => {
+    listings.set("cozy", {
+      listing: { id: "cozy", type: "overlay", name: "Cozy", version: "1" },
+      acquireAnswer: () => Response.json({ entitled: true, source: "free" }, { status: 200 }),
+      bundle: { layout: {}, widgets: [] },
+    });
+    const h = host();
+
+    await expect(installBundle(h, "cozy")).rejects.toThrow("marketplace_http status=503 code=license_unavailable");
+    expect(requestsTo("/catalog/cozy/bundle")).toEqual([]);
+    expect(h.scenes).toEqual([]);
   });
 
   test("answers payment_required on 402 and creates nothing", async () => {
@@ -1148,6 +1239,16 @@ describe("installMarketplaceBundle", () => {
     expect(await installBundle(h, "pricey", "t")).toEqual({ status: "payment_required", name: "Pricey", version: "1" });
     expect(h.scenes).toEqual([]);
     expect(requestsTo("/catalog/pricey/bundle")).toEqual([]);
+  });
+
+  test("reads a dev-tier listing with the buyer token", async () => {
+    listings.set("dev_overlay", {
+      listing: { id: "dev_overlay", type: "overlay", name: "Dev", version: "1" },
+      devTier: true,
+      bundle: { layout: {}, widgets: [] },
+    });
+
+    expect((await installBundle(host(), "dev_overlay", "dev.token")).status).toBe("installed");
   });
 
   test("refuses a module listing", async () => {
