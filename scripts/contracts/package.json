@@ -1,0 +1,13 @@
+{
+  "name": "@woofx3/contract-tools",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@redocly/openapi-core": "1.34.24",
+    "@types/bun": "^1.4.1",
+    "ajv": "8.20.0",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
+    "yaml": "2.9.1"
+  }
+}
