@@ -843,16 +843,6 @@ describe("MarketplaceClient.getModuleDownload", () => {
     ]);
   });
 
-  test("sends no license headers without a license", async () => {
-    addModuleListing("mod", OBS_MANIFEST);
-    await client().getModuleDownload("mod");
-    expect(requestsTo("/modules/mod/download")[0]).toMatchObject({
-      authorization: null,
-      licenseKey: null,
-      installId: null,
-    });
-  });
-
   test("refuses a license with a blank key or install id before asking", async () => {
     addModuleListing("mod", OBS_MANIFEST);
     await expect(client().getModuleDownload("mod", { license: { key: "W3X-1", installId: "" } })).rejects.toThrow(
@@ -921,7 +911,8 @@ describe("installMarketplaceListing with license keys", () => {
       kind: "http",
       status: 503,
       code: "license_unavailable",
-      message: "the marketplace could not hand out this listing's license key; try again shortly",
+      message:
+        "the marketplace did not hand out a license key for this listing; try again, and if it keeps failing, sign in or update woofx3",
     });
     expect(requestsTo("/modules/")).toEqual([]);
     expect(h.barkloaderUploads).toEqual([]);

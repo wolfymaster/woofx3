@@ -138,7 +138,7 @@ async function claimLicense(
       `Marketplace acquire for ${listingId} entitled the buyer without a license key`,
       503,
       LICENSE_UNAVAILABLE,
-      "the marketplace could not hand out this listing's license key; try again shortly"
+      "the marketplace did not hand out a license key for this listing; try again, and if it keeps failing, sign in or update woofx3"
     );
   }
   return { status: "licensed", key: acquired.license.key };
