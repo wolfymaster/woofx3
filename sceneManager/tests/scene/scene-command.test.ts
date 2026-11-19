@@ -1,5 +1,11 @@
 import { describe, expect, it, mock } from "bun:test";
-import { SceneCommandCommand, SceneCommandRequestType } from "@woofx3/common/cloudevents/Scene/scene.gen";
+import {
+  SceneCommandAppliedStatus,
+  SceneCommandCommand,
+  SceneCommandFailedStatus,
+  SceneCommandRequestType,
+} from "@woofx3/common/cloudevents/Scene/scene.gen";
+import { validateSceneCommandReply } from "@woofx3/common/cloudevents/Scene/scene.validate.gen";
 import {
   answerSceneCommand,
   executeSceneControlCommand,
@@ -115,7 +121,7 @@ describe("parseSceneControlRequest", () => {
 describe("executeSceneControlCommand", () => {
   it("hides the widget on the published scene, copies it into the draft, and saves it", async () => {
     const { docs, sent, writes } = documents();
-    expect(await executeSceneControlCommand(docs, hide)).toEqual({ ok: true });
+    expect(await executeSceneControlCommand(docs, hide)).toEqual({ status: SceneCommandAppliedStatus.ok });
 
     expect((await docs.snapshot("scene-1"))!.doc.widgets["board-1"]!.visible).toBe(false);
     expect((await docs.snapshot("scene-1", "draft"))!.doc.widgets["board-1"]!.visible).toBe(false);
@@ -129,14 +135,16 @@ describe("executeSceneControlCommand", () => {
 
   it("changes nothing for a widget already that way", async () => {
     const { docs, sent } = documents();
-    expect(await executeSceneControlCommand(docs, { ...hide, visible: true })).toEqual({ ok: true });
+    expect(await executeSceneControlCommand(docs, { ...hide, visible: true })).toEqual({
+      status: SceneCommandAppliedStatus.ok,
+    });
     expect(sent).toEqual([]);
   });
 
   it("names a scene that does not exist", async () => {
     const { docs } = documents();
     expect(await executeSceneControlCommand(docs, { ...hide, sceneId: "gone" })).toEqual({
-      ok: false,
+      status: SceneCommandFailedStatus.failed,
       error: 'scene "gone" does not exist',
     });
   });
@@ -145,7 +153,7 @@ describe("executeSceneControlCommand", () => {
     const alert: OverlaySceneState = { ...SCENE, sceneId: "alert-1", name: "Follow", kind: "alert" };
     const { docs, sent } = documents(async (id) => (id === "alert-1" ? alert : null));
     expect(await executeSceneControlCommand(docs, { ...hide, sceneId: "alert-1" })).toEqual({
-      ok: false,
+      status: SceneCommandFailedStatus.failed,
       error: '"Follow" is an alert composition, not a scene; only a running scene\'s widgets can be shown or hidden',
     });
     expect(sent).toEqual([]);
@@ -155,7 +163,7 @@ describe("executeSceneControlCommand", () => {
   it("names a placement that is not on the scene", async () => {
     const { docs, sent } = documents();
     expect(await executeSceneControlCommand(docs, { ...hide, placementId: "removed-1" })).toEqual({
-      ok: false,
+      status: SceneCommandFailedStatus.failed,
       error: 'widget placement "removed-1" is not on scene "Main"',
     });
     expect(sent).toEqual([]);
@@ -175,14 +183,15 @@ describe("answerSceneCommand", () => {
   it("answers a request with the outcome", async () => {
     const msg = message(request(hide), "_INBOX.1");
     await answerSceneCommand(documents().docs, msg, fakeLogger());
-    expect(replyOf(msg)).toEqual({ ok: true });
+    expect(replyOf(msg)).toEqual({ status: SceneCommandAppliedStatus.ok });
+    expect(validateSceneCommandReply(replyOf(msg))).toBe(true);
   });
 
   it("answers a malformed command with why", async () => {
     const msg = message(request({ command: "set_placement_visibility" }), "_INBOX.1");
     await answerSceneCommand(documents().docs, msg, fakeLogger());
     expect(replyOf(msg)).toEqual({
-      ok: false,
+      status: SceneCommandFailedStatus.failed,
       error: "invalid scene command: data: must have required property 'sceneId'",
     });
   });
@@ -199,6 +208,6 @@ describe("answerSceneCommand", () => {
     const { docs } = documents(async () => Promise.reject(new Error("db down")));
     const msg = message(request(hide), "_INBOX.1");
     await answerSceneCommand(docs, msg, fakeLogger());
-    expect(replyOf(msg)).toEqual({ ok: false, error: "scene manager error: db down" });
+    expect(replyOf(msg)).toEqual({ status: SceneCommandFailedStatus.failed, error: "scene manager error: db down" });
   });
 });

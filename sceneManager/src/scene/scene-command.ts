@@ -10,7 +10,11 @@
 // becomes the step's error in the run log.
 
 import type { CompositionKind } from "@woofx3/api";
-import type { components } from "@woofx3/common/cloudevents/Scene/scene.gen";
+import {
+  type components,
+  SceneCommandAppliedStatus,
+  SceneCommandFailedStatus,
+} from "@woofx3/common/cloudevents/Scene/scene.gen";
 import { validateSceneCommandRequest } from "@woofx3/common/cloudevents/Scene/scene.validate.gen";
 import type { Logger } from "@woofx3/common/runtime";
 import type { Json0Component, SceneSnapshot } from "@woofx3/api/scene-editor/document";
@@ -29,6 +33,9 @@ export interface SceneCommandDeps {
     change: (snapshot: SceneSnapshot) => Json0Component[] | { error: string }
   ): Promise<{ ok: true } | { ok: false; error: string }>;
 }
+
+const applied: SceneControlReply = { status: SceneCommandAppliedStatus.ok };
+const failed = (error: string): SceneControlReply => ({ status: SceneCommandFailedStatus.failed, error });
 
 export type ParsedSceneCommand = { ok: true; command: SceneControlCommand } | { ok: false; error: string };
 
@@ -61,13 +68,12 @@ export async function executeSceneControlCommand(
 ): Promise<SceneControlReply> {
   const composition = await deps.published(command.sceneId);
   if (composition === null) {
-    return { ok: false, error: `scene ${JSON.stringify(command.sceneId)} does not exist` };
+    return failed(`scene ${JSON.stringify(command.sceneId)} does not exist`);
   }
   if (composition.kind !== "scene") {
-    return {
-      ok: false,
-      error: `${JSON.stringify(composition.name)} is an alert composition, not a scene; only a running scene's widgets can be shown or hidden`,
-    };
+    return failed(
+      `${JSON.stringify(composition.name)} is an alert composition, not a scene; only a running scene's widgets can be shown or hidden`
+    );
   }
   const result = await deps.applyChange(command.sceneId, "published", (snapshot) => {
     const placement = snapshot.doc.widgets[command.placementId];
@@ -82,9 +88,9 @@ export async function executeSceneControlCommand(
     return [{ p: ["widgets", command.placementId, "visible"], od: placement.visible, oi: command.visible }];
   });
   if (!result.ok && result.error === "not_found") {
-    return { ok: false, error: `scene ${JSON.stringify(command.sceneId)} does not exist` };
+    return failed(`scene ${JSON.stringify(command.sceneId)} does not exist`);
   }
-  return result;
+  return result.ok ? applied : failed(result.error);
 }
 
 /** The slice of a NATS message `answerSceneCommand` needs. */
@@ -128,16 +134,16 @@ async function handleSceneControlRequest(
     logger.warn("engine.scene.command: malformed JSON payload", {
       error: err instanceof Error ? err.message : String(err),
     });
-    return { ok: false, error: "invalid scene command: payload is not JSON" };
+    return failed("invalid scene command: payload is not JSON");
   }
   const parsed = parseSceneControlRequest(envelope);
   if (!parsed.ok) {
     logger.warn("engine.scene.command: refused", { error: parsed.error });
-    return parsed;
+    return failed(parsed.error);
   }
   try {
     const reply = await executeSceneControlCommand(deps, parsed.command);
-    if (reply.ok) {
+    if (reply.status === SceneCommandAppliedStatus.ok) {
       logger.info("engine.scene.command: applied", {
         command: parsed.command.command,
         sceneId: parsed.command.sceneId,
@@ -151,6 +157,6 @@ async function handleSceneControlRequest(
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     logger.error("engine.scene.command: handler failed", { error });
-    return { ok: false, error: `scene manager error: ${error}` };
+    return failed(`scene manager error: ${error}`);
   }
 }
