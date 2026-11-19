@@ -1,0 +1,299 @@
+{
+  "schema": "ModuleFieldOptionsRequest",
+  "description": "barkloader.module.field_options requests. A request is closed: an unknown field, a missing or mistyped one, a null and an empty value are all refused.",
+  "cases": [
+    {
+      "name": "the request the api sends",
+      "valid": true,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "spotify",
+          "functionId": "get_devices"
+        }
+      }
+    },
+    {
+      "name": "with a specversion",
+      "valid": true,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "spotify",
+          "functionId": "get_devices"
+        },
+        "specversion": "1.0"
+      }
+    },
+    {
+      "name": "ids at the 200 character limit",
+      "valid": true,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+          "functionId": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        }
+      }
+    },
+    {
+      "name": "no id",
+      "valid": false,
+      "value": {
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "spotify",
+          "functionId": "get_devices"
+        }
+      }
+    },
+    {
+      "name": "no type",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "spotify",
+          "functionId": "get_devices"
+        }
+      }
+    },
+    {
+      "name": "no source",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "spotify",
+          "functionId": "get_devices"
+        }
+      }
+    },
+    {
+      "name": "no time",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "data": {
+          "moduleId": "spotify",
+          "functionId": "get_devices"
+        }
+      }
+    },
+    {
+      "name": "no data",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z"
+      }
+    },
+    {
+      "name": "no data.moduleId",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "functionId": "get_devices"
+        }
+      }
+    },
+    {
+      "name": "no data.functionId",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "spotify"
+        }
+      }
+    },
+    {
+      "name": "an unknown envelope field",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "spotify",
+          "functionId": "get_devices"
+        },
+        "correlationKey": "k"
+      }
+    },
+    {
+      "name": "an unknown data field",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "spotify",
+          "functionId": "get_devices",
+          "command": "listChannelPointRewards"
+        }
+      }
+    },
+    {
+      "name": "a null moduleId",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": null,
+          "functionId": "get_devices"
+        }
+      }
+    },
+    {
+      "name": "a numeric functionId",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "spotify",
+          "functionId": 1
+        }
+      }
+    },
+    {
+      "name": "an empty moduleId",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "",
+          "functionId": "get_devices"
+        }
+      }
+    },
+    {
+      "name": "an empty functionId",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "spotify",
+          "functionId": ""
+        }
+      }
+    },
+    {
+      "name": "a 201 character moduleId",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+          "functionId": "get_devices"
+        }
+      }
+    },
+    {
+      "name": "another subject as the type",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "twitchapi",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "spotify",
+          "functionId": "get_devices"
+        }
+      }
+    },
+    {
+      "name": "specversion 0.3",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "moduleId": "spotify",
+          "functionId": "get_devices"
+        },
+        "specversion": "0.3"
+      }
+    },
+    {
+      "name": "a null data",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": null
+      }
+    },
+    {
+      "name": "an empty data",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {}
+      }
+    },
+    {
+      "name": "a list as data",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "barkloader.module.field_options",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": []
+      }
+    }
+  ]
+}
