@@ -253,6 +253,14 @@ describe("dispatchFieldOptionsRequest", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  test("refuses a barkloader field-options request that does not fit its contract without sending anything", async () => {
+    const { dispatch, request } = routeHost();
+    await expect(
+      dispatch({ moduleId: "twitch", declaration: "action", declarationId: "song_request", fieldId: "deviceId" }, "k")
+    ).rejects.toThrow(/barkloader\.module\.field_options request does not match its contract: \/data .*moduleId/);
+    expect(request).not.toHaveBeenCalled();
+  });
+
   test("refuses a module that is not installed without sending anything", async () => {
     const { dispatch, request } = routeHost();
     await expect(

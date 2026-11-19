@@ -1,4 +1,6 @@
 import type { FieldOptionsReference } from "@woofx3/api";
+import { ModuleFieldOptionsRequestType } from "@woofx3/common/cloudevents/Barkloader/barkloader.gen";
+import { validateModuleFieldOptionsRequest } from "@woofx3/common/cloudevents/Barkloader/barkloader.validate.gen";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import { fieldOptionsDescriptorFor, parseFieldOptionsReference } from "../field-options-reference";
 import { parseStoredManifestJson } from "../stored-manifest";
@@ -61,6 +63,17 @@ export const fieldOptionsRoutes = routeModule({
       time: new Date().toISOString(),
       data: descriptor.request.payload ?? {},
     };
+    // The request is whatever subject the manifest declares; one with a contract is held to it before it is sent.
+    if (
+      requestEnvelope.type === ModuleFieldOptionsRequestType.barkloader_module_field_options &&
+      !validateModuleFieldOptionsRequest(requestEnvelope)
+    ) {
+      const detail = validateModuleFieldOptionsRequest.errors?.[0];
+      throw new Error(
+        `dispatchFieldOptionsRequest: ${requestEnvelope.type} request does not match its contract: ` +
+          `${detail?.instancePath ?? ""} ${detail?.message ?? ""}`.trim()
+      );
+    }
     const requestBytes = new TextEncoder().encode(JSON.stringify(requestEnvelope));
     const timeout = descriptor.timeoutMs ?? 10_000;
     const nats = this.nats;
