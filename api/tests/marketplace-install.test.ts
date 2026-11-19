@@ -32,6 +32,8 @@ interface FakeListing {
   download?: (base: string) => Record<string, unknown>;
   archive?: Uint8Array;
   bundle?: Record<string, unknown>;
+  /** Hidden from GET /catalog/{id} unless read with the dev token, like a dev-tier listing. */
+  devTier?: boolean;
   /** Refuses GET /catalog/{id}/bundle with this answer instead of serving it. */
   bundleRefusal?: () => Response;
 }
@@ -97,6 +99,9 @@ const server = Bun.serve({
       return errorEnvelope(404, "listing_not_found", "listing not found");
     }
     if (parts[0] === "catalog" && parts.length === 2 && req.method === "GET") {
+      if (entry.devTier && req.headers.get("authorization") !== "Bearer dev.token") {
+        return errorEnvelope(404, "listing_not_found", "listing not found");
+      }
       return Response.json({ listing: entry.listing });
     }
     if (parts[0] === "catalog" && parts[2] === "acquire" && req.method === "POST") {
@@ -191,6 +196,7 @@ function addModuleListing(
     acquireAnswer: options.acquireAnswer,
     downloadRefusal: options.downloadRefusal,
     download: options.download,
+    devTier: options.devTier,
   });
   return archive;
 }
@@ -545,8 +551,16 @@ describe("installMarketplaceListing", () => {
       },
     ]);
     expect(requestsTo("/modules/obs_scenes/download")[0].authorization).toBe("Bearer buyer.jws.token");
-    expect(seen.find((s) => s.path === "/catalog/obs_scenes")?.authorization).toBeNull();
+    expect(seen.find((s) => s.path === "/catalog/obs_scenes")?.authorization).toBe("Bearer buyer.jws.token");
     expect(requestsTo("/files/")[0].authorization).toBeNull();
+  });
+
+  test("reads a dev-tier listing with the buyer token, which alone can see it", async () => {
+    addModuleListing("dev_mod", { ...OBS_MANIFEST, id: "dev_mod" }, { devTier: true });
+
+    expect((await install(host(), "dev_mod", { ...APPROVED, buyerToken: "dev.token" })).status).toBe("installed");
+    expect(await inspect(host(), "dev_mod", "dev.token")).toMatchObject({ listingId: "dev_mod" });
+    await expect(install(host(), "dev_mod", APPROVED)).rejects.toThrow("listing_not_found");
   });
 
   test("answers payment_required with the purchase intent on 402 and downloads nothing", async () => {
@@ -1219,6 +1233,16 @@ describe("installMarketplaceBundle", () => {
     expect(await installBundle(h, "pricey", "t")).toEqual({ status: "payment_required", name: "Pricey", version: "1" });
     expect(h.scenes).toEqual([]);
     expect(requestsTo("/catalog/pricey/bundle")).toEqual([]);
+  });
+
+  test("reads a dev-tier listing with the buyer token", async () => {
+    listings.set("dev_overlay", {
+      listing: { id: "dev_overlay", type: "overlay", name: "Dev", version: "1" },
+      devTier: true,
+      bundle: { layout: {}, widgets: [] },
+    });
+
+    expect((await installBundle(host(), "dev_overlay", "dev.token")).status).toBe("installed");
   });
 
   test("refuses a module listing", async () => {

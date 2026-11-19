@@ -348,9 +348,13 @@ export class MarketplaceClient {
 
   // ---------- install ----------
 
-  /** One listing, read anonymously, with the fields an install needs. */
-  async getListing(listingId: string): Promise<MarketplaceListing> {
-    const payload = await this.request("GET", `/catalog/${encodeURIComponent(listingId)}`);
+  /**
+   * One listing, with the fields an install needs. Read with the buyer token
+   * when there is one, because only a token with the dev claim sees a
+   * dev-tier listing; to anyone else it does not exist.
+   */
+  async getListing(listingId: string, buyerToken?: string): Promise<MarketplaceListing> {
+    const payload = await this.request("GET", `/catalog/${encodeURIComponent(listingId)}`, { bearer: buyerToken });
     const raw = asObject(asObject(payload).listing);
     const id = asString(raw.id);
     if (id === "" || !LISTING_TYPES.has(asString(raw.type))) {

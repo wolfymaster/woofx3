@@ -195,7 +195,7 @@ export const marketplaceRoutes = routeModule({
     const licenseKey = optionalLicenseKey(caller, request.licenseKey);
     const marketplace = requireMarketplace(this.marketplace);
 
-    const listing = await marketplace.getListing(listingId);
+    const listing = await marketplace.getListing(listingId, buyerToken);
     requireModuleListing(listing);
     const { name, version } = listing;
     this.logger.info("Installing marketplace listing", {
@@ -288,7 +288,7 @@ export const marketplaceRoutes = routeModule({
   async inspectMarketplaceListing(listingId: string, buyerToken?: string): Promise<MarketplaceListingInspection> {
     requireListingId("inspectMarketplaceListing", listingId);
     const marketplace = requireMarketplace(this.marketplace);
-    const listing = await marketplace.getListing(listingId);
+    const listing = await marketplace.getListing(listingId, buyerToken || undefined);
     requireModuleListing(listing);
     // Without a license key: the review comes before consent, so nothing is
     // claimed for it. The marketplace serves a currently free listing
@@ -338,7 +338,7 @@ export const marketplaceRoutes = routeModule({
     requireListingId("installMarketplaceBundle", listingId);
     const marketplace = requireMarketplace(this.marketplace);
     const token = buyerToken || undefined;
-    const listing = await marketplace.getListing(listingId);
+    const listing = await marketplace.getListing(listingId, token);
     if (listing.type !== "overlay" && listing.type !== "alert") {
       throw new Error(`${listing.name} is a ${listing.type} listing and does not install as a bundle`);
     }
