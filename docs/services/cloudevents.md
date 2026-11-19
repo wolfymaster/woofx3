@@ -85,6 +85,108 @@ nats.publish(subject, payload);
 
 ---
 
+## Message contracts
+
+A message that crosses a language boundary (a Go producer and a TypeScript consumer, a TypeScript
+producer and a Rust consumer) is described once, in an OpenAPI 3.1 document, and every language's
+types and validator are generated from it. Nothing else holds the shape: not a hand-written type, not
+an enum list, not a second validator. This is the message half of the [contracts rules](./contracts.md).
+
+| Contract | Messages | Producer | Consumer |
+| --- | --- | --- | --- |
+| `shared/contracts/scene/openapi.yaml` | `engine.scene.command` request and reply | workflow engine (Go) | scene manager (TypeScript) |
+| `shared/contracts/barkloader/openapi.yaml` | `barkloader.module.field_options` request | api (TypeScript) | barkloader (Rust) |
+
+Both documents take their CloudEvents attributes (`specversion`, `id`, `source`, `time`) and the
+opaque id type from `shared/contracts/common/cloudevents.yaml`, a document with no operations of its
+own.
+
+### Writing a message
+
+- Each message is a schema in `components.schemas`, and an operation under `paths` references it.
+  The operation exists so the generators reach the schema; its path is the NATS subject, and its
+  request body and `200` response are the message's request and reply.
+- A request is the whole CloudEvent: `additionalProperties: false`, every attribute listed, `type`
+  an `enum` with one value, the subject. A reply is the raw reply body and is open, so a producer
+  can add a field before its consumers know it.
+- `data` is bounded: `maxLength` on every string, `minimum` and `maximum` on every number, `enum`
+  for every closed set, and a name for every id type.
+- Only one subset of the language is used, so one validator per language enforces all of it: no
+  `if`/`then`/`else`, no `uniqueItems` on arrays of objects, no `propertyNames`, no
+  `nullable`. Optional fields are omitted by their producer, never sent as `null` or empty, and the
+  schema refuses both.
+- A union is written with `oneOf` over variants discriminated by a constant string. The generator
+  for Go cannot discriminate on a boolean, so the scene reply is one object whose `error` is
+  present when `ok` is false.
+
+The subject is a generated constant in every language: the `type` enum becomes
+`SceneCommandRequestTypeEngineSceneCommand` in Go (package `messages/scene`), the
+`SceneCommandRequestType.engine_scene_command` enum in TypeScript, and
+`SceneCommandRequestType::EngineSceneCommand` in Rust (`to_string()` is the subject). A
+producer sets `type` from it and a consumer subscribes on it. `scripts/gen-schemas.sh` refuses a
+document whose operation path is not the `type` its request fixes.
+
+### Generating
+
+```bash
+bun install                  # once; installs the pinned TypeScript generators
+scripts/gen-schemas.sh       # regenerate every contract
+scripts/gen-schemas.sh --check   # generate into a temporary directory and diff; exit 1 on drift
+```
+
+`scripts/gen-schemas.sh` bundles each document, then writes, for every domain listed in its
+`DOMAINS` table:
+
+| Language | Generator | Output |
+| --- | --- | --- |
+| Go | `ogen` 1.25 | `shared/common/golang/messages/<domain>/*_gen.go`: types, enum constants and `Validate()` methods |
+| TypeScript | `openapi-typescript` 7.13 with `--enum`, Ajv 8 | `<Dir>/<domain>.gen.ts` (types and enums) and `<Dir>/<domain>.validate.gen.ts` (precompiled validators, one type guard per schema), under `shared/common/typescript/cloudevents/` |
+| Rust | `cargo-typify` 0.10.1 | `shared/common/rust/cloudevents/src/<domain>_gen.rs`: serde types and the document as `DOCUMENT` |
+
+The tools and their pins are in `scripts/contracts/` (`go.mod`, `package.json`, the `typify`
+version in the script). Generated files carry a header naming the command and are never edited.
+`scripts/check.sh schemas` runs the check, and the `schemas` job of `go-checks.yml` runs it in CI,
+so a document changed without its outputs, or an output edited by hand, cannot merge.
+
+### Adding a message or a domain
+
+1. Add the schemas and the operation to the domain's document, or create
+   `shared/contracts/<domain>/openapi.yaml` with its `fixtures/` directory.
+2. For a new domain, add a line to `DOMAINS` in `scripts/gen-schemas.sh`, a Go package directory
+   `shared/common/golang/messages/<domain>`, and the TypeScript and Rust consumers' entries (the
+   Rust module in `shared/common/rust/cloudevents/src/lib.rs`, the paths in `scripts/check.sh` and
+   in the path filters of `go-checks.yml`).
+3. Run `scripts/gen-schemas.sh` and commit the outputs.
+4. Add fixtures and a test line for each schema (below).
+5. Use the generated types in the producer and the consumer. What stays hand-written is the mapping
+   between a domain object and its generated type.
+
+### Fixtures
+
+`shared/contracts/<domain>/fixtures/*.json` hold, for one schema each, named cases
+`{ name, valid, value }`: valid values, and invalid ones (an unknown field on a request, a missing or
+mistyped field, a `null`, an empty value, a value over a bound, a reply with an extra field, which is
+valid). A valid case with fields the generated type does not know carries `unknownFields: true`.
+The same files run in all three languages, through the generated types and through the run-time
+validator: Go in `shared/common/golang/messages/<domain>/fixtures_test.go`, TypeScript in
+`shared/common/typescript/cloudevents/contracts.test.ts`, Rust in
+`shared/common/rust/cloudevents/tests/contracts.rs`. A valid case must round-trip through the
+generated type unchanged.
+
+### Run-time validation
+
+A consumer validates what it receives against the same document that typed it:
+
+- **Go**: `json.Unmarshal` into the generated type, then its `Validate()`. The workflow engine
+  validates its own request before publishing, and the reply it receives.
+- **TypeScript**: the `validate<Schema>` type guard from `<domain>.validate.gen.ts`. The scene manager
+  validates every `engine.scene.command` request; the api validates a `barkloader.module.field_options`
+  request before sending it. The validators are precompiled, so they need no document at run time
+  (and run under Convex); `ajv` is the only dependency.
+- **Rust**: the `jsonschema` crate over the `DOCUMENT` the generated module embeds, then serde into the
+  generated type. Barkloader validates every field-options request this way. A serde type alone
+  accepts `null` for an optional field, so the validator is the check, not the type.
+
 ## Twitch Events
 
 Twitch channel events carry a full CloudEvent envelope. The NATS subject doubles as the CloudEvents `type`.
@@ -344,8 +446,9 @@ The workflow engine's `scene.widget.visibility` action changes a scene with a
 request/reply CloudEvent on `engine.scene.command`, answered by the scene
 manager with `{ ok, error? }`. Its `data` is
 `{ command: "set_placement_visibility", sceneId, placementId, visible }`
-(`shared/common/typescript/cloudevents/Scene/commands.ts`). A message with no
-reply subject changes nothing. The scene manager applies it as an op on the
+(the `SceneCommand` schema of the [scene contract](#message-contracts)). A
+request that does not fit the contract is answered `{ ok: false, error }` and
+changes nothing, and so is a message with no reply subject. The scene manager applies it as an op on the
 published scene, so it reaches overlays and editors like any other change
 (see [Scene documents](./scene-documents.md)). See
 [Task types → scene.widget.visibility](../workflow/tasks.md#scene-widget-visibility).
