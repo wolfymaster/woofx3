@@ -528,8 +528,8 @@ async fn validate_theme_dependencies(
 
 /// The subject barkloader's field-options responder answers. It runs
 /// `{payload.moduleId}:function:{payload.functionId}` with that module's
-/// permissions, so a form may name only its own module. Must match `SUBJECT`
-/// in barkloader/app/src/services/field_options.rs.
+/// permissions, so a form may name only its own module. Must equal the `type` the
+/// request fixes in shared/contracts/barkloader/openapi.yaml.
 const FIELD_OPTIONS_SUBJECT: &str = "barkloader.module.field_options";
 
 /// The connectors Twitch adapter's request subject. It answers any method of its Twitch
