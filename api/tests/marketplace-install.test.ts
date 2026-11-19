@@ -4,7 +4,6 @@ import {
   type MarketplaceBundleInstallResult,
   type MarketplaceInstallRequest,
   type MarketplaceInstallResult,
-  type MarketplaceListingInspection,
   type MarketplacePurchaseIntent,
   parseMarketplaceCatalogError,
 } from "@woofx3/api";
@@ -289,14 +288,6 @@ function install(h: Host, listingId: string, request: MarketplaceInstallRequest)
   return route.call(h.self, listingId, request, { clientId: "client-1" });
 }
 
-function inspect(h: Host, listingId: string, buyerToken?: string): Promise<MarketplaceListingInspection> {
-  const route = marketplaceRoutes.inspectMarketplaceListing as unknown as (
-    id: string,
-    t?: string
-  ) => Promise<MarketplaceListingInspection>;
-  return route.call(h.self, listingId, buyerToken);
-}
-
 function installBundle(h: Host, listingId: string, buyerToken?: string): Promise<MarketplaceBundleInstallResult> {
   const route = marketplaceRoutes.installMarketplaceBundle as unknown as (
     id: string,
@@ -559,7 +550,6 @@ describe("installMarketplaceListing", () => {
     addModuleListing("dev_mod", { ...OBS_MANIFEST, id: "dev_mod" }, { devTier: true });
 
     expect((await install(host(), "dev_mod", { ...APPROVED, buyerToken: "dev.token" })).status).toBe("installed");
-    expect(await inspect(host(), "dev_mod", "dev.token")).toMatchObject({ listingId: "dev_mod" });
     await expect(install(host(), "dev_mod", APPROVED)).rejects.toThrow("listing_not_found");
   });
 
@@ -1056,59 +1046,6 @@ describe("getInstalledModuleLicense", () => {
   test("refuses a module that is not installed, and a blank id", async () => {
     await expect(licenseOf(host(), "ghost")).rejects.toThrow("module ghost is not installed");
     await expect(licenseOf(host(), "")).rejects.toThrow("moduleId is required");
-  });
-});
-
-describe("inspectMarketplaceListing", () => {
-  test("reports the verified build's manifest, permissions, local endpoints and files", async () => {
-    const archive = moduleZip(OBS_MANIFEST, { "main.js": "x", "README.md": "# hi", "__MACOSX/junk": "j" }, "obs/");
-    addModuleListing("obs_scenes", OBS_MANIFEST, { archive });
-
-    const result = await inspect(host(), "obs_scenes");
-
-    expect(result).toEqual({
-      listingId: "obs_scenes",
-      moduleId: "obs_scenes",
-      edition: 1,
-      type: "module",
-      name: "obs_scenes name",
-      version: "1.2.0",
-      moduleKey: `obs_scenes:1.2.0:${sha256(archive).slice(0, 7)}`,
-      sha256: sha256(archive),
-      sizeBytes: archive.byteLength,
-      manifest: { id: "obs_scenes", name: "OBS Scenes", version: "1.2.0", description: "" },
-      permissions: ["obs.control", "storage"],
-      localEndpoints: [{ id: "obs", name: "OBS", protocol: "websocket" }],
-      files: [
-        { path: "README.md", size: 4 },
-        { path: "main.js", size: 1 },
-        { path: "manifest.json", size: JSON.stringify(OBS_MANIFEST).length },
-      ],
-    });
-    expect(requestsTo("/catalog/obs_scenes/acquire")).toEqual([]);
-    expect(requestsTo("/modules/obs_scenes/download")[0]).toMatchObject({ licenseKey: null, installId: null });
-  });
-
-  test("reports a later edition's listing id, module id and the key it installs under", async () => {
-    const archive = addModuleListing(
-      "obs_scenes-v2",
-      { ...OBS_MANIFEST, version: "2.0.0" },
-      { version: "2.0.0", edition: 2, moduleKey: "obs_scenes" }
-    );
-
-    const result = await inspect(host(), "obs_scenes-v2");
-
-    expect(result).toMatchObject({
-      listingId: "obs_scenes-v2",
-      moduleId: "obs_scenes",
-      edition: 2,
-      moduleKey: `obs_scenes:2.0.0:${sha256(archive).slice(0, 7)}`,
-    });
-  });
-
-  test("refuses a build whose manifest id is not the listing's module id", async () => {
-    addModuleListing("obs_scenes-v2", OBS_MANIFEST, { edition: 2, moduleKey: "obs" });
-    await expect(inspect(host(), "obs_scenes-v2")).rejects.toThrow('is module "obs"');
   });
 });
 
