@@ -1,0 +1,31 @@
+openapi: 3.1.0
+info:
+  title: CloudEvents attributes shared by every bus message
+  version: 1.0.0
+paths: {}
+components:
+  schemas:
+    EventSpecVersion:
+      description: CloudEvents specification version.
+      type: string
+      enum: ["1.0"]
+    EventId:
+      description: Unique id of one event; the producer chooses the format.
+      type: string
+      minLength: 1
+      maxLength: 200
+    EventSource:
+      description: Name of the component that produced the event.
+      type: string
+      minLength: 1
+      maxLength: 200
+    EventTime:
+      description: RFC 3339 timestamp of when the event was produced.
+      type: string
+      maxLength: 40
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$'
+    EntityId:
+      description: Id of a record owned by another component, opaque to the reader.
+      type: string
+      minLength: 1
+      maxLength: 200

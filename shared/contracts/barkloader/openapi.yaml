@@ -1,0 +1,55 @@
+openapi: 3.1.0
+info:
+  title: Barkloader bus messages
+  version: 1.0.0
+  description: >
+    Request/reply messages answered by barkloader. Each operation path is the NATS
+    subject; the request's `type` is that same subject.
+paths:
+  /barkloader.module.field_options:
+    post:
+      operationId: moduleFieldOptions
+      summary: List the options of a module's select field by running one of its functions. Published by the api, answered by barkloader.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModuleFieldOptionsRequest"
+      responses:
+        "200":
+          description: The function's own result, a list of options or an object with an error; its shape belongs to the module.
+          content:
+            application/json:
+              schema: {}
+components:
+  schemas:
+    ModuleFieldOptionsRequest:
+      description: CloudEvent naming the module function that lists a field's options.
+      type: object
+      additionalProperties: false
+      required: [id, type, source, time, data]
+      properties:
+        specversion:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [barkloader.module.field_options]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        data:
+          $ref: "#/components/schemas/ModuleFieldOptions"
+    ModuleFieldOptions:
+      description: The function that runs is `<moduleId>:function:<functionId>`.
+      type: object
+      additionalProperties: false
+      required: [moduleId, functionId]
+      properties:
+        moduleId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        functionId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
