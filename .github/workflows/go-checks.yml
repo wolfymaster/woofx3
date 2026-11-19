@@ -25,6 +25,14 @@ on:
       - "shared/clients/typescript/api/platform-gateway.gen.ts"
       - "shared/common/typescript/cloudevents/Companion/module-request.gen.ts"
       - "barkloader/lib_sandbox/src/contracts/companion_gateway.gen.rs"
+      # Message-contract documents, their generators and the generated code
+      # outside Go; the schemas job regenerates and compares them. Generated Go
+      # matches "**.go".
+      - "shared/contracts/**"
+      - "scripts/contracts/**"
+      - "scripts/gen-schemas.sh"
+      - "shared/common/typescript/cloudevents/**/*.gen.ts"
+      - "shared/common/rust/cloudevents/src/*_gen.rs"
       - ".github/workflows/go-checks.yml"
   pull_request:
     paths:
@@ -35,6 +43,11 @@ on:
       - "shared/clients/typescript/api/platform-gateway.gen.ts"
       - "shared/common/typescript/cloudevents/Companion/module-request.gen.ts"
       - "barkloader/lib_sandbox/src/contracts/companion_gateway.gen.rs"
+      - "shared/contracts/**"
+      - "scripts/contracts/**"
+      - "scripts/gen-schemas.sh"
+      - "shared/common/typescript/cloudevents/**/*.gen.ts"
+      - "shared/common/rust/cloudevents/src/*_gen.rs"
       - ".github/workflows/go-checks.yml"
   workflow_dispatch:
 
@@ -60,6 +73,7 @@ jobs:
           - shared/common/golang/conditions
           - shared/common/golang/config
           - shared/common/golang/logging
+          - shared/common/golang/messages
           - shared/common/golang/platformgateway
           - shared/common/golang/runtime
           - shared/common/contracts/gen
@@ -108,6 +122,42 @@ jobs:
         working-directory: db
         run: go test ./app/services/
 
+  # Every message contract under shared/contracts is regenerated and compared
+  # with the committed Go, TypeScript and Rust code, so a document changed
+  # without its outputs, or an output edited by hand, fails here. The tools are
+  # the pinned ones: ogen and the Bun packages from the lockfiles, cargo-typify
+  # from scripts/gen-schemas.sh (built once, then cached by that script's hash).
+  schemas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: scripts/contracts/go.sum
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Install workspace dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Cache cargo-typify
+        uses: actions/cache@v4
+        with:
+          path: scripts/contracts/.tools
+          key: cargo-typify-${{ runner.os }}-${{ hashFiles('scripts/gen-schemas.sh') }}
+
+      - name: Check the generated contract code
+        run: scripts/gen-schemas.sh --check
+
   # Informational for now: it reports vulnerabilities in dependencies and in
   # the standard library of the pinned Go version, which a PR cannot always
   # fix, and the baseline is not clean yet. The scan step tolerates findings
@@ -140,6 +190,7 @@ jobs:
           - shared/common/golang/conditions
           - shared/common/golang/config
           - shared/common/golang/logging
+          - shared/common/golang/messages
           - shared/common/golang/platformgateway
           - shared/common/golang/runtime
           - shared/common/contracts/gen

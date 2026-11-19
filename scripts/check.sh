@@ -9,6 +9,7 @@
 #   check.sh --all           every package CI checks
 #   check.sh --quick ...     build and type-check only; skip tests and clippy
 #   check.sh contracts       generated contract code is up to date
+#   check.sh schemas         generated message-contract code is up to date
 #
 # Each package runs the same commands as its CI job (.github/workflows/
 # {go,rust,api,service,format}-checks.yml), so a pass here should mean a pass
@@ -32,9 +33,9 @@ readonly GO_MODULES=(
   shared/clients/golang/barkloader shared/clients/golang/db shared/clients/golang/nats
   shared/clients/golang/servicediscovery shared/common/golang/cloudevents shared/common/golang/conditions
   shared/common/golang/config shared/common/golang/logging shared/common/golang/platformgateway
-  shared/common/golang/runtime shared/common/contracts/gen
+  shared/common/golang/runtime shared/common/golang/messages shared/common/contracts/gen
 )
-readonly RUST_ROOTS=(barkloader shared/common/rust/logging shared/common/rust/runtime)
+readonly RUST_ROOTS=(barkloader shared/common/rust/cloudevents shared/common/rust/logging shared/common/rust/runtime)
 readonly TS_SERVICES=(api connectors sceneManager)
 # Shared packages with their own type check and tests, as the CI jobs of the
 # services that use them run them.
@@ -72,11 +73,38 @@ select_all() {
   for service in "${TS_SERVICES[@]}"; do select_target "ts:$service"; done
   for package in "${TS_PACKAGES[@]}"; do select_target "ts:$package"; done
   select_target "contracts:shared/common/contracts"
+  select_target "schemas:shared/contracts"
 }
 
 # Maps one repository path to the check targets that cover it.
 select_for_path() {
   local path="$1" module root service package
+  # Generated message-contract code is checked against its document wherever it
+  # lives. The generated paths must match the outputs in DOMAINS in
+  # scripts/gen-schemas.sh.
+  case "$path" in
+    shared/contracts/* | scripts/contracts/* | scripts/gen-schemas.sh/ | \
+      shared/common/golang/messages/*/*_gen.go/ | \
+      shared/common/typescript/cloudevents/Scene/*.gen.ts/ | \
+      shared/common/typescript/cloudevents/Barkloader/*.gen.ts/ | \
+      shared/common/rust/cloudevents/src/*_gen.rs/)
+      select_target "schemas:shared/contracts"
+      ;;
+  esac
+  case "$path" in
+    # The fixtures run in the Go, TypeScript and Rust tests of every consumer.
+    shared/contracts/*)
+      select_target "go:shared/common/golang/messages"
+      select_target "ts:shared/common/typescript"
+      select_target "rust:shared/common/rust/cloudevents"
+      select_target "ts:sceneManager"
+      select_target "ts:api"
+      select_target "go:workflow"
+      select_target "rust:barkloader"
+      return
+      ;;
+    scripts/contracts/* | scripts/gen-schemas.sh/) return ;;
+  esac
   # Generated contract code is checked against its contract wherever it lives.
   # The generated paths must match the outputs in CONTRACTS in
   # scripts/gen-contracts.sh.
@@ -109,6 +137,7 @@ select_for_path() {
       for module in "${GO_MODULES[@]}"; do select_target "go:$module"; done
       return
       ;;
+    shared/common/rust/cloudevents/*) select_target "rust:shared/common/rust/cloudevents" ;;
     shared/common/rust/logging/*) select_target "rust:shared/common/rust/logging" ;;
     shared/common/rust/runtime/*) select_target "rust:shared/common/rust/runtime" ;;
   esac
@@ -209,6 +238,10 @@ run_steps() {
     contracts)
       ./scripts/gen-contracts.sh --check || return 1
       ;;
+    schemas)
+      ensure_ts_deps || return 1
+      ./scripts/gen-schemas.sh --check || return 1
+      ;;
     go)
       (cd "$dir" && go build ./...) || return 1
       $quick || (cd "$dir" && go test ./...) || return 1
@@ -225,7 +258,7 @@ run_steps() {
       (cd "$dir" && bun run typecheck) || return 1
       if ! $quick; then
         if [ "$dir" = "shared/common/typescript" ]; then
-          (cd "$dir" && bun test runtime/ logging/ integrations/ cloudevents/Obs/ cloudevents/Relay/ cloudevents/Companion/) || return 1
+          (cd "$dir" && bun test runtime/ logging/ integrations/ cloudevents/Obs/ cloudevents/Relay/ cloudevents/Companion/ cloudevents/contracts.test.ts) || return 1
         else
           (cd "$dir" && bun test) || return 1
         fi
@@ -248,7 +281,7 @@ run_target() {
 }
 
 # Contracts and Go first, then TS, then Rust: cheapest feedback first.
-for kind in contracts go ts rust; do
+for kind in contracts schemas go ts rust; do
   for target in $(printf '%s\n' "${!selected[@]}" | grep "^$kind:" | sort); do
     run_target "$target"
   done
