@@ -7,7 +7,19 @@ import standaloneCode from "ajv/dist/standalone";
 import { readFileSync, writeFileSync } from "node:fs";
 
 const [docPath, typesFile, outPath] = process.argv.slice(2);
-const doc = JSON.parse(readFileSync(docPath, "utf8"));
+// Ajv's `discriminator` keyword refuses `mapping`, which the other generators need. The variants' single-value
+// `status` enums already exclude one another, so the plain `oneOf` validates the same values.
+const withoutDiscriminator = (node: unknown): unknown =>
+  Array.isArray(node)
+    ? node.map(withoutDiscriminator)
+    : node && typeof node === "object"
+      ? Object.fromEntries(
+          Object.entries(node)
+            .filter(([key]) => key !== "discriminator")
+            .map(([key, value]) => [key, withoutDiscriminator(value)])
+        )
+      : node;
+const doc = withoutDiscriminator(JSON.parse(readFileSync(docPath, "utf8"))) as { components: { schemas: object } };
 const names: string[] = Object.keys(doc.components.schemas);
 const ajv = new Ajv2020({ code: { source: true, esm: true } });
 ajv.addKeyword("components"); // the document root is the schema, so its components resolve as local refs

@@ -65,16 +65,34 @@ components:
           type: boolean
     SceneCommandReply:
       description: >
-        The outcome of a command. `error` is present exactly when `ok` is false;
-        it is written for the streamer and becomes the failed workflow step's
-        error as written. A union discriminated by `ok` is the more precise
-        shape, but ogen cannot generate a union discriminated by a boolean.
+        The outcome of a command: one variant per `status`, each with a
+        single-value `status` enum.
+      oneOf:
+        - $ref: "#/components/schemas/SceneCommandApplied"
+        - $ref: "#/components/schemas/SceneCommandFailed"
+      discriminator:
+        propertyName: status
+        mapping:
+          ok: "#/components/schemas/SceneCommandApplied"
+          failed: "#/components/schemas/SceneCommandFailed"
+    SceneCommandApplied:
+      description: The change was made, or the scene already had it.
       type: object
-      required: [ok]
+      required: [status]
       properties:
-        ok:
-          type: boolean
+        status:
+          type: string
+          enum: [ok]
+    SceneCommandFailed:
+      description: The change was not made.
+      type: object
+      required: [status, error]
+      properties:
+        status:
+          type: string
+          enum: [failed]
         error:
+          description: Written for the streamer; becomes the failed workflow step's error as written.
           type: string
           minLength: 1
           maxLength: 10000
