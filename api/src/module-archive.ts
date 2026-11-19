@@ -1,15 +1,14 @@
-import type { ModuleFileEntry } from "@woofx3/api";
 import { manifestLocalEndpoints, manifestPermissions } from "@woofx3/api/module-manifest";
 import { strFromU8, type UnzipFileInfo, unzipSync } from "fflate";
 
 /**
  * Reading a module archive the engine has not installed yet: the manifest
- * barkloader would install from, and the files it would serve afterwards.
+ * barkloader would install from.
  *
- * The archive is chosen and walked by barkloader's rules, so what a streamer
- * reviews before an install is what the install uses. Must match
- * `manifest_file_rank` in barkloader/lib_module and the root and junk rules
- * in barkloader/app/src/routes/archives.rs.
+ * The manifest is chosen by barkloader's rules, so the permissions an install
+ * is approved against are the ones it installs with. Must match
+ * `manifest_file_rank` in barkloader/lib_module and the junk rules in
+ * barkloader/app/src/routes/archives.rs.
  */
 
 /** Manifest names barkloader accepts, best first, compared on the last path segment case-insensitively. */
@@ -26,8 +25,6 @@ const MAX_MANIFEST_BYTES = 1024 * 1024;
 
 export interface ModuleArchiveContents {
   manifest: Record<string, unknown>;
-  /** The module's files relative to its root, sorted by path, as `listModuleFiles` lists them. */
-  files: ModuleFileEntry[];
 }
 
 function manifestRank(name: string): number | null {
@@ -54,8 +51,8 @@ function isJunk(path: string): boolean {
 }
 
 /** The member barkloader installs the manifest from: best-ranked name first, then the shallowest. */
-function chooseManifest(headers: readonly UnzipFileInfo[]): { header: UnzipFileInfo; root: string } | null {
-  let best: { header: UnzipFileInfo; rank: number; depth: number; root: string } | null = null;
+function chooseManifest(headers: readonly UnzipFileInfo[]): UnzipFileInfo | null {
+  let best: { header: UnzipFileInfo; rank: number; depth: number } | null = null;
   for (const header of headers) {
     const rank = manifestRank(header.name);
     const normalized = normalizeArchivePath(header.name);
@@ -64,30 +61,14 @@ function chooseManifest(headers: readonly UnzipFileInfo[]): { header: UnzipFileI
     }
     const depth = normalized.split("/").length - 1;
     if (best === null || rank < best.rank || (rank === best.rank && depth < best.depth)) {
-      const slash = normalized.lastIndexOf("/");
-      best = { header, rank, depth, root: slash === -1 ? "" : normalized.slice(0, slash + 1) };
+      best = { header, rank, depth };
     }
   }
-  return best === null ? null : { header: best.header, root: best.root };
-}
-
-function modulePath(root: string, name: string): string | null {
-  if (name.endsWith("/")) {
-    return null;
-  }
-  const normalized = normalizeArchivePath(name);
-  if (normalized === null || !normalized.startsWith(root)) {
-    return null;
-  }
-  const rel = normalized.slice(root.length);
-  if (rel === "" || isJunk(rel)) {
-    return null;
-  }
-  return rel;
+  return best === null ? null : best.header;
 }
 
 /**
- * The manifest and file list of a module archive. Throws when the archive is
+ * The manifest of a module archive. Throws when the archive is
  * not a zip, has no manifest, or its manifest is not a JSON object: a YAML
  * manifest installs, but the engine cannot show it for review, and an
  * archive nobody can review is not installed through the marketplace.
@@ -104,12 +85,12 @@ export function readModuleArchive(archive: Uint8Array): ModuleArchiveContents {
   if (chosen === null) {
     throw new Error("Module archive contains no manifest");
   }
-  const manifestName = chosen.header.name;
+  const manifestName = chosen.name;
   if (!manifestName.toLowerCase().endsWith(".json")) {
     throw new Error(`Module archive manifest ${manifestName} is not JSON, so it cannot be reviewed`);
   }
-  if (chosen.header.originalSize > MAX_MANIFEST_BYTES) {
-    throw new Error(`Module archive manifest is ${chosen.header.originalSize} bytes, over ${MAX_MANIFEST_BYTES}`);
+  if (chosen.originalSize > MAX_MANIFEST_BYTES) {
+    throw new Error(`Module archive manifest is ${chosen.originalSize} bytes, over ${MAX_MANIFEST_BYTES}`);
   }
   const entries = unzipSync(archive, { filter: (file) => file.name === manifestName });
   const raw = entries[manifestName];
@@ -127,15 +108,7 @@ export function readModuleArchive(archive: Uint8Array): ModuleArchiveContents {
     throw new Error(`Module archive ${manifestName} is not a JSON object`);
   }
 
-  const files: ModuleFileEntry[] = [];
-  for (const header of headers) {
-    const path = modulePath(chosen.root, header.name);
-    if (path !== null) {
-      files.push({ path, size: header.originalSize });
-    }
-  }
-  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
-  return { manifest: manifest as Record<string, unknown>, files };
+  return { manifest: manifest as Record<string, unknown> };
 }
 
 /** What a manifest declares that an install approval does not cover. */
