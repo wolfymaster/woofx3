@@ -10,24 +10,14 @@
 // becomes the step's error in the run log.
 
 import type { CompositionKind } from "@woofx3/api";
-import type { SceneControlCommand, SceneControlReply } from "@woofx3/common/cloudevents/Scene/commands";
+import type { components } from "@woofx3/common/cloudevents/Scene/scene.gen";
+import { validateSceneCommandRequest } from "@woofx3/common/cloudevents/Scene/scene.validate.gen";
 import type { Logger } from "@woofx3/common/runtime";
-import { z } from "zod";
 import type { Json0Component, SceneSnapshot } from "@woofx3/api/scene-editor/document";
 import type { SceneVersion } from "./scene-host";
 
-const nonEmptyId = z.string().min(1);
-
-// Mirrors SceneControlCommand in shared/common/typescript/cloudevents/Scene/commands.ts.
-// Strict objects, so a misspelled field is refused rather than silently ignored.
-const commandSchema = z.discriminatedUnion("command", [
-  z.strictObject({
-    command: z.literal("set_placement_visibility"),
-    sceneId: nonEmptyId,
-    placementId: nonEmptyId,
-    visible: z.boolean(),
-  }),
-]);
+export type SceneControlCommand = components["schemas"]["SceneCommand"];
+export type SceneControlReply = components["schemas"]["SceneCommandReply"];
 
 /** The slice of `SceneDocuments` a command changes a scene through. */
 export interface SceneCommandDeps {
@@ -42,17 +32,19 @@ export interface SceneCommandDeps {
 
 export type ParsedSceneCommand = { ok: true; command: SceneControlCommand } | { ok: false; error: string };
 
-/** Validate the `data` of an `engine.scene.command` CloudEvent. */
-export function parseSceneControlCommand(data: unknown): ParsedSceneCommand {
-  const parsed = commandSchema.safeParse(data);
-  if (!parsed.success) {
-    const issues = parsed.error.issues.map((issue) => {
-      const path = issue.path.join(".");
-      return path ? `${path}: ${issue.message}` : issue.message;
-    });
-    return { ok: false, error: `invalid scene command: ${issues.join("; ")}` };
+/**
+ * Validate an `engine.scene.command` CloudEvent against the scene contract and
+ * return its command. The contract is closed, so a misspelled field is refused
+ * rather than silently ignored.
+ */
+export function parseSceneControlRequest(envelope: unknown): ParsedSceneCommand {
+  if (!validateSceneCommandRequest(envelope)) {
+    const [first] = validateSceneCommandRequest.errors ?? [];
+    const path = (first?.instancePath ?? "").split("/").filter(Boolean).join(".");
+    const detail = first?.message ?? "does not match the contract";
+    return { ok: false, error: `invalid scene command: ${path ? `${path}: ${detail}` : detail}` };
   }
-  return { ok: true, command: parsed.data };
+  return { ok: true, command: envelope.data };
 }
 
 /**
@@ -129,16 +121,16 @@ async function handleSceneControlRequest(
   raw: Uint8Array,
   logger: Logger
 ): Promise<SceneControlReply> {
-  let envelope: { data?: unknown };
+  let envelope: unknown;
   try {
-    envelope = JSON.parse(new TextDecoder().decode(raw)) as { data?: unknown };
+    envelope = JSON.parse(new TextDecoder().decode(raw));
   } catch (err) {
     logger.warn("engine.scene.command: malformed JSON payload", {
       error: err instanceof Error ? err.message : String(err),
     });
     return { ok: false, error: "invalid scene command: payload is not JSON" };
   }
-  const parsed = parseSceneControlCommand(envelope?.data);
+  const parsed = parseSceneControlRequest(envelope);
   if (!parsed.ok) {
     logger.warn("engine.scene.command: refused", { error: parsed.error });
     return parsed;
