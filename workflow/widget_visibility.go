@@ -158,12 +158,8 @@ func decodeSceneCommandReply(raw []byte) error {
 	if err := reply.Validate(); err != nil {
 		return fmt.Errorf("scene manager answered with something that is not a reply: %w", err)
 	}
-	if !reply.Ok {
-		reason, hasReason := reply.Error.Get()
-		if !hasReason {
-			return fmt.Errorf("scene manager refused the change without saying why")
-		}
-		return fmt.Errorf("%s", reason)
+	if reply.Type == scene.SceneCommandFailedSceneCommandReply {
+		return fmt.Errorf("%s", reply.SceneCommandFailed.Error)
 	}
 	return nil
 }

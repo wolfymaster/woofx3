@@ -89,18 +89,22 @@ func TestBuildSceneCommandRequest_CarriesTheCommandAsCloudEventData(t *testing.T
 }
 
 func TestDecodeSceneCommandReply(t *testing.T) {
-	if err := decodeSceneCommandReply([]byte(`{"ok":true}`)); err != nil {
+	if err := decodeSceneCommandReply([]byte(`{"status":"ok"}`)); err != nil {
 		t.Fatalf("ok reply: unexpected error %v", err)
 	}
-	err := decodeSceneCommandReply([]byte(`{"ok":false,"error":"widget placement \"board-1\" is not on scene \"Main\""}`))
+	err := decodeSceneCommandReply([]byte(`{"status":"failed","error":"widget placement \"board-1\" is not on scene \"Main\""}`))
 	if err == nil || err.Error() != `widget placement "board-1" is not on scene "Main"` {
 		t.Fatalf("refusal: got %v, want the scene manager's reason as is", err)
 	}
-	if err := decodeSceneCommandReply([]byte(`{"ok":false}`)); err == nil {
-		t.Fatal("refusal without a reason: expected an error")
-	}
-	if err := decodeSceneCommandReply([]byte(`not json`)); err == nil {
-		t.Fatal("garbage: expected an error")
+	for name, raw := range map[string]string{
+		"a failure without a reason": `{"status":"failed"}`,
+		"an unknown status":          `{"status":"maybe"}`,
+		"the old flat shape":         `{"ok":true}`,
+		"garbage":                    `not json`,
+	} {
+		if err := decodeSceneCommandReply([]byte(raw)); err == nil {
+			t.Fatalf("%s: expected an error", name)
+		}
 	}
 }
 

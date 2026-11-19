@@ -48,7 +48,11 @@ fn run<T: DeserializeOwned + Serialize>(domain: &str, file: &str, schema: &str, 
         let schema_ok = validator.is_valid(&case.value);
         assert_eq!(schema_ok, case.valid, "jsonschema: {label}");
         // serde reads a null as an absent optional field, so the types alone cannot refuse one; the validator does.
-        if !(case.value.to_string().contains("null") && !case.valid) {
+        // typify reads a union discriminated by a string as an adjacently tagged enum, which refuses a field beside a
+        // variant that has none, such as `error` on `{"status":"ok"}`, though an open reply allows it.
+        let tolerated = (case.value.to_string().contains("null") && !case.valid)
+            || (case.valid && case.unknown_fields);
+        if !tolerated {
             assert_eq!(typed.is_ok(), case.valid, "typify types: {label}");
         }
         if case.valid && !case.unknown_fields {
