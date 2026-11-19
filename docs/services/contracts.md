@@ -43,12 +43,16 @@ that depends on it and cannot be missed or left to rot.
 | HTTP routes (request and response) | route definitions in the owner (Zod with `@hono/zod-openapi`), rendered as an OpenAPI 3.1 document checked in as `openapi/<name>.json` | the document, and TypeScript types for each consumer (`openapi-typescript`), written beside the consumer | a test regenerates the document and the types and fails on a difference | the owner validates requests from the route definitions; a consumer validates answers with Ajv against the document it was typed from |
 | Messages on a bus or RPC with a shared catalog | one JSON contract in `shared/common/contracts` | Go, TypeScript and Rust code, by `scripts/gen-contracts.sh` | the generator's golden test (and `--check`) | the generated parsers, pinned by shared fixtures |
 
-Two rules about HTTP documents keep the generated types honest:
+Three rules about HTTP documents keep the generated types honest:
 
 - A nullable use of a named schema is written as a union with null, never with
   `.nullable()`, which renders as an `allOf` no null satisfies. A test fails on
   the pattern in route schemas, and a consumer's run-time check fails on a
   document that has it.
+- A nullable enum lists `null` among its values, or the document refuses the
+  very answer it allows. Types cannot show this; the run-time check of a real
+  answer against the document does, so a producer's contract test validates
+  each real answer against its own published document, as a consumer would.
 - A field with a default is optional in the request that omits it, so the
   types are generated with `defaultNonNullable: false`.
 
@@ -64,3 +68,9 @@ the application, or its consumers cannot name it. `bun run openapi` in
 | Companion gateway | `woofx3` | `shared/common/contracts/companion-gateway.json` | [Companion gateway](/services/companion-gateway) |
 | Maintenance API | `woofx3-maintenance` | route definitions, `openapi/maintenance.json` | the repository's `CLAUDE.md` |
 | Operators' billing API | `woofx3-maintenance` | route definitions, `openapi/billing.json` | the repository's `CLAUDE.md` |
+| Ops API | `woofx3-ui` | `convex/lib/ops/contract.ts`, `openapi/ops.json` | the UI's `docs/patterns/ops-api.md` |
+| Marketplace API | `woofx3-marketplace-api` | `openapi/marketplace.yaml`, embedded and checked against every request | the repository's `CLAUDE.md` |
+
+A repository that consumes another's contract vendors its document (`openapi/ops.json`,
+`openapi/marketplace.yaml`) with a manifest naming the commit and SHA-256 it came from, generates its types from
+the copy, and checks every answer against it at run time with the one shared checker.
