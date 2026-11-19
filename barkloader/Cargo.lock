@@ -2654,6 +2654,7 @@ dependencies = [
  "tracing",
  "url",
  "woofx3",
+ "woofx3-cloudevents",
  "woofx3-twirp",
 ]
 

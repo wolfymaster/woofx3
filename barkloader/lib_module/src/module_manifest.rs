@@ -3002,22 +3002,22 @@ mod tests {
                 "type": "button",
                 "action": {
                     "kind": "internal",
-                    "request": { "event": "barkloader.module.field_options", "payload": { "moduleId": "spotify", "functionId": "get_devices" } },
+                    "request": { "event": "$SUBJECT", "payload": { "moduleId": "spotify", "functionId": "get_devices" } },
                     "timeoutMs": 10000
                 }
             },
             {"id": "clientId", "label": "Spotify Client ID", "type": "text", "required": false}
         ]
     }"#;
-        let m: ModuleManifest = serde_json::from_str(j).expect("parse");
+        let subject = woofx3_cloudevents::barkloader_gen::ModuleFieldOptionsRequestType::BarkloaderModuleFieldOptions
+            .to_string();
+        let m: ModuleManifest =
+            serde_json::from_str(&j.replace("$SUBJECT", &subject)).expect("parse");
         assert_eq!(m.settings.len(), 3);
         assert_eq!(m.settings[0].action["kind"], "integration");
         assert_eq!(m.settings[0].action["integration"], "spotify");
         assert_eq!(m.settings[1].action["kind"], "internal");
-        assert_eq!(
-            m.settings[1].action["request"]["event"],
-            "barkloader.module.field_options"
-        );
+        assert_eq!(m.settings[1].action["request"]["event"], subject.as_str());
         // clientId has no action at all — must not gain one from a missing-field default.
         assert!(m.settings[2].action.is_null());
 

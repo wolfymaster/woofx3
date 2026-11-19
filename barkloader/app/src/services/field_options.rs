@@ -36,7 +36,7 @@ fn parse_request(
     serde_json::from_value(value).map_err(|e| e.to_string())
 }
 
-/// Subscribe to `barkloader.module.field_options` and handle dynamic select
+/// Subscribe to the field-options subject and handle dynamic select
 /// field options requests from the workflow builder UI.
 ///
 /// Each request is a NATS request/reply: the API publishes a CloudEvent to
