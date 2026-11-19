@@ -76,6 +76,12 @@ export const ENGINE_CAPABILITIES = {
    * `getInstalledModuleLicense` reads the kept key back.
    */
   marketplaceLicenseKeys: "marketplace.licenseKeys",
+  /**
+   * Licensed bundle installs: `installMarketplaceBundle` claims the overlay or
+   * alert listing (anonymously for a free listing with no `buyerToken`) and
+   * downloads its bundle with the license key and the engine's install id.
+   */
+  marketplaceBundleLicenseKeys: "marketplace.bundleLicenseKeys",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];

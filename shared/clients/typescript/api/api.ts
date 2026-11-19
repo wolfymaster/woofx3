@@ -2079,8 +2079,10 @@ export interface Woofx3EngineApi {
   /**
    * Install an overlay or alert listing: its bundle becomes a new scene or
    * alert composition, through the same writes as `createScene` and
-   * `createAlertComposition`. Claims the listing for the buyer first when
-   * given a `buyerToken`.
+   * `createAlertComposition`. Claims the listing first (for the buyer when
+   * given a `buyerToken`, anonymously otherwise, which only a free listing
+   * allows) and downloads the bundle with the license key the claim answers
+   * with. Needs the `marketplace.bundleLicenseKeys` capability.
    */
   installMarketplaceBundle(listingId: string, buyerToken?: string): Promise<MarketplaceBundleInstallResult>;
 

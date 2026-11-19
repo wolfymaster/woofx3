@@ -38,9 +38,9 @@ import { scenesRoutes } from "./scenes";
  * A caller acting for a buyer passes that buyer's marketplace token; the
  * engine forwards it and keeps nothing.
  *
- * A module downloads with its license key and the engine's install id. The
- * caller may pass the key; otherwise the engine claims the listing and takes
- * the key from the claim. The key is a credential: it is never logged.
+ * A module or bundle downloads with its license key and the engine's install
+ * id. A module install may be given the key; otherwise the engine claims the
+ * listing and takes the key from the claim. The key is a credential: it is never logged.
  */
 
 /**
@@ -342,17 +342,27 @@ export const marketplaceRoutes = routeModule({
     if (listing.type !== "overlay" && listing.type !== "alert") {
       throw new Error(`${listing.name} is a ${listing.type} listing and does not install as a bundle`);
     }
-    if (token) {
-      const acquired = await marketplace.acquire(listingId, token);
-      if (acquired.status === "payment_required") {
-        return { status: "payment_required", name: listing.name, version: listing.version };
-      }
+    // A bundle is not kept with any provenance, so its key is used for this
+    // download only and a reinstall claims again.
+    const license = await withMarketplaceErrors(() => claimLicense(marketplace, listingId, token, this.installId));
+    if (license.status === "payment_required") {
+      return { status: "payment_required", name: listing.name, version: listing.version };
     }
 
-    const bundle = await marketplace.getBundle(listingId, token);
+    const bundle = await withMarketplaceErrors(async () =>
+      marketplace.getBundle(listingId, {
+        buyerToken: token,
+        license: license.key === null ? undefined : { key: license.key, installId: await this.installId.get() },
+      })
+    );
     const layoutJson = JSON.stringify(bundle.layout ?? {});
     const widgetsJson = JSON.stringify(bundle.widgets ?? []);
-    this.logger.info("Installing marketplace bundle", { listingId, type: listing.type });
+    this.logger.info("Installing marketplace bundle", {
+      listingId,
+      type: listing.type,
+      buyer: Boolean(token),
+      hasLicense: license.key !== null,
+    });
 
     // The same writes the scene editor and the alert library use, so an
     // installed bundle is indistinguishable from one made by hand.
