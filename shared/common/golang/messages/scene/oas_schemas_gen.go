@@ -50,52 +50,6 @@ func (s *EventSpecVersion) UnmarshalText(data []byte) error {
 
 type EventTime string
 
-// NewOptString returns new OptString with value set to v.
-func NewOptString(v string) OptString {
-	return OptString{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptString is optional string.
-type OptString struct {
-	Value string
-	Set   bool
-}
-
-// IsSet returns true if OptString was set.
-func (o OptString) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptString) Reset() {
-	var v string
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptString) SetTo(v string) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptString) Get() (v string, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptString) Or(d string) string {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // Shows or hides one widget placement. `placementId` is the placement's id in the scene's widgets, not
 // a widget definition: one widget can be placed on a scene more than once.
 // Ref: #/components/schemas/SceneCommand
@@ -146,6 +100,56 @@ func (s *SceneCommand) SetVisible(val bool) {
 	s.Visible = val
 }
 
+// The change was made, or the scene already had it.
+// Ref: #/components/schemas/SceneCommandApplied
+type SceneCommandApplied struct {
+	Status SceneCommandAppliedStatus `json:"status"`
+}
+
+// GetStatus returns the value of Status.
+func (s *SceneCommandApplied) GetStatus() SceneCommandAppliedStatus {
+	return s.Status
+}
+
+// SetStatus sets the value of Status.
+func (s *SceneCommandApplied) SetStatus(val SceneCommandAppliedStatus) {
+	s.Status = val
+}
+
+type SceneCommandAppliedStatus string
+
+const (
+	SceneCommandAppliedStatusOk SceneCommandAppliedStatus = "ok"
+)
+
+// AllValues returns all SceneCommandAppliedStatus values.
+func (SceneCommandAppliedStatus) AllValues() []SceneCommandAppliedStatus {
+	return []SceneCommandAppliedStatus{
+		SceneCommandAppliedStatusOk,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SceneCommandAppliedStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case SceneCommandAppliedStatusOk:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SceneCommandAppliedStatus) UnmarshalText(data []byte) error {
+	switch SceneCommandAppliedStatus(data) {
+	case SceneCommandAppliedStatusOk:
+		*s = SceneCommandAppliedStatusOk
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 type SceneCommandCommand string
 
 const (
@@ -180,33 +184,137 @@ func (s *SceneCommandCommand) UnmarshalText(data []byte) error {
 	}
 }
 
-// The outcome of a command. `error` is present exactly when `ok` is false; it is written for the
-// streamer and becomes the failed workflow step's error as written. A union discriminated by `ok` is
-// the more precise shape, but ogen cannot generate a union discriminated by a boolean.
-// Ref: #/components/schemas/SceneCommandReply
-type SceneCommandReply struct {
-	Ok    bool      `json:"ok"`
-	Error OptString `json:"error"`
+// The change was not made.
+// Ref: #/components/schemas/SceneCommandFailed
+type SceneCommandFailed struct {
+	Status SceneCommandFailedStatus `json:"status"`
+	// Written for the streamer; becomes the failed workflow step's error as written.
+	Error string `json:"error"`
 }
 
-// GetOk returns the value of Ok.
-func (s *SceneCommandReply) GetOk() bool {
-	return s.Ok
+// GetStatus returns the value of Status.
+func (s *SceneCommandFailed) GetStatus() SceneCommandFailedStatus {
+	return s.Status
 }
 
 // GetError returns the value of Error.
-func (s *SceneCommandReply) GetError() OptString {
+func (s *SceneCommandFailed) GetError() string {
 	return s.Error
 }
 
-// SetOk sets the value of Ok.
-func (s *SceneCommandReply) SetOk(val bool) {
-	s.Ok = val
+// SetStatus sets the value of Status.
+func (s *SceneCommandFailed) SetStatus(val SceneCommandFailedStatus) {
+	s.Status = val
 }
 
 // SetError sets the value of Error.
-func (s *SceneCommandReply) SetError(val OptString) {
+func (s *SceneCommandFailed) SetError(val string) {
 	s.Error = val
+}
+
+type SceneCommandFailedStatus string
+
+const (
+	SceneCommandFailedStatusFailed SceneCommandFailedStatus = "failed"
+)
+
+// AllValues returns all SceneCommandFailedStatus values.
+func (SceneCommandFailedStatus) AllValues() []SceneCommandFailedStatus {
+	return []SceneCommandFailedStatus{
+		SceneCommandFailedStatusFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SceneCommandFailedStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case SceneCommandFailedStatusFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SceneCommandFailedStatus) UnmarshalText(data []byte) error {
+	switch SceneCommandFailedStatus(data) {
+	case SceneCommandFailedStatusFailed:
+		*s = SceneCommandFailedStatusFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// The outcome of a command: one variant per `status`, each with a single-value `status` enum.
+// Ref: #/components/schemas/SceneCommandReply
+// SceneCommandReply represents sum type.
+type SceneCommandReply struct {
+	// Type selects the active sum variant, switch on this field.
+	Type                SceneCommandReplyType
+	SceneCommandApplied SceneCommandApplied
+	SceneCommandFailed  SceneCommandFailed
+}
+
+// SceneCommandReplyType is oneOf type of SceneCommandReply.
+type SceneCommandReplyType string
+
+// Possible values for SceneCommandReplyType.
+const (
+	SceneCommandAppliedSceneCommandReply SceneCommandReplyType = "ok"
+	SceneCommandFailedSceneCommandReply  SceneCommandReplyType = "failed"
+)
+
+// IsSceneCommandApplied reports whether SceneCommandReply is SceneCommandApplied.
+func (s SceneCommandReply) IsSceneCommandApplied() bool {
+	return s.Type == SceneCommandAppliedSceneCommandReply
+}
+
+// IsSceneCommandFailed reports whether SceneCommandReply is SceneCommandFailed.
+func (s SceneCommandReply) IsSceneCommandFailed() bool {
+	return s.Type == SceneCommandFailedSceneCommandReply
+}
+
+// SetSceneCommandApplied sets SceneCommandReply to SceneCommandApplied.
+func (s *SceneCommandReply) SetSceneCommandApplied(v SceneCommandApplied) {
+	s.Type = SceneCommandAppliedSceneCommandReply
+	s.SceneCommandApplied = v
+}
+
+// GetSceneCommandApplied returns SceneCommandApplied and true boolean if SceneCommandReply is SceneCommandApplied.
+func (s SceneCommandReply) GetSceneCommandApplied() (v SceneCommandApplied, ok bool) {
+	if !s.IsSceneCommandApplied() {
+		return v, false
+	}
+	return s.SceneCommandApplied, true
+}
+
+// NewSceneCommandAppliedSceneCommandReply returns new SceneCommandReply from SceneCommandApplied.
+func NewSceneCommandAppliedSceneCommandReply(v SceneCommandApplied) SceneCommandReply {
+	var s SceneCommandReply
+	s.SetSceneCommandApplied(v)
+	return s
+}
+
+// SetSceneCommandFailed sets SceneCommandReply to SceneCommandFailed.
+func (s *SceneCommandReply) SetSceneCommandFailed(v SceneCommandFailed) {
+	s.Type = SceneCommandFailedSceneCommandReply
+	s.SceneCommandFailed = v
+}
+
+// GetSceneCommandFailed returns SceneCommandFailed and true boolean if SceneCommandReply is SceneCommandFailed.
+func (s SceneCommandReply) GetSceneCommandFailed() (v SceneCommandFailed, ok bool) {
+	if !s.IsSceneCommandFailed() {
+		return v, false
+	}
+	return s.SceneCommandFailed, true
+}
+
+// NewSceneCommandFailedSceneCommandReply returns new SceneCommandReply from SceneCommandFailed.
+func NewSceneCommandFailedSceneCommandReply(v SceneCommandFailed) SceneCommandReply {
+	var s SceneCommandReply
+	s.SetSceneCommandFailed(v)
+	return s
 }
 
 // CloudEvent carrying one change to a live scene.

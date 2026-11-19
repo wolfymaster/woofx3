@@ -44,10 +44,25 @@ export interface components {
             placementId: components["schemas"]["EntityId"];
             visible: boolean;
         };
-        /** @description The outcome of a command. `error` is present exactly when `ok` is false; it is written for the streamer and becomes the failed workflow step's error as written. A union discriminated by `ok` is the more precise shape, but ogen cannot generate a union discriminated by a boolean. */
-        SceneCommandReply: {
-            ok: boolean;
-            error?: string;
+        /** @description The outcome of a command: one variant per `status`, each with a single-value `status` enum. */
+        SceneCommandReply: components["schemas"]["SceneCommandApplied"] | components["schemas"]["SceneCommandFailed"];
+        /** @description The change was made, or the scene already had it. */
+        SceneCommandApplied: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            status: SceneCommandAppliedStatus;
+        };
+        /** @description The change was not made. */
+        SceneCommandFailed: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            status: SceneCommandFailedStatus;
+            /** @description Written for the streamer; becomes the failed workflow step's error as written. */
+            error: string;
         };
         /**
          * @description CloudEvents specification version.
@@ -72,6 +87,8 @@ export interface components {
 export type SchemaSceneCommandRequest = components['schemas']['SceneCommandRequest'];
 export type SchemaSceneCommand = components['schemas']['SceneCommand'];
 export type SchemaSceneCommandReply = components['schemas']['SceneCommandReply'];
+export type SchemaSceneCommandApplied = components['schemas']['SceneCommandApplied'];
+export type SchemaSceneCommandFailed = components['schemas']['SceneCommandFailed'];
 export type SchemaEventId = components['schemas']['EventId'];
 export type SchemaEventSource = components['schemas']['EventSource'];
 export type SchemaEventTime = components['schemas']['EventTime'];
@@ -108,6 +125,12 @@ export enum SceneCommandRequestType {
 }
 export enum SceneCommandCommand {
     set_placement_visibility = "set_placement_visibility"
+}
+export enum SceneCommandAppliedStatus {
+    ok = "ok"
+}
+export enum SceneCommandFailedStatus {
+    failed = "failed"
 }
 export enum EventSpecVersion {
     Value1_0 = "1.0"

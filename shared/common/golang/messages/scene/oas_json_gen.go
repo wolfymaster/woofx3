@@ -209,41 +209,6 @@ func (s *EventTime) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes string as json.
-func (o OptString) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	e.Str(string(o.Value))
-}
-
-// Decode decodes string from json.
-func (o *OptString) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptString to nil")
-	}
-	o.Set = true
-	v, err := d.Str()
-	if err != nil {
-		return err
-	}
-	o.Value = string(v)
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptString) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptString) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode implements json.Marshaler.
 func (s *SceneCommand) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -385,6 +350,138 @@ func (s *SceneCommand) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode implements json.Marshaler.
+func (s *SceneCommandApplied) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SceneCommandApplied) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("status")
+		s.Status.Encode(e)
+	}
+}
+
+var jsonFieldsNameOfSceneCommandApplied = [1]string{
+	0: "status",
+}
+
+// Decode decodes SceneCommandApplied from json.
+func (s *SceneCommandApplied) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SceneCommandApplied to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "status":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.Status.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"status\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SceneCommandApplied")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000001,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSceneCommandApplied) {
+					name = jsonFieldsNameOfSceneCommandApplied[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SceneCommandApplied) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SceneCommandApplied) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SceneCommandAppliedStatus as json.
+func (s SceneCommandAppliedStatus) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SceneCommandAppliedStatus from json.
+func (s *SceneCommandAppliedStatus) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SceneCommandAppliedStatus to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SceneCommandAppliedStatus(v) {
+	case SceneCommandAppliedStatusOk:
+		*s = SceneCommandAppliedStatusOk
+	default:
+		*s = SceneCommandAppliedStatus(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SceneCommandAppliedStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SceneCommandAppliedStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes SceneCommandCommand as json.
 func (s SceneCommandCommand) Encode(e *jx.Encoder) {
 	e.Str(string(s))
@@ -424,56 +521,54 @@ func (s *SceneCommandCommand) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
-func (s *SceneCommandReply) Encode(e *jx.Encoder) {
+func (s *SceneCommandFailed) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
 	e.ObjEnd()
 }
 
 // encodeFields encodes fields.
-func (s *SceneCommandReply) encodeFields(e *jx.Encoder) {
+func (s *SceneCommandFailed) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("ok")
-		e.Bool(s.Ok)
+		e.FieldStart("status")
+		s.Status.Encode(e)
 	}
 	{
-		if s.Error.Set {
-			e.FieldStart("error")
-			s.Error.Encode(e)
-		}
+		e.FieldStart("error")
+		e.Str(s.Error)
 	}
 }
 
-var jsonFieldsNameOfSceneCommandReply = [2]string{
-	0: "ok",
+var jsonFieldsNameOfSceneCommandFailed = [2]string{
+	0: "status",
 	1: "error",
 }
 
-// Decode decodes SceneCommandReply from json.
-func (s *SceneCommandReply) Decode(d *jx.Decoder) error {
+// Decode decodes SceneCommandFailed from json.
+func (s *SceneCommandFailed) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode SceneCommandReply to nil")
+		return errors.New("invalid: unable to decode SceneCommandFailed to nil")
 	}
 	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "ok":
+		case "status":
 			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
-				v, err := d.Bool()
-				s.Ok = bool(v)
-				if err != nil {
+				if err := s.Status.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"ok\"")
+				return errors.Wrap(err, "decode field \"status\"")
 			}
 		case "error":
+			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				s.Error.Reset()
-				if err := s.Error.Decode(d); err != nil {
+				v, err := d.Str()
+				s.Error = string(v)
+				if err != nil {
 					return err
 				}
 				return nil
@@ -485,12 +580,12 @@ func (s *SceneCommandReply) Decode(d *jx.Decoder) error {
 		}
 		return nil
 	}); err != nil {
-		return errors.Wrap(err, "decode SceneCommandReply")
+		return errors.Wrap(err, "decode SceneCommandFailed")
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00000001,
+		0b00000011,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -502,8 +597,8 @@ func (s *SceneCommandReply) Decode(d *jx.Decoder) error {
 				bitIdx := bits.TrailingZeros8(result)
 				fieldIdx := i*8 + bitIdx
 				var name string
-				if fieldIdx < len(jsonFieldsNameOfSceneCommandReply) {
-					name = jsonFieldsNameOfSceneCommandReply[fieldIdx]
+				if fieldIdx < len(jsonFieldsNameOfSceneCommandFailed) {
+					name = jsonFieldsNameOfSceneCommandFailed[fieldIdx]
 				} else {
 					name = strconv.Itoa(fieldIdx)
 				}
@@ -524,7 +619,140 @@ func (s *SceneCommandReply) Decode(d *jx.Decoder) error {
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *SceneCommandReply) MarshalJSON() ([]byte, error) {
+func (s *SceneCommandFailed) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SceneCommandFailed) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SceneCommandFailedStatus as json.
+func (s SceneCommandFailedStatus) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SceneCommandFailedStatus from json.
+func (s *SceneCommandFailedStatus) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SceneCommandFailedStatus to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SceneCommandFailedStatus(v) {
+	case SceneCommandFailedStatusFailed:
+		*s = SceneCommandFailedStatusFailed
+	default:
+		*s = SceneCommandFailedStatus(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SceneCommandFailedStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SceneCommandFailedStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SceneCommandReply as json.
+func (s SceneCommandReply) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+func (s SceneCommandReply) encodeFields(e *jx.Encoder) {
+	switch s.Type {
+	case SceneCommandAppliedSceneCommandReply:
+		e.FieldStart("status")
+		e.Str("ok")
+	case SceneCommandFailedSceneCommandReply:
+		e.FieldStart("status")
+		e.Str("failed")
+		{
+			s := s.SceneCommandFailed
+			{
+				e.FieldStart("error")
+				e.Str(s.Error)
+			}
+		}
+	}
+}
+
+// Decode decodes SceneCommandReply from json.
+func (s *SceneCommandReply) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SceneCommandReply to nil")
+	}
+	// Sum type discriminator.
+	if typ := d.Next(); typ != jx.Object {
+		return errors.Errorf("unexpected json type %q", typ)
+	}
+
+	var found bool
+	if err := d.Capture(func(d *jx.Decoder) error {
+		return d.ObjBytes(func(d *jx.Decoder, key []byte) error {
+			if found {
+				return d.Skip()
+			}
+			switch string(key) {
+			case "status":
+				typ, err := d.Str()
+				if err != nil {
+					return err
+				}
+				switch typ {
+				case "ok":
+					s.Type = SceneCommandAppliedSceneCommandReply
+					found = true
+				case "failed":
+					s.Type = SceneCommandFailedSceneCommandReply
+					found = true
+				default:
+					return errors.Errorf("unknown type %s", typ)
+				}
+				return nil
+			}
+			return d.Skip()
+		})
+	}); err != nil {
+		return errors.Wrap(err, "capture")
+	}
+	if !found {
+		return errors.New("unable to detect sum type variant")
+	}
+	switch s.Type {
+	case SceneCommandAppliedSceneCommandReply:
+		if err := s.SceneCommandApplied.Decode(d); err != nil {
+			return err
+		}
+	case SceneCommandFailedSceneCommandReply:
+		if err := s.SceneCommandFailed.Decode(d); err != nil {
+			return err
+		}
+	default:
+		return errors.Errorf("inferred invalid type: %s", s.Type)
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SceneCommandReply) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil

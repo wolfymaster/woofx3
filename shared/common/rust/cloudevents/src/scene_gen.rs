@@ -278,6 +278,58 @@ pub struct SceneCommand {
     pub scene_id: EntityId,
     pub visible: bool,
 }
+#[doc = "The change was made, or the scene already had it."]
+#[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
+pub struct SceneCommandApplied {
+    pub status: SceneCommandAppliedStatus,
+}
+#[doc = "`SceneCommandAppliedStatus`"]
+#[derive(
+    :: serde :: Deserialize,
+    :: serde :: Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum SceneCommandAppliedStatus {
+    #[serde(rename = "ok")]
+    Ok,
+}
+impl ::std::fmt::Display for SceneCommandAppliedStatus {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::Ok => f.write_str("ok"),
+        }
+    }
+}
+impl ::std::str::FromStr for SceneCommandAppliedStatus {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "ok" => Ok(Self::Ok),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for SceneCommandAppliedStatus {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for SceneCommandAppliedStatus {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
 #[doc = "`SceneCommandCommand`"]
 #[derive(
     :: serde :: Deserialize,
@@ -325,14 +377,128 @@ impl ::std::convert::TryFrom<::std::string::String> for SceneCommandCommand {
         value.parse()
     }
 }
-#[doc = "The outcome of a command. `error` is present exactly when `ok` is false; it is written for the streamer and becomes the failed workflow step's error as written. A union discriminated by `ok` is the more precise shape, but ogen cannot generate a union discriminated by a boolean.\n"]
+#[doc = "The change was not made."]
 #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
-pub struct SceneCommandReply {
-    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
-    pub error: ::std::option::Option<SceneCommandReplyError>,
-    pub ok: bool,
+pub struct SceneCommandFailed {
+    #[doc = "Written for the streamer; becomes the failed workflow step's error as written."]
+    pub error: SceneCommandFailedError,
+    pub status: SceneCommandFailedStatus,
 }
-#[doc = "`SceneCommandReplyError`"]
+#[doc = "Written for the streamer; becomes the failed workflow step's error as written."]
+#[derive(:: serde :: Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[serde(transparent)]
+pub struct SceneCommandFailedError(::std::string::String);
+impl ::std::ops::Deref for SceneCommandFailedError {
+    type Target = ::std::string::String;
+    fn deref(&self) -> &::std::string::String {
+        &self.0
+    }
+}
+impl ::std::convert::From<SceneCommandFailedError> for ::std::string::String {
+    fn from(value: SceneCommandFailedError) -> Self {
+        value.0
+    }
+}
+impl ::std::str::FromStr for SceneCommandFailedError {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        ::std::convert::TryFrom::try_from(value)
+    }
+}
+impl ::std::convert::TryFrom<&str> for SceneCommandFailedError {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        if value.chars().count() > 10000usize {
+            return Err("longer than 10000 characters".into());
+        }
+        if value.chars().count() < 1usize {
+            return Err("shorter than 1 characters".into());
+        }
+        Ok(Self(value.to_string()))
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for SceneCommandFailedError {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        ::std::convert::TryFrom::try_from(value.as_str())
+    }
+}
+impl<'de> ::serde::Deserialize<'de> for SceneCommandFailedError {
+    fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
+    where
+        D: ::serde::Deserializer<'de>,
+    {
+        ::std::convert::TryFrom::try_from(::std::string::String::deserialize(deserializer)?)
+            .map_err(|e: self::error::ConversionError| {
+                <D::Error as ::serde::de::Error>::custom(e.to_string())
+            })
+    }
+}
+#[doc = "`SceneCommandFailedStatus`"]
+#[derive(
+    :: serde :: Deserialize,
+    :: serde :: Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum SceneCommandFailedStatus {
+    #[serde(rename = "failed")]
+    Failed,
+}
+impl ::std::fmt::Display for SceneCommandFailedStatus {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::Failed => f.write_str("failed"),
+        }
+    }
+}
+impl ::std::str::FromStr for SceneCommandFailedStatus {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "failed" => Ok(Self::Failed),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for SceneCommandFailedStatus {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for SceneCommandFailedStatus {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+#[doc = "The outcome of a command: one variant per `status`, each with a single-value `status` enum.\n"]
+#[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
+#[serde(tag = "status", content = "error")]
+pub enum SceneCommandReply {
+    #[serde(rename = "ok")]
+    Ok,
+    #[doc = "The change was not made."]
+    #[serde(rename = "failed")]
+    Failed(SceneCommandReplyError),
+}
+impl ::std::convert::From<SceneCommandReplyError> for SceneCommandReply {
+    fn from(value: SceneCommandReplyError) -> Self {
+        Self::Failed(value)
+    }
+}
+#[doc = "Written for the streamer; becomes the failed workflow step's error as written."]
 #[derive(:: serde :: Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
 pub struct SceneCommandReplyError(::std::string::String);
@@ -471,4 +637,4 @@ pub mod error {
 }
 
 /// The contract document the run-time validator reads.
-pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"Scene manager bus messages","version":"1.0.0","description":"Request/reply messages answered by the scene manager. Each operation path is the NATS subject; the request's `type` is that same subject, and the reply is the raw reply body.\n"},"paths":{"/engine.scene.command":{"post":{"operationId":"sceneCommand","summary":"Change one thing on a live scene. Published by the workflow engine, answered by the scene manager.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SceneCommandRequest"}}}},"responses":{"200":{"description":"The scene manager's answer, whether or not the change was made.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/SceneCommandReply"}}}}}}}},"components":{"schemas":{"SceneCommandRequest":{"description":"CloudEvent carrying one change to a live scene.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["engine.scene.command"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"data":{"$ref":"#/components/schemas/SceneCommand"}}},"SceneCommand":{"description":"Shows or hides one widget placement. `placementId` is the placement's id in the scene's widgets, not a widget definition: one widget can be placed on a scene more than once.\n","type":"object","additionalProperties":false,"required":["command","sceneId","placementId","visible"],"properties":{"command":{"type":"string","enum":["set_placement_visibility"]},"sceneId":{"$ref":"#/components/schemas/EntityId"},"placementId":{"$ref":"#/components/schemas/EntityId"},"visible":{"type":"boolean"}}},"SceneCommandReply":{"description":"The outcome of a command. `error` is present exactly when `ok` is false; it is written for the streamer and becomes the failed workflow step's error as written. A union discriminated by `ok` is the more precise shape, but ogen cannot generate a union discriminated by a boolean.\n","type":"object","required":["ok"],"properties":{"ok":{"type":"boolean"},"error":{"type":"string","minLength":1,"maxLength":10000}}},"EventSpecVersion":{"description":"CloudEvents specification version.","type":"string","enum":["1.0"]},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventSource":{"description":"Name of the component that produced the event.","type":"string","minLength":1,"maxLength":200},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200}}}}"####;
+pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"Scene manager bus messages","version":"1.0.0","description":"Request/reply messages answered by the scene manager. Each operation path is the NATS subject; the request's `type` is that same subject, and the reply is the raw reply body.\n"},"paths":{"/engine.scene.command":{"post":{"operationId":"sceneCommand","summary":"Change one thing on a live scene. Published by the workflow engine, answered by the scene manager.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SceneCommandRequest"}}}},"responses":{"200":{"description":"The scene manager's answer, whether or not the change was made.","content":{"application/json":{"schema":{"$ref":"#/components/schemas/SceneCommandReply"}}}}}}}},"components":{"schemas":{"SceneCommandRequest":{"description":"CloudEvent carrying one change to a live scene.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["engine.scene.command"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"data":{"$ref":"#/components/schemas/SceneCommand"}}},"SceneCommand":{"description":"Shows or hides one widget placement. `placementId` is the placement's id in the scene's widgets, not a widget definition: one widget can be placed on a scene more than once.\n","type":"object","additionalProperties":false,"required":["command","sceneId","placementId","visible"],"properties":{"command":{"type":"string","enum":["set_placement_visibility"]},"sceneId":{"$ref":"#/components/schemas/EntityId"},"placementId":{"$ref":"#/components/schemas/EntityId"},"visible":{"type":"boolean"}}},"SceneCommandReply":{"description":"The outcome of a command: one variant per `status`, each with a single-value `status` enum.\n","oneOf":[{"$ref":"#/components/schemas/SceneCommandApplied"},{"$ref":"#/components/schemas/SceneCommandFailed"}],"discriminator":{"propertyName":"status","mapping":{"ok":"#/components/schemas/SceneCommandApplied","failed":"#/components/schemas/SceneCommandFailed"}}},"SceneCommandApplied":{"description":"The change was made, or the scene already had it.","type":"object","required":["status"],"properties":{"status":{"type":"string","enum":["ok"]}}},"SceneCommandFailed":{"description":"The change was not made.","type":"object","required":["status","error"],"properties":{"status":{"type":"string","enum":["failed"]},"error":{"description":"Written for the streamer; becomes the failed workflow step's error as written.","type":"string","minLength":1,"maxLength":10000}}},"EventSpecVersion":{"description":"CloudEvents specification version.","type":"string","enum":["1.0"]},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventSource":{"description":"Name of the component that produced the event.","type":"string","minLength":1,"maxLength":200},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200}}}}"####;

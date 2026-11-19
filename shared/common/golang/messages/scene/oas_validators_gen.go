@@ -141,6 +141,38 @@ func (s *SceneCommand) Validate() error {
 	return nil
 }
 
+func (s *SceneCommandApplied) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Status.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "status",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s SceneCommandAppliedStatus) Validate() error {
+	switch s {
+	case "ok":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s SceneCommandCommand) Validate() error {
 	switch s {
 	case "set_placement_visibility":
@@ -150,34 +182,38 @@ func (s SceneCommandCommand) Validate() error {
 	}
 }
 
-func (s *SceneCommandReply) Validate() error {
+func (s *SceneCommandFailed) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if value, ok := s.Error.Get(); ok {
-			if err := func() error {
-				if err := (validate.String{
-					MinLength:     1,
-					MinLengthSet:  true,
-					MaxLength:     10000,
-					MaxLengthSet:  true,
-					Email:         false,
-					Hostname:      false,
-					Regex:         nil,
-					MinNumeric:    0,
-					MinNumericSet: false,
-					MaxNumeric:    0,
-					MaxNumericSet: false,
-				}).Validate(string(value)); err != nil {
-					return errors.Wrap(err, "string")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
+		if err := s.Status.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "status",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := (validate.String{
+			MinLength:     1,
+			MinLengthSet:  true,
+			MaxLength:     10000,
+			MaxLengthSet:  true,
+			Email:         false,
+			Hostname:      false,
+			Regex:         nil,
+			MinNumeric:    0,
+			MinNumericSet: false,
+			MaxNumeric:    0,
+			MaxNumericSet: false,
+		}).Validate(string(s.Error)); err != nil {
+			return errors.Wrap(err, "string")
 		}
 		return nil
 	}(); err != nil {
@@ -190,6 +226,32 @@ func (s *SceneCommandReply) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s SceneCommandFailedStatus) Validate() error {
+	switch s {
+	case "failed":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s SceneCommandReply) Validate() error {
+	switch s.Type {
+	case SceneCommandAppliedSceneCommandReply:
+		if err := s.SceneCommandApplied.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case SceneCommandFailedSceneCommandReply:
+		if err := s.SceneCommandFailed.Validate(); err != nil {
+			return err
+		}
+		return nil
+	default:
+		return errors.Errorf("invalid type %q", s.Type)
+	}
 }
 
 func (s *SceneCommandRequest) Validate() error {
