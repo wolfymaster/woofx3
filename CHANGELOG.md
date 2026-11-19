@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.72.0](https://github.com/wolfymaster/woofx3/compare/v0.71.0...v0.72.0) (2026-11-19)
+
+### Features
+
+* **api:** install marketplace bundles with a license key ([d989c53](https://github.com/wolfymaster/woofx3/commit/d989c535f580b5d80fe940cbfeb915be6407f635))
+
+### Bug Fixes
+
+* **api:** read a marketplace listing with the buyer token ([8b9d41e](https://github.com/wolfymaster/woofx3/commit/8b9d41e06fcab9b1b4f88d4fc28c241670b64e76))
+
 ## [0.71.0](https://github.com/wolfymaster/woofx3/compare/v0.70.0...v0.71.0) (2026-11-11)
 
 ### Features
