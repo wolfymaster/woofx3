@@ -88,13 +88,14 @@ const (
 	SubjectWorkflowHealthSnapshot Subject = "workflow.health.snapshot"
 
 	// One workflow's health changed after the snapshot. Published only on a
-	// change, never on every reconcile pass. Data (an entry):
-	//   { workflowId, status: "ok" | "error", reason?, since }
+	// change, never on every reconcile pass. The data is WorkflowHealth in
+	// shared/contracts/workflow/openapi.yaml.
 	SubjectWorkflowHealthChanged Subject = "workflow.health.changed"
 
 	// Request/reply: the workflow service answers with every workflow it has
-	// tried to load, as { loaded, at, workflows: [entry...] }. `loaded` is
-	// false until its first complete load, when the list is still partial.
+	// tried to load, as WorkflowHealthReply in shared/contracts/workflow/openapi.yaml.
+	// `loaded` is false until its first complete load, when the list is still
+	// partial.
 	SubjectWorkflowHealthGet Subject = "workflow.health.get"
 
 	// Unified widget event channel (R2 of the widget refactor).
