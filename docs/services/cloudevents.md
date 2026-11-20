@@ -96,6 +96,8 @@ an enum list, not a second validator. This is the message half of the [contracts
 | --- | --- | --- | --- |
 | `shared/contracts/scene/openapi.yaml` | `engine.scene.command` request and reply | workflow engine (Go) | scene manager (TypeScript) |
 | `shared/contracts/barkloader/openapi.yaml` | `barkloader.module.field_options` request | api (TypeScript) | barkloader (Rust) |
+| `shared/contracts/module/openapi.yaml` | `module.storage.changed` | barkloader (Rust), api (TypeScript) | api, scene manager (TypeScript) |
+| `shared/contracts/outbox/openapi.yaml` | `database.record.changed`, `userpage.form.submitted`, `viewer.segment.entered`, `viewer.segment.left` | db service (Go) | api (TypeScript), workflow engine (Go) |
 
 Both documents take their CloudEvents attributes (`specversion`, `id`, `source`, `time`) and the
 opaque id type from `shared/contracts/common/cloudevents.yaml`, a document with no operations of its
@@ -176,6 +178,29 @@ validator: Go in `shared/common/golang/messages/<domain>/fixtures_test.go`, Type
 `shared/common/rust/cloudevents/tests/contracts.rs`. A valid case must round-trip through the
 generated type unchanged.
 
+### Events
+
+An event has no reply, so its operation answers `202` and the document says who publishes it and
+who reads it. Its schema is closed like a request, and lists every attribute the publisher puts on
+the wire, extension attributes included.
+
+The `outbox` document describes events the db service writes to its outbox inside the transaction
+that changed the data. They are published on the subject equal to their `type`, because workflows
+trigger on the type, and not on the `db.<entity>.<operation>.system` subjects of the other outbox
+rows. `EventPublisher.PublishEventIn` takes the generated data type and calls its `Validate()`
+before it writes the row, so data that breaks the contract fails the transaction that produced it
+and never reaches the outbox; the worker does no validation of its own, which keeps the publish
+path cheap. The worker builds the envelope from the row in one function (`encodeCloudEvent`), and
+a test validates what it builds against the generated envelope. Where the contract allows a
+`null` (a deleted row's `publicValues`, the platform fields of an anonymous viewer), the value is
+required and nullable, never optional.
+
+`module.storage.changed` is published per module on `module.storage.<moduleId>.changed`, once for
+every storage write, so it is validated once per consumer at the edge, not by the publishers:
+barkloader builds its data from the generated type, and the api's session-end clear builds it from
+the generated TypeScript type. Its `value` is any JSON value, `null` included, and is always
+present.
+
 ### Run-time validation
 
 A consumer validates what it receives against the same document that typed it:
@@ -184,7 +209,9 @@ A consumer validates what it receives against the same document that typed it:
   validates its own request before publishing, and the reply it receives.
 - **TypeScript**: the `validate<Schema>` type guard from `<domain>.validate.gen.ts`. The scene manager
   validates every `engine.scene.command` request; the api validates a `barkloader.module.field_options`
-  request before sending it. The validators are precompiled, so they need no document at run time
+  request before sending it. The api validates `database.record.changed` and `module.storage.changed`
+  before projecting them onto webhooks, and the scene manager validates `module.storage.changed`; an
+  event that breaks its contract is logged and dropped. The validators are precompiled, so they need no document at run time
   (and run under Convex); `ajv` is the only dependency.
 - **Rust**: the `jsonschema` crate over the `DOCUMENT` the generated module embeds, then serde into the
   generated type. Barkloader validates every field-options request this way. A serde type alone

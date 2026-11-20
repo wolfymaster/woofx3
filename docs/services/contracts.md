@@ -85,6 +85,8 @@ the application, or its consumers cannot name it. `bun run openapi` in
 | Companion gateway | `woofx3` | `shared/common/contracts/companion-gateway.json`, the same generator | [Companion gateway](/services/companion-gateway) |
 | Scene manager messages (`engine.scene.command`) | `woofx3` | `shared/contracts/scene/openapi.yaml` | [Message contracts](/services/cloudevents#message-contracts) |
 | Barkloader messages (`barkloader.module.field_options`) | `woofx3` | `shared/contracts/barkloader/openapi.yaml` | [Message contracts](/services/cloudevents#message-contracts) |
+| Module storage events (`module.storage.changed`) | `woofx3` | `shared/contracts/module/openapi.yaml` | [Message contracts](/services/cloudevents#message-contracts) |
+| Outbox events (`database.record.changed`, `userpage.form.submitted`, `viewer.segment.entered`, `viewer.segment.left`) | `woofx3` | `shared/contracts/outbox/openapi.yaml` | [Message contracts](/services/cloudevents#message-contracts) |
 | Maintenance API | `woofx3-maintenance` | route definitions, `openapi/maintenance.json` | the repository's `CLAUDE.md` |
 | Operators' billing API | `woofx3-maintenance` | route definitions, `openapi/billing.json` | the repository's `CLAUDE.md` |
 | Ops API | `woofx3-ui` | `convex/lib/ops/contract.ts`, `openapi/ops.json` | the UI's `docs/patterns/ops-api.md` |
