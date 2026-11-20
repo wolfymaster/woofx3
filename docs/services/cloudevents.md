@@ -96,16 +96,21 @@ an enum list, not a second validator. This is the message half of the [contracts
 | --- | --- | --- | --- |
 | `shared/contracts/scene/openapi.yaml` | `engine.scene.command` request and reply | workflow engine (Go) | scene manager (TypeScript) |
 | `shared/contracts/barkloader/openapi.yaml` | `barkloader.module.field_options` request | api (TypeScript) | barkloader (Rust) |
+| `shared/contracts/heartbeat/openapi.yaml` | `com.woofx3.heartbeat`, published on `HEARTBEAT` | every service (Go, TypeScript, Rust) | the runtime health monitors (Go, TypeScript) and the api's readiness probe |
+| `shared/contracts/session/openapi.yaml` | `session.started`, `session.ended` | api (TypeScript) | every publishing process (TypeScript, Rust), the api's session summary emitter |
+| `shared/contracts/streamstatus/openapi.yaml` | `stream.status.observed`, `stream.status.requested` | connectors host, api (TypeScript) | api, connectors host |
 
-Both documents take their CloudEvents attributes (`specversion`, `id`, `source`, `time`) and the
+All the documents take their CloudEvents attributes (`specversion`, `id`, `source`, `time`) and the
 opaque id type from `shared/contracts/common/cloudevents.yaml`, a document with no operations of its
 own.
 
 ### Writing a message
 
 - Each message is a schema in `components.schemas`, and an operation under `paths` references it.
-  The operation exists so the generators reach the schema; its path is the NATS subject, and its
-  request body and `200` response are the message's request and reply.
+  The operation exists so the generators reach the schema; its path is the message's `type` (the
+  NATS subject, except for the heartbeat, which is published on `HEARTBEAT`), and its request body
+  and `200` response are the message's request and reply. A message nobody replies to, an event, has
+  only a `202` response with no body.
 - A request is the whole CloudEvent: `additionalProperties: false`, every attribute listed, `type`
   an `enum` with one value, the subject. A reply is the raw reply body and is open, so a producer
   can add a field before its consumers know it.
@@ -128,6 +133,26 @@ The subject is a generated constant in every language: the `type` enum becomes
 `SceneCommandRequestType::EngineSceneCommand` in Rust (`to_string()` is the subject). A
 producer sets `type` from it and a consumer subscribes on it. `scripts/gen-schemas.sh` refuses a
 document whose operation path is not the `type` its request fixes.
+
+### Heartbeat, session and stream status
+
+These are published events with no reply, so each document holds the producer's whole CloudEvent,
+closed, and every reader checks what it receives against the same schema.
+
+- **`com.woofx3.heartbeat`** carries `specversion` `1.0`, a fresh `id`, `source`, `subject`
+  `HEARTBEAT`, `time` and `data: { application, ready }`. A reader takes `application` as the
+  service's runtime name. A message on `HEARTBEAT` that does not fit, such as a bare ping, is not a
+  heartbeat and is ignored. The runtime monitors' liveness ping is not published there: it goes to
+  `_HEALTH.<application>.ping`.
+- **`session.started`** and **`session.ended`** carry no `sessionId` attribute, since they are what
+  establishes the session. **`stream.status.observed`** carries the `platform` attribute and, when
+  its publisher knows a session, the `sessionId` attribute; `data` is `{ live, startedAt? }` and
+  `startedAt` is present only for a live stream whose platform says when it began.
+  **`stream.status.requested`** has no `data`.
+- These three documents state the `specversion` the TypeScript and Rust event factories write,
+  `1.0.0`, which is not a CloudEvents version. The factories serve every event family, so the value
+  is a property of the factory and not of one message; the heartbeat, written by hand in each
+  language, uses `1.0`.
 
 ### Generating
 
@@ -181,13 +206,19 @@ generated type unchanged.
 A consumer validates what it receives against the same document that typed it:
 
 - **Go**: `json.Unmarshal` into the generated type, then its `Validate()`. The workflow engine
-  validates its own request before publishing, and the reply it receives.
+  validates its own request before publishing, and the reply it receives. The runtime's NATS monitor
+  builds each heartbeat from the generated type, validates it before publishing, and ignores a message
+  on `HEARTBEAT` that does not validate.
 - **TypeScript**: the `validate<Schema>` type guard from `<domain>.validate.gen.ts`. The scene manager
   validates every `engine.scene.command` request; the api validates a `barkloader.module.field_options`
-  request before sending it. The validators are precompiled, so they need no document at run time
+  request before sending it. The api's resolver and the connectors host check each `session.*` and
+  `stream.status.*` event they publish with `encodeContract` (`cloudevents/utils.ts`), which throws when
+  the serialised event does not fit; every reader checks what it receives with `parseContract`, as the
+  runtime monitors and the api's readiness tracker do for heartbeats. The validators are precompiled, so they need no document at run time
   (and run under Convex); `ajv` is the only dependency.
 - **Rust**: the `jsonschema` crate over the `DOCUMENT` the generated module embeds, then serde into the
-  generated type. Barkloader validates every field-options request this way. A serde type alone
+  generated type. Barkloader validates every field-options request and every `session.started` message this way,
+  and builds each heartbeat it publishes from the generated types. A serde type alone
   accepts `null` for an optional field, so the validator is the check, not the type.
 
 ## Twitch Events
