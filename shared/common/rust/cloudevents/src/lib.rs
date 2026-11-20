@@ -17,6 +17,7 @@ pub mod session;
 // Generated from shared/contracts/<domain>/openapi.yaml by scripts/gen-schemas.sh.
 pub mod barkloader_gen;
 pub mod scene_gen;
+pub mod workflow_gen;
 
 pub use base_event::{BaseEvent, SPEC_VERSION};
 pub use time::{format_iso8601, now_iso8601};
