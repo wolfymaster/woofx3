@@ -25,6 +25,7 @@ on:
       - "barkloader/**"
       - "shared/common/rust/**"
       - "shared/common/contracts/**"
+      - "shared/contracts/**"
       - "shared/clients/rust/**"
       - ".github/workflows/rust-checks.yml"
   pull_request:
@@ -32,6 +33,7 @@ on:
       - "barkloader/**"
       - "shared/common/rust/**"
       - "shared/common/contracts/**"
+      - "shared/contracts/**"
       - "shared/clients/rust/**"
       - ".github/workflows/rust-checks.yml"
   workflow_dispatch:

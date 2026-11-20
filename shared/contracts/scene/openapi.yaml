@@ -1,0 +1,98 @@
+openapi: 3.1.0
+info:
+  title: Scene manager bus messages
+  version: 1.0.0
+  description: >
+    Request/reply messages answered by the scene manager. Each operation path is
+    the NATS subject; the request's `type` is that same subject, and the reply is
+    the raw reply body.
+paths:
+  /engine.scene.command:
+    post:
+      operationId: sceneCommand
+      summary: Change one thing on a live scene. Published by the workflow engine, answered by the scene manager.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SceneCommandRequest"
+      responses:
+        "200":
+          description: The scene manager's answer, whether or not the change was made.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SceneCommandReply"
+components:
+  schemas:
+    SceneCommandRequest:
+      description: CloudEvent carrying one change to a live scene.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, data]
+      properties:
+        specversion:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [engine.scene.command]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        data:
+          $ref: "#/components/schemas/SceneCommand"
+    SceneCommand:
+      description: >
+        Shows or hides one widget placement. `placementId` is the placement's id
+        in the scene's widgets, not a widget definition: one widget can be placed
+        on a scene more than once.
+      type: object
+      additionalProperties: false
+      required: [command, sceneId, placementId, visible]
+      properties:
+        command:
+          type: string
+          enum: [set_placement_visibility]
+        sceneId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        placementId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        visible:
+          type: boolean
+    SceneCommandReply:
+      description: >
+        The outcome of a command: one variant per `status`, each with a
+        single-value `status` enum.
+      oneOf:
+        - $ref: "#/components/schemas/SceneCommandApplied"
+        - $ref: "#/components/schemas/SceneCommandFailed"
+      discriminator:
+        propertyName: status
+        mapping:
+          ok: "#/components/schemas/SceneCommandApplied"
+          failed: "#/components/schemas/SceneCommandFailed"
+    SceneCommandApplied:
+      description: The change was made, or the scene already had it.
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    SceneCommandFailed:
+      description: The change was not made.
+      type: object
+      required: [status, error]
+      properties:
+        status:
+          type: string
+          enum: [failed]
+        error:
+          description: Written for the streamer; becomes the failed workflow step's error as written.
+          type: string
+          minLength: 1
+          maxLength: 10000

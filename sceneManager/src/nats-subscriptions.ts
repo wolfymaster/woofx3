@@ -1,4 +1,4 @@
-import { SCENE_COMMAND_SUBJECT } from "@woofx3/common/cloudevents/Scene/commands";
+import { SceneCommandRequestType } from "@woofx3/common/cloudevents/Scene/scene.gen";
 import {
   COMPOSITION_PREVIEW_TOKEN_SUBJECT,
   type CompositionPreviewTokenReply,
@@ -272,8 +272,10 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
 
   // A workflow step changing a scene (scene.widget.visibility): applied to
   // the published scene like an edit, and answered so the step knows.
-  await nats.subscribe(SCENE_COMMAND_SUBJECT, (msg) => answerSceneCommand(sceneDocuments, msg, logger));
-  logger.info(`Answering ${SCENE_COMMAND_SUBJECT}`);
+  await nats.subscribe(SceneCommandRequestType.engine_scene_command, (msg) =>
+    answerSceneCommand(sceneDocuments, msg, logger)
+  );
+  logger.info(`Answering ${SceneCommandRequestType.engine_scene_command}`);
 
   // db-proxy announces every module setting write, naming the setting but
   // never its value. A module's widgets reading one of its list settings get

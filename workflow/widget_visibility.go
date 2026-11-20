@@ -6,28 +6,21 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/wolfymaster/woofx3/common/messages/scene"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 )
 
 // sceneCommandSubject is answered by the scene manager, which holds every open
-// overlay. Must match SCENE_COMMAND_SUBJECT in
-// shared/common/typescript/cloudevents/Scene/commands.ts.
-const sceneCommandSubject = "engine.scene.command"
+// overlay. It is the `type` the scene contract fixes for the request.
+const sceneCommandSubject = string(scene.SceneCommandRequestTypeEngineSceneCommand)
+
+// sceneCommandSource is the `source` of the requests this engine publishes.
+const sceneCommandSource = "workflow"
 
 // sceneCommandTimeout bounds the wait for the scene manager's answer. The
 // change is one op on a scene it holds in memory (saved a moment later), so a
 // slow answer means the scene manager is not there, not that it is busy.
 const sceneCommandTimeout = 5 * time.Second
-
-// placementVisibilityCommand is the `data` of an `engine.scene.command`
-// request. Mirrors SceneControlCommand in
-// shared/common/typescript/cloudevents/Scene/commands.ts.
-type placementVisibilityCommand struct {
-	Command     string `json:"command"`
-	SceneID     string `json:"sceneId"`
-	PlacementID string `json:"placementId"`
-	Visible     bool   `json:"visible"`
-}
 
 // NewWidgetVisibilityAction is the engine handler registered as
 // `scene.widget.visibility`. It shows or hides one widget placement on a
@@ -66,8 +59,8 @@ func NewWidgetVisibilityAction() tasks.ActionFunc[AppServices] {
 			return nil, err
 		}
 		return map[string]any{
-			"sceneId":     command.SceneID,
-			"placementId": command.PlacementID,
+			"sceneId":     command.SceneId,
+			"placementId": command.PlacementId,
 			"visible":     command.Visible,
 		}, nil
 	}
@@ -88,30 +81,30 @@ var widgetVisibilityActionSpec = tasks.ActionSpec{
 		if command.Visible {
 			verb = "show"
 		}
-		return fmt.Sprintf("would %s widget placement %s on scene %s", verb, command.PlacementID, command.SceneID), nil
+		return fmt.Sprintf("would %s widget placement %s on scene %s", verb, command.PlacementId, command.SceneId), nil
 	},
 }
 
 // parseWidgetVisibilityParams reads the step's parameters. `visible` defaults
 // to true and accepts "true" and "false", since a value filled in from an
 // expression reaches the action as text.
-func parseWidgetVisibilityParams(params map[string]any) (placementVisibilityCommand, error) {
+func parseWidgetVisibilityParams(params map[string]any) (scene.SceneCommand, error) {
 	sceneID, _ := params["sceneId"].(string)
 	if sceneID == "" {
-		return placementVisibilityCommand{}, fmt.Errorf("sceneId must be a scene id, got %s", describeParam(params["sceneId"]))
+		return scene.SceneCommand{}, fmt.Errorf("sceneId must be a scene id, got %s", describeParam(params["sceneId"]))
 	}
 	placementID, _ := params["placementId"].(string)
 	if placementID == "" {
-		return placementVisibilityCommand{}, fmt.Errorf("placementId must be a widget placement id, got %s", describeParam(params["placementId"]))
+		return scene.SceneCommand{}, fmt.Errorf("placementId must be a widget placement id, got %s", describeParam(params["placementId"]))
 	}
 	visible, err := parseVisibleParam(params["visible"])
 	if err != nil {
-		return placementVisibilityCommand{}, err
+		return scene.SceneCommand{}, err
 	}
-	return placementVisibilityCommand{
-		Command:     "set_placement_visibility",
-		SceneID:     sceneID,
-		PlacementID: placementID,
+	return scene.SceneCommand{
+		Command:     scene.SceneCommandCommandSetPlacementVisibility,
+		SceneId:     scene.EntityId(sceneID),
+		PlacementId: scene.EntityId(placementID),
 		Visible:     visible,
 	}, nil
 }
@@ -133,15 +126,21 @@ func parseVisibleParam(value any) (bool, error) {
 	return false, fmt.Errorf("visible must be true or false, got %s", describeParam(value))
 }
 
-func buildSceneCommandRequest(command placementVisibilityCommand) ([]byte, error) {
-	payload, err := json.Marshal(map[string]any{
-		"specversion": "1.0",
-		"id":          uuid.NewString(),
-		"type":        sceneCommandSubject,
-		"source":      "workflow",
-		"time":        time.Now().UTC().Format(time.RFC3339),
-		"data":        command,
-	})
+// buildSceneCommandRequest serializes the command as the CloudEvent the scene
+// contract describes, refusing to produce one the scene manager would reject.
+func buildSceneCommandRequest(command scene.SceneCommand) ([]byte, error) {
+	request := scene.SceneCommandRequest{
+		Specversion: scene.EventSpecVersion10,
+		ID:          scene.EventId(uuid.NewString()),
+		Type:        scene.SceneCommandRequestTypeEngineSceneCommand,
+		Source:      sceneCommandSource,
+		Time:        scene.EventTime(time.Now().UTC().Format(time.RFC3339)),
+		Data:        command,
+	}
+	if err := request.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid %s request: %w", sceneCommandSubject, err)
+	}
+	payload, err := json.Marshal(request)
 	if err != nil {
 		return nil, fmt.Errorf("marshal %s: %w", sceneCommandSubject, err)
 	}
@@ -152,18 +151,15 @@ func buildSceneCommandRequest(command placementVisibilityCommand) ([]byte, error
 // outcome. Its error text is written for the streamer and becomes the step's
 // error as it is.
 func decodeSceneCommandReply(raw []byte) error {
-	var reply struct {
-		OK    bool   `json:"ok"`
-		Error string `json:"error"`
-	}
+	var reply scene.SceneCommandReply
 	if err := json.Unmarshal(raw, &reply); err != nil {
 		return fmt.Errorf("scene manager answered with something that is not a reply: %w", err)
 	}
-	if !reply.OK {
-		if reply.Error == "" {
-			return fmt.Errorf("scene manager refused the change without saying why")
-		}
-		return fmt.Errorf("%s", reply.Error)
+	if err := reply.Validate(); err != nil {
+		return fmt.Errorf("scene manager answered with something that is not a reply: %w", err)
+	}
+	if reply.Type == scene.SceneCommandFailedSceneCommandReply {
+		return fmt.Errorf("%s", reply.SceneCommandFailed.Error)
 	}
 	return nil
 }

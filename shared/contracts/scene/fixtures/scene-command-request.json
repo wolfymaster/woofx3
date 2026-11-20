@@ -1,0 +1,624 @@
+{
+  "schema": "SceneCommandRequest",
+  "description": "engine.scene.command requests. A request is closed: an unknown field, a missing or mistyped one, a null and an empty value are all refused.",
+  "cases": [
+    {
+      "name": "hide a placement",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "show a placement",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": true
+        }
+      }
+    },
+    {
+      "name": "a time with a fraction and an offset",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30.123+02:00",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "ids at the 200 character limit",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+          "placementId": "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "no specversion",
+      "valid": false,
+      "value": {
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "no id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "no type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "no source",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "no time",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "no data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z"
+      }
+    },
+    {
+      "name": "no data.command",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "no data.sceneId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "no data.placementId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "no data.visible",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1"
+        }
+      }
+    },
+    {
+      "name": "an unknown envelope field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        },
+        "traceparent": "00-abc"
+      }
+    },
+    {
+      "name": "an unknown data field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false,
+          "extra": 1
+        }
+      }
+    },
+    {
+      "name": "a misspelled data field instead of visible",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visibile": false
+        }
+      }
+    },
+    {
+      "name": "visible as text",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": "false"
+        }
+      }
+    },
+    {
+      "name": "visible as a number",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": 0
+        }
+      }
+    },
+    {
+      "name": "a null visible",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": null
+        }
+      }
+    },
+    {
+      "name": "a null sceneId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": null,
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "a numeric placementId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": 7,
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "an empty sceneId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "an empty placementId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "a 201 character sceneId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "a 201 character placementId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "ppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "an unknown command",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "delete_scene",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "a null command",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": null,
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "another subject as the type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.repair",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "an empty type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "specversion 2.0",
+      "valid": false,
+      "value": {
+        "specversion": "2.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "an empty id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "an empty source",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "a time that is not a timestamp",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "yesterday",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "a time without an offset",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30",
+        "data": {
+          "command": "set_placement_visibility",
+          "sceneId": "scene-1",
+          "placementId": "board-1",
+          "visible": false
+        }
+      }
+    },
+    {
+      "name": "a null data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": null
+      }
+    },
+    {
+      "name": "an empty data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": {}
+      }
+    },
+    {
+      "name": "a list as data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
+        "type": "engine.scene.command",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30Z",
+        "data": []
+      }
+    }
+  ]
+}

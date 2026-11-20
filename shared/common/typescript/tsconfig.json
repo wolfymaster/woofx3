@@ -14,6 +14,9 @@
     "http/**/*.ts",
     "runtime/**/*.ts",
     "integrations/**/*.ts",
-    "cloudevents/Companion/**/*.ts"
+    "cloudevents/Companion/**/*.ts",
+    "cloudevents/Barkloader/**/*.ts",
+    "cloudevents/Scene/**/*.ts",
+    "cloudevents/contracts.test.ts"
   ]
 }

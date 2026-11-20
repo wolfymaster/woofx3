@@ -1,8 +1,15 @@
 import { describe, expect, it, mock } from "bun:test";
 import {
+  SceneCommandAppliedStatus,
+  SceneCommandCommand,
+  SceneCommandFailedStatus,
+  SceneCommandRequestType,
+} from "@woofx3/common/cloudevents/Scene/scene.gen";
+import { validateSceneCommandReply } from "@woofx3/common/cloudevents/Scene/scene.validate.gen";
+import {
   answerSceneCommand,
   executeSceneControlCommand,
-  parseSceneControlCommand,
+  parseSceneControlRequest,
 } from "../../src/scene/scene-command";
 import { SceneDocuments, type SceneWrite } from "../../src/scene/scene-documents";
 import type { OverlaySceneState } from "../../src/scene/scene-host";
@@ -66,31 +73,55 @@ function documents(
 }
 
 const hide = {
-  command: "set_placement_visibility",
+  command: SceneCommandCommand.set_placement_visibility,
   sceneId: "scene-1",
   placementId: "board-1",
   visible: false,
-} as const;
+};
 
-describe("parseSceneControlCommand", () => {
+function request(data: unknown) {
+  return {
+    specversion: "1.0",
+    id: "evt-1",
+    type: SceneCommandRequestType.engine_scene_command,
+    source: "workflow",
+    time: "2026-11-19T10:15:30Z",
+    data,
+  };
+}
+
+describe("parseSceneControlRequest", () => {
   it("accepts a visibility command", () => {
-    expect(parseSceneControlCommand(hide)).toEqual({ ok: true, command: hide });
+    expect(parseSceneControlRequest(request(hide))).toEqual({ ok: true, command: hide });
   });
 
   it("refuses a misspelled field rather than ignoring it", () => {
-    expect(parseSceneControlCommand({ ...hide, visible: undefined, visibile: false }).ok).toBe(false);
+    expect(parseSceneControlRequest(request({ ...hide, visible: undefined, visibile: false })).ok).toBe(false);
   });
 
   it("refuses an empty placement id and a visibility given as text", () => {
-    expect(parseSceneControlCommand({ ...hide, placementId: "" }).ok).toBe(false);
-    expect(parseSceneControlCommand({ ...hide, visible: "false" }).ok).toBe(false);
+    expect(parseSceneControlRequest(request({ ...hide, placementId: "" })).ok).toBe(false);
+    expect(parseSceneControlRequest(request({ ...hide, visible: "false" })).ok).toBe(false);
+  });
+
+  it("names the field that does not fit", () => {
+    expect(parseSceneControlRequest(request({ ...hide, visible: "false" }))).toEqual({
+      ok: false,
+      error: "invalid scene command: data.visible: must be boolean",
+    });
+  });
+
+  it("refuses an envelope that is not the contract's", () => {
+    expect(parseSceneControlRequest({ ...request(hide), type: "engine.scene.repair" }).ok).toBe(false);
+    expect(parseSceneControlRequest({ ...request(hide), extra: 1 }).ok).toBe(false);
+    expect(parseSceneControlRequest({ data: hide }).ok).toBe(false);
   });
 });
 
 describe("executeSceneControlCommand", () => {
   it("hides the widget on the published scene, copies it into the draft, and saves it", async () => {
     const { docs, sent, writes } = documents();
-    expect(await executeSceneControlCommand(docs, hide)).toEqual({ ok: true });
+    expect(await executeSceneControlCommand(docs, hide)).toEqual({ status: SceneCommandAppliedStatus.ok });
 
     expect((await docs.snapshot("scene-1"))!.doc.widgets["board-1"]!.visible).toBe(false);
     expect((await docs.snapshot("scene-1", "draft"))!.doc.widgets["board-1"]!.visible).toBe(false);
@@ -104,14 +135,16 @@ describe("executeSceneControlCommand", () => {
 
   it("changes nothing for a widget already that way", async () => {
     const { docs, sent } = documents();
-    expect(await executeSceneControlCommand(docs, { ...hide, visible: true })).toEqual({ ok: true });
+    expect(await executeSceneControlCommand(docs, { ...hide, visible: true })).toEqual({
+      status: SceneCommandAppliedStatus.ok,
+    });
     expect(sent).toEqual([]);
   });
 
   it("names a scene that does not exist", async () => {
     const { docs } = documents();
     expect(await executeSceneControlCommand(docs, { ...hide, sceneId: "gone" })).toEqual({
-      ok: false,
+      status: SceneCommandFailedStatus.failed,
       error: 'scene "gone" does not exist',
     });
   });
@@ -120,7 +153,7 @@ describe("executeSceneControlCommand", () => {
     const alert: OverlaySceneState = { ...SCENE, sceneId: "alert-1", name: "Follow", kind: "alert" };
     const { docs, sent } = documents(async (id) => (id === "alert-1" ? alert : null));
     expect(await executeSceneControlCommand(docs, { ...hide, sceneId: "alert-1" })).toEqual({
-      ok: false,
+      status: SceneCommandFailedStatus.failed,
       error: '"Follow" is an alert composition, not a scene; only a running scene\'s widgets can be shown or hidden',
     });
     expect(sent).toEqual([]);
@@ -130,7 +163,7 @@ describe("executeSceneControlCommand", () => {
   it("names a placement that is not on the scene", async () => {
     const { docs, sent } = documents();
     expect(await executeSceneControlCommand(docs, { ...hide, placementId: "removed-1" })).toEqual({
-      ok: false,
+      status: SceneCommandFailedStatus.failed,
       error: 'widget placement "removed-1" is not on scene "Main"',
     });
     expect(sent).toEqual([]);
@@ -148,20 +181,24 @@ describe("answerSceneCommand", () => {
   }
 
   it("answers a request with the outcome", async () => {
-    const msg = message({ specversion: "1.0", type: "engine.scene.command", data: hide }, "_INBOX.1");
+    const msg = message(request(hide), "_INBOX.1");
     await answerSceneCommand(documents().docs, msg, fakeLogger());
-    expect(replyOf(msg)).toEqual({ ok: true });
+    expect(replyOf(msg)).toEqual({ status: SceneCommandAppliedStatus.ok });
+    expect(validateSceneCommandReply(replyOf(msg))).toBe(true);
   });
 
   it("answers a malformed command with why", async () => {
-    const msg = message({ data: { command: "set_placement_visibility" } }, "_INBOX.1");
+    const msg = message(request({ command: "set_placement_visibility" }), "_INBOX.1");
     await answerSceneCommand(documents().docs, msg, fakeLogger());
-    expect((replyOf(msg) as { ok: boolean }).ok).toBe(false);
+    expect(replyOf(msg)).toEqual({
+      status: SceneCommandFailedStatus.failed,
+      error: "invalid scene command: data: must have required property 'sceneId'",
+    });
   });
 
   it("changes nothing for a bare publish, which only something other than the engine sends", async () => {
     const { docs, sent } = documents();
-    const msg = message({ data: hide }, undefined);
+    const msg = message(request(hide), undefined);
     await answerSceneCommand(docs, msg, fakeLogger());
     expect(msg.respond).not.toHaveBeenCalled();
     expect(sent).toEqual([]);
@@ -169,8 +206,8 @@ describe("answerSceneCommand", () => {
 
   it("answers rather than throws when loading the scene fails", async () => {
     const { docs } = documents(async () => Promise.reject(new Error("db down")));
-    const msg = message({ data: hide }, "_INBOX.1");
+    const msg = message(request(hide), "_INBOX.1");
     await answerSceneCommand(docs, msg, fakeLogger());
-    expect(replyOf(msg)).toEqual({ ok: false, error: "scene manager error: db down" });
+    expect(replyOf(msg)).toEqual({ status: SceneCommandFailedStatus.failed, error: "scene manager error: db down" });
   });
 });

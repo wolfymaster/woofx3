@@ -44,6 +44,7 @@ use super::module_manifest::{
 use super::reserved_subjects::declared_event_reservation;
 use super::resource_kind_ref::parse_kind_ref;
 use super::theme::{self, InstalledModule};
+use woofx3_cloudevents::barkloader_gen::ModuleFieldOptionsRequestType;
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
 /// carries fully-resolved canonical ids ready for persistence.
@@ -528,9 +529,11 @@ async fn validate_theme_dependencies(
 
 /// The subject barkloader's field-options responder answers. It runs
 /// `{payload.moduleId}:function:{payload.functionId}` with that module's
-/// permissions, so a form may name only its own module. Must match `SUBJECT`
-/// in barkloader/app/src/services/field_options.rs.
-const FIELD_OPTIONS_SUBJECT: &str = "barkloader.module.field_options";
+/// permissions, so a form may name only its own module. It is the `type` the
+/// barkloader contract fixes for the request.
+fn field_options_subject() -> String {
+    ModuleFieldOptionsRequestType::BarkloaderModuleFieldOptions.to_string()
+}
 
 /// The connectors Twitch adapter's request subject. It answers any method of its Twitch
 /// client, writes included (a shoutout, adding a moderator), so a form may
@@ -548,7 +551,7 @@ const TWITCHAPI_FORM_READS: [&str; 1] = ["listChannelPointRewards"];
 /// button is pressed. Without this, a field could switch OBS scenes or add a
 /// moderator just by being looked at, or run another module's function with
 /// that module's permissions. An upload's forms may therefore request only
-/// `FIELD_OPTIONS_SUBJECT` for its own functions and the `twitchapi` reads in
+/// the field-options subject for its own functions and the `twitchapi` reads in
 /// `TWITCHAPI_FORM_READS`: an allowlist, because a new command subject should
 /// stay closed to forms until someone decides otherwise. The system module's
 /// forms are the engine's own and may read its subjects. A module that lists
@@ -628,12 +631,13 @@ impl FormRequests<'_> {
                 "{context}: an `internal` request needs a `request.event` subject"
             ));
         };
+        let field_options = field_options_subject();
         match event {
-            FIELD_OPTIONS_SUBJECT => self.check_field_options_request(descriptor, context),
+            _ if event == field_options => self.check_field_options_request(descriptor, context),
             TWITCHAPI_SUBJECT => check_twitchapi_request(descriptor, context),
             _ => Err(anyhow!(
                 "{context}: requests {event:?}; an uploaded module's forms may request only \
-                 {FIELD_OPTIONS_SUBJECT} (its own functions) or {TWITCHAPI_SUBJECT} (the reads {TWITCHAPI_FORM_READS:?})"
+                 {field_options} (its own functions) or {TWITCHAPI_SUBJECT} (the reads {TWITCHAPI_FORM_READS:?})"
             )),
         }
     }
@@ -650,8 +654,9 @@ impl FormRequests<'_> {
             .unwrap_or_default();
         if requested_module != module_id {
             return Err(anyhow!(
-                "{context}: requests {FIELD_OPTIONS_SUBJECT} for module {requested_module:?}; \
-                 a form may run only its own module's functions, so `payload.moduleId` must be {module_id:?}"
+                "{context}: requests {} for module {requested_module:?}; \
+                 a form may run only its own module's functions, so `payload.moduleId` must be {module_id:?}",
+                field_options_subject()
             ));
         }
         let function_id = descriptor
@@ -660,8 +665,9 @@ impl FormRequests<'_> {
             .unwrap_or_default();
         if !self.manifest.functions.iter().any(|f| f.id == function_id) {
             return Err(anyhow!(
-                "{context}: requests {FIELD_OPTIONS_SUBJECT} for function {function_id:?}, \
-                 which this module does not declare"
+                "{context}: requests {} for function {function_id:?}, \
+                 which this module does not declare",
+                field_options_subject()
             ));
         }
         Ok(())
@@ -3639,7 +3645,7 @@ mod tests {
             ("setting.integration.token.updated", "setting."),
             ("HEARTBEAT", "HEARTBEAT"),
             ("MESSAGEBUS_INIT", "MESSAGEBUS_INIT"),
-            ("barkloader.module.field_options", "barkloader."),
+            (&field_options_subject(), "barkloader."),
             ("workflow.run.completed", "workflow."),
             ("workflow.health.ping", "workflow."),
             ("workflow.anything", "workflow."),
@@ -3762,7 +3768,7 @@ mod tests {
     #[test]
     fn accepts_an_upload_field_source_on_its_own_function() {
         validate(&action_with_field_source(
-            "barkloader.module.field_options",
+            &field_options_subject(),
             r#"{ "moduleId": "mod", "functionId": "f" }"#,
         ))
         .expect("a module's forms may run its own field-options function");
@@ -3776,12 +3782,9 @@ mod tests {
             r#"{ "moduleId": "other_mod", "functionId": "f" }"#,
             r#"{ "functionId": "f" }"#,
         ] {
-            let err = validate(&action_with_field_source(
-                "barkloader.module.field_options",
-                payload,
-            ))
-            .expect_err("a form must not run another module's function")
-            .to_string();
+            let err = validate(&action_with_field_source(&field_options_subject(), payload))
+                .expect_err("a form must not run another module's function")
+                .to_string();
             assert!(
                 err.contains("its own module's functions"),
                 "{payload}: {err}"
@@ -3793,7 +3796,7 @@ mod tests {
     #[test]
     fn rejects_an_upload_field_source_on_an_undeclared_function() {
         let err = validate(&action_with_field_source(
-            "barkloader.module.field_options",
+            &field_options_subject(),
             r#"{ "moduleId": "mod", "functionId": "missing" }"#,
         ))
         .expect_err("the field would never load")
@@ -3834,14 +3837,15 @@ mod tests {
             "actions": [{{ "id": "a", "name": "A", "type": "function", "function": "f",
                 "schema": [{{ "id": "platform", "label": "Platform", "type": "select", {select_extras} }}] }}],
             "functions": [{{ "id": "f", "name": "F", "runtime": "js", "path": "f.js" }}]}}"#
-        ))
+        )
+        .replace("$SUBJECT", &field_options_subject()))
     }
 
     const PINNED_PLATFORM_OPTIONS: &str = r#""options": [
         { "value": "origin", "label": "Where it came from" },
         { "value": "all", "label": "Everywhere" }]"#;
     const OWN_FIELD_OPTIONS_SOURCE: &str = r#""source": { "kind": "internal", "request": {
-        "event": "barkloader.module.field_options",
+        "event": "$SUBJECT",
         "payload": { "moduleId": "mod", "functionId": "f" } } }"#;
 
     #[test]
@@ -3946,8 +3950,10 @@ mod tests {
         let m = action_with_list_row(
             r#"{ "id": "pick", "label": "Pick", "type": "select",
                 "source": { "kind": "internal", "request": {
-                    "event": "barkloader.module.field_options",
-                    "payload": { "moduleId": "mod", "functionId": "f" } } } }"#,
+                    "event": "$SUBJECT",
+                    "payload": { "moduleId": "mod", "functionId": "f" } } } }"#
+                .replace("$SUBJECT", &field_options_subject())
+                .as_str(),
         );
         let err = validate(&m)
             .expect_err("a nested source is not resolved")

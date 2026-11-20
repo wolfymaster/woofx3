@@ -87,3 +87,6 @@ services/nats/messagebus
 .stylegate/runs/
 .stylegate/cache/
 .stylegate/mined/
+
+# contract generators installed by scripts/gen-schemas.sh
+scripts/contracts/.tools/
