@@ -4,11 +4,13 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as barkloader from "./Barkloader/barkloader.validate.gen";
+import * as module from "./Module/module.validate.gen";
+import * as outbox from "./Outbox/outbox.validate.gen";
 import * as scene from "./Scene/scene.validate.gen";
 
 type Validator = ((value: unknown) => boolean) & { errors?: unknown };
 
-const domains: Record<string, Record<string, Validator>> = { scene, barkloader };
+const domains: Record<string, Record<string, Validator>> = { scene, barkloader, module, outbox };
 const contractsDir = join(import.meta.dir, "..", "..", "..", "contracts");
 
 interface Fixture {

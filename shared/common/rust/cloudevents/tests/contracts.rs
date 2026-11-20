@@ -4,7 +4,7 @@
 
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
-use woofx3_cloudevents::{barkloader_gen, scene_gen};
+use woofx3_cloudevents::{barkloader_gen, module_gen, outbox_gen, scene_gen};
 
 struct Case {
     name: String,
@@ -40,6 +40,22 @@ fn validator(document: &str, schema: &str) -> jsonschema::Validator {
     jsonschema::validator_for(&root).unwrap()
 }
 
+/// Equal as JSON: a number typed as a float and one written as an integer are the same value.
+fn same_json(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| same_json(p, q))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(k, v)| y.get(k).is_some_and(|w| same_json(v, w)))
+        }
+        _ => a == b,
+    }
+}
+
 fn run<T: DeserializeOwned + Serialize>(domain: &str, file: &str, schema: &str, document: &str) {
     let validator = validator(document, schema);
     for case in fixtures(domain, file, schema) {
@@ -56,10 +72,11 @@ fn run<T: DeserializeOwned + Serialize>(domain: &str, file: &str, schema: &str, 
             assert_eq!(typed.is_ok(), case.valid, "typify types: {label}");
         }
         if case.valid && !case.unknown_fields {
-            assert_eq!(
-                serde_json::to_value(typed.unwrap()).unwrap(),
-                case.value,
-                "round trip: {label}"
+            let encoded = serde_json::to_value(typed.unwrap()).unwrap();
+            assert!(
+                same_json(&encoded, &case.value),
+                "round trip: {label}\n got  {encoded}\n want {}",
+                case.value
             );
         }
     }
@@ -92,6 +109,56 @@ fn test_module_field_options_request_fixtures() {
         "module-field-options-request.json",
         "ModuleFieldOptionsRequest",
         barkloader_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_module_storage_changed_event_fixtures() {
+    run::<module_gen::ModuleStorageChangedEvent>(
+        "module",
+        "module-storage-changed-event.json",
+        "ModuleStorageChangedEvent",
+        module_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_database_record_changed_event_fixtures() {
+    run::<outbox_gen::DatabaseRecordChangedEvent>(
+        "outbox",
+        "database-record-changed-event.json",
+        "DatabaseRecordChangedEvent",
+        outbox_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_user_page_form_submitted_event_fixtures() {
+    run::<outbox_gen::UserPageFormSubmittedEvent>(
+        "outbox",
+        "userpage-form-submitted-event.json",
+        "UserPageFormSubmittedEvent",
+        outbox_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_viewer_segment_entered_event_fixtures() {
+    run::<outbox_gen::ViewerSegmentEnteredEvent>(
+        "outbox",
+        "viewer-segment-entered-event.json",
+        "ViewerSegmentEnteredEvent",
+        outbox_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_viewer_segment_left_event_fixtures() {
+    run::<outbox_gen::ViewerSegmentLeftEvent>(
+        "outbox",
+        "viewer-segment-left-event.json",
+        "ViewerSegmentLeftEvent",
+        outbox_gen::DOCUMENT,
     );
 }
 
