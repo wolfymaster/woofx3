@@ -17,6 +17,9 @@
     "cloudevents/Companion/**/*.ts",
     "cloudevents/Barkloader/**/*.ts",
     "cloudevents/Scene/**/*.ts",
+    "cloudevents/Heartbeat/**/*.ts",
+    "cloudevents/Session/**/*.gen.ts",
+    "cloudevents/StreamStatus/**/*.gen.ts",
     "cloudevents/contracts.test.ts"
   ]
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { EventType } from "@woofx3/common/cloudevents/StreamStatus/events";
+import { StreamStatusObservedEventType } from "@woofx3/common/cloudevents/StreamStatus/streamstatus.gen";
 import { LIVE_STATUS_READ_RETRY, LiveStatusBoard } from "./live-status";
 import { FakeTime, flush, halfRandom, RecordingLogger, text } from "./testing";
 
@@ -28,7 +28,7 @@ describe("LiveStatusBoard", () => {
     await board.forAdapter("twitch").seed(async () => ({ live: true, startedAt }), signal.signal);
 
     expect(published).toHaveLength(1);
-    expect(published[0].subject).toBe(EventType.StreamStatusObserved);
+    expect(published[0].subject).toBe(StreamStatusObservedEventType.stream_status_observed);
     expect(published[0].event.platform).toBe("twitch");
     expect(published[0].event.data).toEqual({ live: true, startedAt });
   });

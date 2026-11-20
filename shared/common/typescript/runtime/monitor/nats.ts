@@ -1,4 +1,5 @@
 import type { HealthMonitor, RequiredServicesProvider } from "../runtime";
+import { buildHeartbeat, livenessSubject, readHeartbeat } from "../heartbeat";
 
 export type NATSClient = {
   publish(subject: string, data: Uint8Array): Promise<void> | void;
@@ -16,33 +17,25 @@ export interface CreateNATSMonitorOptions {
   requiredServices?: string[];
 }
 
-function toUint8(obj: unknown): Uint8Array {
+function encode(obj: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(obj));
 }
 
-function fromUint8(u8: Uint8Array): any {
+function parseJson(data: Uint8Array): unknown {
   try {
-    return JSON.parse(new TextDecoder().decode(u8));
+    return JSON.parse(new TextDecoder().decode(data));
   } catch {
     return undefined;
   }
-}
-
-type HeartbeatData = { application: string; ready: boolean };
-function parseHeartbeatEvent(payload: any): HeartbeatData | undefined {
-  if (!payload) return undefined;
-  const data = payload.data ?? payload;
-  if (typeof data !== "object" || data == null) return undefined;
-  const app = (data.application ?? data.app ?? data.name) as string | undefined;
-  const ready = Boolean((data.ready as any) ?? false);
-  if (!app) return undefined;
-  return { application: app, ready };
 }
 
 export function createNATSMonitor(
   options: CreateNATSMonitorOptions
 ): HealthMonitor & Partial<RequiredServicesProvider> {
   const { natsClient, applicationName, heartbeatSubject = "HEARTBEAT", heartbeatReady, requiredServices } = options;
+  if (applicationName === "") {
+    throw new Error("createNATSMonitor: applicationName is empty, so its heartbeats would not fit their contract");
+  }
   const readyByApp: Record<string, boolean> = {};
   let unsub: (() => void) | undefined;
 
@@ -50,9 +43,10 @@ export function createNATSMonitor(
     async start() {
       try {
         const sub = await natsClient.subscribe(heartbeatSubject, (msg) => {
-          const payload = msg.json?.() ?? fromUint8(msg.data);
-          const parsed = parseHeartbeatEvent(payload);
-          if (parsed) readyByApp[parsed.application] = parsed.ready;
+          const parsed = readHeartbeat(parseJson(msg.data));
+          if (parsed) {
+            readyByApp[parsed.application] = parsed.ready;
+          }
         });
         unsub = typeof sub?.unsubscribe === "function" ? sub.unsubscribe.bind(sub) : undefined;
       } catch (err) {
@@ -72,7 +66,7 @@ export function createNATSMonitor(
     },
     async liveness() {
       try {
-        await Promise.resolve(natsClient.publish(heartbeatSubject, toUint8({ ping: true })));
+        await Promise.resolve(natsClient.publish(livenessSubject(applicationName), encode("ping")));
       } catch (e) {
         // Ignore liveness errors - NATS may be disconnected during shutdown
       }
@@ -80,15 +74,8 @@ export function createNATSMonitor(
     async heartbeat() {
       try {
         const ready = (await Promise.resolve(heartbeatReady?.())) ?? false;
-        const event = {
-          specversion: "1.0",
-          type: "com.woofx3.heartbeat",
-          source: applicationName,
-          subject: heartbeatSubject,
-          time: new Date().toISOString(),
-          data: { application: applicationName, ready },
-        };
-        await Promise.resolve(natsClient.publish(heartbeatSubject, toUint8(event)));
+        const event = buildHeartbeat(applicationName, ready, new Date());
+        await Promise.resolve(natsClient.publish(heartbeatSubject, encode(event)));
       } catch (e) {
         // Ignore heartbeat errors - NATS may be disconnected during shutdown
       }

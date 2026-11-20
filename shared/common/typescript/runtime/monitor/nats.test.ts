@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { validateHeartbeatEvent } from "../../cloudevents/Heartbeat/heartbeat.validate.gen";
 import type { Service } from "../service";
 import { createNATSMonitor } from "./nats";
 
@@ -37,5 +38,42 @@ describe("createNATSMonitor healthCheck", () => {
     const db = service("db", async () => false);
 
     expect(await monitor.healthCheck({ db, bus: service("bus", false) })).toBe(false);
+  });
+});
+
+describe("createNATSMonitor heartbeats", () => {
+  function recordingClient() {
+    const published: { subject: string; payload: string }[] = [];
+    let deliver: ((data: Uint8Array) => void) | undefined;
+    return {
+      published,
+      deliver: (data: Uint8Array) => deliver?.(data),
+      client: {
+        publish: (subject: string, data: Uint8Array) => {
+          published.push({ subject, payload: new TextDecoder().decode(data) });
+        },
+        subscribe: async (_subject: string, handler: (msg: { data: Uint8Array }) => void) => {
+          deliver = (data) => handler({ data });
+          return { unsubscribe: () => {} };
+        },
+      } as never,
+    };
+  }
+
+  test("publishes a heartbeat that fits its contract, and liveness apart from it", async () => {
+    const bus = recordingClient();
+    const monitor = createNATSMonitor({ natsClient: bus.client, applicationName: "api", heartbeatReady: () => true });
+
+    await monitor.heartbeat();
+    await monitor.liveness();
+
+    const [beat, ping] = bus.published;
+    expect(beat?.subject).toBe("HEARTBEAT");
+    expect(validateHeartbeatEvent(JSON.parse(beat?.payload ?? ""))).toBe(true);
+    expect(ping?.subject).toBe("_HEALTH.api.ping");
+  });
+
+  test("refuses an empty application name", () => {
+    expect(() => createNATSMonitor({ natsClient, applicationName: "" })).toThrow("applicationName is empty");
   });
 });

@@ -1,5 +1,7 @@
-import { EventType } from "./Session/events";
+import { type SchemaSessionStartedEvent, SessionStartedEventType } from "./Session/session.gen";
+import { validateSessionStartedEvent } from "./Session/session.validate.gen";
 import { setCurrentSessionId } from "./session";
+import { err, type ParseResult, parseContract } from "./utils";
 
 /**
  * The slice of a NATS client this needs.
@@ -32,31 +34,26 @@ export interface SessionSubscriberLogger {
  * present, so the holder should never be empty once it has been filled.
  */
 export async function subscribeToSessionUpdates(bus: SessionBus, logger?: SessionSubscriberLogger): Promise<void> {
-  await bus.subscribe(EventType.SessionStarted, (msg) => {
+  await bus.subscribe(SessionStartedEventType.session_started, (msg) => {
     // A throw here kills the subscription and stops delivery of everything
     // behind it, so nothing in this handler is allowed to escape.
-    const sessionId = readSessionId(msg);
-    if (sessionId === null) {
-      logger?.warn("session.started: no sessionId in payload; keeping the previous session");
+    const read = readSessionStarted(msg);
+    if (!read.ok) {
+      logger?.warn("session.started: the message does not fit its contract; keeping the previous session", {
+        error: read.error,
+      });
       return;
     }
+    const sessionId = read.value.data.sessionId;
     setCurrentSessionId(sessionId);
     logger?.info("Stamping events with a new stream session", { sessionId });
   });
 }
 
-function readSessionId(msg: { json(): unknown }): string | null {
+function readSessionStarted(msg: { json(): unknown }): ParseResult<SchemaSessionStartedEvent> {
   try {
-    const envelope = msg.json() as Record<string, unknown>;
-    // `ce.data ?? ce` is how every consumer in the repo unwraps an envelope;
-    // nothing validates CloudEvents on the way in.
-    const data = ((envelope.data as Record<string, unknown> | undefined) ?? envelope) as Record<string, unknown>;
-    const sessionId = data.sessionId;
-    if (typeof sessionId !== "string" || sessionId === "") {
-      return null;
-    }
-    return sessionId;
-  } catch {
-    return null;
+    return parseContract(validateSessionStartedEvent, msg.json());
+  } catch (e) {
+    return err(`not JSON: ${e instanceof Error ? e.message : String(e)}`);
   }
 }

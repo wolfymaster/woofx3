@@ -108,6 +108,18 @@ function makeMsg(subject: string, body: unknown): Msg {
   };
 }
 
+/** A `session.ended` as the resolver publishes it, whose data is `data`. */
+function endedMsg(data: unknown): Msg {
+  return makeMsg("session.ended", {
+    specversion: "1.0.0",
+    id: "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+    type: "session.ended",
+    source: "api",
+    time: "2026-09-02T18:00:00.000Z",
+    data,
+  });
+}
+
 describe("buildSessionSummary", () => {
   it("carries the closed session, its segments and its totals", async () => {
     const now = new Date("2026-09-02T18:00:01Z");
@@ -201,12 +213,7 @@ describe("SessionSummaryEmitter", () => {
     await emitter.start();
     const handler = handlers.get("session.ended");
     expect(handler).toBeDefined();
-    await handler?.(
-      makeMsg("session.ended", {
-        type: "session.ended",
-        data: { sessionId: SESSION, endedAt: "2026-09-02T18:00:00.000Z", replacedBySessionId: "next" },
-      })
-    );
+    await handler?.(endedMsg({ sessionId: SESSION, endedAt: "2026-09-02T18:00:00.000Z", replacedBySessionId: "next" }));
     expect(sent).toHaveLength(1);
     expect(sent[0]?.sessionId).toBe(SESSION);
     expect(sent[0]?.type).toBe(EngineEventType.SESSION_SUMMARY);
@@ -247,14 +254,16 @@ describe("SessionSummaryEmitter", () => {
   it("drops a session.ended with no session id", async () => {
     const { emitter, handlers, sent } = setup();
     await emitter.start();
-    await handlers.get("session.ended")?.(makeMsg("session.ended", { data: {} }));
+    await handlers.get("session.ended")?.(endedMsg({}));
     expect(sent).toHaveLength(0);
   });
 
   it("swallows a failed read so the subscription keeps running", async () => {
     const { emitter, handlers, sent } = setup({ totals: { ...TOTALS, bits: 2n ** 60n } });
     await emitter.start();
-    await handlers.get("session.ended")?.(makeMsg("session.ended", { data: { sessionId: SESSION } }));
+    await handlers.get("session.ended")?.(
+      endedMsg({ sessionId: SESSION, endedAt: "2026-09-02T18:00:00.000Z", replacedBySessionId: "next" })
+    );
     expect(sent).toHaveLength(0);
   });
 });

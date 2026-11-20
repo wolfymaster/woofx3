@@ -6,7 +6,10 @@ import {
   INTEGRATION_ENABLED_UPDATED_SUBJECT,
   INTEGRATION_TOKEN_UPDATED_SUBJECT,
 } from "@woofx3/common/integrations/integration-settings";
-import { EventType as StreamStatusEventType } from "@woofx3/common/cloudevents/StreamStatus/events";
+import {
+  StreamStatusObservedEventType,
+  StreamStatusRequestedEventType,
+} from "@woofx3/common/cloudevents/StreamStatus/streamstatus.gen";
 import { FakeDispatcherDb, NO_ROLES, storedCommand } from "../chat/testing";
 import { TRUSTED_LINE_SOURCES } from "../chat/trust";
 import { ChatEnvSchema, chatConfig } from "../config/chat";
@@ -37,8 +40,10 @@ const twitchapi: ServedSubject = {
   unavailableReply: ({ reason, link }) => bytes(link?.connected ? `integration_unavailable:${reason}` : "not_linked"),
 };
 
-function event(subject: string, data: Record<string, unknown>): Uint8Array {
-  return bytes(JSON.stringify({ specversion: "1.0", id: "e", type: subject, source: "api", data }));
+function event(subject: string, data?: Record<string, unknown>): Uint8Array {
+  return bytes(
+    JSON.stringify({ specversion: "1.0.0", id: "e", type: subject, source: "api", time: "2026-10-22T12:00:00Z", data })
+  );
 }
 
 /** A bus whose requests reach the host's own responders, as the real bus would route them. */
@@ -280,24 +285,25 @@ describe("Host", () => {
     values.twitch_token = "tok";
     values["integration.twitch.enabled"] = "true";
     await announce(true);
-    const observed = () => bus.published.filter((m) => m.subject === StreamStatusEventType.StreamStatusObserved);
-    const requested = event(StreamStatusEventType.StreamStatusRequested, {});
+    const observed = () =>
+      bus.published.filter((m) => m.subject === StreamStatusObservedEventType.stream_status_observed);
+    const requested = event(StreamStatusRequestedEventType.stream_status_requested);
 
-    bus.deliver(StreamStatusEventType.StreamStatusRequested, requested);
+    bus.deliver(StreamStatusRequestedEventType.stream_status_requested, requested);
     await flush();
     expect(observed()).toEqual([]);
 
     await adapter.lastContext?.liveStatus.seed(async () => ({ live: true }), new AbortController().signal);
     expect(observed()).toHaveLength(1);
 
-    bus.deliver(StreamStatusEventType.StreamStatusRequested, requested);
+    bus.deliver(StreamStatusRequestedEventType.stream_status_requested, requested);
     await flush();
     expect(observed()).toHaveLength(2);
     expect((JSON.parse(text(observed()[1].data)) as { platform: string }).platform).toBe("twitch");
 
     values["integration.twitch.enabled"] = "false";
     await announce(false);
-    bus.deliver(StreamStatusEventType.StreamStatusRequested, requested);
+    bus.deliver(StreamStatusRequestedEventType.stream_status_requested, requested);
     await flush();
     expect(observed()).toHaveLength(2);
     await host.stop();

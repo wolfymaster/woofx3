@@ -1,6 +1,10 @@
 import Event from "@woofx3/common/cloudevents/BaseEvent";
-import { EventType, type StreamStatusObserved } from "@woofx3/common/cloudevents/StreamStatus/events";
-import { encode } from "@woofx3/common/cloudevents/utils";
+import {
+  type SchemaStreamStatusObserved as StreamStatusObserved,
+  StreamStatusObservedEventType,
+} from "@woofx3/common/cloudevents/StreamStatus/streamstatus.gen";
+import { validateStreamStatusObservedEvent } from "@woofx3/common/cloudevents/StreamStatus/streamstatus.validate.gen";
+import { encodeContract } from "@woofx3/common/cloudevents/utils";
 import { type BackoffConfig, createBackoff } from "@woofx3/common/runtime";
 import type { AdapterId } from "./adapter-ids";
 import { errorMessage, type Logger, type RandomSource, type Timers } from "./deps";
@@ -119,11 +123,14 @@ export class LiveStatusBoard {
   /** A failed publish is logged and not retried: the engine's request at its next start asks again. */
   private async publish(id: AdapterId, status: StreamStatusObserved): Promise<void> {
     const event = Event<StreamStatusObserved>(
-      { type: EventType.StreamStatusObserved, source: "connectors", platform: id },
+      { type: StreamStatusObservedEventType.stream_status_observed, source: "connectors", platform: id },
       status
     );
     try {
-      await this.deps.publish(EventType.StreamStatusObserved, encode(event));
+      await this.deps.publish(
+        StreamStatusObservedEventType.stream_status_observed,
+        encodeContract(validateStreamStatusObservedEvent, event)
+      );
     } catch (err) {
       this.deps.logger.warn("could not publish the stream's live state", { adapter: id, err: errorMessage(err) });
     }
