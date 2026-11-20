@@ -1,0 +1,1748 @@
+openapi: 3.1.0
+info:
+  title: Streaming platform events
+  version: 1.0.0
+  description: >
+    Events the connectors publish from a streaming platform. Each operation path
+    is the NATS subject; the event's `type` is that same subject. The platform an
+    event came from is the `platform` attribute, so the subjects carry no platform
+    name. A field the platform can lack is required and nullable, never omitted:
+    a workflow condition reads `null` where it would fail on a missing key.
+paths:
+  /user.message:
+    post:
+      operationId: userMessage
+      summary: Published by connectors on user.message.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserMessageEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.cheer:
+    post:
+      operationId: channelCheer
+      summary: Published by connectors on channel.cheer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelCheerEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.follow:
+    post:
+      operationId: channelFollow
+      summary: Published by connectors on channel.follow.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelFollowEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.hypetrain:
+    post:
+      operationId: channelHypeTrain
+      summary: Published by connectors on channel.hypetrain.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelHypeTrainEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.raid:
+    post:
+      operationId: channelRaid
+      summary: Published by connectors on channel.raid.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelRaidEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channelpoints.redeem:
+    post:
+      operationId: channelPointsRedeem
+      summary: Published by connectors on channelpoints.redeem.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelPointsRedeemEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /stream.online:
+    post:
+      operationId: streamOnline
+      summary: Published by connectors on stream.online.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StreamOnlineEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /stream.offline:
+    post:
+      operationId: streamOffline
+      summary: Published by connectors on stream.offline.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StreamOfflineEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.subscribe:
+    post:
+      operationId: channelSubscribe
+      summary: Published by connectors on channel.subscribe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelSubscribeEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.subscriptionGift:
+    post:
+      operationId: channelSubscriptionGift
+      summary: Published by connectors on channel.subscriptionGift.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelSubscriptionGiftEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.resub:
+    post:
+      operationId: channelResub
+      summary: Published by connectors on channel.resub.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelResubEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.giftPaidUpgrade:
+    post:
+      operationId: channelGiftPaidUpgrade
+      summary: Published by connectors on channel.giftPaidUpgrade.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelGiftPaidUpgradeEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.primePaidUpgrade:
+    post:
+      operationId: channelPrimePaidUpgrade
+      summary: Published by connectors on channel.primePaidUpgrade.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelPrimePaidUpgradeEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.unraid:
+    post:
+      operationId: channelUnraid
+      summary: Published by connectors on channel.unraid.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelUnraidEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.payItForward:
+    post:
+      operationId: channelPayItForward
+      summary: Published by connectors on channel.payItForward.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelPayItForwardEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.announcement:
+    post:
+      operationId: channelAnnouncement
+      summary: Published by connectors on channel.announcement.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelAnnouncementEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.charityDonation:
+    post:
+      operationId: channelCharityDonation
+      summary: Published by connectors on channel.charityDonation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelCharityDonationEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.bitsBadgeTier:
+    post:
+      operationId: channelBitsBadgeTier
+      summary: Published by connectors on channel.bitsBadgeTier.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelBitsBadgeTierEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.watchStreak:
+    post:
+      operationId: channelWatchStreak
+      summary: Published by connectors on channel.watchStreak.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelWatchStreakEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.sharedSubscribe:
+    post:
+      operationId: channelSharedSubscribe
+      summary: Published by connectors on channel.sharedSubscribe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelSharedSubscribeEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.sharedSubscriptionGift:
+    post:
+      operationId: channelSharedSubscriptionGift
+      summary: Published by connectors on channel.sharedSubscriptionGift.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelSharedSubscriptionGiftEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.sharedRaid:
+    post:
+      operationId: channelSharedRaid
+      summary: Published by connectors on channel.sharedRaid.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelSharedRaidEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.sharedResub:
+    post:
+      operationId: channelSharedResub
+      summary: Published by connectors on channel.sharedResub.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelSharedResubEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.sharedGiftPaidUpgrade:
+    post:
+      operationId: channelSharedGiftPaidUpgrade
+      summary: Published by connectors on channel.sharedGiftPaidUpgrade.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelSharedGiftPaidUpgradeEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.sharedPrimePaidUpgrade:
+    post:
+      operationId: channelSharedPrimePaidUpgrade
+      summary: Published by connectors on channel.sharedPrimePaidUpgrade.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelSharedPrimePaidUpgradeEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.sharedPayItForward:
+    post:
+      operationId: channelSharedPayItForward
+      summary: Published by connectors on channel.sharedPayItForward.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelSharedPayItForwardEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.sharedAnnouncement:
+    post:
+      operationId: channelSharedAnnouncement
+      summary: Published by connectors on channel.sharedAnnouncement.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelSharedAnnouncementEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.ad_break.upcoming:
+    post:
+      operationId: channelAdBreakUpcoming
+      summary: Published by connectors on channel.ad_break.upcoming.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelAdBreakUpcomingEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.ad_break.begin:
+    post:
+      operationId: channelAdBreakBegin
+      summary: Published by connectors on channel.ad_break.begin.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelAdBreakBeginEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+  /channel.ad_break.end:
+    post:
+      operationId: channelAdBreakEnd
+      summary: Published by connectors on channel.ad_break.end.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelAdBreakEndEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
+components:
+  schemas:
+    PlatformId:
+      description: The streaming platform an event came from.
+      type: string
+      enum: [twitch]
+    StreamEventSpecVersion:
+      description: The CloudEvents version string the TypeScript publishers stamp on every event.
+      type: string
+      enum: ["1.0.0"]
+    WorkflowChain:
+      description: >
+        Comma-separated ids of the workflow runs that led to the event, oldest
+        first; at most 8 ids of 200 characters.
+      type: string
+      minLength: 1
+      maxLength: 1607
+    ChatterMembership:
+      description: >
+        Platform membership of a chat message's author, neutral across platforms.
+        `isFollower` and `subscriberTier` are absent when the platform does not
+        report them or the lookup did not resolve; absent is never `false` or a
+        default tier.
+      type: object
+      additionalProperties: false
+      required: [isBroadcaster, isModerator, isSubscriber, isVip]
+      properties:
+        isBroadcaster:
+          type: boolean
+        isModerator:
+          type: boolean
+        isSubscriber:
+          type: boolean
+        isVip:
+          type: boolean
+        isFollower:
+          type: boolean
+        subscriberTier:
+          description: A neutral token such as `tier1`, never a platform's own code.
+          type: string
+    HypeTrainContribution:
+      description: What a viewer put into a hype train.
+      type: object
+      additionalProperties: false
+      required: [userId, userName, type, total]
+      properties:
+        userId:
+          type: string
+        userName:
+          type: string
+        type:
+          type: string
+          enum: [bits, subscription, other]
+        total:
+          description: Points. Bits count one each, a subscription counts by tier.
+          type: integer
+    UserMessage:
+      description: A line said in chat, by a viewer or by the engine itself.
+      type: object
+      additionalProperties: false
+      required: [messageId, amount, isPaid, channelId, channelName, chatterId, chatterName, chatterLogin, message, membership, fromEngine]
+      properties:
+        messageId:
+          type: string
+        amount:
+          type: integer
+        isPaid:
+          type: boolean
+        channelId:
+          type: [string, "null"]
+        channelName:
+          type: [string, "null"]
+        chatterId:
+          type: string
+        chatterName:
+          type: string
+        chatterLogin:
+          type: string
+        message:
+          type: string
+        membership:
+          $ref: "#/components/schemas/ChatterMembership"
+        fromEngine:
+          type: boolean
+    ChannelCheer:
+      description: Bits cheered in the channel.
+      type: object
+      additionalProperties: false
+      required: [amount, isAnonymous, message, userId, userName]
+      properties:
+        amount:
+          type: integer
+        isAnonymous:
+          type: boolean
+        message:
+          type: string
+        userId:
+          type: [string, "null"]
+        userName:
+          type: [string, "null"]
+    ChannelFollow:
+      description: A viewer followed the channel.
+      type: object
+      additionalProperties: false
+      required: [userId, userName]
+      properties:
+        userId:
+          type: string
+        userName:
+          type: string
+    ChannelHypeTrain:
+      description: A hype train started.
+      type: object
+      additionalProperties: false
+      required: [id, broadcasterId, broadcasterName, level, total, progress, goal, topContributions, startedAt, expiresAt]
+      properties:
+        id:
+          type: string
+        broadcasterId:
+          type: string
+        broadcasterName:
+          type: string
+        level:
+          type: integer
+        total:
+          type: integer
+        progress:
+          type: integer
+        goal:
+          type: integer
+        topContributions:
+          type: array
+          items:
+            $ref: "#/components/schemas/HypeTrainContribution"
+        startedAt:
+          type: string
+        expiresAt:
+          type: string
+    ChannelRaid:
+      description: An incoming raid into the broadcaster's channel.
+      type: object
+      additionalProperties: false
+      required: [fromBroadcasterUserId, fromBroadcasterUserName, viewers]
+      properties:
+        fromBroadcasterUserId:
+          type: string
+        fromBroadcasterUserName:
+          type: string
+        viewers:
+          type: integer
+    ChannelPointsRedeem:
+      description: A channel-points custom reward redemption.
+      type: object
+      additionalProperties: false
+      required: [redeemId, rewardId, rewardTitle, rewardCost, userId, userName]
+      properties:
+        redeemId:
+          type: string
+        rewardId:
+          type: string
+        rewardTitle:
+          type: string
+        rewardCost:
+          type: integer
+        userId:
+          type: string
+        userName:
+          type: string
+        message:
+          type: string
+    StreamOnline:
+      description: The stream went live.
+      type: object
+      additionalProperties: false
+      required: [broadcasterUserId, broadcasterUserName, startedAt]
+      properties:
+        broadcasterUserId:
+          type: string
+        broadcasterUserName:
+          type: string
+        startedAt:
+          type: string
+    StreamOffline:
+      description: The stream ended.
+      type: object
+      additionalProperties: false
+      required: [broadcasterUserId, broadcasterUserName]
+      properties:
+        broadcasterUserId:
+          type: string
+        broadcasterUserName:
+          type: string
+    ChannelSubscribe:
+      description: A subscription, bought or gifted to one named viewer.
+      type: object
+      additionalProperties: false
+      required: [isGift, isCommunityGift, tier, userId, userName]
+      properties:
+        isGift:
+          type: boolean
+        isCommunityGift:
+          type: boolean
+        tier:
+          type: string
+        userId:
+          type: [string, "null"]
+        userName:
+          type: [string, "null"]
+    ChannelSubscriptionGift:
+      description: A community gift of subscriptions.
+      type: object
+      additionalProperties: false
+      required: [amount, gifterId, gifterName, isAnonymous, tier]
+      properties:
+        amount:
+          type: integer
+        gifterId:
+          type: string
+        gifterName:
+          type: string
+        isAnonymous:
+          type: boolean
+        tier:
+          type: string
+    ChannelResub:
+      description: A resubscription.
+      type: object
+      additionalProperties: false
+      required: [chatterId, chatterName, chatterIsAnonymous, messageId, messageText, sourceBroadcasterId, sourceBroadcasterName, broadcasterId, broadcasterName, tier, isPrime, durationMonths, cumulativeMonths, streakMonths, isGift, gifterIsAnonymous, gifterId, gifterName]
+      properties:
+        chatterId:
+          type: string
+        chatterName:
+          type: string
+        chatterIsAnonymous:
+          type: boolean
+        messageId:
+          type: string
+        messageText:
+          type: string
+        sourceBroadcasterId:
+          type: [string, "null"]
+        sourceBroadcasterName:
+          type: [string, "null"]
+        broadcasterId:
+          type: string
+        broadcasterName:
+          type: string
+        tier:
+          type: string
+        isPrime:
+          type: boolean
+        durationMonths:
+          type: integer
+        cumulativeMonths:
+          type: integer
+        streakMonths:
+          type: [integer, "null"]
+        isGift:
+          type: boolean
+        gifterIsAnonymous:
+          type: [boolean, "null"]
+        gifterId:
+          type: [string, "null"]
+        gifterName:
+          type: [string, "null"]
+    ChannelGiftPaidUpgrade:
+      description: A viewer upgraded a gifted subscription to a paid one.
+      type: object
+      additionalProperties: false
+      required: [chatterId, chatterName, chatterIsAnonymous, messageId, messageText, sourceBroadcasterId, sourceBroadcasterName, broadcasterId, broadcasterName, isGifterAnonymous, gifterId, gifterName]
+      properties:
+        chatterId:
+          type: string
+        chatterName:
+          type: string
+        chatterIsAnonymous:
+          type: boolean
+        messageId:
+          type: string
+        messageText:
+          type: string
+        sourceBroadcasterId:
+          type: [string, "null"]
+        sourceBroadcasterName:
+          type: [string, "null"]
+        broadcasterId:
+          type: string
+        broadcasterName:
+          type: string
+        isGifterAnonymous:
+          type: boolean
+        gifterId:
+          type: [string, "null"]
+        gifterName:
+          type: [string, "null"]
+    ChannelPrimePaidUpgrade:
+      description: A viewer upgraded a Prime subscription to a paid one.
+      type: object
+      additionalProperties: false
+      required: [chatterId, chatterName, chatterIsAnonymous, messageId, messageText, sourceBroadcasterId, sourceBroadcasterName, broadcasterId, broadcasterName, tier]
+      properties:
+        chatterId:
+          type: string
+        chatterName:
+          type: string
+        chatterIsAnonymous:
+          type: boolean
+        messageId:
+          type: string
+        messageText:
+          type: string
+        sourceBroadcasterId:
+          type: [string, "null"]
+        sourceBroadcasterName:
+          type: [string, "null"]
+        broadcasterId:
+          type: string
+        broadcasterName:
+          type: string
+        tier:
+          type: string
+    ChannelUnraid:
+      description: A raid was cancelled.
+      type: object
+      additionalProperties: false
+      required: [chatterId, chatterName, chatterIsAnonymous, messageId, messageText, sourceBroadcasterId, sourceBroadcasterName, broadcasterId, broadcasterName]
+      properties:
+        chatterId:
+          type: string
+        chatterName:
+          type: string
+        chatterIsAnonymous:
+          type: boolean
+        messageId:
+          type: string
+        messageText:
+          type: string
+        sourceBroadcasterId:
+          type: [string, "null"]
+        sourceBroadcasterName:
+          type: [string, "null"]
+        broadcasterId:
+          type: string
+        broadcasterName:
+          type: string
+    ChannelPayItForward:
+      description: A viewer paid forward a gift they received.
+      type: object
+      additionalProperties: false
+      required: [chatterId, chatterName, chatterIsAnonymous, messageId, messageText, sourceBroadcasterId, sourceBroadcasterName, broadcasterId, broadcasterName, isGifterAnonymous, gifterId, gifterName]
+      properties:
+        chatterId:
+          type: string
+        chatterName:
+          type: string
+        chatterIsAnonymous:
+          type: boolean
+        messageId:
+          type: string
+        messageText:
+          type: string
+        sourceBroadcasterId:
+          type: [string, "null"]
+        sourceBroadcasterName:
+          type: [string, "null"]
+        broadcasterId:
+          type: string
+        broadcasterName:
+          type: string
+        isGifterAnonymous:
+          type: boolean
+        gifterId:
+          type: [string, "null"]
+        gifterName:
+          type: [string, "null"]
+    ChannelAnnouncement:
+      description: An announcement posted in chat.
+      type: object
+      additionalProperties: false
+      required: [chatterId, chatterName, chatterIsAnonymous, messageId, messageText, sourceBroadcasterId, sourceBroadcasterName, broadcasterId, broadcasterName, color]
+      properties:
+        chatterId:
+          type: string
+        chatterName:
+          type: string
+        chatterIsAnonymous:
+          type: boolean
+        messageId:
+          type: string
+        messageText:
+          type: string
+        sourceBroadcasterId:
+          type: [string, "null"]
+        sourceBroadcasterName:
+          type: [string, "null"]
+        broadcasterId:
+          type: string
+        broadcasterName:
+          type: string
+        color:
+          type: string
+    ChannelCharityDonation:
+      description: A charity donation.
+      type: object
+      additionalProperties: false
+      required: [chatterId, chatterName, chatterIsAnonymous, messageId, messageText, sourceBroadcasterId, sourceBroadcasterName, broadcasterId, broadcasterName, charityName, amount, currency]
+      properties:
+        chatterId:
+          type: string
+        chatterName:
+          type: string
+        chatterIsAnonymous:
+          type: boolean
+        messageId:
+          type: string
+        messageText:
+          type: string
+        sourceBroadcasterId:
+          type: [string, "null"]
+        sourceBroadcasterName:
+          type: [string, "null"]
+        broadcasterId:
+          type: string
+        broadcasterName:
+          type: string
+        charityName:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+    ChannelBitsBadgeTier:
+      description: A viewer reached a new bits badge tier.
+      type: object
+      additionalProperties: false
+      required: [chatterId, chatterName, chatterIsAnonymous, messageId, messageText, sourceBroadcasterId, sourceBroadcasterName, broadcasterId, broadcasterName, newTier]
+      properties:
+        chatterId:
+          type: string
+        chatterName:
+          type: string
+        chatterIsAnonymous:
+          type: boolean
+        messageId:
+          type: string
+        messageText:
+          type: string
+        sourceBroadcasterId:
+          type: [string, "null"]
+        sourceBroadcasterName:
+          type: [string, "null"]
+        broadcasterId:
+          type: string
+        broadcasterName:
+          type: string
+        newTier:
+          type: integer
+    ChannelWatchStreak:
+      description: A viewer shared a watch streak.
+      type: object
+      additionalProperties: false
+      required: [chatterId, chatterName, chatterIsAnonymous, messageId, messageText, sourceBroadcasterId, sourceBroadcasterName, broadcasterId, broadcasterName, streakCount, channelPointsAwarded]
+      properties:
+        chatterId:
+          type: string
+        chatterName:
+          type: string
+        chatterIsAnonymous:
+          type: boolean
+        messageId:
+          type: string
+        messageText:
+          type: string
+        sourceBroadcasterId:
+          type: [string, "null"]
+        sourceBroadcasterName:
+          type: [string, "null"]
+        broadcasterId:
+          type: string
+        broadcasterName:
+          type: string
+        streakCount:
+          type: integer
+        channelPointsAwarded:
+          type: integer
+    ChannelSharedSubscribe:
+      description: A subscription in another participant's channel during a shared chat session.
+      type: object
+      additionalProperties: false
+      required: [isGift, isCommunityGift, tier, userId, userName, chatterId, chatterName, chatterIsAnonymous, messageId, messageText, sourceBroadcasterId, sourceBroadcasterName, broadcasterId, broadcasterName]
+      properties:
+        isGift:
+          type: boolean
+        isCommunityGift:
+          type: boolean
+        tier:
+          type: string
+        userId:
+          type: [string, "null"]
+        userName:
+          type: [string, "null"]
+        chatterId:
+          type: string
+        chatterName:
+          type: string
+        chatterIsAnonymous:
+          type: boolean
+        messageId:
+          type: string
+        messageText:
+          type: string
+        sourceBroadcasterId:
+          type: [string, "null"]
+        sourceBroadcasterName:
+          type: [string, "null"]
+        broadcasterId:
+          type: string
+        broadcasterName:
+          type: string
+    ChannelSharedSubscriptionGift:
+      description: A community gift in another participant's channel during a shared chat session.
+      type: object
+      additionalProperties: false
+      required: [amount, gifterId, gifterName, isAnonymous, tier, chatterId, chatterName, chatterIsAnonymous, messageId, messageText, sourceBroadcasterId, sourceBroadcasterName, broadcasterId, broadcasterName]
+      properties:
+        amount:
+          type: integer
+        gifterId:
+          type: string
+        gifterName:
+          type: string
+        isAnonymous:
+          type: boolean
+        tier:
+          type: string
+        chatterId:
+          type: string
+        chatterName:
+          type: string
+        chatterIsAnonymous:
+          type: boolean
+        messageId:
+          type: string
+        messageText:
+          type: string
+        sourceBroadcasterId:
+          type: [string, "null"]
+        sourceBroadcasterName:
+          type: [string, "null"]
+        broadcasterId:
+          type: string
+        broadcasterName:
+          type: string
+    ChannelSharedRaid:
+      description: A raid in another participant's channel during a shared chat session.
+      type: object
+      additionalProperties: false
+      required: [fromBroadcasterUserId, fromBroadcasterUserName, viewers, chatterId, chatterName, chatterIsAnonymous, messageId, messageText, sourceBroadcasterId, sourceBroadcasterName, broadcasterId, broadcasterName]
+      properties:
+        fromBroadcasterUserId:
+          type: string
+        fromBroadcasterUserName:
+          type: string
+        viewers:
+          type: integer
+        chatterId:
+          type: string
+        chatterName:
+          type: string
+        chatterIsAnonymous:
+          type: boolean
+        messageId:
+          type: string
+        messageText:
+          type: string
+        sourceBroadcasterId:
+          type: [string, "null"]
+        sourceBroadcasterName:
+          type: [string, "null"]
+        broadcasterId:
+          type: string
+        broadcasterName:
+          type: string
+    ChannelAdBreakUpcoming:
+      description: An ad break is scheduled soon.
+      type: object
+      additionalProperties: false
+      required: [nextAdAt, secondsUntil, durationSeconds]
+      properties:
+        nextAdAt:
+          type: string
+        secondsUntil:
+          type: integer
+        durationSeconds:
+          type: integer
+    ChannelAdBreakBegin:
+      description: An ad break started.
+      type: object
+      additionalProperties: false
+      required: [durationSeconds, isAutomatic, startedAt, endsAt]
+      properties:
+        durationSeconds:
+          type: integer
+        isAutomatic:
+          type: boolean
+        startedAt:
+          type: string
+        endsAt:
+          type: string
+    ChannelAdBreakEnd:
+      description: An ad break was due to end.
+      type: object
+      additionalProperties: false
+      required: [durationSeconds, isAutomatic, startedAt, endedAt]
+      properties:
+        durationSeconds:
+          type: integer
+        isAutomatic:
+          type: boolean
+        startedAt:
+          type: string
+        endedAt:
+          type: string
+    UserMessageEvent:
+      description: The `user.message` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [user.message]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        workflowChain:
+          description: Set on a line a workflow said, which the platform handed back.
+          $ref: "#/components/schemas/WorkflowChain"
+        data:
+          $ref: "#/components/schemas/UserMessage"
+    ChannelCheerEvent:
+      description: The `channel.cheer` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.cheer]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelCheer"
+    ChannelFollowEvent:
+      description: The `channel.follow` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.follow]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelFollow"
+    ChannelHypeTrainEvent:
+      description: The `channel.hypetrain` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.hypetrain]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelHypeTrain"
+    ChannelRaidEvent:
+      description: The `channel.raid` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.raid]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelRaid"
+    ChannelPointsRedeemEvent:
+      description: The `channelpoints.redeem` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channelpoints.redeem]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelPointsRedeem"
+    StreamOnlineEvent:
+      description: The `stream.online` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [stream.online]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/StreamOnline"
+    StreamOfflineEvent:
+      description: The `stream.offline` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [stream.offline]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/StreamOffline"
+    ChannelSubscribeEvent:
+      description: The `channel.subscribe` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.subscribe]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelSubscribe"
+    ChannelSubscriptionGiftEvent:
+      description: The `channel.subscriptionGift` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.subscriptionGift]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelSubscriptionGift"
+    ChannelResubEvent:
+      description: The `channel.resub` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.resub]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelResub"
+    ChannelGiftPaidUpgradeEvent:
+      description: The `channel.giftPaidUpgrade` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.giftPaidUpgrade]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelGiftPaidUpgrade"
+    ChannelPrimePaidUpgradeEvent:
+      description: The `channel.primePaidUpgrade` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.primePaidUpgrade]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelPrimePaidUpgrade"
+    ChannelUnraidEvent:
+      description: The `channel.unraid` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.unraid]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelUnraid"
+    ChannelPayItForwardEvent:
+      description: The `channel.payItForward` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.payItForward]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelPayItForward"
+    ChannelAnnouncementEvent:
+      description: The `channel.announcement` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.announcement]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelAnnouncement"
+    ChannelCharityDonationEvent:
+      description: The `channel.charityDonation` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.charityDonation]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelCharityDonation"
+    ChannelBitsBadgeTierEvent:
+      description: The `channel.bitsBadgeTier` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.bitsBadgeTier]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelBitsBadgeTier"
+    ChannelWatchStreakEvent:
+      description: The `channel.watchStreak` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.watchStreak]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelWatchStreak"
+    ChannelSharedSubscribeEvent:
+      description: The `channel.sharedSubscribe` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.sharedSubscribe]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelSharedSubscribe"
+    ChannelSharedSubscriptionGiftEvent:
+      description: The `channel.sharedSubscriptionGift` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.sharedSubscriptionGift]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelSharedSubscriptionGift"
+    ChannelSharedRaidEvent:
+      description: The `channel.sharedRaid` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.sharedRaid]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelSharedRaid"
+    ChannelSharedResubEvent:
+      description: The `channel.sharedResub` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.sharedResub]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelResub"
+    ChannelSharedGiftPaidUpgradeEvent:
+      description: The `channel.sharedGiftPaidUpgrade` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.sharedGiftPaidUpgrade]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelGiftPaidUpgrade"
+    ChannelSharedPrimePaidUpgradeEvent:
+      description: The `channel.sharedPrimePaidUpgrade` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.sharedPrimePaidUpgrade]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelPrimePaidUpgrade"
+    ChannelSharedPayItForwardEvent:
+      description: The `channel.sharedPayItForward` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.sharedPayItForward]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelPayItForward"
+    ChannelSharedAnnouncementEvent:
+      description: The `channel.sharedAnnouncement` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.sharedAnnouncement]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelAnnouncement"
+    ChannelAdBreakUpcomingEvent:
+      description: The `channel.ad_break.upcoming` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.ad_break.upcoming]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelAdBreakUpcoming"
+    ChannelAdBreakBeginEvent:
+      description: The `channel.ad_break.begin` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.ad_break.begin]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelAdBreakBegin"
+    ChannelAdBreakEndEvent:
+      description: The `channel.ad_break.end` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamEventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.ad_break.end]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelAdBreakEnd"

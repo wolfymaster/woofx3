@@ -1,6 +1,7 @@
 import type { EventSubChannelHypeTrainBeginV2Event, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { HypeTrainBegin } from "@woofx3/common/cloudevents/Twitch";
+import { HypeTrainContributionType } from "@woofx3/common/cloudevents/Twitch/stream.gen";
 import type { Context } from "../../types";
 import { publishEvent } from "../publishEvent";
 
@@ -21,7 +22,7 @@ export function toHypeTrainBegin(event: EventSubChannelHypeTrainBeginV2Event): H
     topContributions: event.topContributors.map((contribution) => ({
       userId: contribution.userId,
       userName: contribution.userDisplayName,
-      type: contribution.type,
+      type: HypeTrainContributionType[contribution.type],
       total: contribution.total,
     })),
     startedAt: event.startDate.toISOString(),

@@ -5,10 +5,11 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as barkloader from "./Barkloader/barkloader.validate.gen";
 import * as scene from "./Scene/scene.validate.gen";
+import * as stream from "./Twitch/stream.validate.gen";
 
 type Validator = ((value: unknown) => boolean) & { errors?: unknown };
 
-const domains: Record<string, Record<string, Validator>> = { scene, barkloader };
+const domains: Record<string, Record<string, Validator>> = { scene, barkloader, stream };
 const contractsDir = join(import.meta.dir, "..", "..", "..", "contracts");
 
 interface Fixture {
