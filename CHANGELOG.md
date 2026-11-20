@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.73.0](https://github.com/wolfymaster/woofx3/compare/v0.72.0...v0.73.0) (2026-11-20)
+
+### Features
+
+* **contracts:** scripts/gen-schemas.sh generates Go, TypeScript and Rust from OpenAPI ([e9e924c](https://github.com/wolfymaster/woofx3/commit/e9e924c86a0aedeff34b7fea33e53f5289f552a1))
+* **contracts:** the messages module, the Rust module and the fixture tests ([1fb089d](https://github.com/wolfymaster/woofx3/commit/1fb089d3f851d865ccd31f0bc00ca2e3cc204ebb))
+* **contracts:** the scene and barkloader message documents ([8af1515](https://github.com/wolfymaster/woofx3/commit/8af1515c729c143f2b1330d7bbe6a7ddda79380c))
+* **contracts:** the scene reply is a union discriminated by a string status ([91dad9e](https://github.com/wolfymaster/woofx3/commit/91dad9ee453fe243546c3e3df88d635f3ff98092))
+
 ## [0.72.0](https://github.com/wolfymaster/woofx3/compare/v0.71.0...v0.72.0) (2026-11-19)
 
 ### Features
