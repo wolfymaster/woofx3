@@ -1,6 +1,7 @@
 import * as CommandEvent from "./events";
 import { encode } from "../utils";
 import Event from "../BaseEvent";
+import { validateWorkflowCommandExecute } from "../Workflow/workflow.validate.gen";
 
 export * from "./events";
 export * from "./messages";
@@ -29,6 +30,11 @@ export default class CommandEvents {
   }
 
   executeWorkflow(event: CommandEvent.CommandWorkflowExecution): EventTuple {
+    if (!validateWorkflowCommandExecute(event)) {
+      throw new Error(
+        `workflow.command.execute breaks its contract: ${validateWorkflowCommandExecute.errors?.[0]?.message}`
+      );
+    }
     return this.encodeEvent(CommandEvent.EventType.ExecuteWorkflow, event);
   }
 

@@ -276,7 +276,7 @@ export const workflowsRoutes = routeModule({
     if (!this.nats) {
       throw new Error("NATS client not available");
     }
-    const report = await requestWorkflowHealth(this.nats, this.logger);
+    const report = await requestWorkflowHealth(this.nats);
     if (!report.loaded) {
       throw new Error("the workflow engine is still loading workflows; health is not known yet");
     }

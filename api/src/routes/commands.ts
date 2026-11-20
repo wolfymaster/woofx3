@@ -230,7 +230,7 @@ export const commandsRoutes = routeModule({
 
     const actions = cmd.workflowId ? [] : parseActions(cmd.actionsJson);
     if (cmd.workflowId) {
-      await this.publishEventTuple(commandEvents.executeWorkflow({ workflowId: cmd.workflowId, event }));
+      await this.publishEventTuple(commandEvents.executeWorkflow({ workflowId: cmd.workflowId, event: { ...event } }));
     } else if (actions.length > 0) {
       await this.publishEventTuple(actionEvents.execute({ label: `command:${cmd.command}`, actions, event }));
     }

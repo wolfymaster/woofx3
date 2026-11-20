@@ -111,7 +111,7 @@ export class ChatDispatcher {
           stored,
           {
             runWorkflow: (workflowId, event) =>
-              this.publish(this.events.Command().executeWorkflow({ workflowId, event })),
+              this.publish(this.events.Command().executeWorkflow({ workflowId, event: { ...event } })),
             runActions: (label, actions, event) =>
               this.publish(this.events.Action().execute({ label, actions, event })),
           },

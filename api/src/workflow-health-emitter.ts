@@ -4,6 +4,17 @@ import {
   type WorkflowHealthChangedEvent,
   type WorkflowHealthSnapshotEvent,
 } from "@woofx3/api/webhooks";
+import type {
+  SchemaWorkflowHealth,
+  SchemaWorkflowHealthChangedEvent,
+  SchemaWorkflowHealthReply,
+  SchemaWorkflowHealthSnapshotEvent,
+} from "@woofx3/common/cloudevents/Workflow/workflow.gen";
+import {
+  validateWorkflowHealthChangedEvent,
+  validateWorkflowHealthReply,
+  validateWorkflowHealthSnapshotEvent,
+} from "@woofx3/common/cloudevents/Workflow/workflow.validate.gen";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
@@ -16,55 +27,24 @@ export const SUBJECT_WORKFLOW_HEALTH_CHANGED = "workflow.health.changed";
 export const SUBJECT_WORKFLOW_HEALTH_SNAPSHOT = "workflow.health.snapshot";
 export const SUBJECT_WORKFLOW_HEALTH_GET = "workflow.health.get";
 
-type WarnLogger = Pick<SharedLogger, "warn">;
+type Validator = ((value: unknown) => boolean) & { errors?: { instancePath: string; message?: string }[] | null };
 
-/**
- * Decode one health entry, from a health CloudEvent's data or from a
- * `workflow.health.get` reply. All share the workflow service's shape, so one
- * decoder keeps the webhooks and the RPC from drifting apart.
- *
- * Returns null for an entry without a workflow id or with a status this does
- * not model: the engine never sends either, so a null is a producer bug.
- */
-export function parseWorkflowHealth(raw: unknown, logger: WarnLogger): WorkflowHealth | null {
-  if (!raw || typeof raw !== "object") {
-    return null;
-  }
-  const entry = raw as Record<string, unknown>;
-  const workflowId = typeof entry.workflowId === "string" ? entry.workflowId : "";
-  if (!workflowId) {
-    return null;
-  }
-  if (entry.status !== "ok" && entry.status !== "error") {
-    return null;
-  }
-  let since = typeof entry.since === "string" ? entry.since : "";
-  if (!since) {
-    // The engine always stamps `since`; a missing one is a producer bug, and
-    // `now` makes a later change for the same workflow look older than it is.
-    logger.warn("workflow health entry without since; using now", { workflowId });
-    since = new Date().toISOString();
-  }
-  const health: WorkflowHealth = { workflowId, status: entry.status, since };
-  // An error the engine could not explain is still an error, so the reason is
-  // defaulted to empty rather than the entry dropped; an ok never carries one.
-  if (health.status === "error") {
-    health.reason = typeof entry.reason === "string" ? entry.reason : "";
-  }
-  return health;
+function validationProblem(validate: Validator): string {
+  const first = validate.errors?.[0];
+  return first ? `${first.instancePath} ${first.message ?? ""}`.trim() : "unknown";
 }
 
-function parseEntries(raw: unknown[], logger: WarnLogger): WorkflowHealth[] {
-  const out: WorkflowHealth[] = [];
-  for (const item of raw) {
-    const entry = parseWorkflowHealth(item, logger);
-    if (entry) {
-      out.push(entry);
-    } else {
-      logger.warn("dropping malformed workflow health entry", { entry: item });
-    }
+/**
+ * One health entry as the contract states it. Present-and-empty never happens,
+ * so an ok carries no reason and an error carries the engine's own.
+ */
+function toWorkflowHealth(entry: SchemaWorkflowHealth): WorkflowHealth {
+  const health: WorkflowHealth = { workflowId: entry.workflowId, status: entry.status, since: entry.since };
+  if (entry.status === "error") {
+    // An error the engine could not explain is still an error.
+    health.reason = entry.reason ?? "";
   }
-  return out;
+  return health;
 }
 
 export interface WorkflowHealthReport {
@@ -75,21 +55,16 @@ export interface WorkflowHealthReport {
 }
 
 /** Ask the workflow service for its current health. Throws when it does not answer. */
-export async function requestWorkflowHealth(nats: NATSClient, logger: WarnLogger): Promise<WorkflowHealthReport> {
+export async function requestWorkflowHealth(nats: NATSClient): Promise<WorkflowHealthReport> {
   const reply = await nats.request(SUBJECT_WORKFLOW_HEALTH_GET, new TextEncoder().encode("{}"));
-  const body = JSON.parse(new TextDecoder().decode(reply.data)) as {
-    loaded?: unknown;
-    at?: unknown;
-    workflows?: unknown;
-  };
-  if (!Array.isArray(body.workflows)) {
-    throw new Error("workflow service answered a health request without a workflow list");
+  const body: unknown = JSON.parse(new TextDecoder().decode(reply.data));
+  if (!validateWorkflowHealthReply(body)) {
+    throw new Error(
+      `workflow service answered a health request against its contract: ${validationProblem(validateWorkflowHealthReply)}`
+    );
   }
-  return {
-    loaded: body.loaded === true,
-    at: typeof body.at === "string" && body.at ? body.at : new Date().toISOString(),
-    workflows: parseEntries(body.workflows, logger),
-  };
+  const report = body as SchemaWorkflowHealthReply;
+  return { loaded: report.loaded, at: report.at, workflows: report.workflows.map(toWorkflowHealth) };
 }
 
 /**
@@ -134,7 +109,7 @@ export class WorkflowHealthEmitter {
   async resync(): Promise<void> {
     let report: WorkflowHealthReport;
     try {
-      report = await requestWorkflowHealth(this.nats, this.logger);
+      report = await requestWorkflowHealth(this.nats);
     } catch (err) {
       this.logger.info("WorkflowHealthEmitter: workflow service did not answer; waiting for its snapshot", {
         error: err instanceof Error ? err.message : String(err),
@@ -152,46 +127,45 @@ export class WorkflowHealthEmitter {
   }
 
   private handleChanged(msg: Msg): void {
-    const data = this.decode(msg);
-    if (data === undefined) {
+    const event = this.decode<SchemaWorkflowHealthChangedEvent>(msg, validateWorkflowHealthChangedEvent);
+    if (!event) {
       return;
     }
-    const health = parseWorkflowHealth(data, this.logger);
-    if (!health) {
-      this.logger.warn("WorkflowHealthEmitter: dropping malformed change", { subject: msg.subject });
-      return;
-    }
-    this.send({ type: EngineEventType.WORKFLOW_HEALTH_CHANGED, ...health });
+    this.send({ type: EngineEventType.WORKFLOW_HEALTH_CHANGED, ...toWorkflowHealth(event.data) });
   }
 
   private handleSnapshot(msg: Msg): void {
-    const data = this.decode(msg);
-    if (data === undefined) {
-      return;
-    }
-    const snapshot = (data ?? {}) as { workflows?: unknown; at?: unknown };
-    if (!Array.isArray(snapshot.workflows)) {
-      this.logger.warn("WorkflowHealthEmitter: dropping malformed snapshot", { subject: msg.subject });
+    const event = this.decode<SchemaWorkflowHealthSnapshotEvent>(msg, validateWorkflowHealthSnapshotEvent);
+    if (!event) {
       return;
     }
     this.send({
       type: EngineEventType.WORKFLOW_HEALTH_SNAPSHOT,
-      workflows: parseEntries(snapshot.workflows, this.logger).filter((entry) => entry.status === "error"),
-      at: typeof snapshot.at === "string" && snapshot.at ? snapshot.at : new Date().toISOString(),
+      workflows: event.data.workflows.map(toWorkflowHealth).filter((entry) => entry.status === "error"),
+      at: event.data.at,
     });
   }
 
-  /** The CloudEvent's data (null when absent), or undefined when the message is not JSON. */
-  private decode(msg: Msg): unknown {
+  /** The message as the contract's type, or null, logged, when it is not JSON or breaks the contract. */
+  private decode<T>(msg: Msg, validate: Validator): T | null {
+    let body: unknown;
     try {
-      return (msg.json() as { data?: unknown }).data ?? null;
+      body = msg.json();
     } catch (err) {
       this.logger.error("WorkflowHealthEmitter: failed to decode CloudEvent", {
         subject: msg.subject,
         error: err instanceof Error ? err.message : String(err),
       });
-      return undefined;
+      return null;
     }
+    if (!validate(body)) {
+      this.logger.warn("WorkflowHealthEmitter: dropping a message that breaks its contract", {
+        subject: msg.subject,
+        problem: validationProblem(validate),
+      });
+      return null;
+    }
+    return body as T;
   }
 
   private send(event: WorkflowHealthChangedEvent | WorkflowHealthSnapshotEvent): void {

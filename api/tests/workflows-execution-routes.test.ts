@@ -497,11 +497,11 @@ describe("replayWorkflowRun", () => {
     expect((published[0]?.data as { dryRun?: boolean }).dryRun).toBeUndefined();
   });
 
-  // An empty resume step means the whole run; the engine reads it that way.
+  // No resume step means the whole run; the contract leaves the field out rather than sending it empty.
   test("replays the whole run when no step is named", async () => {
     const { replay, published } = setupReplay();
     await replay("run-1");
-    expect(published[0]?.data.fromTaskId).toBe("");
+    expect(published[0]?.data).not.toHaveProperty("fromTaskId");
   });
 
   test("mints a correlation id when the caller supplies none", async () => {
