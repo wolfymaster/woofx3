@@ -1,0 +1,58 @@
+openapi: 3.1.0
+info:
+  title: Heartbeat bus messages
+  version: 1.0.0
+  description: >
+    Liveness messages every service publishes on the NATS subject `HEARTBEAT`.
+    The operation path is the message's `type`, which is not the subject it is
+    published on.
+paths:
+  /com.woofx3.heartbeat:
+    post:
+      operationId: heartbeat
+      summary: Report whether a service is ready to be depended on. Published by every service, read by the runtime health monitors and the api's readiness probe.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HeartbeatEvent"
+      responses:
+        "202":
+          description: Published to the bus; nothing replies.
+components:
+  schemas:
+    HeartbeatEvent:
+      description: CloudEvent saying one service is alive and whether it is ready.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, subject, time, data]
+      properties:
+        specversion:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [com.woofx3.heartbeat]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        subject:
+          type: string
+          enum: [HEARTBEAT]
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        data:
+          $ref: "#/components/schemas/HeartbeatData"
+    HeartbeatData:
+      description: >
+        `application` is the name dependents wait for (the service's runtime
+        name). `ready` is false while the service is up but not yet usable.
+      type: object
+      additionalProperties: false
+      required: [application, ready]
+      properties:
+        application:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        ready:
+          type: boolean

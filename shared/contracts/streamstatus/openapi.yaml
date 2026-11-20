@@ -1,0 +1,98 @@
+openapi: 3.1.0
+info:
+  title: Stream status bus messages
+  version: 1.0.0
+  description: >
+    Whether a platform's stream is live now, as a state rather than the
+    `stream.online` and `stream.offline` occurrences. Each operation path is the
+    message's `type`, which is also the NATS subject. See
+    docs/services/stream-sessions.md.
+paths:
+  /stream.status.observed:
+    post:
+      operationId: streamStatusObserved
+      summary: A platform's current state. Published by the connectors host when an adapter has read it and in answer to a request; read by the api's resolver.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StreamStatusObservedEvent"
+      responses:
+        "202":
+          description: Published to the bus; nothing replies.
+  /stream.status.requested:
+    post:
+      operationId: streamStatusRequested
+      summary: Ask every connected platform to publish its state. Published by the api's resolver; read by the connectors host.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StreamStatusRequestedEvent"
+      responses:
+        "202":
+          description: Published to the bus; nothing replies.
+components:
+  schemas:
+    StreamStatusObservedEvent:
+      description: >
+        CloudEvent carrying one platform's live state. `platform` names the
+        platform and `sessionId`, when the publisher knows one, the session it
+        stamps with.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamStatusSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [stream.status.observed]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        sessionId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/StreamStatusObserved"
+    StreamStatusRequestedEvent:
+      description: CloudEvent asking for every platform's state. It has no data and carries no `sessionId` attribute.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/StreamStatusSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [stream.status.requested]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+    StreamStatusSpecVersion:
+      description: >
+        The `specversion` the TypeScript and Rust event factories write. It is
+        not the CloudEvents value `1.0`; the factories are shared by every event
+        family and are not changed per message.
+      type: string
+      enum: ["1.0.0"]
+    StreamStatusObserved:
+      description: Whether the stream is live. `startedAt` is present only when live, and only when the platform says when it began.
+      type: object
+      additionalProperties: false
+      required: [live]
+      properties:
+        live:
+          type: boolean
+        startedAt:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
