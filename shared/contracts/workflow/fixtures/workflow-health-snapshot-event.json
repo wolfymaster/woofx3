@@ -1,0 +1,292 @@
+{
+  "schema": "WorkflowHealthSnapshotEvent",
+  "description": "WorkflowHealthSnapshotEvent as its producer sends it. A closed message refuses an unknown field, a missing or mistyped one and an empty value; a reply is open.",
+  "cases": [
+    {
+      "name": "the message the producer sends",
+      "valid": true,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.snapshot",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflows": [
+            {
+              "workflowId": "wf-1",
+              "status": "error",
+              "reason": "unknown action",
+              "since": "2026-11-20T10:15:30.123456Z"
+            }
+          ],
+          "at": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "no workflow in error",
+      "valid": true,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.snapshot",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflows": [],
+          "at": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "an unknown field",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.snapshot",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflows": [
+            {
+              "workflowId": "wf-1",
+              "status": "error",
+              "reason": "unknown action",
+              "since": "2026-11-20T10:15:30.123456Z"
+            }
+          ],
+          "at": "2026-11-20T10:15:30.123456Z"
+        },
+        "extra": 1
+      }
+    },
+    {
+      "name": "an unknown field in data",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.snapshot",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflows": [
+            {
+              "workflowId": "wf-1",
+              "status": "error",
+              "reason": "unknown action",
+              "since": "2026-11-20T10:15:30.123456Z"
+            }
+          ],
+          "at": "2026-11-20T10:15:30.123456Z",
+          "extra": 1
+        }
+      }
+    },
+    {
+      "name": "no id",
+      "valid": false,
+      "value": {
+        "type": "workflow.health.snapshot",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflows": [
+            {
+              "workflowId": "wf-1",
+              "status": "error",
+              "reason": "unknown action",
+              "since": "2026-11-20T10:15:30.123456Z"
+            }
+          ],
+          "at": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "no type",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflows": [
+            {
+              "workflowId": "wf-1",
+              "status": "error",
+              "reason": "unknown action",
+              "since": "2026-11-20T10:15:30.123456Z"
+            }
+          ],
+          "at": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "no source",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.snapshot",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflows": [
+            {
+              "workflowId": "wf-1",
+              "status": "error",
+              "reason": "unknown action",
+              "since": "2026-11-20T10:15:30.123456Z"
+            }
+          ],
+          "at": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "no time",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.snapshot",
+        "source": "workflow",
+        "data": {
+          "workflows": [
+            {
+              "workflowId": "wf-1",
+              "status": "error",
+              "reason": "unknown action",
+              "since": "2026-11-20T10:15:30.123456Z"
+            }
+          ],
+          "at": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "no data",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.snapshot",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z"
+      }
+    },
+    {
+      "name": "an empty id",
+      "valid": false,
+      "value": {
+        "id": "",
+        "type": "workflow.health.snapshot",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflows": [
+            {
+              "workflowId": "wf-1",
+              "status": "error",
+              "reason": "unknown action",
+              "since": "2026-11-20T10:15:30.123456Z"
+            }
+          ],
+          "at": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "a null id",
+      "valid": false,
+      "value": {
+        "id": null,
+        "type": "workflow.health.snapshot",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflows": [
+            {
+              "workflowId": "wf-1",
+              "status": "error",
+              "reason": "unknown action",
+              "since": "2026-11-20T10:15:30.123456Z"
+            }
+          ],
+          "at": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "an empty time",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.snapshot",
+        "source": "workflow",
+        "time": "",
+        "data": {
+          "workflows": [
+            {
+              "workflowId": "wf-1",
+              "status": "error",
+              "reason": "unknown action",
+              "since": "2026-11-20T10:15:30.123456Z"
+            }
+          ],
+          "at": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "a null time",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.snapshot",
+        "source": "workflow",
+        "time": null,
+        "data": {
+          "workflows": [
+            {
+              "workflowId": "wf-1",
+              "status": "error",
+              "reason": "unknown action",
+              "since": "2026-11-20T10:15:30.123456Z"
+            }
+          ],
+          "at": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "a null list",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.snapshot",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflows": null,
+          "at": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "an entry with no since",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.snapshot",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflows": [
+            {
+              "workflowId": "wf-1",
+              "status": "ok"
+            }
+          ],
+          "at": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    }
+  ]
+}

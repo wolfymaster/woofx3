@@ -1,0 +1,124 @@
+{
+  "schema": "WorkflowHealthReply",
+  "description": "WorkflowHealthReply as its producer sends it. A closed message refuses an unknown field, a missing or mistyped one and an empty value; a reply is open.",
+  "cases": [
+    {
+      "name": "the message the producer sends",
+      "valid": true,
+      "value": {
+        "loaded": true,
+        "at": "2026-11-20T10:15:30.123456Z",
+        "workflows": [
+          {
+            "workflowId": "wf-1",
+            "status": "error",
+            "reason": "unknown action",
+            "since": "2026-11-20T10:15:30.123456Z"
+          },
+          {
+            "workflowId": "wf-2",
+            "status": "ok",
+            "since": "2026-11-20T10:15:30.123456Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "before the first load",
+      "valid": true,
+      "value": {
+        "loaded": false,
+        "at": "2026-11-20T10:15:30.123456Z",
+        "workflows": []
+      }
+    },
+    {
+      "name": "an extra field, which a reply may carry",
+      "valid": true,
+      "unknownFields": true,
+      "value": {
+        "loaded": true,
+        "at": "2026-11-20T10:15:30.123456Z",
+        "workflows": [
+          {
+            "workflowId": "wf-1",
+            "status": "error",
+            "reason": "unknown action",
+            "since": "2026-11-20T10:15:30.123456Z"
+          },
+          {
+            "workflowId": "wf-2",
+            "status": "ok",
+            "since": "2026-11-20T10:15:30.123456Z"
+          }
+        ],
+        "extra": 1
+      }
+    },
+    {
+      "name": "no loaded",
+      "valid": false,
+      "value": {
+        "at": "2026-11-20T10:15:30.123456Z",
+        "workflows": [
+          {
+            "workflowId": "wf-1",
+            "status": "error",
+            "reason": "unknown action",
+            "since": "2026-11-20T10:15:30.123456Z"
+          },
+          {
+            "workflowId": "wf-2",
+            "status": "ok",
+            "since": "2026-11-20T10:15:30.123456Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no at",
+      "valid": false,
+      "value": {
+        "loaded": true,
+        "workflows": [
+          {
+            "workflowId": "wf-1",
+            "status": "error",
+            "reason": "unknown action",
+            "since": "2026-11-20T10:15:30.123456Z"
+          },
+          {
+            "workflowId": "wf-2",
+            "status": "ok",
+            "since": "2026-11-20T10:15:30.123456Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "no workflows",
+      "valid": false,
+      "value": {
+        "loaded": true,
+        "at": "2026-11-20T10:15:30.123456Z"
+      }
+    },
+    {
+      "name": "no loaded",
+      "valid": false,
+      "value": {
+        "at": "2026-11-20T10:15:30.123456Z",
+        "workflows": []
+      }
+    },
+    {
+      "name": "a null list",
+      "valid": false,
+      "value": {
+        "loaded": true,
+        "at": "2026-11-20T10:15:30.123456Z",
+        "workflows": null
+      }
+    }
+  ]
+}

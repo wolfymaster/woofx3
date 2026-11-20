@@ -36,6 +36,7 @@ esac
 readonly DOMAINS=(
   "scene shared/common/golang/messages/scene shared/common/typescript/cloudevents/Scene shared/common/rust/cloudevents/src/scene_gen.rs"
   "barkloader shared/common/golang/messages/barkloader shared/common/typescript/cloudevents/Barkloader shared/common/rust/cloudevents/src/barkloader_gen.rs"
+  "workflow shared/common/golang/messages/workflow shared/common/typescript/cloudevents/Workflow shared/common/rust/cloudevents/src/workflow_gen.rs"
 )
 
 tools=scripts/contracts
@@ -56,8 +57,9 @@ for entry in "${DOMAINS[@]}"; do
 
   bun "$tools/bundle.ts" "$source" "$doc"
 
-  # The operation path is the subject, and the generated `type` constant must say the same.
-  jq -e '. as $d | .paths | to_entries | all(.[]; (.value.post.requestBody.content["application/json"].schema["$ref"] | split("/")[-1]) as $n | "/" + $d.components.schemas[$n].properties.type.enum[0] == .key)' "$doc" >/dev/null ||
+  # The operation path is the subject, and a request that is a CloudEvent fixes the same `type`.
+  # A plain JSON request has no `type` and an operation may have no request at all.
+  jq -e '. as $d | .paths | to_entries | all(.[]; (.value.post.requestBody.content["application/json"].schema["$ref"] // null) as $r | if $r == null then true else ($d.components.schemas[($r | split("/")[-1])].properties.type.enum[0]) as $t | $t == null or "/" + $t == .key end)' "$doc" >/dev/null ||
     { echo "gen-schemas: $source: an operation path is not the \`type\` its request fixes" >&2; exit 1; }
 
   # Go: types, enums, tagged unions and validators; no client or server.

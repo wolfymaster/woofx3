@@ -1,0 +1,45 @@
+{
+  "schema": "WorkflowCancelReply",
+  "description": "WorkflowCancelReply as its producer sends it. A closed message refuses an unknown field, a missing or mistyped one and an empty value; a reply is open.",
+  "cases": [
+    {
+      "name": "the message the producer sends",
+      "valid": true,
+      "value": {
+        "outcome": "cancelled",
+        "status": "cancelled"
+      }
+    },
+    {
+      "name": "not found",
+      "valid": true,
+      "value": {
+        "outcome": "not_found"
+      }
+    },
+    {
+      "name": "an extra field, which a reply may carry",
+      "valid": true,
+      "unknownFields": true,
+      "value": {
+        "outcome": "cancelled",
+        "status": "cancelled",
+        "extra": 1
+      }
+    },
+    {
+      "name": "no outcome",
+      "valid": false,
+      "value": {
+        "status": "cancelled"
+      }
+    },
+    {
+      "name": "an unknown outcome",
+      "valid": false,
+      "value": {
+        "outcome": "gone"
+      }
+    }
+  ]
+}

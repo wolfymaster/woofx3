@@ -1,0 +1,52 @@
+{
+  "schema": "WorkflowCancelRequest",
+  "description": "WorkflowCancelRequest as its producer sends it. A closed message refuses an unknown field, a missing or mistyped one and an empty value; a reply is open.",
+  "cases": [
+    {
+      "name": "the message the producer sends",
+      "valid": true,
+      "value": {
+        "executionId": "run-1",
+        "reason": "stopped from the dashboard"
+      }
+    },
+    {
+      "name": "no reason",
+      "valid": true,
+      "value": {
+        "executionId": "run-1"
+      }
+    },
+    {
+      "name": "an unknown field",
+      "valid": false,
+      "value": {
+        "executionId": "run-1",
+        "reason": "stopped from the dashboard",
+        "extra": 1
+      }
+    },
+    {
+      "name": "no executionId",
+      "valid": false,
+      "value": {
+        "reason": "stopped from the dashboard"
+      }
+    },
+    {
+      "name": "no execution",
+      "valid": false,
+      "value": {
+        "reason": "x"
+      }
+    },
+    {
+      "name": "an empty reason",
+      "valid": false,
+      "value": {
+        "executionId": "run-1",
+        "reason": ""
+      }
+    }
+  ]
+}

@@ -1,0 +1,264 @@
+{
+  "schema": "WorkflowRunFailedEvent",
+  "description": "WorkflowRunFailedEvent as its producer sends it. A closed message refuses an unknown field, a missing or mistyped one and an empty value; a reply is open.",
+  "cases": [
+    {
+      "name": "the message the producer sends",
+      "valid": true,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.run.failed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch",
+        "data": {
+          "workflowId": "wf-1",
+          "executionId": "run-1",
+          "error": "step t2 failed"
+        }
+      }
+    },
+    {
+      "name": "a failure with no reason",
+      "valid": true,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.run.failed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch",
+        "data": {
+          "workflowId": "wf-1",
+          "executionId": "run-1"
+        }
+      }
+    },
+    {
+      "name": "an unknown field",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.run.failed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch",
+        "data": {
+          "workflowId": "wf-1",
+          "executionId": "run-1",
+          "error": "step t2 failed"
+        },
+        "extra": 1
+      }
+    },
+    {
+      "name": "an unknown field in data",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.run.failed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch",
+        "data": {
+          "workflowId": "wf-1",
+          "executionId": "run-1",
+          "error": "step t2 failed",
+          "extra": 1
+        }
+      }
+    },
+    {
+      "name": "no id",
+      "valid": false,
+      "value": {
+        "type": "workflow.run.failed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch",
+        "data": {
+          "workflowId": "wf-1",
+          "executionId": "run-1",
+          "error": "step t2 failed"
+        }
+      }
+    },
+    {
+      "name": "no type",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch",
+        "data": {
+          "workflowId": "wf-1",
+          "executionId": "run-1",
+          "error": "step t2 failed"
+        }
+      }
+    },
+    {
+      "name": "no source",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.run.failed",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch",
+        "data": {
+          "workflowId": "wf-1",
+          "executionId": "run-1",
+          "error": "step t2 failed"
+        }
+      }
+    },
+    {
+      "name": "no time",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.run.failed",
+        "source": "workflow",
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch",
+        "data": {
+          "workflowId": "wf-1",
+          "executionId": "run-1",
+          "error": "step t2 failed"
+        }
+      }
+    },
+    {
+      "name": "no data",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.run.failed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "an empty id",
+      "valid": false,
+      "value": {
+        "id": "",
+        "type": "workflow.run.failed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch",
+        "data": {
+          "workflowId": "wf-1",
+          "executionId": "run-1",
+          "error": "step t2 failed"
+        }
+      }
+    },
+    {
+      "name": "a null id",
+      "valid": false,
+      "value": {
+        "id": null,
+        "type": "workflow.run.failed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch",
+        "data": {
+          "workflowId": "wf-1",
+          "executionId": "run-1",
+          "error": "step t2 failed"
+        }
+      }
+    },
+    {
+      "name": "an empty time",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.run.failed",
+        "source": "workflow",
+        "time": "",
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch",
+        "data": {
+          "workflowId": "wf-1",
+          "executionId": "run-1",
+          "error": "step t2 failed"
+        }
+      }
+    },
+    {
+      "name": "a null time",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.run.failed",
+        "source": "workflow",
+        "time": null,
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch",
+        "data": {
+          "workflowId": "wf-1",
+          "executionId": "run-1",
+          "error": "step t2 failed"
+        }
+      }
+    },
+    {
+      "name": "an empty error",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.run.failed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "triggerId": "4f3b9a52-0c7e-4d0d-8a6e-1d2b3c4d5e6f",
+        "triggeredBy": "dashboard",
+        "sessionId": "sess-1",
+        "platform": "twitch",
+        "data": {
+          "workflowId": "wf-1",
+          "executionId": "run-1",
+          "error": ""
+        }
+      }
+    }
+  ]
+}

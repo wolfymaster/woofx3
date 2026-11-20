@@ -1,0 +1,295 @@
+{
+  "schema": "WorkflowCommandExecuteRequest",
+  "description": "WorkflowCommandExecuteRequest as its producer sends it. A closed message refuses an unknown field, a missing or mistyped one and an empty value; a reply is open.",
+  "cases": [
+    {
+      "name": "the message the producer sends",
+      "valid": true,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.command.execute",
+        "source": "connectors",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "event": {
+            "id": "e1",
+            "type": "chat.command.hello",
+            "data": {
+              "chatter": "a"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an unknown field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.command.execute",
+        "source": "connectors",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "event": {
+            "id": "e1",
+            "type": "chat.command.hello",
+            "data": {
+              "chatter": "a"
+            }
+          }
+        },
+        "extra": 1
+      }
+    },
+    {
+      "name": "an unknown field in data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.command.execute",
+        "source": "connectors",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "event": {
+            "id": "e1",
+            "type": "chat.command.hello",
+            "data": {
+              "chatter": "a"
+            }
+          },
+          "extra": 1
+        }
+      }
+    },
+    {
+      "name": "no specversion",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.command.execute",
+        "source": "connectors",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "event": {
+            "id": "e1",
+            "type": "chat.command.hello",
+            "data": {
+              "chatter": "a"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "no id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "type": "workflow.command.execute",
+        "source": "connectors",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "event": {
+            "id": "e1",
+            "type": "chat.command.hello",
+            "data": {
+              "chatter": "a"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "no type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "source": "connectors",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "event": {
+            "id": "e1",
+            "type": "chat.command.hello",
+            "data": {
+              "chatter": "a"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "no source",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.command.execute",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "event": {
+            "id": "e1",
+            "type": "chat.command.hello",
+            "data": {
+              "chatter": "a"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "no time",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.command.execute",
+        "source": "connectors",
+        "data": {
+          "workflowId": "wf-1",
+          "event": {
+            "id": "e1",
+            "type": "chat.command.hello",
+            "data": {
+              "chatter": "a"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "no data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.command.execute",
+        "source": "connectors",
+        "time": "2026-11-20T10:15:30.123456Z"
+      }
+    },
+    {
+      "name": "an empty id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "",
+        "type": "workflow.command.execute",
+        "source": "connectors",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "event": {
+            "id": "e1",
+            "type": "chat.command.hello",
+            "data": {
+              "chatter": "a"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a null id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": null,
+        "type": "workflow.command.execute",
+        "source": "connectors",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "event": {
+            "id": "e1",
+            "type": "chat.command.hello",
+            "data": {
+              "chatter": "a"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "an empty time",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.command.execute",
+        "source": "connectors",
+        "time": "",
+        "data": {
+          "workflowId": "wf-1",
+          "event": {
+            "id": "e1",
+            "type": "chat.command.hello",
+            "data": {
+              "chatter": "a"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a null time",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.command.execute",
+        "source": "connectors",
+        "time": null,
+        "data": {
+          "workflowId": "wf-1",
+          "event": {
+            "id": "e1",
+            "type": "chat.command.hello",
+            "data": {
+              "chatter": "a"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "no event",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.command.execute",
+        "source": "api",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1"
+        }
+      }
+    },
+    {
+      "name": "an event that is not an object",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.command.execute",
+        "source": "api",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "event": "x"
+        }
+      }
+    }
+  ]
+}
