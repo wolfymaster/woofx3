@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/common/messages/outbox"
 	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -79,11 +81,19 @@ type segmentEdge struct {
 	eventType  string
 	entityID   string
 	extensions map[string]string
-	data       segmentEdgeEvent
+	data       outbox.ViewerSegmentEdge
+}
+
+// reading is a numeric fact reading, or NaN for any other.
+func reading(r outbox.FactReading) float64 {
+	if v, ok := r.GetFloat64(); ok {
+		return v
+	}
+	return math.NaN()
 }
 
 func (e segmentEdge) String() string {
-	return fmt.Sprintf("%s %s/%s", e.subject, e.data.SegmentID, e.data.ViewerID)
+	return fmt.Sprintf("%s %s/%s", e.subject, e.data.SegmentId, e.data.ViewerId)
 }
 
 // segmentEdges returns the viewer.segment.entered/left events in the outbox,
@@ -191,15 +201,15 @@ func TestSegmentAnnouncesEachThresholdCrossingOnce(t *testing.T) {
 			t.Fatalf("left edge extensions = %v, want platform only", edge.extensions)
 		}
 		data := edge.data
-		if data.SegmentID != "user:segment:big_cheerer" || data.Platform != "twitch" || data.ViewerID != "v1" ||
-			data.ViewerName != "Wolfy" || data.Cause.Source != "twitch" || data.Cause.EventID != "e5" {
+		if string(data.SegmentId) != "user:segment:big_cheerer" || string(data.Platform) != "twitch" || string(data.ViewerId) != "v1" ||
+			data.ViewerName != "Wolfy" || data.Cause.Source != "twitch" || data.Cause.EventId != "e5" {
 			t.Fatalf("left edge data = %+v", data)
 		}
 		fact := data.Facts["user"]["last_bits"]
-		if fact.Before != 300.0 || fact.After != 10.0 || len(data.Facts) != 1 || len(data.Facts["user"]) != 1 {
+		if reading(fact.Before) != 300.0 || reading(fact.After) != 10.0 || len(data.Facts) != 1 || len(data.Facts["user"]) != 1 {
 			t.Fatalf("left edge facts = %+v, want last_bits 300 -> 10", data.Facts)
 		}
-		if first := edges[0].data.Facts["user"]["last_bits"]; first.Before != 50.0 || first.After != 150.0 {
+		if first := edges[0].data.Facts["user"]["last_bits"]; reading(first.Before) != 50.0 || reading(first.After) != 150.0 {
 			t.Fatalf("entered edge facts = %+v, want 50 -> 150", first)
 		}
 	})
@@ -222,7 +232,7 @@ func TestTimeRelativeSegmentComparesTheEventsBeforeAndAfter(t *testing.T) {
 
 		seenAt("first", factNow)
 		edges := wantEdges(t, db, edgeEntered)
-		if edges[0].data.SegmentID != "user:segment:recent" || edges[0].data.Facts["user"]["last_seen"].Before != nil {
+		if string(edges[0].data.SegmentId) != "user:segment:recent" || edges[0].data.Facts["user"]["last_seen"].Before.Type != outbox.NullFactReading {
 			t.Fatalf("first sighting = %+v, want recent entered from nothing", edges[0].data)
 		}
 		seenAt("soon", factNow.Add(10*time.Minute))
@@ -230,11 +240,11 @@ func TestTimeRelativeSegmentComparesTheEventsBeforeAndAfter(t *testing.T) {
 
 		seenAt("back", factNow.Add(40*24*time.Hour))
 		edges = wantEdges(t, db, edgeEntered, edgeLeft, edgeEntered)
-		if edges[1].data.SegmentID != "user:segment:away" || edges[2].data.SegmentID != "user:segment:recent" {
+		if string(edges[1].data.SegmentId) != "user:segment:away" || string(edges[2].data.SegmentId) != "user:segment:recent" {
 			t.Fatalf("return after 40 days = %v, want away left then recent entered", edges)
 		}
 		facts := edges[1].data.Facts["user"]["last_seen"]
-		if facts.Before != float64(factNow.Add(10*time.Minute).UnixMilli()) || facts.After != float64(factNow.Add(40*24*time.Hour).UnixMilli()) {
+		if reading(facts.Before) != float64(factNow.Add(10*time.Minute).UnixMilli()) || reading(facts.After) != float64(factNow.Add(40*24*time.Hour).UnixMilli()) {
 			t.Fatalf("away left with %+v, want the last sighting before and the return after", facts)
 		}
 		if got := viewerSegments(t, svc, "v1"); !slices.Equal(got, []string{"user:segment:recent"}) {
@@ -281,8 +291,8 @@ func TestSessionSegmentStartsEmptyInANewSessionWithoutAnnouncingIt(t *testing.T)
 		chat("a1", factNow.Add(-time.Hour))
 		chat("a2", factNow.Add(-time.Hour+time.Minute))
 		edges := wantEdges(t, db, edgeEntered)
-		if edges[0].data.SessionID != first || edges[0].extensions["sessionid"] != first || edges[0].extensions["platform"] != "twitch" {
-			t.Fatalf("entered in session %q with extensions %v, want %s", edges[0].data.SessionID, edges[0].extensions, first)
+		if edges[0].data.SessionId != first || edges[0].extensions["sessionid"] != first || edges[0].extensions["platform"] != "twitch" {
+			t.Fatalf("entered in session %q with extensions %v, want %s", edges[0].data.SessionId, edges[0].extensions, first)
 		}
 		// An hour after factNow is in the second session, where v1 has not
 		// chatted.
@@ -302,8 +312,8 @@ func TestSessionSegmentStartsEmptyInANewSessionWithoutAnnouncingIt(t *testing.T)
 		}
 		chat("b2", factNow.Add(32*time.Minute))
 		edges = wantEdges(t, db, edgeEntered, edgeEntered)
-		if edges[1].data.SessionID != second {
-			t.Fatalf("entered again in session %q, want %s", edges[1].data.SessionID, second)
+		if edges[1].data.SessionId != second {
+			t.Fatalf("entered again in session %q, want %s", edges[1].data.SessionId, second)
 		}
 		if got := viewerSegments(t, svc, "v1"); !slices.Equal(got, []string{"user:segment:chatty_tonight"}) {
 			t.Fatalf("v1's segments = %v", got)
@@ -326,8 +336,8 @@ func TestAnEventAheadOfTheClockAtASessionStartIsCurrent(t *testing.T) {
 
 		applyDeltas(t, svc, "early", start.Add(time.Second), "", false, "v1", opDelta(session.Id, session.Revision, "count"))
 		edges := wantEdges(t, db, edgeEntered)
-		if edges[0].data.SessionID != second {
-			t.Fatalf("entered in %q, want %s", edges[0].data.SessionID, second)
+		if edges[0].data.SessionId != second {
+			t.Fatalf("entered in %q, want %s", edges[0].data.SessionId, second)
 		}
 	})
 }
@@ -593,7 +603,7 @@ func TestASegmentReadingAnInactiveFactIsFrozen(t *testing.T) {
 		setArchived(false)
 		message("m3", 3)
 		edges := wantEdges(t, db, edgeEntered)
-		if edges[0].data.SegmentID != "user:segment:chatty_raider" || edges[0].data.Facts["user"]["raids"].After != 1.0 {
+		if string(edges[0].data.SegmentId) != "user:segment:chatty_raider" || edges[0].data.Facts["user"]["raids"].After.Float64 != 1.0 {
 			t.Fatalf("entered once raids was active again = %+v", edges[0].data)
 		}
 	})

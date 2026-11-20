@@ -1,5 +1,6 @@
 import { EngineEventType } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
+import type { SchemaModuleStorageChange } from "@woofx3/common/cloudevents/Module/module.gen";
 import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
 import {
   EventType as StreamStatusEventType,
@@ -375,10 +376,8 @@ export class StreamSessionResolver {
     const occurredAt = new Date().toISOString();
     for (const item of cleared) {
       const subject = `module.storage.${item.namespace}.changed`;
-      const event = Event(
-        { type: "module.storage.changed", source: "api" },
-        { moduleId: item.namespace, key: item.key, value: null, occurredAt }
-      );
+      const change: SchemaModuleStorageChange = { moduleId: item.namespace, key: item.key, value: null, occurredAt };
+      const event = Event({ type: "module.storage.changed", source: "api" }, change);
       try {
         await this.nats.publish(subject, encode(event));
       } catch (err) {

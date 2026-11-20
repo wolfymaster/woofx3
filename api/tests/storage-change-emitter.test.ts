@@ -38,87 +38,54 @@ function setup() {
   return { emitter, nats, webhook, handlers };
 }
 
+function envelope(data: Record<string, unknown>, extra: Record<string, unknown> = {}) {
+  return {
+    specversion: "1.0.0",
+    type: "module.storage.changed",
+    source: "barkloader",
+    id: "ev-1",
+    time: "2026-05-03T00:00:00.000Z",
+    data,
+    ...extra,
+  };
+}
+
+const goodData = { moduleId: "counter", key: "counter:state:count", value: 7, occurredAt: "2026-05-03T00:00:00.500Z" };
+
 describe("mapStorageChanged", () => {
   it("decodes a well-formed envelope", () => {
-    const event = mapStorageChanged({
-      specversion: "1.0",
-      type: "module.storage.changed",
-      source: "barkloader",
-      id: "ev-1",
-      time: "2026-05-03T00:00:00.000Z",
-      data: {
-        moduleId: "counter",
-        key: "counter:state:count",
-        value: 7,
-        occurredAt: "2026-05-03T00:00:00.500Z",
-      },
-    });
-    expect(event).toEqual({
+    expect(mapStorageChanged(envelope(goodData))).toEqual({
       type: EngineEventType.MODULE_STORAGE_CHANGED,
-      moduleId: "counter",
-      key: "counter:state:count",
-      value: 7,
-      occurredAt: "2026-05-03T00:00:00.500Z",
+      ...goodData,
     });
   });
 
-  it("falls back to envelope time when occurredAt is missing", () => {
-    const event = mapStorageChanged({
-      type: "module.storage.changed",
-      time: "2026-05-03T00:00:00.000Z",
-      data: {
-        moduleId: "counter",
-        key: "k",
-        value: null,
-      },
-    });
-    expect(event?.occurredAt).toBe("2026-05-03T00:00:00.000Z");
+  it("accepts the session the publisher knew and a null value", () => {
+    const event = mapStorageChanged(envelope({ ...goodData, value: null }, { sessionId: "s1", source: "api" }));
+    expect(event?.value).toBeNull();
   });
 
-  it("returns null when moduleId is missing", () => {
-    expect(
-      mapStorageChanged({
-        type: "module.storage.changed",
-        data: { key: "k", value: 1 },
-      })
-    ).toBeNull();
+  it.each([
+    ["no occurredAt", { ...goodData, occurredAt: undefined }],
+    ["no moduleId", { ...goodData, moduleId: undefined }],
+    ["no key", { ...goodData, key: undefined }],
+    ["no value", { ...goodData, value: undefined }],
+    ["an unknown field", { ...goodData, previousValue: 1 }],
+    ["a mistyped key", { ...goodData, key: 3 }],
+  ])("refuses data with %s", (_name, data) => {
+    expect(mapStorageChanged(envelope(data))).toBeNull();
   });
 
-  it("returns null when key is missing", () => {
-    expect(
-      mapStorageChanged({
-        type: "module.storage.changed",
-        data: { moduleId: "counter", value: 1 },
-      })
-    ).toBeNull();
+  it("refuses an envelope with another type or an unknown attribute", () => {
+    expect(mapStorageChanged(envelope(goodData, { type: "module.storage.cleared" }))).toBeNull();
+    expect(mapStorageChanged(envelope(goodData, { platform: "twitch" }))).toBeNull();
   });
 
-  it("includes previousValue only when provided", () => {
-    const withPrev = mapStorageChanged({
-      type: "module.storage.changed",
-      data: { moduleId: "m", key: "k", value: 2, previousValue: 1 },
+  it("preserves the value verbatim: strings, objects, arrays", () => {
+    expect(mapStorageChanged(envelope({ ...goodData, value: { nested: { count: 3 } } }))?.value).toEqual({
+      nested: { count: 3 },
     });
-    expect(withPrev?.previousValue).toBe(1);
-
-    const withoutPrev = mapStorageChanged({
-      type: "module.storage.changed",
-      data: { moduleId: "m", key: "k", value: 2 },
-    });
-    expect(withoutPrev && "previousValue" in withoutPrev).toBe(false);
-  });
-
-  it("preserves the value verbatim — strings, objects, arrays", () => {
-    const obj = mapStorageChanged({
-      type: "module.storage.changed",
-      data: { moduleId: "m", key: "k", value: { nested: { count: 3 } } },
-    });
-    expect(obj?.value).toEqual({ nested: { count: 3 } });
-
-    const arr = mapStorageChanged({
-      type: "module.storage.changed",
-      data: { moduleId: "m", key: "k", value: ["a", "b", "c"] },
-    });
-    expect(arr?.value).toEqual(["a", "b", "c"]);
+    expect(mapStorageChanged(envelope({ ...goodData, value: ["a", "b", "c"] }))?.value).toEqual(["a", "b", "c"]);
   });
 });
 
@@ -133,30 +100,10 @@ describe("StorageChangeEmitter wiring", () => {
   it("forwards a decoded event to webhook.send", async () => {
     const { emitter, webhook, handlers } = setup();
     await emitter.start();
-    handlers.get("module.storage.*.changed")!(
-      makeMsg("module.storage.counter.changed", {
-        specversion: "1.0",
-        type: "module.storage.changed",
-        source: "barkloader",
-        id: "ev-1",
-        time: "2026-05-03T00:00:00.000Z",
-        data: {
-          moduleId: "counter",
-          key: "counter:state:count",
-          value: 5,
-          occurredAt: "2026-05-03T00:00:00.500Z",
-        },
-      })
-    );
+    handlers.get("module.storage.*.changed")!(makeMsg("module.storage.counter.changed", envelope(goodData)));
     await Promise.resolve();
     expect(webhook.send).toHaveBeenCalledTimes(1);
-    expect(webhook.send).toHaveBeenCalledWith({
-      type: EngineEventType.MODULE_STORAGE_CHANGED,
-      moduleId: "counter",
-      key: "counter:state:count",
-      value: 5,
-      occurredAt: "2026-05-03T00:00:00.500Z",
-    });
+    expect(webhook.send).toHaveBeenCalledWith({ type: EngineEventType.MODULE_STORAGE_CHANGED, ...goodData });
   });
 
   it("drops malformed payloads without throwing or calling webhook", async () => {

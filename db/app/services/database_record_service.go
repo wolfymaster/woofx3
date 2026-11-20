@@ -12,6 +12,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
+	"github.com/wolfymaster/woofx3/common/messages/outbox"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -20,30 +21,6 @@ import (
 )
 
 const maxDatabaseInsertKeyLength = 255
-
-// databaseRecordOp is what happened to a record, in the
-// `database.record.changed` event.
-type databaseRecordOp string
-
-const (
-	databaseRecordCreated databaseRecordOp = "created"
-	databaseRecordUpdated databaseRecordOp = "updated"
-	databaseRecordDeleted databaseRecordOp = "deleted"
-)
-
-// databaseRecordChangedEvent is the data of `database.record.changed`. Must
-// match DatabaseRecordChangedData in shared/clients/typescript/api/webhooks.ts.
-// It carries only public columns: the event leaves the engine toward the
-// public user page.
-type databaseRecordChangedEvent struct {
-	DatabaseID string           `json:"databaseId"`
-	RecordID   string           `json:"recordId"`
-	Op         databaseRecordOp `json:"op"`
-	Revision   int64            `json:"revision"`
-	CreatedAt  string           `json:"createdAt"`
-	// PublicValues is null for a deleted record.
-	PublicValues map[string]any `json:"publicValues"`
-}
 
 // DatabaseRecordService implements `client.DatabaseRecordService`.
 //
@@ -215,7 +192,7 @@ func (s *DatabaseRecordService) createRecord(ctx context.Context, target *databa
 			outcome = client.CreateDatabaseRecordOutcome_CREATE_DATABASE_RECORD_OUTCOME_DUPLICATE
 			return nil
 		}
-		return s.publishChange(tx, locked, record, databaseRecordCreated)
+		return s.publishChange(tx, locked, record, outbox.DatabaseRecordChangeOpCreated)
 	})
 	if err != nil {
 		return nil, recordWriteError(fmt.Sprintf("create record in %s", target.canonicalID), err)
@@ -289,7 +266,7 @@ func (s *DatabaseRecordService) updateRecord(ctx context.Context, target *databa
 			return err
 		}
 		record = updated
-		return s.publishChange(tx, locked, record, databaseRecordUpdated)
+		return s.publishChange(tx, locked, record, outbox.DatabaseRecordChangeOpUpdated)
 	})
 	var refused twirp.Error
 	switch {
@@ -326,7 +303,7 @@ func (s *DatabaseRecordService) DeleteDatabaseRecord(ctx context.Context, req *c
 		// The deletion is newer than the record's last change, so readers
 		// ordering by revision drop a late update behind it.
 		deleted.Revision++
-		return s.publishChange(tx, target, deleted, databaseRecordDeleted)
+		return s.publishChange(tx, target, deleted, outbox.DatabaseRecordChangeOpDeleted)
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &client.DeleteDatabaseRecordResponse{Status: okStatus("No such record"), Deleted: false}, nil
@@ -469,22 +446,47 @@ func (s *DatabaseRecordService) page(ctx context.Context, target *databaseTarget
 
 // publishChange queues `database.record.changed` in the transaction that
 // changed the record.
-func (s *DatabaseRecordService) publishChange(tx *gorm.DB, target *databaseTarget, record *models.DatabaseRecord, op databaseRecordOp) error {
-	event := databaseRecordChangedEvent{
-		DatabaseID: target.canonicalID,
-		RecordID:   record.ID.String(),
-		Op:         op,
-		Revision:   record.Revision,
-		CreatedAt:  record.CreatedAt.UTC().Format(time.RFC3339Nano),
+func (s *DatabaseRecordService) publishChange(tx *gorm.DB, target *databaseTarget, record *models.DatabaseRecord, op outbox.DatabaseRecordChangeOp) error {
+	event := outbox.DatabaseRecordChange{
+		DatabaseId:   outbox.EntityId(target.canonicalID),
+		RecordId:     outbox.EntityId(record.ID.String()),
+		Op:           op,
+		Revision:     int(record.Revision),
+		CreatedAt:    outbox.EventTime(record.CreatedAt.UTC().Format(time.RFC3339Nano)),
+		PublicValues: outbox.NilPublicValues{Null: true},
 	}
-	if op != databaseRecordDeleted {
+	if op != outbox.DatabaseRecordChangeOpDeleted {
 		values, err := repo.DecodeRecordValues(record.Values)
 		if err != nil {
 			return err
 		}
-		event.PublicValues = publicValues(target.columns, values)
+		cells, err := publicCells(publicValues(target.columns, values))
+		if err != nil {
+			return fmt.Errorf("record %s: %w", record.ID, err)
+		}
+		event.PublicValues = outbox.NewNilPublicValues(cells)
 	}
-	return s.publisher.PublishEventIn(tx, string(cloudevents.SubjectDatabaseRecordChanged), record.ID.String(), nil, event)
+	return s.publisher.PublishEventIn(tx, string(cloudevents.SubjectDatabaseRecordChanged), record.ID.String(), nil, &event)
+}
+
+// publicCells types decoded JSON cells for the event. A column holds text, a
+// number or a checkbox, so any other value is a stored row the contract does
+// not describe and fails the write rather than leaving the engine.
+func publicCells(values map[string]any) (outbox.PublicValues, error) {
+	cells := make(outbox.PublicValues, len(values))
+	for id, value := range values {
+		switch v := value.(type) {
+		case string:
+			cells[id] = outbox.NewStringCell(v)
+		case float64:
+			cells[id] = outbox.NewFloat64Cell(v)
+		case bool:
+			cells[id] = outbox.NewBoolCell(v)
+		default:
+			return nil, fmt.Errorf("column %q holds a %T, not text, a number or a checkbox", id, value)
+		}
+	}
+	return cells, nil
 }
 
 func parseRecordID(raw string) (uuid.UUID, error) {
