@@ -36,6 +36,8 @@ esac
 readonly DOMAINS=(
   "scene shared/common/golang/messages/scene shared/common/typescript/cloudevents/Scene shared/common/rust/cloudevents/src/scene_gen.rs"
   "barkloader shared/common/golang/messages/barkloader shared/common/typescript/cloudevents/Barkloader shared/common/rust/cloudevents/src/barkloader_gen.rs"
+  "module shared/common/golang/messages/module shared/common/typescript/cloudevents/Module shared/common/rust/cloudevents/src/module_gen.rs"
+  "outbox shared/common/golang/messages/outbox shared/common/typescript/cloudevents/Outbox shared/common/rust/cloudevents/src/outbox_gen.rs"
 )
 
 tools=scripts/contracts
