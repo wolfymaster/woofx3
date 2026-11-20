@@ -4,7 +4,7 @@
 
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
-use woofx3_cloudevents::{barkloader_gen, scene_gen};
+use woofx3_cloudevents::{barkloader_gen, scene_gen, workflow_gen};
 
 struct Case {
     name: String,
@@ -92,6 +92,136 @@ fn test_module_field_options_request_fixtures() {
         "module-field-options-request.json",
         "ModuleFieldOptionsRequest",
         barkloader_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_workflow_execute_request_fixtures() {
+    run::<workflow_gen::WorkflowExecuteRequest>(
+        "workflow",
+        "workflow-execute-request.json",
+        "WorkflowExecuteRequest",
+        workflow_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_workflow_execute_reply_fixtures() {
+    run::<workflow_gen::WorkflowExecuteReply>(
+        "workflow",
+        "workflow-execute-reply.json",
+        "WorkflowExecuteReply",
+        workflow_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_workflow_replay_request_fixtures() {
+    run::<workflow_gen::WorkflowReplayRequest>(
+        "workflow",
+        "workflow-replay-request.json",
+        "WorkflowReplayRequest",
+        workflow_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_workflow_command_execute_request_fixtures() {
+    run::<workflow_gen::WorkflowCommandExecuteRequest>(
+        "workflow",
+        "workflow-command-execute-request.json",
+        "WorkflowCommandExecuteRequest",
+        workflow_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_workflow_cancel_request_fixtures() {
+    run::<workflow_gen::WorkflowCancelRequest>(
+        "workflow",
+        "workflow-cancel-request.json",
+        "WorkflowCancelRequest",
+        workflow_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_workflow_cancel_reply_fixtures() {
+    run::<workflow_gen::WorkflowCancelReply>(
+        "workflow",
+        "workflow-cancel-reply.json",
+        "WorkflowCancelReply",
+        workflow_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_workflow_run_started_event_fixtures() {
+    run::<workflow_gen::WorkflowRunStartedEvent>(
+        "workflow",
+        "workflow-run-started-event.json",
+        "WorkflowRunStartedEvent",
+        workflow_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_workflow_run_completed_event_fixtures() {
+    run::<workflow_gen::WorkflowRunCompletedEvent>(
+        "workflow",
+        "workflow-run-completed-event.json",
+        "WorkflowRunCompletedEvent",
+        workflow_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_workflow_run_failed_event_fixtures() {
+    run::<workflow_gen::WorkflowRunFailedEvent>(
+        "workflow",
+        "workflow-run-failed-event.json",
+        "WorkflowRunFailedEvent",
+        workflow_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_workflow_run_cancelled_event_fixtures() {
+    run::<workflow_gen::WorkflowRunCancelledEvent>(
+        "workflow",
+        "workflow-run-cancelled-event.json",
+        "WorkflowRunCancelledEvent",
+        workflow_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_workflow_health_snapshot_event_fixtures() {
+    run::<workflow_gen::WorkflowHealthSnapshotEvent>(
+        "workflow",
+        "workflow-health-snapshot-event.json",
+        "WorkflowHealthSnapshotEvent",
+        workflow_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_workflow_health_changed_event_fixtures() {
+    run::<workflow_gen::WorkflowHealthChangedEvent>(
+        "workflow",
+        "workflow-health-changed-event.json",
+        "WorkflowHealthChangedEvent",
+        workflow_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_workflow_health_reply_fixtures() {
+    run::<workflow_gen::WorkflowHealthReply>(
+        "workflow",
+        "workflow-health-reply.json",
+        "WorkflowHealthReply",
+        workflow_gen::DOCUMENT,
     );
 }
 
