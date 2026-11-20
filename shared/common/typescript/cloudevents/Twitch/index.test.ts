@@ -129,3 +129,25 @@ describe("assertPlainPayload", () => {
     });
   }
 });
+
+describe("TwitchEvents contract check", () => {
+  test("refuses a chat message whose nullable field was left undefined", () => {
+    const missing = { ...CHAT_MESSAGE, channelId: undefined } as unknown as ChatMessage;
+
+    expect(() => new TwitchEvents("twitch").chatMessage(missing)).toThrow(
+      "user.message event does not match its contract"
+    );
+  });
+
+  test("refuses a field the contract does not know", () => {
+    const extra = { ...CHAT_MESSAGE, extra: 1 } as unknown as ChatMessage;
+
+    expect(() => new TwitchEvents("twitch").chatMessage(extra)).toThrow("additional properties");
+  });
+
+  test("keeps a null in a nullable field", () => {
+    const [, bytes] = new TwitchEvents("twitch").chatMessage(CHAT_MESSAGE);
+
+    expect(decoded(bytes).data).toMatchObject({ channelId: null, channelName: null });
+  });
+});
