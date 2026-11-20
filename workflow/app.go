@@ -11,6 +11,7 @@ import (
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
+	"github.com/wolfymaster/woofx3/common/messages/workflow"
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/common/runtime/service"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
@@ -41,6 +42,9 @@ func (p *NATSEventPublisher) Publish(event *types.Event) error {
 	data, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("failed to marshal event: %w", err)
+	}
+	if err := checkPublished(event.Type, data); err != nil {
+		return fmt.Errorf("event %s breaks its contract: %w", event.ID, err)
 	}
 
 	// Use event type as subject, replacing dots with periods is standard
@@ -465,6 +469,10 @@ type executeReply struct {
 // execution -- that is what lets the caller who asked for this run be told how
 // it ended, since the run happens here long after their request returned.
 func (a *WorkflowApp) handleWorkflowExecuteEvent(msg natsclient.Msg) []byte {
+	if err := checkWire[workflow.WorkflowExecuteRequest](msg.Data()); err != nil {
+		a.logger.Error("Workflow execute event breaks its contract", "error", err, "subject", msg.Subject())
+		return encodeExecuteReply(executeReply{Outcome: "refused", Error: err.Error()})
+	}
 	event, err := a.validateCloudEvent(msg.Data())
 	if err != nil {
 		a.logger.Error("Invalid workflow execute event",
@@ -562,9 +570,13 @@ type cancelReply struct {
 // service with an answer, not an event anything else reacts to.
 func (a *WorkflowApp) handleWorkflowCancelRequest(msg natsclient.Msg) []byte {
 	var req cancelRequest
-	if err := json.Unmarshal(msg.Data(), &req); err != nil || req.ExecutionID == "" {
+	if err := checkWire[workflow.WorkflowCancelRequest](msg.Data()); err != nil {
 		a.logger.Error("Invalid workflow cancel request", "subject", msg.Subject(), "error", err)
-		return encodeCancelReply(cancelReply{Outcome: "refused", Error: "executionId is required"})
+		return encodeCancelReply(cancelReply{Outcome: "refused", Error: err.Error()})
+	}
+	if err := json.Unmarshal(msg.Data(), &req); err != nil {
+		a.logger.Error("Invalid workflow cancel request", "subject", msg.Subject(), "error", err)
+		return encodeCancelReply(cancelReply{Outcome: "refused", Error: err.Error()})
 	}
 
 	result, err := a.engine.Cancel(req.ExecutionID, req.Reason)
@@ -641,6 +653,10 @@ type commandExecuteMessage struct {
 // handleCommandExecuteEvent runs a command's workflow for one invocation.
 func (a *WorkflowApp) handleCommandExecuteEvent(msg natsclient.Msg) {
 	var message commandExecuteMessage
+	if err := checkWire[workflow.WorkflowCommandExecuteRequest](msg.Data()); err != nil {
+		a.logger.Error("Command run event breaks its contract", "error", err, "subject", msg.Subject())
+		return
+	}
 	if err := json.Unmarshal(msg.Data(), &message); err != nil {
 		a.logger.Error("Invalid command run event", "error", err, "subject", msg.Subject())
 		return
@@ -694,6 +710,10 @@ type replayMessage struct {
 // replay is not logged a second time here.
 func (a *WorkflowApp) handleWorkflowReplayEvent(msg natsclient.Msg) {
 	var message replayMessage
+	if err := checkWire[workflow.WorkflowReplayRequest](msg.Data()); err != nil {
+		a.logger.Error("Workflow replay event breaks its contract", "error", err, "subject", msg.Subject())
+		return
+	}
 	if err := json.Unmarshal(msg.Data(), &message); err != nil {
 		a.logger.Error("Invalid workflow replay event", "error", err, "subject", msg.Subject())
 		return
