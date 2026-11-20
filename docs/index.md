@@ -18,6 +18,7 @@ WoofX3 is a unified streaming control plane consisting of various services that 
 - **[Asset delivery](/services/asset-delivery)** - How module and user assets reach the browser: URL shape, the sceneManager relay, and barkloader's presigned redirects
 - **[Engine settings the UI configures](/services/engine-settings-ui)** - DB-backed settings (asset base URLs, etc.) surfaced through `getEngineInfo()` / `set*()` on `Woofx3EngineApi`
 - **[Chat commands & groups: the UI contract](/services/commands-ui)** - Endpoints and webhook callbacks for managing chat commands and the user groups that gate them
+- **[Contracts](/services/contracts)** - The rules every cross-component contract follows: one source, everything else generated, CI regenerates and compares, input checked at run time against the generated schema
 - **[Platform gateway contract](/services/platform-gateway)** - The action catalog every component uses to post to a streaming platform: subjects, request and reply shapes, validation, and the Go and TypeScript code generated from one contract
 - **[Chat moderation](/services/moderation)** - Bot-style chat filters (links, caps, repetition, symbols, banned phrases) run by the connectors host on every platform, acting through the platform gateway
 - **[Twitch channel controls](/services/twitch-channel)** - The `twitchapi` commands (title, category, tags, markers, timeouts), what modules reach through `ctx.twitch`, and the chatbot's `!title`, `!category` and `!marker`
