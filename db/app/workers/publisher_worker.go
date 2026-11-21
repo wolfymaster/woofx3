@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	cloudevents "github.com/cloudevents/sdk-go/v2"
@@ -13,6 +14,11 @@ import (
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"github.com/wolfymaster/woofx3/db/database/repository"
 )
+
+// wireSpecVersion is the `specversion` every bus contract names. It is not a
+// CloudEvents value, so the SDK refuses to set it and it is written onto the
+// encoded envelope instead.
+const wireSpecVersion = "1.0.0"
 
 type PublisherWorker struct {
 	repo          *repository.DbEventRepository
@@ -345,7 +351,17 @@ func encodeCloudEvent(event *models.WorkerEvent) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("event %s: marshal cloudevent: %w", event.ID, err)
 	}
-	return ceBytes, nil
+
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(ceBytes, &envelope); err != nil {
+		return nil, fmt.Errorf("event %s: decode cloudevent: %w", event.ID, err)
+	}
+	envelope["specversion"] = json.RawMessage(strconv.Quote(wireSpecVersion))
+	wire, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, fmt.Errorf("event %s: encode envelope: %w", event.ID, err)
+	}
+	return wire, nil
 }
 
 // setEventExtensions sets the extensions an event was written with (see

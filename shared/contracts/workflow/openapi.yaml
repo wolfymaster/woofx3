@@ -5,7 +5,7 @@ info:
   description: >
     What the workflow engine receives and announces on the bus. Each operation path is
     the NATS subject, which is the event's `type` where the message is a CloudEvent.
-    Requests sent by the api and the connectors carry `specversion` `1.0.0`. Events the
+    Requests carry `specversion` `1.0.0`. Events the
     engine publishes carry no `specversion`: its publisher writes the attributes it
     knows, and the contract describes what it writes.
 paths:
@@ -171,10 +171,6 @@ paths:
                 $ref: "#/components/schemas/WorkflowHealthReply"
 components:
   schemas:
-    SpecVersion:
-      description: CloudEvents specification version as the TypeScript event factory writes it.
-      type: string
-      enum: ["1.0.0"]
     Platform:
       description: Where the event came from ("twitch", ...); absent for events with no platform.
       type: string
@@ -211,7 +207,7 @@ components:
       required: [specversion, id, type, source, time, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/SpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -302,7 +298,7 @@ components:
       required: [specversion, id, type, source, time, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/SpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -374,7 +370,7 @@ components:
       required: [specversion, id, type, source, time, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/SpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:

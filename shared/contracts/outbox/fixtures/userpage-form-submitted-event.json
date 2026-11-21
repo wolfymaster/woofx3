@@ -6,7 +6,7 @@
       "name": "the event the producer publishes",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
         "type": "userpage.form.submitted",
         "source": "db-proxy",
@@ -52,7 +52,7 @@
       "name": "an anonymous viewer has null platform fields and no platform extension",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
         "type": "userpage.form.submitted",
         "source": "db-proxy",
@@ -97,7 +97,7 @@
       "name": "no fields",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
         "type": "userpage.form.submitted",
         "source": "db-proxy",
@@ -127,7 +127,7 @@
       "name": "with a session",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
         "type": "userpage.form.submitted",
         "source": "db-proxy",

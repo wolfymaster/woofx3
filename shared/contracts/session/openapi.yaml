@@ -42,7 +42,7 @@ components:
       required: [specversion, id, type, source, time, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/SessionSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -61,7 +61,7 @@ components:
       required: [specversion, id, type, source, time, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/SessionSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -73,13 +73,6 @@ components:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
         data:
           $ref: "#/components/schemas/SessionEnded"
-    SessionSpecVersion:
-      description: >
-        The `specversion` the TypeScript and Rust event factories write. It is
-        not the CloudEvents value `1.0`; the factories are shared by every event
-        family and are not changed per message.
-      type: string
-      enum: ["1.0.0"]
     SessionStarted:
       type: object
       additionalProperties: false

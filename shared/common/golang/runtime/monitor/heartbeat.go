@@ -14,7 +14,7 @@ import (
 // subject. It refuses to return a message that does not fit the contract.
 func encodeHeartbeat(appName string, ready bool, now time.Time) ([]byte, error) {
 	event := heartbeat.HeartbeatEvent{
-		Specversion: heartbeat.EventSpecVersion10,
+		Specversion: heartbeat.EventSpecVersion100,
 		ID:          heartbeat.EventId(uuid.NewString()),
 		Type:        heartbeat.HeartbeatEventTypeComWoofx3Heartbeat,
 		Source:      heartbeat.EventSource(appName),

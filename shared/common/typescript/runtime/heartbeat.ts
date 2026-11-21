@@ -13,7 +13,7 @@ import { validateHeartbeatEvent } from "../cloudevents/Heartbeat/heartbeat.valid
  */
 export function buildHeartbeat(applicationName: string, ready: boolean, now: Date): HeartbeatEvent {
   const event: HeartbeatEvent = {
-    specversion: EventSpecVersion.Value1_0,
+    specversion: EventSpecVersion.Value1_0_0,
     id: crypto.randomUUID(),
     type: HeartbeatEventType.com_woofx3_heartbeat,
     source: applicationName,

@@ -81,7 +81,7 @@ const hide = {
 
 function request(data: unknown) {
   return {
-    specversion: "1.0",
+    specversion: "1.0.0",
     id: "evt-1",
     type: SceneCommandRequestType.engine_scene_command,
     source: "workflow",
