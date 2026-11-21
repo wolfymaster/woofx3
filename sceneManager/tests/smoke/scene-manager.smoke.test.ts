@@ -274,7 +274,16 @@ describe.skipIf(!started.ok)("scene manager smoke", () => {
 
       await engine.publish(
         "module.storage.woofx3.changed",
-        new TextEncoder().encode(JSON.stringify({ data: { moduleId: "woofx3", key: "count", value: 4 } }))
+        new TextEncoder().encode(
+          JSON.stringify({
+            specversion: "1.0.0",
+            id: "evt-storage-1",
+            type: "module.storage.changed",
+            source: "barkloader",
+            time: new Date().toISOString(),
+            data: { moduleId: "woofx3", key: "count", value: 4, occurredAt: new Date().toISOString() },
+          })
+        )
       );
       const change = await stream.next("module-state");
       expect(change.kind === "module-state" && change.frame).toEqual({ moduleId: "woofx3", key: "count", value: 4 });

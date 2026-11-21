@@ -17,6 +17,8 @@ pub mod session;
 // Generated from shared/contracts/<domain>/openapi.yaml by scripts/gen-schemas.sh.
 pub mod barkloader_gen;
 pub mod heartbeat_gen;
+pub mod module_gen;
+pub mod outbox_gen;
 pub mod scene_gen;
 pub mod session_gen;
 pub mod stream_gen;

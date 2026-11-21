@@ -1,0 +1,686 @@
+{
+  "schema": "DatabaseRecordChangedEvent",
+  "description": "database.record.changed events as the outbox publishes them. An event is closed: an unknown field, a missing or mistyped one and an empty value are refused. A deleted row's null public values are the one null the contract allows.",
+  "cases": [
+    {
+      "name": "the event the producer publishes",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a deleted row has null public values",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "deleted",
+          "revision": 3,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": null
+        }
+      }
+    },
+    {
+      "name": "no public cells",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {}
+        }
+      }
+    },
+    {
+      "name": "with a platform and session",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        },
+        "platform": "twitch",
+        "sessionid": "s1"
+      }
+    },
+    {
+      "name": "no specversion",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "no id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "no type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "no source",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "no time",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "no datacontenttype",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "no entityid",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "no operation",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "no data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed"
+      }
+    },
+    {
+      "name": "an unknown envelope field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        },
+        "extra": "x"
+      }
+    },
+    {
+      "name": "an unknown data field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          },
+          "extra": "x"
+        }
+      }
+    },
+    {
+      "name": "another type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "other.type",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "an empty id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a time that is not RFC 3339",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "yesterday",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "null data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": null
+      }
+    },
+    {
+      "name": "data that is not an object",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": []
+      }
+    },
+    {
+      "name": "an op that is not created, updated or deleted",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "renamed",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a revision of zero",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 0,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a fractional revision",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1.5,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "a cell that is an object",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": {
+              "a": 1
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "a null cell",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": null
+          }
+        }
+      }
+    },
+    {
+      "name": "an empty database id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "another operation",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "created",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    },
+    {
+      "name": "another source",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "database.record.changed",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+        "operation": "changed",
+        "data": {
+          "databaseId": "user:database:chat-scores",
+          "recordId": "7f2d3c1e-8a52-4f0e-9c1a-3d4b5e6f7a80",
+          "op": "created",
+          "revision": 1,
+          "createdAt": "2026-11-19T10:15:30.123456Z",
+          "publicValues": {
+            "game": "Celeste",
+            "score": 12,
+            "hardcore": true
+          }
+        }
+      }
+    }
+  ]
+}

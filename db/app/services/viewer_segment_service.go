@@ -12,6 +12,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
+	"github.com/wolfymaster/woofx3/common/messages/outbox"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -734,40 +735,11 @@ func (a *segmentApply) viewer(viewer repo.ViewerKey, changes []repo.FactChange, 
 			return err
 		}
 		edgeData := a.edgeEvent(segment.ID, viewer, viewerName, eventSession, before, after)
-		if err := a.service.publisher.PublishEventIn(a.tx, edge, segment.ID, edgeExtensions(viewer, eventSession), edgeData); err != nil {
+		if err := a.service.publisher.PublishEventIn(a.tx, edge, segment.ID, edgeExtensions(viewer, eventSession), &edgeData); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// segmentEdgeEvent is the data of viewer.segment.entered and
-// viewer.segment.left.
-type segmentEdgeEvent struct {
-	SegmentID  string `json:"segmentId"`
-	Platform   string `json:"platform"`
-	ViewerID   string `json:"viewerId"`
-	ViewerName string `json:"viewerName"`
-	SessionID  string `json:"sessionId"`
-	// Facts holds each fact the segment reads under its owner, then its slug:
-	// `{owner}:fact:{slug}` is at Facts[owner][slug], the path ${viewer.*}
-	// gives it, since a workflow expression cannot name a key containing `:`.
-	// A fact id of any other shape has no such path and is left out.
-	Facts map[string]map[string]segmentEdgeFact `json:"facts"`
-	Cause segmentEdgeCause                      `json:"cause"`
-}
-
-// segmentEdgeFact is one fact the segment reads, before and after the event:
-// a number (timestamps in epoch milliseconds), a string, or null for a value
-// the viewer does not have.
-type segmentEdgeFact struct {
-	Before any `json:"before"`
-	After  any `json:"after"`
-}
-
-type segmentEdgeCause struct {
-	Source  string `json:"source"`
-	EventID string `json:"eventId"`
 }
 
 // edgeExtensions are the CloudEvent extensions an edge carries besides its
@@ -781,44 +753,51 @@ func edgeExtensions(viewer repo.ViewerKey, session string) map[string]string {
 	return extensions
 }
 
-func (a *segmentApply) edgeEvent(segmentID string, viewer repo.ViewerKey, viewerName, session string, before, after map[string]*factReading) segmentEdgeEvent {
-	facts := map[string]map[string]segmentEdgeFact{}
+// edgeEvent is the data of viewer.segment.entered and viewer.segment.left.
+// Facts holds each fact the segment reads under its owner, then its slug:
+// `{owner}:fact:{slug}` is at Facts[owner][slug], the path ${viewer.*} gives it,
+// since a workflow expression cannot name a key containing `:`. A fact id of
+// any other shape has no such path and is left out.
+func (a *segmentApply) edgeEvent(segmentID string, viewer repo.ViewerKey, viewerName, session string, before, after map[string]*factReading) outbox.ViewerSegmentEdge {
+	facts := outbox.ViewerSegmentEdgeFacts{}
 	for _, id := range a.read[segmentID] {
 		owner, kind, slug, err := parseCanonicalID(id)
 		if err != nil || kind != "fact" {
 			continue
 		}
 		if facts[owner] == nil {
-			facts[owner] = map[string]segmentEdgeFact{}
+			facts[owner] = outbox.ViewerSegmentEdgeFactsItem{}
 		}
 		valueKind := a.facts[id].valueKind
-		facts[owner][slug] = segmentEdgeFact{Before: plainReading(before[id], valueKind), After: plainReading(after[id], valueKind)}
+		facts[owner][slug] = outbox.FactChange{Before: plainReading(before[id], valueKind), After: plainReading(after[id], valueKind)}
 	}
-	return segmentEdgeEvent{
-		SegmentID:  segmentID,
-		Platform:   viewer.Platform,
-		ViewerID:   viewer.SubjectID,
+	return outbox.ViewerSegmentEdge{
+		SegmentId:  outbox.EntityId(segmentID),
+		Platform:   outbox.Platform(viewer.Platform),
+		ViewerId:   outbox.EntityId(viewer.SubjectID),
 		ViewerName: viewerName,
-		SessionID:  session,
+		SessionId:  session,
 		Facts:      facts,
-		Cause:      segmentEdgeCause{Source: a.batch.Source, EventID: a.batch.EventID},
+		Cause:      outbox.EdgeCause{Source: a.batch.Source, EventId: a.batch.EventID},
 	}
 }
 
-func plainReading(reading *factReading, valueKind string) any {
+// plainReading is a fact's value as the edge reports it: a number (timestamps
+// in epoch milliseconds), a string, or null for a value the viewer does not have.
+func plainReading(reading *factReading, valueKind string) outbox.FactReading {
 	if reading == nil {
-		return nil
+		return outbox.NewNullFactReading(struct{}{})
 	}
 	if valueKind == models.FactValueKindString {
 		if reading.str == nil {
-			return nil
+			return outbox.NewNullFactReading(struct{}{})
 		}
-		return *reading.str
+		return outbox.NewStringFactReading(*reading.str)
 	}
 	if reading.num == nil {
-		return nil
+		return outbox.NewNullFactReading(struct{}{})
 	}
-	return *reading.num
+	return outbox.NewFloat64FactReading(*reading.num)
 }
 
 func readingOf(state *repo.FactValueState) *factReading {

@@ -1,0 +1,419 @@
+{
+  "schema": "ModuleStorageChangedEvent",
+  "description": "module.storage.changed events from barkloader and the api. A value is any JSON, null included, but the key must be present.",
+  "cases": [
+    {
+      "name": "the event the producer publishes",
+      "valid": true,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "the api clearing a session key",
+      "valid": true,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": null,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        },
+        "sessionId": "s1"
+      }
+    },
+    {
+      "name": "an object value",
+      "valid": true,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": {
+            "nested": {
+              "count": 3
+            }
+          },
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "an array value",
+      "valid": true,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": ["a", "b"],
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "a string value",
+      "valid": true,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": "x",
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "no specversion",
+      "valid": false,
+      "value": {
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "no id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "no type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "no source",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "no time",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "no data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z"
+      }
+    },
+    {
+      "name": "an unknown envelope field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        },
+        "extra": "x"
+      }
+    },
+    {
+      "name": "an unknown data field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z",
+          "extra": "x"
+        }
+      }
+    },
+    {
+      "name": "another type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "other.type",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "an empty id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "a time that is not RFC 3339",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "yesterday",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "null data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": null
+      }
+    },
+    {
+      "name": "data that is not an object",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": []
+      }
+    },
+    {
+      "name": "a key that is a number",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": 3,
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "an empty key",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "an empty module id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "a spec version of 1.0",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "a source that does not publish it",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "workflow",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        }
+      }
+    },
+    {
+      "name": "a previous value",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z",
+          "previousValue": 1
+        }
+      }
+    },
+    {
+      "name": "an empty session id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "0a7e5c63-4f1b-4a42-8a53-5f6f2c8d1e20",
+        "type": "module.storage.changed",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.500Z",
+        "data": {
+          "moduleId": "counter",
+          "key": "counter:state:count",
+          "value": 7,
+          "occurredAt": "2026-11-19T10:15:30.500Z"
+        },
+        "sessionId": ""
+      }
+    }
+  ]
+}

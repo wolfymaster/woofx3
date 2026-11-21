@@ -12,6 +12,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
+	"github.com/wolfymaster/woofx3/common/messages/outbox"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -64,45 +65,13 @@ func NewUserPageSubmissionService(
 	}
 }
 
-// userPageFormSubmittedEvent is the data of userpage.form.submitted.
-// Must match the emits of the `userpage_form_submitted` trigger in
-// modules/woofx3/manifest.json.
-type userPageFormSubmittedEvent struct {
-	SubmissionID string               `json:"submissionId"`
-	PageID       string               `json:"pageId"`
-	FormID       string               `json:"formId"`
-	FormTitle    string               `json:"formTitle"`
-	SubmittedAt  string               `json:"submittedAt"`
-	Viewer       *userPageEventViewer `json:"viewer"`
-	Fields       []userPageEventField `json:"fields"`
-	// Answers holds each field's value under its id, since a workflow path can
-	// index `fields` by position but cannot find an entry by id.
-	Answers map[string]any `json:"answers"`
-}
-
-type userPageEventViewer struct {
-	// Platform and PlatformUserID are null for an anonymous viewer, which is
-	// what keeps the event from naming a viewer to `${viewer.*}` and viewer facts.
-	Platform       *string  `json:"platform"`
-	PlatformUserID *string  `json:"platformUserId"`
-	DisplayName    string   `json:"displayName"`
-	Roles          []string `json:"roles"`
-}
-
-type userPageEventField struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
-	Type  string `json:"type"`
-	Value any    `json:"value"`
-}
-
 func (s *userPageSubmissionService) RecordUserPageSubmission(ctx context.Context, req *client.RecordUserPageSubmissionRequest) (*client.RecordUserPageSubmissionResponse, error) {
 	if err := validateUserPageSubmission(req); err != nil {
 		return nil, err
 	}
 
 	event := userPageFormSubmittedEventOf(req)
-	payload, err := json.Marshal(event)
+	payload, err := json.Marshal(&event)
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("encode submission %s: %w", req.SubmissionId, err))
 	}
@@ -121,7 +90,7 @@ func (s *userPageSubmissionService) RecordUserPageSubmission(ctx context.Context
 		SubmittedAt:  req.SubmittedAt.AsTime().UTC(),
 		RecordedAt:   s.now(),
 	}, func(tx *gorm.DB) error {
-		return s.publisher.PublishEventIn(tx, string(cloudevents.SubjectUserPageFormSubmitted), req.SubmissionId, extensions, event)
+		return s.publisher.PublishEventIn(tx, string(cloudevents.SubjectUserPageFormSubmitted), req.SubmissionId, extensions, &event)
 	})
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("record submission %s: %w", req.SubmissionId, err))
@@ -137,37 +106,42 @@ func (s *userPageSubmissionService) RecordUserPageSubmission(ctx context.Context
 	}, nil
 }
 
-func userPageFormSubmittedEventOf(req *client.RecordUserPageSubmissionRequest) userPageFormSubmittedEvent {
-	event := userPageFormSubmittedEvent{
-		SubmissionID: req.SubmissionId,
-		PageID:       req.PageId,
-		FormID:       req.FormId,
+func userPageFormSubmittedEventOf(req *client.RecordUserPageSubmissionRequest) outbox.UserPageFormSubmission {
+	event := outbox.UserPageFormSubmission{
+		SubmissionId: outbox.SubmissionKey(req.SubmissionId),
+		PageId:       outbox.SubmissionKey(req.PageId),
+		FormId:       outbox.SubmissionKey(req.FormId),
 		FormTitle:    req.GetFormTitle(),
-		SubmittedAt:  req.SubmittedAt.AsTime().UTC().Format(time.RFC3339Nano),
-		Fields:       make([]userPageEventField, 0, len(req.Fields)),
-		Answers:      make(map[string]any, len(req.Fields)),
-		Viewer:       &userPageEventViewer{DisplayName: anonymousViewerName, Roles: []string{}},
+		SubmittedAt:  outbox.EventTime(req.SubmittedAt.AsTime().UTC().Format(time.RFC3339Nano)),
+		Fields:       make([]outbox.SubmissionField, 0, len(req.Fields)),
+		Answers:      make(outbox.UserPageFormSubmissionAnswers, len(req.Fields)),
+		Viewer: outbox.SubmissionViewer{
+			Platform:       outbox.NilString{Null: true},
+			PlatformUserId: outbox.NilString{Null: true},
+			DisplayName:    anonymousViewerName,
+			Roles:          []string{},
+		},
 	}
 	if viewer := req.Viewer; viewer != nil {
 		roles := viewer.Roles
 		if roles == nil {
 			roles = []string{}
 		}
-		event.Viewer = &userPageEventViewer{
-			Platform:       &viewer.Platform,
-			PlatformUserID: &viewer.PlatformUserId,
+		event.Viewer = outbox.SubmissionViewer{
+			Platform:       outbox.NewNilString(viewer.Platform),
+			PlatformUserId: outbox.NewNilString(viewer.PlatformUserId),
 			DisplayName:    viewer.DisplayName,
 			Roles:          roles,
 		}
 	}
 	for _, field := range req.Fields {
-		var value any
+		var value outbox.AnswerValue
 		if field.Type == submissionFieldTypeChecked {
-			value = field.GetCheckedValue()
+			value = outbox.NewBoolAnswerValue(field.GetCheckedValue())
 		} else {
-			value = field.GetTextValue()
+			value = outbox.NewStringAnswerValue(field.GetTextValue())
 		}
-		event.Fields = append(event.Fields, userPageEventField{ID: field.Id, Label: field.Label, Type: field.Type, Value: value})
+		event.Fields = append(event.Fields, outbox.SubmissionField{ID: outbox.SubmissionKey(field.Id), Label: field.Label, Type: field.Type, Value: value})
 		event.Answers[field.Id] = value
 	}
 	return event

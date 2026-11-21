@@ -1,0 +1,913 @@
+{
+  "schema": "ViewerSegmentEnteredEvent",
+  "description": "viewer.segment.entered events as the outbox publishes them.",
+  "cases": [
+    {
+      "name": "the event the producer publishes",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "with a session id on the data and the envelope",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "s1",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch",
+        "sessionid": "s1"
+      }
+    },
+    {
+      "name": "a segment that reads no facts",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {},
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "a fact that does not exist before",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              },
+              "seen": {
+                "before": null,
+                "after": 1
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no specversion",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no source",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no time",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no datacontenttype",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no entityid",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no operation",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "an unknown envelope field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch",
+        "extra": "x"
+      }
+    },
+    {
+      "name": "an unknown data field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          },
+          "extra": "x"
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "another type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "other.type",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "an empty id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "a time that is not RFC 3339",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "yesterday",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "null data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": null,
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "data that is not an object",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": [],
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "a fact change without after",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "a fact reading that is a boolean",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": true
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "a fact reading that is an object",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": {},
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "a cause without an event id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "an empty viewer id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "twitch",
+          "viewerId": "",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "an empty platform",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "viewer.segment.entered",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "user:segment:big_cheerer",
+        "operation": "entered",
+        "data": {
+          "segmentId": "user:segment:big_cheerer",
+          "platform": "",
+          "viewerId": "v1",
+          "viewerName": "Wolfy",
+          "sessionId": "",
+          "facts": {
+            "user": {
+              "last_bits": {
+                "before": 300,
+                "after": 10
+              },
+              "title": {
+                "before": null,
+                "after": "Hello"
+              }
+            }
+          },
+          "cause": {
+            "source": "twitch",
+            "eventId": "e5"
+          }
+        },
+        "platform": "twitch"
+      }
+    }
+  ]
+}

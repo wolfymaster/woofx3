@@ -19,6 +19,7 @@ require (
 	github.com/wolfymaster/woofx3/common/conditions v0.0.0
 	github.com/wolfymaster/woofx3/common/config v0.0.0
 	github.com/wolfymaster/woofx3/common/logging v0.0.0
+	github.com/wolfymaster/woofx3/common/messages v0.0.0
 	github.com/wolfymaster/woofx3/common/runtime v0.0.0
 	go.opentelemetry.io/otel v1.47.0
 	google.golang.org/protobuf v1.36.12

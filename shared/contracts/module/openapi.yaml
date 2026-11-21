@@ -1,0 +1,71 @@
+openapi: 3.1.0
+info:
+  title: Module bus messages
+  version: 1.0.0
+  description: >
+    Events about modules that cross a service or a language boundary. Each operation
+    path is the event's `type`; the NATS subject is that type, except where the
+    operation says otherwise.
+paths:
+  /module.storage.changed:
+    post:
+      operationId: moduleStorageChanged
+      summary: >
+        A key of a module's persistent storage was written or cleared. Published on
+        `module.storage.<moduleId>.changed` by barkloader after a module function's
+        write and by the api for each session-scoped key a session end cleared; read
+        by the api, which forwards it as a webhook, and by the scene manager.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ModuleStorageChangedEvent"
+      responses:
+        "202":
+          description: Published; nothing answers an event.
+components:
+  schemas:
+    ModuleStorageChangedEvent:
+      description: CloudEvent announcing one storage key's new value.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, data]
+      properties:
+        specversion:
+          type: string
+          enum: ["1.0.0"]
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [module.storage.changed]
+        source:
+          type: string
+          enum: [barkloader, api]
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        sessionId:
+          description: The stream session the publisher knew when it published; absent when it knew none.
+          type: string
+          minLength: 1
+          maxLength: 200
+        data:
+          $ref: "#/components/schemas/ModuleStorageChange"
+    ModuleStorageChange:
+      description: >
+        `value` is the value after the write, already decoded, and null when the key
+        was cleared. It is any JSON value, so the key must be present and its content
+        belongs to the module.
+      type: object
+      additionalProperties: false
+      required: [moduleId, key, value, occurredAt]
+      properties:
+        moduleId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        key:
+          type: string
+          minLength: 1
+        value: {}
+        occurredAt:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
