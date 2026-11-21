@@ -104,6 +104,7 @@ require (
 	github.com/tetratelabs/wazero v1.2.1 // indirect
 	github.com/wasilibs/go-re2 v1.3.0 // indirect
 	github.com/wolfymaster/woofx3/clients/barkloader v0.0.0 // indirect
+	github.com/wolfymaster/woofx3/common/messages v0.0.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.21.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.23.0 // indirect

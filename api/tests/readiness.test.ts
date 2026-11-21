@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { buildHeartbeat } from "@woofx3/common/runtime/heartbeat";
 import {
   BARKLOADER_HEARTBEAT_MAX_AGE_MS,
   checkReadiness,
@@ -14,7 +15,7 @@ const MIGRATED = { applied: "0042_workflow_run_history", latest: "0042_workflow_
 /** A tracker that last saw barkloader report `ready` at `at`. */
 function heartbeats(ready: boolean, at: number = NOW): HeartbeatTracker {
   const tracker = new HeartbeatTracker();
-  tracker.record({ data: { application: "barkloader", ready } }, at);
+  tracker.record(buildHeartbeat("barkloader", ready, new Date(at)), at);
   return tracker;
 }
 
@@ -93,14 +94,15 @@ describe("HeartbeatTracker", () => {
     const tracker = new HeartbeatTracker();
     tracker.record({ nothing: "here" }, NOW);
     tracker.record(null, NOW);
-    tracker.record({ data: { ready: true } }, NOW);
+    tracker.record({ ...buildHeartbeat("barkloader", true, new Date(NOW)), id: undefined }, NOW);
+    tracker.record({ data: { application: "barkloader", ready: true } }, NOW);
 
     expect(tracker.isReady("barkloader", NOW, BARKLOADER_HEARTBEAT_MAX_AGE_MS)).toBe(false);
   });
 
   test("a later not-ready heartbeat withdraws readiness", () => {
     const tracker = heartbeats(true, NOW - 1000);
-    tracker.record({ data: { application: "barkloader", ready: false } }, NOW);
+    tracker.record(buildHeartbeat("barkloader", false, new Date(NOW)), NOW);
 
     expect(tracker.isReady("barkloader", NOW, BARKLOADER_HEARTBEAT_MAX_AGE_MS)).toBe(false);
   });

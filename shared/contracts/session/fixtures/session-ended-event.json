@@ -1,0 +1,560 @@
+{
+  "schema": "SessionEndedEvent",
+  "description": "session.ended messages. The announcement carries no sessionId attribute of its own.",
+  "cases": [
+    {
+      "name": "the event the publisher sends",
+      "valid": true,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "no specversion",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "no id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "no type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "no source",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "no time",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "an unknown envelope field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        },
+        "correlationKey": "k"
+      }
+    },
+    {
+      "name": "a null id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": null,
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "an empty id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "a numeric id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": 7,
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "an empty source",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "a time without a zone",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "a time that is not a time",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "yesterday",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "another subject as the type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "twitchapi",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "a specversion that is not 1.0.0",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "a sessionId attribute",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        },
+        "sessionId": "ses_01"
+      }
+    },
+    {
+      "name": "no data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z"
+      }
+    },
+    {
+      "name": "a null data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": null
+      }
+    },
+    {
+      "name": "an empty data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {}
+      }
+    },
+    {
+      "name": "a list as data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": []
+      }
+    },
+    {
+      "name": "an unknown data field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02",
+          "extra": "x"
+        }
+      }
+    },
+    {
+      "name": "no data.sessionId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "no data.endedAt",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "no data.replacedBySessionId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z"
+        }
+      }
+    },
+    {
+      "name": "a null data.sessionId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": null,
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "an empty data.sessionId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "a numeric data.sessionId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": 1,
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "a 201 character data.sessionId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "a null data.endedAt",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": null,
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "an empty data.endedAt",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "a numeric data.endedAt",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": 1,
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "a 201 character data.endedAt",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+          "replacedBySessionId": "ses_02"
+        }
+      }
+    },
+    {
+      "name": "a null data.replacedBySessionId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": null
+        }
+      }
+    },
+    {
+      "name": "an empty data.replacedBySessionId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": ""
+        }
+      }
+    },
+    {
+      "name": "a numeric data.replacedBySessionId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": 1
+        }
+      }
+    },
+    {
+      "name": "a 201 character data.replacedBySessionId",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "session.ended",
+        "source": "api",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "sessionId": "ses_01",
+          "endedAt": "2026-11-19T10:15:30.123Z",
+          "replacedBySessionId": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm"
+        }
+      }
+    }
+  ]
+}

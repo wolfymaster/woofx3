@@ -8,7 +8,6 @@ import (
 	"time"
 
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
-	"github.com/wolfymaster/woofx3/common/cloudevents"
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/common/runtime/service"
 )
@@ -135,24 +134,19 @@ func (n *NATSMonitor) Start(ctx context.Context) error {
 	n.logger.Info("Starting NATS health monitor", "app", n.appName, "subject", n.subject, "timeout", n.expirationTimeout)
 
 	sub, err := client.Subscribe(n.subject, func(msg natsclient.Msg) {
-		var event cloudevents.Heartbeat
-		if err := msg.JSON(&event); err != nil {
-			n.logger.Debug("Failed to parse heartbeat message", "error", err)
-			return
-		}
-		data, err := event.Data()
+		data, err := decodeHeartbeat(msg.Data())
 		if err != nil {
-			n.logger.Debug("Failed to extract heartbeat data", "error", err)
+			n.logger.Debug("Ignoring a message on the heartbeat subject", "error", err)
 			return
 		}
 		n.mu.Lock()
-		n.lastHeartbeats[data.Application] = &heartbeatEntry{
+		n.lastHeartbeats[string(data.Application)] = &heartbeatEntry{
 			ready:    data.Ready,
 			lastSeen: time.Now(),
 		}
 		n.mu.Unlock()
 		if n.logger != nil {
-			n.logger.Debug("Received heartbeat", "from", data.Application, "ready", data.Ready)
+			n.logger.Debug("Received heartbeat", "from", string(data.Application), "ready", data.Ready)
 		}
 	})
 	if err != nil {
@@ -183,15 +177,11 @@ func (n *NATSMonitor) Heartbeat(ctx context.Context) error {
 	if n.readyFn != nil {
 		ready = n.readyFn()
 	}
-	event, err := cloudevents.ApplicationEvent.HeartbeatEvent(n.appName, ready)
+	payload, err := encodeHeartbeat(n.appName, ready, time.Now())
 	if err != nil {
 		return err
 	}
-	data, err := cloudevents.Encode(event)
-	if err != nil {
-		return err
-	}
-	return n.client().Publish(n.subject, data)
+	return n.client().Publish(n.subject, payload)
 }
 
 // StartupDependencies names the services the runtime should wait for before

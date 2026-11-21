@@ -1,26 +1,13 @@
-//! Service readiness heartbeat.
+//! Service readiness flag.
 //!
-//! Every Go and TypeScript service publishes `{application, ready}` on the
-//! `HEARTBEAT` subject so dependents can wait for readiness rather than infer
-//! it from a process being up. This is the Rust half of that protocol.
-//!
-//! The event shape lives here and the publishing does not: this crate is
-//! deliberately transport-free (config and telemetry only), so a caller hands
-//! the encoded event to whichever NATS client it already holds. Keeping the
-//! shape in one place is what stops the Rust encoding drifting from the Go
-//! `NewHeartbeatEvent` that consumers parse.
+//! Every service publishes a heartbeat saying whether it is ready, so
+//! dependents can wait for readiness rather than infer it from a process being
+//! up. The message is the generated `heartbeat_gen` contract of
+//! `woofx3-cloudevents`; this crate is deliberately transport-free (config and
+//! telemetry only), so it holds only the flag a publisher reads.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
-/// CloudEvent `type` for a heartbeat. Must match
-/// `cloudevents.HeartbeatType` in the Go client, which is what subscribers
-/// match on.
-pub const HEARTBEAT_TYPE: &str = "com.woofx3.heartbeat";
-
-/// NATS subject heartbeats are published on. Matches
-/// `cloudevents.HeartbeatSubject`.
-pub const HEARTBEAT_SUBJECT: &str = "HEARTBEAT";
 
 /// Whether this service is ready to be depended on.
 ///
@@ -61,21 +48,6 @@ impl Default for Readiness {
     }
 }
 
-/// Build the heartbeat CloudEvent for `app_name`.
-///
-/// `time` is passed in rather than read from a clock so this crate stays
-/// dependency-free and the encoding is testable without one.
-pub fn heartbeat_event(app_name: &str, ready: bool, time: &str) -> serde_json::Value {
-    serde_json::json!({
-        "specversion": "1.0",
-        "type": HEARTBEAT_TYPE,
-        "source": app_name,
-        "subject": HEARTBEAT_SUBJECT,
-        "time": time,
-        "data": { "application": app_name, "ready": ready },
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,26 +64,5 @@ mod tests {
         assert!(!b.is_ready());
         a.mark_ready();
         assert!(b.is_ready(), "clones must observe the same flag");
-    }
-
-    /// Subscribers key on `data.application` and `data.ready`, and match the
-    /// event by `type`. A drift in any of the three is a heartbeat nobody
-    /// counts, which looks exactly like a service that never started.
-    #[test]
-    fn event_matches_the_shape_consumers_parse() {
-        let e = heartbeat_event("barkloader", false, "2026-01-01T00:00:00Z");
-        assert_eq!(e["specversion"], "1.0");
-        assert_eq!(e["type"], "com.woofx3.heartbeat");
-        assert_eq!(e["source"], "barkloader");
-        assert_eq!(e["subject"], "HEARTBEAT");
-        assert_eq!(e["time"], "2026-01-01T00:00:00Z");
-        assert_eq!(e["data"]["application"], "barkloader");
-        assert_eq!(e["data"]["ready"], false);
-    }
-
-    #[test]
-    fn ready_is_carried_through() {
-        let e = heartbeat_event("barkloader", true, "2026-01-01T00:00:00Z");
-        assert_eq!(e["data"]["ready"], true);
     }
 }

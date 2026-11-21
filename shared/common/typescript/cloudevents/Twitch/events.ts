@@ -1,4 +1,4 @@
-import type { ChatterMembership } from "../Chat/events";
+import type * as Stream from "./stream.gen";
 /**
  * Event types are platform-agnostic: the same `channel.follow` is emitted
  * whether the follow arrived from Twitch or anywhere else. Which platform it
@@ -42,251 +42,41 @@ export enum EventType {
   AdBreakEnd = "channel.ad_break.end",
 }
 
-export interface ChatMessage {
-  /** Twitch's id for the line: what a reply or a pin names. */
-  messageId: string;
-  amount: number;
-  isPaid: boolean;
-  channelId: string | null;
-  channelName: string | null;
-  chatterId: string;
-  /** The chatter's display name. */
-  chatterName: string;
-  /** The chatter's login: their account name, lowercase. */
-  chatterLogin: string;
-  message: string;
-  membership: ChatterMembership;
-  /**
-   * True for a line the engine said itself and Twitch handed back. The engine
-   * speaks with the broadcaster's token, so without it an engine line reads
-   * as the streamer typing. A claimed line's event also carries the
-   * `workflowChain` of the workflow that said it.
-   */
-  fromEngine: boolean;
-}
+/** The payload types are generated from shared/contracts/stream/openapi.yaml; these names point at them. */
+export type ChatMessage = Stream.SchemaUserMessage;
+export type Cheer = Stream.SchemaChannelCheer;
+export type Follow = Stream.SchemaChannelFollow;
+export type HypeTrainContribution = Stream.SchemaHypeTrainContribution;
+export type HypeTrainBegin = Stream.SchemaChannelHypeTrain;
+export type Raid = Stream.SchemaChannelRaid;
+export type Redeem = Stream.SchemaChannelPointsRedeem;
+export type AdBreakUpcoming = Stream.SchemaChannelAdBreakUpcoming;
+export type AdBreakBegin = Stream.SchemaChannelAdBreakBegin;
+export type AdBreakEnd = Stream.SchemaChannelAdBreakEnd;
+export type StreamOnline = Stream.SchemaStreamOnline;
+export type StreamOffline = Stream.SchemaStreamOffline;
+export type Subscribe = Stream.SchemaChannelSubscribe;
+export type SubscriptionGift = Stream.SchemaChannelSubscriptionGift;
+export type Resub = Stream.SchemaChannelResub;
+export type GiftPaidUpgrade = Stream.SchemaChannelGiftPaidUpgrade;
+export type PrimePaidUpgrade = Stream.SchemaChannelPrimePaidUpgrade;
+export type Unraid = Stream.SchemaChannelUnraid;
+export type PayItForward = Stream.SchemaChannelPayItForward;
+export type Announcement = Stream.SchemaChannelAnnouncement;
+export type CharityDonation = Stream.SchemaChannelCharityDonation;
+export type BitsBadgeTier = Stream.SchemaChannelBitsBadgeTier;
+export type WatchStreak = Stream.SchemaChannelWatchStreak;
+export type SharedSubscribe = Stream.SchemaChannelSharedSubscribe;
+export type SharedSubscriptionGift = Stream.SchemaChannelSharedSubscriptionGift;
+export type SharedRaid = Stream.SchemaChannelSharedRaid;
+export type SharedResub = Stream.SchemaChannelResub;
+export type SharedGiftPaidUpgrade = Stream.SchemaChannelGiftPaidUpgrade;
+export type SharedPrimePaidUpgrade = Stream.SchemaChannelPrimePaidUpgrade;
+export type SharedPayItForward = Stream.SchemaChannelPayItForward;
+export type SharedAnnouncement = Stream.SchemaChannelAnnouncement;
 
 /** CloudEvent attributes a chat message's event may carry besides its payload. */
 export interface ChatMessageAttributes {
   /** Set on an engine line a workflow said; see BaseEvent.workflowChain. */
   workflowChain?: string;
 }
-
-export interface Cheer {
-  amount: number;
-  isAnonymous: boolean;
-  message: string;
-  userId: string | null;
-  userName: string | null;
-}
-
-// a twitch follow event
-export interface Follow {
-  userId: string;
-  userName: string;
-}
-
-/** What a viewer put into a hype train. Twitch counts anything else as "other". */
-export type HypeTrainContributionType = "bits" | "subscription" | "other";
-
-export interface HypeTrainContribution {
-  userId: string;
-  userName: string;
-  type: HypeTrainContributionType;
-  /** Points: bits count one each, a subscription counts by tier. */
-  total: number;
-}
-
-// A hype train started (EventSub channel.hype_train.begin v2).
-export interface HypeTrainBegin {
-  id: string;
-  broadcasterId: string;
-  broadcasterName: string;
-  level: number;
-  /** Points contributed to the whole train so far. */
-  total: number;
-  /** Points contributed towards the current level. */
-  progress: number;
-  /** Points the current level needs before the train moves up. */
-  goal: number;
-  topContributions: HypeTrainContribution[];
-  /** ISO-8601. */
-  startedAt: string;
-  /** ISO-8601. Twitch extends it whenever the train moves up a level. */
-  expiresAt: string;
-}
-
-// An incoming raid into the broadcaster's channel.
-export interface Raid {
-  fromBroadcasterUserId: string;
-  fromBroadcasterUserName: string;
-  viewers: number;
-}
-
-// A channel-points custom reward redemption (channel.channel_points_custom_reward_redemption.add).
-export interface Redeem {
-  redeemId: string;
-  rewardId: string;
-  rewardTitle: string;
-  // Channel points the viewer spent on the reward.
-  rewardCost: number;
-  userId: string;
-  userName: string;
-  message?: string;
-}
-
-/**
- * An ad break is scheduled soon. Not a Twitch event: the connectors Twitch adapter
- * reads the ad schedule while the stream is live and publishes this once
- * per scheduled break, `secondsUntil` ahead of it
- * (docs/services/twitch-channel.md).
- */
-export interface AdBreakUpcoming {
-  /** ISO-8601 time Twitch has the next ad break scheduled for. */
-  nextAdAt: string;
-  secondsUntil: number;
-  durationSeconds: number;
-}
-
-/** An ad break started (EventSub channel.ad_break.begin). */
-export interface AdBreakBegin {
-  durationSeconds: number;
-  /** False when the broadcaster or an editor ran the ad by hand. */
-  isAutomatic: boolean;
-  startedAt: string;
-  /** `startedAt` plus `durationSeconds`: when the break is expected to end. */
-  endsAt: string;
-}
-
-/**
- * An ad break ended. Twitch sends no end event: the connectors Twitch adapter
- * publishes this `durationSeconds` after the begin event, so `endedAt` is
- * when the break was due to end, not an observation that it did.
- */
-export interface AdBreakEnd {
-  durationSeconds: number;
-  isAutomatic: boolean;
-  startedAt: string;
-  endedAt: string;
-}
-
-// Twitch's `stream.online` EventSub payload identifies the broadcaster
-// and carries a start timestamp; everything else (title, game, viewer
-// count) requires a follow-up Helix lookup. Subscribers that just need
-// the on/off transition can ignore the optional fields.
-export interface StreamOnline {
-  broadcasterUserId: string;
-  broadcasterUserName: string;
-  startedAt: string;
-}
-
-// Counterpart to `StreamOnline`. The raw `stream.offline` EventSub
-// notification doesn't carry a payload beyond broadcaster identity.
-export interface StreamOffline {
-  broadcasterUserId: string;
-  broadcasterUserName: string;
-}
-
-export interface Subscribe {
-  isGift: boolean;
-  /**
-   * A gifted sub that is one of a community gift, which also arrives whole as
-   * `SubscriptionGift`. False for a sub the viewer bought and for a gift to one
-   * named viewer, which has no other event.
-   */
-  isCommunityGift: boolean;
-  tier: string;
-  userId: string | null;
-  userName: string | null;
-}
-
-export interface SubscriptionGift {
-  amount: number;
-  gifterId: string;
-  gifterName: string;
-  isAnonymous: boolean;
-  tier: string;
-}
-
-// Fields shared by every channel.chat.notification subtype.
-export interface NotificationBase {
-  broadcasterId: string;
-  broadcasterName: string;
-  chatterId: string;
-  chatterName: string;
-  chatterIsAnonymous: boolean;
-  messageId: string;
-  messageText: string;
-  // Only set when the notification happens in another channel's chat
-  // during a shared chat session; null otherwise.
-  sourceBroadcasterId: string | null;
-  sourceBroadcasterName: string | null;
-}
-
-export interface Resub extends NotificationBase {
-  tier: string;
-  isPrime: boolean;
-  durationMonths: number;
-  cumulativeMonths: number;
-  streakMonths: number | null;
-  isGift: boolean;
-  gifterIsAnonymous: boolean | null;
-  gifterId: string | null;
-  gifterName: string | null;
-}
-
-export interface GiftPaidUpgrade extends NotificationBase {
-  isGifterAnonymous: boolean;
-  gifterId: string | null;
-  gifterName: string | null;
-}
-
-export interface PrimePaidUpgrade extends NotificationBase {
-  tier: string;
-}
-
-export interface Unraid extends NotificationBase {}
-
-export interface PayItForward extends NotificationBase {
-  isGifterAnonymous: boolean;
-  gifterId: string | null;
-  gifterName: string | null;
-}
-
-export interface Announcement extends NotificationBase {
-  color: string;
-}
-
-export interface CharityDonation extends NotificationBase {
-  charityName: string;
-  amount: number;
-  currency: string;
-}
-
-export interface BitsBadgeTier extends NotificationBase {
-  newTier: number;
-}
-
-export interface WatchStreak extends NotificationBase {
-  streakCount: number;
-  channelPointsAwarded: number;
-}
-
-// The shared* events are activity in another participant's channel during a
-// shared chat session, which Twitch also shows in this broadcaster's chat. They
-// are kept apart from the plain events so a partner's sub or raid never reads as
-// one on this channel; sourceBroadcasterId names the channel it happened in.
-export interface SharedSubscribe extends Subscribe, NotificationBase {}
-
-export interface SharedSubscriptionGift extends SubscriptionGift, NotificationBase {}
-
-export interface SharedRaid extends Raid, NotificationBase {}
-
-export interface SharedResub extends Resub {}
-
-export interface SharedGiftPaidUpgrade extends GiftPaidUpgrade {}
-
-export interface SharedPrimePaidUpgrade extends PrimePaidUpgrade {}
-
-export interface SharedPayItForward extends PayItForward {}
-
-export interface SharedAnnouncement extends Announcement {}

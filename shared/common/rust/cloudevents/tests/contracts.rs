@@ -4,7 +4,10 @@
 
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
-use woofx3_cloudevents::{barkloader_gen, module_gen, outbox_gen, scene_gen};
+use woofx3_cloudevents::{
+    barkloader_gen, heartbeat_gen, module_gen, outbox_gen, scene_gen, session_gen, stream_gen,
+    streamstatus_gen,
+};
 
 struct Case {
     name: String,
@@ -40,22 +43,6 @@ fn validator(document: &str, schema: &str) -> jsonschema::Validator {
     jsonschema::validator_for(&root).unwrap()
 }
 
-/// Equal as JSON: a number typed as a float and one written as an integer are the same value.
-fn same_json(a: &Value, b: &Value) -> bool {
-    match (a, b) {
-        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
-        (Value::Array(x), Value::Array(y)) => {
-            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| same_json(p, q))
-        }
-        (Value::Object(x), Value::Object(y)) => {
-            x.len() == y.len()
-                && x.iter()
-                    .all(|(k, v)| y.get(k).is_some_and(|w| same_json(v, w)))
-        }
-        _ => a == b,
-    }
-}
-
 fn run<T: DeserializeOwned + Serialize>(domain: &str, file: &str, schema: &str, document: &str) {
     let validator = validator(document, schema);
     for case in fixtures(domain, file, schema) {
@@ -72,11 +59,10 @@ fn run<T: DeserializeOwned + Serialize>(domain: &str, file: &str, schema: &str, 
             assert_eq!(typed.is_ok(), case.valid, "typify types: {label}");
         }
         if case.valid && !case.unknown_fields {
-            let encoded = serde_json::to_value(typed.unwrap()).unwrap();
-            assert!(
-                same_json(&encoded, &case.value),
-                "round trip: {label}\n got  {encoded}\n want {}",
-                case.value
+            assert_eq!(
+                serde_json::to_value(typed.unwrap()).unwrap(),
+                case.value,
+                "round trip: {label}"
             );
         }
     }
@@ -109,6 +95,56 @@ fn test_module_field_options_request_fixtures() {
         "module-field-options-request.json",
         "ModuleFieldOptionsRequest",
         barkloader_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_heartbeat_event_fixtures() {
+    run::<heartbeat_gen::HeartbeatEvent>(
+        "heartbeat",
+        "heartbeat-event.json",
+        "HeartbeatEvent",
+        heartbeat_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_session_started_event_fixtures() {
+    run::<session_gen::SessionStartedEvent>(
+        "session",
+        "session-started-event.json",
+        "SessionStartedEvent",
+        session_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_session_ended_event_fixtures() {
+    run::<session_gen::SessionEndedEvent>(
+        "session",
+        "session-ended-event.json",
+        "SessionEndedEvent",
+        session_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_stream_status_observed_event_fixtures() {
+    run::<streamstatus_gen::StreamStatusObservedEvent>(
+        "streamstatus",
+        "stream-status-observed-event.json",
+        "StreamStatusObservedEvent",
+        streamstatus_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_stream_status_requested_event_fixtures() {
+    run::<streamstatus_gen::StreamStatusRequestedEvent>(
+        "streamstatus",
+        "stream-status-requested-event.json",
+        "StreamStatusRequestedEvent",
+        streamstatus_gen::DOCUMENT,
     );
 }
 
@@ -172,4 +208,66 @@ fn test_request_type_is_the_subject() {
         scene_gen::SceneCommandRequestType::EngineSceneCommand.to_string(),
         "engine.scene.command"
     );
+    assert_eq!(
+        heartbeat_gen::HeartbeatEventType::ComWoofx3Heartbeat.to_string(),
+        "com.woofx3.heartbeat"
+    );
+    assert_eq!(
+        session_gen::SessionStartedEventType::SessionStarted.to_string(),
+        "session.started"
+    );
+    assert_eq!(
+        session_gen::SessionEndedEventType::SessionEnded.to_string(),
+        "session.ended"
+    );
+    assert_eq!(
+        streamstatus_gen::StreamStatusObservedEventType::StreamStatusObserved.to_string(),
+        "stream.status.observed"
+    );
+    assert_eq!(
+        streamstatus_gen::StreamStatusRequestedEventType::StreamStatusRequested.to_string(),
+        "stream.status.requested"
+    );
+}
+
+macro_rules! stream_fixtures {
+    ($($test:ident, $file:literal, $schema:ident;)*) => {$(
+        #[test]
+        fn $test() {
+            run::<stream_gen::$schema>("stream", $file, stringify!($schema), stream_gen::DOCUMENT);
+        }
+    )*};
+}
+
+stream_fixtures! {
+    test_user_message_event_fixtures, "user-message.json", UserMessageEvent;
+    test_channel_cheer_event_fixtures, "channel-cheer.json", ChannelCheerEvent;
+    test_channel_follow_event_fixtures, "channel-follow.json", ChannelFollowEvent;
+    test_channel_hype_train_event_fixtures, "channel-hypetrain.json", ChannelHypeTrainEvent;
+    test_channel_raid_event_fixtures, "channel-raid.json", ChannelRaidEvent;
+    test_channel_points_redeem_event_fixtures, "channelpoints-redeem.json", ChannelPointsRedeemEvent;
+    test_stream_online_event_fixtures, "stream-online.json", StreamOnlineEvent;
+    test_stream_offline_event_fixtures, "stream-offline.json", StreamOfflineEvent;
+    test_channel_subscribe_event_fixtures, "channel-subscribe.json", ChannelSubscribeEvent;
+    test_channel_subscription_gift_event_fixtures, "channel-subscriptionGift.json", ChannelSubscriptionGiftEvent;
+    test_channel_resub_event_fixtures, "channel-resub.json", ChannelResubEvent;
+    test_channel_gift_paid_upgrade_event_fixtures, "channel-giftPaidUpgrade.json", ChannelGiftPaidUpgradeEvent;
+    test_channel_prime_paid_upgrade_event_fixtures, "channel-primePaidUpgrade.json", ChannelPrimePaidUpgradeEvent;
+    test_channel_unraid_event_fixtures, "channel-unraid.json", ChannelUnraidEvent;
+    test_channel_pay_it_forward_event_fixtures, "channel-payItForward.json", ChannelPayItForwardEvent;
+    test_channel_announcement_event_fixtures, "channel-announcement.json", ChannelAnnouncementEvent;
+    test_channel_charity_donation_event_fixtures, "channel-charityDonation.json", ChannelCharityDonationEvent;
+    test_channel_bits_badge_tier_event_fixtures, "channel-bitsBadgeTier.json", ChannelBitsBadgeTierEvent;
+    test_channel_watch_streak_event_fixtures, "channel-watchStreak.json", ChannelWatchStreakEvent;
+    test_channel_shared_subscribe_event_fixtures, "channel-sharedSubscribe.json", ChannelSharedSubscribeEvent;
+    test_channel_shared_subscription_gift_event_fixtures, "channel-sharedSubscriptionGift.json", ChannelSharedSubscriptionGiftEvent;
+    test_channel_shared_raid_event_fixtures, "channel-sharedRaid.json", ChannelSharedRaidEvent;
+    test_channel_shared_resub_event_fixtures, "channel-sharedResub.json", ChannelSharedResubEvent;
+    test_channel_shared_gift_paid_upgrade_event_fixtures, "channel-sharedGiftPaidUpgrade.json", ChannelSharedGiftPaidUpgradeEvent;
+    test_channel_shared_prime_paid_upgrade_event_fixtures, "channel-sharedPrimePaidUpgrade.json", ChannelSharedPrimePaidUpgradeEvent;
+    test_channel_shared_pay_it_forward_event_fixtures, "channel-sharedPayItForward.json", ChannelSharedPayItForwardEvent;
+    test_channel_shared_announcement_event_fixtures, "channel-sharedAnnouncement.json", ChannelSharedAnnouncementEvent;
+    test_channel_ad_break_upcoming_event_fixtures, "channel-ad-break-upcoming.json", ChannelAdBreakUpcomingEvent;
+    test_channel_ad_break_begin_event_fixtures, "channel-ad-break-begin.json", ChannelAdBreakBeginEvent;
+    test_channel_ad_break_end_event_fixtures, "channel-ad-break-end.json", ChannelAdBreakEndEvent;
 }

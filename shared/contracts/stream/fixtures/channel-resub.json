@@ -1,0 +1,467 @@
+{
+  "schema": "ChannelResubEvent",
+  "description": "channel.resub events. An event is closed: an unknown field, a missing or mistyped one, and a null where the contract has none are refused; a field that can be null is present and null, never omitted.",
+  "cases": [
+    {
+      "name": "the event the connectors publish",
+      "valid": true,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": {
+          "chatterId": "abc-1",
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterId": "abc-1",
+          "sourceBroadcasterName": "abc-1",
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": 3,
+          "isGift": true,
+          "gifterIsAnonymous": true,
+          "gifterId": "abc-1",
+          "gifterName": "abc-1"
+        }
+      }
+    },
+    {
+      "name": "nullable fields null",
+      "valid": true,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": {
+          "chatterId": "abc-1",
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterId": null,
+          "sourceBroadcasterName": null,
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": null,
+          "isGift": true,
+          "gifterIsAnonymous": null,
+          "gifterId": null,
+          "gifterName": null
+        }
+      }
+    },
+    {
+      "name": "with a session id",
+      "valid": true,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": {
+          "chatterId": "abc-1",
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterId": "abc-1",
+          "sourceBroadcasterName": "abc-1",
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": 3,
+          "isGift": true,
+          "gifterIsAnonymous": true,
+          "gifterId": "abc-1",
+          "gifterName": "abc-1"
+        },
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "name": "chatterId missing",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": {
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterId": "abc-1",
+          "sourceBroadcasterName": "abc-1",
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": 3,
+          "isGift": true,
+          "gifterIsAnonymous": true,
+          "gifterId": "abc-1",
+          "gifterName": "abc-1"
+        }
+      }
+    },
+    {
+      "name": "chatterId mistyped",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": {
+          "chatterId": 7,
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterId": "abc-1",
+          "sourceBroadcasterName": "abc-1",
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": 3,
+          "isGift": true,
+          "gifterIsAnonymous": true,
+          "gifterId": "abc-1",
+          "gifterName": "abc-1"
+        }
+      }
+    },
+    {
+      "name": "chatterId null",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": {
+          "chatterId": null,
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterId": "abc-1",
+          "sourceBroadcasterName": "abc-1",
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": 3,
+          "isGift": true,
+          "gifterIsAnonymous": true,
+          "gifterId": "abc-1",
+          "gifterName": "abc-1"
+        }
+      }
+    },
+    {
+      "name": "nullable sourceBroadcasterId omitted",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": {
+          "chatterId": "abc-1",
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterName": "abc-1",
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": 3,
+          "isGift": true,
+          "gifterIsAnonymous": true,
+          "gifterId": "abc-1",
+          "gifterName": "abc-1"
+        }
+      }
+    },
+    {
+      "name": "an unknown data field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": {
+          "chatterId": "abc-1",
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterId": "abc-1",
+          "sourceBroadcasterName": "abc-1",
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": 3,
+          "isGift": true,
+          "gifterIsAnonymous": true,
+          "gifterId": "abc-1",
+          "gifterName": "abc-1",
+          "unknownField": 1
+        }
+      }
+    },
+    {
+      "name": "an unknown envelope field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": {
+          "chatterId": "abc-1",
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterId": "abc-1",
+          "sourceBroadcasterName": "abc-1",
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": 3,
+          "isGift": true,
+          "gifterIsAnonymous": true,
+          "gifterId": "abc-1",
+          "gifterName": "abc-1"
+        },
+        "unknownAttribute": "x"
+      }
+    },
+    {
+      "name": "a platform no adapter has",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "mixer",
+        "data": {
+          "chatterId": "abc-1",
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterId": "abc-1",
+          "sourceBroadcasterName": "abc-1",
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": 3,
+          "isGift": true,
+          "gifterIsAnonymous": true,
+          "gifterId": "abc-1",
+          "gifterName": "abc-1"
+        }
+      }
+    },
+    {
+      "name": "platform missing",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "chatterId": "abc-1",
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterId": "abc-1",
+          "sourceBroadcasterName": "abc-1",
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": 3,
+          "isGift": true,
+          "gifterIsAnonymous": true,
+          "gifterId": "abc-1",
+          "gifterName": "abc-1"
+        }
+      }
+    },
+    {
+      "name": "another type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.other",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": {
+          "chatterId": "abc-1",
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterId": "abc-1",
+          "sourceBroadcasterName": "abc-1",
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": 3,
+          "isGift": true,
+          "gifterIsAnonymous": true,
+          "gifterId": "abc-1",
+          "gifterName": "abc-1"
+        }
+      }
+    },
+    {
+      "name": "a time that is not RFC 3339",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "yesterday",
+        "platform": "twitch",
+        "data": {
+          "chatterId": "abc-1",
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterId": "abc-1",
+          "sourceBroadcasterName": "abc-1",
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": 3,
+          "isGift": true,
+          "gifterIsAnonymous": true,
+          "gifterId": "abc-1",
+          "gifterName": "abc-1"
+        }
+      }
+    },
+    {
+      "name": "a specversion the publishers do not send",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": {
+          "chatterId": "abc-1",
+          "chatterName": "abc-1",
+          "chatterIsAnonymous": true,
+          "messageId": "abc-1",
+          "messageText": "abc-1",
+          "sourceBroadcasterId": "abc-1",
+          "sourceBroadcasterName": "abc-1",
+          "broadcasterId": "abc-1",
+          "broadcasterName": "abc-1",
+          "tier": "abc-1",
+          "isPrime": true,
+          "durationMonths": 3,
+          "cumulativeMonths": 3,
+          "streakMonths": 3,
+          "isGift": true,
+          "gifterIsAnonymous": true,
+          "gifterId": "abc-1",
+          "gifterName": "abc-1"
+        }
+      }
+    },
+    {
+      "name": "data that is not an object",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "channel.resub",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": []
+      }
+    }
+  ]
+}

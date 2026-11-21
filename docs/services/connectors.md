@@ -257,7 +257,8 @@ it for the host:
   waits for event publishes still in flight, all within the host's stop
   deadline. Nothing from a stopped run survives into the next start, so
   enable, disable and re-enable cycles leave one EventSub connection. A
-  publish the bus refuses is logged with its subject and dropped. The host
+  publish the bus refuses, or an event that does not fit its contract, is
+  logged with its subject and dropped. The host
   then closes the adapter's subscriptions.
 - **Manifest.** Publishes every Twitch event subject
   (`@woofx3/common/cloudevents/Twitch/events`), subscribes to

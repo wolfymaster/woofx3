@@ -1,14 +1,23 @@
 import { EngineEventType } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
 import type { SchemaModuleStorageChange } from "@woofx3/common/cloudevents/Module/module.gen";
-import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
+import { SessionEndedEventType, SessionStartedEventType } from "@woofx3/common/cloudevents/Session/session.gen";
 import {
-  EventType as StreamStatusEventType,
-  type StreamStatusObserved,
-} from "@woofx3/common/cloudevents/StreamStatus/events";
+  validateSessionEndedEvent,
+  validateSessionStartedEvent,
+} from "@woofx3/common/cloudevents/Session/session.validate.gen";
+import {
+  type SchemaStreamStatusObserved as StreamStatusObserved,
+  StreamStatusObservedEventType,
+  StreamStatusRequestedEventType,
+} from "@woofx3/common/cloudevents/StreamStatus/streamstatus.gen";
+import {
+  validateStreamStatusObservedEvent,
+  validateStreamStatusRequestedEvent,
+} from "@woofx3/common/cloudevents/StreamStatus/streamstatus.validate.gen";
 import { setCurrentSessionId } from "@woofx3/common/cloudevents/session";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
-import { encode } from "@woofx3/common/cloudevents/utils";
+import { type ContractValidator, encode, encodeContract, parseContract } from "@woofx3/common/cloudevents/utils";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type * as storage from "@woofx3/db/storage.pb";
 import type * as stream_session from "@woofx3/db/stream_session.pb";
@@ -79,7 +88,7 @@ export class StreamSessionResolver {
     // subscription callback has already returned.
     await this.nats.subscribe(EventType.StreamOnline, (msg: Msg) => this.handleStreamOnline(msg));
     await this.nats.subscribe(EventType.StreamOffline, (msg: Msg) => this.handleStreamOffline(msg));
-    await this.nats.subscribe(StreamStatusEventType.StreamStatusObserved, (msg: Msg) =>
+    await this.nats.subscribe(StreamStatusObservedEventType.stream_status_observed, (msg: Msg) =>
       this.handleStreamStatusObserved(msg)
     );
 
@@ -151,7 +160,7 @@ export class StreamSessionResolver {
       throw new Error("split did not return both the ended session and its successor");
     }
     await this.clearSessionScopedStorage(split.ended.id);
-    await this.publish(SessionEventType.SessionEnded, {
+    await this.publish(SessionEndedEventType.session_ended, validateSessionEndedEvent, {
       sessionId: split.ended.id,
       endedAt: endedAt.toISOString(),
       replacedBySessionId: split.started.id,
@@ -178,7 +187,7 @@ export class StreamSessionResolver {
 
   private async requestStreamStatus(): Promise<void> {
     try {
-      await this.publish(StreamStatusEventType.StreamStatusRequested, {});
+      await this.publish(StreamStatusRequestedEventType.stream_status_requested, validateStreamStatusRequestedEvent);
     } catch (err) {
       this.logger.warn("StreamSessionResolver: could not ask the platforms whether the stream is live", {
         error: err instanceof Error ? err.message : String(err),
@@ -204,7 +213,7 @@ export class StreamSessionResolver {
   private async handleStreamStatusObserved(msg: Msg): Promise<void> {
     const status = readStreamStatus(msg);
     if (status === null) {
-      this.logger.warn(`${StreamStatusEventType.StreamStatusObserved}: malformed event; skipping`);
+      this.logger.warn(`${StreamStatusObservedEventType.stream_status_observed}: malformed event; skipping`);
       return;
     }
     if (!status.live) {
@@ -306,7 +315,7 @@ export class StreamSessionResolver {
     // Feeds this process's own stamping holder. Every publishing process keeps
     // it current from these events; api/ is simply the one that emits them.
     setCurrentSessionId(sessionId);
-    await this.publish(SessionEventType.SessionStarted, {
+    await this.publish(SessionStartedEventType.session_started, validateSessionStartedEvent, {
       sessionId,
       startedAt,
     });
@@ -419,9 +428,9 @@ export class StreamSessionResolver {
    * the holder, and undefined drops out at serialization, so the attribute is
    * absent rather than null.
    */
-  private async publish(type: SessionEventType | StreamStatusEventType, data: Record<string, unknown>): Promise<void> {
-    const event = Event<Record<string, unknown>>({ type, source: "api", sessionId: undefined }, data);
-    await this.nats.publish(type, encode(event));
+  private async publish<T>(type: string, validate: ContractValidator<T>, data?: unknown): Promise<void> {
+    const event = Event<unknown>({ type, source: "api", sessionId: undefined }, data);
+    await this.nats.publish(type, encodeContract(validate, event));
   }
 }
 
@@ -437,14 +446,11 @@ function decisionState(state: stream_session.StreamSessionStateResponse): OpenSe
   };
 }
 
-/** The data of a `stream.status.observed`, or null when it is not one. */
+/** The data of a `stream.status.observed`, or null when the message does not fit its contract. */
 function readStreamStatus(msg: Msg): StreamStatusObserved | null {
   try {
-    const data = (msg.json() as { data?: { live?: unknown; startedAt?: unknown } }).data;
-    if (typeof data?.live !== "boolean") {
-      return null;
-    }
-    return typeof data.startedAt === "string" ? { live: data.live, startedAt: data.startedAt } : { live: data.live };
+    const parsed = parseContract(validateStreamStatusObservedEvent, msg.json());
+    return parsed.ok ? parsed.value.data : null;
   } catch {
     // Not JSON at all: the same as any other malformed event, which the caller logs.
     return null;

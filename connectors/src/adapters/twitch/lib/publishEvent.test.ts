@@ -124,7 +124,9 @@ const chatMessage = {
   chatterName: "pup",
   chatterDisplayName: "Pup",
   messageText: "hi",
+  bits: 0,
   sourceBroadcasterId: null,
+  sourceBroadcasterName: null,
   sourceBadges: null,
   hasBadge: () => false,
 };
@@ -135,7 +137,19 @@ describe("EventSub callbacks when the bus refuses the publish", () => {
     ["cheer", onChannelCheer, { bits: 5, isAnonymous: false, userDisplayName: "Pup", userId: "u1", message: "" }],
     ["follow", onChannelFollow, { userDisplayName: "Pup", userId: "u1" }],
     ["raid", onChannelRaid, { raidingBroadcasterId: "b2", raidingBroadcasterDisplayName: "Howl", viewers: 3 }],
-    ["redemption", onChannelRedemptionAdd, { id: "r1", userId: "u1", userDisplayName: "Pup", rewardId: "w1" }],
+    [
+      "redemption",
+      onChannelRedemptionAdd,
+      {
+        id: "r1",
+        userId: "u1",
+        userDisplayName: "Pup",
+        rewardId: "w1",
+        rewardTitle: "Hydrate",
+        rewardCost: 100,
+        input: "",
+      },
+    ],
     ["stream online", onStreamOnline, { broadcasterId: "broadcaster-1", broadcasterName: "Wolfy" }],
     ["stream offline", onStreamOffline, { broadcasterId: "broadcaster-1", broadcasterName: "Wolfy" }],
   ];
@@ -161,7 +175,19 @@ describe("EventSub callbacks when the event fails to build", () => {
     ["follow", onChannelFollow, { userDisplayName: "Pup", userId: "u1" }],
     ["hype train begin", onChannelHypeTrainBegin, { id: "h1" }],
     ["raid", onChannelRaid, { raidingBroadcasterId: "b2", raidingBroadcasterDisplayName: "Howl", viewers: 3 }],
-    ["redemption", onChannelRedemptionAdd, { id: "r1", userId: "u1", userDisplayName: "Pup", rewardId: "w1" }],
+    [
+      "redemption",
+      onChannelRedemptionAdd,
+      {
+        id: "r1",
+        userId: "u1",
+        userDisplayName: "Pup",
+        rewardId: "w1",
+        rewardTitle: "Hydrate",
+        rewardCost: 100,
+        input: "",
+      },
+    ],
     ["stream online", onStreamOnline, { broadcasterId: "broadcaster-1", broadcasterName: "Wolfy" }],
     ["stream offline", onStreamOffline, { broadcasterId: "broadcaster-1", broadcasterName: "Wolfy" }],
   ];

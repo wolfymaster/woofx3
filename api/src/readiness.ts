@@ -1,3 +1,6 @@
+import { HeartbeatEventSubject } from "@woofx3/common/cloudevents/Heartbeat/heartbeat.gen";
+import { validateHeartbeatEvent } from "@woofx3/common/cloudevents/Heartbeat/heartbeat.validate.gen";
+
 /**
  * Whether this engine is ready to serve, for `GET /ready`.
  *
@@ -39,8 +42,8 @@ export interface ReadinessProbes {
  */
 export const BARKLOADER_HEARTBEAT_MAX_AGE_MS = 30_000;
 
-/** Subject every service publishes heartbeats on. Must match `HEARTBEAT_SUBJECT` in shared/common/rust/runtime/src/heartbeat.rs. */
-export const HEARTBEAT_SUBJECT = "HEARTBEAT";
+/** Subject every service publishes heartbeats on. */
+export const HEARTBEAT_SUBJECT: string = HeartbeatEventSubject.HEARTBEAT;
 
 /** Heartbeat `application` name barkloader publishes under. */
 const BARKLOADER_APPLICATION = "barkloader";
@@ -73,19 +76,16 @@ export async function checkReadiness(probes: ReadinessProbes): Promise<Readiness
 /**
  * The latest readiness each service reported on the `HEARTBEAT` subject.
  *
- * Heartbeats are CloudEvents whose `data` is `{ application, ready }` (see
- * `shared/common/rust/runtime/src/heartbeat.rs` and the TypeScript and Go
- * publishers); anything else is ignored rather than trusted.
+ * Anything on the subject that does not fit the heartbeat contract is ignored rather than trusted.
  */
 export class HeartbeatTracker {
   private readonly latest = new Map<string, { ready: boolean; at: number }>();
 
   record(payload: unknown, at: number): void {
-    const data = heartbeatData(payload);
-    if (!data) {
+    if (!validateHeartbeatEvent(payload)) {
       return;
     }
-    this.latest.set(data.application, { ready: data.ready, at });
+    this.latest.set(payload.data.application, { ready: payload.data.ready, at });
   }
 
   isReady(application: string, now: number, maxAgeMs: number): boolean {
@@ -95,19 +95,4 @@ export class HeartbeatTracker {
     }
     return last.ready && now - last.at <= maxAgeMs;
   }
-}
-
-function heartbeatData(payload: unknown): { application: string; ready: boolean } | null {
-  if (typeof payload !== "object" || payload === null) {
-    return null;
-  }
-  const data = (payload as { data?: unknown }).data;
-  if (typeof data !== "object" || data === null) {
-    return null;
-  }
-  const { application, ready } = data as { application?: unknown; ready?: unknown };
-  if (typeof application !== "string" || application.length === 0 || typeof ready !== "boolean") {
-    return null;
-  }
-  return { application, ready };
 }
