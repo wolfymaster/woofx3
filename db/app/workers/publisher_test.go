@@ -8,6 +8,7 @@ import (
 
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 	"github.com/go-gormigrate/gormigrate/v2"
+	"github.com/wolfymaster/woofx3/common/messages/outbox"
 	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/migrate/migrations"
 	"github.com/wolfymaster/woofx3/db/database/models"
@@ -64,20 +65,70 @@ func TestPublishStoresTheEventOnSQLite(t *testing.T) {
 	}
 }
 
+func validEdge() *outbox.ViewerSegmentEdge {
+	return &outbox.ViewerSegmentEdge{
+		SegmentId:  "user:segment:chatty",
+		Platform:   "twitch",
+		ViewerId:   "v1",
+		ViewerName: "Wolfy",
+		SessionId:  "s1",
+		Facts: outbox.ViewerSegmentEdgeFacts{"user": {"messages": outbox.FactChange{
+			Before: outbox.NewFloat64FactReading(1),
+			After:  outbox.NewNullFactReading(struct{}{}),
+		}}},
+		Cause: outbox.EdgeCause{Source: "twitch", EventId: "e1"},
+	}
+}
+
+// The envelope the worker builds from a row is the one the contract names, so
+// the data validated at publish and the attributes added here are one message.
+func TestEncodeCloudEventIsTheContractsEnvelope(t *testing.T) {
+	db := openOutboxDB(t)
+	publisher := NewEventPublisher(repository.NewDbEventRepository(db), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := publisher.PublishEventIn(db, "viewer.segment.entered", "user:segment:chatty",
+		map[string]string{"platform": "twitch", "sessionid": "s1"}, validEdge()); err != nil {
+		t.Fatalf("PublishEventIn: %v", err)
+	}
+	var event models.WorkerEvent
+	if err := db.First(&event).Error; err != nil {
+		t.Fatalf("read event: %v", err)
+	}
+
+	wire, err := encodeCloudEvent(&event)
+	if err != nil {
+		t.Fatalf("encodeCloudEvent: %v", err)
+	}
+	var envelope outbox.ViewerSegmentEnteredEvent
+	if err := envelope.UnmarshalJSON(wire); err != nil {
+		t.Fatalf("the envelope does not decode as the contract's: %v\n%s", err, wire)
+	}
+	if err := envelope.Validate(); err != nil {
+		t.Fatalf("the envelope breaks the contract: %v\n%s", err, wire)
+	}
+}
+
 func TestPublishEventInCarriesItsSubjectAsTypeAndItsExtensionsOntoTheWire(t *testing.T) {
 	db := openOutboxDB(t)
 	publisher := NewEventPublisher(repository.NewDbEventRepository(db), slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	if err := publisher.PublishEventIn(db, "viewer.segment.entered", "user:segment:chatty",
-		map[string]string{"bad_name": "x"}, nil); err == nil {
+		map[string]string{"bad_name": "x"}, validEdge()); err == nil {
 		t.Fatal("an extension name the SDK would drop was accepted")
 	}
-	if err := publisher.PublishEventIn(db, "viewer", "user:segment:chatty", nil, nil); err == nil {
+	if err := publisher.PublishEventIn(db, "viewer", "user:segment:chatty", nil, validEdge()); err == nil {
 		t.Fatal("a subject with no operation was accepted")
+	}
+	broken := validEdge()
+	broken.ViewerId = ""
+	if err := publisher.PublishEventIn(db, "viewer.segment.entered", "user:segment:chatty", nil, broken); err == nil {
+		t.Fatal("data that breaks its contract was written to the outbox")
+	}
+	if err := publisher.PublishEventIn(db, "viewer.segment.entered", "user:segment:chatty", nil, nil); err == nil {
+		t.Fatal("an event with no data was written to the outbox")
 	}
 	err := db.Transaction(func(tx *gorm.DB) error {
 		return publisher.PublishEventIn(tx, "viewer.segment.entered", "user:segment:chatty",
-			map[string]string{"platform": "twitch", "sessionid": "s1"}, map[string]string{"viewerId": "v1"})
+			map[string]string{"platform": "twitch", "sessionid": "s1"}, validEdge())
 	})
 	if err != nil {
 		t.Fatalf("PublishEventIn: %v", err)

@@ -1,3 +1,5 @@
+import type { SchemaModuleStorageChangedEvent } from "@woofx3/common/cloudevents/Module/module.gen";
+import { validateModuleStorageChangedEvent } from "@woofx3/common/cloudevents/Module/module.validate.gen";
 import { SceneCommandRequestType } from "@woofx3/common/cloudevents/Scene/scene.gen";
 import {
   COMPOSITION_PREVIEW_TOKEN_SUBJECT,
@@ -49,10 +51,6 @@ interface InitArgs {
   /** Mints the token that opens the composition preview page (see routes/composition-preview.ts). */
   previewToken: () => Promise<CompositionPreviewTokenReply>;
   logger: Logger;
-}
-
-interface StorageChangedEnvelope {
-  data?: { moduleId?: unknown; key?: unknown; value?: unknown };
 }
 
 interface ModuleSettingUpdatedEnvelope {
@@ -205,15 +203,16 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
 
   // Published by barkloader on every module storage write, and by the api
   // with a null value for each session-scoped key a session end cleared.
-  await subscribeJson<StorageChangedEnvelope>(nats, logger, "module.storage.*.changed", async (envelope, msg) => {
-    const data = envelope.data ?? {};
-    const moduleId = typeof data.moduleId === "string" ? data.moduleId : "";
-    const key = typeof data.key === "string" ? data.key : "";
-    if (!moduleId || !key) {
-      logger.warn("module.storage.changed: missing moduleId or key; dropping", { subject: msg.subject });
+  await subscribeJson<unknown>(nats, logger, "module.storage.*.changed", async (envelope, msg) => {
+    if (!validateModuleStorageChangedEvent(envelope)) {
+      logger.warn("module.storage.changed: breaks its contract; dropping", {
+        subject: msg.subject,
+        problem: validateModuleStorageChangedEvent.errors?.[0]?.message,
+      });
       return;
     }
-    await moduleState.publish(moduleId, key, data.value ?? null);
+    const { moduleId, key, value } = (envelope as SchemaModuleStorageChangedEvent).data;
+    await moduleState.publish(moduleId, key, value);
   });
 
   // A resource instance's settings can change what its value reads as (a

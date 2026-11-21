@@ -96,17 +96,25 @@ an enum list, not a second validator. This is the message half of the [contracts
 | --- | --- | --- | --- |
 | `shared/contracts/scene/openapi.yaml` | `engine.scene.command` request and reply | workflow engine (Go) | scene manager (TypeScript) |
 | `shared/contracts/barkloader/openapi.yaml` | `barkloader.module.field_options` request | api (TypeScript) | barkloader (Rust) |
+| `shared/contracts/heartbeat/openapi.yaml` | `com.woofx3.heartbeat`, published on `HEARTBEAT` | every service (Go, TypeScript, Rust) | the runtime health monitors (Go, TypeScript) and the api's readiness probe |
+| `shared/contracts/session/openapi.yaml` | `session.started`, `session.ended` | api (TypeScript) | every publishing process (TypeScript, Rust), the api's session summary emitter |
+| `shared/contracts/streamstatus/openapi.yaml` | `stream.status.observed`, `stream.status.requested` | connectors host, api (TypeScript) | api, connectors host |
+| `shared/contracts/stream/openapi.yaml` | the [streaming platform events](#streaming-platform-events) | connectors (TypeScript) | workflow engine (Go), api (TypeScript) |
+| `shared/contracts/module/openapi.yaml` | `module.storage.changed` | barkloader (Rust), api (TypeScript) | api, scene manager (TypeScript) |
+| `shared/contracts/outbox/openapi.yaml` | `database.record.changed`, `userpage.form.submitted`, `viewer.segment.entered`, `viewer.segment.left` | db service (Go) | api (TypeScript), workflow engine (Go) |
 | `shared/contracts/workflow/openapi.yaml` | `workflow.execute`, `workflow.cancel` (request and reply), `workflow.replay`, `workflow.command.execute`, `workflow.run.started`, `.completed`, `.failed` and `.cancelled`, `workflow.health.snapshot`, `.changed` and `.get` | api and connectors (TypeScript) for the requests, workflow engine (Go) for the replies and events | workflow engine, api |
 
-Both documents take their CloudEvents attributes (`specversion`, `id`, `source`, `time`) and the
+All the documents take their CloudEvents attributes (`specversion`, `id`, `source`, `time`) and the
 opaque id type from `shared/contracts/common/cloudevents.yaml`, a document with no operations of its
 own.
 
 ### Writing a message
 
 - Each message is a schema in `components.schemas`, and an operation under `paths` references it.
-  The operation exists so the generators reach the schema; its path is the NATS subject, and its
-  request body and `200` response are the message's request and reply.
+  The operation exists so the generators reach the schema; its path is the message's `type` (the
+  NATS subject, except for the heartbeat, which is published on `HEARTBEAT`), and its request body
+  and `200` response are the message's request and reply. A message nobody replies to, an event, has
+  only a `202` response with no body.
 - A request is the whole CloudEvent: `additionalProperties: false`, every attribute listed, `type`
   an `enum` with one value, the subject. A reply is the raw reply body and is open, so a producer
   can add a field before its consumers know it.
@@ -129,6 +137,26 @@ The subject is a generated constant in every language: the `type` enum becomes
 `SceneCommandRequestType::EngineSceneCommand` in Rust (`to_string()` is the subject). A
 producer sets `type` from it and a consumer subscribes on it. `scripts/gen-schemas.sh` refuses a
 document whose operation path is not the `type` its request fixes.
+
+### Heartbeat, session and stream status
+
+These are published events with no reply, so each document holds the producer's whole CloudEvent,
+closed, and every reader checks what it receives against the same schema.
+
+- **`com.woofx3.heartbeat`** carries `specversion` `1.0`, a fresh `id`, `source`, `subject`
+  `HEARTBEAT`, `time` and `data: { application, ready }`. A reader takes `application` as the
+  service's runtime name. A message on `HEARTBEAT` that does not fit, such as a bare ping, is not a
+  heartbeat and is ignored. The runtime monitors' liveness ping is not published there: it goes to
+  `_HEALTH.<application>.ping`.
+- **`session.started`** and **`session.ended`** carry no `sessionId` attribute, since they are what
+  establishes the session. **`stream.status.observed`** carries the `platform` attribute and, when
+  its publisher knows a session, the `sessionId` attribute; `data` is `{ live, startedAt? }` and
+  `startedAt` is present only for a live stream whose platform says when it began.
+  **`stream.status.requested`** has no `data`.
+- These three documents state the `specversion` the TypeScript and Rust event factories write,
+  `1.0.0`, which is not a CloudEvents version. The factories serve every event family, so the value
+  is a property of the factory and not of one message; the heartbeat, written by hand in each
+  language, uses `1.0`.
 
 ### Generating
 
@@ -177,6 +205,29 @@ validator: Go in `shared/common/golang/messages/<domain>/fixtures_test.go`, Type
 `shared/common/rust/cloudevents/tests/contracts.rs`. A valid case must round-trip through the
 generated type unchanged.
 
+### Events
+
+An event has no reply, so its operation answers `202` and the document says who publishes it and
+who reads it. Its schema is closed like a request, and lists every attribute the publisher puts on
+the wire, extension attributes included.
+
+The `outbox` document describes events the db service writes to its outbox inside the transaction
+that changed the data. They are published on the subject equal to their `type`, because workflows
+trigger on the type, and not on the `db.<entity>.<operation>.system` subjects of the other outbox
+rows. `EventPublisher.PublishEventIn` takes the generated data type and calls its `Validate()`
+before it writes the row, so data that breaks the contract fails the transaction that produced it
+and never reaches the outbox; the worker does no validation of its own, which keeps the publish
+path cheap. The worker builds the envelope from the row in one function (`encodeCloudEvent`), and
+a test validates what it builds against the generated envelope. Where the contract allows a
+`null` (a deleted row's `publicValues`, the platform fields of an anonymous viewer), the value is
+required and nullable, never optional.
+
+`module.storage.changed` is published per module on `module.storage.<moduleId>.changed`, once for
+every storage write, so it is validated once per consumer at the edge, not by the publishers:
+barkloader builds its data from the generated type, and the api's session-end clear builds it from
+the generated TypeScript type. Its `value` is any JSON value, `null` included, and is always
+present.
+
 ### Workflow messages
 
 The `workflow` document covers what the engine receives and announces, except `action.execute`
@@ -200,130 +251,65 @@ its own requests before sending them.
 A consumer validates what it receives against the same document that typed it:
 
 - **Go**: `json.Unmarshal` into the generated type, then its `Validate()`. The workflow engine
-  validates its own request before publishing, and the reply it receives.
+  validates its own request before publishing, and the reply it receives. The runtime's NATS monitor
+  builds each heartbeat from the generated type, validates it before publishing, and ignores a message
+  on `HEARTBEAT` that does not validate.
 - **TypeScript**: the `validate<Schema>` type guard from `<domain>.validate.gen.ts`. The scene manager
   validates every `engine.scene.command` request; the api validates a `barkloader.module.field_options`
-  request before sending it. The validators are precompiled, so they need no document at run time
+  request before sending it. The api's resolver and the connectors host check each `session.*` and
+  `stream.status.*` event they publish with `encodeContract` (`cloudevents/utils.ts`), which throws when
+  the serialised event does not fit; every reader checks what it receives with `parseContract`, as the
+  runtime monitors and the api's readiness tracker do for heartbeats. The api validates
+  `database.record.changed` and `module.storage.changed` before projecting them onto webhooks, and the
+  scene manager validates `module.storage.changed`; an event that breaks its contract is logged and
+  dropped. The validators are precompiled, so they need no document at run time
   (and run under Convex); `ajv` is the only dependency.
 - **Rust**: the `jsonschema` crate over the `DOCUMENT` the generated module embeds, then serde into the
-  generated type. Barkloader validates every field-options request this way. A serde type alone
+  generated type. Barkloader validates every field-options request and every `session.started` message this way,
+  and builds each heartbeat it publishes from the generated types. A serde type alone
   accepts `null` for an optional field, so the validator is the check, not the type.
 
-## Twitch Events
+## Streaming platform events
 
-Twitch channel events carry a full CloudEvent envelope. The NATS subject doubles as the CloudEvents `type`.
+The connectors publish what happens on a streaming platform as CloudEvents whose NATS subject is the
+CloudEvents `type`. The platform is the `platform` attribute (`twitch`), not part of the subject, so a
+workflow subscribes to `channel.follow` once and narrows by platform only when it cares. The contract is
+`shared/contracts/stream/openapi.yaml`; its payload schemas are the only description of each payload, so
+read them there.
 
-### Event Types
+| Subject | Schema (envelope) | Payload |
+|---------|-------------------|---------|
+| `user.message` | `UserMessageEvent` | `UserMessage` |
+| `channel.cheer`, `channel.follow`, `channel.raid`, `channel.hypetrain` | `Channel<Name>Event` | `ChannelCheer`, `ChannelFollow`, `ChannelRaid`, `ChannelHypeTrain` |
+| `channelpoints.redeem` | `ChannelPointsRedeemEvent` | `ChannelPointsRedeem` |
+| `stream.online`, `stream.offline` | `StreamOnlineEvent`, `StreamOfflineEvent` | `StreamOnline`, `StreamOffline` |
+| `channel.subscribe`, `channel.subscriptionGift`, `channel.resub`, `channel.giftPaidUpgrade`, `channel.primePaidUpgrade`, `channel.unraid`, `channel.payItForward`, `channel.announcement`, `channel.charityDonation`, `channel.bitsBadgeTier`, `channel.watchStreak` | `Channel<Name>Event` | `Channel<Name>` |
+| `channel.shared*` (see [Shared chat](#shared-chat)) | `ChannelShared<Name>Event` | the plain event's payload, except `Subscribe`, `SubscriptionGift` and `Raid`, whose shared payloads add the chat notification fields |
+| `channel.ad_break.upcoming`, `.begin`, `.end` | `ChannelAdBreak<Name>Event` | `ChannelAdBreak<Name>` (see [Twitch ad breaks](/services/twitch-channel)); `end` is synthesized by the adapter, not sent by Twitch |
 
-| Method | NATS Subject / Type | Description |
-|--------|---------------------|-------------|
-| `chatMessage` | `user.message` | A chat message was sent in the channel |
-| `cheer` | `channel.cheer` | A viewer cheered with bits |
-| `follow` | `channel.follow` | A viewer followed the channel |
-| `hypeTrainBegin` | `channel.hypetrain` | A hype train started |
-| `streamOnline` | `stream.online` | The stream went online |
-| `subscribe` | `channel.subscribe` | A viewer subscribed |
-| `subscriptionGift` | `channel.subscriptionGift` | A subscription was gifted |
-| `adBreakUpcoming` | `channel.ad_break.upcoming` | An ad break is scheduled soon (published by the connectors Twitch adapter; see [Twitch ad breaks](/services/twitch-channel)) |
-| `adBreakBegin` | `channel.ad_break.begin` | An ad break started |
-| `adBreakEnd` | `channel.ad_break.end` | An ad break is due to have ended (synthesized, not from Twitch) |
+Rules the contract fixes:
 
-### Payloads
+- An event is closed: an unknown field, a missing or mistyped one, and a `null` where the schema has none
+  are refused. A field the platform can lack (a gifter who is anonymous, a channel outside a shared chat)
+  is required and nullable: it is present and `null`, never omitted, so a workflow condition reads `null`
+  instead of failing on a missing key. Only `ChannelPointsRedeem.message`, `ChatterMembership.isFollower`
+  and `ChatterMembership.subscriberTier` are omitted when absent; absent is never `false` or a default tier.
+- `specversion` is `1.0.0`, what `BaseEvent` stamps on every TypeScript event; `sessionId` is present once the
+  publisher knows a session; `workflowChain` is present only on a `user.message` the engine said itself.
+- `chat.command.<slug>` has no schema here: its subject is one per command name, and the generated contract
+  names exactly one subject per message.
 
-#### ChatMessage
+`TwitchEvents` (`shared/common/typescript/cloudevents/Twitch`) validates each event against its generated
+validator before returning the bytes to publish, so an event that does not fit throws at the publish call
+and nothing reaches the bus. Consumers do not validate again: the workflow engine matches on subjects and
+reads `data` through expressions, and the api reads typed fields after the producer's check. Go
+(`shared/common/golang/messages/stream`) and Rust (`stream_gen`) carry the generated types for any consumer
+that decodes these payloads; the shared fixtures in `shared/contracts/stream/fixtures` run through all three.
 
-```typescript
-interface ChatMessage {
-    messageId: string;    // Twitch's id for the line, what a reply or pin names
-    amount: number;       // dollar amount if paid message, otherwise 0
-    isPaid: boolean;
-    channelId: string | null;
-    channelName: string | null;
-    chatterId: string;
-    chatterName: string;  // display name
-    chatterLogin: string; // account name, lowercase
-    message: string;
-    membership: ChatterMembership;
-    fromEngine: boolean;  // a line the engine said itself, handed back by Twitch
-}
-```
-
-#### Cheer
-
-```typescript
-interface Cheer {
-    amount: number;       // bits cheered
-    isAnonymous: boolean;
-    message: string;
-    userId: string | null;
-    userName: string | null;
-}
-```
-
-#### Follow
-
-```typescript
-interface Follow {
-    userName: string;
-}
-```
-
-#### HypeTrainBegin
-
-```typescript
-interface HypeTrainBegin {
-    id: string;
-    broadcasterId: string;
-    broadcasterName: string;   // display name
-    level: number;
-    total: number;             // points contributed to the whole train
-    progress: number;          // points towards the current level
-    goal: number;              // points the current level needs
-    topContributions: {
-        userId: string;
-        userName: string;      // display name
-        type: "bits" | "subscription" | "other";
-        total: number;
-    }[];
-    startedAt: string;         // ISO-8601
-    expiresAt: string;         // ISO-8601; extended when the train levels up
-}
-```
-
-Every Twitch payload must be a plain object. `TwitchEvents` throws when given a
+Every payload must also be a plain object. `TwitchEvents` throws when given a
 class instance (anywhere in the payload), so a platform SDK event, whose data
 sits behind getters and whose API client is an own property, can never be
 serialized onto the bus by accident.
-
-#### StreamOnline
-
-```typescript
-interface StreamOnline {}   // no additional payload
-```
-
-#### Subscribe
-
-```typescript
-interface Subscribe {
-    isGift: boolean;
-    isCommunityGift: boolean; // one recipient of a community gift, also sent whole as SubscriptionGift
-    tier: string;         // e.g. "1000", "2000", "3000"
-    userId: string | null;
-    userName: string | null;
-}
-```
-
-#### SubscriptionGift
-
-```typescript
-interface SubscriptionGift {
-    amount: number;       // number of subs gifted
-    gifterId: string;
-    gifterName: string;
-    isAnonymous: boolean;
-    tier: string;
-}
-```
 
 ### Shared chat
 

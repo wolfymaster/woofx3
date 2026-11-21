@@ -4,12 +4,28 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as barkloader from "./Barkloader/barkloader.validate.gen";
+import * as heartbeat from "./Heartbeat/heartbeat.validate.gen";
+import * as module from "./Module/module.validate.gen";
+import * as outbox from "./Outbox/outbox.validate.gen";
 import * as scene from "./Scene/scene.validate.gen";
+import * as session from "./Session/session.validate.gen";
+import * as stream from "./Twitch/stream.validate.gen";
+import * as streamstatus from "./StreamStatus/streamstatus.validate.gen";
 import * as workflow from "./Workflow/workflow.validate.gen";
 
 type Validator = ((value: unknown) => boolean) & { errors?: unknown };
 
-const domains: Record<string, Record<string, Validator>> = { scene, barkloader, workflow };
+const domains: Record<string, Record<string, Validator>> = {
+  scene,
+  barkloader,
+  heartbeat,
+  module,
+  outbox,
+  session,
+  stream,
+  streamstatus,
+  workflow,
+};
 const contractsDir = join(import.meta.dir, "..", "..", "..", "contracts");
 
 interface Fixture {

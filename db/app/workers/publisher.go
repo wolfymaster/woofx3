@@ -27,6 +27,13 @@ func NewEventPublisher(repo *repository.DbEventRepository, logger *slog.Logger) 
 // subjectScope is the fourth token of every outbox subject.
 const subjectScope = "system"
 
+// ContractData is the data of an event with a generated contract: a type
+// generated from shared/contracts, which checks itself.
+type ContractData interface {
+	json.Marshaler
+	Validate() error
+}
+
 type PublishOptions struct {
 	ClientID        string
 	EntityType      string
@@ -58,15 +65,25 @@ func (p *EventPublisher) PublishIn(tx *gorm.DB, opts PublishOptions) error {
 // at its last dot (`viewer.segment` and `entered` for
 // `viewer.segment.entered`). It is acknowledged on publish.
 //
+// data is validated against its generated contract before the row is written,
+// so an event that breaks it fails the transaction that produced it instead of
+// reaching a consumer.
+//
 // extensions are CloudEvent extension attributes the event carries besides
 // the ones every outbox event does, for what consumers read from the envelope
 // rather than the data (the workflow service reads an event's platform only
 // from the `platform` extension). Names must be lowercase letters and digits,
 // which the CloudEvents SDK otherwise drops on the wire.
-func (p *EventPublisher) PublishEventIn(tx *gorm.DB, subject, entityID string, extensions map[string]string, data interface{}) error {
+func (p *EventPublisher) PublishEventIn(tx *gorm.DB, subject, entityID string, extensions map[string]string, data ContractData) error {
 	dot := strings.LastIndex(subject, ".")
 	if dot <= 0 || dot == len(subject)-1 {
 		return fmt.Errorf("publish event: subject %q is not `<entity>.<operation>`", subject)
+	}
+	if data == nil {
+		return fmt.Errorf("publish event %s: no data", subject)
+	}
+	if err := data.Validate(); err != nil {
+		return fmt.Errorf("publish event %s: data breaks its contract: %w", subject, err)
 	}
 	for name := range extensions {
 		if !validExtensionName(name) {

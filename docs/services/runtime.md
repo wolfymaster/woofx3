@@ -199,8 +199,8 @@ runtime_init → health_monitor_init → health_monitor_ready → services_conne
 
 The runtime includes a health monitoring system that:
 
-1. Checks liveness every 3 seconds
-2. Sends heartbeat every 5 seconds  
+1. Checks liveness every 3 seconds (a connectivity ping on `_HEALTH.<application>.ping`)
+2. Sends heartbeat every 5 seconds, a `com.woofx3.heartbeat` message on `HEARTBEAT` built from and checked against the [heartbeat contract](/services/cloudevents#message-contracts); a message on that subject that does not fit is ignored
 3. Performs health checks on all registered services every 5 seconds (`HEALTH_CHECK_INTERVAL_MS`)
 4. Automatically retries failed services with exponential backoff
 

@@ -145,6 +145,11 @@ anything keyed on `session.ended`, clearing included, lags until then.
 
 ### Lifecycle events
 
+Both events are contracts, generated from `shared/contracts/session/openapi.yaml` (see [Message
+contracts](/services/cloudevents#message-contracts)). The resolver checks each before publishing and
+every reader refuses a message that does not fit, so a malformed announcement keeps the previous session
+and is logged.
+
 | Subject | Fired when | Meaning for consumers |
 |---|---|---|
 | `session.started` | a new session opens, idle ones included, and again when the resolver starts | The session to stamp is now this one. |
@@ -223,14 +228,15 @@ Two mirrors carry the field independently and are easy to forget:
   route through `BaseEvent::new` for the same reason the TypeScript ones route
   through `Event()`.
 
-  `heartbeat.rs` stays outside it deliberately. A readiness ping fires whether
+  The readiness heartbeat stays outside it deliberately. It fires whether
   or not anyone is broadcasting, so a session id on one would mean nothing, and
-  its shape is pinned against the Go `NewHeartbeatEvent` that consumers parse.
+  its closed contract (`shared/contracts/heartbeat/openapi.yaml`) has no such
+  attribute.
 
 There is no `BaseEvent` struct on the Go side; the de facto envelope is the
-`Event` struct above. There is also no TypeScript decode function — every
-consumer hand-rolls `msg.json()` with a `ce.data ?? ce` fallback — so nothing
-validates the attribute on the way in.
+`Event` struct above. The `session.*` and `stream.status.*` messages are
+validated where they are read, against their contracts, but a session id
+stamped on any other event is not checked on the way in.
 
 ## Clearing ephemeral storage
 
@@ -387,6 +393,12 @@ Two subjects carry the same fact as a state instead:
 - `stream.status.observed` says what a platform's stream is doing now, with the
   platform in the event's `platform` attribute.
 - `stream.status.requested` asks every connected platform to publish that.
+
+Both are contracts, generated from `shared/contracts/streamstatus/openapi.yaml`:
+the observation is `{ live, startedAt? }` with the platform and, if the publisher
+knows one, the session as attributes, and the request has no data. A message that
+does not fit is refused, so an observation with an unreadable `startedAt` is
+logged and skipped, never read as "live now".
 
 A platform adapter reads its state once when it connects, after subscribing to
 the platform's events, and publishes the result. A failed read retries with

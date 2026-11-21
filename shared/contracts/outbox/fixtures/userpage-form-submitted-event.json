@@ -1,0 +1,1134 @@
+{
+  "schema": "UserPageFormSubmittedEvent",
+  "description": "userpage.form.submitted events as the outbox publishes them. An anonymous viewer is the null platform fields, the one null the contract allows besides a deleted row's.",
+  "cases": [
+    {
+      "name": "the event the producer publishes",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "an anonymous viewer has null platform fields and no platform extension",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": null,
+            "platformUserId": null,
+            "displayName": "anonymous",
+            "roles": []
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        }
+      }
+    },
+    {
+      "name": "no fields",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [],
+          "answers": {}
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "with a session",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch",
+        "sessionid": "s1"
+      }
+    },
+    {
+      "name": "no specversion",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no source",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no time",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no datacontenttype",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no entityid",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no operation",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "no data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "an unknown envelope field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch",
+        "extra": "x"
+      }
+    },
+    {
+      "name": "an unknown data field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          },
+          "extra": "x"
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "another type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "other.type",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "an empty id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "a time that is not RFC 3339",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "yesterday",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "null data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": null,
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "data that is not an object",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": [],
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "a viewer without roles",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy"
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "a viewer with a null display name",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": null,
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "an answer that is a number",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": 3,
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "a field without a label",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "a field with an unknown key",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST",
+              "extra": 1
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "an empty page id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "sub-1",
+          "pageId": "",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    },
+    {
+      "name": "a submission id over 255 characters",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "userpage.form.submitted",
+        "source": "db-proxy",
+        "time": "2026-11-19T10:15:30.123456Z",
+        "datacontenttype": "application/json",
+        "entityid": "sub-1",
+        "operation": "submitted",
+        "data": {
+          "submissionId": "ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss",
+          "pageId": "page-1",
+          "formId": "form-1",
+          "formTitle": "Song requests",
+          "submittedAt": "2026-11-19T10:15:30Z",
+          "viewer": {
+            "platform": "twitch",
+            "platformUserId": "12345",
+            "displayName": "Wolfy",
+            "roles": ["subscriber"]
+          },
+          "fields": [
+            {
+              "id": "song",
+              "label": "Song",
+              "type": "text",
+              "value": "Hades OST"
+            },
+            {
+              "id": "agree",
+              "label": "I agree",
+              "type": "checkbox",
+              "value": true
+            }
+          ],
+          "answers": {
+            "song": "Hades OST",
+            "agree": true
+          }
+        },
+        "platform": "twitch"
+      }
+    }
+  ]
+}

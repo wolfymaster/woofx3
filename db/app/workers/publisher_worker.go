@@ -143,46 +143,12 @@ func (w *PublisherWorker) publishEvent(event *models.WorkerEvent) error {
 		"event_id", event.ID,
 		"payload_size", len(event.Payload))
 
-	ce := cloudevents.NewEvent()
-	ce.SetID(event.ID)
-	ce.SetSource("db-proxy")
-	ce.SetType(event.EventType)
-	ce.SetTime(event.CreatedAt)
-
-	// CloudEvents extension names must be lowercase a-z and digits only —
-	// the SDK silently drops names with underscores during JSON marshal,
-	// so consumers never receive them. Only metadata that consumers
-	// actually need is forwarded; client_id and entity_type are kept on
-	// WorkerEvent (DB metadata + subject building) but no consumer reads
-	// them off the wire.
-	ce.SetExtension("entityid", event.EntityID)
-	ce.SetExtension("operation", event.Operation)
-
-	// acksubject carries the per-event reply subject for manual
-	// acknowledgment (AckWorker subscribes to db.ack.>). Only set when
-	// the producer chose !AutoAcknowledge — see EventPublisher.Publish.
-	if !event.AutoAcknowledge && event.AckSubject != nil {
-		ce.SetExtension("acksubject", *event.AckSubject)
-	}
-	if err := setEventExtensions(&ce, event); err != nil {
-		return err
-	}
-
-	var payloadData interface{}
-	if err := json.Unmarshal([]byte(event.Payload), &payloadData); err != nil {
-		w.logger.Error("failed to unmarshal payload",
-			"event_id", event.ID,
-			"error", err)
-		return fmt.Errorf("unmarshal payload: %w", err)
-	}
-	ce.SetData(cloudevents.ApplicationJSON, payloadData)
-
-	ceBytes, err := json.Marshal(ce)
+	ceBytes, err := encodeCloudEvent(event)
 	if err != nil {
-		w.logger.Error("failed to marshal cloudevent",
+		w.logger.Error("failed to encode cloudevent",
 			"event_id", event.ID,
 			"error", err)
-		return fmt.Errorf("marshal cloudevent: %w", err)
+		return err
 	}
 
 	if w.natsConn == nil {
@@ -315,33 +281,9 @@ func (w *PublisherWorker) processMaxRetriesExceeded() {
 func (w *PublisherWorker) retryEvent(cached *CachedEvent) error {
 	event := cached.Event
 
-	ce := cloudevents.NewEvent()
-	ce.SetID(event.ID)
-	ce.SetSource("db-proxy")
-	ce.SetType(event.EventType)
-	ce.SetTime(event.CreatedAt)
-
-	// CloudEvents extension names must be lowercase a-z and digits only —
-	// see publishEvent for the rationale. Keep this in sync with that path.
-	ce.SetExtension("entityid", event.EntityID)
-	ce.SetExtension("operation", event.Operation)
-
-	if event.AckSubject != nil {
-		ce.SetExtension("acksubject", *event.AckSubject)
-	}
-	if err := setEventExtensions(&ce, event); err != nil {
-		return err
-	}
-
-	var payloadData interface{}
-	if err := json.Unmarshal([]byte(event.Payload), &payloadData); err != nil {
-		return fmt.Errorf("unmarshal payload: %w", err)
-	}
-	ce.SetData(cloudevents.ApplicationJSON, payloadData)
-
-	ceBytes, err := json.Marshal(ce)
+	ceBytes, err := encodeCloudEvent(event)
 	if err != nil {
-		return fmt.Errorf("marshal cloudevent: %w", err)
+		return err
 	}
 
 	if err := w.natsConn.Publish(event.NATSSubject, ceBytes); err != nil {
@@ -364,6 +306,46 @@ func (w *PublisherWorker) retryEvent(cached *CachedEvent) error {
 	)
 
 	return nil
+}
+
+// encodeCloudEvent is the wire form of an outbox row. The attributes it sets
+// and the extensions the row was written with are the envelope of the
+// contracts in shared/contracts/outbox.
+func encodeCloudEvent(event *models.WorkerEvent) ([]byte, error) {
+	ce := cloudevents.NewEvent()
+	ce.SetID(event.ID)
+	ce.SetSource("db-proxy")
+	ce.SetType(event.EventType)
+	ce.SetTime(event.CreatedAt)
+
+	// CloudEvents extension names must be lowercase a-z and digits only: the
+	// SDK silently drops other names when it marshals, so consumers would
+	// never receive them. client_id and entity_type stay on WorkerEvent (they
+	// build the subject) because no consumer reads them off the wire.
+	ce.SetExtension("entityid", event.EntityID)
+	ce.SetExtension("operation", event.Operation)
+
+	// acksubject is the reply subject for manual acknowledgment, which the
+	// AckWorker subscribes to as db.ack.>. Only a producer that chose
+	// !AutoAcknowledge has one.
+	if event.AckSubject != nil {
+		ce.SetExtension("acksubject", *event.AckSubject)
+	}
+	if err := setEventExtensions(&ce, event); err != nil {
+		return nil, err
+	}
+
+	var payloadData interface{}
+	if err := json.Unmarshal([]byte(event.Payload), &payloadData); err != nil {
+		return nil, fmt.Errorf("event %s: unmarshal payload: %w", event.ID, err)
+	}
+	ce.SetData(cloudevents.ApplicationJSON, payloadData)
+
+	ceBytes, err := json.Marshal(ce)
+	if err != nil {
+		return nil, fmt.Errorf("event %s: marshal cloudevent: %w", event.ID, err)
+	}
+	return ceBytes, nil
 }
 
 // setEventExtensions sets the extensions an event was written with (see

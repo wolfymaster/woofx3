@@ -87,6 +87,9 @@ select_for_path() {
       shared/common/golang/messages/*/*_gen.go/ | \
       shared/common/typescript/cloudevents/Scene/*.gen.ts/ | \
       shared/common/typescript/cloudevents/Barkloader/*.gen.ts/ | \
+      shared/common/typescript/cloudevents/Heartbeat/*.gen.ts/ | \
+      shared/common/typescript/cloudevents/Session/*.gen.ts/ | \
+      shared/common/typescript/cloudevents/StreamStatus/*.gen.ts/ | \
       shared/common/rust/cloudevents/src/*_gen.rs/)
       select_target "schemas:shared/contracts"
       ;;
@@ -99,7 +102,9 @@ select_for_path() {
       select_target "rust:shared/common/rust/cloudevents"
       select_target "ts:sceneManager"
       select_target "ts:api"
+      select_target "ts:connectors"
       select_target "go:workflow"
+      select_target "go:db"
       select_target "rust:barkloader"
       return
       ;;

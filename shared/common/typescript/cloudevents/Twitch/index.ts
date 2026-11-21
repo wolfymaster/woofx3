@@ -1,6 +1,37 @@
 import Event from "../BaseEvent";
-import { encode } from "../utils";
 import * as TwitchEvent from "./events";
+import {
+  validateChannelAdBreakBeginEvent,
+  validateChannelAdBreakEndEvent,
+  validateChannelAdBreakUpcomingEvent,
+  validateChannelAnnouncementEvent,
+  validateChannelBitsBadgeTierEvent,
+  validateChannelCharityDonationEvent,
+  validateChannelCheerEvent,
+  validateChannelFollowEvent,
+  validateChannelGiftPaidUpgradeEvent,
+  validateChannelHypeTrainEvent,
+  validateChannelPayItForwardEvent,
+  validateChannelPointsRedeemEvent,
+  validateChannelPrimePaidUpgradeEvent,
+  validateChannelRaidEvent,
+  validateChannelResubEvent,
+  validateChannelSharedAnnouncementEvent,
+  validateChannelSharedGiftPaidUpgradeEvent,
+  validateChannelSharedPayItForwardEvent,
+  validateChannelSharedPrimePaidUpgradeEvent,
+  validateChannelSharedRaidEvent,
+  validateChannelSharedResubEvent,
+  validateChannelSharedSubscribeEvent,
+  validateChannelSharedSubscriptionGiftEvent,
+  validateChannelSubscribeEvent,
+  validateChannelSubscriptionGiftEvent,
+  validateChannelUnraidEvent,
+  validateChannelWatchStreakEvent,
+  validateStreamOfflineEvent,
+  validateStreamOnlineEvent,
+  validateUserMessageEvent,
+} from "./stream.validate.gen";
 
 export * from "./events";
 export * from "./messages";
@@ -40,6 +71,42 @@ export interface TwitchEventPayloads {
   [TwitchEvent.EventType.AdBreakBegin]: TwitchEvent.AdBreakBegin;
   [TwitchEvent.EventType.AdBreakEnd]: TwitchEvent.AdBreakEnd;
 }
+
+type EventValidator = ((value: unknown) => boolean) & { errors?: { instancePath: string; message?: string }[] | null };
+
+/** The generated validator of each event type's whole CloudEvent. A new event type does not compile until it is listed. */
+const VALIDATORS: Record<TwitchEvent.EventType, EventValidator> = {
+  [TwitchEvent.EventType.ChatMessage]: validateUserMessageEvent,
+  [TwitchEvent.EventType.Cheer]: validateChannelCheerEvent,
+  [TwitchEvent.EventType.Follow]: validateChannelFollowEvent,
+  [TwitchEvent.EventType.HypeTrainBegin]: validateChannelHypeTrainEvent,
+  [TwitchEvent.EventType.Raid]: validateChannelRaidEvent,
+  [TwitchEvent.EventType.Redeem]: validateChannelPointsRedeemEvent,
+  [TwitchEvent.EventType.StreamOnline]: validateStreamOnlineEvent,
+  [TwitchEvent.EventType.StreamOffline]: validateStreamOfflineEvent,
+  [TwitchEvent.EventType.Subscribe]: validateChannelSubscribeEvent,
+  [TwitchEvent.EventType.SubscriptionGift]: validateChannelSubscriptionGiftEvent,
+  [TwitchEvent.EventType.Resub]: validateChannelResubEvent,
+  [TwitchEvent.EventType.GiftPaidUpgrade]: validateChannelGiftPaidUpgradeEvent,
+  [TwitchEvent.EventType.PrimePaidUpgrade]: validateChannelPrimePaidUpgradeEvent,
+  [TwitchEvent.EventType.Unraid]: validateChannelUnraidEvent,
+  [TwitchEvent.EventType.PayItForward]: validateChannelPayItForwardEvent,
+  [TwitchEvent.EventType.Announcement]: validateChannelAnnouncementEvent,
+  [TwitchEvent.EventType.CharityDonation]: validateChannelCharityDonationEvent,
+  [TwitchEvent.EventType.BitsBadgeTier]: validateChannelBitsBadgeTierEvent,
+  [TwitchEvent.EventType.WatchStreak]: validateChannelWatchStreakEvent,
+  [TwitchEvent.EventType.SharedSubscribe]: validateChannelSharedSubscribeEvent,
+  [TwitchEvent.EventType.SharedSubscriptionGift]: validateChannelSharedSubscriptionGiftEvent,
+  [TwitchEvent.EventType.SharedRaid]: validateChannelSharedRaidEvent,
+  [TwitchEvent.EventType.SharedResub]: validateChannelSharedResubEvent,
+  [TwitchEvent.EventType.SharedGiftPaidUpgrade]: validateChannelSharedGiftPaidUpgradeEvent,
+  [TwitchEvent.EventType.SharedPrimePaidUpgrade]: validateChannelSharedPrimePaidUpgradeEvent,
+  [TwitchEvent.EventType.SharedPayItForward]: validateChannelSharedPayItForwardEvent,
+  [TwitchEvent.EventType.SharedAnnouncement]: validateChannelSharedAnnouncementEvent,
+  [TwitchEvent.EventType.AdBreakUpcoming]: validateChannelAdBreakUpcomingEvent,
+  [TwitchEvent.EventType.AdBreakBegin]: validateChannelAdBreakBeginEvent,
+  [TwitchEvent.EventType.AdBreakEnd]: validateChannelAdBreakEndEvent,
+};
 
 /**
  * Throws unless `value` is JSON data built from plain objects, arrays and
@@ -223,13 +290,22 @@ export default class TwitchEvents {
   /** The tuple is `[NATS subject, encoded CloudEvent]`; the subject is the
    *  event type. Every event this class builds is stamped with its platform
    *  here rather than at each call site, so a new event cannot be added
-   *  without provenance. */
+   *  without provenance. The encoded event is checked against its contract
+   *  before it is returned, so an event that does not fit is never published. */
   private encodeEvent<T extends TwitchEvent.EventType>(
     type: T,
     event: TwitchEventPayloads[T],
     attributes: TwitchEvent.ChatMessageAttributes = {}
   ): EventTuple {
     assertPlainPayload(event);
-    return [type, encode(Event({ ...attributes, type, source: this.source, platform: PLATFORM }, event))];
+    const wire = JSON.stringify(Event({ ...attributes, type, source: this.source, platform: PLATFORM }, event));
+    const validate = VALIDATORS[type];
+    if (!validate(JSON.parse(wire))) {
+      const problem = validate.errors?.[0];
+      throw new Error(
+        `${type} event does not match its contract: ${problem?.instancePath ?? ""} ${problem?.message ?? ""}`.trim()
+      );
+    }
+    return [type, new TextEncoder().encode(wire)];
   }
 }

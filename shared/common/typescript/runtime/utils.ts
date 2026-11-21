@@ -1,26 +1,16 @@
+import { buildHeartbeat, readHeartbeat } from "./heartbeat";
 import type { Service } from "./service";
 
 function toUint8(obj: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(obj));
 }
 
-function fromUint8(u8: Uint8Array): any {
+function fromUint8(u8: Uint8Array): unknown {
   try {
     return JSON.parse(new TextDecoder().decode(u8));
   } catch {
     return undefined;
   }
-}
-
-type HeartbeatData = { application: string; ready: boolean };
-function parseHeartbeatEvent(payload: any): HeartbeatData | undefined {
-  if (!payload) return undefined;
-  const data = payload.data ?? payload;
-  if (typeof data !== "object" || data == null) return undefined;
-  const app = (data.application ?? data.app ?? data.name) as string | undefined;
-  const ready = Boolean((data.ready as any) ?? false);
-  if (!app) return undefined;
-  return { application: app, ready };
 }
 
 type NATSClient = {
@@ -39,14 +29,7 @@ export function createNATSHeartbeat(
 ): () => Promise<void> {
   return async () => {
     const ready = (await Promise.resolve(heartbeatReady?.())) ?? false;
-    const event = {
-      specversion: "1.0",
-      type: "com.woofx3.heartbeat",
-      source: applicationName,
-      subject: heartbeatSubject,
-      time: new Date().toISOString(),
-      data: { application: applicationName, ready },
-    };
+    const event = buildHeartbeat(applicationName, ready, new Date());
     await Promise.resolve(natsClient.publish(heartbeatSubject, toUint8(event)));
   };
 }
@@ -62,8 +45,7 @@ export function createNATSHealthCheck(
     if (!isSubscribed) {
       try {
         await natsClient.subscribe(heartbeatSubject, (msg) => {
-          const payload = msg.json?.() ?? fromUint8(msg.data);
-          const parsed = parseHeartbeatEvent(payload);
+          const parsed = readHeartbeat(fromUint8(msg.data));
           if (parsed) {
             readyByApp[parsed.application] = parsed.ready;
           }

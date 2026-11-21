@@ -198,8 +198,20 @@ describe("parseDatabaseRecordChanged", () => {
     publicValues: { game: "Celeste" },
   };
 
+  const envelope = (rowData: unknown) => ({
+    specversion: "1.0",
+    id: "evt-1",
+    type: "database.record.changed",
+    source: "db-proxy",
+    time: "2026-11-04T12:00:00Z",
+    datacontenttype: "application/json",
+    entityid: "row-1",
+    operation: "changed",
+    data: rowData,
+  });
+
   test("projects the outbox row onto the webhook", () => {
-    expect(parseDatabaseRecordChanged({ type: "database.record.changed", data })).toEqual({
+    expect(parseDatabaseRecordChanged(envelope(data))).toEqual({
       type: EngineEventType.DATABASE_RECORD_CHANGED,
       ...data,
       op: "created",
@@ -208,7 +220,7 @@ describe("parseDatabaseRecordChanged", () => {
 
   test("keeps a delete's null values", () => {
     expect(
-      parseDatabaseRecordChanged({ data: { ...data, op: "deleted", publicValues: null } })?.publicValues
+      parseDatabaseRecordChanged(envelope({ ...data, op: "deleted", publicValues: null }))?.publicValues
     ).toBeNull();
   });
 
@@ -219,7 +231,7 @@ describe("parseDatabaseRecordChanged", () => {
       { ...data, revision: 0 },
       { ...data, publicValues: { game: ["x"] } },
     ]) {
-      expect(parseDatabaseRecordChanged({ data: broken })).toBeNull();
+      expect(parseDatabaseRecordChanged(envelope(broken))).toBeNull();
     }
   });
 });

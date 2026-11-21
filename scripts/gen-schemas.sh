@@ -36,6 +36,12 @@ esac
 readonly DOMAINS=(
   "scene shared/common/golang/messages/scene shared/common/typescript/cloudevents/Scene shared/common/rust/cloudevents/src/scene_gen.rs"
   "barkloader shared/common/golang/messages/barkloader shared/common/typescript/cloudevents/Barkloader shared/common/rust/cloudevents/src/barkloader_gen.rs"
+  "heartbeat shared/common/golang/messages/heartbeat shared/common/typescript/cloudevents/Heartbeat shared/common/rust/cloudevents/src/heartbeat_gen.rs"
+  "session shared/common/golang/messages/session shared/common/typescript/cloudevents/Session shared/common/rust/cloudevents/src/session_gen.rs"
+  "streamstatus shared/common/golang/messages/streamstatus shared/common/typescript/cloudevents/StreamStatus shared/common/rust/cloudevents/src/streamstatus_gen.rs"
+  "stream shared/common/golang/messages/stream shared/common/typescript/cloudevents/Twitch shared/common/rust/cloudevents/src/stream_gen.rs"
+  "module shared/common/golang/messages/module shared/common/typescript/cloudevents/Module shared/common/rust/cloudevents/src/module_gen.rs"
+  "outbox shared/common/golang/messages/outbox shared/common/typescript/cloudevents/Outbox shared/common/rust/cloudevents/src/outbox_gen.rs"
   "workflow shared/common/golang/messages/workflow shared/common/typescript/cloudevents/Workflow shared/common/rust/cloudevents/src/workflow_gen.rs"
 )
 

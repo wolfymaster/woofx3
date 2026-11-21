@@ -197,28 +197,20 @@ const (
 	// A viewer's facts crossed a segment's condition, published by the db
 	// proxy inside the transaction that changed those facts. The NATS subject
 	// equals the CloudEvent type because workflow triggers match on type.
-	// Data: { segmentId, platform, viewerId, viewerName, sessionId,
-	//         facts: { <owner>: { <slug>: { before, after } } }, cause: { source, eventId } }
-	// where a fact `{owner}:fact:{slug}` sits at facts.<owner>.<slug>, the path
-	// ${viewer.*} gives it, as an expression cannot name a key containing `:`.
+	// The data is ViewerSegmentEdge in shared/contracts/outbox/openapi.yaml.
 	SubjectViewerSegmentEntered Subject = "viewer.segment.entered"
 	SubjectViewerSegmentLeft    Subject = "viewer.segment.left"
 
 	// A viewer sent a form on the streamer's public user page, published by the
 	// db proxy inside the transaction that recorded the submission. As with the
 	// segment events, the NATS subject equals the CloudEvent type.
-	// Data: { submissionId, pageId, formId, formTitle, submittedAt, viewer,
-	//         fields: [{ id, label, type, value }], answers: { <fieldId>: value } }
-	// where an anonymous viewer is { platform: null, platformUserId: null,
-	// displayName: "anonymous", roles: [] }.
+	// The data is UserPageFormSubmission in shared/contracts/outbox/openapi.yaml.
 	SubjectUserPageFormSubmitted Subject = "userpage.form.submitted"
 
 	// A row of a database resource instance was created, updated or deleted,
 	// published by the db proxy inside the transaction that changed it. Only
 	// public columns are carried, since the event feeds the public user page.
-	// Data: { databaseId, recordId, op: "created" | "updated" | "deleted",
-	//         revision, createdAt, publicValues: { <columnId>: value } | null }
-	// where publicValues is null on delete and revision orders a row's events.
+	// The data is DatabaseRecordChange in shared/contracts/outbox/openapi.yaml.
 	SubjectDatabaseRecordChanged Subject = "database.record.changed"
 
 	// System events

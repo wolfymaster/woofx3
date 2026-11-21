@@ -1,0 +1,102 @@
+openapi: 3.1.0
+info:
+  title: Stream session bus messages
+  version: 1.0.0
+  description: >
+    Lifecycle announcements of the stream session, published by the api's
+    resolver. Each operation path is the message's `type`, which is also the NATS
+    subject. See docs/services/stream-sessions.md.
+paths:
+  /session.started:
+    post:
+      operationId: sessionStarted
+      summary: Name the session events are stamped with. Published by the api on a new session and when it starts; read by every publishing process.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionStartedEvent"
+      responses:
+        "202":
+          description: Published to the bus; nothing replies.
+  /session.ended:
+    post:
+      operationId: sessionEnded
+      summary: Say a broadcast's session is over. Published by the api; read by the session summary emitter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionEndedEvent"
+      responses:
+        "202":
+          description: Published to the bus; nothing replies.
+components:
+  schemas:
+    SessionStartedEvent:
+      description: CloudEvent stating the current session. It carries no `sessionId` attribute, since it is what establishes one.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/SessionSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [session.started]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        data:
+          $ref: "#/components/schemas/SessionStarted"
+    SessionEndedEvent:
+      description: CloudEvent announcing that a session is over. It carries no `sessionId` attribute.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/SessionSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [session.ended]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        data:
+          $ref: "#/components/schemas/SessionEnded"
+    SessionSpecVersion:
+      description: >
+        The `specversion` the TypeScript and Rust event factories write. It is
+        not the CloudEvents value `1.0`; the factories are shared by every event
+        family and are not changed per message.
+      type: string
+      enum: ["1.0.0"]
+    SessionStarted:
+      type: object
+      additionalProperties: false
+      required: [sessionId, startedAt]
+      properties:
+        sessionId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        startedAt:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+    SessionEnded:
+      type: object
+      additionalProperties: false
+      required: [sessionId, endedAt, replacedBySessionId]
+      properties:
+        sessionId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        endedAt:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        replacedBySessionId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"

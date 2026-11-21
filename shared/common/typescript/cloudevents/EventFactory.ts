@@ -5,7 +5,6 @@ import CommandEvents from "./Command";
 import ActionEvents from "./Action";
 import AlertEvents from "./Alert";
 import ObsEvents from "./Obs";
-import ModuleEvents from "./Module";
 
 export interface EventFactoryOpts {
   source: string;
@@ -44,9 +43,5 @@ export default class EventFactory {
 
   Obs() {
     return new ObsEvents(this.source);
-  }
-
-  Module() {
-    return new ModuleEvents(this.source);
   }
 }

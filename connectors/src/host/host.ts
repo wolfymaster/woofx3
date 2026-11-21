@@ -1,6 +1,9 @@
 import { PLATFORM_IDS } from "@woofx3/api/platform-gateway";
-import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
-import { EventType as StreamStatusEventType } from "@woofx3/common/cloudevents/StreamStatus/events";
+import { SessionStartedEventType } from "@woofx3/common/cloudevents/Session/session.gen";
+import {
+  StreamStatusObservedEventType,
+  StreamStatusRequestedEventType,
+} from "@woofx3/common/cloudevents/StreamStatus/streamstatus.gen";
 import { type SessionBus, subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
 import type { DispatcherDb } from "../chat/db-client";
 import { ClaimRegistry } from "../companion/claims";
@@ -180,11 +183,11 @@ export class Host {
       scope: HOST_SCOPE,
       client: deps.bus,
       grants: {
-        publishes: [StreamStatusEventType.StreamStatusObserved],
+        publishes: [StreamStatusObservedEventType.stream_status_observed],
         subscribes: [
           ...watchedSubjects(deps.readers),
-          SessionEventType.SessionStarted,
-          StreamStatusEventType.StreamStatusRequested,
+          SessionStartedEventType.session_started,
+          StreamStatusRequestedEventType.stream_status_requested,
           ...COMPANION_GATEWAY_GRANTS.subscribes,
           ...this.servedSubjects(),
         ],
@@ -265,7 +268,9 @@ export class Host {
     this.assertStillStarting();
     // Before the watcher starts any adapter, so a request is never missed
     // between an adapter's read and this subscription.
-    await this.scope.subscribe(StreamStatusEventType.StreamStatusRequested, () => this.liveStatus.publishKnown());
+    await this.scope.subscribe(StreamStatusRequestedEventType.stream_status_requested, () =>
+      this.liveStatus.publishKnown()
+    );
     this.assertStillStarting();
     await this.watcher.start();
     this.assertStillStarting();

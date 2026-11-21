@@ -1,0 +1,363 @@
+openapi: 3.1.0
+info:
+  title: Database outbox bus messages
+  version: 1.0.0
+  description: >
+    Engine events the db service writes to its outbox in the transaction that changed
+    the data, and publishes on the subject equal to their `type`. Each operation path
+    is that type. The data is validated where the outbox row is written; the envelope
+    is the one the outbox worker builds from the row.
+paths:
+  /database.record.changed:
+    post:
+      operationId: databaseRecordChanged
+      summary: A row of a database resource instance was created, updated or deleted. Read by the api, which forwards it as a webhook.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DatabaseRecordChangedEvent"
+      responses:
+        "202":
+          description: Published; nothing answers an event.
+  /userpage.form.submitted:
+    post:
+      operationId: userPageFormSubmitted
+      summary: A viewer sent a form on the streamer's public user page. Workflows trigger on it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserPageFormSubmittedEvent"
+      responses:
+        "202":
+          description: Published; nothing answers an event.
+  /viewer.segment.entered:
+    post:
+      operationId: viewerSegmentEntered
+      summary: A viewer's facts crossed into a segment's condition. Workflows trigger on it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ViewerSegmentEnteredEvent"
+      responses:
+        "202":
+          description: Published; nothing answers an event.
+  /viewer.segment.left:
+    post:
+      operationId: viewerSegmentLeft
+      summary: A viewer's facts crossed out of a segment's condition. Workflows trigger on it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ViewerSegmentLeftEvent"
+      responses:
+        "202":
+          description: Published; nothing answers an event.
+components:
+  schemas:
+    OutboxSource:
+      description: The outbox worker names itself as the source of every event.
+      type: string
+      enum: [db-proxy]
+    OutboxDataContentType:
+      description: Media type of `data`, set by the CloudEvents library.
+      type: string
+      enum: [application/json]
+    Platform:
+      description: The platform the event came from, read from the envelope rather than the data.
+      type: string
+      minLength: 1
+      maxLength: 200
+    SessionId:
+      description: The stream session the event happened during.
+      type: string
+      minLength: 1
+      maxLength: 200
+    DatabaseRecordChangedEvent:
+      description: CloudEvent announcing one change to a database row.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, datacontenttype, entityid, operation, data]
+      properties:
+        specversion:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [database.record.changed]
+        source:
+          $ref: "#/components/schemas/OutboxSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        datacontenttype:
+          $ref: "#/components/schemas/OutboxDataContentType"
+        entityid:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        operation:
+          type: string
+          enum: [changed]
+        platform:
+          $ref: "#/components/schemas/Platform"
+        sessionid:
+          $ref: "#/components/schemas/SessionId"
+        data:
+          $ref: "#/components/schemas/DatabaseRecordChange"
+    UserPageFormSubmittedEvent:
+      description: CloudEvent announcing one form submission. Carries `platform` when the viewer is known.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, datacontenttype, entityid, operation, data]
+      properties:
+        specversion:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [userpage.form.submitted]
+        source:
+          $ref: "#/components/schemas/OutboxSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        datacontenttype:
+          $ref: "#/components/schemas/OutboxDataContentType"
+        entityid:
+          $ref: "#/components/schemas/SubmissionKey"
+        operation:
+          type: string
+          enum: [submitted]
+        platform:
+          $ref: "#/components/schemas/Platform"
+        sessionid:
+          $ref: "#/components/schemas/SessionId"
+        data:
+          $ref: "#/components/schemas/UserPageFormSubmission"
+    ViewerSegmentEnteredEvent:
+      description: CloudEvent announcing that a viewer entered a segment.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, datacontenttype, entityid, operation, data]
+      properties:
+        specversion:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [viewer.segment.entered]
+        source:
+          $ref: "#/components/schemas/OutboxSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        datacontenttype:
+          $ref: "#/components/schemas/OutboxDataContentType"
+        entityid:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        operation:
+          type: string
+          enum: [entered]
+        platform:
+          $ref: "#/components/schemas/Platform"
+        sessionid:
+          $ref: "#/components/schemas/SessionId"
+        data:
+          $ref: "#/components/schemas/ViewerSegmentEdge"
+    ViewerSegmentLeftEvent:
+      description: CloudEvent announcing that a viewer left a segment.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, datacontenttype, entityid, operation, data]
+      properties:
+        specversion:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [viewer.segment.left]
+        source:
+          $ref: "#/components/schemas/OutboxSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        datacontenttype:
+          $ref: "#/components/schemas/OutboxDataContentType"
+        entityid:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        operation:
+          type: string
+          enum: [left]
+        platform:
+          $ref: "#/components/schemas/Platform"
+        sessionid:
+          $ref: "#/components/schemas/SessionId"
+        data:
+          $ref: "#/components/schemas/ViewerSegmentEdge"
+    DatabaseRecordChange:
+      description: >
+        Only the columns public at the time are carried, since the event feeds the
+        public user page. `revision` orders one row's events. `publicValues` is null for
+        a deleted row.
+      type: object
+      additionalProperties: false
+      required: [databaseId, recordId, op, revision, createdAt, publicValues]
+      properties:
+        databaseId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        recordId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        op:
+          type: string
+          enum: [created, updated, deleted]
+        revision:
+          type: integer
+          minimum: 1
+        createdAt:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        publicValues:
+          oneOf:
+            - $ref: "#/components/schemas/PublicValues"
+            - type: "null"
+    PublicValues:
+      description: Public cells by column id.
+      type: object
+      additionalProperties:
+        $ref: "#/components/schemas/Cell"
+    Cell:
+      oneOf:
+        - type: string
+        - type: number
+        - type: boolean
+    UserPageFormSubmission:
+      description: >
+        `fields` keeps the form's order; `answers` repeats each field's value under its
+        id, since a workflow path can index `fields` by position but cannot find an entry
+        by id.
+      type: object
+      additionalProperties: false
+      required: [submissionId, pageId, formId, formTitle, submittedAt, viewer, fields, answers]
+      properties:
+        submissionId:
+          $ref: "#/components/schemas/SubmissionKey"
+        pageId:
+          $ref: "#/components/schemas/SubmissionKey"
+        formId:
+          $ref: "#/components/schemas/SubmissionKey"
+        formTitle:
+          type: string
+        submittedAt:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        viewer:
+          $ref: "#/components/schemas/SubmissionViewer"
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubmissionField"
+        answers:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/AnswerValue"
+    SubmissionKey:
+      description: An id the user page's form editor chose, up to the db service's limit for one.
+      type: string
+      minLength: 1
+      maxLength: 255
+    SubmissionViewer:
+      description: >
+        An anonymous viewer has a null platform and platform user id, the display name
+        `anonymous` and no roles, which keeps the event from naming a viewer to
+        `${viewer.*}` and viewer facts.
+      type: object
+      additionalProperties: false
+      required: [platform, platformUserId, displayName, roles]
+      properties:
+        platform:
+          type: [string, "null"]
+          minLength: 1
+        platformUserId:
+          type: [string, "null"]
+          minLength: 1
+        displayName:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+    SubmissionField:
+      type: object
+      additionalProperties: false
+      required: [id, label, type, value]
+      properties:
+        id:
+          $ref: "#/components/schemas/SubmissionKey"
+        label:
+          type: string
+        type:
+          type: string
+        value:
+          $ref: "#/components/schemas/AnswerValue"
+    AnswerValue:
+      description: A checkbox field answers with a boolean, every other field with text.
+      oneOf:
+        - type: string
+        - type: boolean
+    ViewerSegmentEdge:
+      description: >
+        `facts` holds each fact the segment reads under its owner, then its slug:
+        `{owner}:fact:{slug}` is at `facts[owner][slug]`, the path `${viewer.*}` gives it,
+        since an expression cannot name a key containing a colon.
+      type: object
+      additionalProperties: false
+      required: [segmentId, platform, viewerId, viewerName, sessionId, facts, cause]
+      properties:
+        segmentId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        platform:
+          $ref: "#/components/schemas/Platform"
+        viewerId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        viewerName:
+          type: string
+        sessionId:
+          description: The session the edge happened in; empty when the engine knew none.
+          type: string
+        facts:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties:
+              $ref: "#/components/schemas/FactChange"
+        cause:
+          $ref: "#/components/schemas/EdgeCause"
+    FactChange:
+      description: A fact's reading before and after the event that caused the edge.
+      type: object
+      additionalProperties: false
+      required: [before, after]
+      properties:
+        before:
+          $ref: "#/components/schemas/FactReading"
+        after:
+          $ref: "#/components/schemas/FactReading"
+    FactReading:
+      description: A number (timestamps in epoch milliseconds), a string, or null for a value the viewer does not have.
+      oneOf:
+        - type: number
+        - type: string
+        - type: "null"
+    EdgeCause:
+      type: object
+      additionalProperties: false
+      required: [source, eventId]
+      properties:
+        source:
+          type: string
+        eventId:
+          type: string

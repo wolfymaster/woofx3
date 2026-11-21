@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.75.0](https://github.com/wolfymaster/woofx3/compare/v0.74.0...v0.75.0) (2026-11-21)
+
+### Features
+
+* **contracts:** heartbeat, session and stream status documents ([ac72462](https://github.com/wolfymaster/woofx3/commit/ac72462c0f73699fbda82ae3a8559467bce843a6))
+* **engine:** carry heartbeat and session messages through their contracts ([26a386e](https://github.com/wolfymaster/woofx3/commit/26a386ee8e69cd2f8ca1146c2bb76ecc17811d60))
+
+## [0.74.0](https://github.com/wolfymaster/woofx3/compare/v0.73.0...v0.74.0) (2026-11-20)
+
+### Features
+
+* **cloudevents:** check Twitch events against their contract at publish ([92a8f69](https://github.com/wolfymaster/woofx3/commit/92a8f698571cfec1c284883e1f7640d09619e472))
+* **contracts:** the streaming platform event documents and fixtures ([4e896e0](https://github.com/wolfymaster/woofx3/commit/4e896e02b6b986b1437dfe56c00238ef9e05eba8))
+
 ## [0.73.0](https://github.com/wolfymaster/woofx3/compare/v0.72.0...v0.73.0) (2026-11-20)
 
 ### Features
