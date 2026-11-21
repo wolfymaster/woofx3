@@ -12,6 +12,44 @@ type EventId string
 
 type EventSource string
 
+// The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that
+// is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and
+// consumer agrees on it.
+// Ref: #/components/schemas/EventSpecVersion
+type EventSpecVersion string
+
+const (
+	EventSpecVersion100 EventSpecVersion = "1.0.0"
+)
+
+// AllValues returns all EventSpecVersion values.
+func (EventSpecVersion) AllValues() []EventSpecVersion {
+	return []EventSpecVersion{
+		EventSpecVersion100,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s EventSpecVersion) MarshalText() ([]byte, error) {
+	switch s {
+	case EventSpecVersion100:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *EventSpecVersion) UnmarshalText(data []byte) error {
+	switch EventSpecVersion(data) {
+	case EventSpecVersion100:
+		*s = EventSpecVersion100
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 type EventTime string
 
 // NewOptEntityId returns new OptEntityId with value set to v.
@@ -141,7 +179,7 @@ type StreamStatusObservedAccepted struct{}
 // the publisher knows one, the session it stamps with.
 // Ref: #/components/schemas/StreamStatusObservedEvent
 type StreamStatusObservedEvent struct {
-	Specversion StreamStatusSpecVersion       `json:"specversion"`
+	Specversion EventSpecVersion              `json:"specversion"`
 	ID          EventId                       `json:"id"`
 	Type        StreamStatusObservedEventType `json:"type"`
 	Source      EventSource                   `json:"source"`
@@ -152,7 +190,7 @@ type StreamStatusObservedEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *StreamStatusObservedEvent) GetSpecversion() StreamStatusSpecVersion {
+func (s *StreamStatusObservedEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -192,7 +230,7 @@ func (s *StreamStatusObservedEvent) GetData() StreamStatusObserved {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *StreamStatusObservedEvent) SetSpecversion(val StreamStatusSpecVersion) {
+func (s *StreamStatusObservedEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -271,7 +309,7 @@ type StreamStatusRequestedAccepted struct{}
 // CloudEvent asking for every platform's state. It has no data and carries no `sessionId` attribute.
 // Ref: #/components/schemas/StreamStatusRequestedEvent
 type StreamStatusRequestedEvent struct {
-	Specversion StreamStatusSpecVersion        `json:"specversion"`
+	Specversion EventSpecVersion               `json:"specversion"`
 	ID          EventId                        `json:"id"`
 	Type        StreamStatusRequestedEventType `json:"type"`
 	Source      EventSource                    `json:"source"`
@@ -279,7 +317,7 @@ type StreamStatusRequestedEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *StreamStatusRequestedEvent) GetSpecversion() StreamStatusSpecVersion {
+func (s *StreamStatusRequestedEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -304,7 +342,7 @@ func (s *StreamStatusRequestedEvent) GetTime() EventTime {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *StreamStatusRequestedEvent) SetSpecversion(val StreamStatusSpecVersion) {
+func (s *StreamStatusRequestedEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -356,43 +394,6 @@ func (s *StreamStatusRequestedEventType) UnmarshalText(data []byte) error {
 	switch StreamStatusRequestedEventType(data) {
 	case StreamStatusRequestedEventTypeStreamStatusRequested:
 		*s = StreamStatusRequestedEventTypeStreamStatusRequested
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// The `specversion` the TypeScript and Rust event factories write. It is not the CloudEvents value
-// `1.0`; the factories are shared by every event family and are not changed per message.
-// Ref: #/components/schemas/StreamStatusSpecVersion
-type StreamStatusSpecVersion string
-
-const (
-	StreamStatusSpecVersion100 StreamStatusSpecVersion = "1.0.0"
-)
-
-// AllValues returns all StreamStatusSpecVersion values.
-func (StreamStatusSpecVersion) AllValues() []StreamStatusSpecVersion {
-	return []StreamStatusSpecVersion{
-		StreamStatusSpecVersion100,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s StreamStatusSpecVersion) MarshalText() ([]byte, error) {
-	switch s {
-	case StreamStatusSpecVersion100:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *StreamStatusSpecVersion) UnmarshalText(data []byte) error {
-	switch StreamStatusSpecVersion(data) {
-	case StreamStatusSpecVersion100:
-		*s = StreamStatusSpecVersion100
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

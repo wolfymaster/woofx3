@@ -13,6 +13,44 @@ type EventId string
 
 type EventSource string
 
+// The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that
+// is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and
+// consumer agrees on it.
+// Ref: #/components/schemas/EventSpecVersion
+type EventSpecVersion string
+
+const (
+	EventSpecVersion100 EventSpecVersion = "1.0.0"
+)
+
+// AllValues returns all EventSpecVersion values.
+func (EventSpecVersion) AllValues() []EventSpecVersion {
+	return []EventSpecVersion{
+		EventSpecVersion100,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s EventSpecVersion) MarshalText() ([]byte, error) {
+	switch s {
+	case EventSpecVersion100:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *EventSpecVersion) UnmarshalText(data []byte) error {
+	switch EventSpecVersion(data) {
+	case EventSpecVersion100:
+		*s = EventSpecVersion100
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 type EventTime string
 
 // A JSON object whose members belong to a workflow, a module or a trigger, not to this contract.
@@ -494,42 +532,6 @@ func (s *ReplayStep) SetOutputs(val OptString) {
 
 type SessionId string
 
-// CloudEvents specification version as the TypeScript event factory writes it.
-// Ref: #/components/schemas/SpecVersion
-type SpecVersion string
-
-const (
-	SpecVersion100 SpecVersion = "1.0.0"
-)
-
-// AllValues returns all SpecVersion values.
-func (SpecVersion) AllValues() []SpecVersion {
-	return []SpecVersion{
-		SpecVersion100,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SpecVersion) MarshalText() ([]byte, error) {
-	switch s {
-	case SpecVersion100:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SpecVersion) UnmarshalText(data []byte) error {
-	switch SpecVersion(data) {
-	case SpecVersion100:
-		*s = SpecVersion100
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
 type TriggerId string
 
 type TriggeredBy string
@@ -739,7 +741,7 @@ type WorkflowCommandExecuteAccepted struct{}
 // CloudEvent asking the engine to run a chat command's workflow for one invocation.
 // Ref: #/components/schemas/WorkflowCommandExecuteRequest
 type WorkflowCommandExecuteRequest struct {
-	Specversion   SpecVersion                       `json:"specversion"`
+	Specversion   EventSpecVersion                  `json:"specversion"`
 	ID            EventId                           `json:"id"`
 	Type          WorkflowCommandExecuteRequestType `json:"type"`
 	Source        EventSource                       `json:"source"`
@@ -753,7 +755,7 @@ type WorkflowCommandExecuteRequest struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *WorkflowCommandExecuteRequest) GetSpecversion() SpecVersion {
+func (s *WorkflowCommandExecuteRequest) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -808,7 +810,7 @@ func (s *WorkflowCommandExecuteRequest) GetData() WorkflowCommandExecute {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *WorkflowCommandExecuteRequest) SetSpecversion(val SpecVersion) {
+func (s *WorkflowCommandExecuteRequest) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -1091,7 +1093,7 @@ func (s *WorkflowExecuteReplyOutcome) UnmarshalText(data []byte) error {
 // CloudEvent asking the engine to run one workflow.
 // Ref: #/components/schemas/WorkflowExecuteRequest
 type WorkflowExecuteRequest struct {
-	Specversion   SpecVersion                `json:"specversion"`
+	Specversion   EventSpecVersion           `json:"specversion"`
 	ID            EventId                    `json:"id"`
 	Type          WorkflowExecuteRequestType `json:"type"`
 	Source        EventSource                `json:"source"`
@@ -1105,7 +1107,7 @@ type WorkflowExecuteRequest struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *WorkflowExecuteRequest) GetSpecversion() SpecVersion {
+func (s *WorkflowExecuteRequest) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -1160,7 +1162,7 @@ func (s *WorkflowExecuteRequest) GetData() WorkflowExecute {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *WorkflowExecuteRequest) SetSpecversion(val SpecVersion) {
+func (s *WorkflowExecuteRequest) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -1732,7 +1734,7 @@ type WorkflowReplayAccepted struct{}
 // CloudEvent asking the engine to run a recorded run again.
 // Ref: #/components/schemas/WorkflowReplayRequest
 type WorkflowReplayRequest struct {
-	Specversion   SpecVersion               `json:"specversion"`
+	Specversion   EventSpecVersion          `json:"specversion"`
 	ID            EventId                   `json:"id"`
 	Type          WorkflowReplayRequestType `json:"type"`
 	Source        EventSource               `json:"source"`
@@ -1746,7 +1748,7 @@ type WorkflowReplayRequest struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *WorkflowReplayRequest) GetSpecversion() SpecVersion {
+func (s *WorkflowReplayRequest) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -1801,7 +1803,7 @@ func (s *WorkflowReplayRequest) GetData() WorkflowReplay {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *WorkflowReplayRequest) SetSpecversion(val SpecVersion) {
+func (s *WorkflowReplayRequest) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 

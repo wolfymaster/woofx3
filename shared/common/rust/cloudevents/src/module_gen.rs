@@ -108,6 +108,53 @@ impl<'de> ::serde::Deserialize<'de> for EventId {
             })
     }
 }
+#[doc = "The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.\n"]
+#[derive(
+    :: serde :: Deserialize,
+    :: serde :: Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum EventSpecVersion {
+    #[serde(rename = "1.0.0")]
+    X100,
+}
+impl ::std::fmt::Display for EventSpecVersion {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::X100 => f.write_str("1.0.0"),
+        }
+    }
+}
+impl ::std::str::FromStr for EventSpecVersion {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "1.0.0" => Ok(Self::X100),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for EventSpecVersion {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for EventSpecVersion {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
 #[doc = "RFC 3339 timestamp of when the event was produced."]
 #[derive(:: serde :: Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
@@ -241,7 +288,7 @@ pub struct ModuleStorageChangedEvent {
     )]
     pub session_id: ::std::option::Option<ModuleStorageChangedEventSessionId>,
     pub source: ModuleStorageChangedEventSource,
-    pub specversion: ModuleStorageChangedEventSpecversion,
+    pub specversion: EventSpecVersion,
     pub time: EventTime,
     #[serde(rename = "type")]
     pub type_: ModuleStorageChangedEventType,
@@ -349,53 +396,6 @@ impl ::std::convert::TryFrom<::std::string::String> for ModuleStorageChangedEven
         value.parse()
     }
 }
-#[doc = "`ModuleStorageChangedEventSpecversion`"]
-#[derive(
-    :: serde :: Deserialize,
-    :: serde :: Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum ModuleStorageChangedEventSpecversion {
-    #[serde(rename = "1.0.0")]
-    X100,
-}
-impl ::std::fmt::Display for ModuleStorageChangedEventSpecversion {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::X100 => f.write_str("1.0.0"),
-        }
-    }
-}
-impl ::std::str::FromStr for ModuleStorageChangedEventSpecversion {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "1.0.0" => Ok(Self::X100),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for ModuleStorageChangedEventSpecversion {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for ModuleStorageChangedEventSpecversion {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 #[doc = "`ModuleStorageChangedEventType`"]
 #[derive(
     :: serde :: Deserialize,
@@ -471,4 +471,4 @@ pub mod error {
 }
 
 /// The contract document the run-time validator reads.
-pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"Module bus messages","version":"1.0.0","description":"Events about modules that cross a service or a language boundary. Each operation path is the event's `type`; the NATS subject is that type, except where the operation says otherwise.\n"},"paths":{"/module.storage.changed":{"post":{"operationId":"moduleStorageChanged","summary":"A key of a module's persistent storage was written or cleared. Published on `module.storage.<moduleId>.changed` by barkloader after a module function's write and by the api for each session-scoped key a session end cleared; read by the api, which forwards it as a webhook, and by the scene manager.\n","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ModuleStorageChangedEvent"}}}},"responses":{"202":{"description":"Published; nothing answers an event."}}}}},"components":{"schemas":{"ModuleStorageChangedEvent":{"description":"CloudEvent announcing one storage key's new value.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","data"],"properties":{"specversion":{"type":"string","enum":["1.0.0"]},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["module.storage.changed"]},"source":{"type":"string","enum":["barkloader","api"]},"time":{"$ref":"#/components/schemas/EventTime"},"sessionId":{"description":"The stream session the publisher knew when it published; absent when it knew none.","type":"string","minLength":1,"maxLength":200},"data":{"$ref":"#/components/schemas/ModuleStorageChange"}}},"ModuleStorageChange":{"description":"`value` is the value after the write, already decoded, and null when the key was cleared. It is any JSON value, so the key must be present and its content belongs to the module.\n","type":"object","additionalProperties":false,"required":["moduleId","key","value","occurredAt"],"properties":{"moduleId":{"$ref":"#/components/schemas/EntityId"},"key":{"type":"string","minLength":1},"value":{},"occurredAt":{"$ref":"#/components/schemas/EventTime"}}},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200}}}}"####;
+pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"Module bus messages","version":"1.0.0","description":"Events about modules that cross a service or a language boundary. Each operation path is the event's `type`; the NATS subject is that type, except where the operation says otherwise.\n"},"paths":{"/module.storage.changed":{"post":{"operationId":"moduleStorageChanged","summary":"A key of a module's persistent storage was written or cleared. Published on `module.storage.<moduleId>.changed` by barkloader after a module function's write and by the api for each session-scoped key a session end cleared; read by the api, which forwards it as a webhook, and by the scene manager.\n","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ModuleStorageChangedEvent"}}}},"responses":{"202":{"description":"Published; nothing answers an event."}}}}},"components":{"schemas":{"ModuleStorageChangedEvent":{"description":"CloudEvent announcing one storage key's new value.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["module.storage.changed"]},"source":{"type":"string","enum":["barkloader","api"]},"time":{"$ref":"#/components/schemas/EventTime"},"sessionId":{"description":"The stream session the publisher knew when it published; absent when it knew none.","type":"string","minLength":1,"maxLength":200},"data":{"$ref":"#/components/schemas/ModuleStorageChange"}}},"ModuleStorageChange":{"description":"`value` is the value after the write, already decoded, and null when the key was cleared. It is any JSON value, so the key must be present and its content belongs to the module.\n","type":"object","additionalProperties":false,"required":["moduleId","key","value","occurredAt"],"properties":{"moduleId":{"$ref":"#/components/schemas/EntityId"},"key":{"type":"string","minLength":1},"value":{},"occurredAt":{"$ref":"#/components/schemas/EventTime"}}},"EventSpecVersion":{"description":"The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.\n","type":"string","enum":["1.0.0"]},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200}}}}"####;

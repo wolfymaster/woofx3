@@ -47,6 +47,15 @@ func (s EventId) Validate() error {
 	return nil
 }
 
+func (s EventSpecVersion) Validate() error {
+	switch s {
+	case "1.0.0":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s EventTime) Validate() error {
 	alias := (string)(s)
 	if err := (validate.String{
@@ -237,15 +246,6 @@ func (s ModuleStorageChangedEventSource) Validate() error {
 	case "barkloader":
 		return nil
 	case "api":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s ModuleStorageChangedEventSpecversion) Validate() error {
-	switch s {
-	case "1.0.0":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

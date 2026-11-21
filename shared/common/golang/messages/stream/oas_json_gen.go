@@ -11715,6 +11715,44 @@ func (s *EventSource) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes EventSpecVersion as json.
+func (s EventSpecVersion) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes EventSpecVersion from json.
+func (s *EventSpecVersion) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EventSpecVersion to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch EventSpecVersion(v) {
+	case EventSpecVersion100:
+		*s = EventSpecVersion100
+	default:
+		*s = EventSpecVersion(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s EventSpecVersion) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EventSpecVersion) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes EventTime as json.
 func (s EventTime) Encode(e *jx.Encoder) {
 	unwrapped := string(s)
@@ -12250,44 +12288,6 @@ func (s PlatformId) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PlatformId) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes StreamEventSpecVersion as json.
-func (s StreamEventSpecVersion) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes StreamEventSpecVersion from json.
-func (s *StreamEventSpecVersion) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode StreamEventSpecVersion to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch StreamEventSpecVersion(v) {
-	case StreamEventSpecVersion100:
-		*s = StreamEventSpecVersion100
-	default:
-		*s = StreamEventSpecVersion(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s StreamEventSpecVersion) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *StreamEventSpecVersion) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

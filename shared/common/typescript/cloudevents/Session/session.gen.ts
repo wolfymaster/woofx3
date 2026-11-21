@@ -45,7 +45,7 @@ export interface components {
     schemas: {
         /** @description CloudEvent stating the current session. It carries no `sessionId` attribute, since it is what establishes one. */
         SessionStartedEvent: {
-            specversion: components["schemas"]["SessionSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: SessionStartedEventType;
@@ -55,7 +55,7 @@ export interface components {
         };
         /** @description CloudEvent announcing that a session is over. It carries no `sessionId` attribute. */
         SessionEndedEvent: {
-            specversion: components["schemas"]["SessionSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: SessionEndedEventType;
@@ -63,11 +63,6 @@ export interface components {
             time: components["schemas"]["EventTime"];
             data: components["schemas"]["SessionEnded"];
         };
-        /**
-         * @description The `specversion` the TypeScript and Rust event factories write. It is not the CloudEvents value `1.0`; the factories are shared by every event family and are not changed per message.
-         * @enum {string}
-         */
-        SessionSpecVersion: SessionSpecVersion;
         SessionStarted: {
             sessionId: components["schemas"]["EntityId"];
             startedAt: components["schemas"]["EventTime"];
@@ -77,6 +72,11 @@ export interface components {
             endedAt: components["schemas"]["EventTime"];
             replacedBySessionId: components["schemas"]["EntityId"];
         };
+        /**
+         * @description The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.
+         * @enum {string}
+         */
+        EventSpecVersion: EventSpecVersion;
         /** @description Unique id of one event; the producer chooses the format. */
         EventId: string;
         /** @description Name of the component that produced the event. */
@@ -153,6 +153,6 @@ export enum SessionStartedEventType {
 export enum SessionEndedEventType {
     session_ended = "session.ended"
 }
-export enum SessionSpecVersion {
+export enum EventSpecVersion {
     Value1_0_0 = "1.0.0"
 }

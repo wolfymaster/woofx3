@@ -227,7 +227,7 @@ export interface components {
             eventId: string;
         };
         /**
-         * @description CloudEvents specification version.
+         * @description The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.
          * @enum {string}
          */
         EventSpecVersion: EventSpecVersion;
@@ -392,5 +392,5 @@ export enum DatabaseRecordChangeOp {
     deleted = "deleted"
 }
 export enum EventSpecVersion {
-    Value1_0 = "1.0"
+    Value1_0_0 = "1.0.0"
 }

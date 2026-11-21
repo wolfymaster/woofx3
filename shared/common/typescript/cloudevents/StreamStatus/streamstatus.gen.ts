@@ -45,7 +45,7 @@ export interface components {
     schemas: {
         /** @description CloudEvent carrying one platform's live state. `platform` names the platform and `sessionId`, when the publisher knows one, the session it stamps with. */
         StreamStatusObservedEvent: {
-            specversion: components["schemas"]["StreamStatusSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: StreamStatusObservedEventType;
@@ -57,23 +57,23 @@ export interface components {
         };
         /** @description CloudEvent asking for every platform's state. It has no data and carries no `sessionId` attribute. */
         StreamStatusRequestedEvent: {
-            specversion: components["schemas"]["StreamStatusSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: StreamStatusRequestedEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
         };
-        /**
-         * @description The `specversion` the TypeScript and Rust event factories write. It is not the CloudEvents value `1.0`; the factories are shared by every event family and are not changed per message.
-         * @enum {string}
-         */
-        StreamStatusSpecVersion: StreamStatusSpecVersion;
         /** @description Whether the stream is live. `startedAt` is present only when live, and only when the platform says when it began. */
         StreamStatusObserved: {
             live: boolean;
             startedAt?: components["schemas"]["EventTime"];
         };
+        /**
+         * @description The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.
+         * @enum {string}
+         */
+        EventSpecVersion: EventSpecVersion;
         /** @description Unique id of one event; the producer chooses the format. */
         EventId: string;
         /** @description Name of the component that produced the event. */
@@ -149,6 +149,6 @@ export enum StreamStatusObservedEventType {
 export enum StreamStatusRequestedEventType {
     stream_status_requested = "stream.status.requested"
 }
-export enum StreamStatusSpecVersion {
+export enum EventSpecVersion {
     Value1_0_0 = "1.0.0"
 }

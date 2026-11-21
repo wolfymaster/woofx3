@@ -160,7 +160,7 @@ impl<'de> ::serde::Deserialize<'de> for EventSource {
             })
     }
 }
-#[doc = "CloudEvents specification version."]
+#[doc = "The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.\n"]
 #[derive(
     :: serde :: Deserialize,
     :: serde :: Serialize,
@@ -174,13 +174,13 @@ impl<'de> ::serde::Deserialize<'de> for EventSource {
     PartialOrd,
 )]
 pub enum EventSpecVersion {
-    #[serde(rename = "1.0")]
-    X10,
+    #[serde(rename = "1.0.0")]
+    X100,
 }
 impl ::std::fmt::Display for EventSpecVersion {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         match *self {
-            Self::X10 => f.write_str("1.0"),
+            Self::X100 => f.write_str("1.0.0"),
         }
     }
 }
@@ -188,7 +188,7 @@ impl ::std::str::FromStr for EventSpecVersion {
     type Err = self::error::ConversionError;
     fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
         match value {
-            "1.0" => Ok(Self::X10),
+            "1.0.0" => Ok(Self::X100),
             _ => Err("invalid value".into()),
         }
     }
@@ -364,4 +364,4 @@ pub mod error {
 }
 
 /// The contract document the run-time validator reads.
-pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"Barkloader bus messages","version":"1.0.0","description":"Request/reply messages answered by barkloader. Each operation path is the NATS subject; the request's `type` is that same subject.\n"},"paths":{"/barkloader.module.field_options":{"post":{"operationId":"moduleFieldOptions","summary":"List the options of a module's select field by running one of its functions. Published by the api, answered by barkloader.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ModuleFieldOptionsRequest"}}}},"responses":{"200":{"description":"The function's own result, a list of options or an object with an error; its shape belongs to the module.","content":{"application/json":{"schema":{}}}}}}}},"components":{"schemas":{"ModuleFieldOptionsRequest":{"description":"CloudEvent naming the module function that lists a field's options.","type":"object","additionalProperties":false,"required":["id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["barkloader.module.field_options"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"data":{"$ref":"#/components/schemas/ModuleFieldOptions"}}},"ModuleFieldOptions":{"description":"The function that runs is `<moduleId>:function:<functionId>`.","type":"object","additionalProperties":false,"required":["moduleId","functionId"],"properties":{"moduleId":{"$ref":"#/components/schemas/EntityId"},"functionId":{"$ref":"#/components/schemas/EntityId"}}},"EventSpecVersion":{"description":"CloudEvents specification version.","type":"string","enum":["1.0"]},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventSource":{"description":"Name of the component that produced the event.","type":"string","minLength":1,"maxLength":200},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200}}}}"####;
+pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"Barkloader bus messages","version":"1.0.0","description":"Request/reply messages answered by barkloader. Each operation path is the NATS subject; the request's `type` is that same subject.\n"},"paths":{"/barkloader.module.field_options":{"post":{"operationId":"moduleFieldOptions","summary":"List the options of a module's select field by running one of its functions. Published by the api, answered by barkloader.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ModuleFieldOptionsRequest"}}}},"responses":{"200":{"description":"The function's own result, a list of options or an object with an error; its shape belongs to the module.","content":{"application/json":{"schema":{}}}}}}}},"components":{"schemas":{"ModuleFieldOptionsRequest":{"description":"CloudEvent naming the module function that lists a field's options.","type":"object","additionalProperties":false,"required":["id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["barkloader.module.field_options"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"data":{"$ref":"#/components/schemas/ModuleFieldOptions"}}},"ModuleFieldOptions":{"description":"The function that runs is `<moduleId>:function:<functionId>`.","type":"object","additionalProperties":false,"required":["moduleId","functionId"],"properties":{"moduleId":{"$ref":"#/components/schemas/EntityId"},"functionId":{"$ref":"#/components/schemas/EntityId"}}},"EventSpecVersion":{"description":"The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.\n","type":"string","enum":["1.0.0"]},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventSource":{"description":"Name of the component that produced the event.","type":"string","minLength":1,"maxLength":200},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200}}}}"####;

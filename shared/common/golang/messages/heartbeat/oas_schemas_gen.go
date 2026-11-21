@@ -12,25 +12,27 @@ type EventId string
 
 type EventSource string
 
-// CloudEvents specification version.
+// The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that
+// is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and
+// consumer agrees on it.
 // Ref: #/components/schemas/EventSpecVersion
 type EventSpecVersion string
 
 const (
-	EventSpecVersion10 EventSpecVersion = "1.0"
+	EventSpecVersion100 EventSpecVersion = "1.0.0"
 )
 
 // AllValues returns all EventSpecVersion values.
 func (EventSpecVersion) AllValues() []EventSpecVersion {
 	return []EventSpecVersion{
-		EventSpecVersion10,
+		EventSpecVersion100,
 	}
 }
 
 // MarshalText implements encoding.TextMarshaler.
 func (s EventSpecVersion) MarshalText() ([]byte, error) {
 	switch s {
-	case EventSpecVersion10:
+	case EventSpecVersion100:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -40,8 +42,8 @@ func (s EventSpecVersion) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *EventSpecVersion) UnmarshalText(data []byte) error {
 	switch EventSpecVersion(data) {
-	case EventSpecVersion10:
-		*s = EventSpecVersion10
+	case EventSpecVersion100:
+		*s = EventSpecVersion100
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

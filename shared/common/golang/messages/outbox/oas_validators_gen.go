@@ -340,7 +340,7 @@ func (s EventId) Validate() error {
 
 func (s EventSpecVersion) Validate() error {
 	switch s {
-	case "1.0":
+	case "1.0.0":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

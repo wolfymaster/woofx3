@@ -69,6 +69,15 @@ func (s EventSource) Validate() error {
 	return nil
 }
 
+func (s EventSpecVersion) Validate() error {
+	switch s {
+	case "1.0.0":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s EventTime) Validate() error {
 	alias := (string)(s)
 	if err := (validate.String{
@@ -224,15 +233,6 @@ func (s SessionId) Validate() error {
 		return errors.Wrap(err, "string")
 	}
 	return nil
-}
-
-func (s SpecVersion) Validate() error {
-	switch s {
-	case "1.0.0":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
 }
 
 func (s TriggerId) Validate() error {

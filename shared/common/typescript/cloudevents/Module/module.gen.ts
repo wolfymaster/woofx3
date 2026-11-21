@@ -28,8 +28,7 @@ export interface components {
     schemas: {
         /** @description CloudEvent announcing one storage key's new value. */
         ModuleStorageChangedEvent: {
-            /** @enum {string} */
-            specversion: ModuleStorageChangedEventSpecversion;
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ModuleStorageChangedEventType;
@@ -47,6 +46,11 @@ export interface components {
             value: unknown;
             occurredAt: components["schemas"]["EventTime"];
         };
+        /**
+         * @description The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.
+         * @enum {string}
+         */
+        EventSpecVersion: EventSpecVersion;
         /** @description Unique id of one event; the producer chooses the format. */
         EventId: string;
         /** @description RFC 3339 timestamp of when the event was produced. */
@@ -90,13 +94,13 @@ export interface operations {
         };
     };
 }
-export enum ModuleStorageChangedEventSpecversion {
-    Value1_0_0 = "1.0.0"
-}
 export enum ModuleStorageChangedEventType {
     module_storage_changed = "module.storage.changed"
 }
 export enum ModuleStorageChangedEventSource {
     barkloader = "barkloader",
     api = "api"
+}
+export enum EventSpecVersion {
+    Value1_0_0 = "1.0.0"
 }

@@ -67,6 +67,15 @@ func (s EventSource) Validate() error {
 	return nil
 }
 
+func (s EventSpecVersion) Validate() error {
+	switch s {
+	case "1.0.0":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s EventTime) Validate() error {
 	alias := (string)(s)
 	if err := (validate.String{
@@ -303,15 +312,6 @@ func (s *StreamStatusRequestedEvent) Validate() error {
 func (s StreamStatusRequestedEventType) Validate() error {
 	switch s {
 	case "stream.status.requested":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s StreamStatusSpecVersion) Validate() error {
-	switch s {
-	case "1.0.0":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
