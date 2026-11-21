@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.75.0](https://github.com/wolfymaster/woofx3/compare/v0.74.0...v0.75.0) (2026-11-21)
+
+### Features
+
+* **contracts:** heartbeat, session and stream status documents ([ac72462](https://github.com/wolfymaster/woofx3/commit/ac72462c0f73699fbda82ae3a8559467bce843a6))
+* **engine:** carry heartbeat and session messages through their contracts ([26a386e](https://github.com/wolfymaster/woofx3/commit/26a386ee8e69cd2f8ca1146c2bb76ecc17811d60))
+
 ## [0.74.0](https://github.com/wolfymaster/woofx3/compare/v0.73.0...v0.74.0) (2026-11-20)
 
 ### Features
