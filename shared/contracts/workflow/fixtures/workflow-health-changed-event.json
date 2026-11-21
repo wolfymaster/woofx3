@@ -1,0 +1,237 @@
+{
+  "schema": "WorkflowHealthChangedEvent",
+  "description": "WorkflowHealthChangedEvent as its producer sends it. A closed message refuses an unknown field, a missing or mistyped one and an empty value; a reply is open.",
+  "cases": [
+    {
+      "name": "the message the producer sends",
+      "valid": true,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.changed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "status": "error",
+          "reason": "unknown action",
+          "since": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "back to ok",
+      "valid": true,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.changed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "status": "ok",
+          "since": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "an unknown field",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.changed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "status": "error",
+          "reason": "unknown action",
+          "since": "2026-11-20T10:15:30.123456Z"
+        },
+        "extra": 1
+      }
+    },
+    {
+      "name": "an unknown field in data",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.changed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "status": "error",
+          "reason": "unknown action",
+          "since": "2026-11-20T10:15:30.123456Z",
+          "extra": 1
+        }
+      }
+    },
+    {
+      "name": "no id",
+      "valid": false,
+      "value": {
+        "type": "workflow.health.changed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "status": "error",
+          "reason": "unknown action",
+          "since": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "no type",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "status": "error",
+          "reason": "unknown action",
+          "since": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "no source",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.changed",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "status": "error",
+          "reason": "unknown action",
+          "since": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "no time",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.changed",
+        "source": "workflow",
+        "data": {
+          "workflowId": "wf-1",
+          "status": "error",
+          "reason": "unknown action",
+          "since": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "no data",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.changed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z"
+      }
+    },
+    {
+      "name": "an empty id",
+      "valid": false,
+      "value": {
+        "id": "",
+        "type": "workflow.health.changed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "status": "error",
+          "reason": "unknown action",
+          "since": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "a null id",
+      "valid": false,
+      "value": {
+        "id": null,
+        "type": "workflow.health.changed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "status": "error",
+          "reason": "unknown action",
+          "since": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "an empty time",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.changed",
+        "source": "workflow",
+        "time": "",
+        "data": {
+          "workflowId": "wf-1",
+          "status": "error",
+          "reason": "unknown action",
+          "since": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "a null time",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.changed",
+        "source": "workflow",
+        "time": null,
+        "data": {
+          "workflowId": "wf-1",
+          "status": "error",
+          "reason": "unknown action",
+          "since": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "a status the engine never sends",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.changed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "status": "degraded",
+          "reason": "unknown action",
+          "since": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    },
+    {
+      "name": "an empty reason",
+      "valid": false,
+      "value": {
+        "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
+        "type": "workflow.health.changed",
+        "source": "workflow",
+        "time": "2026-11-20T10:15:30.123456Z",
+        "data": {
+          "workflowId": "wf-1",
+          "status": "error",
+          "reason": "",
+          "since": "2026-11-20T10:15:30.123456Z"
+        }
+      }
+    }
+  ]
+}

@@ -5,6 +5,18 @@ import {
   type WorkflowRunFailedEvent,
   type WorkflowRunStartedEvent,
 } from "@woofx3/api/webhooks";
+import type {
+  SchemaWorkflowRunCancelledEvent,
+  SchemaWorkflowRunCompletedEvent,
+  SchemaWorkflowRunFailedEvent,
+  SchemaWorkflowRunStartedEvent,
+} from "@woofx3/common/cloudevents/Workflow/workflow.gen";
+import {
+  validateWorkflowRunCancelledEvent,
+  validateWorkflowRunCompletedEvent,
+  validateWorkflowRunFailedEvent,
+  validateWorkflowRunStartedEvent,
+} from "@woofx3/common/cloudevents/Workflow/workflow.validate.gen";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
@@ -25,17 +37,11 @@ export type WorkflowRunEvent =
   | WorkflowRunFailedEvent
   | WorkflowRunCancelledEvent;
 
-interface RunEnvelope {
-  type?: string;
-  time?: string;
-  triggerId?: unknown;
-  triggeredBy?: unknown;
-  data?: {
-    workflowId?: unknown;
-    executionId?: unknown;
-    error?: unknown;
-  };
-}
+type RunEnvelope =
+  | SchemaWorkflowRunStartedEvent
+  | SchemaWorkflowRunCompletedEvent
+  | SchemaWorkflowRunFailedEvent
+  | SchemaWorkflowRunCancelledEvent;
 
 /**
  * Forwards the engine's workflow run lifecycle out to the Convex callback
@@ -70,7 +76,7 @@ export class WorkflowRunEmitter {
   private handle(msg: Msg): void {
     let event: WorkflowRunEvent | null;
     try {
-      event = mapWorkflowRun(msg.json() as RunEnvelope);
+      event = mapWorkflowRun(msg.json());
     } catch (err) {
       this.logger.error("WorkflowRunEmitter: failed to decode CloudEvent", {
         subject: msg.subject,
@@ -105,28 +111,32 @@ export class WorkflowRunEmitter {
 /**
  * Decode a workflow run CloudEvent envelope into its webhook event shape.
  *
- * Returns null for an envelope missing the ids that identify the run, and for
- * a type this does not model -- the engine should never publish either, so a
- * null means a producer bug rather than a legitimate variant.
+ * Returns null for an envelope that breaks the run contract, which the engine
+ * refuses to publish, so a null means a producer bug rather than a legitimate
+ * variant.
  *
  * Exported for direct unit testing.
  */
-export function mapWorkflowRun(ce: RunEnvelope): WorkflowRunEvent | null {
-  const data = ce.data ?? {};
-  const workflowId = typeof data.workflowId === "string" ? data.workflowId : "";
-  const executionId = typeof data.executionId === "string" ? data.executionId : "";
-  if (!workflowId || !executionId) {
+export function mapWorkflowRun(body: unknown): WorkflowRunEvent | null {
+  const ce = body as RunEnvelope;
+  const valid = {
+    [SUBJECT_RUN_STARTED]: validateWorkflowRunStartedEvent,
+    [SUBJECT_RUN_COMPLETED]: validateWorkflowRunCompletedEvent,
+    [SUBJECT_RUN_FAILED]: validateWorkflowRunFailedEvent,
+    [SUBJECT_RUN_CANCELLED]: validateWorkflowRunCancelledEvent,
+  }[ce?.type as string];
+  if (!valid?.(body)) {
     return null;
   }
 
   const common = {
-    workflowId,
-    executionId,
+    workflowId: ce.data.workflowId,
+    executionId: ce.data.executionId,
     // The envelope's own time is the moment the engine decided, which is what
-    // a reader wants; `now` is only a fallback for an envelope without one.
-    occurredAt: typeof ce.time === "string" && ce.time ? ce.time : new Date().toISOString(),
-    ...(typeof ce.triggerId === "string" && ce.triggerId ? { triggerId: ce.triggerId } : {}),
-    ...(typeof ce.triggeredBy === "string" && ce.triggeredBy ? { triggeredBy: ce.triggeredBy } : {}),
+    // a reader wants.
+    occurredAt: ce.time,
+    ...(ce.triggerId ? { triggerId: ce.triggerId } : {}),
+    ...(ce.triggeredBy ? { triggeredBy: ce.triggeredBy } : {}),
   };
 
   switch (ce.type) {
@@ -135,20 +145,12 @@ export function mapWorkflowRun(ce: RunEnvelope): WorkflowRunEvent | null {
     case SUBJECT_RUN_COMPLETED:
       return { type: EngineEventType.WORKFLOW_RUN_COMPLETED, ...common };
     case SUBJECT_RUN_FAILED:
-      // Empty rather than absent: the contract makes `error` required on a
+      // Empty rather than absent: the webhook makes `error` required on a
       // failure, and a failure the engine could not explain is still a failure.
-      return {
-        type: EngineEventType.WORKFLOW_RUN_FAILED,
-        ...common,
-        error: typeof data.error === "string" ? data.error : "",
-      };
+      return { type: EngineEventType.WORKFLOW_RUN_FAILED, ...common, error: ce.data.error ?? "" };
     case SUBJECT_RUN_CANCELLED:
       // The engine carries the reason in `error`, as for a failure.
-      return {
-        type: EngineEventType.WORKFLOW_RUN_CANCELLED,
-        ...common,
-        reason: typeof data.error === "string" ? data.error : "",
-      };
+      return { type: EngineEventType.WORKFLOW_RUN_CANCELLED, ...common, reason: ce.data.error ?? "" };
     default:
       return null;
   }

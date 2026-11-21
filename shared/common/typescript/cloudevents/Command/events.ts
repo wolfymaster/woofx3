@@ -3,7 +3,7 @@
 // Chat/commands.ts, which fires on invocation by a chat user.
 
 import type { CommandSnapshot } from "@woofx3/api/command";
-import type { ChatCommandEvent } from "../Chat/commands";
+import type { SchemaWorkflowCommandExecute } from "../Workflow/workflow.gen";
 
 export type { CommandSnapshot };
 
@@ -18,17 +18,13 @@ export enum EventType {
 }
 
 /**
- * Run a command's workflow for one invocation. Sent only after the command
- * matched and passed its checks (enabled, who may run it, cooldown), which is
- * why the engine does not check them again.
+ * Run a command's workflow for one invocation, as shared/contracts/workflow
+ * states it. Sent only after the command matched and passed its checks
+ * (enabled, who may run it, cooldown), which is why the engine does not check
+ * them again. Its `event` is the invocation's `chat.command.<slug>` event, the
+ * very one announced on that subject, which the run reads as its trigger.
  */
-export interface CommandWorkflowExecution {
-  workflowId: string;
-  /** The invocation's `chat.command.<slug>` event, the very one announced on
-   *  that subject, which the run reads as its trigger: `${trigger.data.chatter}`
-   *  and the rest. */
-  event: ChatCommandEvent;
-}
+export type CommandWorkflowExecution = SchemaWorkflowCommandExecute;
 
 export interface CommandCreated {
   command: CommandSnapshot;

@@ -1,0 +1,70 @@
+{
+  "schema": "WorkflowExecuteReply",
+  "description": "WorkflowExecuteReply as its producer sends it. A closed message refuses an unknown field, a missing or mistyped one and an empty value; a reply is open.",
+  "cases": [
+    {
+      "name": "the message the producer sends",
+      "valid": true,
+      "value": {
+        "outcome": "started",
+        "executionId": "run-1",
+        "eventType": "channel.follow"
+      }
+    },
+    {
+      "name": "conditions not met",
+      "valid": true,
+      "value": {
+        "outcome": "conditions_not_met",
+        "unmet": [
+          {
+            "field": "data.amount",
+            "operator": "gte",
+            "value": 5
+          }
+        ]
+      }
+    },
+    {
+      "name": "refused",
+      "valid": true,
+      "value": {
+        "outcome": "refused",
+        "error": "no workflowId"
+      }
+    },
+    {
+      "name": "an extra field, which a reply may carry",
+      "valid": true,
+      "unknownFields": true,
+      "value": {
+        "outcome": "started",
+        "executionId": "run-1",
+        "eventType": "channel.follow",
+        "extra": 1
+      }
+    },
+    {
+      "name": "no outcome",
+      "valid": false,
+      "value": {
+        "executionId": "run-1",
+        "eventType": "channel.follow"
+      }
+    },
+    {
+      "name": "an outcome the engine never sends",
+      "valid": false,
+      "value": {
+        "outcome": "maybe"
+      }
+    },
+    {
+      "name": "no outcome",
+      "valid": false,
+      "value": {
+        "executionId": "run-1"
+      }
+    }
+  ]
+}

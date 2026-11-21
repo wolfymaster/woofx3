@@ -12,6 +12,20 @@ import {
 } from "@woofx3/api";
 import type { WorkflowRunSnapshot } from "@woofx3/api/webhooks";
 import { TRIGGER_OPTIONS_NEED_DATA_MESSAGE, workflowNotFoundMessage } from "@woofx3/api/workflow-trigger-errors";
+import type {
+  SchemaWorkflowCancelReply,
+  SchemaWorkflowCancelRequest,
+  SchemaWorkflowExecute,
+  SchemaWorkflowExecuteReply,
+  SchemaWorkflowReplay,
+} from "@woofx3/common/cloudevents/Workflow/workflow.gen";
+import {
+  validateWorkflowCancelReply,
+  validateWorkflowCancelRequest,
+  validateWorkflowExecute,
+  validateWorkflowExecuteReply,
+  validateWorkflowReplay,
+} from "@woofx3/common/cloudevents/Workflow/workflow.validate.gen";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
 import type { DbClient } from "../db-client";
@@ -19,27 +33,18 @@ import { alertSnapshotFromRow, runSnapshotFromRow, stepSnapshotFromRow } from ".
 import { routeModule } from "./context";
 import { timestampFromDate } from "./helpers";
 
-/**
- * The engine's answer to a `workflow.execute` request. Must match
- * `executeReply` in workflow/app.go.
- */
-interface ExecuteReply {
-  outcome: "started" | "conditions_not_met" | "refused";
-  executionId?: string;
-  eventType?: string;
-  unmet?: UnmetTriggerCondition[];
-  error?: string;
+/** Throws unless `value`, a message on `subject`, meets its contract; sender and receiver both treat a break as a bug. */
+function meetsContract<T>(value: unknown, validate: Validator, subject: string): T {
+  if (!validate(value)) {
+    const first = validate.errors?.[0];
+    throw new Error(
+      `A message on ${subject} breaks its contract: ${first ? `${first.instancePath} ${first.message ?? ""}`.trim() : "unknown"}`
+    );
+  }
+  return value as T;
 }
 
-/**
- * The engine's answer to a `workflow.cancel` request. Must match `cancelReply`
- * in workflow/app.go.
- */
-interface CancelReply {
-  outcome: "cancelled" | "already_finished" | "not_found" | "refused";
-  status?: string;
-  error?: string;
-}
+type Validator = ((value: unknown) => boolean) & { errors?: { instancePath: string; message?: string }[] | null };
 
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled"]);
 
@@ -225,9 +230,14 @@ export const workflowsExecutionRoutes = routeModule({
     }
 
     const correlationId = triggerId || crypto.randomUUID();
-    const request = { workflowId: foundWorkflow.id, inputs: parameters, startedBy: userId ?? "" };
+    const request: SchemaWorkflowExecute = {
+      workflowId: foundWorkflow.id,
+      inputs: parameters,
+      ...(userId ? { startedBy: userId } : {}),
+    };
 
     if (!triggerData && !dryRun) {
+      meetsContract<SchemaWorkflowExecute>(request, validateWorkflowExecute, "workflow.execute");
       // Published for the engine to run, rather than written as a db-proxy
       // execution row. The row had no consumer -- nothing turned a pending row
       // into a run -- so it recorded an execution that never happened and left
@@ -256,16 +266,21 @@ export const workflowsExecutionRoutes = routeModule({
       };
     }
 
-    const reply = await this.requestEvent<ExecuteReply>(
-      "workflow.execute",
-      {
-        ...request,
-        ...(triggerData ? { triggerData } : {}),
-        ...(options.platform ? { platform: options.platform } : {}),
-        ...(options.skipConditions ? { skipConditions: true } : {}),
-        ...(dryRun ? { dryRun: true } : {}),
-      },
-      { triggerId: correlationId, triggeredBy: runOrigin }
+    const manualRequest: SchemaWorkflowExecute = {
+      ...request,
+      ...(triggerData ? { triggerData } : {}),
+      ...(options.platform ? { platform: options.platform } : {}),
+      ...(options.skipConditions ? { skipConditions: true } : {}),
+      ...(dryRun ? { dryRun: true } : {}),
+    };
+    meetsContract<SchemaWorkflowExecute>(manualRequest, validateWorkflowExecute, "workflow.execute");
+    const reply = meetsContract<SchemaWorkflowExecuteReply>(
+      await this.requestEvent<unknown>("workflow.execute", manualRequest, {
+        triggerId: correlationId,
+        triggeredBy: runOrigin,
+      }),
+      validateWorkflowExecuteReply,
+      "workflow.execute"
     );
 
     switch (reply.outcome) {
@@ -322,22 +337,23 @@ export const workflowsExecutionRoutes = routeModule({
     const run = await this.db.getWorkflowExecution({ id: engineRunId });
     const correlationId = triggerId || crypto.randomUUID();
 
+    const replay: SchemaWorkflowReplay = {
+      workflowId: run.workflowId,
+      ...(run.triggerEventJson ? { triggerEvent: run.triggerEventJson } : {}),
+      ...(fromTaskId ? { fromTaskId } : {}),
+      // A replay of a dry run is a dry run: replaying a preview should not
+      // be how its side effects first happen.
+      ...(run.dryRun ? { dryRun: true } : {}),
+      steps: (run.steps ?? []).map((step) => ({
+        taskId: step.stepId,
+        status: step.status,
+        attempt: step.attempt,
+        ...(step.outputsJson ? { outputs: step.outputsJson } : {}),
+      })),
+    };
     await this.publishEvent(
       "workflow.replay",
-      {
-        workflowId: run.workflowId,
-        triggerEvent: run.triggerEventJson,
-        fromTaskId: fromTaskId ?? "",
-        // A replay of a dry run is a dry run: replaying a preview should not
-        // be how its side effects first happen.
-        ...(run.dryRun ? { dryRun: true } : {}),
-        steps: (run.steps ?? []).map((step) => ({
-          taskId: step.stepId,
-          status: step.status,
-          attempt: step.attempt,
-          outputs: step.outputsJson,
-        })),
-      },
+      meetsContract<SchemaWorkflowReplay>(replay, validateWorkflowReplay, "workflow.replay"),
       undefined,
       undefined,
       "api",
@@ -548,7 +564,16 @@ export const workflowsExecutionRoutes = routeModule({
     const why = reason || "Cancelled by user";
     this.logger.info("Cancelling workflow run", { executionId, reason: why });
 
-    const reply = await this.requestJson<CancelReply>("workflow.cancel", { executionId, reason: why });
+    const cancelRequest = meetsContract<SchemaWorkflowCancelRequest>(
+      { executionId, reason: why },
+      validateWorkflowCancelRequest,
+      "workflow.cancel"
+    );
+    const reply = meetsContract<SchemaWorkflowCancelReply>(
+      await this.requestJson<unknown>("workflow.cancel", cancelRequest),
+      validateWorkflowCancelReply,
+      "workflow.cancel"
+    );
     switch (reply.outcome) {
       case "cancelled":
         return { executionId, outcome: "cancelled", status: "cancelled", message: "The run was cancelled" };

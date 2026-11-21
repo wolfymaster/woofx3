@@ -102,6 +102,7 @@ an enum list, not a second validator. This is the message half of the [contracts
 | `shared/contracts/stream/openapi.yaml` | the [streaming platform events](#streaming-platform-events) | connectors (TypeScript) | workflow engine (Go), api (TypeScript) |
 | `shared/contracts/module/openapi.yaml` | `module.storage.changed` | barkloader (Rust), api (TypeScript) | api, scene manager (TypeScript) |
 | `shared/contracts/outbox/openapi.yaml` | `database.record.changed`, `userpage.form.submitted`, `viewer.segment.entered`, `viewer.segment.left` | db service (Go) | api (TypeScript), workflow engine (Go) |
+| `shared/contracts/workflow/openapi.yaml` | `workflow.execute`, `workflow.cancel` (request and reply), `workflow.replay`, `workflow.command.execute`, `workflow.run.started`, `.completed`, `.failed` and `.cancelled`, `workflow.health.snapshot`, `.changed` and `.get` | api and connectors (TypeScript) for the requests, workflow engine (Go) for the replies and events | workflow engine, api |
 
 All the documents take their CloudEvents attributes (`specversion`, `id`, `source`, `time`) and the
 opaque id type from `shared/contracts/common/cloudevents.yaml`, a document with no operations of its
@@ -226,6 +227,24 @@ every storage write, so it is validated once per consumer at the edge, not by th
 barkloader builds its data from the generated type, and the api's session-end clear builds it from
 the generated TypeScript type. Its `value` is any JSON value, `null` included, and is always
 present.
+
+### Workflow messages
+
+The `workflow` document covers what the engine receives and announces, except `action.execute`
+(whose actions are workflow task definitions, a contract of their own) and the `db.workflow.*`
+change events. Two things set it apart from the other documents:
+
+- The engine's own events carry no `specversion`, because its publisher writes only the attributes it
+  has. Requests from the api and the connectors carry `1.0.0`, which the document names in its own
+  `SpecVersion` enum rather than the shared `1.0` the Go SDK writes. The contract describes what each
+  side sends; it does not change either.
+- `workflow.cancel` is a plain JSON request and `workflow.health.get` has no body, so only a request
+  that is a CloudEvent fixes its `type` to the operation path.
+
+The engine validates every request it reads and every run or health event it publishes
+(`workflow/contracts.go`); a refused request is answered `refused`, a refused event is logged and not
+published. The api validates the engine's replies and the events it forwards as webhooks, and checks
+its own requests before sending them.
 
 ### Run-time validation
 

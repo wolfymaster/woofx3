@@ -4,7 +4,7 @@ import { EngineEventType } from "@woofx3/api/webhooks";
 import type { Msg } from "@woofx3/nats/src/types";
 import { workflowsRoutes } from "../src/routes/workflows";
 import { assertValidWorkflowDefinition } from "../src/workflow/validate-definition";
-import { parseWorkflowHealth, WorkflowHealthEmitter } from "../src/workflow-health-emitter";
+import { WorkflowHealthEmitter } from "../src/workflow-health-emitter";
 
 function fakeLogger() {
   return {
@@ -25,55 +25,6 @@ function makeMsg(subject: string, body: unknown): Msg {
     respond: () => false,
   };
 }
-
-describe("parseWorkflowHealth", () => {
-  it("decodes an error with its reason", () => {
-    expect(
-      parseWorkflowHealth(
-        {
-          workflowId: "wf-1",
-          status: "error",
-          reason: 'task "t1": unknown action "gone"',
-          since: "2026-09-28T12:00:00Z",
-        },
-        fakeLogger()
-      )
-    ).toEqual({
-      workflowId: "wf-1",
-      status: "error",
-      reason: 'task "t1": unknown action "gone"',
-      since: "2026-09-28T12:00:00Z",
-    });
-  });
-
-  it("never gives an ok a reason", () => {
-    expect(
-      parseWorkflowHealth({ workflowId: "wf-1", status: "ok", reason: "stale", since: "t" }, fakeLogger())
-    ).toEqual({
-      workflowId: "wf-1",
-      status: "ok",
-      since: "t",
-    });
-  });
-
-  it("keeps an unexplained error rather than dropping it", () => {
-    expect(parseWorkflowHealth({ workflowId: "wf-1", status: "error", since: "t" }, fakeLogger())?.reason).toBe("");
-  });
-
-  it("fills a missing since, and says so", () => {
-    const logger = fakeLogger();
-    const entry = parseWorkflowHealth({ workflowId: "wf-1", status: "ok" }, logger);
-    expect(entry?.since).toBeTruthy();
-    expect(logger.warn).toHaveBeenCalledTimes(1);
-  });
-
-  it("rejects entries the engine never sends", () => {
-    const logger = fakeLogger();
-    expect(parseWorkflowHealth(null, logger)).toBeNull();
-    expect(parseWorkflowHealth({ status: "error" }, logger)).toBeNull();
-    expect(parseWorkflowHealth({ workflowId: "wf-1", status: "degraded" }, logger)).toBeNull();
-  });
-});
 
 type HealthReply = { loaded?: boolean; at?: string; workflows?: unknown };
 
@@ -115,6 +66,7 @@ describe("WorkflowHealthEmitter", () => {
         id: "evt-1",
         type: "workflow.health.changed",
         source: "workflow",
+        time: "2026-09-28T12:00:00Z",
         data: { workflowId: "wf-1", status: "error", reason: "broken", since: "2026-09-28T12:00:00Z" },
       })
     );
@@ -138,9 +90,12 @@ describe("WorkflowHealthEmitter", () => {
 
     handlers.get("workflow.health.snapshot")!(
       makeMsg("workflow.health.snapshot", {
+        id: "evt-2",
         type: "workflow.health.snapshot",
+        source: "workflow",
+        time: "2026-09-28T12:00:00Z",
         data: {
-          workflows: [{ workflowId: "wf-1", status: "error", reason: "broken", since: "s" }],
+          workflows: [{ workflowId: "wf-1", status: "error", reason: "broken", since: "2026-09-28T12:00:00Z" }],
           at: "2026-09-28T12:00:00Z",
         },
       })
@@ -148,7 +103,7 @@ describe("WorkflowHealthEmitter", () => {
 
     expect(webhook.send.mock.calls[0][0]).toEqual({
       type: EngineEventType.WORKFLOW_HEALTH_SNAPSHOT,
-      workflows: [{ workflowId: "wf-1", status: "error", reason: "broken", since: "s" }],
+      workflows: [{ workflowId: "wf-1", status: "error", reason: "broken", since: "2026-09-28T12:00:00Z" }],
       at: "2026-09-28T12:00:00Z",
     });
   });
@@ -158,8 +113,8 @@ describe("WorkflowHealthEmitter", () => {
       loaded: true,
       at: "2026-09-28T12:00:00Z",
       workflows: [
-        { workflowId: "a", status: "error", reason: "broken", since: "s" },
-        { workflowId: "b", status: "ok", since: "s" },
+        { workflowId: "a", status: "error", reason: "broken", since: "2026-09-28T12:00:00Z" },
+        { workflowId: "b", status: "ok", since: "2026-09-28T12:00:00Z" },
       ],
     });
     await emitter.start();
@@ -171,13 +126,13 @@ describe("WorkflowHealthEmitter", () => {
     expect(webhook.send).toHaveBeenCalledTimes(2);
     expect(webhook.send.mock.calls[0][0]).toEqual({
       type: EngineEventType.WORKFLOW_HEALTH_SNAPSHOT,
-      workflows: [{ workflowId: "a", status: "error", reason: "broken", since: "s" }],
+      workflows: [{ workflowId: "a", status: "error", reason: "broken", since: "2026-09-28T12:00:00Z" }],
       at: "2026-09-28T12:00:00Z",
     });
   });
 
   it("sends no snapshot while the engine is still loading or unreachable", async () => {
-    const loading = setup({ loaded: false, at: "t", workflows: [] });
+    const loading = setup({ loaded: false, at: "2026-09-28T12:00:00Z", workflows: [] });
     await loading.emitter.start();
     await flush();
     expect(loading.webhook.send).not.toHaveBeenCalled();
@@ -229,7 +184,6 @@ describe("getWorkflowHealth", () => {
       workflows: [
         { workflowId: "a", status: "error", reason: "broken", since: "2026-09-28T12:00:00Z" },
         { workflowId: "b", status: "ok", since: "2026-09-28T12:00:01Z" },
-        { status: "ok" },
       ],
     });
 
@@ -243,13 +197,13 @@ describe("getWorkflowHealth", () => {
   });
 
   it("refuses while the engine is still loading", async () => {
-    const { ctx } = host({ loaded: false, at: "t", workflows: [] });
+    const { ctx } = host({ loaded: false, at: "2026-09-28T12:00:00Z", workflows: [] });
     await expect(route.call(ctx)).rejects.toThrow("still loading");
   });
 
   it("refuses a reply with no workflow list", async () => {
     const { ctx } = host({ loaded: true });
-    await expect(route.call(ctx)).rejects.toThrow("without a workflow list");
+    await expect(route.call(ctx)).rejects.toThrow("against its contract");
   });
 
   it("refuses without a message bus", async () => {

@@ -58,7 +58,7 @@ func TestHandleWorkflowExecuteEvent(t *testing.T) {
 
 		app.handleWorkflowExecuteEvent(fakeMsg{
 			subject: "workflow.execute",
-			data:    []byte(`{"id":"e1","type":"workflow.execute","source":"api","data":{}}`),
+			data:    []byte(`{"specversion":"1.0.0","id":"e1","type":"workflow.execute","source":"api","time":"2026-11-20T10:00:00Z","data":{}}`),
 		})
 
 		if len(logger.errors) != 1 {
@@ -72,7 +72,7 @@ func TestHandleWorkflowExecuteEvent(t *testing.T) {
 
 		app.handleWorkflowExecuteEvent(fakeMsg{
 			subject: "workflow.execute",
-			data:    []byte(`{"id":"e1","type":"workflow.execute","source":"api","data":{"workflowId":"missing"}}`),
+			data:    []byte(`{"specversion":"1.0.0","id":"e1","type":"workflow.execute","source":"api","time":"2026-11-20T10:00:00Z","data":{"workflowId":"missing"}}`),
 		})
 
 		// Deterministic despite runs executing in a goroutine: the registry
@@ -117,7 +117,7 @@ func TestWorkflowExecuteReplies(t *testing.T) {
 		app := conditionalWorkflowApp(t)
 		reply := decodeExecuteReply(t, app.handleWorkflowExecuteEvent(fakeMsg{
 			subject: "workflow.execute",
-			data: []byte(`{"id":"e1","type":"workflow.execute","source":"api","triggeredBy":"test",` +
+			data: []byte(`{"specversion":"1.0.0","id":"e1","type":"workflow.execute","source":"api","time":"2026-11-20T10:00:00Z","triggeredBy":"test",` +
 				`"data":{"workflowId":"wf-raid","triggerData":{"viewers":25},"platform":"twitch"}}`),
 		}))
 		if reply.Outcome != "started" || reply.ExecutionID == "" || reply.EventType != "channel.raid" {
@@ -129,7 +129,7 @@ func TestWorkflowExecuteReplies(t *testing.T) {
 		app := conditionalWorkflowApp(t)
 		reply := decodeExecuteReply(t, app.handleWorkflowExecuteEvent(fakeMsg{
 			subject: "workflow.execute",
-			data:    []byte(`{"id":"e1","type":"workflow.execute","source":"api","data":{"workflowId":"wf-raid","triggerData":{"viewers":2}}}`),
+			data:    []byte(`{"specversion":"1.0.0","id":"e1","type":"workflow.execute","source":"api","time":"2026-11-20T10:00:00Z","data":{"workflowId":"wf-raid","triggerData":{"viewers":2}}}`),
 		}))
 		if reply.Outcome != "conditions_not_met" || len(reply.Unmet) != 1 || reply.Unmet[0].Field != "${trigger.data.viewers}" {
 			t.Fatalf("reply = %+v", reply)
@@ -140,7 +140,7 @@ func TestWorkflowExecuteReplies(t *testing.T) {
 		app := conditionalWorkflowApp(t)
 		reply := decodeExecuteReply(t, app.handleWorkflowExecuteEvent(fakeMsg{
 			subject: "workflow.execute",
-			data: []byte(`{"id":"e1","type":"workflow.execute","source":"api",` +
+			data: []byte(`{"specversion":"1.0.0","id":"e1","type":"workflow.execute","source":"api","time":"2026-11-20T10:00:00Z",` +
 				`"data":{"workflowId":"wf-raid","triggerData":{"viewers":2},"skipConditions":true}}`),
 		}))
 		if reply.Outcome != "started" {
@@ -152,7 +152,7 @@ func TestWorkflowExecuteReplies(t *testing.T) {
 		app := conditionalWorkflowApp(t)
 		reply := decodeExecuteReply(t, app.handleWorkflowExecuteEvent(fakeMsg{
 			subject: "workflow.execute",
-			data:    []byte(`{"id":"e1","type":"workflow.execute","source":"api","data":{"workflowId":"missing"}}`),
+			data:    []byte(`{"specversion":"1.0.0","id":"e1","type":"workflow.execute","source":"api","time":"2026-11-20T10:00:00Z","data":{"workflowId":"missing"}}`),
 		}))
 		if reply.Outcome != "refused" || reply.Error == "" {
 			t.Fatalf("reply = %+v", reply)
@@ -183,7 +183,7 @@ func TestCloudEventCarriesCorrelationAttributes(t *testing.T) {
 	app := &WorkflowApp{}
 
 	event, err := app.validateCloudEvent([]byte(
-		`{"id":"e1","type":"workflow.execute","source":"api",` +
+		`{"specversion":"1.0.0","id":"e1","type":"workflow.execute","source":"api","time":"2026-11-20T10:00:00Z",` +
 			`"triggerId":"corr-1","triggeredBy":"dashboard","data":{"workflowId":"wf-1"}}`,
 	))
 	if err != nil {
@@ -202,7 +202,7 @@ func TestWorkflowExecuteCarriesDryRun(t *testing.T) {
 	app := conditionalWorkflowApp(t)
 	reply := decodeExecuteReply(t, app.handleWorkflowExecuteEvent(fakeMsg{
 		subject: "workflow.execute",
-		data: []byte(`{"id":"e1","type":"workflow.execute","source":"api",` +
+		data: []byte(`{"specversion":"1.0.0","id":"e1","type":"workflow.execute","source":"api","time":"2026-11-20T10:00:00Z",` +
 			`"data":{"workflowId":"wf-raid","triggerData":{"viewers":25},"dryRun":true}}`),
 	}))
 	if reply.Outcome != "started" {

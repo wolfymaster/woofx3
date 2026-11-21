@@ -1,0 +1,657 @@
+openapi: 3.1.0
+info:
+  title: Workflow bus messages
+  version: 1.0.0
+  description: >
+    What the workflow engine receives and announces on the bus. Each operation path is
+    the NATS subject, which is the event's `type` where the message is a CloudEvent.
+    Requests sent by the api and the connectors carry `specversion` `1.0.0`. Events the
+    engine publishes carry no `specversion`: its publisher writes the attributes it
+    knows, and the contract describes what it writes.
+paths:
+  /workflow.execute:
+    post:
+      operationId: workflowExecute
+      summary: >
+        Run one workflow on request. Published by the api; answered by the engine when the sender asked for a reply.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowExecuteRequest"
+      responses:
+        "200":
+          description: The engine's answer to a request that wanted one; a plain publish is not answered.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowExecuteReply"
+  /workflow.replay:
+    post:
+      operationId: workflowReplay
+      summary: >
+        Run a recorded run again, whole or from one step. Published by the api, which read the run from the db proxy; nothing answers it, the engine announces a refusal as a failed run.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowReplayRequest"
+      responses:
+        "202":
+          description: Published; nothing answers it.
+  /workflow.command.execute:
+    post:
+      operationId: workflowCommandExecute
+      summary: >
+        Run the workflow a chat command is linked to, for one invocation. Published by the connectors chat dispatcher.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowCommandExecuteRequest"
+      responses:
+        "202":
+          description: Published; nothing answers it.
+  /workflow.cancel:
+    post:
+      operationId: workflowCancel
+      summary: >
+        Stop a run. A plain JSON request, not a CloudEvent, answered with what the cancel did.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowCancelRequest"
+      responses:
+        "200":
+          description: Whether the run was stopped.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowCancelReply"
+  /workflow.run.started:
+    post:
+      operationId: workflowRunStarted
+      summary: >
+        A run began. Published by the engine; the api forwards it as a webhook when a caller is waiting on it (it carries a `triggerId`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowRunStartedEvent"
+      responses:
+        "202":
+          description: Published; nothing answers an event.
+  /workflow.run.completed:
+    post:
+      operationId: workflowRunCompleted
+      summary: >
+        A run finished. Published by the engine; the api forwards it as a webhook when a caller is waiting on it (it carries a `triggerId`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowRunCompletedEvent"
+      responses:
+        "202":
+          description: Published; nothing answers an event.
+  /workflow.run.failed:
+    post:
+      operationId: workflowRunFailed
+      summary: >
+        A run failed. Published by the engine; the api forwards it as a webhook when a caller is waiting on it (it carries a `triggerId`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowRunFailedEvent"
+      responses:
+        "202":
+          description: Published; nothing answers an event.
+  /workflow.run.cancelled:
+    post:
+      operationId: workflowRunCancelled
+      summary: >
+        A run was stopped by a cancel request. Published by the engine; the api forwards it as a webhook when a caller is waiting on it (it carries a `triggerId`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowRunCancelledEvent"
+      responses:
+        "202":
+          description: Published; nothing answers an event.
+  /workflow.health.snapshot:
+    post:
+      operationId: workflowHealthSnapshot
+      summary: >
+        Every workflow in error, published once when the engine's first complete load of the stored workflows finishes. A reader replaces its whole view with it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowHealthSnapshotEvent"
+      responses:
+        "202":
+          description: Published; nothing answers an event.
+  /workflow.health.changed:
+    post:
+      operationId: workflowHealthChanged
+      summary: >
+        One workflow's health changed after the snapshot. Published only on a change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowHealthChangedEvent"
+      responses:
+        "202":
+          description: Published; nothing answers an event.
+  /workflow.health.get:
+    post:
+      operationId: workflowHealthGet
+      summary: >
+        Every workflow the engine has tried to load. The request body carries nothing.
+      responses:
+        "200":
+          description: The engine's current view.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowHealthReply"
+components:
+  schemas:
+    SpecVersion:
+      description: CloudEvents specification version as the TypeScript event factory writes it.
+      type: string
+      enum: ["1.0.0"]
+    Platform:
+      description: Where the event came from ("twitch", ...); absent for events with no platform.
+      type: string
+      minLength: 1
+      maxLength: 200
+    SessionId:
+      description: The stream session the publisher knew when it published; absent when it knew none.
+      type: string
+      minLength: 1
+      maxLength: 200
+    TriggerId:
+      description: Correlates an event with whoever asked for it; echoed unchanged onto the run events it causes.
+      type: string
+      minLength: 1
+      maxLength: 200
+    TriggeredBy:
+      description: What caused the event ("dashboard", "twitch", ...).
+      type: string
+      minLength: 1
+      maxLength: 200
+    WorkflowChain:
+      description: The workflow runs that led to the event, oldest first, as comma-separated workflow ids.
+      type: string
+      minLength: 1
+      maxLength: 10000
+    FreeObject:
+      description: A JSON object whose members belong to a workflow, a module or a trigger, not to this contract.
+      type: object
+      additionalProperties: true
+    WorkflowExecuteRequest:
+      description: CloudEvent asking the engine to run one workflow.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/SpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [workflow.execute]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/Platform"
+        sessionId:
+          $ref: "#/components/schemas/SessionId"
+        triggerId:
+          $ref: "#/components/schemas/TriggerId"
+        triggeredBy:
+          $ref: "#/components/schemas/TriggeredBy"
+        workflowChain:
+          $ref: "#/components/schemas/WorkflowChain"
+        data:
+          $ref: "#/components/schemas/WorkflowExecute"
+    WorkflowExecute:
+      description: >
+        `triggerData` is sample trigger data for a manual run; without it the event is
+        handed to the engine unchanged. `inputs` and `startedBy` are recorded by the api
+        and not read by the engine.
+      type: object
+      additionalProperties: false
+      required: [workflowId]
+      properties:
+        workflowId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        inputs:
+          $ref: "#/components/schemas/FreeObject"
+        startedBy:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        triggerData:
+          $ref: "#/components/schemas/FreeObject"
+        platform:
+          $ref: "#/components/schemas/Platform"
+        skipConditions:
+          type: boolean
+        dryRun:
+          type: boolean
+    WorkflowExecuteReply:
+      description: The engine's answer to a workflow.execute request. Open, so the engine can add a field before the api knows it.
+      type: object
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [started, conditions_not_met, refused]
+        executionId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        eventType:
+          type: string
+          minLength: 1
+          maxLength: 200
+        unmet:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: "#/components/schemas/UnmetCondition"
+        error:
+          type: string
+          minLength: 1
+          maxLength: 100000
+    UnmetCondition:
+      description: One trigger condition a sample did not satisfy, or could not be evaluated against.
+      type: object
+      required: [field, operator, value]
+      properties:
+        field:
+          type: string
+          maxLength: 1000
+        operator:
+          type: string
+          maxLength: 100
+        value: {}
+        error:
+          type: string
+          minLength: 1
+          maxLength: 100000
+    WorkflowReplayRequest:
+      description: CloudEvent asking the engine to run a recorded run again.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/SpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [workflow.replay]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/Platform"
+        sessionId:
+          $ref: "#/components/schemas/SessionId"
+        triggerId:
+          $ref: "#/components/schemas/TriggerId"
+        triggeredBy:
+          $ref: "#/components/schemas/TriggeredBy"
+        workflowChain:
+          $ref: "#/components/schemas/WorkflowChain"
+        data:
+          $ref: "#/components/schemas/WorkflowReplay"
+    WorkflowReplay:
+      description: >
+        `triggerEvent` is the recorded trigger event as JSON text, and each step's
+        `outputs` the recorded outputs as JSON text, as the db proxy stores them.
+        Both are left out when nothing was recorded.
+      type: object
+      additionalProperties: false
+      required: [workflowId, steps]
+      properties:
+        workflowId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        triggerEvent:
+          type: string
+          minLength: 1
+          maxLength: 1000000
+        fromTaskId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        dryRun:
+          type: boolean
+        steps:
+          type: array
+          maxItems: 10000
+          items:
+            $ref: "#/components/schemas/ReplayStep"
+    ReplayStep:
+      type: object
+      additionalProperties: false
+      required: [taskId, status, attempt]
+      properties:
+        taskId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        status:
+          type: string
+          minLength: 1
+          maxLength: 100
+        attempt:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+        outputs:
+          type: string
+          minLength: 1
+          maxLength: 1000000
+    WorkflowCommandExecuteRequest:
+      description: CloudEvent asking the engine to run a chat command's workflow for one invocation.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, data]
+      properties:
+        specversion:
+          $ref: "#/components/schemas/SpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [workflow.command.execute]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/Platform"
+        sessionId:
+          $ref: "#/components/schemas/SessionId"
+        triggerId:
+          $ref: "#/components/schemas/TriggerId"
+        triggeredBy:
+          $ref: "#/components/schemas/TriggeredBy"
+        workflowChain:
+          $ref: "#/components/schemas/WorkflowChain"
+        data:
+          $ref: "#/components/schemas/WorkflowCommandExecute"
+    WorkflowCommandExecute:
+      description: >
+        `event` is the invocation's `chat.command.<slug>` event as announced, which the
+        run reads as its trigger. Its own shape is that event's, not this contract's.
+      type: object
+      additionalProperties: false
+      required: [workflowId, event]
+      properties:
+        workflowId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        event:
+          $ref: "#/components/schemas/FreeObject"
+    WorkflowCancelRequest:
+      description: A plain JSON request to stop one run.
+      type: object
+      additionalProperties: false
+      required: [executionId]
+      properties:
+        executionId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 10000
+    WorkflowCancelReply:
+      description: The engine's answer to a cancel. Open.
+      type: object
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [cancelled, already_finished, not_found, refused]
+        status:
+          type: string
+          minLength: 1
+          maxLength: 100
+        error:
+          type: string
+          minLength: 1
+          maxLength: 100000
+    WorkflowRunChange:
+      description: One run's state. `error` is present only on a failed run, and only when the engine has a reason.
+      type: object
+      additionalProperties: false
+      required: [workflowId, executionId]
+      properties:
+        workflowId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        executionId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        error:
+          type: string
+          minLength: 1
+          maxLength: 100000
+    WorkflowRunStartedEvent:
+      description: CloudEvent announcing a run began.
+      type: object
+      additionalProperties: false
+      required: [id, type, source, time, data]
+      properties:
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [workflow.run.started]
+        source:
+          type: string
+          enum: [workflow]
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/Platform"
+        sessionId:
+          $ref: "#/components/schemas/SessionId"
+        triggerId:
+          $ref: "#/components/schemas/TriggerId"
+        triggeredBy:
+          $ref: "#/components/schemas/TriggeredBy"
+        workflowChain:
+          $ref: "#/components/schemas/WorkflowChain"
+        dryRun:
+          description: Present, and true, only for an event a dry run caused.
+          type: boolean
+        data:
+          $ref: "#/components/schemas/WorkflowRunChange"
+    WorkflowRunCompletedEvent:
+      description: CloudEvent announcing a run finished.
+      type: object
+      additionalProperties: false
+      required: [id, type, source, time, data]
+      properties:
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [workflow.run.completed]
+        source:
+          type: string
+          enum: [workflow]
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/Platform"
+        sessionId:
+          $ref: "#/components/schemas/SessionId"
+        triggerId:
+          $ref: "#/components/schemas/TriggerId"
+        triggeredBy:
+          $ref: "#/components/schemas/TriggeredBy"
+        workflowChain:
+          $ref: "#/components/schemas/WorkflowChain"
+        dryRun:
+          description: Present, and true, only for an event a dry run caused.
+          type: boolean
+        data:
+          $ref: "#/components/schemas/WorkflowRunChange"
+    WorkflowRunFailedEvent:
+      description: CloudEvent announcing a run failed.
+      type: object
+      additionalProperties: false
+      required: [id, type, source, time, data]
+      properties:
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [workflow.run.failed]
+        source:
+          type: string
+          enum: [workflow]
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/Platform"
+        sessionId:
+          $ref: "#/components/schemas/SessionId"
+        triggerId:
+          $ref: "#/components/schemas/TriggerId"
+        triggeredBy:
+          $ref: "#/components/schemas/TriggeredBy"
+        workflowChain:
+          $ref: "#/components/schemas/WorkflowChain"
+        dryRun:
+          description: Present, and true, only for an event a dry run caused.
+          type: boolean
+        data:
+          $ref: "#/components/schemas/WorkflowRunChange"
+    WorkflowRunCancelledEvent:
+      description: CloudEvent announcing a run was stopped by a cancel request.
+      type: object
+      additionalProperties: false
+      required: [id, type, source, time, data]
+      properties:
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [workflow.run.cancelled]
+        source:
+          type: string
+          enum: [workflow]
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/Platform"
+        sessionId:
+          $ref: "#/components/schemas/SessionId"
+        triggerId:
+          $ref: "#/components/schemas/TriggerId"
+        triggeredBy:
+          $ref: "#/components/schemas/TriggeredBy"
+        workflowChain:
+          $ref: "#/components/schemas/WorkflowChain"
+        dryRun:
+          description: Present, and true, only for an event a dry run caused.
+          type: boolean
+        data:
+          $ref: "#/components/schemas/WorkflowRunChange"
+    WorkflowHealth:
+      description: >
+        One workflow's load outcome. `reason` is present only on an error, and only when
+        the engine has one.
+      type: object
+      additionalProperties: false
+      required: [workflowId, status, since]
+      properties:
+        workflowId:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        status:
+          type: string
+          enum: [ok, error]
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 100000
+        since:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+    WorkflowHealthSnapshot:
+      type: object
+      additionalProperties: false
+      required: [workflows, at]
+      properties:
+        workflows:
+          type: array
+          maxItems: 100000
+          items:
+            $ref: "#/components/schemas/WorkflowHealth"
+        at:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+    WorkflowHealthSnapshotEvent:
+      description: CloudEvent carrying every workflow in error.
+      type: object
+      additionalProperties: false
+      required: [id, type, source, time, data]
+      properties:
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [workflow.health.snapshot]
+        source:
+          type: string
+          enum: [workflow]
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        data:
+          $ref: "#/components/schemas/WorkflowHealthSnapshot"
+    WorkflowHealthChangedEvent:
+      description: CloudEvent carrying one workflow's new health.
+      type: object
+      additionalProperties: false
+      required: [id, type, source, time, data]
+      properties:
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [workflow.health.changed]
+        source:
+          type: string
+          enum: [workflow]
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        data:
+          $ref: "#/components/schemas/WorkflowHealth"
+    WorkflowHealthReply:
+      description: The engine's view. `loaded` is false until its first complete load, when the list is still partial. Open.
+      type: object
+      required: [loaded, at, workflows]
+      properties:
+        loaded:
+          type: boolean
+        at:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        workflows:
+          type: array
+          maxItems: 100000
+          items:
+            $ref: "#/components/schemas/WorkflowHealth"

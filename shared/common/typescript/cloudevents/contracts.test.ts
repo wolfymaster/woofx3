@@ -11,6 +11,7 @@ import * as scene from "./Scene/scene.validate.gen";
 import * as session from "./Session/session.validate.gen";
 import * as stream from "./Twitch/stream.validate.gen";
 import * as streamstatus from "./StreamStatus/streamstatus.validate.gen";
+import * as workflow from "./Workflow/workflow.validate.gen";
 
 type Validator = ((value: unknown) => boolean) & { errors?: unknown };
 
@@ -23,6 +24,7 @@ const domains: Record<string, Record<string, Validator>> = {
   session,
   stream,
   streamstatus,
+  workflow,
 };
 const contractsDir = join(import.meta.dir, "..", "..", "..", "contracts");
 
