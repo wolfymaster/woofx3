@@ -37,6 +37,22 @@ fn fixtures(domain: &str, file: &str, schema: &str) -> Vec<Case> {
         .collect()
 }
 
+/// Equal as JSON: a number typed as a float and one written as an integer are the same value.
+fn same_json(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(x), Value::Number(y)) => x.as_f64() == y.as_f64(),
+        (Value::Array(x), Value::Array(y)) => {
+            x.len() == y.len() && x.iter().zip(y).all(|(p, q)| same_json(p, q))
+        }
+        (Value::Object(x), Value::Object(y)) => {
+            x.len() == y.len()
+                && x.iter()
+                    .all(|(k, v)| y.get(k).is_some_and(|w| same_json(v, w)))
+        }
+        _ => a == b,
+    }
+}
+
 fn validator(document: &str, schema: &str) -> jsonschema::Validator {
     let mut root: Value = serde_json::from_str(document).unwrap();
     root = json!({ "$ref": format!("#/components/schemas/{schema}"), "components": root["components"] });
@@ -59,10 +75,13 @@ fn run<T: DeserializeOwned + Serialize>(domain: &str, file: &str, schema: &str, 
             assert_eq!(typed.is_ok(), case.valid, "typify types: {label}");
         }
         if case.valid && !case.unknown_fields {
-            assert_eq!(
-                serde_json::to_value(typed.unwrap()).unwrap(),
-                case.value,
-                "round trip: {label}"
+            let encoded = serde_json::to_value(typed.unwrap()).unwrap();
+            assert!(
+                same_json(&encoded, &case.value),
+                "round trip: {label}
+ got  {encoded}
+ want {}",
+                case.value
             );
         }
     }
