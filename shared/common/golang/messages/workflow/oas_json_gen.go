@@ -131,6 +131,44 @@ func (s *EventSource) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes EventSpecVersion as json.
+func (s EventSpecVersion) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes EventSpecVersion from json.
+func (s *EventSpecVersion) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode EventSpecVersion to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch EventSpecVersion(v) {
+	case EventSpecVersion100:
+		*s = EventSpecVersion100
+	default:
+		*s = EventSpecVersion(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s EventSpecVersion) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *EventSpecVersion) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes EventTime as json.
 func (s EventTime) Encode(e *jx.Encoder) {
 	unwrapped := string(s)
@@ -752,44 +790,6 @@ func (s SessionId) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SessionId) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes SpecVersion as json.
-func (s SpecVersion) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes SpecVersion from json.
-func (s *SpecVersion) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode SpecVersion to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch SpecVersion(v) {
-	case SpecVersion100:
-		*s = SpecVersion100
-	default:
-		*s = SpecVersion(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s SpecVersion) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *SpecVersion) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

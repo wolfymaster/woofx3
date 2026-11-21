@@ -160,6 +160,53 @@ impl<'de> ::serde::Deserialize<'de> for EventSource {
             })
     }
 }
+#[doc = "The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.\n"]
+#[derive(
+    :: serde :: Deserialize,
+    :: serde :: Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum EventSpecVersion {
+    #[serde(rename = "1.0.0")]
+    X100,
+}
+impl ::std::fmt::Display for EventSpecVersion {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::X100 => f.write_str("1.0.0"),
+        }
+    }
+}
+impl ::std::str::FromStr for EventSpecVersion {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "1.0.0" => Ok(Self::X100),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for EventSpecVersion {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for EventSpecVersion {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
 #[doc = "RFC 3339 timestamp of when the event was produced."]
 #[derive(:: serde :: Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
@@ -238,7 +285,7 @@ pub struct SessionEndedEvent {
     pub data: SessionEnded,
     pub id: EventId,
     pub source: EventSource,
-    pub specversion: SessionSpecVersion,
+    pub specversion: EventSpecVersion,
     pub time: EventTime,
     #[serde(rename = "type")]
     pub type_: SessionEndedEventType,
@@ -290,53 +337,6 @@ impl ::std::convert::TryFrom<::std::string::String> for SessionEndedEventType {
         value.parse()
     }
 }
-#[doc = "The `specversion` the TypeScript and Rust event factories write. It is not the CloudEvents value `1.0`; the factories are shared by every event family and are not changed per message.\n"]
-#[derive(
-    :: serde :: Deserialize,
-    :: serde :: Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum SessionSpecVersion {
-    #[serde(rename = "1.0.0")]
-    X100,
-}
-impl ::std::fmt::Display for SessionSpecVersion {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::X100 => f.write_str("1.0.0"),
-        }
-    }
-}
-impl ::std::str::FromStr for SessionSpecVersion {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "1.0.0" => Ok(Self::X100),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for SessionSpecVersion {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for SessionSpecVersion {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 #[doc = "`SessionStarted`"]
 #[derive(:: serde :: Deserialize, :: serde :: Serialize, Clone, Debug)]
 #[serde(deny_unknown_fields)]
@@ -353,7 +353,7 @@ pub struct SessionStartedEvent {
     pub data: SessionStarted,
     pub id: EventId,
     pub source: EventSource,
-    pub specversion: SessionSpecVersion,
+    pub specversion: EventSpecVersion,
     pub time: EventTime,
     #[serde(rename = "type")]
     pub type_: SessionStartedEventType,
@@ -433,4 +433,4 @@ pub mod error {
 }
 
 /// The contract document the run-time validator reads.
-pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"Stream session bus messages","version":"1.0.0","description":"Lifecycle announcements of the stream session, published by the api's resolver. Each operation path is the message's `type`, which is also the NATS subject. See docs/services/stream-sessions.md.\n"},"paths":{"/session.started":{"post":{"operationId":"sessionStarted","summary":"Name the session events are stamped with. Published by the api on a new session and when it starts; read by every publishing process.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionStartedEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}},"/session.ended":{"post":{"operationId":"sessionEnded","summary":"Say a broadcast's session is over. Published by the api; read by the session summary emitter.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionEndedEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}}},"components":{"schemas":{"SessionStartedEvent":{"description":"CloudEvent stating the current session. It carries no `sessionId` attribute, since it is what establishes one.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/SessionSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["session.started"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"data":{"$ref":"#/components/schemas/SessionStarted"}}},"SessionEndedEvent":{"description":"CloudEvent announcing that a session is over. It carries no `sessionId` attribute.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/SessionSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["session.ended"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"data":{"$ref":"#/components/schemas/SessionEnded"}}},"SessionSpecVersion":{"description":"The `specversion` the TypeScript and Rust event factories write. It is not the CloudEvents value `1.0`; the factories are shared by every event family and are not changed per message.\n","type":"string","enum":["1.0.0"]},"SessionStarted":{"type":"object","additionalProperties":false,"required":["sessionId","startedAt"],"properties":{"sessionId":{"$ref":"#/components/schemas/EntityId"},"startedAt":{"$ref":"#/components/schemas/EventTime"}}},"SessionEnded":{"type":"object","additionalProperties":false,"required":["sessionId","endedAt","replacedBySessionId"],"properties":{"sessionId":{"$ref":"#/components/schemas/EntityId"},"endedAt":{"$ref":"#/components/schemas/EventTime"},"replacedBySessionId":{"$ref":"#/components/schemas/EntityId"}}},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventSource":{"description":"Name of the component that produced the event.","type":"string","minLength":1,"maxLength":200},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200}}}}"####;
+pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"Stream session bus messages","version":"1.0.0","description":"Lifecycle announcements of the stream session, published by the api's resolver. Each operation path is the message's `type`, which is also the NATS subject. See docs/services/stream-sessions.md.\n"},"paths":{"/session.started":{"post":{"operationId":"sessionStarted","summary":"Name the session events are stamped with. Published by the api on a new session and when it starts; read by every publishing process.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionStartedEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}},"/session.ended":{"post":{"operationId":"sessionEnded","summary":"Say a broadcast's session is over. Published by the api; read by the session summary emitter.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionEndedEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}}},"components":{"schemas":{"SessionStartedEvent":{"description":"CloudEvent stating the current session. It carries no `sessionId` attribute, since it is what establishes one.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["session.started"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"data":{"$ref":"#/components/schemas/SessionStarted"}}},"SessionEndedEvent":{"description":"CloudEvent announcing that a session is over. It carries no `sessionId` attribute.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["session.ended"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"data":{"$ref":"#/components/schemas/SessionEnded"}}},"SessionStarted":{"type":"object","additionalProperties":false,"required":["sessionId","startedAt"],"properties":{"sessionId":{"$ref":"#/components/schemas/EntityId"},"startedAt":{"$ref":"#/components/schemas/EventTime"}}},"SessionEnded":{"type":"object","additionalProperties":false,"required":["sessionId","endedAt","replacedBySessionId"],"properties":{"sessionId":{"$ref":"#/components/schemas/EntityId"},"endedAt":{"$ref":"#/components/schemas/EventTime"},"replacedBySessionId":{"$ref":"#/components/schemas/EntityId"}}},"EventSpecVersion":{"description":"The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.\n","type":"string","enum":["1.0.0"]},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventSource":{"description":"Name of the component that produced the event.","type":"string","minLength":1,"maxLength":200},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200}}}}"####;

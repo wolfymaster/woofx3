@@ -147,8 +147,8 @@ func (s *EventSpecVersion) Decode(d *jx.Decoder) error {
 	}
 	// Try to use constant string.
 	switch EventSpecVersion(v) {
-	case EventSpecVersion10:
-		*s = EventSpecVersion10
+	case EventSpecVersion100:
+		*s = EventSpecVersion100
 	default:
 		*s = EventSpecVersion(v)
 	}

@@ -199,7 +199,7 @@ describe("parseDatabaseRecordChanged", () => {
   };
 
   const envelope = (rowData: unknown) => ({
-    specversion: "1.0",
+    specversion: "1.0.0",
     id: "evt-1",
     type: "database.record.changed",
     source: "db-proxy",

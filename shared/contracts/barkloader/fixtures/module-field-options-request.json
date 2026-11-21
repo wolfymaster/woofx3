@@ -28,7 +28,7 @@
           "moduleId": "spotify",
           "functionId": "get_devices"
         },
-        "specversion": "1.0"
+        "specversion": "1.0.0"
       }
     },
     {

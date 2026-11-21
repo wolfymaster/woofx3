@@ -130,7 +130,7 @@ func parseVisibleParam(value any) (bool, error) {
 // contract describes, refusing to produce one the scene manager would reject.
 func buildSceneCommandRequest(command scene.SceneCommand) ([]byte, error) {
 	request := scene.SceneCommandRequest{
-		Specversion: scene.EventSpecVersion10,
+		Specversion: scene.EventSpecVersion100,
 		ID:          scene.EventId(uuid.NewString()),
 		Type:        scene.SceneCommandRequestTypeEngineSceneCommand,
 		Source:      sceneCommandSource,

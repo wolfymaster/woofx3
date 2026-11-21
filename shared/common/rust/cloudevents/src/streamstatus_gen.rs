@@ -160,6 +160,53 @@ impl<'de> ::serde::Deserialize<'de> for EventSource {
             })
     }
 }
+#[doc = "The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.\n"]
+#[derive(
+    :: serde :: Deserialize,
+    :: serde :: Serialize,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    Hash,
+    Ord,
+    PartialEq,
+    PartialOrd,
+)]
+pub enum EventSpecVersion {
+    #[serde(rename = "1.0.0")]
+    X100,
+}
+impl ::std::fmt::Display for EventSpecVersion {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match *self {
+            Self::X100 => f.write_str("1.0.0"),
+        }
+    }
+}
+impl ::std::str::FromStr for EventSpecVersion {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        match value {
+            "1.0.0" => Ok(Self::X100),
+            _ => Err("invalid value".into()),
+        }
+    }
+}
+impl ::std::convert::TryFrom<&str> for EventSpecVersion {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for EventSpecVersion {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        value.parse()
+    }
+}
 #[doc = "RFC 3339 timestamp of when the event was produced."]
 #[derive(:: serde :: Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[serde(transparent)]
@@ -244,7 +291,7 @@ pub struct StreamStatusObservedEvent {
     )]
     pub session_id: ::std::option::Option<EntityId>,
     pub source: EventSource,
-    pub specversion: StreamStatusSpecVersion,
+    pub specversion: EventSpecVersion,
     pub time: EventTime,
     #[serde(rename = "type")]
     pub type_: StreamStatusObservedEventType,
@@ -302,7 +349,7 @@ impl ::std::convert::TryFrom<::std::string::String> for StreamStatusObservedEven
 pub struct StreamStatusRequestedEvent {
     pub id: EventId,
     pub source: EventSource,
-    pub specversion: StreamStatusSpecVersion,
+    pub specversion: EventSpecVersion,
     pub time: EventTime,
     #[serde(rename = "type")]
     pub type_: StreamStatusRequestedEventType,
@@ -354,53 +401,6 @@ impl ::std::convert::TryFrom<::std::string::String> for StreamStatusRequestedEve
         value.parse()
     }
 }
-#[doc = "The `specversion` the TypeScript and Rust event factories write. It is not the CloudEvents value `1.0`; the factories are shared by every event family and are not changed per message.\n"]
-#[derive(
-    :: serde :: Deserialize,
-    :: serde :: Serialize,
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    Hash,
-    Ord,
-    PartialEq,
-    PartialOrd,
-)]
-pub enum StreamStatusSpecVersion {
-    #[serde(rename = "1.0.0")]
-    X100,
-}
-impl ::std::fmt::Display for StreamStatusSpecVersion {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        match *self {
-            Self::X100 => f.write_str("1.0.0"),
-        }
-    }
-}
-impl ::std::str::FromStr for StreamStatusSpecVersion {
-    type Err = self::error::ConversionError;
-    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        match value {
-            "1.0.0" => Ok(Self::X100),
-            _ => Err("invalid value".into()),
-        }
-    }
-}
-impl ::std::convert::TryFrom<&str> for StreamStatusSpecVersion {
-    type Error = self::error::ConversionError;
-    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
-impl ::std::convert::TryFrom<::std::string::String> for StreamStatusSpecVersion {
-    type Error = self::error::ConversionError;
-    fn try_from(
-        value: ::std::string::String,
-    ) -> ::std::result::Result<Self, self::error::ConversionError> {
-        value.parse()
-    }
-}
 #[doc = " Error types."]
 pub mod error {
     #[doc = r" Error from a `TryFrom` or `FromStr` implementation."]
@@ -429,4 +429,4 @@ pub mod error {
 }
 
 /// The contract document the run-time validator reads.
-pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"Stream status bus messages","version":"1.0.0","description":"Whether a platform's stream is live now, as a state rather than the `stream.online` and `stream.offline` occurrences. Each operation path is the message's `type`, which is also the NATS subject. See docs/services/stream-sessions.md.\n"},"paths":{"/stream.status.observed":{"post":{"operationId":"streamStatusObserved","summary":"A platform's current state. Published by the connectors host when an adapter has read it and in answer to a request; read by the api's resolver.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StreamStatusObservedEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}},"/stream.status.requested":{"post":{"operationId":"streamStatusRequested","summary":"Ask every connected platform to publish its state. Published by the api's resolver; read by the connectors host.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StreamStatusRequestedEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}}},"components":{"schemas":{"StreamStatusObservedEvent":{"description":"CloudEvent carrying one platform's live state. `platform` names the platform and `sessionId`, when the publisher knows one, the session it stamps with.\n","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","platform","data"],"properties":{"specversion":{"$ref":"#/components/schemas/StreamStatusSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["stream.status.observed"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"platform":{"$ref":"#/components/schemas/EntityId"},"sessionId":{"$ref":"#/components/schemas/EntityId"},"data":{"$ref":"#/components/schemas/StreamStatusObserved"}}},"StreamStatusRequestedEvent":{"description":"CloudEvent asking for every platform's state. It has no data and carries no `sessionId` attribute.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time"],"properties":{"specversion":{"$ref":"#/components/schemas/StreamStatusSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["stream.status.requested"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"}}},"StreamStatusSpecVersion":{"description":"The `specversion` the TypeScript and Rust event factories write. It is not the CloudEvents value `1.0`; the factories are shared by every event family and are not changed per message.\n","type":"string","enum":["1.0.0"]},"StreamStatusObserved":{"description":"Whether the stream is live. `startedAt` is present only when live, and only when the platform says when it began.","type":"object","additionalProperties":false,"required":["live"],"properties":{"live":{"type":"boolean"},"startedAt":{"$ref":"#/components/schemas/EventTime"}}},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventSource":{"description":"Name of the component that produced the event.","type":"string","minLength":1,"maxLength":200},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200}}}}"####;
+pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"Stream status bus messages","version":"1.0.0","description":"Whether a platform's stream is live now, as a state rather than the `stream.online` and `stream.offline` occurrences. Each operation path is the message's `type`, which is also the NATS subject. See docs/services/stream-sessions.md.\n"},"paths":{"/stream.status.observed":{"post":{"operationId":"streamStatusObserved","summary":"A platform's current state. Published by the connectors host when an adapter has read it and in answer to a request; read by the api's resolver.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StreamStatusObservedEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}},"/stream.status.requested":{"post":{"operationId":"streamStatusRequested","summary":"Ask every connected platform to publish its state. Published by the api's resolver; read by the connectors host.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/StreamStatusRequestedEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}}},"components":{"schemas":{"StreamStatusObservedEvent":{"description":"CloudEvent carrying one platform's live state. `platform` names the platform and `sessionId`, when the publisher knows one, the session it stamps with.\n","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","platform","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["stream.status.observed"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"platform":{"$ref":"#/components/schemas/EntityId"},"sessionId":{"$ref":"#/components/schemas/EntityId"},"data":{"$ref":"#/components/schemas/StreamStatusObserved"}}},"StreamStatusRequestedEvent":{"description":"CloudEvent asking for every platform's state. It has no data and carries no `sessionId` attribute.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["stream.status.requested"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"}}},"StreamStatusObserved":{"description":"Whether the stream is live. `startedAt` is present only when live, and only when the platform says when it began.","type":"object","additionalProperties":false,"required":["live"],"properties":{"live":{"type":"boolean"},"startedAt":{"$ref":"#/components/schemas/EventTime"}}},"EventSpecVersion":{"description":"The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.\n","type":"string","enum":["1.0.0"]},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventSource":{"description":"Name of the component that produced the event.","type":"string","minLength":1,"maxLength":200},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200}}}}"####;

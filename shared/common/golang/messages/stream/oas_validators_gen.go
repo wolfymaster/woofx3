@@ -2989,6 +2989,15 @@ func (s EventSource) Validate() error {
 	return nil
 }
 
+func (s EventSpecVersion) Validate() error {
+	switch s {
+	case "1.0.0":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s EventTime) Validate() error {
 	alias := (string)(s)
 	if err := (validate.String{
@@ -3048,15 +3057,6 @@ func (s HypeTrainContributionType) Validate() error {
 func (s PlatformId) Validate() error {
 	switch s {
 	case "twitch":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s StreamEventSpecVersion) Validate() error {
-	switch s {
-	case "1.0.0":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

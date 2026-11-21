@@ -34,9 +34,9 @@ func TestDecodeHeartbeatRefusesWhatIsNotAHeartbeat(t *testing.T) {
 	}{
 		{"not json", `ping`},
 		{"a bare ping", `{"ping":true}`},
-		{"no data", `{"specversion":"1.0","id":"a","type":"com.woofx3.heartbeat","source":"db","subject":"HEARTBEAT","time":"2026-11-19T10:15:30Z"}`},
-		{"no id", `{"specversion":"1.0","type":"com.woofx3.heartbeat","source":"db","subject":"HEARTBEAT","time":"2026-11-19T10:15:30Z","data":{"application":"db","ready":true}}`},
-		{"a stringly ready", `{"specversion":"1.0","id":"a","type":"com.woofx3.heartbeat","source":"db","subject":"HEARTBEAT","time":"2026-11-19T10:15:30Z","data":{"application":"db","ready":"true"}}`},
+		{"no data", `{"specversion":"1.0.0","id":"a","type":"com.woofx3.heartbeat","source":"db","subject":"HEARTBEAT","time":"2026-11-19T10:15:30Z"}`},
+		{"no id", `{"specversion":"1.0.0","type":"com.woofx3.heartbeat","source":"db","subject":"HEARTBEAT","time":"2026-11-19T10:15:30Z","data":{"application":"db","ready":true}}`},
+		{"a stringly ready", `{"specversion":"1.0.0","id":"a","type":"com.woofx3.heartbeat","source":"db","subject":"HEARTBEAT","time":"2026-11-19T10:15:30Z","data":{"application":"db","ready":"true"}}`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

@@ -405,10 +405,6 @@ components:
       description: The streaming platform an event came from.
       type: string
       enum: [twitch]
-    StreamEventSpecVersion:
-      description: The CloudEvents version string the TypeScript publishers stamp on every event.
-      type: string
-      enum: ["1.0.0"]
     WorkflowChain:
       description: >
         Comma-separated ids of the workflow runs that led to the event, oldest
@@ -1030,7 +1026,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1057,7 +1053,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1081,7 +1077,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1105,7 +1101,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1129,7 +1125,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1153,7 +1149,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1177,7 +1173,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1201,7 +1197,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1225,7 +1221,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1249,7 +1245,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1273,7 +1269,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1297,7 +1293,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1321,7 +1317,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1345,7 +1341,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1369,7 +1365,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1393,7 +1389,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1417,7 +1413,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1441,7 +1437,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1465,7 +1461,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1489,7 +1485,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1513,7 +1509,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1537,7 +1533,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1561,7 +1557,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1585,7 +1581,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1609,7 +1605,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1633,7 +1629,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1657,7 +1653,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1681,7 +1677,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1705,7 +1701,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -1729,7 +1725,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamEventSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:

@@ -6,7 +6,7 @@
       "name": "hide a placement",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
         "type": "engine.scene.command",
         "source": "workflow",
@@ -23,7 +23,7 @@
       "name": "show a placement",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
         "type": "engine.scene.command",
         "source": "workflow",
@@ -40,7 +40,7 @@
       "name": "a time with a fraction and an offset",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
         "type": "engine.scene.command",
         "source": "workflow",
@@ -57,7 +57,7 @@
       "name": "ids at the 200 character limit",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "5b1d3c1e-7d0e-4c1b-9a53-0c6d2f3a9b11",
         "type": "engine.scene.command",
         "source": "workflow",

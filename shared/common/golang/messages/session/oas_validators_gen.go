@@ -67,6 +67,15 @@ func (s EventSource) Validate() error {
 	return nil
 }
 
+func (s EventSpecVersion) Validate() error {
+	switch s {
+	case "1.0.0":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s EventTime) Validate() error {
 	alias := (string)(s)
 	if err := (validate.String{
@@ -213,15 +222,6 @@ func (s *SessionEndedEvent) Validate() error {
 func (s SessionEndedEventType) Validate() error {
 	switch s {
 	case "session.ended":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s SessionSpecVersion) Validate() error {
-	switch s {
-	case "1.0.0":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

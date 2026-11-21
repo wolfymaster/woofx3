@@ -33,8 +33,7 @@ components:
       required: [specversion, id, type, source, time, data]
       properties:
         specversion:
-          type: string
-          enum: ["1.0.0"]
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
