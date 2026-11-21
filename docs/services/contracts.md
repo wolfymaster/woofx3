@@ -86,6 +86,9 @@ the application, or its consumers cannot name it. `bun run openapi` in
 | Scene manager messages (`engine.scene.command`) | `woofx3` | `shared/contracts/scene/openapi.yaml` | [Message contracts](/services/cloudevents#message-contracts) |
 | Barkloader messages (`barkloader.module.field_options`) | `woofx3` | `shared/contracts/barkloader/openapi.yaml` | [Message contracts](/services/cloudevents#message-contracts) |
 | Streaming platform events (`user.message`, `channel.*`, `channelpoints.redeem`, `stream.online`, `stream.offline`) | `woofx3` | `shared/contracts/stream/openapi.yaml` | [Streaming platform events](/services/cloudevents#streaming-platform-events) |
+| Heartbeat messages (`com.woofx3.heartbeat`) | `woofx3` | `shared/contracts/heartbeat/openapi.yaml` | [Message contracts](/services/cloudevents#message-contracts) |
+| Session messages (`session.started`, `session.ended`) | `woofx3` | `shared/contracts/session/openapi.yaml` | [Message contracts](/services/cloudevents#message-contracts) |
+| Stream status messages (`stream.status.observed`, `stream.status.requested`) | `woofx3` | `shared/contracts/streamstatus/openapi.yaml` | [Message contracts](/services/cloudevents#message-contracts) |
 | Maintenance API | `woofx3-maintenance` | route definitions, `openapi/maintenance.json` | the repository's `CLAUDE.md` |
 | Operators' billing API | `woofx3-maintenance` | route definitions, `openapi/billing.json` | the repository's `CLAUDE.md` |
 | Ops API | `woofx3-ui` | `convex/lib/ops/contract.ts`, `openapi/ops.json` | the UI's `docs/patterns/ops-api.md` |

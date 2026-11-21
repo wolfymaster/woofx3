@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
-import { EventType as StreamStatusEventType } from "@woofx3/common/cloudevents/StreamStatus/events";
+import { SessionEndedEventType, SessionStartedEventType } from "@woofx3/common/cloudevents/Session/session.gen";
+import {
+  StreamStatusObservedEventType,
+  StreamStatusRequestedEventType,
+} from "@woofx3/common/cloudevents/StreamStatus/streamstatus.gen";
 import { clearCurrentSessionId, getCurrentSessionId } from "@woofx3/common/cloudevents/session";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { Msg } from "@woofx3/nats/src/types";
@@ -23,6 +26,26 @@ function makeMsg(subject: string, payload: unknown): Msg {
   const body = JSON.stringify({ type: subject, data: payload });
   return {
     subject,
+    data: new TextEncoder().encode(body),
+    json: () => JSON.parse(body),
+    string: () => body,
+    respond: () => false,
+  };
+}
+
+/** A `stream.status.observed` as the connectors host publishes it, whose data is `status`. */
+function observedMsg(status: unknown, platform: unknown = "twitch"): Msg {
+  const body = JSON.stringify({
+    specversion: "1.0.0",
+    id: "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+    type: StreamStatusObservedEventType.stream_status_observed,
+    source: "connectors",
+    time: "2026-10-31T12:00:00.000Z",
+    platform,
+    data: status,
+  });
+  return {
+    subject: StreamStatusObservedEventType.stream_status_observed,
     data: new TextEncoder().encode(body),
     json: () => JSON.parse(body),
     string: () => body,
@@ -124,9 +147,9 @@ describe("StreamSessionResolver.start", () => {
 
     expect(resolver.currentSessionId()).toBe("session-1");
     expect(getCurrentSessionId()).toBe("session-1");
-    expect(published(nats).filter((event) => event.type === SessionEventType.SessionStarted)).toEqual([
+    expect(published(nats).filter((event) => event.type === SessionStartedEventType.session_started)).toEqual([
       {
-        type: SessionEventType.SessionStarted,
+        type: SessionStartedEventType.session_started,
         data: { sessionId: "session-1", startedAt: "2026-01-01T00:00:00.000Z" },
       },
     ]);
@@ -226,11 +249,11 @@ describe("the end of a broadcast", () => {
     expect(db.clearSessionScoped).toHaveBeenCalledTimes(1);
     expect(published(nats)).toEqual([
       {
-        type: SessionEventType.SessionEnded,
+        type: SessionEndedEventType.session_ended,
         data: { sessionId: "session-1", endedAt: WENT_DOWN, replacedBySessionId: "session-2" },
       },
       {
-        type: SessionEventType.SessionStarted,
+        type: SessionStartedEventType.session_started,
         data: { sessionId: "session-2", startedAt: WENT_DOWN },
       },
     ]);
@@ -372,15 +395,15 @@ describe("stream.online", () => {
     ]);
     expect(published(nats)).toEqual([
       {
-        type: SessionEventType.SessionEnded,
+        type: SessionEndedEventType.session_ended,
         data: { sessionId: "session-1", endedAt: lastEnded, replacedBySessionId: "session-2" },
       },
       {
-        type: SessionEventType.SessionStarted,
+        type: SessionStartedEventType.session_started,
         data: { sessionId: "session-2", startedAt: lastEnded },
       },
       {
-        type: SessionEventType.SessionStarted,
+        type: SessionStartedEventType.session_started,
         data: { sessionId: "session-3", startedAt: backOnline },
       },
     ]);
@@ -410,7 +433,7 @@ describe("stream.online", () => {
     const subjects = nats.publish.mock.calls.map(([subject]: [string]) => subject);
     expect(subjects[0]).toBe("module.storage.woofx3.changed");
     expect(subjects.indexOf("module.storage.woofx3.changed")).toBeLessThan(
-      subjects.indexOf(SessionEventType.SessionEnded)
+      subjects.indexOf(SessionEndedEventType.session_ended)
     );
     expect(published(nats)[0]).toMatchObject({
       type: "module.storage.changed",
@@ -453,7 +476,7 @@ describe("stream.online", () => {
     expect(db.splitStreamSession).toHaveBeenCalledTimes(1);
     expect(db.clearSessionScoped).toHaveBeenCalledTimes(1);
     expect(db.openStreamSessionSegment.mock.calls[0][0].streamSessionId).toBe("session-2");
-    expect(published(nats).map((event) => event.type)).toEqual([SessionEventType.SessionStarted]);
+    expect(published(nats).map((event) => event.type)).toEqual([SessionStartedEventType.session_started]);
     expect(resolver.currentSessionId()).toBe("session-2");
   });
 
@@ -535,20 +558,22 @@ describe("stream.offline", () => {
 });
 
 describe("StreamSessionResolver syncing with the platforms", () => {
-  const OBSERVED = StreamStatusEventType.StreamStatusObserved;
+  const OBSERVED = StreamStatusObservedEventType.stream_status_observed;
   const STARTED_AT = "2026-10-31T12:00:00.000Z";
 
   test("asks the platforms for their state once subscribed", async () => {
     const { resolver, nats, handlers } = setup();
     await resolver.start();
     expect(handlers.has(OBSERVED)).toBe(true);
-    expect(published(nats).map((event) => event.type)).toContain(StreamStatusEventType.StreamStatusRequested);
+    expect(published(nats).map((event) => event.type)).toContain(
+      StreamStatusRequestedEventType.stream_status_requested
+    );
   });
 
   test("still starts when asking fails", async () => {
     const { resolver, nats } = setup();
     nats.publish = mock(async (subject: string) => {
-      if (subject === StreamStatusEventType.StreamStatusRequested) {
+      if (subject === StreamStatusRequestedEventType.stream_status_requested) {
         throw new Error("bus down");
       }
     });
@@ -558,7 +583,7 @@ describe("StreamSessionResolver syncing with the platforms", () => {
   test("opens a segment at the stream's own start when it is found already live", async () => {
     const { resolver, db, handlers } = setup();
     await resolver.start();
-    await handlers.get(OBSERVED)?.(makeMsg(OBSERVED, { live: true, startedAt: STARTED_AT }));
+    await handlers.get(OBSERVED)?.(observedMsg({ live: true, startedAt: STARTED_AT }));
 
     expect(db.openStreamSessionSegment).toHaveBeenCalledTimes(1);
     const [request] = db.openStreamSessionSegment.mock.calls[0];
@@ -568,7 +593,7 @@ describe("StreamSessionResolver syncing with the platforms", () => {
   test("never publishes stream.online for a stream found already live", async () => {
     const { resolver, nats, handlers } = setup();
     await resolver.start();
-    await handlers.get(OBSERVED)?.(makeMsg(OBSERVED, { live: true, startedAt: STARTED_AT }));
+    await handlers.get(OBSERVED)?.(observedMsg({ live: true, startedAt: STARTED_AT }));
     expect(published(nats).map((event) => event.type)).not.toContain(EventType.StreamOnline);
   });
 
@@ -582,23 +607,21 @@ describe("StreamSessionResolver syncing with the platforms", () => {
       })),
     });
     await resolver.start();
-    await handlers.get(OBSERVED)?.(makeMsg(OBSERVED, { live: true, startedAt: STARTED_AT }));
+    await handlers.get(OBSERVED)?.(observedMsg({ live: true, startedAt: STARTED_AT }));
     expect(db.splitStreamSession).toHaveBeenCalledTimes(2);
   });
 
   test("uses the time it learned of it when the platform gives no start", async () => {
     const { resolver, db, handlers } = setup();
     await resolver.start();
-    for (const data of [{ live: true }, { live: true, startedAt: "not a time" }]) {
-      await handlers.get(OBSERVED)?.(makeMsg(OBSERVED, data));
-    }
-    expect(db.openStreamSessionSegment).toHaveBeenCalledTimes(2);
+    await handlers.get(OBSERVED)?.(observedMsg({ live: true }));
+    expect(db.openStreamSessionSegment).toHaveBeenCalledTimes(1);
   });
 
   test("closes the open segment when the stream is found offline", async () => {
     const { resolver, db, handlers } = setup();
     await resolver.start();
-    await handlers.get(OBSERVED)?.(makeMsg(OBSERVED, { live: false }));
+    await handlers.get(OBSERVED)?.(observedMsg({ live: false }));
     expect(db.closeStreamSessionSegment).toHaveBeenCalledTimes(1);
     expect(db.openStreamSessionSegment).not.toHaveBeenCalled();
   });
@@ -606,8 +629,16 @@ describe("StreamSessionResolver syncing with the platforms", () => {
   test("ignores a malformed observation", async () => {
     const { resolver, db, handlers } = setup();
     await resolver.start();
-    for (const data of [{}, { live: "yes" }, null]) {
-      await handlers.get(OBSERVED)?.(makeMsg(OBSERVED, data));
+    const refused = [
+      observedMsg({}),
+      observedMsg({ live: "yes" }),
+      observedMsg(null),
+      observedMsg({ live: true, startedAt: "not a time" }),
+      observedMsg({ live: true }, null),
+      makeMsg(OBSERVED, { live: true }),
+    ];
+    for (const msg of refused) {
+      await handlers.get(OBSERVED)?.(msg);
     }
     expect(db.openStreamSessionSegment).not.toHaveBeenCalled();
     expect(db.closeStreamSessionSegment).not.toHaveBeenCalled();

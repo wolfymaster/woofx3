@@ -1,0 +1,522 @@
+{
+  "schema": "HeartbeatEvent",
+  "description": "com.woofx3.heartbeat messages. Closed: an unknown, missing, mistyped, null or empty field is refused; a bare liveness ping is not a heartbeat.",
+  "cases": [
+    {
+      "name": "the event the publisher sends",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "not ready",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": false
+        }
+      }
+    },
+    {
+      "name": "a time with an offset",
+      "valid": true,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T11:15:30+01:00",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "no specversion",
+      "valid": false,
+      "value": {
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "no id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "no type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "no source",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "no subject",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "no time",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "an unknown envelope field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        },
+        "correlationKey": "k"
+      }
+    },
+    {
+      "name": "a null id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": null,
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "an empty id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "a numeric id",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": 7,
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "an empty source",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "a time without a zone",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "a time that is not a time",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "yesterday",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "another subject as the type",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "twitchapi",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "a specversion that is not 1.0",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "another subject",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "OTHER",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "a bare ping",
+      "valid": false,
+      "value": {
+        "ping": true
+      }
+    },
+    {
+      "name": "no data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z"
+      }
+    },
+    {
+      "name": "a null data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": null
+      }
+    },
+    {
+      "name": "an empty data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {}
+      }
+    },
+    {
+      "name": "a list as data",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": []
+      }
+    },
+    {
+      "name": "an unknown data field",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": true,
+          "extra": "x"
+        }
+      }
+    },
+    {
+      "name": "no data.application",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "no data.ready",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader"
+        }
+      }
+    },
+    {
+      "name": "a null data.application",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": null,
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "an empty data.application",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "a numeric data.application",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": 1,
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "a 201 character data.application",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+          "ready": true
+        }
+      }
+    },
+    {
+      "name": "a null data.ready",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": null
+        }
+      }
+    },
+    {
+      "name": "a string data.ready",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": "true"
+        }
+      }
+    },
+    {
+      "name": "a numeric data.ready",
+      "valid": false,
+      "value": {
+        "specversion": "1.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "com.woofx3.heartbeat",
+        "source": "barkloader",
+        "subject": "HEARTBEAT",
+        "time": "2026-11-19T10:15:30.123Z",
+        "data": {
+          "application": "barkloader",
+          "ready": 1
+        }
+      }
+    }
+  ]
+}

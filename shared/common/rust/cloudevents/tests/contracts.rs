@@ -4,7 +4,9 @@
 
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
-use woofx3_cloudevents::{barkloader_gen, scene_gen, stream_gen};
+use woofx3_cloudevents::{
+    barkloader_gen, heartbeat_gen, scene_gen, session_gen, stream_gen, streamstatus_gen,
+};
 
 struct Case {
     name: String,
@@ -96,6 +98,56 @@ fn test_module_field_options_request_fixtures() {
 }
 
 #[test]
+fn test_heartbeat_event_fixtures() {
+    run::<heartbeat_gen::HeartbeatEvent>(
+        "heartbeat",
+        "heartbeat-event.json",
+        "HeartbeatEvent",
+        heartbeat_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_session_started_event_fixtures() {
+    run::<session_gen::SessionStartedEvent>(
+        "session",
+        "session-started-event.json",
+        "SessionStartedEvent",
+        session_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_session_ended_event_fixtures() {
+    run::<session_gen::SessionEndedEvent>(
+        "session",
+        "session-ended-event.json",
+        "SessionEndedEvent",
+        session_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_stream_status_observed_event_fixtures() {
+    run::<streamstatus_gen::StreamStatusObservedEvent>(
+        "streamstatus",
+        "stream-status-observed-event.json",
+        "StreamStatusObservedEvent",
+        streamstatus_gen::DOCUMENT,
+    );
+}
+
+#[test]
+fn test_stream_status_requested_event_fixtures() {
+    run::<streamstatus_gen::StreamStatusRequestedEvent>(
+        "streamstatus",
+        "stream-status-requested-event.json",
+        "StreamStatusRequestedEvent",
+        streamstatus_gen::DOCUMENT,
+    );
+}
+
+#[test]
 fn test_request_type_is_the_subject() {
     assert_eq!(
         barkloader_gen::ModuleFieldOptionsRequestType::BarkloaderModuleFieldOptions.to_string(),
@@ -104,6 +156,26 @@ fn test_request_type_is_the_subject() {
     assert_eq!(
         scene_gen::SceneCommandRequestType::EngineSceneCommand.to_string(),
         "engine.scene.command"
+    );
+    assert_eq!(
+        heartbeat_gen::HeartbeatEventType::ComWoofx3Heartbeat.to_string(),
+        "com.woofx3.heartbeat"
+    );
+    assert_eq!(
+        session_gen::SessionStartedEventType::SessionStarted.to_string(),
+        "session.started"
+    );
+    assert_eq!(
+        session_gen::SessionEndedEventType::SessionEnded.to_string(),
+        "session.ended"
+    );
+    assert_eq!(
+        streamstatus_gen::StreamStatusObservedEventType::StreamStatusObserved.to_string(),
+        "stream.status.observed"
+    );
+    assert_eq!(
+        streamstatus_gen::StreamStatusRequestedEventType::StreamStatusRequested.to_string(),
+        "stream.status.requested"
     );
 }
 

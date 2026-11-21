@@ -11,7 +11,11 @@ use std::time::Duration;
 
 use async_nats::Client;
 use tracing::{debug, warn};
-use woofx3_runtime::heartbeat::{HEARTBEAT_SUBJECT, Readiness, heartbeat_event};
+use uuid::Uuid;
+use woofx3_cloudevents::heartbeat_gen::{
+    EventSpecVersion, HeartbeatData, HeartbeatEvent, HeartbeatEventSubject, HeartbeatEventType,
+};
+use woofx3_runtime::heartbeat::Readiness;
 
 /// How often to publish. Matches the runtime's default heartbeat interval on
 /// the Go and TypeScript sides, so a dependent's staleness window is the same
@@ -37,9 +41,33 @@ pub fn spawn(
     })
 }
 
+/// The heartbeat message for `app_name`, built from the generated contract
+/// types so a value outside the contract cannot be constructed.
+fn heartbeat_event(app_name: &str, ready: bool, time: &str) -> Result<HeartbeatEvent, String> {
+    let application = app_name.parse().map_err(|e| format!("application: {e}"))?;
+    Ok(HeartbeatEvent {
+        specversion: EventSpecVersion::X10,
+        id: Uuid::new_v4()
+            .to_string()
+            .parse()
+            .map_err(|e| format!("id: {e}"))?,
+        type_: HeartbeatEventType::ComWoofx3Heartbeat,
+        source: app_name.parse().map_err(|e| format!("source: {e}"))?,
+        subject: HeartbeatEventSubject::Heartbeat,
+        time: time.parse().map_err(|e| format!("time: {e}"))?,
+        data: HeartbeatData { application, ready },
+    })
+}
+
 async fn publish_once(client: &Client, app_name: &str, readiness: &Readiness) {
     let ready = readiness.is_ready();
-    let event = heartbeat_event(app_name, ready, &chrono::Utc::now().to_rfc3339());
+    let event = match heartbeat_event(app_name, ready, &chrono::Utc::now().to_rfc3339()) {
+        Ok(event) => event,
+        Err(e) => {
+            warn!("heartbeat does not fit its contract: {e}");
+            return;
+        }
+    };
     let payload = match serde_json::to_vec(&event) {
         Ok(bytes) => bytes,
         Err(e) => {
@@ -50,7 +78,10 @@ async fn publish_once(client: &Client, app_name: &str, readiness: &Readiness) {
     // A failed heartbeat is not fatal: NATS may be briefly unavailable, and
     // the next tick republishes. Dependents treat missing heartbeats as
     // not-ready, which is the same conclusion a `ready: false` would give.
-    match client.publish(HEARTBEAT_SUBJECT, payload.into()).await {
+    match client
+        .publish(HeartbeatEventSubject::Heartbeat.to_string(), payload.into())
+        .await
+    {
         Ok(()) => debug!(ready, "published heartbeat"),
         Err(e) => warn!("heartbeat publish failed: {e}"),
     }
@@ -71,5 +102,31 @@ impl HeartbeatHandle {
             readiness,
             _task: Arc::new(task),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_heartbeat_event_matches_the_contract() {
+        let event = heartbeat_event("barkloader", false, "2026-01-01T00:00:00Z").unwrap();
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["type"], "com.woofx3.heartbeat");
+        assert_eq!(value["subject"], "HEARTBEAT");
+        assert_eq!(value["source"], "barkloader");
+        assert_eq!(value["data"]["application"], "barkloader");
+        assert_eq!(value["data"]["ready"], false);
+    }
+
+    #[test]
+    fn test_heartbeat_event_refuses_an_empty_application() {
+        assert!(heartbeat_event("", true, "2026-01-01T00:00:00Z").is_err());
+    }
+
+    #[test]
+    fn test_heartbeat_event_refuses_a_time_that_is_not_rfc3339() {
+        assert!(heartbeat_event("barkloader", true, "yesterday").is_err());
     }
 }

@@ -1,5 +1,7 @@
 import { EngineEventType, SESSION_SUMMARY_SCHEMA_VERSION, type SessionSummaryEvent } from "@woofx3/api/webhooks";
-import { EventType as SessionEventType } from "@woofx3/common/cloudevents/Session/events";
+import { SessionEndedEventType } from "@woofx3/common/cloudevents/Session/session.gen";
+import { validateSessionEndedEvent } from "@woofx3/common/cloudevents/Session/session.validate.gen";
+import { parseContract } from "@woofx3/common/cloudevents/utils";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
@@ -76,8 +78,8 @@ export class SessionSummaryEmitter {
   ) {}
 
   async start(): Promise<void> {
-    await this.nats.subscribe(SessionEventType.SessionEnded, (msg: Msg) => this.handleSessionEnded(msg));
-    this.logger.info("SessionSummaryEmitter started", { subject: SessionEventType.SessionEnded });
+    await this.nats.subscribe(SessionEndedEventType.session_ended, (msg: Msg) => this.handleSessionEnded(msg));
+    this.logger.info("SessionSummaryEmitter started", { subject: SessionEndedEventType.session_ended });
   }
 
   /**
@@ -114,7 +116,7 @@ export class SessionSummaryEmitter {
   private async handleSessionEnded(msg: Msg): Promise<void> {
     const sessionId = readEndedSessionId(msg);
     if (sessionId === null) {
-      this.logger.error(`${SessionEventType.SessionEnded}: no sessionId in payload; cannot summarise`, {
+      this.logger.error(`${SessionEndedEventType.session_ended}: not a session.ended message; cannot summarise`, {
         subject: msg.subject,
       });
       return;
@@ -132,11 +134,10 @@ export class SessionSummaryEmitter {
 
 function readEndedSessionId(msg: Msg): string | null {
   try {
-    const ce = msg.json() as Record<string, unknown>;
-    const data = (ce.data as Record<string, unknown> | undefined) ?? ce;
-    const sessionId = data.sessionId;
-    return typeof sessionId === "string" && sessionId.length > 0 ? sessionId : null;
+    const parsed = parseContract(validateSessionEndedEvent, msg.json());
+    return parsed.ok ? parsed.value.data.sessionId : null;
   } catch {
+    // Not JSON at all: the caller reports it like any other message that does not fit the contract.
     return null;
   }
 }
