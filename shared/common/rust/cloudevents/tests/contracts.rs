@@ -4,7 +4,7 @@
 
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
-use woofx3_cloudevents::{barkloader_gen, heartbeat_gen, scene_gen, session_gen, streamstatus_gen};
+use woofx3_cloudevents::{barkloader_gen, heartbeat_gen, scene_gen, session_gen, stream_gen, streamstatus_gen};
 
 struct Case {
     name: String,
@@ -175,4 +175,46 @@ fn test_request_type_is_the_subject() {
         streamstatus_gen::StreamStatusRequestedEventType::StreamStatusRequested.to_string(),
         "stream.status.requested"
     );
+}
+
+macro_rules! stream_fixtures {
+    ($($test:ident, $file:literal, $schema:ident;)*) => {$(
+        #[test]
+        fn $test() {
+            run::<stream_gen::$schema>("stream", $file, stringify!($schema), stream_gen::DOCUMENT);
+        }
+    )*};
+}
+
+stream_fixtures! {
+    test_user_message_event_fixtures, "user-message.json", UserMessageEvent;
+    test_channel_cheer_event_fixtures, "channel-cheer.json", ChannelCheerEvent;
+    test_channel_follow_event_fixtures, "channel-follow.json", ChannelFollowEvent;
+    test_channel_hype_train_event_fixtures, "channel-hypetrain.json", ChannelHypeTrainEvent;
+    test_channel_raid_event_fixtures, "channel-raid.json", ChannelRaidEvent;
+    test_channel_points_redeem_event_fixtures, "channelpoints-redeem.json", ChannelPointsRedeemEvent;
+    test_stream_online_event_fixtures, "stream-online.json", StreamOnlineEvent;
+    test_stream_offline_event_fixtures, "stream-offline.json", StreamOfflineEvent;
+    test_channel_subscribe_event_fixtures, "channel-subscribe.json", ChannelSubscribeEvent;
+    test_channel_subscription_gift_event_fixtures, "channel-subscriptionGift.json", ChannelSubscriptionGiftEvent;
+    test_channel_resub_event_fixtures, "channel-resub.json", ChannelResubEvent;
+    test_channel_gift_paid_upgrade_event_fixtures, "channel-giftPaidUpgrade.json", ChannelGiftPaidUpgradeEvent;
+    test_channel_prime_paid_upgrade_event_fixtures, "channel-primePaidUpgrade.json", ChannelPrimePaidUpgradeEvent;
+    test_channel_unraid_event_fixtures, "channel-unraid.json", ChannelUnraidEvent;
+    test_channel_pay_it_forward_event_fixtures, "channel-payItForward.json", ChannelPayItForwardEvent;
+    test_channel_announcement_event_fixtures, "channel-announcement.json", ChannelAnnouncementEvent;
+    test_channel_charity_donation_event_fixtures, "channel-charityDonation.json", ChannelCharityDonationEvent;
+    test_channel_bits_badge_tier_event_fixtures, "channel-bitsBadgeTier.json", ChannelBitsBadgeTierEvent;
+    test_channel_watch_streak_event_fixtures, "channel-watchStreak.json", ChannelWatchStreakEvent;
+    test_channel_shared_subscribe_event_fixtures, "channel-sharedSubscribe.json", ChannelSharedSubscribeEvent;
+    test_channel_shared_subscription_gift_event_fixtures, "channel-sharedSubscriptionGift.json", ChannelSharedSubscriptionGiftEvent;
+    test_channel_shared_raid_event_fixtures, "channel-sharedRaid.json", ChannelSharedRaidEvent;
+    test_channel_shared_resub_event_fixtures, "channel-sharedResub.json", ChannelSharedResubEvent;
+    test_channel_shared_gift_paid_upgrade_event_fixtures, "channel-sharedGiftPaidUpgrade.json", ChannelSharedGiftPaidUpgradeEvent;
+    test_channel_shared_prime_paid_upgrade_event_fixtures, "channel-sharedPrimePaidUpgrade.json", ChannelSharedPrimePaidUpgradeEvent;
+    test_channel_shared_pay_it_forward_event_fixtures, "channel-sharedPayItForward.json", ChannelSharedPayItForwardEvent;
+    test_channel_shared_announcement_event_fixtures, "channel-sharedAnnouncement.json", ChannelSharedAnnouncementEvent;
+    test_channel_ad_break_upcoming_event_fixtures, "channel-ad-break-upcoming.json", ChannelAdBreakUpcomingEvent;
+    test_channel_ad_break_begin_event_fixtures, "channel-ad-break-begin.json", ChannelAdBreakBeginEvent;
+    test_channel_ad_break_end_event_fixtures, "channel-ad-break-end.json", ChannelAdBreakEndEvent;
 }

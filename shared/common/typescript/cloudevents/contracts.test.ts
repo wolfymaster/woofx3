@@ -7,11 +7,19 @@ import * as barkloader from "./Barkloader/barkloader.validate.gen";
 import * as heartbeat from "./Heartbeat/heartbeat.validate.gen";
 import * as scene from "./Scene/scene.validate.gen";
 import * as session from "./Session/session.validate.gen";
+import * as stream from "./Twitch/stream.validate.gen";
 import * as streamstatus from "./StreamStatus/streamstatus.validate.gen";
 
 type Validator = ((value: unknown) => boolean) & { errors?: unknown };
 
-const domains: Record<string, Record<string, Validator>> = { scene, barkloader, heartbeat, session, streamstatus };
+const domains: Record<string, Record<string, Validator>> = {
+  scene,
+  barkloader,
+  heartbeat,
+  session,
+  stream,
+  streamstatus,
+};
 const contractsDir = join(import.meta.dir, "..", "..", "..", "contracts");
 
 interface Fixture {

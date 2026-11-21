@@ -20,6 +20,7 @@ pub mod heartbeat_gen;
 pub mod scene_gen;
 pub mod session_gen;
 pub mod streamstatus_gen;
+pub mod stream_gen;
 
 pub use base_event::{BaseEvent, SPEC_VERSION};
 pub use time::{format_iso8601, now_iso8601};

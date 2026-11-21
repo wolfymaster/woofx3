@@ -99,6 +99,7 @@ an enum list, not a second validator. This is the message half of the [contracts
 | `shared/contracts/heartbeat/openapi.yaml` | `com.woofx3.heartbeat`, published on `HEARTBEAT` | every service (Go, TypeScript, Rust) | the runtime health monitors (Go, TypeScript) and the api's readiness probe |
 | `shared/contracts/session/openapi.yaml` | `session.started`, `session.ended` | api (TypeScript) | every publishing process (TypeScript, Rust), the api's session summary emitter |
 | `shared/contracts/streamstatus/openapi.yaml` | `stream.status.observed`, `stream.status.requested` | connectors host, api (TypeScript) | api, connectors host |
+| `shared/contracts/stream/openapi.yaml` | the [streaming platform events](#streaming-platform-events) | connectors (TypeScript) | workflow engine (Go), api (TypeScript) |
 
 All the documents take their CloudEvents attributes (`specversion`, `id`, `source`, `time`) and the
 opaque id type from `shared/contracts/common/cloudevents.yaml`, a document with no operations of its
@@ -221,121 +222,47 @@ A consumer validates what it receives against the same document that typed it:
   and builds each heartbeat it publishes from the generated types. A serde type alone
   accepts `null` for an optional field, so the validator is the check, not the type.
 
-## Twitch Events
+## Streaming platform events
 
-Twitch channel events carry a full CloudEvent envelope. The NATS subject doubles as the CloudEvents `type`.
+The connectors publish what happens on a streaming platform as CloudEvents whose NATS subject is the
+CloudEvents `type`. The platform is the `platform` attribute (`twitch`), not part of the subject, so a
+workflow subscribes to `channel.follow` once and narrows by platform only when it cares. The contract is
+`shared/contracts/stream/openapi.yaml`; its payload schemas are the only description of each payload, so
+read them there.
 
-### Event Types
+| Subject | Schema (envelope) | Payload |
+|---------|-------------------|---------|
+| `user.message` | `UserMessageEvent` | `UserMessage` |
+| `channel.cheer`, `channel.follow`, `channel.raid`, `channel.hypetrain` | `Channel<Name>Event` | `ChannelCheer`, `ChannelFollow`, `ChannelRaid`, `ChannelHypeTrain` |
+| `channelpoints.redeem` | `ChannelPointsRedeemEvent` | `ChannelPointsRedeem` |
+| `stream.online`, `stream.offline` | `StreamOnlineEvent`, `StreamOfflineEvent` | `StreamOnline`, `StreamOffline` |
+| `channel.subscribe`, `channel.subscriptionGift`, `channel.resub`, `channel.giftPaidUpgrade`, `channel.primePaidUpgrade`, `channel.unraid`, `channel.payItForward`, `channel.announcement`, `channel.charityDonation`, `channel.bitsBadgeTier`, `channel.watchStreak` | `Channel<Name>Event` | `Channel<Name>` |
+| `channel.shared*` (see [Shared chat](#shared-chat)) | `ChannelShared<Name>Event` | the plain event's payload, except `Subscribe`, `SubscriptionGift` and `Raid`, whose shared payloads add the chat notification fields |
+| `channel.ad_break.upcoming`, `.begin`, `.end` | `ChannelAdBreak<Name>Event` | `ChannelAdBreak<Name>` (see [Twitch ad breaks](/services/twitch-channel)); `end` is synthesized by the adapter, not sent by Twitch |
 
-| Method | NATS Subject / Type | Description |
-|--------|---------------------|-------------|
-| `chatMessage` | `user.message` | A chat message was sent in the channel |
-| `cheer` | `channel.cheer` | A viewer cheered with bits |
-| `follow` | `channel.follow` | A viewer followed the channel |
-| `hypeTrainBegin` | `channel.hypetrain` | A hype train started |
-| `streamOnline` | `stream.online` | The stream went online |
-| `subscribe` | `channel.subscribe` | A viewer subscribed |
-| `subscriptionGift` | `channel.subscriptionGift` | A subscription was gifted |
-| `adBreakUpcoming` | `channel.ad_break.upcoming` | An ad break is scheduled soon (published by the connectors Twitch adapter; see [Twitch ad breaks](/services/twitch-channel)) |
-| `adBreakBegin` | `channel.ad_break.begin` | An ad break started |
-| `adBreakEnd` | `channel.ad_break.end` | An ad break is due to have ended (synthesized, not from Twitch) |
+Rules the contract fixes:
 
-### Payloads
+- An event is closed: an unknown field, a missing or mistyped one, and a `null` where the schema has none
+  are refused. A field the platform can lack (a gifter who is anonymous, a channel outside a shared chat)
+  is required and nullable: it is present and `null`, never omitted, so a workflow condition reads `null`
+  instead of failing on a missing key. Only `ChannelPointsRedeem.message`, `ChatterMembership.isFollower`
+  and `ChatterMembership.subscriberTier` are omitted when absent; absent is never `false` or a default tier.
+- `specversion` is `1.0.0`, what `BaseEvent` stamps on every TypeScript event; `sessionId` is present once the
+  publisher knows a session; `workflowChain` is present only on a `user.message` the engine said itself.
+- `chat.command.<slug>` has no schema here: its subject is one per command name, and the generated contract
+  names exactly one subject per message.
 
-#### ChatMessage
+`TwitchEvents` (`shared/common/typescript/cloudevents/Twitch`) validates each event against its generated
+validator before returning the bytes to publish, so an event that does not fit throws at the publish call
+and nothing reaches the bus. Consumers do not validate again: the workflow engine matches on subjects and
+reads `data` through expressions, and the api reads typed fields after the producer's check. Go
+(`shared/common/golang/messages/stream`) and Rust (`stream_gen`) carry the generated types for any consumer
+that decodes these payloads; the shared fixtures in `shared/contracts/stream/fixtures` run through all three.
 
-```typescript
-interface ChatMessage {
-    messageId: string;    // Twitch's id for the line, what a reply or pin names
-    amount: number;       // dollar amount if paid message, otherwise 0
-    isPaid: boolean;
-    channelId: string | null;
-    channelName: string | null;
-    chatterId: string;
-    chatterName: string;  // display name
-    chatterLogin: string; // account name, lowercase
-    message: string;
-    membership: ChatterMembership;
-    fromEngine: boolean;  // a line the engine said itself, handed back by Twitch
-}
-```
-
-#### Cheer
-
-```typescript
-interface Cheer {
-    amount: number;       // bits cheered
-    isAnonymous: boolean;
-    message: string;
-    userId: string | null;
-    userName: string | null;
-}
-```
-
-#### Follow
-
-```typescript
-interface Follow {
-    userName: string;
-}
-```
-
-#### HypeTrainBegin
-
-```typescript
-interface HypeTrainBegin {
-    id: string;
-    broadcasterId: string;
-    broadcasterName: string;   // display name
-    level: number;
-    total: number;             // points contributed to the whole train
-    progress: number;          // points towards the current level
-    goal: number;              // points the current level needs
-    topContributions: {
-        userId: string;
-        userName: string;      // display name
-        type: "bits" | "subscription" | "other";
-        total: number;
-    }[];
-    startedAt: string;         // ISO-8601
-    expiresAt: string;         // ISO-8601; extended when the train levels up
-}
-```
-
-Every Twitch payload must be a plain object. `TwitchEvents` throws when given a
+Every payload must also be a plain object. `TwitchEvents` throws when given a
 class instance (anywhere in the payload), so a platform SDK event, whose data
 sits behind getters and whose API client is an own property, can never be
 serialized onto the bus by accident.
-
-#### StreamOnline
-
-```typescript
-interface StreamOnline {}   // no additional payload
-```
-
-#### Subscribe
-
-```typescript
-interface Subscribe {
-    isGift: boolean;
-    isCommunityGift: boolean; // one recipient of a community gift, also sent whole as SubscriptionGift
-    tier: string;         // e.g. "1000", "2000", "3000"
-    userId: string | null;
-    userName: string | null;
-}
-```
-
-#### SubscriptionGift
-
-```typescript
-interface SubscriptionGift {
-    amount: number;       // number of subs gifted
-    gifterId: string;
-    gifterName: string;
-    isAnonymous: boolean;
-    tier: string;
-}
-```
 
 ### Shared chat
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.74.0](https://github.com/wolfymaster/woofx3/compare/v0.73.0...v0.74.0) (2026-11-20)
+
+### Features
+
+* **cloudevents:** check Twitch events against their contract at publish ([92a8f69](https://github.com/wolfymaster/woofx3/commit/92a8f698571cfec1c284883e1f7640d09619e472))
+* **contracts:** the streaming platform event documents and fixtures ([4e896e0](https://github.com/wolfymaster/woofx3/commit/4e896e02b6b986b1437dfe56c00238ef9e05eba8))
+
 ## [0.73.0](https://github.com/wolfymaster/woofx3/compare/v0.72.0...v0.73.0) (2026-11-20)
 
 ### Features

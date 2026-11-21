@@ -39,6 +39,7 @@ readonly DOMAINS=(
   "heartbeat shared/common/golang/messages/heartbeat shared/common/typescript/cloudevents/Heartbeat shared/common/rust/cloudevents/src/heartbeat_gen.rs"
   "session shared/common/golang/messages/session shared/common/typescript/cloudevents/Session shared/common/rust/cloudevents/src/session_gen.rs"
   "streamstatus shared/common/golang/messages/streamstatus shared/common/typescript/cloudevents/StreamStatus shared/common/rust/cloudevents/src/streamstatus_gen.rs"
+  "stream shared/common/golang/messages/stream shared/common/typescript/cloudevents/Twitch shared/common/rust/cloudevents/src/stream_gen.rs"
 )
 
 tools=scripts/contracts
