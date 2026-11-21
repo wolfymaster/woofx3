@@ -4,7 +4,9 @@
 
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
-use woofx3_cloudevents::{barkloader_gen, heartbeat_gen, scene_gen, session_gen, stream_gen, streamstatus_gen};
+use woofx3_cloudevents::{
+    barkloader_gen, heartbeat_gen, scene_gen, session_gen, stream_gen, streamstatus_gen,
+};
 
 struct Case {
     name: String,
