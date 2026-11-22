@@ -1,4 +1,4 @@
-// Package fixturetest runs the shared contract fixtures in shared/contracts/<domain>/fixtures through a generated
+// Package fixturetest runs the shared contract fixtures in shared/contracts/<source>/fixtures through a generated
 // Go type. The same files run in the TypeScript and Rust tests, so one case fixes the verdict of all three languages.
 package fixturetest
 
@@ -36,9 +36,9 @@ type Validatable interface {
 func Run[T any, P interface {
 	*T
 	Validatable
-}](t *testing.T, domain, file, schema string) {
+}](t *testing.T, source, file, schema string) {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "contracts", domain, "fixtures", file))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", source, "fixtures", file))
 	if err != nil {
 		t.Fatal(err)
 	}

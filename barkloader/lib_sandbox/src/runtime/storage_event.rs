@@ -10,7 +10,7 @@
 use crate::host::NatsPublisher;
 use serde_json::Value;
 use std::sync::Arc;
-use woofx3_cloudevents::module_gen::ModuleStorageChange;
+use woofx3_cloudevents::messages_gen::ModuleStorageChange;
 use woofx3_cloudevents::{BaseEvent, now_iso8601};
 
 const EVENT_TYPE: &str = "module.storage.changed";
@@ -89,7 +89,7 @@ fn storage_change(
 mod tests {
     use super::*;
     use serde_json::json;
-    use woofx3_cloudevents::module_gen::ModuleStorageChangedEvent;
+    use woofx3_cloudevents::messages_gen::ModuleStorageChangedEvent;
 
     #[test]
     fn test_storage_change_event_is_the_contracts_envelope() {

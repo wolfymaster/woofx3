@@ -1,7 +1,7 @@
 import Event, { type BaseEvent } from "../BaseEvent";
 import { commandNameToSubjectSegment } from "../slug";
-import type { SchemaChatCommand } from "../Twitch/stream.gen";
-import { validateChatCommandEvent } from "../Twitch/stream.validate.gen";
+import type { SchemaChatCommand } from "../messages.gen";
+import { validateChatCommandEvent } from "../messages.validate.gen";
 import { encode } from "../utils";
 
 /** The payload of one invocation, as the stream contract (shared/contracts/stream/openapi.yaml) defines it. */

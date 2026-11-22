@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { StreamStatusObservedEventType } from "@woofx3/common/cloudevents/StreamStatus/streamstatus.gen";
+import { StreamStatusObservedEventType } from "@woofx3/common/cloudevents/messages.gen";
 import { LIVE_STATUS_READ_RETRY, LiveStatusBoard } from "./live-status";
 import { FakeTime, flush, halfRandom, RecordingLogger, text } from "./testing";
 

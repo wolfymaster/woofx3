@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/wolfymaster/woofx3/common/messages/scene"
+	"github.com/wolfymaster/woofx3/common/messages"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 )
 
 // sceneCommandSubject is answered by the scene manager, which holds every open
 // overlay. It is the `type` the scene contract fixes for the request.
-const sceneCommandSubject = string(scene.SceneCommandRequestTypeEngineSceneCommand)
+const sceneCommandSubject = string(messages.SceneCommandRequestTypeEngineSceneCommand)
 
 // sceneCommandSource is the `source` of the requests this engine publishes.
 const sceneCommandSource = "workflow"
@@ -88,23 +88,23 @@ var widgetVisibilityActionSpec = tasks.ActionSpec{
 // parseWidgetVisibilityParams reads the step's parameters. `visible` defaults
 // to true and accepts "true" and "false", since a value filled in from an
 // expression reaches the action as text.
-func parseWidgetVisibilityParams(params map[string]any) (scene.SceneCommand, error) {
+func parseWidgetVisibilityParams(params map[string]any) (messages.SceneCommand, error) {
 	sceneID, _ := params["sceneId"].(string)
 	if sceneID == "" {
-		return scene.SceneCommand{}, fmt.Errorf("sceneId must be a scene id, got %s", describeParam(params["sceneId"]))
+		return messages.SceneCommand{}, fmt.Errorf("sceneId must be a scene id, got %s", describeParam(params["sceneId"]))
 	}
 	placementID, _ := params["placementId"].(string)
 	if placementID == "" {
-		return scene.SceneCommand{}, fmt.Errorf("placementId must be a widget placement id, got %s", describeParam(params["placementId"]))
+		return messages.SceneCommand{}, fmt.Errorf("placementId must be a widget placement id, got %s", describeParam(params["placementId"]))
 	}
 	visible, err := parseVisibleParam(params["visible"])
 	if err != nil {
-		return scene.SceneCommand{}, err
+		return messages.SceneCommand{}, err
 	}
-	return scene.SceneCommand{
-		Command:     scene.SceneCommandCommandSetPlacementVisibility,
-		SceneId:     scene.EntityId(sceneID),
-		PlacementId: scene.EntityId(placementID),
+	return messages.SceneCommand{
+		Command:     messages.SceneCommandCommandSetPlacementVisibility,
+		SceneId:     messages.EntityId(sceneID),
+		PlacementId: messages.EntityId(placementID),
 		Visible:     visible,
 	}, nil
 }
@@ -128,13 +128,13 @@ func parseVisibleParam(value any) (bool, error) {
 
 // buildSceneCommandRequest serializes the command as the CloudEvent the scene
 // contract describes, refusing to produce one the scene manager would reject.
-func buildSceneCommandRequest(command scene.SceneCommand) ([]byte, error) {
-	request := scene.SceneCommandRequest{
-		Specversion: scene.EventSpecVersion100,
-		ID:          scene.EventId(uuid.NewString()),
-		Type:        scene.SceneCommandRequestTypeEngineSceneCommand,
+func buildSceneCommandRequest(command messages.SceneCommand) ([]byte, error) {
+	request := messages.SceneCommandRequest{
+		Specversion: messages.EventSpecVersion100,
+		ID:          messages.EventId(uuid.NewString()),
+		Type:        messages.SceneCommandRequestTypeEngineSceneCommand,
 		Source:      sceneCommandSource,
-		Time:        scene.EventTime(time.Now().UTC().Format(time.RFC3339)),
+		Time:        messages.EventTime(time.Now().UTC().Format(time.RFC3339)),
 		Data:        command,
 	}
 	if err := request.Validate(); err != nil {
@@ -151,14 +151,14 @@ func buildSceneCommandRequest(command scene.SceneCommand) ([]byte, error) {
 // outcome. Its error text is written for the streamer and becomes the step's
 // error as it is.
 func decodeSceneCommandReply(raw []byte) error {
-	var reply scene.SceneCommandReply
+	var reply messages.SceneCommandReply
 	if err := json.Unmarshal(raw, &reply); err != nil {
 		return fmt.Errorf("scene manager answered with something that is not a reply: %w", err)
 	}
 	if err := reply.Validate(); err != nil {
 		return fmt.Errorf("scene manager answered with something that is not a reply: %w", err)
 	}
-	if reply.Type == scene.SceneCommandFailedSceneCommandReply {
+	if reply.Type == messages.SceneCommandFailedSceneCommandReply {
 		return fmt.Errorf("%s", reply.SceneCommandFailed.Error)
 	}
 	return nil

@@ -6,8 +6,7 @@ import (
 	"strings"
 
 	"github.com/wolfymaster/woofx3/common/cloudevents"
-	"github.com/wolfymaster/woofx3/common/messages/stream"
-	"github.com/wolfymaster/woofx3/common/messages/workflow"
+	"github.com/wolfymaster/woofx3/common/messages"
 )
 
 // wireMessage is what ogen generates for every schema of a message contract.
@@ -39,21 +38,21 @@ func checkWire[T any, P interface {
 // with no contract passes: those are events a workflow's own actions emit.
 func checkPublished(eventType string, raw []byte) error {
 	if strings.HasPrefix(eventType, commandEventSubjectPrefix) {
-		return checkWire[stream.ChatCommandEvent](raw)
+		return checkWire[messages.ChatCommandEvent](raw)
 	}
 	switch cloudevents.Subject(eventType) {
 	case cloudevents.SubjectWorkflowRunStarted:
-		return checkWire[workflow.WorkflowRunStartedEvent](raw)
+		return checkWire[messages.WorkflowRunStartedEvent](raw)
 	case cloudevents.SubjectWorkflowRunCompleted:
-		return checkWire[workflow.WorkflowRunCompletedEvent](raw)
+		return checkWire[messages.WorkflowRunCompletedEvent](raw)
 	case cloudevents.SubjectWorkflowRunFailed:
-		return checkWire[workflow.WorkflowRunFailedEvent](raw)
+		return checkWire[messages.WorkflowRunFailedEvent](raw)
 	case cloudevents.SubjectWorkflowRunCancelled:
-		return checkWire[workflow.WorkflowRunCancelledEvent](raw)
+		return checkWire[messages.WorkflowRunCancelledEvent](raw)
 	case cloudevents.SubjectWorkflowHealthSnapshot:
-		return checkWire[workflow.WorkflowHealthSnapshotEvent](raw)
+		return checkWire[messages.WorkflowHealthSnapshotEvent](raw)
 	case cloudevents.SubjectWorkflowHealthChanged:
-		return checkWire[workflow.WorkflowHealthChangedEvent](raw)
+		return checkWire[messages.WorkflowHealthChangedEvent](raw)
 	default:
 		return nil
 	}

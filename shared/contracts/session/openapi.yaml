@@ -10,6 +10,7 @@ paths:
   /session.started:
     post:
       operationId: sessionStarted
+      x-consumers: [ts, rust]
       summary: Name the session events are stamped with. Published by the api on a new session and when it starts; read by every publishing process.
       requestBody:
         required: true
@@ -23,6 +24,7 @@ paths:
   /session.ended:
     post:
       operationId: sessionEnded
+      x-consumers: [ts]
       summary: Say a broadcast's session is over. Published by the api; read by the session summary emitter.
       requestBody:
         required: true

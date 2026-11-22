@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { validateHeartbeatEvent } from "../cloudevents/Heartbeat/heartbeat.validate.gen";
+import { validateHeartbeatEvent } from "../cloudevents/messages.validate.gen";
 import { buildHeartbeat, livenessSubject, readHeartbeat } from "./heartbeat";
 
 const now = new Date("2026-11-19T10:15:30.123Z");

@@ -44,7 +44,7 @@ use super::module_manifest::{
 use super::reserved_subjects::declared_event_reservation;
 use super::resource_kind_ref::parse_kind_ref;
 use super::theme::{self, InstalledModule};
-use woofx3_cloudevents::barkloader_gen::ModuleFieldOptionsRequestType;
+use woofx3_cloudevents::messages_gen::ModuleFieldOptionsRequestType;
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
 /// carries fully-resolved canonical ids ready for persistence.

@@ -5,7 +5,7 @@ use lib_sandbox::SandboxFactory;
 use lib_sandbox::models::request::InvokeRequest;
 use serde_json::{Value, json};
 use tracing::{error, info, warn};
-use woofx3_cloudevents::barkloader_gen::{
+use woofx3_cloudevents::messages_gen::{
     DOCUMENT, ModuleFieldOptionsRequest, ModuleFieldOptionsRequestType,
 };
 

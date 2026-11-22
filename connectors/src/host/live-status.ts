@@ -2,8 +2,8 @@ import Event from "@woofx3/common/cloudevents/BaseEvent";
 import {
   type SchemaStreamStatusObserved as StreamStatusObserved,
   StreamStatusObservedEventType,
-} from "@woofx3/common/cloudevents/StreamStatus/streamstatus.gen";
-import { validateStreamStatusObservedEvent } from "@woofx3/common/cloudevents/StreamStatus/streamstatus.validate.gen";
+} from "@woofx3/common/cloudevents/messages.gen";
+import { validateStreamStatusObservedEvent } from "@woofx3/common/cloudevents/messages.validate.gen";
 import { encodeContract } from "@woofx3/common/cloudevents/utils";
 import { type BackoffConfig, createBackoff } from "@woofx3/common/runtime";
 import type { AdapterId } from "./adapter-ids";

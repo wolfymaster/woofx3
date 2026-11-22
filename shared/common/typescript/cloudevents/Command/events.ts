@@ -3,7 +3,7 @@
 // Chat/commands.ts, which fires on invocation by a chat user.
 
 import type { CommandSnapshot } from "@woofx3/api/command";
-import type { SchemaWorkflowCommandExecute } from "../Workflow/workflow.gen";
+import type { SchemaWorkflowCommandExecute } from "../messages.gen";
 
 export type { CommandSnapshot };
 

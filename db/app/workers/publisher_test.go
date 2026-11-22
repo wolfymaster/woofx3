@@ -8,7 +8,7 @@ import (
 
 	cloudevents "github.com/cloudevents/sdk-go/v2"
 	"github.com/go-gormigrate/gormigrate/v2"
-	"github.com/wolfymaster/woofx3/common/messages/outbox"
+	"github.com/wolfymaster/woofx3/common/messages"
 	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/migrate/migrations"
 	"github.com/wolfymaster/woofx3/db/database/models"
@@ -65,18 +65,18 @@ func TestPublishStoresTheEventOnSQLite(t *testing.T) {
 	}
 }
 
-func validEdge() *outbox.ViewerSegmentEdge {
-	return &outbox.ViewerSegmentEdge{
+func validEdge() *messages.ViewerSegmentEdge {
+	return &messages.ViewerSegmentEdge{
 		SegmentId:  "user:segment:chatty",
 		Platform:   "twitch",
 		ViewerId:   "v1",
 		ViewerName: "Wolfy",
 		SessionId:  "s1",
-		Facts: outbox.ViewerSegmentEdgeFacts{"user": {"messages": outbox.FactChange{
-			Before: outbox.NewFloat64FactReading(1),
-			After:  outbox.NewNullFactReading(struct{}{}),
+		Facts: messages.ViewerSegmentEdgeFacts{"user": {"messages": messages.FactChange{
+			Before: messages.NewFloat64FactReading(1),
+			After:  messages.NewNullFactReading(struct{}{}),
 		}}},
-		Cause: outbox.EdgeCause{Source: "twitch", EventId: "e1"},
+		Cause: messages.EdgeCause{Source: "twitch", EventId: "e1"},
 	}
 }
 
@@ -98,7 +98,7 @@ func TestEncodeCloudEventIsTheContractsEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encodeCloudEvent: %v", err)
 	}
-	var envelope outbox.ViewerSegmentEnteredEvent
+	var envelope messages.ViewerSegmentEnteredEvent
 	if err := envelope.UnmarshalJSON(wire); err != nil {
 		t.Fatalf("the envelope does not decode as the contract's: %v\n%s", err, wire)
 	}

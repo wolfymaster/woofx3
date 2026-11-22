@@ -2,7 +2,7 @@
 //!
 //! Every service publishes a heartbeat saying whether it is ready, so
 //! dependents can wait for readiness rather than infer it from a process being
-//! up. The message is the generated `heartbeat_gen` contract of
+//! up. The message is the generated `messages_gen` contract of
 //! `woofx3-cloudevents`; this crate is deliberately transport-free (config and
 //! telemetry only), so it holds only the flag a publisher reads.
 

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/wolfymaster/woofx3/common/messages/workflow"
+	"github.com/wolfymaster/woofx3/common/messages"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
@@ -68,7 +68,7 @@ func TestHealthTrackerOutputMeetsItsContract(t *testing.T) {
 			t.Errorf("%s: %v", event.Type, err)
 		}
 	}
-	if err := checkWire[workflow.WorkflowHealthReply](tracker.HandleHealthRequest()); err != nil {
+	if err := checkWire[messages.WorkflowHealthReply](tracker.HandleHealthRequest()); err != nil {
 		t.Errorf("health reply: %v", err)
 	}
 }
@@ -80,7 +80,7 @@ func TestRepliesMeetTheirContracts(t *testing.T) {
 			{Outcome: "conditions_not_met", Unmet: []engine.UnmetCondition{{Field: "data.amount", Operator: "gte", Value: 5}}},
 			{Outcome: "refused", Error: "no workflowId"},
 		} {
-			if err := checkWire[workflow.WorkflowExecuteReply](encodeExecuteReply(reply)); err != nil {
+			if err := checkWire[messages.WorkflowExecuteReply](encodeExecuteReply(reply)); err != nil {
 				t.Errorf("%+v: %v", reply, err)
 			}
 		}
@@ -91,7 +91,7 @@ func TestRepliesMeetTheirContracts(t *testing.T) {
 			{Outcome: "not_found"},
 			{Outcome: "refused", Error: "executionId is required"},
 		} {
-			if err := checkWire[workflow.WorkflowCancelReply](encodeCancelReply(reply)); err != nil {
+			if err := checkWire[messages.WorkflowCancelReply](encodeCancelReply(reply)); err != nil {
 				t.Errorf("%+v: %v", reply, err)
 			}
 		}

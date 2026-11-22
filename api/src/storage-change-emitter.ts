@@ -1,6 +1,6 @@
 import { EngineEventType, type ModuleStorageChangedEvent } from "@woofx3/api/webhooks";
-import type { SchemaModuleStorageChangedEvent } from "@woofx3/common/cloudevents/Module/module.gen";
-import { validateModuleStorageChangedEvent } from "@woofx3/common/cloudevents/Module/module.validate.gen";
+import type { SchemaModuleStorageChangedEvent } from "@woofx3/common/cloudevents/messages.gen";
+import { validateModuleStorageChangedEvent } from "@woofx3/common/cloudevents/messages.validate.gen";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";

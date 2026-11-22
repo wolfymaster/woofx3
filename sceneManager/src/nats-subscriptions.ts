@@ -1,6 +1,6 @@
-import type { SchemaModuleStorageChangedEvent } from "@woofx3/common/cloudevents/Module/module.gen";
-import { validateModuleStorageChangedEvent } from "@woofx3/common/cloudevents/Module/module.validate.gen";
-import { SceneCommandRequestType } from "@woofx3/common/cloudevents/Scene/scene.gen";
+import type { SchemaModuleStorageChangedEvent } from "@woofx3/common/cloudevents/messages.gen";
+import { validateModuleStorageChangedEvent } from "@woofx3/common/cloudevents/messages.validate.gen";
+import { SceneCommandRequestType } from "@woofx3/common/cloudevents/messages.gen";
 import {
   COMPOSITION_PREVIEW_TOKEN_SUBJECT,
   type CompositionPreviewTokenReply,

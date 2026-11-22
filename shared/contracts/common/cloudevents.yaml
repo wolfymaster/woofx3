@@ -32,3 +32,20 @@ components:
       type: string
       minLength: 1
       maxLength: 200
+    Platform:
+      description: Where the event came from ("twitch", ...); absent for events with no platform.
+      type: string
+      minLength: 1
+      maxLength: 200
+    SessionId:
+      description: The stream session the publisher knew when it published; absent when it knew none.
+      type: string
+      minLength: 1
+      maxLength: 200
+    WorkflowChain:
+      description: >
+        Comma-separated ids of the workflow runs that led to the event, oldest
+        first; at most 8 ids of 200 characters.
+      type: string
+      minLength: 1
+      maxLength: 1607

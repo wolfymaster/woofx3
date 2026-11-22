@@ -1,5 +1,5 @@
-import { HeartbeatEventSubject } from "@woofx3/common/cloudevents/Heartbeat/heartbeat.gen";
-import { validateHeartbeatEvent } from "@woofx3/common/cloudevents/Heartbeat/heartbeat.validate.gen";
+import { HeartbeatEventSubject } from "@woofx3/common/cloudevents/messages.gen";
+import { validateHeartbeatEvent } from "@woofx3/common/cloudevents/messages.validate.gen";
 
 /**
  * Whether this engine is ready to serve, for `GET /ready`.

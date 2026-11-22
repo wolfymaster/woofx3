@@ -12,7 +12,7 @@ use std::time::Duration;
 use async_nats::Client;
 use tracing::{debug, warn};
 use uuid::Uuid;
-use woofx3_cloudevents::heartbeat_gen::{
+use woofx3_cloudevents::messages_gen::{
     EventSpecVersion, HeartbeatData, HeartbeatEvent, HeartbeatEventSubject, HeartbeatEventType,
 };
 use woofx3_runtime::heartbeat::Readiness;

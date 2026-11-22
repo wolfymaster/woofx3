@@ -4,8 +4,8 @@ import {
   HeartbeatEventType,
   type SchemaHeartbeatData as HeartbeatData,
   type SchemaHeartbeatEvent as HeartbeatEvent,
-} from "../cloudevents/Heartbeat/heartbeat.gen";
-import { validateHeartbeatEvent } from "../cloudevents/Heartbeat/heartbeat.validate.gen";
+} from "../cloudevents/messages.gen";
+import { validateHeartbeatEvent } from "../cloudevents/messages.validate.gen";
 
 /**
  * The heartbeat a service publishes on the `HEARTBEAT` subject. Throws when the result does not fit the contract,

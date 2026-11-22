@@ -31,7 +31,7 @@ import {
   validateStreamOfflineEvent,
   validateStreamOnlineEvent,
   validateUserMessageEvent,
-} from "./stream.validate.gen";
+} from "../messages.validate.gen";
 
 export * from "./events";
 export * from "./messages";

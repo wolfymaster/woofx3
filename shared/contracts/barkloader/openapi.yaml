@@ -9,6 +9,7 @@ paths:
   /barkloader.module.field_options:
     post:
       operationId: moduleFieldOptions
+      x-consumers: [ts, rust]
       summary: List the options of a module's select field by running one of its functions. Published by the api, answered by barkloader.
       requestBody:
         required: true

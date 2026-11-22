@@ -18,14 +18,14 @@ import type {
   SchemaWorkflowExecute,
   SchemaWorkflowExecuteReply,
   SchemaWorkflowReplay,
-} from "@woofx3/common/cloudevents/Workflow/workflow.gen";
+} from "@woofx3/common/cloudevents/messages.gen";
 import {
   validateWorkflowCancelReply,
   validateWorkflowCancelRequest,
   validateWorkflowExecute,
   validateWorkflowExecuteReply,
   validateWorkflowReplay,
-} from "@woofx3/common/cloudevents/Workflow/workflow.validate.gen";
+} from "@woofx3/common/cloudevents/messages.validate.gen";
 import type * as workflow from "@woofx3/db/workflow.pb";
 import * as protoscript from "protoscript";
 import type { DbClient } from "../db-client";

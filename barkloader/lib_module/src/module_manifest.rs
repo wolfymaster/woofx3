@@ -3009,7 +3009,7 @@ mod tests {
             {"id": "clientId", "label": "Spotify Client ID", "type": "text", "required": false}
         ]
     }"#;
-        let subject = woofx3_cloudevents::barkloader_gen::ModuleFieldOptionsRequestType::BarkloaderModuleFieldOptions
+        let subject = woofx3_cloudevents::messages_gen::ModuleFieldOptionsRequestType::BarkloaderModuleFieldOptions
             .to_string();
         let m: ModuleManifest =
             serde_json::from_str(&j.replace("$SUBJECT", &subject)).expect("parse");

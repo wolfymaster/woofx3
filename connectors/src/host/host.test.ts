@@ -6,10 +6,7 @@ import {
   INTEGRATION_ENABLED_UPDATED_SUBJECT,
   INTEGRATION_TOKEN_UPDATED_SUBJECT,
 } from "@woofx3/common/integrations/integration-settings";
-import {
-  StreamStatusObservedEventType,
-  StreamStatusRequestedEventType,
-} from "@woofx3/common/cloudevents/StreamStatus/streamstatus.gen";
+import { StreamStatusObservedEventType, StreamStatusRequestedEventType } from "@woofx3/common/cloudevents/messages.gen";
 import { FakeDispatcherDb, NO_ROLES, storedCommand } from "../chat/testing";
 import { TRUSTED_LINE_SOURCES } from "../chat/trust";
 import { ChatEnvSchema, chatConfig } from "../config/chat";

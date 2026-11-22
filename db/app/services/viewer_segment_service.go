@@ -12,7 +12,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
-	"github.com/wolfymaster/woofx3/common/messages/outbox"
+	"github.com/wolfymaster/woofx3/common/messages"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -758,46 +758,46 @@ func edgeExtensions(viewer repo.ViewerKey, session string) map[string]string {
 // `{owner}:fact:{slug}` is at Facts[owner][slug], the path ${viewer.*} gives it,
 // since a workflow expression cannot name a key containing `:`. A fact id of
 // any other shape has no such path and is left out.
-func (a *segmentApply) edgeEvent(segmentID string, viewer repo.ViewerKey, viewerName, session string, before, after map[string]*factReading) outbox.ViewerSegmentEdge {
-	facts := outbox.ViewerSegmentEdgeFacts{}
+func (a *segmentApply) edgeEvent(segmentID string, viewer repo.ViewerKey, viewerName, session string, before, after map[string]*factReading) messages.ViewerSegmentEdge {
+	facts := messages.ViewerSegmentEdgeFacts{}
 	for _, id := range a.read[segmentID] {
 		owner, kind, slug, err := parseCanonicalID(id)
 		if err != nil || kind != "fact" {
 			continue
 		}
 		if facts[owner] == nil {
-			facts[owner] = outbox.ViewerSegmentEdgeFactsItem{}
+			facts[owner] = messages.ViewerSegmentEdgeFactsItem{}
 		}
 		valueKind := a.facts[id].valueKind
-		facts[owner][slug] = outbox.FactChange{Before: plainReading(before[id], valueKind), After: plainReading(after[id], valueKind)}
+		facts[owner][slug] = messages.FactChange{Before: plainReading(before[id], valueKind), After: plainReading(after[id], valueKind)}
 	}
-	return outbox.ViewerSegmentEdge{
-		SegmentId:  outbox.EntityId(segmentID),
-		Platform:   outbox.Platform(viewer.Platform),
-		ViewerId:   outbox.EntityId(viewer.SubjectID),
+	return messages.ViewerSegmentEdge{
+		SegmentId:  messages.EntityId(segmentID),
+		Platform:   messages.Platform(viewer.Platform),
+		ViewerId:   messages.EntityId(viewer.SubjectID),
 		ViewerName: viewerName,
 		SessionId:  session,
 		Facts:      facts,
-		Cause:      outbox.EdgeCause{Source: a.batch.Source, EventId: a.batch.EventID},
+		Cause:      messages.EdgeCause{Source: a.batch.Source, EventId: a.batch.EventID},
 	}
 }
 
 // plainReading is a fact's value as the edge reports it: a number (timestamps
 // in epoch milliseconds), a string, or null for a value the viewer does not have.
-func plainReading(reading *factReading, valueKind string) outbox.FactReading {
+func plainReading(reading *factReading, valueKind string) messages.FactReading {
 	if reading == nil {
-		return outbox.NewNullFactReading(struct{}{})
+		return messages.NewNullFactReading(struct{}{})
 	}
 	if valueKind == models.FactValueKindString {
 		if reading.str == nil {
-			return outbox.NewNullFactReading(struct{}{})
+			return messages.NewNullFactReading(struct{}{})
 		}
-		return outbox.NewStringFactReading(*reading.str)
+		return messages.NewStringFactReading(*reading.str)
 	}
 	if reading.num == nil {
-		return outbox.NewNullFactReading(struct{}{})
+		return messages.NewNullFactReading(struct{}{})
 	}
-	return outbox.NewFloat64FactReading(*reading.num)
+	return messages.NewFloat64FactReading(*reading.num)
 }
 
 func readingOf(state *repo.FactValueState) *factReading {

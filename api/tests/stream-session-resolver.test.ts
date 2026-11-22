@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { SessionEndedEventType, SessionStartedEventType } from "@woofx3/common/cloudevents/Session/session.gen";
-import {
-  StreamStatusObservedEventType,
-  StreamStatusRequestedEventType,
-} from "@woofx3/common/cloudevents/StreamStatus/streamstatus.gen";
+import { SessionEndedEventType, SessionStartedEventType } from "@woofx3/common/cloudevents/messages.gen";
+import { StreamStatusObservedEventType, StreamStatusRequestedEventType } from "@woofx3/common/cloudevents/messages.gen";
 import { clearCurrentSessionId, getCurrentSessionId } from "@woofx3/common/cloudevents/session";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { Msg } from "@woofx3/nats/src/types";
