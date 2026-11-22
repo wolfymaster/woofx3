@@ -59,6 +59,44 @@ Logs the parameters for debugging.
 
 Returns all parameters as-is.
 
+#### `command.run`
+
+"Run command". Runs a chat command's steps as though someone had typed the
+command with no arguments, so a schedule or another workflow can reuse a
+command as a set of steps.
+
+```json
+{
+  "id": "post-hug",
+  "type": "action",
+  "action": "command.run",
+  "parameters": { "command": "hug" }
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | `string` | Yes | Must be `"command.run"`. Set at the task top level. |
+| `parameters.command` | `string` | Yes | The command's name, with or without the `!`. Supports expressions. |
+
+Who may use the command is not checked: the author of the step is the one
+asking, and a step has no chatter to check. Chat and the dashboard's Run
+button still check it. The command must exist, be enabled and have steps, or
+the step fails. The cooldown does not apply, as for a run from the dashboard.
+
+The run starts with an empty `chatter`, `text` and `variables`, so a command
+whose steps need an argument sees them blank. `chat.command.<name>` is
+announced after the steps start, so workflows listening for the command run
+too; if only that announcement fails, the step fails saying the steps already
+ran.
+
+Returns:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `started` | `boolean` | `false` when the command's own trigger conditions stopped the run. |
+| `executionId` | `string` | The command's run, empty when it did not start. |
+
 #### `chat.reply`
 
 "Send chat message". Sends one message through the
