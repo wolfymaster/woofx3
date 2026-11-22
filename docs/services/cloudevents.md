@@ -282,6 +282,7 @@ read them there.
 |---------|-------------------|---------|
 | `user.message` | `UserMessageEvent` | `UserMessage` |
 | `channel.cheer`, `channel.follow`, `channel.raid`, `channel.hypetrain` | `Channel<Name>Event` | `ChannelCheer`, `ChannelFollow`, `ChannelRaid`, `ChannelHypeTrain` |
+| `chat.command.<slug>` | `ChatCommandEvent` | `ChatCommand` |
 | `channelpoints.redeem` | `ChannelPointsRedeemEvent` | `ChannelPointsRedeem` |
 | `stream.online`, `stream.offline` | `StreamOnlineEvent`, `StreamOfflineEvent` | `StreamOnline`, `StreamOffline` |
 | `channel.subscribe`, `channel.subscriptionGift`, `channel.resub`, `channel.giftPaidUpgrade`, `channel.primePaidUpgrade`, `channel.unraid`, `channel.payItForward`, `channel.announcement`, `channel.charityDonation`, `channel.bitsBadgeTier`, `channel.watchStreak` | `Channel<Name>Event` | `Channel<Name>` |
@@ -297,8 +298,11 @@ Rules the contract fixes:
   and `ChatterMembership.subscriberTier` are omitted when absent; absent is never `false` or a default tier.
 - `specversion` is `1.0.0`, what `BaseEvent` stamps on every TypeScript event; `sessionId` is present once the
   publisher knows a session; `workflowChain` is present only on a `user.message` the engine said itself.
-- `chat.command.<slug>` has no schema here: its subject is one per command name, and the generated contract
-  names exactly one subject per message.
+- `chat.command.<slug>` is one subject per command name, so its operation path is `/chat.command.{slug}` and
+  its `type` is a pattern, not a fixed value. Three publishers build it: the connectors when a viewer types the
+  command, the api when the dashboard runs it, and the workflow engine's `command.run` step. `specversion` is
+  optional on it because the engine does not stamp one, and `data.platform` is `null` on a run no chat caused,
+  where `chatter` is empty too.
 
 `TwitchEvents` (`shared/common/typescript/cloudevents/Twitch`) validates each event against its generated
 validator before returning the bytes to publish, so an event that does not fit throws at the publish call

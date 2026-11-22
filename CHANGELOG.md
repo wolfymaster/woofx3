@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.76.0](https://github.com/wolfymaster/woofx3/compare/v0.75.0...v0.76.0) (2026-11-21)
+
+### Features
+
+* **api:** send and read the workflow messages through their contracts ([d5ef556](https://github.com/wolfymaster/woofx3/commit/d5ef55640831698de938c8d7bce8381441bdc788))
+* **contracts:** outbox and module storage message documents ([284c849](https://github.com/wolfymaster/woofx3/commit/284c84904a1eb6d8faa3f3fb0581c4a41f39fb77))
+* **contracts:** workflow lifecycle, health and request message document ([4bab643](https://github.com/wolfymaster/woofx3/commit/4bab64335a02c39aec3559bbaa64ed572c199df2))
+* **db:** publish outbox events and read storage events through their contracts ([de6ffd5](https://github.com/wolfymaster/woofx3/commit/de6ffd5f2680001796d1915202886a6999502b55))
+* **workflow:** publish and read the workflow messages through their contracts ([e1b7617](https://github.com/wolfymaster/woofx3/commit/e1b76170b6fb624701d4ef6ec7fda94b52b8c31f))
+
 ## [0.75.0](https://github.com/wolfymaster/woofx3/compare/v0.74.0...v0.75.0) (2026-11-21)
 
 ### Features

@@ -46,6 +46,7 @@ type AppServices struct {
 	messageBus *natsclient.Client
 	alertLog   dbv1.AlertService
 	records    dbv1.DatabaseRecordService
+	commands   dbv1.CommandService
 	gateway    PlatformGateway
 }
 
@@ -62,6 +63,11 @@ func (s AppServices) MessageBus() *natsclient.Client {
 // tolerate rather than treat as fatal: an alert is worth more than its log.
 func (s AppServices) AlertLog() dbv1.AlertService {
 	return s.alertLog
+}
+
+// Commands lists chat commands, for the action that runs one.
+func (s AppServices) Commands() dbv1.CommandService {
+	return s.commands
 }
 
 // DatabaseRecords reads and writes the rows of database resource instances.
@@ -92,11 +98,15 @@ func buildAppServices() (AppServices, error) {
 	if err != nil {
 		return AppServices{}, err
 	}
+	commands, err := resolveService[dbv1.CommandService]("commands")
+	if err != nil {
+		return AppServices{}, err
+	}
 	gateway, err := resolveService[PlatformGateway]("platformGateway")
 	if err != nil {
 		return AppServices{}, err
 	}
-	return AppServices{barkloader: bark, messageBus: bus, alertLog: alertLog, records: records, gateway: gateway}, nil
+	return AppServices{barkloader: bark, messageBus: bus, alertLog: alertLog, records: records, commands: commands, gateway: gateway}, nil
 }
 
 func WithServices[TServices any](services TServices, action tasks.ActionFunc[TServices]) tasks.ActionFunc[TServices] {

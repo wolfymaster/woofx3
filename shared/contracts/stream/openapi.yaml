@@ -22,6 +22,31 @@ paths:
       responses:
         "200":
           description: Published without a reply; the bus sends none.
+  /chat.command.{slug}:
+    post:
+      operationId: chatCommand
+      summary: >
+        Published on `chat.command.<slug>` for each invocation of a chat command: by connectors when a
+        viewer types it, by the api when the dashboard runs it, and by the workflow engine when a
+        `command.run` step runs it.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          description: The command's name without its `!`, lowercase.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCommandEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
   /channel.cheer:
     post:
       operationId: channelCheer
@@ -1046,6 +1071,82 @@ components:
           $ref: "#/components/schemas/WorkflowChain"
         data:
           $ref: "#/components/schemas/UserMessage"
+    ChatCommandEvent:
+      description: >
+        The `chat.command.<slug>` CloudEvent for one invocation of a chat command. `specversion` is
+        optional because the workflow engine does not stamp it; the TypeScript publishers always do.
+        `platform` is absent when no platform's chat caused the run, such as a scheduled one.
+      type: object
+      additionalProperties: false
+      required: [id, type, source, time, data]
+      properties:
+        specversion:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          minLength: 14
+          maxLength: 213
+          pattern: '^chat\.command\.[^.*>\s]+$'
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        triggerId:
+          description: Correlates the event with whoever asked for it; absent unless a caller waits on the outcome.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        triggeredBy:
+          description: What caused the invocation ("twitch", "dashboard", "workflow").
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        workflowChain:
+          description: Set when a workflow run caused the invocation.
+          $ref: "#/components/schemas/WorkflowChain"
+        dryRun:
+          description: Set on an invocation a dry run caused, so the workflows it triggers are dry runs too.
+          type: boolean
+        data:
+          $ref: "#/components/schemas/ChatCommand"
+    ChatCommand:
+      description: One invocation of a chat command, as its steps and listening workflows read it.
+      type: object
+      additionalProperties: false
+      required: [command, args, rawMessage, text, variables, chatter, platform]
+      properties:
+        command:
+          description: The command's name without its `!`, lowercase; the `<slug>` of the subject.
+          type: string
+          minLength: 1
+          maxLength: 200
+        args:
+          description: The words after the command.
+          type: array
+          items:
+            type: string
+        rawMessage:
+          description: The line as it was said, or as it would have been.
+          type: string
+        text:
+          description: The line with the command word stripped.
+          type: string
+        variables:
+          description: The command's argument pattern captures, by name; dotted names nest.
+          type: object
+          additionalProperties: true
+        chatter:
+          description: Who invoked it; empty when no one did, such as a scheduled run.
+          type: string
+        platform:
+          description: The platform the invoking line was said on; null when no platform's chat caused the run.
+          type: [string, "null"]
+          enum: [twitch, null]
+        channelId:
+          type: string
     ChannelCheerEvent:
       description: The `channel.cheer` CloudEvent as the connectors publish it.
       type: object

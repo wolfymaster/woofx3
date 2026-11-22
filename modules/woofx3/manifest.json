@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.47.0",
+  "version": "0.48.0",
   "category": "system",
   "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
   "resources": [
@@ -395,6 +395,40 @@
       "description": "Invoke a sandboxed module function. Set `function` to the canonical function id; everything else in `parameters` is forwarded to the function as a single object argument.",
       "type": "native",
       "handler": "function",
+      "taxonomy": [
+        "workflow"
+      ]
+    },
+    {
+      "id": "command.run",
+      "name": "Run command",
+      "description": "Run a chat command's steps, as though someone had typed it with no arguments. Who may use the command is not checked, since you are the one setting this up; the command must exist and be enabled.",
+      "sentence": "Run command {command}",
+      "type": "native",
+      "handler": "command.run",
+      "schema": [
+        {
+          "id": "command",
+          "label": "Command",
+          "type": "text",
+          "required": true,
+          "placeholder": "hug",
+          "description": "The command's name, with or without the !."
+        }
+      ],
+      "returns": {
+        "fields": [
+          {
+            "path": "started",
+            "type": "boolean",
+            "description": "False when the command's own conditions stopped the run."
+          },
+          {
+            "path": "executionId",
+            "type": "string"
+          }
+        ]
+      },
       "taxonomy": [
         "workflow"
       ]

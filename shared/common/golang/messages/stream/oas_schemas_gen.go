@@ -4,6 +4,7 @@ package stream
 
 import (
 	"github.com/go-faster/errors"
+	"github.com/go-faster/jx"
 )
 
 // An ad break started.
@@ -5765,6 +5766,300 @@ func (s *ChannelWatchStreakEventType) UnmarshalText(data []byte) error {
 // ChannelWatchStreakOK is response for ChannelWatchStreak operation.
 type ChannelWatchStreakOK struct{}
 
+// One invocation of a chat command, as its steps and listening workflows read it.
+// Ref: #/components/schemas/ChatCommand
+type ChatCommand struct {
+	// The command's name without its `!`, lowercase; the `<slug>` of the subject.
+	Command string `json:"command"`
+	// The words after the command.
+	Args []string `json:"args"`
+	// The line as it was said, or as it would have been.
+	RawMessage string `json:"rawMessage"`
+	// The line with the command word stripped.
+	Text string `json:"text"`
+	// The command's argument pattern captures, by name; dotted names nest.
+	Variables ChatCommandVariables `json:"variables"`
+	// Who invoked it; empty when no one did, such as a scheduled run.
+	Chatter string `json:"chatter"`
+	// The platform the invoking line was said on; null when no platform's chat caused the run.
+	Platform  NilChatCommandPlatform `json:"platform"`
+	ChannelId OptString              `json:"channelId"`
+}
+
+// GetCommand returns the value of Command.
+func (s *ChatCommand) GetCommand() string {
+	return s.Command
+}
+
+// GetArgs returns the value of Args.
+func (s *ChatCommand) GetArgs() []string {
+	return s.Args
+}
+
+// GetRawMessage returns the value of RawMessage.
+func (s *ChatCommand) GetRawMessage() string {
+	return s.RawMessage
+}
+
+// GetText returns the value of Text.
+func (s *ChatCommand) GetText() string {
+	return s.Text
+}
+
+// GetVariables returns the value of Variables.
+func (s *ChatCommand) GetVariables() ChatCommandVariables {
+	return s.Variables
+}
+
+// GetChatter returns the value of Chatter.
+func (s *ChatCommand) GetChatter() string {
+	return s.Chatter
+}
+
+// GetPlatform returns the value of Platform.
+func (s *ChatCommand) GetPlatform() NilChatCommandPlatform {
+	return s.Platform
+}
+
+// GetChannelId returns the value of ChannelId.
+func (s *ChatCommand) GetChannelId() OptString {
+	return s.ChannelId
+}
+
+// SetCommand sets the value of Command.
+func (s *ChatCommand) SetCommand(val string) {
+	s.Command = val
+}
+
+// SetArgs sets the value of Args.
+func (s *ChatCommand) SetArgs(val []string) {
+	s.Args = val
+}
+
+// SetRawMessage sets the value of RawMessage.
+func (s *ChatCommand) SetRawMessage(val string) {
+	s.RawMessage = val
+}
+
+// SetText sets the value of Text.
+func (s *ChatCommand) SetText(val string) {
+	s.Text = val
+}
+
+// SetVariables sets the value of Variables.
+func (s *ChatCommand) SetVariables(val ChatCommandVariables) {
+	s.Variables = val
+}
+
+// SetChatter sets the value of Chatter.
+func (s *ChatCommand) SetChatter(val string) {
+	s.Chatter = val
+}
+
+// SetPlatform sets the value of Platform.
+func (s *ChatCommand) SetPlatform(val NilChatCommandPlatform) {
+	s.Platform = val
+}
+
+// SetChannelId sets the value of ChannelId.
+func (s *ChatCommand) SetChannelId(val OptString) {
+	s.ChannelId = val
+}
+
+// The `chat.command.<slug>` CloudEvent for one invocation of a chat command. `specversion` is optional
+// because the workflow engine does not stamp it; the TypeScript publishers always do. `platform` is
+// absent when no platform's chat caused the run, such as a scheduled one.
+// Ref: #/components/schemas/ChatCommandEvent
+type ChatCommandEvent struct {
+	Specversion OptEventSpecVersion `json:"specversion"`
+	ID          EventId             `json:"id"`
+	Type        string              `json:"type"`
+	Source      EventSource         `json:"source"`
+	Time        EventTime           `json:"time"`
+	Platform    OptPlatformId       `json:"platform"`
+	// The stream session the event happened during; absent before the publisher knows one.
+	SessionId OptEntityId `json:"sessionId"`
+	// Correlates the event with whoever asked for it; absent unless a caller waits on the outcome.
+	TriggerId OptEntityId `json:"triggerId"`
+	// What caused the invocation ("twitch", "dashboard", "workflow").
+	TriggeredBy OptEntityId `json:"triggeredBy"`
+	// Set when a workflow run caused the invocation.
+	WorkflowChain OptWorkflowChain `json:"workflowChain"`
+	// Set on an invocation a dry run caused, so the workflows it triggers are dry runs too.
+	DryRun OptBool     `json:"dryRun"`
+	Data   ChatCommand `json:"data"`
+}
+
+// GetSpecversion returns the value of Specversion.
+func (s *ChatCommandEvent) GetSpecversion() OptEventSpecVersion {
+	return s.Specversion
+}
+
+// GetID returns the value of ID.
+func (s *ChatCommandEvent) GetID() EventId {
+	return s.ID
+}
+
+// GetType returns the value of Type.
+func (s *ChatCommandEvent) GetType() string {
+	return s.Type
+}
+
+// GetSource returns the value of Source.
+func (s *ChatCommandEvent) GetSource() EventSource {
+	return s.Source
+}
+
+// GetTime returns the value of Time.
+func (s *ChatCommandEvent) GetTime() EventTime {
+	return s.Time
+}
+
+// GetPlatform returns the value of Platform.
+func (s *ChatCommandEvent) GetPlatform() OptPlatformId {
+	return s.Platform
+}
+
+// GetSessionId returns the value of SessionId.
+func (s *ChatCommandEvent) GetSessionId() OptEntityId {
+	return s.SessionId
+}
+
+// GetTriggerId returns the value of TriggerId.
+func (s *ChatCommandEvent) GetTriggerId() OptEntityId {
+	return s.TriggerId
+}
+
+// GetTriggeredBy returns the value of TriggeredBy.
+func (s *ChatCommandEvent) GetTriggeredBy() OptEntityId {
+	return s.TriggeredBy
+}
+
+// GetWorkflowChain returns the value of WorkflowChain.
+func (s *ChatCommandEvent) GetWorkflowChain() OptWorkflowChain {
+	return s.WorkflowChain
+}
+
+// GetDryRun returns the value of DryRun.
+func (s *ChatCommandEvent) GetDryRun() OptBool {
+	return s.DryRun
+}
+
+// GetData returns the value of Data.
+func (s *ChatCommandEvent) GetData() ChatCommand {
+	return s.Data
+}
+
+// SetSpecversion sets the value of Specversion.
+func (s *ChatCommandEvent) SetSpecversion(val OptEventSpecVersion) {
+	s.Specversion = val
+}
+
+// SetID sets the value of ID.
+func (s *ChatCommandEvent) SetID(val EventId) {
+	s.ID = val
+}
+
+// SetType sets the value of Type.
+func (s *ChatCommandEvent) SetType(val string) {
+	s.Type = val
+}
+
+// SetSource sets the value of Source.
+func (s *ChatCommandEvent) SetSource(val EventSource) {
+	s.Source = val
+}
+
+// SetTime sets the value of Time.
+func (s *ChatCommandEvent) SetTime(val EventTime) {
+	s.Time = val
+}
+
+// SetPlatform sets the value of Platform.
+func (s *ChatCommandEvent) SetPlatform(val OptPlatformId) {
+	s.Platform = val
+}
+
+// SetSessionId sets the value of SessionId.
+func (s *ChatCommandEvent) SetSessionId(val OptEntityId) {
+	s.SessionId = val
+}
+
+// SetTriggerId sets the value of TriggerId.
+func (s *ChatCommandEvent) SetTriggerId(val OptEntityId) {
+	s.TriggerId = val
+}
+
+// SetTriggeredBy sets the value of TriggeredBy.
+func (s *ChatCommandEvent) SetTriggeredBy(val OptEntityId) {
+	s.TriggeredBy = val
+}
+
+// SetWorkflowChain sets the value of WorkflowChain.
+func (s *ChatCommandEvent) SetWorkflowChain(val OptWorkflowChain) {
+	s.WorkflowChain = val
+}
+
+// SetDryRun sets the value of DryRun.
+func (s *ChatCommandEvent) SetDryRun(val OptBool) {
+	s.DryRun = val
+}
+
+// SetData sets the value of Data.
+func (s *ChatCommandEvent) SetData(val ChatCommand) {
+	s.Data = val
+}
+
+// ChatCommandOK is response for ChatCommand operation.
+type ChatCommandOK struct{}
+
+// The platform the invoking line was said on; null when no platform's chat caused the run.
+type ChatCommandPlatform string
+
+const (
+	ChatCommandPlatformTwitch ChatCommandPlatform = "twitch"
+)
+
+// AllValues returns all ChatCommandPlatform values.
+func (ChatCommandPlatform) AllValues() []ChatCommandPlatform {
+	return []ChatCommandPlatform{
+		ChatCommandPlatformTwitch,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ChatCommandPlatform) MarshalText() ([]byte, error) {
+	switch s {
+	case ChatCommandPlatformTwitch:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ChatCommandPlatform) UnmarshalText(data []byte) error {
+	switch ChatCommandPlatform(data) {
+	case ChatCommandPlatformTwitch:
+		*s = ChatCommandPlatformTwitch
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// The command's argument pattern captures, by name; dotted names nest.
+type ChatCommandVariables map[string]jx.Raw
+
+func (s *ChatCommandVariables) init() ChatCommandVariables {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
 // Platform membership of a chat message's author, neutral across platforms. `isFollower` and
 // `subscriberTier` are absent when the platform does not report them or the lookup did not resolve;
 // absent is never `false` or a default tier.
@@ -6028,6 +6323,51 @@ func (o NilBool) Or(d bool) bool {
 	return d
 }
 
+// NewNilChatCommandPlatform returns new NilChatCommandPlatform with value set to v.
+func NewNilChatCommandPlatform(v ChatCommandPlatform) NilChatCommandPlatform {
+	return NilChatCommandPlatform{
+		Value: v,
+	}
+}
+
+// NilChatCommandPlatform is nullable ChatCommandPlatform.
+type NilChatCommandPlatform struct {
+	Value ChatCommandPlatform
+	Null  bool
+}
+
+// SetTo sets value to v.
+func (o *NilChatCommandPlatform) SetTo(v ChatCommandPlatform) {
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o NilChatCommandPlatform) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *NilChatCommandPlatform) SetToNull() {
+	o.Null = true
+	var v ChatCommandPlatform
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o NilChatCommandPlatform) Get() (v ChatCommandPlatform, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o NilChatCommandPlatform) Or(d ChatCommandPlatform) ChatCommandPlatform {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewNilInt returns new NilInt with value set to v.
 func NewNilInt(v int) NilInt {
 	return NilInt{
@@ -6204,6 +6544,98 @@ func (o OptEntityId) Get() (v EntityId, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptEntityId) Or(d EntityId) EntityId {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptEventSpecVersion returns new OptEventSpecVersion with value set to v.
+func NewOptEventSpecVersion(v EventSpecVersion) OptEventSpecVersion {
+	return OptEventSpecVersion{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptEventSpecVersion is optional EventSpecVersion.
+type OptEventSpecVersion struct {
+	Value EventSpecVersion
+	Set   bool
+}
+
+// IsSet returns true if OptEventSpecVersion was set.
+func (o OptEventSpecVersion) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptEventSpecVersion) Reset() {
+	var v EventSpecVersion
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptEventSpecVersion) SetTo(v EventSpecVersion) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptEventSpecVersion) Get() (v EventSpecVersion, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptEventSpecVersion) Or(d EventSpecVersion) EventSpecVersion {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPlatformId returns new OptPlatformId with value set to v.
+func NewOptPlatformId(v PlatformId) OptPlatformId {
+	return OptPlatformId{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPlatformId is optional PlatformId.
+type OptPlatformId struct {
+	Value PlatformId
+	Set   bool
+}
+
+// IsSet returns true if OptPlatformId was set.
+func (o OptPlatformId) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPlatformId) Reset() {
+	var v PlatformId
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPlatformId) SetTo(v PlatformId) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPlatformId) Get() (v PlatformId, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPlatformId) Or(d PlatformId) PlatformId {
 	if v, ok := o.Get(); ok {
 		return v
 	}

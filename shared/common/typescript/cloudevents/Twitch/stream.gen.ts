@@ -22,6 +22,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat.command.{slug}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Published on `chat.command.<slug>` for each invocation of a chat command: by connectors when a viewer types it, by the api when the dashboard runs it, and by the workflow engine when a `command.run` step runs it. */
+        post: operations["chatCommand"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channel.cheer": {
         parameters: {
             query?: never;
@@ -843,6 +860,49 @@ export interface components {
             workflowChain?: components["schemas"]["WorkflowChain"];
             data: components["schemas"]["UserMessage"];
         };
+        /** @description The `chat.command.<slug>` CloudEvent for one invocation of a chat command. `specversion` is optional because the workflow engine does not stamp it; the TypeScript publishers always do. `platform` is absent when no platform's chat caused the run, such as a scheduled one. */
+        ChatCommandEvent: {
+            specversion?: components["schemas"]["EventSpecVersion"];
+            id: components["schemas"]["EventId"];
+            type: string;
+            source: components["schemas"]["EventSource"];
+            time: components["schemas"]["EventTime"];
+            platform?: components["schemas"]["PlatformId"];
+            /** @description The stream session the event happened during; absent before the publisher knows one. */
+            sessionId?: components["schemas"]["EntityId"];
+            /** @description Correlates the event with whoever asked for it; absent unless a caller waits on the outcome. */
+            triggerId?: components["schemas"]["EntityId"];
+            /** @description What caused the invocation ("twitch", "dashboard", "workflow"). */
+            triggeredBy?: components["schemas"]["EntityId"];
+            /** @description Set when a workflow run caused the invocation. */
+            workflowChain?: components["schemas"]["WorkflowChain"];
+            /** @description Set on an invocation a dry run caused, so the workflows it triggers are dry runs too. */
+            dryRun?: boolean;
+            data: components["schemas"]["ChatCommand"];
+        };
+        /** @description One invocation of a chat command, as its steps and listening workflows read it. */
+        ChatCommand: {
+            /** @description The command's name without its `!`, lowercase; the `<slug>` of the subject. */
+            command: string;
+            /** @description The words after the command. */
+            args: string[];
+            /** @description The line as it was said, or as it would have been. */
+            rawMessage: string;
+            /** @description The line with the command word stripped. */
+            text: string;
+            /** @description The command's argument pattern captures, by name; dotted names nest. */
+            variables: {
+                [key: string]: unknown;
+            };
+            /** @description Who invoked it; empty when no one did, such as a scheduled run. */
+            chatter: string;
+            /**
+             * @description The platform the invoking line was said on; null when no platform's chat caused the run.
+             * @enum {string|null}
+             */
+            platform: "twitch" | null;
+            channelId?: string;
+        };
         /** @description The `channel.cheer` CloudEvent as the connectors publish it. */
         ChannelCheerEvent: {
             specversion: components["schemas"]["EventSpecVersion"];
@@ -1269,6 +1329,8 @@ export type SchemaChannelAdBreakUpcoming = components['schemas']['ChannelAdBreak
 export type SchemaChannelAdBreakBegin = components['schemas']['ChannelAdBreakBegin'];
 export type SchemaChannelAdBreakEnd = components['schemas']['ChannelAdBreakEnd'];
 export type SchemaUserMessageEvent = components['schemas']['UserMessageEvent'];
+export type SchemaChatCommandEvent = components['schemas']['ChatCommandEvent'];
+export type SchemaChatCommand = components['schemas']['ChatCommand'];
 export type SchemaChannelCheerEvent = components['schemas']['ChannelCheerEvent'];
 export type SchemaChannelFollowEvent = components['schemas']['ChannelFollowEvent'];
 export type SchemaChannelHypeTrainEvent = components['schemas']['ChannelHypeTrainEvent'];
@@ -1314,6 +1376,31 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UserMessageEvent"];
+            };
+        };
+        responses: {
+            /** @description Published without a reply; the bus sends none. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    chatCommand: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The command's name without its `!`, lowercase. */
+                slug: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatCommandEvent"];
             };
         };
         responses: {

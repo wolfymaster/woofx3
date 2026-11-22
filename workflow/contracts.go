@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/wolfymaster/woofx3/common/cloudevents"
+	"github.com/wolfymaster/woofx3/common/messages/stream"
 	"github.com/wolfymaster/woofx3/common/messages/workflow"
 )
 
@@ -31,10 +33,14 @@ func checkWire[T any, P interface {
 }
 
 // checkPublished validates an event the engine is about to publish against
-// its contract in shared/contracts/workflow, so a producer that drifts fails
+// its contract in shared/contracts/workflow, or shared/contracts/stream for a
+// chat command's event, so a producer that drifts fails
 // where it publishes rather than in whoever reads the event. An event type
 // with no contract passes: those are events a workflow's own actions emit.
 func checkPublished(eventType string, raw []byte) error {
+	if strings.HasPrefix(eventType, commandEventSubjectPrefix) {
+		return checkWire[stream.ChatCommandEvent](raw)
+	}
 	switch cloudevents.Subject(eventType) {
 	case cloudevents.SubjectWorkflowRunStarted:
 		return checkWire[workflow.WorkflowRunStartedEvent](raw)
