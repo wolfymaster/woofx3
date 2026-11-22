@@ -624,6 +624,55 @@
       ]
     },
     {
+      "id": "platform.user.info",
+      "name": "Look up a viewer",
+      "description": "Look up a user on a streaming platform: who they are, their avatar and whether they are live. Every field is available to later steps. Each platform's own module provides the lookup.",
+      "sentence": "Look up {user}",
+      "type": "native",
+      "handler": "platform.user.info",
+      "schema": [
+        {
+          "id": "user",
+          "label": "User",
+          "type": "text",
+          "required": true,
+          "placeholder": "Username or user id",
+          "description": "The user to look up. A leading @ and extra spaces are removed.",
+          "hint": "Supports template substitution, so a command can pass what the chatter typed straight through."
+        },
+        {
+          "id": "platform",
+          "label": "Platform",
+          "type": "select",
+          "defaultValue": "origin",
+          "options": [
+            {
+              "value": "origin",
+              "label": "Where it was triggered"
+            },
+            {
+              "value": "twitch",
+              "label": "Twitch"
+            }
+          ],
+          "description": "Which platform to look the user up on."
+        }
+      ],
+      "returns": {
+        "fields": [
+          { "path": "platform", "type": "string", "description": "The platform the user was looked up on." },
+          { "path": "userId", "type": "string", "description": "The user's id on that platform." },
+          { "path": "userName", "type": "string", "description": "The username that was looked up." },
+          { "path": "displayName", "type": "string", "description": "The name as the user spells it." },
+          { "path": "profileImageUrl", "type": "string", "description": "Their avatar." },
+          { "path": "isLive", "type": "boolean", "description": "Whether they are streaming right now." }
+        ]
+      },
+      "taxonomy": [
+        "platform"
+      ]
+    },
+    {
       "id": "alert",
       "name": "Alert",
       "description": "Play an on-stream alert: widgets placed on a canvas, shown on every alert widget with the target name on a running scene.",
