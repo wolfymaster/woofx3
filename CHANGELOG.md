@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.77.0](https://github.com/wolfymaster/woofx3/compare/v0.76.0...v0.77.0) (2026-11-22)
+
+### Features
+
+* **contracts:** describe chat.command.<slug> in the stream contract ([95a4122](https://github.com/wolfymaster/woofx3/commit/95a4122c07b13c69abb891580f50c8fc4a43d658))
+* **workflow:** add a command.run action ([7e3f4fa](https://github.com/wolfymaster/woofx3/commit/7e3f4fa138cf6062e4a8bb0cc7da35b4d4924be4))
+* **workflow:** build command.run's event from the stream contract ([5344892](https://github.com/wolfymaster/woofx3/commit/5344892e0f4ca7516f40d191933ba3fba47d57f9))
+
 ## [0.76.0](https://github.com/wolfymaster/woofx3/compare/v0.75.0...v0.76.0) (2026-11-21)
 
 ### Features
