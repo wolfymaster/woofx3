@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.78.0](https://github.com/wolfymaster/woofx3/compare/v0.77.0...v0.78.0) (2026-11-22)
+
+### Features
+
+* **woofx3:** declare the platform.user.info action ([1495ba5](https://github.com/wolfymaster/woofx3/commit/1495ba59227bfafd1eeb4a62af7215196518512e))
+* **workflow:** add platform.user.info action ([a887721](https://github.com/wolfymaster/woofx3/commit/a8877216f8a1f73bccad4fff0999f4fd2cc66a6a))
+
+### Bug Fixes
+
+* **contracts:** one specversion, 1.0.0, for every message contract ([c928828](https://github.com/wolfymaster/woofx3/commit/c9288280be860b15624e92b86a5d0bef560f0717))
+
 ## [0.77.0](https://github.com/wolfymaster/woofx3/compare/v0.76.0...v0.77.0) (2026-11-22)
 
 ### Features
