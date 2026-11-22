@@ -11,6 +11,44 @@ type EntityId string
 
 type EventId string
 
+// The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that
+// is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and
+// consumer agrees on it.
+// Ref: #/components/schemas/EventSpecVersion
+type EventSpecVersion string
+
+const (
+	EventSpecVersion100 EventSpecVersion = "1.0.0"
+)
+
+// AllValues returns all EventSpecVersion values.
+func (EventSpecVersion) AllValues() []EventSpecVersion {
+	return []EventSpecVersion{
+		EventSpecVersion100,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s EventSpecVersion) MarshalText() ([]byte, error) {
+	switch s {
+	case EventSpecVersion100:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *EventSpecVersion) UnmarshalText(data []byte) error {
+	switch EventSpecVersion(data) {
+	case EventSpecVersion100:
+		*s = EventSpecVersion100
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 type EventTime string
 
 // `value` is the value after the write, already decoded, and null when the key was cleared. It is any
@@ -69,18 +107,18 @@ type ModuleStorageChangedAccepted struct{}
 // CloudEvent announcing one storage key's new value.
 // Ref: #/components/schemas/ModuleStorageChangedEvent
 type ModuleStorageChangedEvent struct {
-	Specversion ModuleStorageChangedEventSpecversion `json:"specversion"`
-	ID          EventId                              `json:"id"`
-	Type        ModuleStorageChangedEventType        `json:"type"`
-	Source      ModuleStorageChangedEventSource      `json:"source"`
-	Time        EventTime                            `json:"time"`
+	Specversion EventSpecVersion                `json:"specversion"`
+	ID          EventId                         `json:"id"`
+	Type        ModuleStorageChangedEventType   `json:"type"`
+	Source      ModuleStorageChangedEventSource `json:"source"`
+	Time        EventTime                       `json:"time"`
 	// The stream session the publisher knew when it published; absent when it knew none.
 	SessionId OptString           `json:"sessionId"`
 	Data      ModuleStorageChange `json:"data"`
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ModuleStorageChangedEvent) GetSpecversion() ModuleStorageChangedEventSpecversion {
+func (s *ModuleStorageChangedEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -115,7 +153,7 @@ func (s *ModuleStorageChangedEvent) GetData() ModuleStorageChange {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ModuleStorageChangedEvent) SetSpecversion(val ModuleStorageChangedEventSpecversion) {
+func (s *ModuleStorageChangedEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -184,40 +222,6 @@ func (s *ModuleStorageChangedEventSource) UnmarshalText(data []byte) error {
 		return nil
 	case ModuleStorageChangedEventSourceAPI:
 		*s = ModuleStorageChangedEventSourceAPI
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-type ModuleStorageChangedEventSpecversion string
-
-const (
-	ModuleStorageChangedEventSpecversion100 ModuleStorageChangedEventSpecversion = "1.0.0"
-)
-
-// AllValues returns all ModuleStorageChangedEventSpecversion values.
-func (ModuleStorageChangedEventSpecversion) AllValues() []ModuleStorageChangedEventSpecversion {
-	return []ModuleStorageChangedEventSpecversion{
-		ModuleStorageChangedEventSpecversion100,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ModuleStorageChangedEventSpecversion) MarshalText() ([]byte, error) {
-	switch s {
-	case ModuleStorageChangedEventSpecversion100:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ModuleStorageChangedEventSpecversion) UnmarshalText(data []byte) error {
-	switch ModuleStorageChangedEventSpecversion(data) {
-	case ModuleStorageChangedEventSpecversion100:
-		*s = ModuleStorageChangedEventSpecversion100
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

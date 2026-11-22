@@ -6,7 +6,7 @@
       "name": "the event the publisher sends",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
         "type": "com.woofx3.heartbeat",
         "source": "barkloader",
@@ -22,7 +22,7 @@
       "name": "not ready",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
         "type": "com.woofx3.heartbeat",
         "source": "barkloader",
@@ -38,7 +38,7 @@
       "name": "a time with an offset",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
         "type": "com.woofx3.heartbeat",
         "source": "barkloader",
@@ -270,10 +270,10 @@
       }
     },
     {
-      "name": "a specversion that is not 1.0",
+      "name": "the CloudEvents value 1.0, which no producer writes",
       "valid": false,
       "value": {
-        "specversion": "1.0.0",
+        "specversion": "1.0",
         "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
         "type": "com.woofx3.heartbeat",
         "source": "barkloader",

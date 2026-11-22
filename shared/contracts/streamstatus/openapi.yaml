@@ -46,7 +46,7 @@ components:
       required: [specversion, id, type, source, time, platform, data]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamStatusSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -69,7 +69,7 @@ components:
       required: [specversion, id, type, source, time]
       properties:
         specversion:
-          $ref: "#/components/schemas/StreamStatusSpecVersion"
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
         id:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
         type:
@@ -79,13 +79,6 @@ components:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
-    StreamStatusSpecVersion:
-      description: >
-        The `specversion` the TypeScript and Rust event factories write. It is
-        not the CloudEvents value `1.0`; the factories are shared by every event
-        family and are not changed per message.
-      type: string
-      enum: ["1.0.0"]
     StreamStatusObserved:
       description: Whether the stream is live. `startedAt` is present only when live, and only when the platform says when it began.
       type: object

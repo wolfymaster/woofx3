@@ -6,9 +6,12 @@ paths: {}
 components:
   schemas:
     EventSpecVersion:
-      description: CloudEvents specification version.
+      description: >
+        The `specversion` every bus message carries. `1.0.0` is not a CloudEvents
+        specification value (that is `1.0`); it is what the TypeScript and Rust event
+        factories wrote first, and every producer and consumer agrees on it.
       type: string
-      enum: ["1.0"]
+      enum: ["1.0.0"]
     EventId:
       description: Unique id of one event; the producer chooses the format.
       type: string

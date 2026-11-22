@@ -196,11 +196,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        /**
-         * @description CloudEvents specification version as the TypeScript event factory writes it.
-         * @enum {string}
-         */
-        SpecVersion: SpecVersion;
         /** @description Where the event came from ("twitch", ...); absent for events with no platform. */
         Platform: string;
         /** @description The stream session the publisher knew when it published; absent when it knew none. */
@@ -217,7 +212,7 @@ export interface components {
         };
         /** @description CloudEvent asking the engine to run one workflow. */
         WorkflowExecuteRequest: {
-            specversion: components["schemas"]["SpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: WorkflowExecuteRequestType;
@@ -258,7 +253,7 @@ export interface components {
         };
         /** @description CloudEvent asking the engine to run a recorded run again. */
         WorkflowReplayRequest: {
-            specversion: components["schemas"]["SpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: WorkflowReplayRequestType;
@@ -287,7 +282,7 @@ export interface components {
         };
         /** @description CloudEvent asking the engine to run a chat command's workflow for one invocation. */
         WorkflowCommandExecuteRequest: {
-            specversion: components["schemas"]["SpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: WorkflowCommandExecuteRequestType;
@@ -429,6 +424,11 @@ export interface components {
             at: components["schemas"]["EventTime"];
             workflows: components["schemas"]["WorkflowHealth"][];
         };
+        /**
+         * @description The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.
+         * @enum {string}
+         */
+        EventSpecVersion: EventSpecVersion;
         /** @description Unique id of one event; the producer chooses the format. */
         EventId: string;
         /** @description Name of the component that produced the event. */
@@ -722,9 +722,6 @@ export interface operations {
         };
     };
 }
-export enum SpecVersion {
-    Value1_0_0 = "1.0.0"
-}
 export enum WorkflowExecuteRequestType {
     workflow_execute = "workflow.execute"
 }
@@ -784,4 +781,7 @@ export enum WorkflowHealthChangedEventType {
 }
 export enum WorkflowHealthChangedEventSource {
     workflow = "workflow"
+}
+export enum EventSpecVersion {
+    Value1_0_0 = "1.0.0"
 }

@@ -160,7 +160,7 @@ impl<'de> ::serde::Deserialize<'de> for EventSource {
             })
     }
 }
-#[doc = "CloudEvents specification version."]
+#[doc = "The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.\n"]
 #[derive(
     :: serde :: Deserialize,
     :: serde :: Serialize,
@@ -174,13 +174,13 @@ impl<'de> ::serde::Deserialize<'de> for EventSource {
     PartialOrd,
 )]
 pub enum EventSpecVersion {
-    #[serde(rename = "1.0")]
-    X10,
+    #[serde(rename = "1.0.0")]
+    X100,
 }
 impl ::std::fmt::Display for EventSpecVersion {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         match *self {
-            Self::X10 => f.write_str("1.0"),
+            Self::X100 => f.write_str("1.0.0"),
         }
     }
 }
@@ -188,7 +188,7 @@ impl ::std::str::FromStr for EventSpecVersion {
     type Err = self::error::ConversionError;
     fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
         match value {
-            "1.0" => Ok(Self::X10),
+            "1.0.0" => Ok(Self::X100),
             _ => Err("invalid value".into()),
         }
     }
@@ -409,4 +409,4 @@ pub mod error {
 }
 
 /// The contract document the run-time validator reads.
-pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"Heartbeat bus messages","version":"1.0.0","description":"Liveness messages every service publishes on the NATS subject `HEARTBEAT`. The operation path is the message's `type`, which is not the subject it is published on.\n"},"paths":{"/com.woofx3.heartbeat":{"post":{"operationId":"heartbeat","summary":"Report whether a service is ready to be depended on. Published by every service, read by the runtime health monitors and the api's readiness probe.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HeartbeatEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}}},"components":{"schemas":{"HeartbeatEvent":{"description":"CloudEvent saying one service is alive and whether it is ready.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","subject","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["com.woofx3.heartbeat"]},"source":{"$ref":"#/components/schemas/EventSource"},"subject":{"type":"string","enum":["HEARTBEAT"]},"time":{"$ref":"#/components/schemas/EventTime"},"data":{"$ref":"#/components/schemas/HeartbeatData"}}},"HeartbeatData":{"description":"`application` is the name dependents wait for (the service's runtime name). `ready` is false while the service is up but not yet usable.\n","type":"object","additionalProperties":false,"required":["application","ready"],"properties":{"application":{"$ref":"#/components/schemas/EntityId"},"ready":{"type":"boolean"}}},"EventSpecVersion":{"description":"CloudEvents specification version.","type":"string","enum":["1.0"]},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventSource":{"description":"Name of the component that produced the event.","type":"string","minLength":1,"maxLength":200},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200}}}}"####;
+pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"Heartbeat bus messages","version":"1.0.0","description":"Liveness messages every service publishes on the NATS subject `HEARTBEAT`. The operation path is the message's `type`, which is not the subject it is published on.\n"},"paths":{"/com.woofx3.heartbeat":{"post":{"operationId":"heartbeat","summary":"Report whether a service is ready to be depended on. Published by every service, read by the runtime health monitors and the api's readiness probe.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HeartbeatEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}}},"components":{"schemas":{"HeartbeatEvent":{"description":"CloudEvent saying one service is alive and whether it is ready.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","subject","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["com.woofx3.heartbeat"]},"source":{"$ref":"#/components/schemas/EventSource"},"subject":{"type":"string","enum":["HEARTBEAT"]},"time":{"$ref":"#/components/schemas/EventTime"},"data":{"$ref":"#/components/schemas/HeartbeatData"}}},"HeartbeatData":{"description":"`application` is the name dependents wait for (the service's runtime name). `ready` is false while the service is up but not yet usable.\n","type":"object","additionalProperties":false,"required":["application","ready"],"properties":{"application":{"$ref":"#/components/schemas/EntityId"},"ready":{"type":"boolean"}}},"EventSpecVersion":{"description":"The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.\n","type":"string","enum":["1.0.0"]},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventSource":{"description":"Name of the component that produced the event.","type":"string","minLength":1,"maxLength":200},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200}}}}"####;

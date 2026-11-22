@@ -108,6 +108,12 @@ All the documents take their CloudEvents attributes (`specversion`, `id`, `sourc
 opaque id type from `shared/contracts/common/cloudevents.yaml`, a document with no operations of its
 own.
 
+Every contract message carries `specversion` `1.0.0`, one value defined once in that document. It is
+not a CloudEvents specification value (the specification's is `1.0`): it is what the TypeScript and
+Rust event factories wrote first, and a factory serves every event family. A reader refuses `1.0`.
+The Go SDK cannot set a version it does not know, so a Go producer writes the generated constant
+itself, and the db service's outbox encoder replaces the SDK's `specversion` on the encoded envelope.
+
 ### Writing a message
 
 - Each message is a schema in `components.schemas`, and an operation under `paths` references it.
@@ -143,7 +149,7 @@ document whose operation path is not the `type` its request fixes.
 These are published events with no reply, so each document holds the producer's whole CloudEvent,
 closed, and every reader checks what it receives against the same schema.
 
-- **`com.woofx3.heartbeat`** carries `specversion` `1.0`, a fresh `id`, `source`, `subject`
+- **`com.woofx3.heartbeat`** carries a fresh `id`, `source`, `subject`
   `HEARTBEAT`, `time` and `data: { application, ready }`. A reader takes `application` as the
   service's runtime name. A message on `HEARTBEAT` that does not fit, such as a bare ping, is not a
   heartbeat and is ignored. The runtime monitors' liveness ping is not published there: it goes to
@@ -153,10 +159,6 @@ closed, and every reader checks what it receives against the same schema.
   its publisher knows a session, the `sessionId` attribute; `data` is `{ live, startedAt? }` and
   `startedAt` is present only for a live stream whose platform says when it began.
   **`stream.status.requested`** has no `data`.
-- These three documents state the `specversion` the TypeScript and Rust event factories write,
-  `1.0.0`, which is not a CloudEvents version. The factories serve every event family, so the value
-  is a property of the factory and not of one message; the heartbeat, written by hand in each
-  language, uses `1.0`.
 
 ### Generating
 
@@ -235,9 +237,8 @@ The `workflow` document covers what the engine receives and announces, except `a
 change events. Two things set it apart from the other documents:
 
 - The engine's own events carry no `specversion`, because its publisher writes only the attributes it
-  has. Requests from the api and the connectors carry `1.0.0`, which the document names in its own
-  `SpecVersion` enum rather than the shared `1.0` the Go SDK writes. The contract describes what each
-  side sends; it does not change either.
+  has. Requests from the api and the connectors carry `1.0.0`. The contract describes what each side
+  sends; it does not change either.
 - `workflow.cancel` is a plain JSON request and `workflow.health.get` has no body, so only a request
   that is a CloudEvent fixes its `type` to the operation path.
 

@@ -12,6 +12,44 @@ type EventId string
 
 type EventSource string
 
+// The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that
+// is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and
+// consumer agrees on it.
+// Ref: #/components/schemas/EventSpecVersion
+type EventSpecVersion string
+
+const (
+	EventSpecVersion100 EventSpecVersion = "1.0.0"
+)
+
+// AllValues returns all EventSpecVersion values.
+func (EventSpecVersion) AllValues() []EventSpecVersion {
+	return []EventSpecVersion{
+		EventSpecVersion100,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s EventSpecVersion) MarshalText() ([]byte, error) {
+	switch s {
+	case EventSpecVersion100:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *EventSpecVersion) UnmarshalText(data []byte) error {
+	switch EventSpecVersion(data) {
+	case EventSpecVersion100:
+		*s = EventSpecVersion100
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 type EventTime string
 
 // Ref: #/components/schemas/SessionEnded
@@ -57,7 +95,7 @@ type SessionEndedAccepted struct{}
 // CloudEvent announcing that a session is over. It carries no `sessionId` attribute.
 // Ref: #/components/schemas/SessionEndedEvent
 type SessionEndedEvent struct {
-	Specversion SessionSpecVersion    `json:"specversion"`
+	Specversion EventSpecVersion      `json:"specversion"`
 	ID          EventId               `json:"id"`
 	Type        SessionEndedEventType `json:"type"`
 	Source      EventSource           `json:"source"`
@@ -66,7 +104,7 @@ type SessionEndedEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *SessionEndedEvent) GetSpecversion() SessionSpecVersion {
+func (s *SessionEndedEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -96,7 +134,7 @@ func (s *SessionEndedEvent) GetData() SessionEnded {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *SessionEndedEvent) SetSpecversion(val SessionSpecVersion) {
+func (s *SessionEndedEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -159,43 +197,6 @@ func (s *SessionEndedEventType) UnmarshalText(data []byte) error {
 	}
 }
 
-// The `specversion` the TypeScript and Rust event factories write. It is not the CloudEvents value
-// `1.0`; the factories are shared by every event family and are not changed per message.
-// Ref: #/components/schemas/SessionSpecVersion
-type SessionSpecVersion string
-
-const (
-	SessionSpecVersion100 SessionSpecVersion = "1.0.0"
-)
-
-// AllValues returns all SessionSpecVersion values.
-func (SessionSpecVersion) AllValues() []SessionSpecVersion {
-	return []SessionSpecVersion{
-		SessionSpecVersion100,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SessionSpecVersion) MarshalText() ([]byte, error) {
-	switch s {
-	case SessionSpecVersion100:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SessionSpecVersion) UnmarshalText(data []byte) error {
-	switch SessionSpecVersion(data) {
-	case SessionSpecVersion100:
-		*s = SessionSpecVersion100
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
 // Ref: #/components/schemas/SessionStarted
 type SessionStarted struct {
 	SessionId EntityId  `json:"sessionId"`
@@ -229,7 +230,7 @@ type SessionStartedAccepted struct{}
 // establishes one.
 // Ref: #/components/schemas/SessionStartedEvent
 type SessionStartedEvent struct {
-	Specversion SessionSpecVersion      `json:"specversion"`
+	Specversion EventSpecVersion        `json:"specversion"`
 	ID          EventId                 `json:"id"`
 	Type        SessionStartedEventType `json:"type"`
 	Source      EventSource             `json:"source"`
@@ -238,7 +239,7 @@ type SessionStartedEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *SessionStartedEvent) GetSpecversion() SessionSpecVersion {
+func (s *SessionStartedEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -268,7 +269,7 @@ func (s *SessionStartedEvent) GetData() SessionStarted {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *SessionStartedEvent) SetSpecversion(val SessionSpecVersion) {
+func (s *SessionStartedEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 

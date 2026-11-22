@@ -541,11 +541,6 @@ export interface components {
          * @enum {string}
          */
         PlatformId: PlatformId;
-        /**
-         * @description The CloudEvents version string the TypeScript publishers stamp on every event.
-         * @enum {string}
-         */
-        StreamEventSpecVersion: StreamEventSpecVersion;
         /** @description Comma-separated ids of the workflow runs that led to the event, oldest first; at most 8 ids of 200 characters. */
         WorkflowChain: string;
         /** @description Platform membership of a chat message's author, neutral across platforms. `isFollower` and `subscriberTier` are absent when the platform does not report them or the lookup did not resolve; absent is never `false` or a default tier. */
@@ -852,7 +847,7 @@ export interface components {
         };
         /** @description The `user.message` CloudEvent as the connectors publish it. */
         UserMessageEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: UserMessageEventType;
@@ -867,7 +862,7 @@ export interface components {
         };
         /** @description The `chat.command.<slug>` CloudEvent for one invocation of a chat command. `specversion` is optional because the workflow engine does not stamp it; the TypeScript publishers always do. `platform` is absent when no platform's chat caused the run, such as a scheduled one. */
         ChatCommandEvent: {
-            specversion?: components["schemas"]["StreamEventSpecVersion"];
+            specversion?: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             type: string;
             source: components["schemas"]["EventSource"];
@@ -910,7 +905,7 @@ export interface components {
         };
         /** @description The `channel.cheer` CloudEvent as the connectors publish it. */
         ChannelCheerEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelCheerEventType;
@@ -923,7 +918,7 @@ export interface components {
         };
         /** @description The `channel.follow` CloudEvent as the connectors publish it. */
         ChannelFollowEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelFollowEventType;
@@ -936,7 +931,7 @@ export interface components {
         };
         /** @description The `channel.hypetrain` CloudEvent as the connectors publish it. */
         ChannelHypeTrainEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelHypeTrainEventType;
@@ -949,7 +944,7 @@ export interface components {
         };
         /** @description The `channel.raid` CloudEvent as the connectors publish it. */
         ChannelRaidEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelRaidEventType;
@@ -962,7 +957,7 @@ export interface components {
         };
         /** @description The `channelpoints.redeem` CloudEvent as the connectors publish it. */
         ChannelPointsRedeemEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelPointsRedeemEventType;
@@ -975,7 +970,7 @@ export interface components {
         };
         /** @description The `stream.online` CloudEvent as the connectors publish it. */
         StreamOnlineEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: StreamOnlineEventType;
@@ -988,7 +983,7 @@ export interface components {
         };
         /** @description The `stream.offline` CloudEvent as the connectors publish it. */
         StreamOfflineEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: StreamOfflineEventType;
@@ -1001,7 +996,7 @@ export interface components {
         };
         /** @description The `channel.subscribe` CloudEvent as the connectors publish it. */
         ChannelSubscribeEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelSubscribeEventType;
@@ -1014,7 +1009,7 @@ export interface components {
         };
         /** @description The `channel.subscriptionGift` CloudEvent as the connectors publish it. */
         ChannelSubscriptionGiftEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelSubscriptionGiftEventType;
@@ -1027,7 +1022,7 @@ export interface components {
         };
         /** @description The `channel.resub` CloudEvent as the connectors publish it. */
         ChannelResubEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelResubEventType;
@@ -1040,7 +1035,7 @@ export interface components {
         };
         /** @description The `channel.giftPaidUpgrade` CloudEvent as the connectors publish it. */
         ChannelGiftPaidUpgradeEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelGiftPaidUpgradeEventType;
@@ -1053,7 +1048,7 @@ export interface components {
         };
         /** @description The `channel.primePaidUpgrade` CloudEvent as the connectors publish it. */
         ChannelPrimePaidUpgradeEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelPrimePaidUpgradeEventType;
@@ -1066,7 +1061,7 @@ export interface components {
         };
         /** @description The `channel.unraid` CloudEvent as the connectors publish it. */
         ChannelUnraidEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelUnraidEventType;
@@ -1079,7 +1074,7 @@ export interface components {
         };
         /** @description The `channel.payItForward` CloudEvent as the connectors publish it. */
         ChannelPayItForwardEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelPayItForwardEventType;
@@ -1092,7 +1087,7 @@ export interface components {
         };
         /** @description The `channel.announcement` CloudEvent as the connectors publish it. */
         ChannelAnnouncementEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelAnnouncementEventType;
@@ -1105,7 +1100,7 @@ export interface components {
         };
         /** @description The `channel.charityDonation` CloudEvent as the connectors publish it. */
         ChannelCharityDonationEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelCharityDonationEventType;
@@ -1118,7 +1113,7 @@ export interface components {
         };
         /** @description The `channel.bitsBadgeTier` CloudEvent as the connectors publish it. */
         ChannelBitsBadgeTierEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelBitsBadgeTierEventType;
@@ -1131,7 +1126,7 @@ export interface components {
         };
         /** @description The `channel.watchStreak` CloudEvent as the connectors publish it. */
         ChannelWatchStreakEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelWatchStreakEventType;
@@ -1144,7 +1139,7 @@ export interface components {
         };
         /** @description The `channel.sharedSubscribe` CloudEvent as the connectors publish it. */
         ChannelSharedSubscribeEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelSharedSubscribeEventType;
@@ -1157,7 +1152,7 @@ export interface components {
         };
         /** @description The `channel.sharedSubscriptionGift` CloudEvent as the connectors publish it. */
         ChannelSharedSubscriptionGiftEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelSharedSubscriptionGiftEventType;
@@ -1170,7 +1165,7 @@ export interface components {
         };
         /** @description The `channel.sharedRaid` CloudEvent as the connectors publish it. */
         ChannelSharedRaidEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelSharedRaidEventType;
@@ -1183,7 +1178,7 @@ export interface components {
         };
         /** @description The `channel.sharedResub` CloudEvent as the connectors publish it. */
         ChannelSharedResubEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelSharedResubEventType;
@@ -1196,7 +1191,7 @@ export interface components {
         };
         /** @description The `channel.sharedGiftPaidUpgrade` CloudEvent as the connectors publish it. */
         ChannelSharedGiftPaidUpgradeEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelSharedGiftPaidUpgradeEventType;
@@ -1209,7 +1204,7 @@ export interface components {
         };
         /** @description The `channel.sharedPrimePaidUpgrade` CloudEvent as the connectors publish it. */
         ChannelSharedPrimePaidUpgradeEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelSharedPrimePaidUpgradeEventType;
@@ -1222,7 +1217,7 @@ export interface components {
         };
         /** @description The `channel.sharedPayItForward` CloudEvent as the connectors publish it. */
         ChannelSharedPayItForwardEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelSharedPayItForwardEventType;
@@ -1235,7 +1230,7 @@ export interface components {
         };
         /** @description The `channel.sharedAnnouncement` CloudEvent as the connectors publish it. */
         ChannelSharedAnnouncementEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelSharedAnnouncementEventType;
@@ -1248,7 +1243,7 @@ export interface components {
         };
         /** @description The `channel.ad_break.upcoming` CloudEvent as the connectors publish it. */
         ChannelAdBreakUpcomingEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelAdBreakUpcomingEventType;
@@ -1261,7 +1256,7 @@ export interface components {
         };
         /** @description The `channel.ad_break.begin` CloudEvent as the connectors publish it. */
         ChannelAdBreakBeginEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelAdBreakBeginEventType;
@@ -1274,7 +1269,7 @@ export interface components {
         };
         /** @description The `channel.ad_break.end` CloudEvent as the connectors publish it. */
         ChannelAdBreakEndEvent: {
-            specversion: components["schemas"]["StreamEventSpecVersion"];
+            specversion: components["schemas"]["EventSpecVersion"];
             id: components["schemas"]["EventId"];
             /** @enum {string} */
             type: ChannelAdBreakEndEventType;
@@ -1285,6 +1280,11 @@ export interface components {
             sessionId?: components["schemas"]["EntityId"];
             data: components["schemas"]["ChannelAdBreakEnd"];
         };
+        /**
+         * @description The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.
+         * @enum {string}
+         */
+        EventSpecVersion: EventSpecVersion;
         /** @description Unique id of one event; the producer chooses the format. */
         EventId: string;
         /** @description Name of the component that produced the event. */
@@ -2055,9 +2055,6 @@ export interface operations {
 export enum PlatformId {
     twitch = "twitch"
 }
-export enum StreamEventSpecVersion {
-    Value1_0_0 = "1.0.0"
-}
 export enum HypeTrainContributionType {
     bits = "bits",
     subscription = "subscription",
@@ -2152,4 +2149,7 @@ export enum ChannelAdBreakBeginEventType {
 }
 export enum ChannelAdBreakEndEventType {
     channel_ad_break_end = "channel.ad_break.end"
+}
+export enum EventSpecVersion {
+    Value1_0_0 = "1.0.0"
 }

@@ -59,7 +59,7 @@ func (s *ChannelAdBreakBegin) SetEndsAt(val string) {
 // The `channel.ad_break.begin` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelAdBreakBeginEvent
 type ChannelAdBreakBeginEvent struct {
-	Specversion StreamEventSpecVersion       `json:"specversion"`
+	Specversion EventSpecVersion             `json:"specversion"`
 	ID          EventId                      `json:"id"`
 	Type        ChannelAdBreakBeginEventType `json:"type"`
 	Source      EventSource                  `json:"source"`
@@ -71,7 +71,7 @@ type ChannelAdBreakBeginEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelAdBreakBeginEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelAdBreakBeginEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -111,7 +111,7 @@ func (s *ChannelAdBreakBeginEvent) GetData() ChannelAdBreakBegin {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelAdBreakBeginEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelAdBreakBeginEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -239,7 +239,7 @@ func (s *ChannelAdBreakEnd) SetEndedAt(val string) {
 // The `channel.ad_break.end` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelAdBreakEndEvent
 type ChannelAdBreakEndEvent struct {
-	Specversion StreamEventSpecVersion     `json:"specversion"`
+	Specversion EventSpecVersion           `json:"specversion"`
 	ID          EventId                    `json:"id"`
 	Type        ChannelAdBreakEndEventType `json:"type"`
 	Source      EventSource                `json:"source"`
@@ -251,7 +251,7 @@ type ChannelAdBreakEndEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelAdBreakEndEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelAdBreakEndEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -291,7 +291,7 @@ func (s *ChannelAdBreakEndEvent) GetData() ChannelAdBreakEnd {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelAdBreakEndEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelAdBreakEndEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -408,7 +408,7 @@ func (s *ChannelAdBreakUpcoming) SetDurationSeconds(val int) {
 // The `channel.ad_break.upcoming` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelAdBreakUpcomingEvent
 type ChannelAdBreakUpcomingEvent struct {
-	Specversion StreamEventSpecVersion          `json:"specversion"`
+	Specversion EventSpecVersion                `json:"specversion"`
 	ID          EventId                         `json:"id"`
 	Type        ChannelAdBreakUpcomingEventType `json:"type"`
 	Source      EventSource                     `json:"source"`
@@ -420,7 +420,7 @@ type ChannelAdBreakUpcomingEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelAdBreakUpcomingEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelAdBreakUpcomingEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -460,7 +460,7 @@ func (s *ChannelAdBreakUpcomingEvent) GetData() ChannelAdBreakUpcoming {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelAdBreakUpcomingEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelAdBreakUpcomingEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -654,7 +654,7 @@ func (s *ChannelAnnouncement) SetColor(val string) {
 // The `channel.announcement` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelAnnouncementEvent
 type ChannelAnnouncementEvent struct {
-	Specversion StreamEventSpecVersion       `json:"specversion"`
+	Specversion EventSpecVersion             `json:"specversion"`
 	ID          EventId                      `json:"id"`
 	Type        ChannelAnnouncementEventType `json:"type"`
 	Source      EventSource                  `json:"source"`
@@ -666,7 +666,7 @@ type ChannelAnnouncementEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelAnnouncementEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelAnnouncementEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -706,7 +706,7 @@ func (s *ChannelAnnouncementEvent) GetData() ChannelAnnouncement {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelAnnouncementEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelAnnouncementEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -900,7 +900,7 @@ func (s *ChannelBitsBadgeTier) SetNewTier(val int) {
 // The `channel.bitsBadgeTier` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelBitsBadgeTierEvent
 type ChannelBitsBadgeTierEvent struct {
-	Specversion StreamEventSpecVersion        `json:"specversion"`
+	Specversion EventSpecVersion              `json:"specversion"`
 	ID          EventId                       `json:"id"`
 	Type        ChannelBitsBadgeTierEventType `json:"type"`
 	Source      EventSource                   `json:"source"`
@@ -912,7 +912,7 @@ type ChannelBitsBadgeTierEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelBitsBadgeTierEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelBitsBadgeTierEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -952,7 +952,7 @@ func (s *ChannelBitsBadgeTierEvent) GetData() ChannelBitsBadgeTier {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelBitsBadgeTierEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelBitsBadgeTierEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -1168,7 +1168,7 @@ func (s *ChannelCharityDonation) SetCurrency(val string) {
 // The `channel.charityDonation` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelCharityDonationEvent
 type ChannelCharityDonationEvent struct {
-	Specversion StreamEventSpecVersion          `json:"specversion"`
+	Specversion EventSpecVersion                `json:"specversion"`
 	ID          EventId                         `json:"id"`
 	Type        ChannelCharityDonationEventType `json:"type"`
 	Source      EventSource                     `json:"source"`
@@ -1180,7 +1180,7 @@ type ChannelCharityDonationEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelCharityDonationEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelCharityDonationEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -1220,7 +1220,7 @@ func (s *ChannelCharityDonationEvent) GetData() ChannelCharityDonation {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelCharityDonationEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelCharityDonationEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -1359,19 +1359,19 @@ func (s *ChannelCheer) SetUserName(val NilString) {
 // The `channel.cheer` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelCheerEvent
 type ChannelCheerEvent struct {
-	Specversion StreamEventSpecVersion `json:"specversion"`
-	ID          EventId                `json:"id"`
-	Type        ChannelCheerEventType  `json:"type"`
-	Source      EventSource            `json:"source"`
-	Time        EventTime              `json:"time"`
-	Platform    PlatformId             `json:"platform"`
+	Specversion EventSpecVersion      `json:"specversion"`
+	ID          EventId               `json:"id"`
+	Type        ChannelCheerEventType `json:"type"`
+	Source      EventSource           `json:"source"`
+	Time        EventTime             `json:"time"`
+	Platform    PlatformId            `json:"platform"`
 	// The stream session the event happened during; absent before the publisher knows one.
 	SessionId OptEntityId  `json:"sessionId"`
 	Data      ChannelCheer `json:"data"`
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelCheerEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelCheerEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -1411,7 +1411,7 @@ func (s *ChannelCheerEvent) GetData() ChannelCheer {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelCheerEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelCheerEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -1517,7 +1517,7 @@ func (s *ChannelFollow) SetUserName(val string) {
 // The `channel.follow` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelFollowEvent
 type ChannelFollowEvent struct {
-	Specversion StreamEventSpecVersion `json:"specversion"`
+	Specversion EventSpecVersion       `json:"specversion"`
 	ID          EventId                `json:"id"`
 	Type        ChannelFollowEventType `json:"type"`
 	Source      EventSource            `json:"source"`
@@ -1529,7 +1529,7 @@ type ChannelFollowEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelFollowEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelFollowEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -1569,7 +1569,7 @@ func (s *ChannelFollowEvent) GetData() ChannelFollow {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelFollowEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelFollowEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -1785,7 +1785,7 @@ func (s *ChannelGiftPaidUpgrade) SetGifterName(val NilString) {
 // The `channel.giftPaidUpgrade` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelGiftPaidUpgradeEvent
 type ChannelGiftPaidUpgradeEvent struct {
-	Specversion StreamEventSpecVersion          `json:"specversion"`
+	Specversion EventSpecVersion                `json:"specversion"`
 	ID          EventId                         `json:"id"`
 	Type        ChannelGiftPaidUpgradeEventType `json:"type"`
 	Source      EventSource                     `json:"source"`
@@ -1797,7 +1797,7 @@ type ChannelGiftPaidUpgradeEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelGiftPaidUpgradeEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelGiftPaidUpgradeEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -1837,7 +1837,7 @@ func (s *ChannelGiftPaidUpgradeEvent) GetData() ChannelGiftPaidUpgrade {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelGiftPaidUpgradeEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelGiftPaidUpgradeEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -2031,7 +2031,7 @@ func (s *ChannelHypeTrain) SetExpiresAt(val string) {
 // The `channel.hypetrain` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelHypeTrainEvent
 type ChannelHypeTrainEvent struct {
-	Specversion StreamEventSpecVersion    `json:"specversion"`
+	Specversion EventSpecVersion          `json:"specversion"`
 	ID          EventId                   `json:"id"`
 	Type        ChannelHypeTrainEventType `json:"type"`
 	Source      EventSource               `json:"source"`
@@ -2043,7 +2043,7 @@ type ChannelHypeTrainEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelHypeTrainEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelHypeTrainEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -2083,7 +2083,7 @@ func (s *ChannelHypeTrainEvent) GetData() ChannelHypeTrain {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelHypeTrainEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelHypeTrainEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -2299,7 +2299,7 @@ func (s *ChannelPayItForward) SetGifterName(val NilString) {
 // The `channel.payItForward` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelPayItForwardEvent
 type ChannelPayItForwardEvent struct {
-	Specversion StreamEventSpecVersion       `json:"specversion"`
+	Specversion EventSpecVersion             `json:"specversion"`
 	ID          EventId                      `json:"id"`
 	Type        ChannelPayItForwardEventType `json:"type"`
 	Source      EventSource                  `json:"source"`
@@ -2311,7 +2311,7 @@ type ChannelPayItForwardEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelPayItForwardEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelPayItForwardEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -2351,7 +2351,7 @@ func (s *ChannelPayItForwardEvent) GetData() ChannelPayItForward {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelPayItForwardEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelPayItForwardEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -2512,7 +2512,7 @@ func (s *ChannelPointsRedeem) SetMessage(val OptString) {
 // The `channelpoints.redeem` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelPointsRedeemEvent
 type ChannelPointsRedeemEvent struct {
-	Specversion StreamEventSpecVersion       `json:"specversion"`
+	Specversion EventSpecVersion             `json:"specversion"`
 	ID          EventId                      `json:"id"`
 	Type        ChannelPointsRedeemEventType `json:"type"`
 	Source      EventSource                  `json:"source"`
@@ -2524,7 +2524,7 @@ type ChannelPointsRedeemEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelPointsRedeemEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelPointsRedeemEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -2564,7 +2564,7 @@ func (s *ChannelPointsRedeemEvent) GetData() ChannelPointsRedeem {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelPointsRedeemEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelPointsRedeemEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -2758,7 +2758,7 @@ func (s *ChannelPrimePaidUpgrade) SetTier(val string) {
 // The `channel.primePaidUpgrade` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelPrimePaidUpgradeEvent
 type ChannelPrimePaidUpgradeEvent struct {
-	Specversion StreamEventSpecVersion           `json:"specversion"`
+	Specversion EventSpecVersion                 `json:"specversion"`
 	ID          EventId                          `json:"id"`
 	Type        ChannelPrimePaidUpgradeEventType `json:"type"`
 	Source      EventSource                      `json:"source"`
@@ -2770,7 +2770,7 @@ type ChannelPrimePaidUpgradeEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelPrimePaidUpgradeEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelPrimePaidUpgradeEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -2810,7 +2810,7 @@ func (s *ChannelPrimePaidUpgradeEvent) GetData() ChannelPrimePaidUpgrade {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelPrimePaidUpgradeEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelPrimePaidUpgradeEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -2927,19 +2927,19 @@ func (s *ChannelRaid) SetViewers(val int) {
 // The `channel.raid` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelRaidEvent
 type ChannelRaidEvent struct {
-	Specversion StreamEventSpecVersion `json:"specversion"`
-	ID          EventId                `json:"id"`
-	Type        ChannelRaidEventType   `json:"type"`
-	Source      EventSource            `json:"source"`
-	Time        EventTime              `json:"time"`
-	Platform    PlatformId             `json:"platform"`
+	Specversion EventSpecVersion     `json:"specversion"`
+	ID          EventId              `json:"id"`
+	Type        ChannelRaidEventType `json:"type"`
+	Source      EventSource          `json:"source"`
+	Time        EventTime            `json:"time"`
+	Platform    PlatformId           `json:"platform"`
 	// The stream session the event happened during; absent before the publisher knows one.
 	SessionId OptEntityId `json:"sessionId"`
 	Data      ChannelRaid `json:"data"`
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelRaidEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelRaidEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -2979,7 +2979,7 @@ func (s *ChannelRaidEvent) GetData() ChannelRaid {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelRaidEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelRaidEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -3261,19 +3261,19 @@ func (s *ChannelResub) SetGifterName(val NilString) {
 // The `channel.resub` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelResubEvent
 type ChannelResubEvent struct {
-	Specversion StreamEventSpecVersion `json:"specversion"`
-	ID          EventId                `json:"id"`
-	Type        ChannelResubEventType  `json:"type"`
-	Source      EventSource            `json:"source"`
-	Time        EventTime              `json:"time"`
-	Platform    PlatformId             `json:"platform"`
+	Specversion EventSpecVersion      `json:"specversion"`
+	ID          EventId               `json:"id"`
+	Type        ChannelResubEventType `json:"type"`
+	Source      EventSource           `json:"source"`
+	Time        EventTime             `json:"time"`
+	Platform    PlatformId            `json:"platform"`
 	// The stream session the event happened during; absent before the publisher knows one.
 	SessionId OptEntityId  `json:"sessionId"`
 	Data      ChannelResub `json:"data"`
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelResubEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelResubEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -3313,7 +3313,7 @@ func (s *ChannelResubEvent) GetData() ChannelResub {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelResubEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelResubEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -3392,7 +3392,7 @@ type ChannelResubOK struct{}
 // The `channel.sharedAnnouncement` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelSharedAnnouncementEvent
 type ChannelSharedAnnouncementEvent struct {
-	Specversion StreamEventSpecVersion             `json:"specversion"`
+	Specversion EventSpecVersion                   `json:"specversion"`
 	ID          EventId                            `json:"id"`
 	Type        ChannelSharedAnnouncementEventType `json:"type"`
 	Source      EventSource                        `json:"source"`
@@ -3404,7 +3404,7 @@ type ChannelSharedAnnouncementEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelSharedAnnouncementEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelSharedAnnouncementEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -3444,7 +3444,7 @@ func (s *ChannelSharedAnnouncementEvent) GetData() ChannelAnnouncement {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelSharedAnnouncementEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelSharedAnnouncementEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -3523,7 +3523,7 @@ type ChannelSharedAnnouncementOK struct{}
 // The `channel.sharedGiftPaidUpgrade` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelSharedGiftPaidUpgradeEvent
 type ChannelSharedGiftPaidUpgradeEvent struct {
-	Specversion StreamEventSpecVersion                `json:"specversion"`
+	Specversion EventSpecVersion                      `json:"specversion"`
 	ID          EventId                               `json:"id"`
 	Type        ChannelSharedGiftPaidUpgradeEventType `json:"type"`
 	Source      EventSource                           `json:"source"`
@@ -3535,7 +3535,7 @@ type ChannelSharedGiftPaidUpgradeEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelSharedGiftPaidUpgradeEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelSharedGiftPaidUpgradeEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -3575,7 +3575,7 @@ func (s *ChannelSharedGiftPaidUpgradeEvent) GetData() ChannelGiftPaidUpgrade {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelSharedGiftPaidUpgradeEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelSharedGiftPaidUpgradeEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -3654,7 +3654,7 @@ type ChannelSharedGiftPaidUpgradeOK struct{}
 // The `channel.sharedPayItForward` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelSharedPayItForwardEvent
 type ChannelSharedPayItForwardEvent struct {
-	Specversion StreamEventSpecVersion             `json:"specversion"`
+	Specversion EventSpecVersion                   `json:"specversion"`
 	ID          EventId                            `json:"id"`
 	Type        ChannelSharedPayItForwardEventType `json:"type"`
 	Source      EventSource                        `json:"source"`
@@ -3666,7 +3666,7 @@ type ChannelSharedPayItForwardEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelSharedPayItForwardEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelSharedPayItForwardEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -3706,7 +3706,7 @@ func (s *ChannelSharedPayItForwardEvent) GetData() ChannelPayItForward {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelSharedPayItForwardEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelSharedPayItForwardEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -3785,7 +3785,7 @@ type ChannelSharedPayItForwardOK struct{}
 // The `channel.sharedPrimePaidUpgrade` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelSharedPrimePaidUpgradeEvent
 type ChannelSharedPrimePaidUpgradeEvent struct {
-	Specversion StreamEventSpecVersion                 `json:"specversion"`
+	Specversion EventSpecVersion                       `json:"specversion"`
 	ID          EventId                                `json:"id"`
 	Type        ChannelSharedPrimePaidUpgradeEventType `json:"type"`
 	Source      EventSource                            `json:"source"`
@@ -3797,7 +3797,7 @@ type ChannelSharedPrimePaidUpgradeEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelSharedPrimePaidUpgradeEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelSharedPrimePaidUpgradeEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -3837,7 +3837,7 @@ func (s *ChannelSharedPrimePaidUpgradeEvent) GetData() ChannelPrimePaidUpgrade {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelSharedPrimePaidUpgradeEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelSharedPrimePaidUpgradeEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -4053,7 +4053,7 @@ func (s *ChannelSharedRaid) SetBroadcasterName(val string) {
 // The `channel.sharedRaid` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelSharedRaidEvent
 type ChannelSharedRaidEvent struct {
-	Specversion StreamEventSpecVersion     `json:"specversion"`
+	Specversion EventSpecVersion           `json:"specversion"`
 	ID          EventId                    `json:"id"`
 	Type        ChannelSharedRaidEventType `json:"type"`
 	Source      EventSource                `json:"source"`
@@ -4065,7 +4065,7 @@ type ChannelSharedRaidEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelSharedRaidEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelSharedRaidEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -4105,7 +4105,7 @@ func (s *ChannelSharedRaidEvent) GetData() ChannelSharedRaid {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelSharedRaidEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelSharedRaidEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -4184,7 +4184,7 @@ type ChannelSharedRaidOK struct{}
 // The `channel.sharedResub` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelSharedResubEvent
 type ChannelSharedResubEvent struct {
-	Specversion StreamEventSpecVersion      `json:"specversion"`
+	Specversion EventSpecVersion            `json:"specversion"`
 	ID          EventId                     `json:"id"`
 	Type        ChannelSharedResubEventType `json:"type"`
 	Source      EventSource                 `json:"source"`
@@ -4196,7 +4196,7 @@ type ChannelSharedResubEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelSharedResubEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelSharedResubEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -4236,7 +4236,7 @@ func (s *ChannelSharedResubEvent) GetData() ChannelResub {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelSharedResubEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelSharedResubEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -4474,7 +4474,7 @@ func (s *ChannelSharedSubscribe) SetBroadcasterName(val string) {
 // The `channel.sharedSubscribe` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelSharedSubscribeEvent
 type ChannelSharedSubscribeEvent struct {
-	Specversion StreamEventSpecVersion          `json:"specversion"`
+	Specversion EventSpecVersion                `json:"specversion"`
 	ID          EventId                         `json:"id"`
 	Type        ChannelSharedSubscribeEventType `json:"type"`
 	Source      EventSource                     `json:"source"`
@@ -4486,7 +4486,7 @@ type ChannelSharedSubscribeEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelSharedSubscribeEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelSharedSubscribeEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -4526,7 +4526,7 @@ func (s *ChannelSharedSubscribeEvent) GetData() ChannelSharedSubscribe {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelSharedSubscribeEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelSharedSubscribeEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -4764,7 +4764,7 @@ func (s *ChannelSharedSubscriptionGift) SetBroadcasterName(val string) {
 // The `channel.sharedSubscriptionGift` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelSharedSubscriptionGiftEvent
 type ChannelSharedSubscriptionGiftEvent struct {
-	Specversion StreamEventSpecVersion                 `json:"specversion"`
+	Specversion EventSpecVersion                       `json:"specversion"`
 	ID          EventId                                `json:"id"`
 	Type        ChannelSharedSubscriptionGiftEventType `json:"type"`
 	Source      EventSource                            `json:"source"`
@@ -4776,7 +4776,7 @@ type ChannelSharedSubscriptionGiftEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelSharedSubscriptionGiftEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelSharedSubscriptionGiftEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -4816,7 +4816,7 @@ func (s *ChannelSharedSubscriptionGiftEvent) GetData() ChannelSharedSubscription
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelSharedSubscriptionGiftEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelSharedSubscriptionGiftEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -4955,7 +4955,7 @@ func (s *ChannelSubscribe) SetUserName(val NilString) {
 // The `channel.subscribe` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelSubscribeEvent
 type ChannelSubscribeEvent struct {
-	Specversion StreamEventSpecVersion    `json:"specversion"`
+	Specversion EventSpecVersion          `json:"specversion"`
 	ID          EventId                   `json:"id"`
 	Type        ChannelSubscribeEventType `json:"type"`
 	Source      EventSource               `json:"source"`
@@ -4967,7 +4967,7 @@ type ChannelSubscribeEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelSubscribeEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelSubscribeEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -5007,7 +5007,7 @@ func (s *ChannelSubscribeEvent) GetData() ChannelSubscribe {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelSubscribeEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelSubscribeEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -5146,7 +5146,7 @@ func (s *ChannelSubscriptionGift) SetTier(val string) {
 // The `channel.subscriptionGift` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelSubscriptionGiftEvent
 type ChannelSubscriptionGiftEvent struct {
-	Specversion StreamEventSpecVersion           `json:"specversion"`
+	Specversion EventSpecVersion                 `json:"specversion"`
 	ID          EventId                          `json:"id"`
 	Type        ChannelSubscriptionGiftEventType `json:"type"`
 	Source      EventSource                      `json:"source"`
@@ -5158,7 +5158,7 @@ type ChannelSubscriptionGiftEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelSubscriptionGiftEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelSubscriptionGiftEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -5198,7 +5198,7 @@ func (s *ChannelSubscriptionGiftEvent) GetData() ChannelSubscriptionGift {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelSubscriptionGiftEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelSubscriptionGiftEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -5381,7 +5381,7 @@ func (s *ChannelUnraid) SetBroadcasterName(val string) {
 // The `channel.unraid` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelUnraidEvent
 type ChannelUnraidEvent struct {
-	Specversion StreamEventSpecVersion `json:"specversion"`
+	Specversion EventSpecVersion       `json:"specversion"`
 	ID          EventId                `json:"id"`
 	Type        ChannelUnraidEventType `json:"type"`
 	Source      EventSource            `json:"source"`
@@ -5393,7 +5393,7 @@ type ChannelUnraidEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelUnraidEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelUnraidEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -5433,7 +5433,7 @@ func (s *ChannelUnraidEvent) GetData() ChannelUnraid {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelUnraidEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelUnraidEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -5638,7 +5638,7 @@ func (s *ChannelWatchStreak) SetChannelPointsAwarded(val int) {
 // The `channel.watchStreak` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/ChannelWatchStreakEvent
 type ChannelWatchStreakEvent struct {
-	Specversion StreamEventSpecVersion      `json:"specversion"`
+	Specversion EventSpecVersion            `json:"specversion"`
 	ID          EventId                     `json:"id"`
 	Type        ChannelWatchStreakEventType `json:"type"`
 	Source      EventSource                 `json:"source"`
@@ -5650,7 +5650,7 @@ type ChannelWatchStreakEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChannelWatchStreakEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *ChannelWatchStreakEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -5690,7 +5690,7 @@ func (s *ChannelWatchStreakEvent) GetData() ChannelWatchStreak {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChannelWatchStreakEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *ChannelWatchStreakEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -5871,12 +5871,12 @@ func (s *ChatCommand) SetChannelId(val OptString) {
 // absent when no platform's chat caused the run, such as a scheduled one.
 // Ref: #/components/schemas/ChatCommandEvent
 type ChatCommandEvent struct {
-	Specversion OptStreamEventSpecVersion `json:"specversion"`
-	ID          EventId                   `json:"id"`
-	Type        string                    `json:"type"`
-	Source      EventSource               `json:"source"`
-	Time        EventTime                 `json:"time"`
-	Platform    OptPlatformId             `json:"platform"`
+	Specversion OptEventSpecVersion `json:"specversion"`
+	ID          EventId             `json:"id"`
+	Type        string              `json:"type"`
+	Source      EventSource         `json:"source"`
+	Time        EventTime           `json:"time"`
+	Platform    OptPlatformId       `json:"platform"`
 	// The stream session the event happened during; absent before the publisher knows one.
 	SessionId OptEntityId `json:"sessionId"`
 	// Correlates the event with whoever asked for it; absent unless a caller waits on the outcome.
@@ -5891,7 +5891,7 @@ type ChatCommandEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *ChatCommandEvent) GetSpecversion() OptStreamEventSpecVersion {
+func (s *ChatCommandEvent) GetSpecversion() OptEventSpecVersion {
 	return s.Specversion
 }
 
@@ -5951,7 +5951,7 @@ func (s *ChatCommandEvent) GetData() ChatCommand {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *ChatCommandEvent) SetSpecversion(val OptStreamEventSpecVersion) {
+func (s *ChatCommandEvent) SetSpecversion(val OptEventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -6139,6 +6139,44 @@ type EntityId string
 type EventId string
 
 type EventSource string
+
+// The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that
+// is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and
+// consumer agrees on it.
+// Ref: #/components/schemas/EventSpecVersion
+type EventSpecVersion string
+
+const (
+	EventSpecVersion100 EventSpecVersion = "1.0.0"
+)
+
+// AllValues returns all EventSpecVersion values.
+func (EventSpecVersion) AllValues() []EventSpecVersion {
+	return []EventSpecVersion{
+		EventSpecVersion100,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s EventSpecVersion) MarshalText() ([]byte, error) {
+	switch s {
+	case EventSpecVersion100:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *EventSpecVersion) UnmarshalText(data []byte) error {
+	switch EventSpecVersion(data) {
+	case EventSpecVersion100:
+		*s = EventSpecVersion100
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 type EventTime string
 
@@ -6512,6 +6550,52 @@ func (o OptEntityId) Or(d EntityId) EntityId {
 	return d
 }
 
+// NewOptEventSpecVersion returns new OptEventSpecVersion with value set to v.
+func NewOptEventSpecVersion(v EventSpecVersion) OptEventSpecVersion {
+	return OptEventSpecVersion{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptEventSpecVersion is optional EventSpecVersion.
+type OptEventSpecVersion struct {
+	Value EventSpecVersion
+	Set   bool
+}
+
+// IsSet returns true if OptEventSpecVersion was set.
+func (o OptEventSpecVersion) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptEventSpecVersion) Reset() {
+	var v EventSpecVersion
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptEventSpecVersion) SetTo(v EventSpecVersion) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptEventSpecVersion) Get() (v EventSpecVersion, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptEventSpecVersion) Or(d EventSpecVersion) EventSpecVersion {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptPlatformId returns new OptPlatformId with value set to v.
 func NewOptPlatformId(v PlatformId) OptPlatformId {
 	return OptPlatformId{
@@ -6552,52 +6636,6 @@ func (o OptPlatformId) Get() (v PlatformId, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptPlatformId) Or(d PlatformId) PlatformId {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptStreamEventSpecVersion returns new OptStreamEventSpecVersion with value set to v.
-func NewOptStreamEventSpecVersion(v StreamEventSpecVersion) OptStreamEventSpecVersion {
-	return OptStreamEventSpecVersion{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptStreamEventSpecVersion is optional StreamEventSpecVersion.
-type OptStreamEventSpecVersion struct {
-	Value StreamEventSpecVersion
-	Set   bool
-}
-
-// IsSet returns true if OptStreamEventSpecVersion was set.
-func (o OptStreamEventSpecVersion) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptStreamEventSpecVersion) Reset() {
-	var v StreamEventSpecVersion
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptStreamEventSpecVersion) SetTo(v StreamEventSpecVersion) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptStreamEventSpecVersion) Get() (v StreamEventSpecVersion, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptStreamEventSpecVersion) Or(d StreamEventSpecVersion) StreamEventSpecVersion {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -6732,42 +6770,6 @@ func (s *PlatformId) UnmarshalText(data []byte) error {
 	}
 }
 
-// The CloudEvents version string the TypeScript publishers stamp on every event.
-// Ref: #/components/schemas/StreamEventSpecVersion
-type StreamEventSpecVersion string
-
-const (
-	StreamEventSpecVersion100 StreamEventSpecVersion = "1.0.0"
-)
-
-// AllValues returns all StreamEventSpecVersion values.
-func (StreamEventSpecVersion) AllValues() []StreamEventSpecVersion {
-	return []StreamEventSpecVersion{
-		StreamEventSpecVersion100,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s StreamEventSpecVersion) MarshalText() ([]byte, error) {
-	switch s {
-	case StreamEventSpecVersion100:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *StreamEventSpecVersion) UnmarshalText(data []byte) error {
-	switch StreamEventSpecVersion(data) {
-	case StreamEventSpecVersion100:
-		*s = StreamEventSpecVersion100
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
 // The stream ended.
 // Ref: #/components/schemas/StreamOffline
 type StreamOffline struct {
@@ -6798,7 +6800,7 @@ func (s *StreamOffline) SetBroadcasterUserName(val string) {
 // The `stream.offline` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/StreamOfflineEvent
 type StreamOfflineEvent struct {
-	Specversion StreamEventSpecVersion `json:"specversion"`
+	Specversion EventSpecVersion       `json:"specversion"`
 	ID          EventId                `json:"id"`
 	Type        StreamOfflineEventType `json:"type"`
 	Source      EventSource            `json:"source"`
@@ -6810,7 +6812,7 @@ type StreamOfflineEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *StreamOfflineEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *StreamOfflineEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -6850,7 +6852,7 @@ func (s *StreamOfflineEvent) GetData() StreamOffline {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *StreamOfflineEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *StreamOfflineEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -6967,19 +6969,19 @@ func (s *StreamOnline) SetStartedAt(val string) {
 // The `stream.online` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/StreamOnlineEvent
 type StreamOnlineEvent struct {
-	Specversion StreamEventSpecVersion `json:"specversion"`
-	ID          EventId                `json:"id"`
-	Type        StreamOnlineEventType  `json:"type"`
-	Source      EventSource            `json:"source"`
-	Time        EventTime              `json:"time"`
-	Platform    PlatformId             `json:"platform"`
+	Specversion EventSpecVersion      `json:"specversion"`
+	ID          EventId               `json:"id"`
+	Type        StreamOnlineEventType `json:"type"`
+	Source      EventSource           `json:"source"`
+	Time        EventTime             `json:"time"`
+	Platform    PlatformId            `json:"platform"`
 	// The stream session the event happened during; absent before the publisher knows one.
 	SessionId OptEntityId  `json:"sessionId"`
 	Data      StreamOnline `json:"data"`
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *StreamOnlineEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *StreamOnlineEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -7019,7 +7021,7 @@ func (s *StreamOnlineEvent) GetData() StreamOnline {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *StreamOnlineEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *StreamOnlineEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 
@@ -7224,12 +7226,12 @@ func (s *UserMessage) SetFromEngine(val bool) {
 // The `user.message` CloudEvent as the connectors publish it.
 // Ref: #/components/schemas/UserMessageEvent
 type UserMessageEvent struct {
-	Specversion StreamEventSpecVersion `json:"specversion"`
-	ID          EventId                `json:"id"`
-	Type        UserMessageEventType   `json:"type"`
-	Source      EventSource            `json:"source"`
-	Time        EventTime              `json:"time"`
-	Platform    PlatformId             `json:"platform"`
+	Specversion EventSpecVersion     `json:"specversion"`
+	ID          EventId              `json:"id"`
+	Type        UserMessageEventType `json:"type"`
+	Source      EventSource          `json:"source"`
+	Time        EventTime            `json:"time"`
+	Platform    PlatformId           `json:"platform"`
 	// The stream session the event happened during; absent before the publisher knows one.
 	SessionId OptEntityId `json:"sessionId"`
 	// Set on a line a workflow said, which the platform handed back.
@@ -7238,7 +7240,7 @@ type UserMessageEvent struct {
 }
 
 // GetSpecversion returns the value of Specversion.
-func (s *UserMessageEvent) GetSpecversion() StreamEventSpecVersion {
+func (s *UserMessageEvent) GetSpecversion() EventSpecVersion {
 	return s.Specversion
 }
 
@@ -7283,7 +7285,7 @@ func (s *UserMessageEvent) GetData() UserMessage {
 }
 
 // SetSpecversion sets the value of Specversion.
-func (s *UserMessageEvent) SetSpecversion(val StreamEventSpecVersion) {
+func (s *UserMessageEvent) SetSpecversion(val EventSpecVersion) {
 	s.Specversion = val
 }
 

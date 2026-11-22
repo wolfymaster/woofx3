@@ -6,7 +6,7 @@
       "name": "the event the producer publishes",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
         "type": "viewer.segment.entered",
         "source": "db-proxy",
@@ -44,7 +44,7 @@
       "name": "with a session id on the data and the envelope",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
         "type": "viewer.segment.entered",
         "source": "db-proxy",
@@ -83,7 +83,7 @@
       "name": "a segment that reads no facts",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
         "type": "viewer.segment.entered",
         "source": "db-proxy",
@@ -110,7 +110,7 @@
       "name": "a fact that does not exist before",
       "valid": true,
       "value": {
-        "specversion": "1.0",
+        "specversion": "1.0.0",
         "id": "c0a8012e-5b1d-4a53-9a1f-0f6c2f1d9a10",
         "type": "viewer.segment.entered",
         "source": "db-proxy",

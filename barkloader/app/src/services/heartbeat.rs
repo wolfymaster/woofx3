@@ -46,7 +46,7 @@ pub fn spawn(
 fn heartbeat_event(app_name: &str, ready: bool, time: &str) -> Result<HeartbeatEvent, String> {
     let application = app_name.parse().map_err(|e| format!("application: {e}"))?;
     Ok(HeartbeatEvent {
-        specversion: EventSpecVersion::X10,
+        specversion: EventSpecVersion::X100,
         id: Uuid::new_v4()
             .to_string()
             .parse()
