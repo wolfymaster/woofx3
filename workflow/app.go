@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/clients/barkloader"
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
@@ -60,17 +61,18 @@ func (p *NATSEventPublisher) Publish(event *types.Event) error {
 
 type WorkflowApp struct {
 	*runtime.BaseApplication
-	engine         *engine.Engine[AppServices]
-	logger         tasks.Logger
-	manager        *WorkflowManager
-	natsSvc        *service.NATSService
-	barkloaderSvc  *service.BarkloaderService
-	moduleDbClient dbv1.ModuleService
-	alertDbClient  dbv1.AlertService
-	factDbClient   dbv1.ViewerFactService
-	recordDbClient dbv1.DatabaseRecordService
-	scheduleReg    *triggers.ScheduleTriggerRegistrar
-	deliveries     *recentDeliveries
+	engine          *engine.Engine[AppServices]
+	logger          tasks.Logger
+	manager         *WorkflowManager
+	natsSvc         *service.NATSService
+	barkloaderSvc   *service.BarkloaderService
+	moduleDbClient  dbv1.ModuleService
+	alertDbClient   dbv1.AlertService
+	factDbClient    dbv1.ViewerFactService
+	recordDbClient  dbv1.DatabaseRecordService
+	commandDbClient dbv1.CommandService
+	scheduleReg     *triggers.ScheduleTriggerRegistrar
+	deliveries      *recentDeliveries
 	// runRecorder is nil when there is no db proxy to write run history to.
 	runRecorder *asyncRunRecorder
 	// facts is nil when there is no fact service to write to; events then
@@ -118,6 +120,7 @@ func (a *WorkflowApp) SetServices(
 	a.alertDbClient = alertClient
 	a.factDbClient = factClient
 	a.recordDbClient = recordClient
+	a.commandDbClient = dbClient.Command
 	a.manager.SetDbClient(dbClient.Workflow)
 	a.engine.SetAssetURLResolver(NewSceneManagerURLResolver(dbClient.Setting, sceneManagerURL, a.logger))
 }
@@ -159,6 +162,10 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	recordDbClient := a.recordDbClient
 	registerService("databaseRecords", func() dbv1.DatabaseRecordService {
 		return recordDbClient
+	})
+	commandDbClient := a.commandDbClient
+	registerService("commands", func() dbv1.CommandService {
+		return commandDbClient
 	})
 	platformGateway := NewNATSPlatformGateway(natsClient, a.logger)
 	registerService("platformGateway", func() PlatformGateway {
@@ -307,6 +314,7 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 		{"chat.reply", WithServices(appServices, NewChatReplyAction()), chatReplyActionSpec},
 		{"chat.announce", WithServices(appServices, NewChatAnnounceAction()), chatAnnounceActionSpec},
 		{"chat.pin", WithServices(appServices, NewChatPinAction()), chatPinActionSpec},
+		{"command.run", WithServices(appServices, NewCommandRunAction(a.engine, NewNATSEventPublisher(natsClient, a.logger), time.Now, uuid.NewString)), commandRunActionSpec},
 		{"scene.widget.visibility", WithServices(appServices, NewWidgetVisibilityAction()), widgetVisibilityActionSpec},
 		{"database.insert", WithServices(appServices, NewDatabaseInsertAction()), databaseInsertActionSpec},
 		{"database.update", WithServices(appServices, NewDatabaseUpdateAction()), databaseUpdateActionSpec},
