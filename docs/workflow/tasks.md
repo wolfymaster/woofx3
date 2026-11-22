@@ -245,6 +245,40 @@ it` with the duration when set.
 Returns the same `message`, `ok` and `results` as `chat.reply`; the result's
 `messageId` is the line that was pinned.
 
+#### `platform.user.info`
+
+"Look up a viewer". Looks a user up on a streaming platform and hands the
+result to later steps. The lookup itself is the platform module's own function
+(Twitch's `getUserInfo` for `twitch`), run the same way the `function` action
+runs one; the engine only picks the platform and the provider.
+
+```json
+{
+  "id": "who",
+  "type": "action",
+  "action": "platform.user.info",
+  "parameters": { "user": "${trigger.data.variables.user}" }
+}
+```
+
+A later step reads the result like any task export, for example
+`${who.displayName}` in a `chat.reply` of a command.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `action` | `string` | Yes | Must be `"platform.user.info"`. Set at the task top level. |
+| `parameters.user` | `string` | Yes | Username or id. Supports expressions. |
+| `parameters.platform` | `string` | No | `origin` (the default, the platform the trigger came from) or a platform id. `all` is refused. |
+
+The result is what the provider returns plus `platform`. Every provider
+returns at least `userId`, `userName`, `displayName`, `profileImageUrl` and
+`isLive`; a provider may add fields of its own. A platform with no provider, or
+a trigger from no platform when `platform` is `origin`, fails the step. A dry
+run does not call the module.
+
+To add a platform, give its module a user lookup function and add the platform
+to `userInfoFunction` in `workflow/platform_user.go`.
+
 #### `function`
 
 Invokes a function registered in the Barkloader module system.
