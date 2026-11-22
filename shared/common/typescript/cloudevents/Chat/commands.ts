@@ -1,23 +1,11 @@
-import type { PlatformId } from "@woofx3/api/platform-gateway";
 import Event, { type BaseEvent } from "../BaseEvent";
 import { commandNameToSubjectSegment } from "../slug";
+import type { SchemaChatCommand } from "../Twitch/stream.gen";
+import { validateChatCommandEvent } from "../Twitch/stream.validate.gen";
 import { encode } from "../utils";
 
-export interface ChatCommandEventData {
-  command: string;
-  args: string[];
-  rawMessage: string;
-  /** rawMessage with the matched command token stripped, e.g. "!sr bad angel" -> "bad angel". */
-  text: string;
-  /** Named argument_pattern captures (e.g. "{songTitle}" -> { songTitle: "..." }).
-   *  Empty object when the command declares no `{variable}` placeholders. Dotted
-   *  variable names (e.g. "user.name") build nested objects. */
-  variables: Record<string, unknown>;
-  chatter: string;
-  /** The platform the invoking line was said on. */
-  platform: PlatformId;
-  channelId?: string;
-}
+/** The payload of one invocation, as the stream contract (shared/contracts/stream/openapi.yaml) defines it. */
+export type ChatCommandEventData = SchemaChatCommand;
 
 type EventTuple = [string, Uint8Array];
 
@@ -26,7 +14,7 @@ export type ChatCommandEvent = BaseEvent<ChatCommandEventData>;
 
 /** Who the invocation came from, carried as CloudEvents extension attributes. */
 export interface ChatCommandAttributes {
-  platform?: PlatformId;
+  platform?: ChatCommandEventData["platform"] & string;
   triggeredBy?: string;
 }
 
@@ -55,7 +43,16 @@ export default class ChatCommandEvents {
   ): ChatCommandEvent {
     const slug = commandNameToSubjectSegment(commandName);
     const type = `chat.command.${slug}`;
-    return Event<ChatCommandEventData>({ type, source: this.source, ...attributes }, { ...data, command: slug });
+    const event = Event<ChatCommandEventData>({ type, source: this.source, ...attributes }, { ...data, command: slug });
+    // Checked where it is built, before the command's steps run, so an event that does not fit the
+    // contract stops the invocation rather than failing after the steps ran.
+    if (!validateChatCommandEvent(JSON.parse(JSON.stringify(event)))) {
+      const problem = validateChatCommandEvent.errors?.[0];
+      throw new Error(
+        `${type} event does not match its contract: ${problem?.instancePath ?? ""} ${problem?.message ?? ""}`.trim()
+      );
+    }
+    return event;
   }
 
   /** The (subject, encoded-payload) tuple announcing `event`. */
