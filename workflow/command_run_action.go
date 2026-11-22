@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/common/messages/stream"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
@@ -60,25 +62,9 @@ func NewCommandRunAction(runner commandRunner, announcer commandAnnouncer, clock
 			return nil, err
 		}
 
-		event := &types.Event{
-			ID:          newID(),
-			Type:        "chat.command." + slug,
-			Source:      "workflow-command-run",
-			Time:        clock(),
-			Platform:    triggerPlatform(ctx.TriggerEvent),
-			TriggeredBy: "workflow",
-			// stylegate:ignore GO-ABS-002 reason="types.Event.Data is a map: the payload is read by workflow expressions as ${trigger.data...}"
-			Data: map[string]any{
-				"command":    slug,
-				"args":       []string{},
-				"rawMessage": "!" + slug,
-				"text":       "",
-				"variables":  map[string]any{},
-				"chatter":    "",
-			},
-		}
-		if ctx.TriggerEvent != nil {
-			event.WorkflowChain = ctx.TriggerEvent.ChainThrough(ctx.WorkflowID)
+		event, err := newChatCommandEvent(slug, ctx.TriggerEvent, ctx.WorkflowID, clock(), newID())
+		if err != nil {
+			return nil, fmt.Errorf("building the event of command %q: %w", name, err)
 		}
 
 		outcome, executionID, err := runner.RunCommand(engine.CommandRun{WorkflowID: workflowID, Event: event})
@@ -139,6 +125,59 @@ func triggerPlatform(trigger *types.Event) string {
 		return ""
 	}
 	return trigger.Platform
+}
+
+// commandEventSubjectPrefix is what a command's subject segment follows; the
+// contract's `type` pattern in shared/contracts/stream/openapi.yaml spells it too.
+const commandEventSubjectPrefix = "chat.command."
+
+// newChatCommandEvent is one invocation of command `slug` with no chatter,
+// text or arguments, as the stream contract's ChatCommandEvent describes it.
+// The payload is built from the contract's generated type, so a field it
+// renames stops this compiling, and the whole event is checked against the
+// contract before anything runs.
+func newChatCommandEvent(slug string, trigger *types.Event, workflowID string, at time.Time, id string) (*types.Event, error) {
+	data := stream.ChatCommand{
+		Command:    slug,
+		Args:       []string{},
+		RawMessage: "!" + slug,
+		Variables:  stream.ChatCommandVariables{},
+	}
+	platform := triggerPlatform(trigger)
+	if platform == "" {
+		data.Platform.SetToNull()
+	} else {
+		data.Platform.SetTo(stream.ChatCommandPlatform(platform))
+	}
+	raw, err := json.Marshal(&data)
+	if err != nil {
+		return nil, fmt.Errorf("encoding the payload: %w", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("reading the payload back: %w", err)
+	}
+
+	event := &types.Event{
+		ID:          id,
+		Type:        commandEventSubjectPrefix + slug,
+		Source:      "workflow",
+		Time:        at,
+		Platform:    platform,
+		TriggeredBy: "workflow",
+		Data:        payload,
+	}
+	if trigger != nil {
+		event.WorkflowChain = trigger.ChainThrough(workflowID)
+	}
+	wire, err := json.Marshal(event)
+	if err != nil {
+		return nil, fmt.Errorf("encoding the event: %w", err)
+	}
+	if err := checkPublished(event.Type, wire); err != nil {
+		return nil, err
+	}
+	return event, nil
 }
 
 // commandSubjectSegment is a command name as the segment of its

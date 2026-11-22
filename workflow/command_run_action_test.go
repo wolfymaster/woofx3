@@ -93,6 +93,13 @@ func TestCommandRunActionRunsTheCommandsWorkflowAndAnnouncesIt(t *testing.T) {
 	if got := runner.runs[0].Event.ID; got != "evt-1" {
 		t.Errorf("event id = %q, want the injected id", got)
 	}
+	data := runner.runs[0].Event.Data
+	if data["command"] != "hug" || data["chatter"] != "" || data["rawMessage"] != "!hug" {
+		t.Errorf("event data = %v, want the command with no chatter", data)
+	}
+	if platform, present := data["platform"]; !present || platform != nil {
+		t.Errorf("event data platform = %v (present %v), want an explicit null for a run no chat caused", platform, present)
+	}
 	if len(announcer.events) != 1 || announcer.events[0] != runner.runs[0].Event {
 		t.Errorf("announced %v, want the event the run read", announcer.events)
 	}
@@ -163,4 +170,42 @@ func TestCommandRunActionSaysWhenOnlyTheAnnouncementFailed(t *testing.T) {
 func newTestCommandRunAction(runner commandRunner, announcer commandAnnouncer) tasks.ActionFunc[AppServices] {
 	at := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
 	return NewCommandRunAction(runner, announcer, func() time.Time { return at }, func() string { return "evt-1" })
+}
+
+func TestNewChatCommandEventKeepsTheTriggersPlatformAndChain(t *testing.T) {
+	trigger := &types.Event{Platform: "twitch", WorkflowChain: "wf-a"}
+
+	event, err := newChatCommandEvent("hug", trigger, "wf-b", time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC), "evt-1")
+	if err != nil {
+		t.Fatalf("newChatCommandEvent: %v", err)
+	}
+	if event.Platform != "twitch" || event.Data["platform"] != "twitch" {
+		t.Errorf("platform = %q / %v, want twitch on both", event.Platform, event.Data["platform"])
+	}
+	if event.WorkflowChain != "wf-a,wf-b" {
+		t.Errorf("chain = %q, want wf-a,wf-b", event.WorkflowChain)
+	}
+}
+
+func TestCheckPublishedHoldsChatCommandEventsToTheStreamContract(t *testing.T) {
+	valid := `{"id":"e","type":"chat.command.hug","source":"workflow","time":"2026-11-22T12:00:00Z",` +
+		`"data":{"command":"hug","args":[],"rawMessage":"!hug","text":"","variables":{},"chatter":"","platform":null}}`
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{"a complete event", valid, false},
+		{"a field the contract does not list", strings.Replace(valid, `"chatter":""`, `"chatter":"","extra":1`, 1), true},
+		{"a missing required field", strings.Replace(valid, `"text":"",`, "", 1), true},
+		{"a platform the contract does not know", strings.Replace(valid, `"platform":null`, `"platform":"nowhere"`, 1), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := checkPublished("chat.command.hug", []byte(tt.raw))
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("checkPublished error = %v, want error: %v", err, tt.wantErr)
+			}
+		})
+	}
 }
