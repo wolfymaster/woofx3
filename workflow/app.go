@@ -314,6 +314,7 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 		{"chat.reply", WithServices(appServices, NewChatReplyAction()), chatReplyActionSpec},
 		{"chat.announce", WithServices(appServices, NewChatAnnounceAction()), chatAnnounceActionSpec},
 		{"chat.pin", WithServices(appServices, NewChatPinAction()), chatPinActionSpec},
+		{"platform.user.info", WithServices(appServices, NewPlatformUserInfoAction()), platformUserInfoActionSpec},
 		{"command.run", WithServices(appServices, NewCommandRunAction(a.engine, NewNATSEventPublisher(natsClient, a.logger), time.Now, uuid.NewString)), commandRunActionSpec},
 		{"scene.widget.visibility", WithServices(appServices, NewWidgetVisibilityAction()), widgetVisibilityActionSpec},
 		{"database.insert", WithServices(appServices, NewDatabaseInsertAction()), databaseInsertActionSpec},
