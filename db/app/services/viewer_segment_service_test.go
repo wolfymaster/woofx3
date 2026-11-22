@@ -15,7 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
-	"github.com/wolfymaster/woofx3/common/messages/outbox"
+	"github.com/wolfymaster/woofx3/common/messages"
 	"github.com/wolfymaster/woofx3/db/database"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -81,11 +81,11 @@ type segmentEdge struct {
 	eventType  string
 	entityID   string
 	extensions map[string]string
-	data       outbox.ViewerSegmentEdge
+	data       messages.ViewerSegmentEdge
 }
 
 // reading is a numeric fact reading, or NaN for any other.
-func reading(r outbox.FactReading) float64 {
+func reading(r messages.FactReading) float64 {
 	if v, ok := r.GetFloat64(); ok {
 		return v
 	}
@@ -232,7 +232,7 @@ func TestTimeRelativeSegmentComparesTheEventsBeforeAndAfter(t *testing.T) {
 
 		seenAt("first", factNow)
 		edges := wantEdges(t, db, edgeEntered)
-		if string(edges[0].data.SegmentId) != "user:segment:recent" || edges[0].data.Facts["user"]["last_seen"].Before.Type != outbox.NullFactReading {
+		if string(edges[0].data.SegmentId) != "user:segment:recent" || edges[0].data.Facts["user"]["last_seen"].Before.Type != messages.NullFactReading {
 			t.Fatalf("first sighting = %+v, want recent entered from nothing", edges[0].data)
 		}
 		seenAt("soon", factNow.Add(10*time.Minute))

@@ -12,7 +12,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
-	"github.com/wolfymaster/woofx3/common/messages/outbox"
+	"github.com/wolfymaster/woofx3/common/messages"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -192,7 +192,7 @@ func (s *DatabaseRecordService) createRecord(ctx context.Context, target *databa
 			outcome = client.CreateDatabaseRecordOutcome_CREATE_DATABASE_RECORD_OUTCOME_DUPLICATE
 			return nil
 		}
-		return s.publishChange(tx, locked, record, outbox.DatabaseRecordChangeOpCreated)
+		return s.publishChange(tx, locked, record, messages.DatabaseRecordChangeOpCreated)
 	})
 	if err != nil {
 		return nil, recordWriteError(fmt.Sprintf("create record in %s", target.canonicalID), err)
@@ -266,7 +266,7 @@ func (s *DatabaseRecordService) updateRecord(ctx context.Context, target *databa
 			return err
 		}
 		record = updated
-		return s.publishChange(tx, locked, record, outbox.DatabaseRecordChangeOpUpdated)
+		return s.publishChange(tx, locked, record, messages.DatabaseRecordChangeOpUpdated)
 	})
 	var refused twirp.Error
 	switch {
@@ -303,7 +303,7 @@ func (s *DatabaseRecordService) DeleteDatabaseRecord(ctx context.Context, req *c
 		// The deletion is newer than the record's last change, so readers
 		// ordering by revision drop a late update behind it.
 		deleted.Revision++
-		return s.publishChange(tx, target, deleted, outbox.DatabaseRecordChangeOpDeleted)
+		return s.publishChange(tx, target, deleted, messages.DatabaseRecordChangeOpDeleted)
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return &client.DeleteDatabaseRecordResponse{Status: okStatus("No such record"), Deleted: false}, nil
@@ -446,16 +446,16 @@ func (s *DatabaseRecordService) page(ctx context.Context, target *databaseTarget
 
 // publishChange queues `database.record.changed` in the transaction that
 // changed the record.
-func (s *DatabaseRecordService) publishChange(tx *gorm.DB, target *databaseTarget, record *models.DatabaseRecord, op outbox.DatabaseRecordChangeOp) error {
-	event := outbox.DatabaseRecordChange{
-		DatabaseId:   outbox.EntityId(target.canonicalID),
-		RecordId:     outbox.EntityId(record.ID.String()),
+func (s *DatabaseRecordService) publishChange(tx *gorm.DB, target *databaseTarget, record *models.DatabaseRecord, op messages.DatabaseRecordChangeOp) error {
+	event := messages.DatabaseRecordChange{
+		DatabaseId:   messages.EntityId(target.canonicalID),
+		RecordId:     messages.EntityId(record.ID.String()),
 		Op:           op,
 		Revision:     int(record.Revision),
-		CreatedAt:    outbox.EventTime(record.CreatedAt.UTC().Format(time.RFC3339Nano)),
-		PublicValues: outbox.NilPublicValues{Null: true},
+		CreatedAt:    messages.EventTime(record.CreatedAt.UTC().Format(time.RFC3339Nano)),
+		PublicValues: messages.NilPublicValues{Null: true},
 	}
-	if op != outbox.DatabaseRecordChangeOpDeleted {
+	if op != messages.DatabaseRecordChangeOpDeleted {
 		values, err := repo.DecodeRecordValues(record.Values)
 		if err != nil {
 			return err
@@ -464,7 +464,7 @@ func (s *DatabaseRecordService) publishChange(tx *gorm.DB, target *databaseTarge
 		if err != nil {
 			return fmt.Errorf("record %s: %w", record.ID, err)
 		}
-		event.PublicValues = outbox.NewNilPublicValues(cells)
+		event.PublicValues = messages.NewNilPublicValues(cells)
 	}
 	return s.publisher.PublishEventIn(tx, string(cloudevents.SubjectDatabaseRecordChanged), record.ID.String(), nil, &event)
 }
@@ -472,16 +472,16 @@ func (s *DatabaseRecordService) publishChange(tx *gorm.DB, target *databaseTarge
 // publicCells types decoded JSON cells for the event. A column holds text, a
 // number or a checkbox, so any other value is a stored row the contract does
 // not describe and fails the write rather than leaving the engine.
-func publicCells(values map[string]any) (outbox.PublicValues, error) {
-	cells := make(outbox.PublicValues, len(values))
+func publicCells(values map[string]any) (messages.PublicValues, error) {
+	cells := make(messages.PublicValues, len(values))
 	for id, value := range values {
 		switch v := value.(type) {
 		case string:
-			cells[id] = outbox.NewStringCell(v)
+			cells[id] = messages.NewStringCell(v)
 		case float64:
-			cells[id] = outbox.NewFloat64Cell(v)
+			cells[id] = messages.NewFloat64Cell(v)
 		case bool:
-			cells[id] = outbox.NewBoolCell(v)
+			cells[id] = messages.NewBoolCell(v)
 		default:
 			return nil, fmt.Errorf("column %q holds a %T, not text, a number or a checkbox", id, value)
 		}

@@ -12,6 +12,7 @@ paths:
   /workflow.execute:
     post:
       operationId: workflowExecute
+      x-consumers: [go, ts]
       summary: >
         Run one workflow on request. Published by the api; answered by the engine when the sender asked for a reply.
       requestBody:
@@ -30,6 +31,7 @@ paths:
   /workflow.replay:
     post:
       operationId: workflowReplay
+      x-consumers: [go, ts]
       summary: >
         Run a recorded run again, whole or from one step. Published by the api, which read the run from the db proxy; nothing answers it, the engine announces a refusal as a failed run.
       requestBody:
@@ -44,6 +46,7 @@ paths:
   /workflow.command.execute:
     post:
       operationId: workflowCommandExecute
+      x-consumers: [go, ts]
       summary: >
         Run the workflow a chat command is linked to, for one invocation. Published by the connectors chat dispatcher.
       requestBody:
@@ -58,6 +61,7 @@ paths:
   /workflow.cancel:
     post:
       operationId: workflowCancel
+      x-consumers: [go, ts]
       summary: >
         Stop a run. A plain JSON request, not a CloudEvent, answered with what the cancel did.
       requestBody:
@@ -76,6 +80,7 @@ paths:
   /workflow.run.started:
     post:
       operationId: workflowRunStarted
+      x-consumers: [go, ts]
       summary: >
         A run began. Published by the engine; the api forwards it as a webhook when a caller is waiting on it (it carries a `triggerId`).
       requestBody:
@@ -90,6 +95,7 @@ paths:
   /workflow.run.completed:
     post:
       operationId: workflowRunCompleted
+      x-consumers: [go, ts]
       summary: >
         A run finished. Published by the engine; the api forwards it as a webhook when a caller is waiting on it (it carries a `triggerId`).
       requestBody:
@@ -104,6 +110,7 @@ paths:
   /workflow.run.failed:
     post:
       operationId: workflowRunFailed
+      x-consumers: [go, ts]
       summary: >
         A run failed. Published by the engine; the api forwards it as a webhook when a caller is waiting on it (it carries a `triggerId`).
       requestBody:
@@ -118,6 +125,7 @@ paths:
   /workflow.run.cancelled:
     post:
       operationId: workflowRunCancelled
+      x-consumers: [go, ts]
       summary: >
         A run was stopped by a cancel request. Published by the engine; the api forwards it as a webhook when a caller is waiting on it (it carries a `triggerId`).
       requestBody:
@@ -132,6 +140,7 @@ paths:
   /workflow.health.snapshot:
     post:
       operationId: workflowHealthSnapshot
+      x-consumers: [go, ts]
       summary: >
         Every workflow in error, published once when the engine's first complete load of the stored workflows finishes. A reader replaces its whole view with it.
       requestBody:
@@ -146,6 +155,7 @@ paths:
   /workflow.health.changed:
     post:
       operationId: workflowHealthChanged
+      x-consumers: [go, ts]
       summary: >
         One workflow's health changed after the snapshot. Published only on a change.
       requestBody:
@@ -160,6 +170,7 @@ paths:
   /workflow.health.get:
     post:
       operationId: workflowHealthGet
+      x-consumers: [go, ts]
       summary: >
         Every workflow the engine has tried to load. The request body carries nothing.
       responses:
@@ -171,16 +182,6 @@ paths:
                 $ref: "#/components/schemas/WorkflowHealthReply"
 components:
   schemas:
-    Platform:
-      description: Where the event came from ("twitch", ...); absent for events with no platform.
-      type: string
-      minLength: 1
-      maxLength: 200
-    SessionId:
-      description: The stream session the publisher knew when it published; absent when it knew none.
-      type: string
-      minLength: 1
-      maxLength: 200
     TriggerId:
       description: Correlates an event with whoever asked for it; echoed unchanged onto the run events it causes.
       type: string
@@ -191,11 +192,6 @@ components:
       type: string
       minLength: 1
       maxLength: 200
-    WorkflowChain:
-      description: The workflow runs that led to the event, oldest first, as comma-separated workflow ids.
-      type: string
-      minLength: 1
-      maxLength: 10000
     FreeObject:
       description: A JSON object whose members belong to a workflow, a module or a trigger, not to this contract.
       type: object
@@ -218,15 +214,15 @@ components:
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
         platform:
-          $ref: "#/components/schemas/Platform"
+          $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
-          $ref: "#/components/schemas/SessionId"
+          $ref: "../common/cloudevents.yaml#/components/schemas/SessionId"
         triggerId:
           $ref: "#/components/schemas/TriggerId"
         triggeredBy:
           $ref: "#/components/schemas/TriggeredBy"
         workflowChain:
-          $ref: "#/components/schemas/WorkflowChain"
+          $ref: "../common/cloudevents.yaml#/components/schemas/WorkflowChain"
         data:
           $ref: "#/components/schemas/WorkflowExecute"
     WorkflowExecute:
@@ -247,7 +243,7 @@ components:
         triggerData:
           $ref: "#/components/schemas/FreeObject"
         platform:
-          $ref: "#/components/schemas/Platform"
+          $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         skipConditions:
           type: boolean
         dryRun:
@@ -309,15 +305,15 @@ components:
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
         platform:
-          $ref: "#/components/schemas/Platform"
+          $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
-          $ref: "#/components/schemas/SessionId"
+          $ref: "../common/cloudevents.yaml#/components/schemas/SessionId"
         triggerId:
           $ref: "#/components/schemas/TriggerId"
         triggeredBy:
           $ref: "#/components/schemas/TriggeredBy"
         workflowChain:
-          $ref: "#/components/schemas/WorkflowChain"
+          $ref: "../common/cloudevents.yaml#/components/schemas/WorkflowChain"
         data:
           $ref: "#/components/schemas/WorkflowReplay"
     WorkflowReplay:
@@ -381,15 +377,15 @@ components:
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
         platform:
-          $ref: "#/components/schemas/Platform"
+          $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
-          $ref: "#/components/schemas/SessionId"
+          $ref: "../common/cloudevents.yaml#/components/schemas/SessionId"
         triggerId:
           $ref: "#/components/schemas/TriggerId"
         triggeredBy:
           $ref: "#/components/schemas/TriggeredBy"
         workflowChain:
-          $ref: "#/components/schemas/WorkflowChain"
+          $ref: "../common/cloudevents.yaml#/components/schemas/WorkflowChain"
         data:
           $ref: "#/components/schemas/WorkflowCommandExecute"
     WorkflowCommandExecute:
@@ -463,15 +459,15 @@ components:
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
         platform:
-          $ref: "#/components/schemas/Platform"
+          $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
-          $ref: "#/components/schemas/SessionId"
+          $ref: "../common/cloudevents.yaml#/components/schemas/SessionId"
         triggerId:
           $ref: "#/components/schemas/TriggerId"
         triggeredBy:
           $ref: "#/components/schemas/TriggeredBy"
         workflowChain:
-          $ref: "#/components/schemas/WorkflowChain"
+          $ref: "../common/cloudevents.yaml#/components/schemas/WorkflowChain"
         dryRun:
           description: Present, and true, only for an event a dry run caused.
           type: boolean
@@ -494,15 +490,15 @@ components:
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
         platform:
-          $ref: "#/components/schemas/Platform"
+          $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
-          $ref: "#/components/schemas/SessionId"
+          $ref: "../common/cloudevents.yaml#/components/schemas/SessionId"
         triggerId:
           $ref: "#/components/schemas/TriggerId"
         triggeredBy:
           $ref: "#/components/schemas/TriggeredBy"
         workflowChain:
-          $ref: "#/components/schemas/WorkflowChain"
+          $ref: "../common/cloudevents.yaml#/components/schemas/WorkflowChain"
         dryRun:
           description: Present, and true, only for an event a dry run caused.
           type: boolean
@@ -525,15 +521,15 @@ components:
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
         platform:
-          $ref: "#/components/schemas/Platform"
+          $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
-          $ref: "#/components/schemas/SessionId"
+          $ref: "../common/cloudevents.yaml#/components/schemas/SessionId"
         triggerId:
           $ref: "#/components/schemas/TriggerId"
         triggeredBy:
           $ref: "#/components/schemas/TriggeredBy"
         workflowChain:
-          $ref: "#/components/schemas/WorkflowChain"
+          $ref: "../common/cloudevents.yaml#/components/schemas/WorkflowChain"
         dryRun:
           description: Present, and true, only for an event a dry run caused.
           type: boolean
@@ -556,15 +552,15 @@ components:
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
         platform:
-          $ref: "#/components/schemas/Platform"
+          $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
-          $ref: "#/components/schemas/SessionId"
+          $ref: "../common/cloudevents.yaml#/components/schemas/SessionId"
         triggerId:
           $ref: "#/components/schemas/TriggerId"
         triggeredBy:
           $ref: "#/components/schemas/TriggeredBy"
         workflowChain:
-          $ref: "#/components/schemas/WorkflowChain"
+          $ref: "../common/cloudevents.yaml#/components/schemas/WorkflowChain"
         dryRun:
           description: Present, and true, only for an event a dry run caused.
           type: boolean

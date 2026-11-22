@@ -7,21 +7,21 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/wolfymaster/woofx3/common/messages/heartbeat"
+	"github.com/wolfymaster/woofx3/common/messages"
 )
 
 // encodeHeartbeat builds the message a service publishes on the heartbeat
 // subject. It refuses to return a message that does not fit the contract.
 func encodeHeartbeat(appName string, ready bool, now time.Time) ([]byte, error) {
-	event := heartbeat.HeartbeatEvent{
-		Specversion: heartbeat.EventSpecVersion100,
-		ID:          heartbeat.EventId(uuid.NewString()),
-		Type:        heartbeat.HeartbeatEventTypeComWoofx3Heartbeat,
-		Source:      heartbeat.EventSource(appName),
-		Subject:     heartbeat.HeartbeatEventSubjectHEARTBEAT,
-		Time:        heartbeat.EventTime(now.UTC().Format(time.RFC3339Nano)),
-		Data: heartbeat.HeartbeatData{
-			Application: heartbeat.EntityId(appName),
+	event := messages.HeartbeatEvent{
+		Specversion: messages.EventSpecVersion100,
+		ID:          messages.EventId(uuid.NewString()),
+		Type:        messages.HeartbeatEventTypeComWoofx3Heartbeat,
+		Source:      messages.EventSource(appName),
+		Subject:     messages.HeartbeatEventSubjectHEARTBEAT,
+		Time:        messages.EventTime(now.UTC().Format(time.RFC3339Nano)),
+		Data: messages.HeartbeatData{
+			Application: messages.EntityId(appName),
 			Ready:       ready,
 		},
 	}
@@ -33,13 +33,13 @@ func encodeHeartbeat(appName string, ready bool, now time.Time) ([]byte, error) 
 
 // decodeHeartbeat reads a message from the heartbeat subject. Anything that
 // does not fit the contract is an error, never a heartbeat of some other shape.
-func decodeHeartbeat(payload []byte) (heartbeat.HeartbeatData, error) {
-	var event heartbeat.HeartbeatEvent
+func decodeHeartbeat(payload []byte) (messages.HeartbeatData, error) {
+	var event messages.HeartbeatEvent
 	if err := event.UnmarshalJSON(payload); err != nil {
-		return heartbeat.HeartbeatData{}, fmt.Errorf("decoding heartbeat: %w", err)
+		return messages.HeartbeatData{}, fmt.Errorf("decoding heartbeat: %w", err)
 	}
 	if err := event.Validate(); err != nil {
-		return heartbeat.HeartbeatData{}, fmt.Errorf("validating heartbeat: %w", err)
+		return messages.HeartbeatData{}, fmt.Errorf("validating heartbeat: %w", err)
 	}
 	return event.Data, nil
 }

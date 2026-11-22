@@ -11,6 +11,7 @@ paths:
   /database.record.changed:
     post:
       operationId: databaseRecordChanged
+      x-consumers: [go, ts]
       summary: A row of a database resource instance was created, updated or deleted. Read by the api, which forwards it as a webhook.
       requestBody:
         required: true
@@ -24,6 +25,7 @@ paths:
   /userpage.form.submitted:
     post:
       operationId: userPageFormSubmitted
+      x-consumers: [go]
       summary: A viewer sent a form on the streamer's public user page. Workflows trigger on it.
       requestBody:
         required: true
@@ -37,6 +39,7 @@ paths:
   /viewer.segment.entered:
     post:
       operationId: viewerSegmentEntered
+      x-consumers: [go]
       summary: A viewer's facts crossed into a segment's condition. Workflows trigger on it.
       requestBody:
         required: true
@@ -50,6 +53,7 @@ paths:
   /viewer.segment.left:
     post:
       operationId: viewerSegmentLeft
+      x-consumers: [go]
       summary: A viewer's facts crossed out of a segment's condition. Workflows trigger on it.
       requestBody:
         required: true
@@ -70,16 +74,6 @@ components:
       description: Media type of `data`, set by the CloudEvents library.
       type: string
       enum: [application/json]
-    Platform:
-      description: The platform the event came from, read from the envelope rather than the data.
-      type: string
-      minLength: 1
-      maxLength: 200
-    SessionId:
-      description: The stream session the event happened during.
-      type: string
-      minLength: 1
-      maxLength: 200
     DatabaseRecordChangedEvent:
       description: CloudEvent announcing one change to a database row.
       type: object
@@ -105,9 +99,9 @@ components:
           type: string
           enum: [changed]
         platform:
-          $ref: "#/components/schemas/Platform"
+          $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionid:
-          $ref: "#/components/schemas/SessionId"
+          $ref: "../common/cloudevents.yaml#/components/schemas/SessionId"
         data:
           $ref: "#/components/schemas/DatabaseRecordChange"
     UserPageFormSubmittedEvent:
@@ -135,9 +129,9 @@ components:
           type: string
           enum: [submitted]
         platform:
-          $ref: "#/components/schemas/Platform"
+          $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionid:
-          $ref: "#/components/schemas/SessionId"
+          $ref: "../common/cloudevents.yaml#/components/schemas/SessionId"
         data:
           $ref: "#/components/schemas/UserPageFormSubmission"
     ViewerSegmentEnteredEvent:
@@ -165,9 +159,9 @@ components:
           type: string
           enum: [entered]
         platform:
-          $ref: "#/components/schemas/Platform"
+          $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionid:
-          $ref: "#/components/schemas/SessionId"
+          $ref: "../common/cloudevents.yaml#/components/schemas/SessionId"
         data:
           $ref: "#/components/schemas/ViewerSegmentEdge"
     ViewerSegmentLeftEvent:
@@ -195,9 +189,9 @@ components:
           type: string
           enum: [left]
         platform:
-          $ref: "#/components/schemas/Platform"
+          $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionid:
-          $ref: "#/components/schemas/SessionId"
+          $ref: "../common/cloudevents.yaml#/components/schemas/SessionId"
         data:
           $ref: "#/components/schemas/ViewerSegmentEdge"
     DatabaseRecordChange:
@@ -320,7 +314,7 @@ components:
         segmentId:
           $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
         platform:
-          $ref: "#/components/schemas/Platform"
+          $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         viewerId:
           $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
         viewerName:

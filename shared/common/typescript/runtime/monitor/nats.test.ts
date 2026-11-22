@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { validateHeartbeatEvent } from "../../cloudevents/Heartbeat/heartbeat.validate.gen";
+import { validateHeartbeatEvent } from "../../cloudevents/messages.validate.gen";
 import type { Service } from "../service";
 import { createNATSMonitor } from "./nats";
 

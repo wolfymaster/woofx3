@@ -12,6 +12,7 @@ paths:
   /user.message:
     post:
       operationId: userMessage
+      x-consumers: [ts]
       summary: Published by connectors on user.message.
       requestBody:
         required: true
@@ -25,6 +26,7 @@ paths:
   /chat.command.{slug}:
     post:
       operationId: chatCommand
+      x-consumers: [go, ts]
       summary: >
         Published on `chat.command.<slug>` for each invocation of a chat command: by connectors when a
         viewer types it, by the api when the dashboard runs it, and by the workflow engine when a
@@ -50,6 +52,7 @@ paths:
   /channel.cheer:
     post:
       operationId: channelCheer
+      x-consumers: [ts]
       summary: Published by connectors on channel.cheer.
       requestBody:
         required: true
@@ -63,6 +66,7 @@ paths:
   /channel.follow:
     post:
       operationId: channelFollow
+      x-consumers: [ts]
       summary: Published by connectors on channel.follow.
       requestBody:
         required: true
@@ -76,6 +80,7 @@ paths:
   /channel.hypetrain:
     post:
       operationId: channelHypeTrain
+      x-consumers: [ts]
       summary: Published by connectors on channel.hypetrain.
       requestBody:
         required: true
@@ -89,6 +94,7 @@ paths:
   /channel.raid:
     post:
       operationId: channelRaid
+      x-consumers: [ts]
       summary: Published by connectors on channel.raid.
       requestBody:
         required: true
@@ -102,6 +108,7 @@ paths:
   /channelpoints.redeem:
     post:
       operationId: channelPointsRedeem
+      x-consumers: [ts]
       summary: Published by connectors on channelpoints.redeem.
       requestBody:
         required: true
@@ -115,6 +122,7 @@ paths:
   /stream.online:
     post:
       operationId: streamOnline
+      x-consumers: [ts]
       summary: Published by connectors on stream.online.
       requestBody:
         required: true
@@ -128,6 +136,7 @@ paths:
   /stream.offline:
     post:
       operationId: streamOffline
+      x-consumers: [ts]
       summary: Published by connectors on stream.offline.
       requestBody:
         required: true
@@ -141,6 +150,7 @@ paths:
   /channel.subscribe:
     post:
       operationId: channelSubscribe
+      x-consumers: [ts]
       summary: Published by connectors on channel.subscribe.
       requestBody:
         required: true
@@ -154,6 +164,7 @@ paths:
   /channel.subscriptionGift:
     post:
       operationId: channelSubscriptionGift
+      x-consumers: [ts]
       summary: Published by connectors on channel.subscriptionGift.
       requestBody:
         required: true
@@ -167,6 +178,7 @@ paths:
   /channel.resub:
     post:
       operationId: channelResub
+      x-consumers: [ts]
       summary: Published by connectors on channel.resub.
       requestBody:
         required: true
@@ -180,6 +192,7 @@ paths:
   /channel.giftPaidUpgrade:
     post:
       operationId: channelGiftPaidUpgrade
+      x-consumers: [ts]
       summary: Published by connectors on channel.giftPaidUpgrade.
       requestBody:
         required: true
@@ -193,6 +206,7 @@ paths:
   /channel.primePaidUpgrade:
     post:
       operationId: channelPrimePaidUpgrade
+      x-consumers: [ts]
       summary: Published by connectors on channel.primePaidUpgrade.
       requestBody:
         required: true
@@ -206,6 +220,7 @@ paths:
   /channel.unraid:
     post:
       operationId: channelUnraid
+      x-consumers: [ts]
       summary: Published by connectors on channel.unraid.
       requestBody:
         required: true
@@ -219,6 +234,7 @@ paths:
   /channel.payItForward:
     post:
       operationId: channelPayItForward
+      x-consumers: [ts]
       summary: Published by connectors on channel.payItForward.
       requestBody:
         required: true
@@ -232,6 +248,7 @@ paths:
   /channel.announcement:
     post:
       operationId: channelAnnouncement
+      x-consumers: [ts]
       summary: Published by connectors on channel.announcement.
       requestBody:
         required: true
@@ -245,6 +262,7 @@ paths:
   /channel.charityDonation:
     post:
       operationId: channelCharityDonation
+      x-consumers: [ts]
       summary: Published by connectors on channel.charityDonation.
       requestBody:
         required: true
@@ -258,6 +276,7 @@ paths:
   /channel.bitsBadgeTier:
     post:
       operationId: channelBitsBadgeTier
+      x-consumers: [ts]
       summary: Published by connectors on channel.bitsBadgeTier.
       requestBody:
         required: true
@@ -271,6 +290,7 @@ paths:
   /channel.watchStreak:
     post:
       operationId: channelWatchStreak
+      x-consumers: [ts]
       summary: Published by connectors on channel.watchStreak.
       requestBody:
         required: true
@@ -284,6 +304,7 @@ paths:
   /channel.sharedSubscribe:
     post:
       operationId: channelSharedSubscribe
+      x-consumers: [ts]
       summary: Published by connectors on channel.sharedSubscribe.
       requestBody:
         required: true
@@ -297,6 +318,7 @@ paths:
   /channel.sharedSubscriptionGift:
     post:
       operationId: channelSharedSubscriptionGift
+      x-consumers: [ts]
       summary: Published by connectors on channel.sharedSubscriptionGift.
       requestBody:
         required: true
@@ -310,6 +332,7 @@ paths:
   /channel.sharedRaid:
     post:
       operationId: channelSharedRaid
+      x-consumers: [ts]
       summary: Published by connectors on channel.sharedRaid.
       requestBody:
         required: true
@@ -323,6 +346,7 @@ paths:
   /channel.sharedResub:
     post:
       operationId: channelSharedResub
+      x-consumers: [ts]
       summary: Published by connectors on channel.sharedResub.
       requestBody:
         required: true
@@ -336,6 +360,7 @@ paths:
   /channel.sharedGiftPaidUpgrade:
     post:
       operationId: channelSharedGiftPaidUpgrade
+      x-consumers: [ts]
       summary: Published by connectors on channel.sharedGiftPaidUpgrade.
       requestBody:
         required: true
@@ -349,6 +374,7 @@ paths:
   /channel.sharedPrimePaidUpgrade:
     post:
       operationId: channelSharedPrimePaidUpgrade
+      x-consumers: [ts]
       summary: Published by connectors on channel.sharedPrimePaidUpgrade.
       requestBody:
         required: true
@@ -362,6 +388,7 @@ paths:
   /channel.sharedPayItForward:
     post:
       operationId: channelSharedPayItForward
+      x-consumers: [ts]
       summary: Published by connectors on channel.sharedPayItForward.
       requestBody:
         required: true
@@ -375,6 +402,7 @@ paths:
   /channel.sharedAnnouncement:
     post:
       operationId: channelSharedAnnouncement
+      x-consumers: [ts]
       summary: Published by connectors on channel.sharedAnnouncement.
       requestBody:
         required: true
@@ -388,6 +416,7 @@ paths:
   /channel.ad_break.upcoming:
     post:
       operationId: channelAdBreakUpcoming
+      x-consumers: [ts]
       summary: Published by connectors on channel.ad_break.upcoming.
       requestBody:
         required: true
@@ -401,6 +430,7 @@ paths:
   /channel.ad_break.begin:
     post:
       operationId: channelAdBreakBegin
+      x-consumers: [ts]
       summary: Published by connectors on channel.ad_break.begin.
       requestBody:
         required: true
@@ -414,6 +444,7 @@ paths:
   /channel.ad_break.end:
     post:
       operationId: channelAdBreakEnd
+      x-consumers: [ts]
       summary: Published by connectors on channel.ad_break.end.
       requestBody:
         required: true
@@ -430,13 +461,6 @@ components:
       description: The streaming platform an event came from.
       type: string
       enum: [twitch]
-    WorkflowChain:
-      description: >
-        Comma-separated ids of the workflow runs that led to the event, oldest
-        first; at most 8 ids of 200 characters.
-      type: string
-      minLength: 1
-      maxLength: 1607
     ChatterMembership:
       description: >
         Platform membership of a chat message's author, neutral across platforms.
@@ -1068,7 +1092,7 @@ components:
           $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
         workflowChain:
           description: Set on a line a workflow said, which the platform handed back.
-          $ref: "#/components/schemas/WorkflowChain"
+          $ref: "../common/cloudevents.yaml#/components/schemas/WorkflowChain"
         data:
           $ref: "#/components/schemas/UserMessage"
     ChatCommandEvent:
@@ -1106,7 +1130,7 @@ components:
           $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
         workflowChain:
           description: Set when a workflow run caused the invocation.
-          $ref: "#/components/schemas/WorkflowChain"
+          $ref: "../common/cloudevents.yaml#/components/schemas/WorkflowChain"
         dryRun:
           description: Set on an invocation a dry run caused, so the workflows it triggers are dry runs too.
           type: boolean

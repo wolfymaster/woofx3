@@ -1,7 +1,7 @@
 import * as CommandEvent from "./events";
 import { encode } from "../utils";
 import Event from "../BaseEvent";
-import { validateWorkflowCommandExecute } from "../Workflow/workflow.validate.gen";
+import { validateWorkflowCommandExecute } from "../messages.validate.gen";
 
 export * from "./events";
 export * from "./messages";

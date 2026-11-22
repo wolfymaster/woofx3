@@ -14,8 +14,8 @@ import {
   type components,
   SceneCommandAppliedStatus,
   SceneCommandFailedStatus,
-} from "@woofx3/common/cloudevents/Scene/scene.gen";
-import { validateSceneCommandRequest } from "@woofx3/common/cloudevents/Scene/scene.validate.gen";
+} from "@woofx3/common/cloudevents/messages.gen";
+import { validateSceneCommandRequest } from "@woofx3/common/cloudevents/messages.validate.gen";
 import type { Logger } from "@woofx3/common/runtime";
 import type { Json0Component, SceneSnapshot } from "@woofx3/api/scene-editor/document";
 import type { SceneVersion } from "./scene-host";

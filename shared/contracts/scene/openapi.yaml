@@ -10,6 +10,7 @@ paths:
   /engine.scene.command:
     post:
       operationId: sceneCommand
+      x-consumers: [go, ts]
       summary: Change one thing on a live scene. Published by the workflow engine, answered by the scene manager.
       requestBody:
         required: true

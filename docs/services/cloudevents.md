@@ -138,7 +138,7 @@ itself, and the db service's outbox encoder replaces the SDK's `specversion` on 
   which is why the reply carries a string `status` rather than `ok`.
 
 The subject is a generated constant in every language: the `type` enum becomes
-`SceneCommandRequestTypeEngineSceneCommand` in Go (package `messages/scene`), the
+`SceneCommandRequestTypeEngineSceneCommand` in Go (package `messages`), the
 `SceneCommandRequestType.engine_scene_command` enum in TypeScript, and
 `SceneCommandRequestType::EngineSceneCommand` in Rust (`to_string()` is the subject). A
 producer sets `type` from it and a consumer subscribes on it. `scripts/gen-schemas.sh` refuses a
@@ -168,44 +168,50 @@ scripts/gen-schemas.sh       # regenerate every contract
 scripts/gen-schemas.sh --check   # generate into a temporary directory and diff; exit 1 on drift
 ```
 
-`scripts/gen-schemas.sh` bundles each document, then writes, for every domain listed in its
-`DOMAINS` table:
+`scripts/gen-schemas.sh` bundles every document under `shared/contracts` into one, then writes one
+output per language from the operations that language consumes. Each operation names its consumers
+with `x-consumers: [go, ts, rust]`; a language gets code for those operations and the schemas they
+reach, and a language no operation names gets none. A schema name is one definition across all the
+documents: two documents that define the same name differently fail the run, so a shared shape
+belongs in `shared/contracts/common/cloudevents.yaml`.
 
 | Language | Generator | Output |
 | --- | --- | --- |
-| Go | `ogen` 1.25 | `shared/common/golang/messages/<domain>/*_gen.go`: types, enum constants and `Validate()` methods |
-| TypeScript | `openapi-typescript` 7.13 with `--enum`, Ajv 8 | `<Dir>/<domain>.gen.ts` (types and enums) and `<Dir>/<domain>.validate.gen.ts` (precompiled validators, one type guard per schema), under `shared/common/typescript/cloudevents/` |
-| Rust | `cargo-typify` 0.10.1 | `shared/common/rust/cloudevents/src/<domain>_gen.rs`: serde types and the document as `DOCUMENT` |
+| Go | `ogen` 1.25 | `shared/common/golang/messages/*_gen.go`, one package: types, enum constants and `Validate()` methods |
+| TypeScript | `openapi-typescript` 7.13 with `--enum`, Ajv 8 | `messages.gen.ts` (types and enums) and `messages.validate.gen.ts` (precompiled validators, one type guard per schema), in `shared/common/typescript/cloudevents/` |
+| Rust | `cargo-typify` 0.10.1 | `shared/common/rust/cloudevents/src/messages_gen.rs`: serde types and the document as `DOCUMENT` |
 
 The tools and their pins are in `scripts/contracts/` (`go.mod`, `package.json`, the `typify`
 version in the script). Generated files carry a header naming the command and are never edited.
 `scripts/check.sh schemas` runs the check, and the `schemas` job of `go-checks.yml` runs it in CI,
 so a document changed without its outputs, or an output edited by hand, cannot merge.
 
-### Adding a message or a domain
+### Adding a message
 
-1. Add the schemas and the operation to the domain's document, or create
-   `shared/contracts/<domain>/openapi.yaml` with its `fixtures/` directory.
-2. For a new domain, add a line to `DOMAINS` in `scripts/gen-schemas.sh`, a Go package directory
-   `shared/common/golang/messages/<domain>`, and the TypeScript and Rust consumers' entries (the
-   Rust module in `shared/common/rust/cloudevents/src/lib.rs`, the paths in `scripts/check.sh` and
-   in the path filters of `go-checks.yml`).
-3. Run `scripts/gen-schemas.sh` and commit the outputs.
-4. Add fixtures and a test line for each schema (below).
-5. Use the generated types in the producer and the consumer. What stays hand-written is the mapping
+1. Add the schemas and the operation to a document under `shared/contracts/<name>/openapi.yaml`
+   (or create one with its `fixtures/` directory), and list the languages that read or write the
+   message in the operation's `x-consumers`.
+2. Run `scripts/gen-schemas.sh` and commit the outputs. It also checks every fixture against the
+   document.
+3. Add fixtures, and for Go and Rust a test line for each schema they consume (below).
+4. Use the generated types in the producer and the consumer. What stays hand-written is the mapping
    between a domain object and its generated type.
+
+A language that starts consuming a message the contracts did not generate for it fails to compile
+until the language is added to the operation's `x-consumers`.
 
 ### Fixtures
 
-`shared/contracts/<domain>/fixtures/*.json` hold, for one schema each, named cases
+`shared/contracts/<name>/fixtures/*.json` hold, for one schema each, named cases
 `{ name, valid, value }`: valid values, and invalid ones (an unknown field on a request, a missing or
 mistyped field, a `null`, an empty value, a value over a bound, a reply with an extra field, which is
 valid). A valid case with fields the generated type does not know carries `unknownFields: true`.
-The same files run in all three languages, through the generated types and through the run-time
-validator: Go in `shared/common/golang/messages/<domain>/fixtures_test.go`, TypeScript in
-`shared/common/typescript/cloudevents/contracts.test.ts`, Rust in
-`shared/common/rust/cloudevents/tests/contracts.rs`. A valid case must round-trip through the
-generated type unchanged.
+`scripts/contracts/fixtures.ts` checks every case against the contract document when the code is
+generated. The same files then run through the generated types and the run-time validator of each
+language that consumes the message: Go in `shared/common/golang/messages/fixtures_test.go`,
+TypeScript in `shared/common/typescript/cloudevents/contracts.test.ts` (which picks up every fixture
+whose validator exists), Rust in `shared/common/rust/cloudevents/tests/contracts.rs`. A valid case
+must round-trip through the generated type unchanged.
 
 ### Events
 
@@ -255,7 +261,7 @@ A consumer validates what it receives against the same document that typed it:
   validates its own request before publishing, and the reply it receives. The runtime's NATS monitor
   builds each heartbeat from the generated type, validates it before publishing, and ignores a message
   on `HEARTBEAT` that does not validate.
-- **TypeScript**: the `validate<Schema>` type guard from `<domain>.validate.gen.ts`. The scene manager
+- **TypeScript**: the `validate<Schema>` type guard from `messages.validate.gen.ts`. The scene manager
   validates every `engine.scene.command` request; the api validates a `barkloader.module.field_options`
   request before sending it. The api's resolver and the connectors host check each `session.*` and
   `stream.status.*` event they publish with `encodeContract` (`cloudevents/utils.ts`), which throws when
@@ -307,9 +313,10 @@ Rules the contract fixes:
 `TwitchEvents` (`shared/common/typescript/cloudevents/Twitch`) validates each event against its generated
 validator before returning the bytes to publish, so an event that does not fit throws at the publish call
 and nothing reaches the bus. Consumers do not validate again: the workflow engine matches on subjects and
-reads `data` through expressions, and the api reads typed fields after the producer's check. Go
-(`shared/common/golang/messages/stream`) and Rust (`stream_gen`) carry the generated types for any consumer
-that decodes these payloads; the shared fixtures in `shared/contracts/stream/fixtures` run through all three.
+reads `data` through expressions, and the api reads typed fields after the producer's check. Only
+TypeScript consumes these events, so only TypeScript has generated code for them; a Go or Rust consumer that
+decodes these payloads adds its language to the `x-consumers` of the operation. The shared fixtures in
+`shared/contracts/stream/fixtures` run through the TypeScript validators and the contract document.
 
 Every payload must also be a plain object. `TwitchEvents` throws when given a
 class instance (anywhere in the payload), so a platform SDK event, whose data

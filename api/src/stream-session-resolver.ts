@@ -1,20 +1,20 @@
 import { EngineEventType } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
-import type { SchemaModuleStorageChange } from "@woofx3/common/cloudevents/Module/module.gen";
-import { SessionEndedEventType, SessionStartedEventType } from "@woofx3/common/cloudevents/Session/session.gen";
+import type { SchemaModuleStorageChange } from "@woofx3/common/cloudevents/messages.gen";
+import { SessionEndedEventType, SessionStartedEventType } from "@woofx3/common/cloudevents/messages.gen";
 import {
   validateSessionEndedEvent,
   validateSessionStartedEvent,
-} from "@woofx3/common/cloudevents/Session/session.validate.gen";
+} from "@woofx3/common/cloudevents/messages.validate.gen";
 import {
   type SchemaStreamStatusObserved as StreamStatusObserved,
   StreamStatusObservedEventType,
   StreamStatusRequestedEventType,
-} from "@woofx3/common/cloudevents/StreamStatus/streamstatus.gen";
+} from "@woofx3/common/cloudevents/messages.gen";
 import {
   validateStreamStatusObservedEvent,
   validateStreamStatusRequestedEvent,
-} from "@woofx3/common/cloudevents/StreamStatus/streamstatus.validate.gen";
+} from "@woofx3/common/cloudevents/messages.validate.gen";
 import { setCurrentSessionId } from "@woofx3/common/cloudevents/session";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import { type ContractValidator, encode, encodeContract, parseContract } from "@woofx3/common/cloudevents/utils";

@@ -4,8 +4,8 @@ import {
   SceneCommandCommand,
   SceneCommandFailedStatus,
   SceneCommandRequestType,
-} from "@woofx3/common/cloudevents/Scene/scene.gen";
-import { validateSceneCommandReply } from "@woofx3/common/cloudevents/Scene/scene.validate.gen";
+} from "@woofx3/common/cloudevents/messages.gen";
+import { validateSceneCommandReply } from "@woofx3/common/cloudevents/messages.validate.gen";
 import {
   answerSceneCommand,
   executeSceneControlCommand,

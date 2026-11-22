@@ -1,6 +1,6 @@
 import { EngineEventType, SESSION_SUMMARY_SCHEMA_VERSION, type SessionSummaryEvent } from "@woofx3/api/webhooks";
-import { SessionEndedEventType } from "@woofx3/common/cloudevents/Session/session.gen";
-import { validateSessionEndedEvent } from "@woofx3/common/cloudevents/Session/session.validate.gen";
+import { SessionEndedEventType } from "@woofx3/common/cloudevents/messages.gen";
+import { validateSessionEndedEvent } from "@woofx3/common/cloudevents/messages.validate.gen";
 import { parseContract } from "@woofx3/common/cloudevents/utils";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";

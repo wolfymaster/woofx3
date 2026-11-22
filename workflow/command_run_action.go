@@ -8,7 +8,7 @@ import (
 	"time"
 
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
-	"github.com/wolfymaster/woofx3/common/messages/stream"
+	"github.com/wolfymaster/woofx3/common/messages"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
@@ -137,17 +137,17 @@ const commandEventSubjectPrefix = "chat.command."
 // renames stops this compiling, and the whole event is checked against the
 // contract before anything runs.
 func newChatCommandEvent(slug string, trigger *types.Event, workflowID string, at time.Time, id string) (*types.Event, error) {
-	data := stream.ChatCommand{
+	data := messages.ChatCommand{
 		Command:    slug,
 		Args:       []string{},
 		RawMessage: "!" + slug,
-		Variables:  stream.ChatCommandVariables{},
+		Variables:  messages.ChatCommandVariables{},
 	}
 	platform := triggerPlatform(trigger)
 	if platform == "" {
 		data.Platform.SetToNull()
 	} else {
-		data.Platform.SetTo(stream.ChatCommandPlatform(platform))
+		data.Platform.SetTo(messages.ChatCommandPlatform(platform))
 	}
 	raw, err := json.Marshal(&data)
 	if err != nil {

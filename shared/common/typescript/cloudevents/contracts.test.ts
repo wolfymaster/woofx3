@@ -1,47 +1,38 @@
-// Runs the shared fixtures in shared/contracts/<domain>/fixtures through the generated Ajv validators. The Go and Rust
-// tests run the same files, so a case fixes the verdict of all three languages.
+// Runs the shared fixtures in shared/contracts/<source>/fixtures through the generated Ajv validators, for every
+// message TypeScript consumes. The Go and Rust tests run the same files for the messages they consume, and
+// scripts/contracts/fixtures.ts checks every fixture against the contract document, so a case fixes the verdict
+// of every language.
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import * as barkloader from "./Barkloader/barkloader.validate.gen";
-import * as heartbeat from "./Heartbeat/heartbeat.validate.gen";
-import * as module from "./Module/module.validate.gen";
-import * as outbox from "./Outbox/outbox.validate.gen";
-import * as scene from "./Scene/scene.validate.gen";
-import * as session from "./Session/session.validate.gen";
-import * as stream from "./Twitch/stream.validate.gen";
-import * as streamstatus from "./StreamStatus/streamstatus.validate.gen";
-import * as workflow from "./Workflow/workflow.validate.gen";
+import * as validators from "./messages.validate.gen";
 
 type Validator = ((value: unknown) => boolean) & { errors?: unknown };
 
-const domains: Record<string, Record<string, Validator>> = {
-  scene,
-  barkloader,
-  heartbeat,
-  module,
-  outbox,
-  session,
-  stream,
-  streamstatus,
-  workflow,
-};
 const contractsDir = join(import.meta.dir, "..", "..", "..", "contracts");
+const validatorOf = (schema: string): Validator | undefined =>
+  (validators as Record<string, Validator | undefined>)[`validate${schema}`];
 
 interface Fixture {
   schema: string;
   cases: { name: string; valid: boolean; value: unknown }[];
 }
 
-for (const [domain, validators] of Object.entries(domains)) {
-  const fixturesDir = join(contractsDir, domain, "fixtures");
-  for (const file of readdirSync(fixturesDir).filter((name) => name.endsWith(".json"))) {
+for (const source of readdirSync(contractsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory())) {
+  const fixturesDir = join(contractsDir, source.name, "fixtures");
+  let files: string[] = [];
+  try {
+    files = readdirSync(fixturesDir).filter((name) => name.endsWith(".json"));
+  } catch {
+    continue;
+  }
+  for (const file of files) {
     const fixture: Fixture = JSON.parse(readFileSync(join(fixturesDir, file), "utf8"));
-    describe(`${domain}/${file}`, () => {
-      const validate = validators[`validate${fixture.schema}`];
-      test("the fixture names a generated validator", () => {
-        expect(typeof validate).toBe("function");
-      });
+    const validate = validatorOf(fixture.schema);
+    if (!validate) {
+      continue;
+    }
+    describe(`${source.name}/${file}`, () => {
       for (const c of fixture.cases) {
         test(c.name, () => {
           expect(validate(c.value)).toBe(c.valid);

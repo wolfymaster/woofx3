@@ -12,7 +12,7 @@ import (
 	dbv1 "github.com/wolfymaster/woofx3/clients/db"
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
-	"github.com/wolfymaster/woofx3/common/messages/workflow"
+	"github.com/wolfymaster/woofx3/common/messages"
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/common/runtime/service"
 	"github.com/wolfymaster/woofx3/workflow/internal/engine"
@@ -478,7 +478,7 @@ type executeReply struct {
 // execution -- that is what lets the caller who asked for this run be told how
 // it ended, since the run happens here long after their request returned.
 func (a *WorkflowApp) handleWorkflowExecuteEvent(msg natsclient.Msg) []byte {
-	if err := checkWire[workflow.WorkflowExecuteRequest](msg.Data()); err != nil {
+	if err := checkWire[messages.WorkflowExecuteRequest](msg.Data()); err != nil {
 		a.logger.Error("Workflow execute event breaks its contract", "error", err, "subject", msg.Subject())
 		return encodeExecuteReply(executeReply{Outcome: "refused", Error: err.Error()})
 	}
@@ -579,7 +579,7 @@ type cancelReply struct {
 // service with an answer, not an event anything else reacts to.
 func (a *WorkflowApp) handleWorkflowCancelRequest(msg natsclient.Msg) []byte {
 	var req cancelRequest
-	if err := checkWire[workflow.WorkflowCancelRequest](msg.Data()); err != nil {
+	if err := checkWire[messages.WorkflowCancelRequest](msg.Data()); err != nil {
 		a.logger.Error("Invalid workflow cancel request", "subject", msg.Subject(), "error", err)
 		return encodeCancelReply(cancelReply{Outcome: "refused", Error: err.Error()})
 	}
@@ -662,7 +662,7 @@ type commandExecuteMessage struct {
 // handleCommandExecuteEvent runs a command's workflow for one invocation.
 func (a *WorkflowApp) handleCommandExecuteEvent(msg natsclient.Msg) {
 	var message commandExecuteMessage
-	if err := checkWire[workflow.WorkflowCommandExecuteRequest](msg.Data()); err != nil {
+	if err := checkWire[messages.WorkflowCommandExecuteRequest](msg.Data()); err != nil {
 		a.logger.Error("Command run event breaks its contract", "error", err, "subject", msg.Subject())
 		return
 	}
@@ -719,7 +719,7 @@ type replayMessage struct {
 // replay is not logged a second time here.
 func (a *WorkflowApp) handleWorkflowReplayEvent(msg natsclient.Msg) {
 	var message replayMessage
-	if err := checkWire[workflow.WorkflowReplayRequest](msg.Data()); err != nil {
+	if err := checkWire[messages.WorkflowReplayRequest](msg.Data()); err != nil {
 		a.logger.Error("Workflow replay event breaks its contract", "error", err, "subject", msg.Subject())
 		return
 	}

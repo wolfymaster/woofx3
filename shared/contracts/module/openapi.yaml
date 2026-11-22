@@ -10,6 +10,7 @@ paths:
   /module.storage.changed:
     post:
       operationId: moduleStorageChanged
+      x-consumers: [ts, rust]
       summary: >
         A key of a module's persistent storage was written or cleared. Published on
         `module.storage.<moduleId>.changed` by barkloader after a module function's

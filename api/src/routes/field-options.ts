@@ -1,6 +1,6 @@
 import type { FieldOptionsReference } from "@woofx3/api";
-import { ModuleFieldOptionsRequestType } from "@woofx3/common/cloudevents/Barkloader/barkloader.gen";
-import { validateModuleFieldOptionsRequest } from "@woofx3/common/cloudevents/Barkloader/barkloader.validate.gen";
+import { ModuleFieldOptionsRequestType } from "@woofx3/common/cloudevents/messages.gen";
+import { validateModuleFieldOptionsRequest } from "@woofx3/common/cloudevents/messages.validate.gen";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import { fieldOptionsDescriptorFor, parseFieldOptionsReference } from "../field-options-reference";
 import { parseStoredManifestJson } from "../stored-manifest";

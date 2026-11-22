@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { SessionEndedEventType, SessionStartedEventType } from "./Session/session.gen";
+import { SessionEndedEventType, SessionStartedEventType } from "./messages.gen";
 import { clearCurrentSessionId, getCurrentSessionId } from "./session";
 import { type SessionBus, subscribeToSessionUpdates } from "./session-subscriber";
 

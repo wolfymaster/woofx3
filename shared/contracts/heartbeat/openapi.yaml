@@ -10,6 +10,7 @@ paths:
   /com.woofx3.heartbeat:
     post:
       operationId: heartbeat
+      x-consumers: [go, ts, rust]
       summary: Report whether a service is ready to be depended on. Published by every service, read by the runtime health monitors and the api's readiness probe.
       requestBody:
         required: true

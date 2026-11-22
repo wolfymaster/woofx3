@@ -9,12 +9,12 @@ import type {
   SchemaWorkflowHealthChangedEvent,
   SchemaWorkflowHealthReply,
   SchemaWorkflowHealthSnapshotEvent,
-} from "@woofx3/common/cloudevents/Workflow/workflow.gen";
+} from "@woofx3/common/cloudevents/messages.gen";
 import {
   validateWorkflowHealthChangedEvent,
   validateWorkflowHealthReply,
   validateWorkflowHealthSnapshotEvent,
-} from "@woofx3/common/cloudevents/Workflow/workflow.validate.gen";
+} from "@woofx3/common/cloudevents/messages.validate.gen";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";

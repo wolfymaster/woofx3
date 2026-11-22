@@ -12,7 +12,7 @@ import (
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
-	"github.com/wolfymaster/woofx3/common/messages/outbox"
+	"github.com/wolfymaster/woofx3/common/messages"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	repo "github.com/wolfymaster/woofx3/db/database/repository"
@@ -106,18 +106,18 @@ func (s *userPageSubmissionService) RecordUserPageSubmission(ctx context.Context
 	}, nil
 }
 
-func userPageFormSubmittedEventOf(req *client.RecordUserPageSubmissionRequest) outbox.UserPageFormSubmission {
-	event := outbox.UserPageFormSubmission{
-		SubmissionId: outbox.SubmissionKey(req.SubmissionId),
-		PageId:       outbox.SubmissionKey(req.PageId),
-		FormId:       outbox.SubmissionKey(req.FormId),
+func userPageFormSubmittedEventOf(req *client.RecordUserPageSubmissionRequest) messages.UserPageFormSubmission {
+	event := messages.UserPageFormSubmission{
+		SubmissionId: messages.SubmissionKey(req.SubmissionId),
+		PageId:       messages.SubmissionKey(req.PageId),
+		FormId:       messages.SubmissionKey(req.FormId),
 		FormTitle:    req.GetFormTitle(),
-		SubmittedAt:  outbox.EventTime(req.SubmittedAt.AsTime().UTC().Format(time.RFC3339Nano)),
-		Fields:       make([]outbox.SubmissionField, 0, len(req.Fields)),
-		Answers:      make(outbox.UserPageFormSubmissionAnswers, len(req.Fields)),
-		Viewer: outbox.SubmissionViewer{
-			Platform:       outbox.NilString{Null: true},
-			PlatformUserId: outbox.NilString{Null: true},
+		SubmittedAt:  messages.EventTime(req.SubmittedAt.AsTime().UTC().Format(time.RFC3339Nano)),
+		Fields:       make([]messages.SubmissionField, 0, len(req.Fields)),
+		Answers:      make(messages.UserPageFormSubmissionAnswers, len(req.Fields)),
+		Viewer: messages.SubmissionViewer{
+			Platform:       messages.NilString{Null: true},
+			PlatformUserId: messages.NilString{Null: true},
 			DisplayName:    anonymousViewerName,
 			Roles:          []string{},
 		},
@@ -127,21 +127,21 @@ func userPageFormSubmittedEventOf(req *client.RecordUserPageSubmissionRequest) o
 		if roles == nil {
 			roles = []string{}
 		}
-		event.Viewer = outbox.SubmissionViewer{
-			Platform:       outbox.NewNilString(viewer.Platform),
-			PlatformUserId: outbox.NewNilString(viewer.PlatformUserId),
+		event.Viewer = messages.SubmissionViewer{
+			Platform:       messages.NewNilString(viewer.Platform),
+			PlatformUserId: messages.NewNilString(viewer.PlatformUserId),
 			DisplayName:    viewer.DisplayName,
 			Roles:          roles,
 		}
 	}
 	for _, field := range req.Fields {
-		var value outbox.AnswerValue
+		var value messages.AnswerValue
 		if field.Type == submissionFieldTypeChecked {
-			value = outbox.NewBoolAnswerValue(field.GetCheckedValue())
+			value = messages.NewBoolAnswerValue(field.GetCheckedValue())
 		} else {
-			value = outbox.NewStringAnswerValue(field.GetTextValue())
+			value = messages.NewStringAnswerValue(field.GetTextValue())
 		}
-		event.Fields = append(event.Fields, outbox.SubmissionField{ID: outbox.SubmissionKey(field.Id), Label: field.Label, Type: field.Type, Value: value})
+		event.Fields = append(event.Fields, messages.SubmissionField{ID: messages.SubmissionKey(field.Id), Label: field.Label, Type: field.Type, Value: value})
 		event.Answers[field.Id] = value
 	}
 	return event

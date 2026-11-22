@@ -1,3 +1,3 @@
-import type { SchemaChatterMembership } from "../Twitch/stream.gen";
+import type { SchemaChatterMembership } from "../messages.gen";
 
 export type ChatterMembership = SchemaChatterMembership;

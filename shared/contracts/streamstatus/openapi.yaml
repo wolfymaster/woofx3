@@ -11,6 +11,7 @@ paths:
   /stream.status.observed:
     post:
       operationId: streamStatusObserved
+      x-consumers: [ts]
       summary: A platform's current state. Published by the connectors host when an adapter has read it and in answer to a request; read by the api's resolver.
       requestBody:
         required: true
@@ -24,6 +25,7 @@ paths:
   /stream.status.requested:
     post:
       operationId: streamStatusRequested
+      x-consumers: [ts]
       summary: Ask every connected platform to publish its state. Published by the api's resolver; read by the connectors host.
       requestBody:
         required: true

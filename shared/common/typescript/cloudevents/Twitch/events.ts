@@ -1,4 +1,4 @@
-import type * as Stream from "./stream.gen";
+import type * as Stream from "../messages.gen";
 /**
  * Event types are platform-agnostic: the same `channel.follow` is emitted
  * whether the follow arrived from Twitch or anywhere else. Which platform it

@@ -10,8 +10,8 @@ use futures::stream::StreamExt;
 use jsonschema::Validator;
 use serde_json::{Value, json};
 use tracing::{error, info, warn};
+use woofx3_cloudevents::messages_gen::{DOCUMENT, SessionStartedEvent, SessionStartedEventType};
 use woofx3_cloudevents::session::set_current_session_id;
-use woofx3_cloudevents::session_gen::{DOCUMENT, SessionStartedEvent, SessionStartedEventType};
 
 const SCHEMA: &str = "SessionStartedEvent";
 

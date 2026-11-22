@@ -1,9 +1,6 @@
 import { PLATFORM_IDS } from "@woofx3/api/platform-gateway";
-import { SessionStartedEventType } from "@woofx3/common/cloudevents/Session/session.gen";
-import {
-  StreamStatusObservedEventType,
-  StreamStatusRequestedEventType,
-} from "@woofx3/common/cloudevents/StreamStatus/streamstatus.gen";
+import { SessionStartedEventType } from "@woofx3/common/cloudevents/messages.gen";
+import { StreamStatusObservedEventType, StreamStatusRequestedEventType } from "@woofx3/common/cloudevents/messages.gen";
 import { type SessionBus, subscribeToSessionUpdates } from "@woofx3/common/cloudevents/session-subscriber";
 import type { DispatcherDb } from "../chat/db-client";
 import { ClaimRegistry } from "../companion/claims";

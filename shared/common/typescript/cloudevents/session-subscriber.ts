@@ -1,5 +1,5 @@
-import { type SchemaSessionStartedEvent, SessionStartedEventType } from "./Session/session.gen";
-import { validateSessionStartedEvent } from "./Session/session.validate.gen";
+import { type SchemaSessionStartedEvent, SessionStartedEventType } from "./messages.gen";
+import { validateSessionStartedEvent } from "./messages.validate.gen";
 import { setCurrentSessionId } from "./session";
 import { err, type ParseResult, parseContract } from "./utils";
 

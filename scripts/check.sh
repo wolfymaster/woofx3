@@ -80,16 +80,11 @@ select_all() {
 select_for_path() {
   local path="$1" module root service package
   # Generated message-contract code is checked against its document wherever it
-  # lives. The generated paths must match the outputs in DOMAINS in
-  # scripts/gen-schemas.sh.
+  # lives. The generated paths must match the outputs in scripts/gen-schemas.sh.
   case "$path" in
     shared/contracts/* | scripts/contracts/* | scripts/gen-schemas.sh/ | \
-      shared/common/golang/messages/*/*_gen.go/ | \
-      shared/common/typescript/cloudevents/Scene/*.gen.ts/ | \
-      shared/common/typescript/cloudevents/Barkloader/*.gen.ts/ | \
-      shared/common/typescript/cloudevents/Heartbeat/*.gen.ts/ | \
-      shared/common/typescript/cloudevents/Session/*.gen.ts/ | \
-      shared/common/typescript/cloudevents/StreamStatus/*.gen.ts/ | \
+      shared/common/golang/messages/*_gen.go/ | \
+      shared/common/typescript/cloudevents/messages*.gen.ts/ | \
       shared/common/rust/cloudevents/src/*_gen.rs/)
       select_target "schemas:shared/contracts"
       ;;
