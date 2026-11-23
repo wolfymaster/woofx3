@@ -3,14 +3,15 @@ import path from "node:path";
 import pino, {
   type DestinationStream,
   type LevelWithSilent,
-  type Logger as PinoLogger,
   multistream,
+  type Logger as PinoLogger,
   type StreamEntry,
 } from "pino";
 import { dataDir, resolveDataPath } from "../runtime/data-dir";
 import { makeLogFileName } from "./naming";
 import { currentTraceContext, initTelemetry, type Telemetry } from "./otel";
 import { createOtelLogStream } from "./otel-log-stream";
+import { parseOtelPairs } from "./otel-pairs";
 import type { CreateServiceLoggerOptions, LoggerContext, LoggingConfig, LogMetadata, SharedLogger } from "./types";
 
 const defaultRedactPaths = [
@@ -20,6 +21,7 @@ const defaultRedactPaths = [
   "metadata.token",
   "metadata.authorization",
   "metadata.cookie",
+  "metadata.otelExporterHeaders",
   "*.password",
   "*.secret",
   "*.token",
@@ -40,11 +42,14 @@ export function resolveConfig(configOverride?: Partial<LoggingConfig>): LoggingC
     logDir: "logs",
     otelEnabled: false,
     otelExporterEndpoint: "",
+    otelExporterHeaders: {},
     otelLocalFileEnabled: true,
+    otelResourceAttributes: {},
     otelTracingEnabled: false,
     prettyConsole: true,
     redactPaths: defaultRedactPaths,
     runtimeLevelChanges: true,
+    serviceVersion: "",
     singleLineFile: true,
   };
 
@@ -59,9 +64,15 @@ export function resolveConfig(configOverride?: Partial<LoggingConfig>): LoggingC
     logDir: process.env.WOOFX3_LOG_DIR ?? defaults.logDir,
     otelEnabled,
     otelExporterEndpoint,
+    otelExporterHeaders: parseOtelPairs(process.env.WOOFX3_OTEL_EXPORTER_HEADERS, "WOOFX3_OTEL_EXPORTER_HEADERS"),
     otelLocalFileEnabled: toBool(process.env.WOOFX3_OTEL_LOCAL_FILE_ENABLED, defaults.otelLocalFileEnabled),
+    otelResourceAttributes: parseOtelPairs(
+      process.env.WOOFX3_OTEL_RESOURCE_ATTRIBUTES,
+      "WOOFX3_OTEL_RESOURCE_ATTRIBUTES"
+    ),
     otelTracingEnabled: toBool(process.env.WOOFX3_OTEL_TRACING_ENABLED, otelEnabled),
     prettyConsole: toBool(process.env.WOOFX3_LOG_PRETTY, defaults.prettyConsole),
+    serviceVersion: process.env.WOOFX3_VERSION?.trim() ?? defaults.serviceVersion,
     runtimeLevelChanges: toBool(process.env.WOOFX3_LOG_DYNAMIC_LEVEL, defaults.runtimeLevelChanges),
     singleLineFile: toBool(process.env.WOOFX3_LOG_FILE_ENABLED, defaults.singleLineFile),
   };

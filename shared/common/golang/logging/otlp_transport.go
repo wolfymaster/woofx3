@@ -35,13 +35,18 @@ func (t *OTLPTransport) Build(resolved resolvedConfig, level *slog.LevelVar) (sl
 		return nil, nil, err
 	}
 
-	exporter, err := otlploghttp.New(context.Background(), otlploghttp.WithEndpointURL(endpointURL))
+	options := []otlploghttp.Option{otlploghttp.WithEndpointURL(endpointURL)}
+	if len(resolved.OTelExporterHeaders) > 0 {
+		options = append(options, otlploghttp.WithHeaders(resolved.OTelExporterHeaders))
+	}
+	// stylegate:ignore GO-API-001 reason="built once at startup from New, which takes no ctx; the exporter does not dial until the first export"
+	exporter, err := otlploghttp.New(context.Background(), options...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create OTLP log exporter: %w", err)
 	}
 
 	provider := sdklog.NewLoggerProvider(
-		sdklog.WithResource(newOTelResource(resolved.ServiceName)),
+		sdklog.WithResource(newOTelResource(resolved)),
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
 	)
 
