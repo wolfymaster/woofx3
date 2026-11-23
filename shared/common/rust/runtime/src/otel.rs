@@ -180,8 +180,12 @@ mod tests {
 
     #[test]
     fn test_parse_pairs_percent_decodes_keys_and_values() {
-        let parsed =
-            parse_pairs("k", "authorization=Basic%20abc%3D%3D,a%2Eb=x%2Cy,p=1+2", true).unwrap();
+        let parsed = parse_pairs(
+            "k",
+            "authorization=Basic%20abc%3D%3D,a%2Eb=x%2Cy,p=1+2",
+            true,
+        )
+        .unwrap();
         assert_eq!(parsed["authorization"], "Basic abc==");
         assert_eq!(parsed["a.b"], "x,y");
         assert_eq!(parsed["p"], "1+2");
