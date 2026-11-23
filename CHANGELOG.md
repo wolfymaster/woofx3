@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.78.1](https://github.com/wolfymaster/woofx3/compare/v0.78.0...v0.78.1) (2026-11-23)
+
+### Bug Fixes
+
+* **woofx3:** describe the bundled module in plain words for streamers ([fb8b2a1](https://github.com/wolfymaster/woofx3/commit/fb8b2a19c6dbdf41fe5e0d99f76555f4c7980daf))
+
 ## [0.78.0](https://github.com/wolfymaster/woofx3/compare/v0.77.0...v0.78.0) (2026-11-22)
 
 ### Features
