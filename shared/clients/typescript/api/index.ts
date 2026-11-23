@@ -4,6 +4,7 @@ export * from "./client";
 export * from "./config-bundle";
 export * from "./databases";
 export * from "./engine-events";
+export * from "./logs";
 export * from "./marketplace-catalog";
 export * from "./module-manifest";
 export * from "./overlay-events";

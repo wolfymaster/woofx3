@@ -395,6 +395,9 @@ export const RPC_METHODS = [
   "exportConfig",
   "previewImport",
   "importConfig",
+  "listLogFiles",
+  "queryLogs",
+  "createLogAccess",
 ] as const;
 
 /** True only when A and B are the same type, invariantly. */

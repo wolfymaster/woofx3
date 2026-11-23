@@ -16,6 +16,7 @@ import { eventsRoutes } from "./events";
 import { fieldOptionsRoutes } from "./field-options";
 import { groupsRoutes } from "./groups";
 import { inboundWebhooksRoutes } from "./inbound-webhooks";
+import { logsRoutes } from "./logs";
 import { marketplaceRoutes } from "./marketplace";
 import { marketplaceCatalogRoutes } from "./marketplace-catalog";
 import { moderationRoutes } from "./moderation";
@@ -50,6 +51,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof triggerSubscriptionRoutes &
   typeof streamEventsRoutes &
   typeof engineEventsRoutes &
+  typeof logsRoutes &
   typeof workflowsExecutionRoutes &
   typeof actionsRoutes &
   typeof commandsRoutes &
@@ -126,6 +128,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(triggerSubscriptionRoutes),
     instrumentRoutes(streamEventsRoutes),
     instrumentRoutes(engineEventsRoutes),
+    instrumentRoutes(logsRoutes),
     instrumentRoutes(workflowsExecutionRoutes),
     instrumentRoutes(commandsRoutes),
     instrumentRoutes(groupsRoutes),

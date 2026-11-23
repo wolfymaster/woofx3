@@ -6,6 +6,7 @@ import { hasBarkloaderBearer } from "./barkloader-webhook-auth";
 import type { ApiGateway } from "./gateway";
 import { type ConnectionInfo, ConnectionLifetime, GatewayConnection } from "./gateway-connection";
 import type { Health } from "./health";
+import { LOGS_PATH_PREFIX, type LogsHttp } from "./engine-logs/LogsHttp";
 import type { Readiness } from "./readiness";
 
 export interface HttpDeps {
@@ -30,6 +31,8 @@ export interface HttpDeps {
    * are not checked (see barkloader-webhook-auth.ts).
    */
   barkloaderWebhookSecret: string | null;
+  /** Serves `/logs/*`; see logs/log-http.ts. Without it those paths answer 404. */
+  logs?: LogsHttp;
 }
 
 /** What a WebSocket carries from its upgrade request to `open`, where its gateway connection is built. */
@@ -162,7 +165,8 @@ function asCapnwebSocket(adapter: BunWebSocketAdapter): WebSocket {
  * ambiently, matching `sceneManager/src/http.ts`'s `createHttpServer`.
  */
 export function createHttpServer(deps: HttpDeps) {
-  const { port, hostname, readiness, health, logger, gateway, onProcessingCallback, barkloaderWebhookSecret } = deps;
+  const { port, hostname, readiness, health, logger, gateway, onProcessingCallback, barkloaderWebhookSecret, logs } =
+    deps;
   const requestGuard = new RequestGuard(deps.requestGuard);
 
   // Map to track WebSocket adapters by their Bun WebSocket (capnweb path)
@@ -309,6 +313,13 @@ export function createHttpServer(deps: HttpDeps) {
           });
         }
         return new Response(null, { status: 204 });
+      }
+
+      if (logs !== undefined && url.pathname.startsWith(LOGS_PATH_PREFIX)) {
+        return logs.handle(req, url, {
+          cors: requestGuard.corsOriginHeaders(req),
+          disableIdleTimeout: () => server.timeout(req, 0),
+        });
       }
 
       // Readiness: 200 only once everything this engine depends on is up,
