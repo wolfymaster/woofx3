@@ -20,6 +20,7 @@ import type {
   DatabaseRecordUpdateResult,
 } from "./databases";
 import type { EngineEventSubscribeOptions, EngineEventSubscriber, EngineRequestAnswer } from "./engine-events";
+import type { LogAccess, LogAccessScope, LogFileInfo, LogPage, LogQuery } from "./logs";
 import type { MarketplaceAuthorQuery, MarketplaceCatalogQuery } from "./marketplace-catalog";
 import type { ModerationActionRecord, ModerationConfig } from "./moderation-config";
 import type {
@@ -2309,6 +2310,20 @@ export interface Woofx3EngineApi {
    * rejection recorded nothing, so the caller resends.
    */
   deliverUserPageSubmission(delivery: UserPageSubmissionDelivery): Promise<UserPageSubmissionReceipt>;
+
+  // Engine logs
+
+  /** The engine's log files, newest first. */
+  listLogFiles(): Promise<LogFileInfo[]>;
+  /** Records matching `query`, newest first, a page at a time. */
+  queryLogs(query: LogQuery): Promise<LogPage>;
+  /**
+   * A token for the engine's `/logs/stream` (live tail, SSE) or `/logs/export`
+   * (zip of every log file) route. The engine does not decide who may ask: the
+   * caller is authenticated, and a dashboard that serves other users must check
+   * they may read logs, and for `export` that they administer the engine.
+   */
+  createLogAccess(scope: LogAccessScope): Promise<LogAccess>;
 
   // Local UI settings. Each write emits a `ui.setting.changed` webhook.
 
