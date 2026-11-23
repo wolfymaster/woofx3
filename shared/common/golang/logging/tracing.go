@@ -68,6 +68,7 @@ func buildSpanExporter(resolved resolvedConfig) (sdktrace.SpanExporter, io.Close
 		if len(resolved.OTelExporterHeaders) > 0 {
 			options = append(options, otlptracehttp.WithHeaders(resolved.OTelExporterHeaders))
 		}
+		// stylegate:ignore GO-API-001 reason="built once at startup from New, which takes no ctx; the exporter does not dial until the first export"
 		exporter, err := otlptracehttp.New(context.Background(), options...)
 		if err != nil {
 			return nil, nil, fmt.Errorf("create OTLP trace exporter: %w", err)

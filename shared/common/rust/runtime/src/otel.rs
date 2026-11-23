@@ -34,16 +34,23 @@ pub struct OtelConfig {
     pub exporter_headers: BTreeMap<String, SecretString>,
 }
 
+/// Whether an error may quote the pair it rejects.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PairText {
+    Shown,
+    Hidden,
+}
+
 /// Splits `key=value,key=value` on commas, then each pair on its first `=`.
 /// Whitespace around pairs, keys and values is trimmed, empty segments are
 /// skipped, and a later duplicate key wins. Keys and values are percent-decoded
 /// after splitting, as in the standard syntax.
-/// `redact_pairs` keeps a malformed pair's text out of the error because
+/// `PairText::Hidden` keeps a malformed pair's text out of the error because
 /// header pairs hold secrets.
 fn parse_pairs(
     key: &str,
     raw: &str,
-    redact_pairs: bool,
+    pair_text: PairText,
 ) -> Result<BTreeMap<String, String>, ConfigError> {
     let mut parsed = BTreeMap::new();
     let segments = raw.split(',').map(str::trim).filter(|s| !s.is_empty());
@@ -51,36 +58,20 @@ fn parse_pairs(
         let entry = segment
             .split_once('=')
             .map(|(name, value)| (name.trim(), value.trim()))
-            .filter(|(name, _)| !name.is_empty());
-        match entry {
-            Some((name, value)) => match (percent_decode(name), percent_decode(value)) {
-                (Some(name), Some(value)) => {
-                    parsed.insert(name, value);
-                }
-                _ => {
-                    let pair = if redact_pairs {
-                        format!("#{}", index + 1)
-                    } else {
-                        format!("`{segment}`")
-                    };
-                    return Err(ConfigError::InvalidPair {
-                        key: key.to_string(),
-                        pair,
-                    });
-                }
-            },
-            None => {
-                let pair = if redact_pairs {
-                    format!("#{}", index + 1)
-                } else {
-                    format!("`{segment}`")
-                };
-                return Err(ConfigError::InvalidPair {
-                    key: key.to_string(),
-                    pair,
-                });
-            }
-        }
+            .filter(|(name, _)| !name.is_empty())
+            .and_then(|(name, value)| Some((percent_decode(name)?, percent_decode(value)?)));
+        let Some((name, value)) = entry else {
+            let pair = if pair_text == PairText::Hidden {
+                format!("#{}", index + 1)
+            } else {
+                format!("`{segment}`")
+            };
+            return Err(ConfigError::InvalidPair {
+                key: key.to_string(),
+                pair,
+            });
+        };
+        parsed.insert(name, value);
     }
     Ok(parsed)
 }
@@ -118,11 +109,11 @@ impl OtelConfig {
             .unwrap_or(true);
 
         let resource_attributes = match config.get_non_empty(OTEL_RESOURCE_ATTRIBUTES_KEY) {
-            Some(raw) => parse_pairs(OTEL_RESOURCE_ATTRIBUTES_KEY, &raw, false)?,
+            Some(raw) => parse_pairs(OTEL_RESOURCE_ATTRIBUTES_KEY, &raw, PairText::Shown)?,
             None => BTreeMap::new(),
         };
         let exporter_headers = match config.get_non_empty(OTEL_EXPORTER_HEADERS_KEY) {
-            Some(raw) => parse_pairs(OTEL_EXPORTER_HEADERS_KEY, &raw, true)?
+            Some(raw) => parse_pairs(OTEL_EXPORTER_HEADERS_KEY, &raw, PairText::Hidden)?
                 .into_iter()
                 .map(|(name, value)| (name, SecretString::new(value)))
                 .collect(),
@@ -183,7 +174,7 @@ mod tests {
         let parsed = parse_pairs(
             "k",
             "authorization=Basic%20abc%3D%3D,a%2Eb=x%2Cy,p=1+2",
-            true,
+            PairText::Hidden,
         )
         .unwrap();
         assert_eq!(parsed["authorization"], "Basic abc==");
@@ -194,7 +185,7 @@ mod tests {
     #[test]
     fn test_parse_pairs_rejects_bad_escape_without_echoing_secret() {
         for raw in ["a=%zz", "a=%4", "a=%FF"] {
-            let err = parse_pairs("k", raw, true).unwrap_err();
+            let err = parse_pairs("k", raw, PairText::Hidden).unwrap_err();
             assert!(matches!(err, ConfigError::InvalidPair { .. }));
             assert!(!err.to_string().contains("%zz"));
         }

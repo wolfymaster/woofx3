@@ -37,7 +37,11 @@ func TestParseKeyValueList(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := parseKeyValueList(tt.raw, "SRC", tt.secret)
+			visibility := entriesShown
+			if tt.secret {
+				visibility = entriesHidden
+			}
+			got, err := parseKeyValueList(tt.raw, "SRC", visibility)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v, want containing %q", err, tt.wantErr)
@@ -83,14 +87,15 @@ func TestResolveConfigOTelAttributesAndHeaders(t *testing.T) {
 		}
 	})
 	t.Run("malformed attribute fails", func(t *testing.T) {
-		if _, err := resolveConfig(Config{ServiceName: "test", OTelResourceAttributes: "novalue"}); err == nil {
-			t.Fatal("expected error")
+		_, err := resolveConfig(Config{ServiceName: "test", OTelResourceAttributes: "novalue"})
+		if err == nil || !strings.Contains(err.Error(), envOTelResourceAttrs) || !strings.Contains(err.Error(), `"novalue"`) {
+			t.Fatalf("error = %v, want one naming %s and the entry", err, envOTelResourceAttrs)
 		}
 	})
 	t.Run("malformed header fails without value", func(t *testing.T) {
 		_, err := resolveConfig(Config{ServiceName: "test", OTelExporterHeaders: "=hunter2"})
-		if err == nil || strings.Contains(err.Error(), "hunter2") {
-			t.Fatalf("error = %v", err)
+		if err == nil || !strings.Contains(err.Error(), envOTelExporterHeaders) || strings.Contains(err.Error(), "hunter2") {
+			t.Fatalf("error = %v, want one naming %s without the value", err, envOTelExporterHeaders)
 		}
 	})
 	t.Run("version from env", func(t *testing.T) {

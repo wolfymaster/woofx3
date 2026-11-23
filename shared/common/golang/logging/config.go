@@ -166,13 +166,13 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 	}
 
 	otelResourceAttributes, err := parseKeyValueList(
-		firstNonEmpty(cfg.OTelResourceAttributes, os.Getenv(envOTelResourceAttrs)), envOTelResourceAttrs, false)
+		firstNonEmpty(cfg.OTelResourceAttributes, os.Getenv(envOTelResourceAttrs)), envOTelResourceAttrs, entriesShown)
 	if err != nil {
 		return resolvedConfig{}, err
 	}
 
 	otelExporterHeaders, err := parseKeyValueList(
-		firstNonEmpty(cfg.OTelExporterHeaders, os.Getenv(envOTelExporterHeaders)), envOTelExporterHeaders, true)
+		firstNonEmpty(cfg.OTelExporterHeaders, os.Getenv(envOTelExporterHeaders)), envOTelExporterHeaders, entriesHidden)
 	if err != nil {
 		return resolvedConfig{}, err
 	}
@@ -226,12 +226,21 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// entryVisibility says whether an error may quote the text of the entry it
+// rejects. Header lists hold credentials, so their entries stay out of errors.
+type entryVisibility int
+
+const (
+	entriesShown entryVisibility = iota
+	entriesHidden
+)
+
 // parseKeyValueList parses "k1=v1,k2=v2". Segments split on the first '=', so
-// values may contain '='; later duplicate keys win. When secret is set, values
+// values may contain '='; later duplicate keys win. With entriesHidden, values
 // and value-less segments (which may themselves be the secret) stay out of
 // errors. Keys and values are percent-decoded after splitting, as in the
 // standard OTEL_EXPORTER_OTLP_HEADERS, so "%20" and an encoded comma survive.
-func parseKeyValueList(raw string, source string, secret bool) (map[string]string, error) {
+func parseKeyValueList(raw string, source string, visibility entryVisibility) (map[string]string, error) {
 	out := map[string]string{}
 	for index, segment := range strings.Split(raw, ",") {
 		segment = strings.TrimSpace(segment)
@@ -241,7 +250,7 @@ func parseKeyValueList(raw string, source string, secret bool) (map[string]strin
 		key, value, found := strings.Cut(segment, "=")
 		key = strings.TrimSpace(key)
 		if !found || key == "" {
-			if secret {
+			if visibility == entriesHidden {
 				return nil, fmt.Errorf("invalid %s: entry %d must be key=value with a non-empty key", source, index+1)
 			}
 			return nil, fmt.Errorf("invalid %s: %q must be key=value with a non-empty key", source, segment)
