@@ -238,7 +238,7 @@ fn resource_for(service_name: &str, otel: &OtelConfig) -> Resource {
         .iter()
         .map(|(key, value)| KeyValue::new(key.clone(), value.clone()));
     Resource::builder()
-        .with_attributes(version.chain(configured))
+        .with_attributes(configured.chain(version))
         .with_service_name(service_name.to_string())
         .build()
 }
@@ -341,6 +341,19 @@ mod tests {
             resource_value(&resource, "woofx3.engine.id").as_deref(),
             Some("7")
         );
+        assert_eq!(
+            resource_value(&resource, "service.version").as_deref(),
+            Some("v1.2.3")
+        );
+    }
+
+    #[test]
+    fn test_resource_for_configured_version_beats_attribute_list() {
+        let otel = otel_from(&[
+            ("otelResourceAttributes", "service.version=from-list"),
+            ("version", "v1.2.3"),
+        ]);
+        let resource = resource_for("barkloader", &otel);
         assert_eq!(
             resource_value(&resource, "service.version").as_deref(),
             Some("v1.2.3")
