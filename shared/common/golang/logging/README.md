@@ -75,6 +75,21 @@ and the global no-op `TracerProvider` left in place.
 - `WOOFX3_OTEL_LOCAL_FILE_ENABLED` (bool, default `true`) -- when tracing is
   enabled but no collector is configured, spans are written to
   `logs/<service>_traces_YYYYMMDD_HHMM.log` instead of being dropped.
+- `WOOFX3_OTEL_RESOURCE_ATTRIBUTES` -- comma-separated `key=value` pairs added
+  to the resource of every log and span, for example
+  `deployment.environment=prod,team=core`. Each pair splits on the first `=`,
+  whitespace around keys and values is trimmed, empty segments are ignored and
+  later duplicates win. A pair without `=` or with an empty key stops startup.
+  `service.name` is always the logger's own service name and cannot be
+  overridden. Values are not percent-decoded. `Config.OTelResourceAttributes`
+  takes the same string and wins over the variable.
+- `WOOFX3_OTEL_EXPORTER_HEADERS` -- comma-separated `key=value` headers sent on
+  every OTLP/HTTP request (logs and traces), same syntax as above, for example
+  `Authorization=Bearer abc`. Values are secrets: they are never logged or put
+  in error messages, and the variable and header names are redacted from log
+  metadata. `Config.OTelExporterHeaders` wins over the variable.
+- `WOOFX3_VERSION` -- when set and non-empty, reported as `service.version` on
+  every resource.
 
 These follow the same precedence as the `WOOFX3_LOG_*` variables. The
 equivalent `Config` fields are `*bool` so that `nil` means "resolve from the

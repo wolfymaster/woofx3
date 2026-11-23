@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
 )
@@ -37,9 +38,16 @@ func otelEndpointURL(endpoint string, signalPath string) (string, error) {
 	return parsed.String(), nil
 }
 
-func newOTelResource(serviceName string) *resource.Resource {
-	return resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceName(serviceName),
-	)
+// newOTelResource applies configured attributes first, then the version, then
+// the service name, so the process's own identity cannot be overridden.
+func newOTelResource(resolved resolvedConfig) *resource.Resource {
+	attrs := make([]attribute.KeyValue, 0, len(resolved.OTelResourceAttributes)+2)
+	for key, value := range resolved.OTelResourceAttributes {
+		attrs = append(attrs, attribute.String(key, value))
+	}
+	if resolved.ServiceVersion != "" {
+		attrs = append(attrs, semconv.ServiceVersion(resolved.ServiceVersion))
+	}
+	attrs = append(attrs, semconv.ServiceName(resolved.ServiceName))
+	return resource.NewWithAttributes(semconv.SchemaURL, attrs...)
 }

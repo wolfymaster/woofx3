@@ -17,6 +17,9 @@ const (
 	envOTelExporterEndpoint = "WOOFX3_OTEL_EXPORTER_ENDPOINT"
 	envOTelTracingEnabled   = "WOOFX3_OTEL_TRACING_ENABLED"
 	envOTelLocalFileEnabled = "WOOFX3_OTEL_LOCAL_FILE_ENABLED"
+	envOTelResourceAttrs    = "WOOFX3_OTEL_RESOURCE_ATTRIBUTES"
+	envOTelExporterHeaders  = "WOOFX3_OTEL_EXPORTER_HEADERS"
+	envVersion              = "WOOFX3_VERSION"
 	envPrettyTerminal       = "WOOFX3_LOG_PRETTY"
 	envLogDirectory         = "WOOFX3_LOG_DIR"
 )
@@ -47,6 +50,12 @@ type Config struct {
 	OTelExporterEndpoint string
 	OTelTracingEnabled   *bool
 	OTelLocalFileEnabled *bool
+
+	// OTelResourceAttributes and OTelExporterHeaders are comma-separated
+	// key=value lists, falling back to WOOFX3_OTEL_RESOURCE_ATTRIBUTES and
+	// WOOFX3_OTEL_EXPORTER_HEADERS. Header values are secrets.
+	OTelResourceAttributes string
+	OTelExporterHeaders    string
 }
 
 type resolvedConfig struct {
@@ -64,6 +73,13 @@ type resolvedConfig struct {
 	OTelExporterEndpoint string
 	OTelTracingEnabled   bool
 	OTelLocalFileEnabled bool
+
+	// OTelResourceAttributes may name service.name or service.version;
+	// newOTelResource applies those last so they cannot override the
+	// process's own identity.
+	OTelResourceAttributes map[string]string
+	OTelExporterHeaders    map[string]string
+	ServiceVersion         string
 }
 
 func resolveConfig(cfg Config) (resolvedConfig, error) {
@@ -148,6 +164,21 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 		return resolvedConfig{}, err
 	}
 
+	otelResourceAttributes, err := parseKeyValueList(
+		firstNonEmpty(cfg.OTelResourceAttributes, os.Getenv(envOTelResourceAttrs)), envOTelResourceAttrs, false)
+	if err != nil {
+		return resolvedConfig{}, err
+	}
+
+	otelExporterHeaders, err := parseKeyValueList(
+		firstNonEmpty(cfg.OTelExporterHeaders, os.Getenv(envOTelExporterHeaders)), envOTelExporterHeaders, true)
+	if err != nil {
+		return resolvedConfig{}, err
+	}
+	for name := range otelExporterHeaders {
+		redactKeys[normalizeKey(name)] = struct{}{}
+	}
+
 	return resolvedConfig{
 		ServiceName:             serviceName,
 		Level:                   level,
@@ -162,6 +193,9 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 		OTelExporterEndpoint:    otelExporterEndpoint,
 		OTelTracingEnabled:      otelTracingEnabled,
 		OTelLocalFileEnabled:    otelLocalFileEnabled,
+		OTelResourceAttributes:  otelResourceAttributes,
+		OTelExporterHeaders:     otelExporterHeaders,
+		ServiceVersion:          strings.TrimSpace(os.Getenv(envVersion)),
 	}, nil
 }
 
@@ -182,9 +216,47 @@ func resolveBool(explicit *bool, envKey string, fallback bool) (bool, error) {
 	return parsed, nil
 }
 
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+// parseKeyValueList parses "k1=v1,k2=v2". Segments split on the first '=', so
+// values may contain '='; later duplicate keys win. When secret is set, values
+// and value-less segments (which may themselves be the secret) stay out of
+// errors.
+// shortcut: no percent-decoding of keys or values, upgrade if a collector
+// needs commas or '=' inside a value.
+func parseKeyValueList(raw string, source string, secret bool) (map[string]string, error) {
+	out := map[string]string{}
+	for index, segment := range strings.Split(raw, ",") {
+		segment = strings.TrimSpace(segment)
+		if segment == "" {
+			continue
+		}
+		key, value, found := strings.Cut(segment, "=")
+		key = strings.TrimSpace(key)
+		if !found || key == "" {
+			if secret {
+				return nil, fmt.Errorf("invalid %s: entry %d must be key=value with a non-empty key", source, index+1)
+			}
+			return nil, fmt.Errorf("invalid %s: %q must be key=value with a non-empty key", source, segment)
+		}
+		out[key] = strings.TrimSpace(value)
+	}
+	return out, nil
+}
+
 func defaultRedactKeys() map[string]struct{} {
 	keys := map[string]struct{}{}
-	for _, key := range []string{"password", "token", "secret", "authorization", "cookie"} {
+	for _, key := range []string{
+		"password", "token", "secret", "authorization", "cookie",
+		normalizeKey(envOTelExporterHeaders), "otelexporterheaders",
+	} {
 		keys[key] = struct{}{}
 	}
 	return keys
