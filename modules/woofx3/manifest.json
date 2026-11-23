@@ -2,14 +2,14 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.48.0",
+  "version": "0.48.1",
   "category": "system",
-  "description": "Bundled system module. Declares the engine's built-in actions, triggers, and widgets so they install through the same path as any other module instead of being hand-registered by each service.",
+  "description": "Chat commands, alerts, counters, timers, queues, schedules, forms, databases and scene widgets, ready to use.",
   "resources": [
     {
       "kind": "counter",
       "name": "Counter",
-      "description": "A number that actions change and overlays and chat can show: deaths, wins, hugs given. Give it goals and it announces reaching them.",
+      "description": "A number your steps change and overlays and chat can show: deaths, wins, hugs given. Give it goals and it announces reaching them.",
       "icon": "Tally5",
       "schema": [
         {
@@ -25,10 +25,10 @@
             },
             {
               "value": "session",
-              "label": "For this stream session"
+              "label": "For this stream"
             }
           ],
-          "description": "A session counter goes back to its starting value when the stream session ends; a forever counter keeps counting. Changing this applies the next time the counter changes."
+          "description": "A per-stream counter goes back to its starting value when the stream ends; a forever counter keeps counting. Changing this applies the next time the counter changes."
         },
         {
           "id": "initialValue",
@@ -78,7 +78,7 @@
     {
       "kind": "timer",
       "name": "Timer",
-      "description": "A countdown that actions start, pause and add time to, and overlays and chat can show: break timers, subathons, giveaways.",
+      "description": "A countdown your steps start, pause and add time to, and overlays and chat can show: break timers, subathons, giveaways.",
       "icon": "Timer",
       "schema": [
         {
@@ -94,10 +94,10 @@
             },
             {
               "value": "session",
-              "label": "For this stream session"
+              "label": "For this stream"
             }
           ],
-          "description": "A session timer goes back to its full duration, stopped, when the stream session ends; a forever timer keeps its value. Changing this applies the next time the timer changes."
+          "description": "A per-stream timer goes back to its full time, stopped, when the stream ends; a forever timer keeps its value. Changing this applies the next time the timer changes."
         },
         {
           "id": "duration",
@@ -113,7 +113,7 @@
     {
       "kind": "queue",
       "name": "Queue",
-      "description": "A line of entries that actions add to and take from, and overlays and chat can show: viewer games, song requests.",
+      "description": "A line of entries your steps add to and take from, and overlays and chat can show: viewer games, song requests.",
       "icon": "ListOrdered",
       "schema": [
         {
@@ -129,10 +129,10 @@
             },
             {
               "value": "session",
-              "label": "For this stream session"
+              "label": "For this stream"
             }
           ],
-          "description": "A session queue empties when the stream session ends; a forever queue keeps its value. Changing this applies the next time the queue changes."
+          "description": "A per-stream queue empties when the stream ends; a forever queue keeps its entries. Changing this applies the next time the queue changes."
         },
         {
           "id": "capacity",
@@ -162,7 +162,7 @@
     {
       "kind": "schedule",
       "name": "Schedule",
-      "description": "Runs on a repeating interval once started, so a workflow can post a chat message every 15 minutes or do anything else on a clock.",
+      "description": "Runs on a repeating timer once started, such as a chat message every 15 minutes.",
       "icon": "CalendarClock",
       "schema": [
         {
@@ -178,10 +178,10 @@
             },
             {
               "value": "session",
-              "label": "For this stream session"
+              "label": "For this stream"
             }
           ],
-          "description": "A session schedule stops when the stream session ends and waits to be started again. Changing this applies the next time the schedule changes."
+          "description": "A per-stream schedule stops when the stream ends and waits to be started again. Changing this applies the next time the schedule changes."
         },
         {
           "id": "interval",
@@ -205,7 +205,7 @@
     {
       "kind": "form",
       "name": "Form",
-      "description": "Questions viewers answer on your public page. Each submission can run workflows, so answers can save to a database, post to chat or anything else.",
+      "description": "Questions viewers answer on your public page. Each submission can save to a database, post to chat or anything else you set up.",
       "icon": "ClipboardList",
       "schema": [
         {
@@ -347,7 +347,7 @@
     },
     {
       "id": "timer.reconcile",
-      "name": "Re-arm timer ends",
+      "name": "Check for timers that ended",
       "runtime": "js",
       "path": "functions/timer.js",
       "entryPoint": "timerReconcile"
@@ -382,7 +382,7 @@
     },
     {
       "id": "schedule.reconcile",
-      "name": "Re-arm schedule runs",
+      "name": "Check for schedules that came due",
       "runtime": "js",
       "path": "functions/schedule.js",
       "entryPoint": "scheduleReconcile"
@@ -391,8 +391,8 @@
   "actions": [
     {
       "id": "function",
-      "name": "Function",
-      "description": "Invoke a sandboxed module function. Set `function` to the canonical function id; everything else in `parameters` is forwarded to the function as a single object argument.",
+      "name": "Run module function",
+      "description": "Run one of a module's functions.",
       "type": "native",
       "handler": "function",
       "taxonomy": [
@@ -402,7 +402,7 @@
     {
       "id": "command.run",
       "name": "Run command",
-      "description": "Run a chat command's steps, as though someone had typed it with no arguments. Who may use the command is not checked, since you are the one setting this up; the command must exist and be enabled.",
+      "description": "Run a chat command's steps as if someone typed it. The command must exist and be turned on.",
       "sentence": "Run command {command}",
       "type": "native",
       "handler": "command.run",
@@ -436,7 +436,7 @@
     {
       "id": "chat.reply",
       "name": "Send chat message",
-      "description": "Send one message to chat, where the trigger came from, on every platform, or on the one you choose. Replying is an action like any other, so a chat command that answers is a command with this action on it.",
+      "description": "Send a message to chat: where it started, every platform, or one you choose.",
       "sentence": "Send {message} in chat",
       "type": "native",
       "handler": "chat.reply",
@@ -447,7 +447,7 @@
           "type": "text",
           "required": true,
           "placeholder": "What should the bot say?",
-          "description": "Plain text. Twitch chat enforces a 500-character limit."
+          "description": "Plain text. Twitch allows up to 500 characters."
         },
         {
           "id": "platform",
@@ -473,7 +473,7 @@
               }
             }
           },
-          "hint": "Where it was triggered answers in the chat the trigger came from, as a reply when it was a chat message. With no chat behind it, such as a timer, it sends to every platform.",
+          "hint": "Where it was triggered replies in the chat it came from. With no chat behind it, like a timer, it goes to every platform.",
           "description": "Which chat to send to. The step fails when a platform it sends to is turned off, not connected or refuses the message."
         }
       ],
@@ -484,7 +484,7 @@
     {
       "id": "chat.announce",
       "name": "Send announcement",
-      "description": "Post a highlighted announcement in chat, where the trigger came from, on every platform, or on the one you choose. Platforms that have no announcements make the step fail.",
+      "description": "Post a highlighted announcement in chat. The step fails on a platform without announcements.",
       "sentence": "Announce {message} in chat",
       "type": "native",
       "handler": "chat.announce",
@@ -495,7 +495,7 @@
           "type": "text",
           "required": true,
           "placeholder": "What should the announcement say?",
-          "description": "Plain text. Twitch chat enforces a 500-character limit."
+          "description": "Plain text. Twitch allows up to 500 characters."
         },
         {
           "id": "platform",
@@ -526,13 +526,13 @@
         },
         {
           "id": "twitchColor",
-          "label": "Twitch colour",
+          "label": "Twitch color",
           "type": "select",
           "defaultValue": "primary",
           "options": [
             {
               "value": "primary",
-              "label": "Channel colour"
+              "label": "Channel color"
             },
             {
               "value": "blue",
@@ -559,7 +559,7 @@
               "twitch"
             ]
           },
-          "description": "The colour of the announcement bar on Twitch. Shown when the step can send to Twitch."
+          "description": "The color of the announcement bar on Twitch."
         }
       ],
       "taxonomy": [
@@ -569,7 +569,7 @@
     {
       "id": "chat.pin",
       "name": "Pin message",
-      "description": "Post a message in chat and pin it, where the trigger came from, on every platform, or on the one you choose. Platforms that cannot pin make the step fail.",
+      "description": "Post a message in chat and pin it. The step fails on a platform that can't pin.",
       "sentence": "Pin {message} in chat",
       "type": "native",
       "handler": "chat.pin",
@@ -580,7 +580,7 @@
           "type": "text",
           "required": true,
           "placeholder": "What should be pinned?",
-          "description": "Plain text. Twitch chat enforces a 500-character limit."
+          "description": "Plain text. Twitch allows up to 500 characters."
         },
         {
           "id": "platform",
@@ -638,7 +638,7 @@
           "required": true,
           "placeholder": "Username or user id",
           "description": "The user to look up. A leading @ and extra spaces are removed.",
-          "hint": "Supports template substitution, so a command can pass what the chatter typed straight through."
+          "hint": "Can use details from the trigger, such as what the chatter typed."
         },
         {
           "id": "platform",
@@ -675,7 +675,7 @@
     {
       "id": "alert",
       "name": "Alert",
-      "description": "Play an on-stream alert: widgets placed on a canvas, shown on every alert widget with the target name on a running scene.",
+      "description": "Play an alert on stream, using the widgets you arranged in it.",
       "sentence": "Play an alert on the {target} alert widget",
       "type": "native",
       "handler": "alert",
@@ -697,7 +697,7 @@
           "type": "layout",
           "surface": "alert",
           "required": true,
-          "description": "What the alert shows. The alert widget scales the canvas to fit, and the alert lasts as long as its longest widget."
+          "description": "What the alert shows. It lasts as long as its longest widget."
         }
       ],
       "taxonomy": [
@@ -708,7 +708,7 @@
     {
       "id": "scene.widget.visibility",
       "name": "Set widget visibility",
-      "description": "Show or hide a widget on a scene, on every overlay showing that scene. The change is saved with the scene, so the widget stays that way until it is changed again.",
+      "description": "Show or hide a widget on a scene. It stays that way until changed again.",
       "sentence": "Show or hide {placementId} on {sceneId}",
       "type": "native",
       "handler": "scene.widget.visibility",
@@ -748,7 +748,7 @@
     {
       "id": "database.insert",
       "name": "Add a row",
-      "description": "Add a row to a database. With a key, running again with the same key adds nothing, so a repeated event never makes a second row.",
+      "description": "Add a row to a database. With an Only once per value, the same event never adds a second row.",
       "sentence": "Add a row to {target}",
       "type": "native",
       "handler": "database.insert",
@@ -775,7 +775,7 @@
           "id": "key",
           "label": "Only once per",
           "type": "text",
-          "description": "Optional. A value that is the same each time the same thing happens, such as a submission id. A row already added with it is not added again."
+          "description": "Optional. A value that stays the same for the same event, such as a submission ID. A row already added with it is not added again."
         }
       ],
       "returns": {
@@ -798,7 +798,7 @@
           {
             "path": "reason",
             "type": "string",
-            "description": "Why not: `duplicate` or `full`. Empty when it was added."
+            "description": "Why not: duplicate or full. Empty when it was added."
           }
         ]
       },
@@ -827,7 +827,7 @@
           "label": "Row",
           "type": "text",
           "required": true,
-          "description": "The id of the row to change, for example from an earlier Read a row or Add a row step."
+          "description": "The row to change, such as one from an earlier Read a row or Add a row step."
         },
         {
           "id": "values",
@@ -860,7 +860,7 @@
           {
             "path": "reason",
             "type": "string",
-            "description": "Why not: `missing` when there is no such row. Empty when it was changed."
+            "description": "Why not: missing when there is no such row. Empty when it was changed."
           }
         ]
       },
@@ -871,7 +871,7 @@
     {
       "id": "database.get",
       "name": "Read a row",
-      "description": "Find one row of a database, by its id or by a value in one column, so later steps can use its columns.",
+      "description": "Find one row of a database, by its row ID or by a value in one column, so later steps can use it.",
       "sentence": "Read a row from {target}",
       "type": "native",
       "handler": "database.get",
@@ -892,7 +892,7 @@
             "kind": "databaseColumns",
             "databaseField": "target"
           },
-          "description": "The column to look in. Leave it empty to find the row by its id."
+          "description": "The column to look in. Leave it empty to find the row by its row ID."
         },
         {
           "id": "match",
@@ -927,7 +927,7 @@
           {
             "path": "values",
             "type": "object",
-            "description": "The row's columns by column id, such as values.game."
+            "description": "The row's column values, such as values.game."
           }
         ]
       },
@@ -938,7 +938,7 @@
     {
       "id": "print",
       "name": "Print",
-      "description": "Log the step's parameters to the workflow service log. Useful for debugging workflow shape and expression resolution.",
+      "description": "Write the step's values to the log, to check what a trigger is doing.",
       "type": "native",
       "handler": "print",
       "taxonomy": [
@@ -1190,7 +1190,7 @@
           {
             "path": "endsAt",
             "type": "number",
-            "description": "When a running timer reaches zero, in milliseconds since the Unix epoch; null when it is stopped."
+            "description": "When a running timer reaches zero, as a timestamp in milliseconds; empty when it is stopped."
           }
         ]
       },
@@ -1240,7 +1240,7 @@
           {
             "path": "endsAt",
             "type": "number",
-            "description": "When a running timer reaches zero, in milliseconds since the Unix epoch; null when it is stopped."
+            "description": "When a running timer reaches zero, as a timestamp in milliseconds; empty when it is stopped."
           }
         ]
       },
@@ -1290,7 +1290,7 @@
           {
             "path": "endsAt",
             "type": "number",
-            "description": "When a running timer reaches zero, in milliseconds since the Unix epoch; null when it is stopped."
+            "description": "When a running timer reaches zero, as a timestamp in milliseconds; empty when it is stopped."
           }
         ]
       },
@@ -1348,7 +1348,7 @@
           {
             "path": "endsAt",
             "type": "number",
-            "description": "When a running timer reaches zero, in milliseconds since the Unix epoch; null when it is stopped."
+            "description": "When a running timer reaches zero, as a timestamp in milliseconds; empty when it is stopped."
           }
         ]
       },
@@ -1406,7 +1406,7 @@
           {
             "path": "endsAt",
             "type": "number",
-            "description": "When a running timer reaches zero, in milliseconds since the Unix epoch; null when it is stopped."
+            "description": "When a running timer reaches zero, as a timestamp in milliseconds; empty when it is stopped."
           }
         ]
       },
@@ -1451,7 +1451,7 @@
           {
             "path": "endsAt",
             "type": "number",
-            "description": "When a running timer reaches zero, in milliseconds since the Unix epoch; null when it is stopped."
+            "description": "When a running timer reaches zero, as a timestamp in milliseconds; empty when it is stopped."
           }
         ]
       },
@@ -1503,7 +1503,7 @@
           {
             "path": "reason",
             "type": "string",
-            "description": "Why it did not: `full` or `duplicate`. Empty when it was added."
+            "description": "Why it did not: full or duplicate. Empty when it was added."
           },
           {
             "path": "position",
@@ -1742,12 +1742,12 @@
           {
             "path": "nextAt",
             "type": "number",
-            "description": "Its next run, in milliseconds since the Unix epoch; null when it is stopped."
+            "description": "Its next run, as a timestamp in milliseconds; empty when it is stopped."
           },
           {
             "path": "lastFiredAt",
             "type": "number",
-            "description": "Its last run, in milliseconds since the Unix epoch; null when it has not run."
+            "description": "Its last run, as a timestamp in milliseconds; empty when it has not run."
           }
         ]
       },
@@ -1787,12 +1787,12 @@
           {
             "path": "nextAt",
             "type": "number",
-            "description": "Its next run, in milliseconds since the Unix epoch; null when it is stopped."
+            "description": "Its next run, as a timestamp in milliseconds; empty when it is stopped."
           },
           {
             "path": "lastFiredAt",
             "type": "number",
-            "description": "Its last run, in milliseconds since the Unix epoch; null when it has not run."
+            "description": "Its last run, as a timestamp in milliseconds; empty when it has not run."
           }
         ]
       },
@@ -1832,12 +1832,12 @@
           {
             "path": "nextAt",
             "type": "number",
-            "description": "Its next run, in milliseconds since the Unix epoch; null when it is stopped."
+            "description": "Its next run, as a timestamp in milliseconds; empty when it is stopped."
           },
           {
             "path": "lastFiredAt",
             "type": "number",
-            "description": "Its last run, in milliseconds since the Unix epoch; null when it has not run."
+            "description": "Its last run, as a timestamp in milliseconds; empty when it has not run."
           }
         ]
       },
@@ -1850,7 +1850,7 @@
     {
       "id": "workflow_created",
       "name": "Workflow created",
-      "description": "Fires when any workflow is created. Useful for meta-workflows that audit, mirror, or react to workflow authoring activity.",
+      "description": "Fires when a workflow is created.",
       "type": "eventbus",
       "event": "db.workflow.created.*",
       "taxonomy": [
@@ -1861,32 +1861,32 @@
           {
             "path": "ID",
             "type": "string",
-            "description": "Workflow id."
+            "description": "The workflow's ID."
           },
           {
             "path": "Name",
             "type": "string",
-            "description": "Workflow name."
+            "description": "The workflow's name."
           },
           {
             "path": "Steps",
             "type": "string",
-            "description": "JSON-encoded step list."
+            "description": "The workflow's steps."
           },
           {
             "path": "Trigger",
             "type": "string",
-            "description": "JSON-encoded trigger binding."
+            "description": "The trigger the workflow runs on."
           },
           {
             "path": "Taxonomy",
             "type": "string",
-            "description": "JSON-encoded classification terms."
+            "description": "How the workflow is classified."
           },
           {
             "path": "CreatedByType",
             "type": "string",
-            "description": "USER for UI-authored workflows, MODULE for module-registered ones.",
+            "description": "Whether it was made in the dashboard or added by a module.",
             "options": [
               { "value": "USER", "label": "Made in the dashboard" },
               { "value": "MODULE", "label": "Added by a module" }
@@ -1895,17 +1895,17 @@
           {
             "path": "CreatedByRef",
             "type": "string",
-            "description": "Manifest module id for MODULE rows; empty for USER rows."
+            "description": "The module that added it; empty when made in the dashboard."
           },
           {
             "path": "ManifestID",
             "type": "string",
-            "description": "Manifest-local workflow id for MODULE rows; empty for USER rows."
+            "description": "The workflow's ID within its module; empty when made in the dashboard."
           },
           {
             "path": "Enabled",
             "type": "boolean",
-            "description": "Whether the workflow runtime considers this row a candidate to run."
+            "description": "Whether the workflow is turned on."
           }
         ]
       }
@@ -1913,7 +1913,7 @@
     {
       "id": "workflow_updated",
       "name": "Workflow updated",
-      "description": "Fires when any workflow is updated.",
+      "description": "Fires when a workflow is changed.",
       "type": "eventbus",
       "event": "db.workflow.updated.*",
       "taxonomy": [
@@ -1924,32 +1924,32 @@
           {
             "path": "ID",
             "type": "string",
-            "description": "Workflow id."
+            "description": "The workflow's ID."
           },
           {
             "path": "Name",
             "type": "string",
-            "description": "Workflow name."
+            "description": "The workflow's name."
           },
           {
             "path": "Steps",
             "type": "string",
-            "description": "JSON-encoded step list."
+            "description": "The workflow's steps."
           },
           {
             "path": "Trigger",
             "type": "string",
-            "description": "JSON-encoded trigger binding."
+            "description": "The trigger the workflow runs on."
           },
           {
             "path": "Taxonomy",
             "type": "string",
-            "description": "JSON-encoded classification terms."
+            "description": "How the workflow is classified."
           },
           {
             "path": "CreatedByType",
             "type": "string",
-            "description": "USER for UI-authored workflows, MODULE for module-registered ones.",
+            "description": "Whether it was made in the dashboard or added by a module.",
             "options": [
               { "value": "USER", "label": "Made in the dashboard" },
               { "value": "MODULE", "label": "Added by a module" }
@@ -1958,17 +1958,17 @@
           {
             "path": "CreatedByRef",
             "type": "string",
-            "description": "Manifest module id for MODULE rows; empty for USER rows."
+            "description": "The module that added it; empty when made in the dashboard."
           },
           {
             "path": "ManifestID",
             "type": "string",
-            "description": "Manifest-local workflow id for MODULE rows; empty for USER rows."
+            "description": "The workflow's ID within its module; empty when made in the dashboard."
           },
           {
             "path": "Enabled",
             "type": "boolean",
-            "description": "Whether the workflow runtime considers this row a candidate to run."
+            "description": "Whether the workflow is turned on."
           }
         ]
       }
@@ -1976,7 +1976,7 @@
     {
       "id": "workflow_deleted",
       "name": "Workflow deleted",
-      "description": "Fires when any workflow is deleted.",
+      "description": "Fires when a workflow is deleted.",
       "type": "eventbus",
       "event": "db.workflow.deleted.*",
       "taxonomy": [
@@ -1987,32 +1987,32 @@
           {
             "path": "ID",
             "type": "string",
-            "description": "Workflow id."
+            "description": "The workflow's ID."
           },
           {
             "path": "Name",
             "type": "string",
-            "description": "Workflow name."
+            "description": "The workflow's name."
           },
           {
             "path": "Steps",
             "type": "string",
-            "description": "JSON-encoded step list."
+            "description": "The workflow's steps."
           },
           {
             "path": "Trigger",
             "type": "string",
-            "description": "JSON-encoded trigger binding."
+            "description": "The trigger the workflow runs on."
           },
           {
             "path": "Taxonomy",
             "type": "string",
-            "description": "JSON-encoded classification terms."
+            "description": "How the workflow is classified."
           },
           {
             "path": "CreatedByType",
             "type": "string",
-            "description": "USER for UI-authored workflows, MODULE for module-registered ones.",
+            "description": "Whether it was made in the dashboard or added by a module.",
             "options": [
               { "value": "USER", "label": "Made in the dashboard" },
               { "value": "MODULE", "label": "Added by a module" }
@@ -2021,17 +2021,17 @@
           {
             "path": "CreatedByRef",
             "type": "string",
-            "description": "Manifest module id for MODULE rows; empty for USER rows."
+            "description": "The module that added it; empty when made in the dashboard."
           },
           {
             "path": "ManifestID",
             "type": "string",
-            "description": "Manifest-local workflow id for MODULE rows; empty for USER rows."
+            "description": "The workflow's ID within its module; empty when made in the dashboard."
           },
           {
             "path": "Enabled",
             "type": "boolean",
-            "description": "Whether the workflow runtime considers this row a candidate to run."
+            "description": "Whether the workflow is turned on."
           }
         ]
       }
@@ -2039,7 +2039,7 @@
     {
       "id": "chat_command",
       "name": "Chat command",
-      "description": "Fires when a viewer runs a chat command. Bind a workflow to one command by naming it in the trigger's `command` field.",
+      "description": "Fires when a viewer uses a chat command. Name a command to react to just that one.",
       "type": "eventbus",
       "event": "chat.command.*",
       "taxonomy": [
@@ -2080,14 +2080,14 @@
           "type": "text",
           "required": true,
           "placeholder": "hello",
-          "description": "The command word, without its prefix (e.g. `sr` for `!sr`)."
+          "description": "The command word without the !, like sr for !sr."
         }
       ]
     },
     {
       "id": "module_installed",
       "name": "Module installed",
-      "description": "Fires when a module is installed. Useful for workflows that announce new capabilities or seed configuration for a module as it arrives.",
+      "description": "Fires when a module is installed.",
       "type": "eventbus",
       "event": "module.change.add",
       "taxonomy": [
@@ -2098,17 +2098,17 @@
           {
             "path": "module_id",
             "type": "string",
-            "description": "Manifest-local module id."
+            "description": "The module's ID."
           },
           {
             "path": "name",
             "type": "string",
-            "description": "Module display name."
+            "description": "The module's name."
           },
           {
             "path": "version",
             "type": "string",
-            "description": "Installed version."
+            "description": "The version installed."
           }
         ]
       }
@@ -2139,7 +2139,7 @@
           {
             "path": "target",
             "type": "string",
-            "description": "The counter, by canonical id."
+            "description": "The counter that changed."
           },
           {
             "path": "previous",
@@ -2180,7 +2180,7 @@
           {
             "path": "target",
             "type": "string",
-            "description": "The timer, by canonical id."
+            "description": "The timer that started."
           },
           {
             "path": "remaining",
@@ -2216,7 +2216,7 @@
           {
             "path": "target",
             "type": "string",
-            "description": "The timer, by canonical id."
+            "description": "The timer that was paused."
           },
           {
             "path": "remaining",
@@ -2252,7 +2252,7 @@
           {
             "path": "target",
             "type": "string",
-            "description": "The timer, by canonical id."
+            "description": "The timer that ended."
           }
         ]
       }
@@ -2283,7 +2283,7 @@
           {
             "path": "target",
             "type": "string",
-            "description": "The queue, by canonical id."
+            "description": "The queue the entry joined."
           },
           {
             "path": "entry",
@@ -2329,7 +2329,7 @@
           {
             "path": "target",
             "type": "string",
-            "description": "The queue, by canonical id."
+            "description": "The queue the entry was taken from."
           },
           {
             "path": "entry",
@@ -2370,7 +2370,7 @@
           {
             "path": "target",
             "type": "string",
-            "description": "The schedule, by canonical id."
+            "description": "The schedule that ran."
           },
           {
             "path": "firedAt",
@@ -2382,7 +2382,7 @@
     },
     {
       "id": "goal_reached",
-      "name": "Counter Goal Met",
+      "name": "Counter goal reached",
       "description": "Fires when a counter reaches one of its goals, whatever counted toward it. Reaching a goal again after dropping below it fires again only when the counter is set to announce every time.",
       "type": "eventbus",
       "event": "goal.reached",
@@ -2408,7 +2408,7 @@
           {
             "path": "target",
             "type": "string",
-            "description": "The counter, by canonical id."
+            "description": "The counter that reached the goal."
           },
           {
             "path": "previous",
@@ -2470,7 +2470,7 @@
           {
             "path": "viewerId",
             "type": "string",
-            "description": "The viewer, by platform user id.",
+            "description": "The viewer's user ID on their platform.",
             "identity": "viewer",
             "displayName": "viewerName"
           },
@@ -2482,7 +2482,7 @@
           {
             "path": "segmentId",
             "type": "string",
-            "description": "The segment, by canonical id."
+            "description": "The segment."
           },
           {
             "path": "platform",
@@ -2492,17 +2492,17 @@
           {
             "path": "sessionId",
             "type": "string",
-            "description": "The stream session the change happened in."
+            "description": "The stream it happened in."
           },
           {
             "path": "facts",
             "type": "object",
-            "description": "Every fact the segment reads, nested by owner and slug like ${viewer.*}: a fact id {owner}:fact:{slug} is at facts.{owner}.{slug}, as { before, after } around the change."
+            "description": "What the segment knows about the viewer, before and after the change."
           },
           {
             "path": "cause",
             "type": "object",
-            "description": "The event that caused the change, as { source, eventId }."
+            "description": "The event that caused the change."
           }
         ]
       }
@@ -2534,7 +2534,7 @@
           {
             "path": "viewerId",
             "type": "string",
-            "description": "The viewer, by platform user id.",
+            "description": "The viewer's user ID on their platform.",
             "identity": "viewer",
             "displayName": "viewerName"
           },
@@ -2546,7 +2546,7 @@
           {
             "path": "segmentId",
             "type": "string",
-            "description": "The segment, by canonical id."
+            "description": "The segment."
           },
           {
             "path": "platform",
@@ -2556,25 +2556,25 @@
           {
             "path": "sessionId",
             "type": "string",
-            "description": "The stream session the change happened in."
+            "description": "The stream it happened in."
           },
           {
             "path": "facts",
             "type": "object",
-            "description": "Every fact the segment reads, nested by owner and slug like ${viewer.*}: a fact id {owner}:fact:{slug} is at facts.{owner}.{slug}, as { before, after } around the change."
+            "description": "What the segment knows about the viewer, before and after the change."
           },
           {
             "path": "cause",
             "type": "object",
-            "description": "The event that caused the change, as { source, eventId }."
+            "description": "The event that caused the change."
           }
         ]
       }
     },
     {
       "id": "userpage_form_submitted",
-      "name": "User page form submitted",
-      "description": "Fires when a viewer sends a form on your public page. Answers are whatever the viewer typed, so treat them as untrusted text.",
+      "name": "Form submitted",
+      "description": "Fires when a viewer sends a form on your public page. Answers are whatever the viewer typed.",
       "type": "eventbus",
       "event": "userpage.form.submitted",
       "taxonomy": [
@@ -2598,7 +2598,7 @@
           {
             "path": "submissionId",
             "type": "string",
-            "description": "The submission's id, unique to it. Each submission fires once."
+            "description": "A unique ID for this submission."
           },
           {
             "path": "pageId",
@@ -2608,7 +2608,7 @@
           {
             "path": "formId",
             "type": "string",
-            "description": "The form, by canonical id."
+            "description": "The form."
           },
           {
             "path": "formTitle",
@@ -2618,22 +2618,22 @@
           {
             "path": "submittedAt",
             "type": "string",
-            "description": "When the viewer sent it, as an RFC 3339 UTC time."
+            "description": "When the viewer sent it, in UTC."
           },
           {
             "path": "viewer",
             "type": "object",
-            "description": "Who sent it. Always present: a viewer who was not signed in has a null platform and platformUserId and the name \"anonymous\"."
+            "description": "Who sent it. A viewer who was not signed in shows as \"anonymous\"."
           },
           {
             "path": "viewer.platform",
             "type": "string",
-            "description": "The platform the viewer signed in with, or null when they did not sign in."
+            "description": "The platform the viewer signed in with, or empty when they did not sign in."
           },
           {
             "path": "viewer.platformUserId",
             "type": "string",
-            "description": "The viewer, by platform user id, or null when they did not sign in. Test this to tell anonymous submissions apart.",
+            "description": "The viewer's user ID on their platform, or empty when they did not sign in. Check this to tell anonymous submissions apart.",
             "identity": "viewer",
             "displayName": "viewer.displayName"
           },
@@ -2650,12 +2650,12 @@
           {
             "path": "fields",
             "type": "array",
-            "description": "Each answer in form order, as { id, label, type, value }. The value is a string, or a boolean for a checkbox."
+            "description": "Each answer, in the order of the form."
           },
           {
             "path": "answers",
             "type": "object",
-            "description": "Each answer's value under its question's id: answers.<question id>."
+            "description": "Each answer by its question's ID, such as answers.<question id>."
           }
         ]
       }
@@ -2665,7 +2665,7 @@
     {
       "id": "alert",
       "name": "Alert",
-      "description": "Where alerts play on this scene. Alert actions target alert widgets by name, and play one alert at a time.",
+      "description": "Where alerts play on this scene, one at a time.",
       "surfaces": [
         "scene"
       ],
@@ -2677,7 +2677,7 @@
           "type": "text",
           "required": true,
           "defaultValue": "default",
-          "description": "Alert actions that target this name play here."
+          "description": "Alerts sent to this name play here."
         }
       ],
       "taxonomy": [
@@ -2944,7 +2944,7 @@
           "label": "Animation",
           "type": "media",
           "required": true,
-          "description": "A Lottie JSON file from the asset library."
+          "description": "A Lottie animation file from your library."
         },
         {
           "id": "textLayer",
@@ -3299,7 +3299,7 @@
         },
         {
           "id": "record",
-          "label": "Row id",
+          "label": "Row ID",
           "type": "text",
           "visibleWhen": {
             "field": "which",
@@ -3307,7 +3307,7 @@
               "record"
             ]
           },
-          "description": "The id of the row to show."
+          "description": "The ID of the row to show."
         }
       ],
       "taxonomy": [
@@ -3320,13 +3320,13 @@
       "id": "timer_end",
       "function": "timer.expire",
       "maxPending": 256,
-      "description": "Ends a running timer the moment it reaches zero and announces that it ended."
+      "description": "Ends a running timer the moment it reaches zero and lets everything know it ended."
     },
     {
       "id": "schedule_due",
       "function": "schedule.fire",
       "maxPending": 256,
-      "description": "Runs a schedule the moment it comes due, announces the run and arms the next one."
+      "description": "Runs a schedule the moment it comes due and sets up the next run."
     }
   ],
   "backgroundTasks": [
@@ -3335,14 +3335,14 @@
       "function": "timer.reconcile",
       "schedule": "* * * * *",
       "runOnLoad": true,
-      "description": "When the module loads and once a minute after, ends every running timer that has run out and arms the end of the rest."
+      "description": "When the module loads and once a minute after, ends every timer that has run out and sets up the end of the others."
     },
     {
       "id": "schedule_reconcile",
       "function": "schedule.reconcile",
       "schedule": "* * * * *",
       "runOnLoad": true,
-      "description": "When the module loads and once a minute after, arms the next run of every running schedule and applies edited intervals."
+      "description": "When the module loads and once a minute after, sets up the next run of every running schedule and applies changed intervals."
     }
   ]
 }
