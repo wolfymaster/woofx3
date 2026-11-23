@@ -136,6 +136,7 @@ describe("the RPC surface a client sees", () => {
       "setStreamEventBroadcaster",
       "setEventLogSelectionSource",
       "setEngineEventStream",
+      "setLogs",
       "dropSessionSubscriptions",
       "dropClientSubscriptions",
       "initSubscriptions",
