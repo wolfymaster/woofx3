@@ -10,13 +10,15 @@
 
 mod file_exporter;
 
+use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use chrono::Local;
 use opentelemetry::trace::TracerProvider as _;
+use opentelemetry::KeyValue;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_otlp::{WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use opentelemetry_sdk::Resource;
@@ -35,6 +37,7 @@ const DEFAULT_LOG_LEVEL: &str = "info";
 const LOG_DIRECTORY_ENV: &str = "WOOFX3_LOG_DIR";
 const LOG_LEVEL_ENV: &str = "WOOFX3_LOG_LEVEL";
 const RUST_LOG_ENV: &str = "RUST_LOG";
+const SERVICE_VERSION_KEY: &str = "service.version";
 const FILE_TIMESTAMP_FORMAT: &str = "%Y%m%d_%H%M";
 
 /// The OpenTelemetry exporters emit their own diagnostics through `tracing`.
@@ -178,13 +181,14 @@ fn build_tracer_provider(
     otel: &OtelConfig,
     log_directory: &Path,
 ) -> Result<SdkTracerProvider, LoggingError> {
-    let builder = SdkTracerProvider::builder().with_resource(resource_for(service_name));
+    let builder = SdkTracerProvider::builder().with_resource(resource_for(service_name, otel));
 
     match &otel.exporter_endpoint {
         Some(endpoint) => {
             let exporter = opentelemetry_otlp::SpanExporter::builder()
                 .with_http()
                 .with_endpoint(endpoint)
+                .with_headers(exporter_headers(otel))
                 .build()?;
             Ok(builder.with_batch_exporter(exporter).build())
         }
@@ -213,18 +217,37 @@ fn build_logger_provider(
     let exporter = opentelemetry_otlp::LogExporter::builder()
         .with_http()
         .with_endpoint(endpoint)
+        .with_headers(exporter_headers(otel))
         .build()?;
 
     Ok(SdkLoggerProvider::builder()
-        .with_resource(resource_for(service_name))
+        .with_resource(resource_for(service_name, otel))
         .with_batch_exporter(exporter)
         .build())
 }
 
-fn resource_for(service_name: &str) -> Resource {
+/// Later attributes win on a duplicate key, so `service.name` goes last: the
+/// process owns its name and configuration cannot override it.
+fn resource_for(service_name: &str, otel: &OtelConfig) -> Resource {
+    let version = otel
+        .service_version
+        .iter()
+        .map(|version| KeyValue::new(SERVICE_VERSION_KEY, version.clone()));
+    let configured = otel
+        .resource_attributes
+        .iter()
+        .map(|(key, value)| KeyValue::new(key.clone(), value.clone()));
     Resource::builder()
+        .with_attributes(version.chain(configured))
         .with_service_name(service_name.to_string())
         .build()
+}
+
+fn exporter_headers(otel: &OtelConfig) -> HashMap<String, String> {
+    otel.exporter_headers
+        .iter()
+        .map(|(name, value)| (name.clone(), value.expose().to_string()))
+        .collect()
 }
 
 fn resolve_filter() -> Result<EnvFilter, LoggingError> {
@@ -272,6 +295,77 @@ fn trace_file_name(service_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn otel_from(pairs: &[(&str, &str)]) -> OtelConfig {
+        let mut config = Config::default();
+        for (key, value) in pairs {
+            config
+                .values
+                .insert((*key).to_string(), serde_json::json!(value));
+        }
+        config.otel().expect("valid otel config")
+    }
+
+    fn resource_value(resource: &Resource, key: &str) -> Option<String> {
+        resource
+            .iter()
+            .find(|(name, _)| name.as_str() == key)
+            .map(|(_, value)| value.to_string())
+    }
+
+    #[test]
+    fn test_resource_for_unset_keys_carry_only_the_service_name() {
+        let resource = resource_for("barkloader", &otel_from(&[]));
+        assert_eq!(
+            resource_value(&resource, "service.name").as_deref(),
+            Some("barkloader")
+        );
+        assert_eq!(resource_value(&resource, "service.version"), None);
+    }
+
+    #[test]
+    fn test_resource_for_merges_attributes_and_version() {
+        let otel = otel_from(&[
+            (
+                "otelResourceAttributes",
+                "service.namespace=eng-1,woofx3.engine.id=7",
+            ),
+            ("version", "v1.2.3"),
+        ]);
+        let resource = resource_for("barkloader", &otel);
+        assert_eq!(
+            resource_value(&resource, "service.namespace").as_deref(),
+            Some("eng-1")
+        );
+        assert_eq!(
+            resource_value(&resource, "woofx3.engine.id").as_deref(),
+            Some("7")
+        );
+        assert_eq!(
+            resource_value(&resource, "service.version").as_deref(),
+            Some("v1.2.3")
+        );
+    }
+
+    #[test]
+    fn test_resource_for_service_name_cannot_be_overridden() {
+        let otel = otel_from(&[("otelResourceAttributes", "service.name=evil")]);
+        let resource = resource_for("barkloader", &otel);
+        assert_eq!(
+            resource_value(&resource, "service.name").as_deref(),
+            Some("barkloader")
+        );
+    }
+
+    #[test]
+    fn test_exporter_headers_expose_values_for_the_wire() {
+        let otel = otel_from(&[("otelExporterHeaders", "Authorization=Bearer t")]);
+        let headers = exporter_headers(&otel);
+        assert_eq!(
+            headers.get("Authorization").map(String::as_str),
+            Some("Bearer t")
+        );
+    }
 
     #[test]
     fn log_file_name_matches_the_shared_convention() {

@@ -2,6 +2,8 @@
 //! `shared/common/golang/config/secret.go` and `validateSecret` in
 //! `shared/common/typescript/runtime/secret.ts`.
 
+use std::fmt;
+
 use thiserror::Error;
 
 use crate::camel_to_screaming_snake;
@@ -24,6 +26,29 @@ const PLACEHOLDER_SECRETS: &[&str] = &[
     "xxx",
     "test",
 ];
+
+/// A secret value that never prints: `Debug` is redacted and there is no
+/// `Display`, so logging a struct that holds one cannot leak it. Read it with
+/// `expose` at the one place it is sent.
+#[derive(Clone, PartialEq, Eq)]
+pub struct SecretString(String);
+
+impl SecretString {
+    pub fn new(value: impl Into<String>) -> SecretString {
+        SecretString(value.into())
+    }
+
+    /// The raw value, for handing to the client that authenticates with it.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for SecretString {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("SecretString(<redacted>)")
+    }
+}
 
 /// Why `validate_secret` refused a value. Each variant carries the config key
 /// and its `WOOFX3_*` variable, never the value.
@@ -78,6 +103,13 @@ mod tests {
             Err(SecretError::Placeholder { .. }) => Want::Placeholder,
             Err(SecretError::TooShort { .. }) => Want::TooShort,
         }
+    }
+
+    #[test]
+    fn test_secret_string_debug_is_redacted() {
+        let secret = SecretString::new("hunter2-hunter2");
+        assert!(!format!("{secret:?}").contains("hunter2"));
+        assert_eq!(secret.expose(), "hunter2-hunter2");
     }
 
     #[test]
