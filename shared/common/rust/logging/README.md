@@ -65,8 +65,8 @@ Both pair lists use the same syntax as the standard `OTEL_RESOURCE_ATTRIBUTES` a
 
 - Pairs are separated by `,`; whitespace around pairs, keys and values is trimmed and empty
   segments are ignored.
-- Each pair splits on its **first** `=`, so values may contain `=`. Values are not
-  percent-decoded.
+- Each pair splits on its **first** `=`, so values may contain `=`. Keys and values are
+  then percent-decoded (`%20`, `%2C`); a bad escape stops startup.
 - A later duplicate key wins.
 - A pair with no `=` or an empty key is a startup error. The error names a malformed attribute
   pair, but only the position of a malformed header pair, because header values are secrets.

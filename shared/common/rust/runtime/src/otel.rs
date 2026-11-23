@@ -36,7 +36,8 @@ pub struct OtelConfig {
 
 /// Splits `key=value,key=value` on commas, then each pair on its first `=`.
 /// Whitespace around pairs, keys and values is trimmed, empty segments are
-/// skipped, and a later duplicate key wins. Values are not percent-decoded.
+/// skipped, and a later duplicate key wins. Keys and values are percent-decoded
+/// after splitting, as in the standard syntax.
 /// `redact_pairs` keeps a malformed pair's text out of the error because
 /// header pairs hold secrets.
 fn parse_pairs(
@@ -52,9 +53,22 @@ fn parse_pairs(
             .map(|(name, value)| (name.trim(), value.trim()))
             .filter(|(name, _)| !name.is_empty());
         match entry {
-            Some((name, value)) => {
-                parsed.insert(name.to_string(), value.to_string());
-            }
+            Some((name, value)) => match (percent_decode(name), percent_decode(value)) {
+                (Some(name), Some(value)) => {
+                    parsed.insert(name, value);
+                }
+                _ => {
+                    let pair = if redact_pairs {
+                        format!("#{}", index + 1)
+                    } else {
+                        format!("`{segment}`")
+                    };
+                    return Err(ConfigError::InvalidPair {
+                        key: key.to_string(),
+                        pair,
+                    });
+                }
+            },
             None => {
                 let pair = if redact_pairs {
                     format!("#{}", index + 1)
@@ -69,6 +83,25 @@ fn parse_pairs(
         }
     }
     Ok(parsed)
+}
+
+/// Decodes `%XX` escapes; `None` on a truncated or non-hex escape, or when the
+/// result is not UTF-8. `+` stays `+`: this is not form encoding.
+fn percent_decode(raw: &str) -> Option<String> {
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = raw.get(i + 1..i + 3)?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
 }
 
 impl OtelConfig {
@@ -143,6 +176,24 @@ mod tests {
             );
         }
         Config { values }
+    }
+
+    #[test]
+    fn test_parse_pairs_percent_decodes_keys_and_values() {
+        let parsed =
+            parse_pairs("k", "authorization=Basic%20abc%3D%3D,a%2Eb=x%2Cy,p=1+2", true).unwrap();
+        assert_eq!(parsed["authorization"], "Basic abc==");
+        assert_eq!(parsed["a.b"], "x,y");
+        assert_eq!(parsed["p"], "1+2");
+    }
+
+    #[test]
+    fn test_parse_pairs_rejects_bad_escape_without_echoing_secret() {
+        for raw in ["a=%zz", "a=%4", "a=%FF"] {
+            let err = parse_pairs("k", raw, true).unwrap_err();
+            assert!(matches!(err, ConfigError::InvalidPair { .. }));
+            assert!(!err.to_string().contains("%zz"));
+        }
     }
 
     #[test]
@@ -233,7 +284,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             otel.resource_attributes,
-            attributes(&[("a", "1"), ("b", "x=y%20z"), ("c", "")])
+            attributes(&[("a", "1"), ("b", "x=y z"), ("c", "")])
         );
     }
 

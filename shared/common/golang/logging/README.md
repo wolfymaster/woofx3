@@ -81,7 +81,7 @@ and the global no-op `TracerProvider` left in place.
   whitespace around keys and values is trimmed, empty segments are ignored and
   later duplicates win. A pair without `=` or with an empty key stops startup.
   `service.name` is always the logger's own service name and cannot be
-  overridden. Values are not percent-decoded. `Config.OTelResourceAttributes`
+  overridden. Keys and values are percent-decoded (`%20`, `%2C`); a bad escape stops startup. `Config.OTelResourceAttributes`
   takes the same string and wins over the variable.
 - `WOOFX3_OTEL_EXPORTER_HEADERS` -- comma-separated `key=value` headers sent on
   every OTLP/HTTP request (logs and traces), same syntax as above, for example

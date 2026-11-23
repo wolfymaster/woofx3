@@ -87,8 +87,9 @@ Precedence matches the rest of the repo:
 | `WOOFX3_OTEL_EXPORTER_HEADERS` | unset | comma-separated `key=value` headers sent on every OTLP request (logs and traces), same syntax as `OTEL_EXPORTER_OTLP_HEADERS`. Treat as a secret; it is never logged |
 | `WOOFX3_VERSION` | unset | reported as `service.version` on every resource |
 
-A pair without a key fails startup. Values are split on the first `=`, so a
-Basic credential ending in `==` survives, and are not percent-decoded.
+A pair without a key fails startup. Values are split on the first `=`, then
+percent-decoded as in the standard syntax, so `Basic%20abc` becomes `Basic abc` and `%2C`
+gives a literal comma. A bad escape fails startup.
 
 Booleans accept `1` or `true` (case-insensitive) for true; anything else is
 false. An unset or empty value falls back to the default.

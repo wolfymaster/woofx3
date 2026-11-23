@@ -3,6 +3,7 @@ package logging
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -228,9 +229,8 @@ func firstNonEmpty(values ...string) string {
 // parseKeyValueList parses "k1=v1,k2=v2". Segments split on the first '=', so
 // values may contain '='; later duplicate keys win. When secret is set, values
 // and value-less segments (which may themselves be the secret) stay out of
-// errors.
-// shortcut: no percent-decoding of keys or values, upgrade if a collector
-// needs commas or '=' inside a value.
+// errors. Keys and values are percent-decoded after splitting, as in the
+// standard OTEL_EXPORTER_OTLP_HEADERS, so "%20" and an encoded comma survive.
 func parseKeyValueList(raw string, source string, secret bool) (map[string]string, error) {
 	out := map[string]string{}
 	for index, segment := range strings.Split(raw, ",") {
@@ -246,7 +246,13 @@ func parseKeyValueList(raw string, source string, secret bool) (map[string]strin
 			}
 			return nil, fmt.Errorf("invalid %s: %q must be key=value with a non-empty key", source, segment)
 		}
-		out[key] = strings.TrimSpace(value)
+		decodedKey, keyErr := url.PathUnescape(key)
+		decodedValue, valueErr := url.PathUnescape(strings.TrimSpace(value))
+		if keyErr != nil || valueErr != nil {
+			// The segment is never echoed: it may hold a credential.
+			return nil, fmt.Errorf("invalid %s: entry %d has an invalid percent-escape", source, index+1)
+		}
+		out[decodedKey] = decodedValue
 	}
 	return out, nil
 }

@@ -4,8 +4,8 @@
  * skipped: a dropped auth header or engine tag would ship telemetry
  * unauthenticated or unattributed with nothing to show for it.
  *
- * shortcut: no percent-decoding, so a value containing a comma cannot be
- * expressed; upgrade when an attribute value needs one.
+ * Keys and values are percent-decoded after splitting, as in the standard
+ * syntax, so `Basic%20abc` and an encoded comma survive.
  */
 export function parseOtelPairs(raw: string | undefined, envName: string): Record<string, string> {
   const pairs: Record<string, string> = {};
@@ -23,7 +23,11 @@ export function parseOtelPairs(raw: string | undefined, envName: string): Record
       // The segment is never echoed: for headers it may hold a credential.
       throw new Error(`${envName} must be comma-separated key=value pairs; a pair has no key`);
     }
-    pairs[key] = trimmed.slice(separator + 1).trim();
+    try {
+      pairs[decodeURIComponent(key)] = decodeURIComponent(trimmed.slice(separator + 1).trim());
+    } catch {
+      throw new Error(`${envName} has an invalid percent-escape`);
+    }
   }
   return pairs;
 }

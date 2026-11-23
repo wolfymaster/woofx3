@@ -24,6 +24,13 @@ describe("parseOtelPairs", () => {
       want: { authorization: "Basic abc==" },
     },
     { name: "later duplicate wins", raw: "a=1,a=2", want: { a: "2" } },
+    {
+      name: "percent-decodes values",
+      raw: "authorization=Basic%20abc%3D%3D,k=a%2Cb",
+      want: { authorization: "Basic abc==", k: "a,b" },
+    },
+    { name: "plus stays plus", raw: "a=1+2", want: { a: "1+2" } },
+    { name: "percent-decodes keys", raw: "a%2Eb=1", want: { "a.b": "1" } },
     { name: "empty value is allowed", raw: "a=", want: { a: "" } },
   ];
   for (const { name, raw, want } of cases) {
@@ -31,6 +38,12 @@ describe("parseOtelPairs", () => {
       expect(parseOtelPairs(raw, "X")).toEqual(want);
     });
   }
+
+  test("a bad percent-escape throws without echoing the value", () => {
+    expect(() => parseOtelPairs("a=%zzhunter2", "WOOFX3_OTEL_EXPORTER_HEADERS")).toThrow(
+      "WOOFX3_OTEL_EXPORTER_HEADERS has an invalid percent-escape"
+    );
+  });
 
   for (const raw of ["novalue", "=v", " =v"]) {
     test(`malformed ${JSON.stringify(raw)} throws without echoing the pair`, () => {
