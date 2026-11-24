@@ -223,7 +223,7 @@ export class StreamEventBroadcaster {
  * that names no platform gets its module's id, as the event log records it,
  * so a live frame and its logged copy read the same.
  */
-function toFrame(subject: string, ce: Record<string, unknown>, moduleId: string | undefined): StreamEventFrame {
+export function toFrame(subject: string, ce: Record<string, unknown>, moduleId: string | undefined): StreamEventFrame {
   return {
     id: typeof ce.id === "string" ? ce.id : undefined,
     type: typeof ce.type === "string" ? ce.type : subject,

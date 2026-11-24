@@ -22,6 +22,7 @@ import type {
 } from "./api";
 import type { CommandSnapshot } from "./command";
 import type { DatabaseRecordChange } from "./databases";
+import type { StreamEventFrame } from "./stream-events";
 /**
  * Canonical event-type strings for every engine callback. Prefer
  * `EngineEventType.MODULE_INSTALLED` over the raw string in application
@@ -98,6 +99,7 @@ export const EngineEventType = {
   UI_SETTING_CHANGED: "ui.setting.changed",
   TWITCH_LINK_CHANGED: "twitch.link.changed",
   CLIENT_PAIRING_STARTED: "client.pairing.started",
+  STREAM_EVENT_PUSHED: "stream.event.pushed",
 } as const;
 
 export type EngineEventType = (typeof EngineEventType)[keyof typeof EngineEventType];
@@ -1571,6 +1573,18 @@ export interface ClientPairingStartedEvent {
 }
 
 /**
+ * A stream event (a follow, a cheer, an ad break, a module's own event) the
+ * engine forwards for a dashboard to show live, the same frame a connected
+ * client would be pushed. Distinct from `stream.online` and `stream.offline`,
+ * which carry session state: those are callbacks about the engine, this one
+ * wraps an event from the stream. Frames fire at human pace; chat never does.
+ */
+export interface StreamEventPushedEvent {
+  type: typeof EngineEventType.STREAM_EVENT_PUSHED;
+  frame: StreamEventFrame;
+}
+
+/**
  * Discriminated union of every event the engine can deliver via webhook.
  * Consumers should narrow on `event.type` — TypeScript will pick the right
  * branch without casts.
@@ -1638,7 +1652,8 @@ export type CallbackEvent =
   | GroupMemberRemovedEvent
   | UISettingChangedEvent
   | TwitchLinkChangedEvent
-  | ClientPairingStartedEvent;
+  | ClientPairingStartedEvent
+  | StreamEventPushedEvent;
 
 /**
  * Lookup from event-type string → payload type. Useful for emitter code
@@ -1708,6 +1723,7 @@ export type CallbackEventByType = {
   [EngineEventType.UI_SETTING_CHANGED]: UISettingChangedEvent;
   [EngineEventType.TWITCH_LINK_CHANGED]: TwitchLinkChangedEvent;
   [EngineEventType.CLIENT_PAIRING_STARTED]: ClientPairingStartedEvent;
+  [EngineEventType.STREAM_EVENT_PUSHED]: StreamEventPushedEvent;
 };
 
 // ---------------------------------------------------------------------------
