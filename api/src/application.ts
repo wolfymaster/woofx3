@@ -76,6 +76,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { SessionSummaryEmitter },
       { StorageChangeEmitter },
       { StreamEventBroadcaster },
+      { StreamEventForwarder },
       { StreamSessionResolver },
       { StreamGaugeSampler },
       { TwitchHelixGauges },
@@ -120,6 +121,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./session-summary-emitter"),
       import("./storage-change-emitter"),
       import("./stream-event-broadcaster"),
+      import("./stream-event-forwarder"),
       import("./stream-session-resolver"),
       import("./stream-gauge-sampler"),
       import("./twitch-helix-gauges"),
@@ -292,6 +294,13 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       const streamEventBroadcaster = new StreamEventBroadcaster(natsClient, logger, this.eventCatalog);
       await streamEventBroadcaster.start();
       api.setStreamEventBroadcaster(streamEventBroadcaster);
+      await new StreamEventForwarder(
+        natsClient,
+        webhookClient,
+        logger,
+        this.eventCatalog,
+        this.eventLogSelection
+      ).start();
       await this.eventCatalog.start();
 
       await initOverlayTokenHandlers(natsClient, webhookClient, logger);
