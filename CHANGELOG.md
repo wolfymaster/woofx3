@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.79.0](https://github.com/wolfymaster/woofx3/compare/v0.78.1...v0.79.0) (2026-11-24)
+
+### Features
+
+* **api:** forward stream events to the dashboard as callbacks ([9287918](https://github.com/wolfymaster/woofx3/commit/928791880b248fe577f2faa7bcdfca76852628c0))
+
 ## [0.78.1](https://github.com/wolfymaster/woofx3/compare/v0.78.0...v0.78.1) (2026-11-23)
 
 ### Bug Fixes
