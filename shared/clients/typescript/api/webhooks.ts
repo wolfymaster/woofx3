@@ -1798,12 +1798,23 @@ export const EngineRequestType = {
    * which spaces them out and retries refusals, instead of competing with it.
    */
   SHOUTOUT_ENQUEUE_REQUESTED: "shoutout.enqueue.requested",
+  /**
+   * The engine needs a current Kick access token for the linked account.
+   * Kick requires the app's client secret for every refresh, so the
+   * dashboard owns the app and the refresh token and answers with the access
+   * token alone.
+   */
+  KICK_TOKEN_REQUESTED: "kick.token.requested",
 } as const;
 
 export type EngineRequestType = (typeof EngineRequestType)[keyof typeof EngineRequestType];
 
 export interface TwitchTokenRequestedEvent {
   type: typeof EngineRequestType.TWITCH_TOKEN_REQUESTED;
+}
+
+export interface KickTokenRequestedEvent {
+  type: typeof EngineRequestType.KICK_TOKEN_REQUESTED;
 }
 
 export interface RelayCredentialRequestedEvent {
@@ -1835,7 +1846,11 @@ export type ShoutoutEnqueueRequestedResponse =
   | { queued: true; position: number; alreadyQueued: boolean }
   | { queued: false; reason: "not_linked" };
 
-export type EngineRequest = TwitchTokenRequestedEvent | RelayCredentialRequestedEvent | ShoutoutEnqueueRequestedEvent;
+export type EngineRequest =
+  | TwitchTokenRequestedEvent
+  | KickTokenRequestedEvent
+  | RelayCredentialRequestedEvent
+  | ShoutoutEnqueueRequestedEvent;
 
 /**
  * A Twitch access token as the dashboard hands it to an engine. It carries
@@ -1861,6 +1876,32 @@ export interface TwitchTokenGrant {
  */
 export type TwitchTokenRequestedResponse =
   | { token: TwitchTokenGrant }
+  | { token: null; reason: "not_linked" | "relink_required" };
+
+/**
+ * A Kick access token as the dashboard hands it to an engine, with the client
+ * id of the Kick app that issued it and no refresh token: only the dashboard
+ * refreshes, since Kick requires the app's client secret to do it. `userId`
+ * is the Kick user id as a decimal string.
+ */
+export interface KickTokenGrant {
+  userId: string;
+  accessToken: string;
+  scope: string[];
+  /** Seconds the token was valid for at `obtainmentTimestamp`. */
+  expiresIn: number;
+  /** Milliseconds since the epoch. */
+  obtainmentTimestamp: number;
+  clientId: string;
+}
+
+/**
+ * The dashboard's answer to `kick.token.requested`. `not_linked`: no Kick
+ * account is linked to this instance. `relink_required`: the dashboard can no
+ * longer refresh the token, and the streamer has to link Kick again.
+ */
+export type KickTokenRequestedResponse =
+  | { token: KickTokenGrant }
   | { token: null; reason: "not_linked" | "relink_required" };
 
 /**

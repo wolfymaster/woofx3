@@ -81,6 +81,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { StreamGaugeSampler },
       { TwitchHelixGauges },
       { serveTwitchToken },
+      { serveKickToken },
       { serveDashboardRelayCredential },
       { serveShoutoutQueue },
       { UserEventRecorder },
@@ -126,6 +127,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./stream-gauge-sampler"),
       import("./twitch-helix-gauges"),
       import("./twitch-token-source"),
+      import("./kick-token-source"),
       import("./relay-dashboard-edge"),
       import("./shoutout-queue"),
       import("./user-event-recorder"),
@@ -305,6 +307,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
       await initOverlayTokenHandlers(natsClient, webhookClient, logger);
       await serveTwitchToken(natsClient, api.twitchToken, logger);
+      await serveKickToken(natsClient, api.kickToken, logger);
       await serveDashboardRelayCredential(natsClient, () => webhookClient, logger);
       await serveShoutoutQueue(
         natsClient,
