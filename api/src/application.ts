@@ -82,6 +82,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { TwitchHelixGauges },
       { serveTwitchToken },
       { serveKickToken },
+      { handleKickWebhook },
       { serveDashboardRelayCredential },
       { serveShoutoutQueue },
       { UserEventRecorder },
@@ -128,6 +129,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./twitch-helix-gauges"),
       import("./twitch-token-source"),
       import("./kick-token-source"),
+      import("./kick-webhook"),
       import("./relay-dashboard-edge"),
       import("./shoutout-queue"),
       import("./user-event-recorder"),
@@ -392,6 +394,16 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       requestGuard: config.requestGuard,
       onProcessingCallback: (body) => api.handleProcessingCallback(body as never),
       barkloaderWebhookSecret: config.barkloaderWebhookAuth === "required" ? config.barkloaderKey : null,
+      kickWebhook: (req) =>
+        handleKickWebhook(req, {
+          request: (subject, data, opts) => {
+            if (natsClient === null) {
+              return Promise.reject(new Error("the message bus is not connected"));
+            }
+            return natsClient.request(subject, data, opts);
+          },
+          logger,
+        }),
     });
 
     logger.info("API server started", {

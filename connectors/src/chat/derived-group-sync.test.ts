@@ -68,6 +68,12 @@ describe("DerivedGroupSync", () => {
     expect(db.writes.slice(writes)).toEqual([{ op: "remove", groupId: "g-mod", username: "viewer" }]);
   });
 
+  test("a Kick viewer's badges write the Kick account's groups, never the Twitch login of the same name", async () => {
+    expect(await sync.reconcile(viewerKey("kick", "k-1"), "Viewer", MODERATOR)).toBe("written");
+    expect(db.memberships.has("g-mod kick:viewer")).toBe(true);
+    expect(db.memberships.has("g-mod viewer")).toBe(false);
+  });
+
   test("memory is per viewer id: another account with the same login state is written on its own", async () => {
     await sync.reconcile(VIEWER, "viewer", MODERATOR);
     const writes = db.writes.length;

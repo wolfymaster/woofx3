@@ -34,6 +34,20 @@ describe("CommandPermissions", () => {
     expect(db.permissionChecks).toEqual([]);
   });
 
+  test("a Kick viewer named like a Twitch viewer does not get the Twitch viewer's grant", async () => {
+    db.grants.add(`bob ${commandResource("title")}`);
+
+    expect(await permissions.authorize(restricted, "title", chatLine({ chatterLogin: "bob" }))).toBe("granted");
+    expect(
+      await permissions.authorize(
+        restricted,
+        "title",
+        chatLine({ platform: "kick", platformUserId: "k-1", chatterLogin: "bob" })
+      )
+    ).toBe("denied");
+    expect(db.permissionChecks.map((check) => check.username)).toEqual(["bob", "kick:bob"]);
+  });
+
   test("simulated badges cannot escalate: an untrusted line is denied without a check", async () => {
     const line = chatLine({ trusted: false, membership: undefined, chatterLogin: "faker" });
     expect(await permissions.authorize(restricted, "title", line)).toBe("denied");

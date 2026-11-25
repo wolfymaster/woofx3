@@ -32,13 +32,7 @@ function context(own: Record<string, SelfSentClaim> = {}, seen = new Set<string>
         claimed.push(echo.messageId);
         return own[echo.messageId] ?? null;
       },
-      firstSighting: (id) => {
-        if (seen.has(id)) {
-          return false;
-        }
-        seen.add(id);
-        return true;
-      },
+      redemptionPublished: (id) => seen.has(id),
       unknownBadge: (type) => {
         unknownBadges.push(type);
       },
@@ -233,7 +227,8 @@ describe("normaliseKickDelivery quirks", () => {
   ];
   for (const [name, statuses, counts] of redemptions) {
     test(`redemption: ${name}`, () => {
-      const recorder = context();
+      const seen = new Set<string>();
+      const recorder = context({}, seen);
       const result = statuses.map((status) => {
         const outcome = normaliseKickDelivery(
           "channel.reward.redemption.updated",
@@ -241,7 +236,13 @@ describe("normaliseKickDelivery quirks", () => {
           { ...clone(redemption), status },
           recorder.ctx
         );
-        return outcome.kind === "events" ? outcome.events.length : 0;
+        if (outcome.kind !== "events") {
+          return 0;
+        }
+        if (outcome.redemptionId !== undefined) {
+          seen.add(outcome.redemptionId);
+        }
+        return outcome.events.length;
       });
       expect(result).toEqual(counts);
     });

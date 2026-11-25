@@ -30,6 +30,8 @@ export interface HttpDeps {
    * are not checked (see barkloader-webhook-auth.ts).
    */
   barkloaderWebhookSecret: string | null;
+  /** Answers `POST /webhooks/kick`; see kick-webhook.ts. */
+  kickWebhook: (req: Request) => Promise<Response>;
 }
 
 /** What a WebSocket carries from its upgrade request to `open`, where its gateway connection is built. */
@@ -309,6 +311,11 @@ export function createHttpServer(deps: HttpDeps) {
           });
         }
         return new Response(null, { status: 204 });
+      }
+
+      // A Kick delivery, verified by the connectors Kick adapter rather than here.
+      if (url.pathname === "/webhooks/kick") {
+        return deps.kickWebhook(req);
       }
 
       // Readiness: 200 only once everything this engine depends on is up,

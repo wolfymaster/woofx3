@@ -121,6 +121,12 @@ describe("built-in commands", () => {
       expect([...db.resourceRoles]).toEqual(["some_mod command/* moderator"]);
     });
 
+    test("a grant on a Kick line names the Kick account, never the Twitch login of the same name", async () => {
+      const { db, run } = setup();
+      expect(await run("grantcommands", chatLine({ platform: "kick" }), "bob-the-mod")).toBe("");
+      expect([...db.resourceRoles]).toEqual(["kick:bob-the-mod command/* moderator"]);
+    });
+
     test("revoke it again", async () => {
       const { db, run } = setup();
       db.resourceRoles.add("some_mod command/* moderator");

@@ -19,19 +19,20 @@ export interface NormaliseContext {
   deliveryId: string;
   /** The engine's own line behind a chat message, claimed so it matches once; null for anyone else's. */
   claimOwnLine(echo: ChatEcho): SelfSentClaim | null;
-  /** True the first time a redemption id is seen, false on every later update of it. */
-  firstSighting(redemptionId: string): boolean;
+  /** Whether a redemption id was published already, so a later update of it publishes nothing. */
+  redemptionPublished(redemptionId: string): boolean;
   /** Told once per badge type the mapping does not know, so a new Kick role shows in the log. */
   unknownBadge(type: string): void;
 }
 
 /**
  * - events: publish these, in order; `live` also says the stream changed state;
+ *   `redemptionId` is to be remembered as published once they are;
  * - ignored: nothing to publish (an unknown event, or an update that changes nothing);
  * - malformed: the body is not the documented shape for its event type.
  */
 export type NormaliseResult =
-  | { kind: "events"; events: EventTuple[]; live?: SchemaStreamStatusObserved }
+  | { kind: "events"; events: EventTuple[]; live?: SchemaStreamStatusObserved; redemptionId?: string }
   | { kind: "ignored"; reason: string }
   | { kind: "malformed"; detail: string };
 
@@ -298,7 +299,7 @@ const redemptionUpdated: Normaliser = (body, ctx) => {
   if (redemption.status === "rejected") {
     return { kind: "ignored", reason: "a rejected redemption" };
   }
-  if (!ctx.firstSighting(redemption.id)) {
+  if (ctx.redemptionPublished(redemption.id)) {
     return { kind: "ignored", reason: "an update of a redemption already published" };
   }
   const input = redemption.user_input ?? "";
@@ -315,6 +316,7 @@ const redemptionUpdated: Normaliser = (body, ctx) => {
         ...(input === "" ? {} : { message: input }),
       }),
     ],
+    redemptionId: redemption.id,
   };
 };
 

@@ -83,3 +83,45 @@ export function supervisedKick(adapter: Adapter, bus: FakeBus, time = new FakeTi
   };
   return { supervisor, apply, live, logger };
 }
+
+const SIGNING = {
+  name: "RSASSA-PKCS1-v1_5",
+  hash: "SHA-256",
+  modulusLength: 2048,
+  publicExponent: new Uint8Array([1, 0, 1]),
+};
+
+/** A Kick webhook signing key: `pem` for the fake Kick server to serve, `sign` for deliveries. */
+export async function kickSigningKey(): Promise<{ pem: string; sign(text: string): Promise<string> }> {
+  const pair = await crypto.subtle.generateKey(SIGNING, true, ["sign", "verify"]);
+  const spki = new Uint8Array(await crypto.subtle.exportKey("spki", pair.publicKey));
+  const lines = btoa(String.fromCharCode(...spki)).match(/.{1,64}/g) ?? [];
+  return {
+    pem: `-----BEGIN PUBLIC KEY-----\n${lines.join("\n")}\n-----END PUBLIC KEY-----\n`,
+    sign: async (text) => {
+      const signature = new Uint8Array(
+        await crypto.subtle.sign(SIGNING, pair.privateKey, new TextEncoder().encode(text))
+      );
+      return btoa(String.fromCharCode(...signature));
+    },
+  };
+}
+
+/** An `engine.kick.webhook` request as the api builds it from Kick's delivery, signed with `key`. */
+export async function kickDelivery(
+  key: { sign(text: string): Promise<string> },
+  delivery: { messageId: string; timestamp: string; eventType: string; body: unknown; eventVersion?: string }
+): Promise<Uint8Array> {
+  const raw = JSON.stringify(delivery.body);
+  return new TextEncoder().encode(
+    JSON.stringify({
+      messageId: delivery.messageId,
+      subscriptionId: "01SUBSCRIPTION",
+      signature: await key.sign(`${delivery.messageId}.${delivery.timestamp}.${raw}`),
+      timestamp: delivery.timestamp,
+      eventType: delivery.eventType,
+      eventVersion: delivery.eventVersion ?? "1",
+      bodyBase64: btoa(String.fromCharCode(...new TextEncoder().encode(raw))),
+    })
+  );
+}

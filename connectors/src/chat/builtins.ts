@@ -1,8 +1,10 @@
+import type { PlatformId } from "@woofx3/api/platform-gateway";
 import { errorMessage, type Logger, type RandomSource } from "../host/deps";
 import type { LinkPermits } from "../moderation/permit-store";
 import type { ChatRole, CommandDefinition, CommandHandler } from "./commands";
 import type { DispatcherDb } from "./db-client";
 import { failureReply, type TwitchApiPort } from "./twitchapi-client";
+import { permissionSubject } from "./viewer";
 
 /** The longest !vanish timeout, in seconds; the duration is drawn from 1 to this. */
 export const VANISH_MAX_SECONDS = 600;
@@ -12,7 +14,11 @@ export const COMMAND_GRANT_RESOURCE = "command/*";
 export const COMMAND_GRANT_ROLE = "moderator";
 
 /** A Twitch login: lowercase letters, digits and underscores, 1 to 25 long. */
-const LOGIN_PATTERN = /^[a-z0-9_]{1,25}$/;
+/** A login each platform allows; a Kick slug may also hold hyphens. */
+const LOGIN_PATTERNS: Readonly<Record<PlatformId, RegExp>> = {
+  twitch: /^[a-z0-9_]{1,25}$/,
+  kick: /^[a-z0-9_-]{1,25}$/,
+};
 
 /** Who may run the commands that change the channel without a grant. */
 const CHANNEL_EDITOR_ROLES: readonly ChatRole[] = ["broadcaster", "moderator"];
@@ -34,12 +40,12 @@ export function formatStreamPosition(positionSeconds: number): string {
 }
 
 /** The login a grant command names, or null when the text is not exactly one valid login. */
-function parseLogin(args: readonly string[]): string | null {
+function parseLogin(args: readonly string[], platform: PlatformId): string | null {
   if (args.length !== 1) {
     return null;
   }
   const login = args[0].replace(/^@/, "").toLowerCase();
-  return LOGIN_PATTERN.test(login) ? login : null;
+  return LOGIN_PATTERNS[platform].test(login) ? login : null;
 }
 
 /**
@@ -66,13 +72,13 @@ export function builtinCommands(deps: BuiltinDeps): CommandDefinition[] {
     cooldownSeconds: 0,
     variables: [],
     allowRoles: [],
-    handler: guard(name, async ({ args }) => {
-      const login = parseLogin(args);
+    handler: guard(name, async ({ args, line }) => {
+      const login = parseLogin(args, line.platform);
       if (login === null) {
         return `Usage: !${name} <login>`;
       }
       try {
-        await apply(login);
+        await apply(permissionSubject(line.platform, login));
       } catch (error) {
         deps.logger.error("a command grant change failed", { command: name, login, error: errorMessage(error) });
         return `Could not ${doing} @${login}`;
@@ -129,7 +135,7 @@ export function builtinCommands(deps: BuiltinDeps): CommandDefinition[] {
       variables: [],
       allowRoles: CHANNEL_EDITOR_ROLES,
       handler: guard("permit", async ({ line, args }) => {
-        const login = parseLogin(args);
+        const login = parseLogin(args, line.platform);
         if (login === null) {
           return "Usage: !permit <login>";
         }
