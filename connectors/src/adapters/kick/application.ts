@@ -3,7 +3,14 @@ import type { KickWebhookReply } from "@woofx3/common/cloudevents/Kick/webhook";
 import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/integration-settings";
 import type { KickConfig } from "../../config/kick";
 import type { AdapterContext } from "../../host/adapter";
-import type { Clock, IdSource, RandomSource, Timers } from "../../host/deps";
+import {
+  type Clock,
+  errorMessage,
+  type IdSource,
+  type RandomSource,
+  type TimerHandle,
+  type Timers,
+} from "../../host/deps";
 import type { BusMessage } from "../../host/scoped-bus";
 import type { SelfSentRegistry } from "../shared/self-sent";
 import type { KickHostState } from "./adapter";
@@ -45,6 +52,9 @@ export default class KickApplication {
   private linked: { broadcaster: KickBroadcaster } | undefined;
   private readonly verifier: KickSignatureVerifier;
   private readonly reconciler: SubscriptionReconciler;
+  /** The live state last published, from the start's read, a webhook or a live check; null before the first. */
+  private believedLive: boolean | null = null;
+  private liveCheck: TimerHandle | undefined;
   /** Badge types already logged as unknown, so each shows once per run. */
   private readonly unknownBadges = new Set<string>();
 
@@ -98,10 +108,58 @@ export default class KickApplication {
     }
     await this.ctx.bus.subscribe(INTEGRATION_TOKEN_UPDATED_SUBJECT, (msg) => this.onTokenUpdated(msg));
     this.linked = { broadcaster: await this.findBroadcaster() };
-    await this.ctx.liveStatus.seed(() => this.readLive(), this.lifetime.signal);
+    await this.ctx.liveStatus.seed(async () => {
+      const status = await this.readLive();
+      this.believedLive = status.live;
+      return status;
+    }, this.lifetime.signal);
     // A subscription Kick refuses (a missing scope) leaves the run connected:
     // its REST actions still work, and /health shows the refusal.
     await this.reconciler.start();
+    this.liveCheck = this.deps.timers.setInterval(() => {
+      void this.checkLive();
+    }, this.deps.config.liveCheckIntervalMs);
+  }
+
+  /**
+   * Publishes the going-live or going-offline Kick's webhook did not deliver,
+   * as the webhook would have, when the channel's state differs from the one
+   * last published.
+   */
+  private async checkLive(): Promise<void> {
+    const broadcaster = this.linked?.broadcaster;
+    if (broadcaster === undefined || this.believedLive === null) {
+      return;
+    }
+    let status: { live: boolean; startedAt?: string };
+    try {
+      status = await this.readLive();
+    } catch (err) {
+      this.ctx.logger.debug("kick: could not read the channel's live state; trying again later", {
+        err: errorMessage(err),
+      });
+      return;
+    }
+    if (this.lifetime.signal.aborted || status.live === this.believedLive) {
+      return;
+    }
+    const events = new EventFactory({ source: KICK_EVENT_SOURCE }).Platform("kick");
+    const who = { broadcasterUserId: broadcaster.userId, broadcasterUserName: broadcaster.name };
+    const [subject, data] = status.live
+      ? events.streamOnline({ ...who, startedAt: status.startedAt ?? new Date(this.deps.clock.now()).toISOString() })
+      : events.streamOffline(who);
+    try {
+      await this.ctx.bus.publish(subject, data);
+    } catch (err) {
+      this.ctx.logger.warn("kick: could not publish a live state change the webhook missed", {
+        subject,
+        err: errorMessage(err),
+      });
+      return;
+    }
+    this.ctx.logger.info("kick: published a live state change the webhook missed", { subject });
+    this.believedLive = status.live;
+    this.ctx.liveStatus.changed(status);
   }
 
   /** Per subscribed event, for /health. */
@@ -151,12 +209,19 @@ export default class KickApplication {
         },
       },
       publish: (subject, data) => this.ctx.bus.publish(subject, data),
-      liveChanged: (status) => this.ctx.liveStatus.changed(status),
+      liveChanged: (status) => {
+        this.believedLive = status.live;
+        this.ctx.liveStatus.changed(status);
+      },
       redemptionPublished: (redemptionId) => hostState.redemptionsSeen.set(redemptionId, true),
     });
   }
 
   async stop(): Promise<void> {
+    if (this.liveCheck !== undefined) {
+      this.deps.timers.clearInterval(this.liveCheck);
+      this.liveCheck = undefined;
+    }
     this.lifetime.abort(new Error("the Kick adapter stopped"));
     await this.reconciler.stop();
   }

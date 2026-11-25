@@ -23,7 +23,7 @@ function setup() {
     fetch,
   };
   const adapter = new KickAdapter(deps, kickHostState(deps));
-  return { bus, adapter, ...supervisedKick(adapter, bus) };
+  return { bus, time, adapter, ...supervisedKick(adapter, bus) };
 }
 
 describe("KickAdapter under the supervisor", () => {
@@ -93,4 +93,29 @@ describe("KickAdapter under the supervisor", () => {
       adapter.desired({ connected: false, enabled: true }),
     ]).toEqual([true, false, false]);
   });
+
+  const missed: [name: string, from: boolean, to: boolean, subject: string][] = [
+    ["a going-offline", true, false, "stream.offline"],
+    ["a going-live", false, true, "stream.online"],
+  ];
+  for (const [name, from, to, subject] of missed) {
+    test(`publishes ${name} the webhook missed on the next live check`, async () => {
+      const { bus, time, live, apply } = setup();
+      const own = kick.state.channels[0];
+      if (own === undefined) {
+        throw new Error("the fake has no channel");
+      }
+      own.stream.is_live = from;
+      own.stream.start_time = from ? "2026-11-25T10:00:00Z" : null;
+      await apply(true, true);
+
+      own.stream.is_live = to;
+      own.stream.start_time = to ? "2026-11-25T11:00:00Z" : null;
+      await time.advance(5 * 60_000);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(bus.published.map((p) => p.subject)).toContain(subject);
+      expect(live.changed).toEqual([to ? { live: true, startedAt: "2026-11-25T11:00:00.000Z" } : { live: false }]);
+    });
+  }
 });

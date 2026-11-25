@@ -30,6 +30,13 @@ export const KICK_DEFAULTS = {
   redemptionSeenMaxEntries: 10_000,
   /** Kick rotates its webhook key without a key id; a failed check refetches it at most this often. */
   publicKeyRefetchMinIntervalMs: 60_000,
+  /**
+   * How often the channel's live state is read while running. Kick's
+   * webhooks are lossy, so a missed going-live or going-offline is published
+   * from this read instead of leaving the stream session wrong until the
+   * next one.
+   */
+  liveCheckIntervalMs: 5 * 60_000,
   /** How often the event subscriptions are checked, so one Kick dropped is recreated. */
   subscriptionReconcileIntervalMs: 15 * 60_000,
   /** The subscription check's backoff after a failed pass: jittered, doubling from base to max. */
@@ -61,6 +68,7 @@ export interface KickConfig {
   dedupe: { ttlMs: number; capacity: number };
   redemptionSeen: { ttlMs: number; capacity: number };
   publicKeyRefetchMinIntervalMs: number;
+  liveCheckIntervalMs: number;
   subscriptionReconcileIntervalMs: number;
   reconcileBackoff: { baseMs: number; maxMs: number };
   sendQueueCap: number;
@@ -83,6 +91,7 @@ export function kickConfig(env: KickEnv): KickConfig {
     dedupe: { ttlMs: KICK_DEFAULTS.dedupeTtlMs, capacity: KICK_DEFAULTS.dedupeMaxEntries },
     redemptionSeen: { ttlMs: KICK_DEFAULTS.redemptionSeenTtlMs, capacity: KICK_DEFAULTS.redemptionSeenMaxEntries },
     publicKeyRefetchMinIntervalMs: KICK_DEFAULTS.publicKeyRefetchMinIntervalMs,
+    liveCheckIntervalMs: KICK_DEFAULTS.liveCheckIntervalMs,
     subscriptionReconcileIntervalMs: KICK_DEFAULTS.subscriptionReconcileIntervalMs,
     reconcileBackoff: KICK_DEFAULTS.reconcileBackoff,
     sendQueueCap: env.woofx3KickSendQueueCap,
