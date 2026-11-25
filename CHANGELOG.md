@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.81.0](https://github.com/wolfymaster/woofx3/compare/v0.80.0...v0.81.0) (2026-11-25)
+
+### Features
+
+* **logging:** add OTel resource attributes, exporter headers and service.version ([afc3a3d](https://github.com/wolfymaster/woofx3/commit/afc3a3d8aba9e638427be90ad55210c1c15d2c51))
+* **logging:** tag Rust OTel resources and authenticate OTLP export ([19d495f](https://github.com/wolfymaster/woofx3/commit/19d495f4c828c71c25037e5341691b0b9af86ad5))
+* **logging:** tag TypeScript telemetry with its origin and authenticate OTLP export ([4864c20](https://github.com/wolfymaster/woofx3/commit/4864c20fedf81876acf703acc7a6235c7ebecd1c))
+
+### Bug Fixes
+
+* **logging:** let the configured version win over a service.version attribute in Rust ([79568c1](https://github.com/wolfymaster/woofx3/commit/79568c1d2c4ac2eca1b67ce7db2ec30449a877e3))
+* **logging:** percent-decode OTel attribute and header lists ([79fe34c](https://github.com/wolfymaster/woofx3/commit/79fe34c084c0c9243f85de88056de2904230ec50))
+
 ## [0.80.0](https://github.com/wolfymaster/woofx3/compare/v0.79.0...v0.80.0) (2026-11-25)
 
 ### Features
