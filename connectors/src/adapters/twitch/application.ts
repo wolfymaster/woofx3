@@ -405,7 +405,7 @@ export default class TwitchApplication {
     const adBreakScheduler = new AdBreakScheduler({
       fetchSchedule: () => twitchApi.getAdSchedule({}),
       publishUpcoming: (event) => {
-        void publishEvent(eventTarget, () => events.Twitch().adBreakUpcoming(event));
+        void publishEvent(eventTarget, () => events.Platform("twitch").adBreakUpcoming(event));
       },
       logger: ctx.logger,
       readLeadSeconds: () => adBreakLeadSetting.read(),

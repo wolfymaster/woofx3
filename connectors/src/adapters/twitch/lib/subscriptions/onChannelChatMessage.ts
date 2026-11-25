@@ -77,7 +77,7 @@ async function chatMessageEvent(ctx: Context, event: EventSubChannelChatMessageE
     ? await ctx.membershipEnricher.enrich(ctx.broadcaster.id, chatterId, badged)
     : badged;
 
-  return ctx.events.Twitch().chatMessage(
+  return ctx.events.Platform("twitch").chatMessage(
     {
       messageId,
       amount: bits,

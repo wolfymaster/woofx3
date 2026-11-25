@@ -6,7 +6,7 @@ import { publishEvent } from "../publishEvent";
 export default function onChannelFollow(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onChannelFollow(ctx.broadcaster.id, ctx.broadcaster.id, async (event: EventSubChannelFollowEvent) => {
     await publishEvent(ctx, () =>
-      ctx.events.Twitch().follow({
+      ctx.events.Platform("twitch").follow({
         userId: event.userId,
         userName: event.userDisplayName,
       })

@@ -32,6 +32,6 @@ export function toHypeTrainBegin(event: EventSubChannelHypeTrainBeginV2Event): H
 
 export default function onChannelHypeTrainBegin(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onChannelHypeTrainBeginV2(ctx.broadcaster.id, async (event: EventSubChannelHypeTrainBeginV2Event) => {
-    await publishEvent(ctx, () => ctx.events.Twitch().hypeTrainBegin(toHypeTrainBegin(event)));
+    await publishEvent(ctx, () => ctx.events.Platform("twitch").hypeTrainBegin(toHypeTrainBegin(event)));
   });
 }
