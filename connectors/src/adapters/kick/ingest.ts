@@ -4,24 +4,43 @@ import {
   kickWebhookReply,
 } from "@woofx3/common/cloudevents/Kick/webhook";
 import type { SchemaStreamStatusObserved } from "@woofx3/common/cloudevents/messages.gen";
+import type PlatformEvents from "@woofx3/common/cloudevents/Twitch";
 import type { BoundedMap } from "../../chat/bounded-map";
 import { type Clock, errorMessage, type Logger } from "../../host/deps";
 import { type NormaliseContext, normaliseKickDelivery } from "./lib/events";
 import type { SignatureVerdict, SignedDelivery } from "./lib/signature";
 
-/** Delivery ids already published, kept across adapter restarts in the module's host state. */
-export type DeliveryMemory = BoundedMap<string, true>;
+/**
+ * What the adapter remembers about deliveries across its restarts (the
+ * module's host state; lost on a process restart):
+ * - delivered: ids whose every event is published;
+ * - published: how many of a delivery's events are on the bus, so a retry
+ *   after a partial failure resumes after them instead of repeating them;
+ * - inFlight: deliveries being processed now, so a concurrent copy of one
+ *   waits for it instead of publishing it a second time.
+ */
+export interface DeliveryMemory {
+  delivered: BoundedMap<string, true>;
+  published: BoundedMap<string, number>;
+  inFlight: Map<string, Promise<KickWebhookReply>>;
+}
 
 export interface KickIngestDeps {
   verify(delivery: SignedDelivery): Promise<SignatureVerdict>;
   clock: Clock;
   logger: Logger;
-  /** A delivery whose timestamp is further than this from the clock, either way, is refused. */
+  /** A delivery whose timestamp is further than this from the clock, either way, is dropped. */
   maxSkewMs: number;
-  delivered: DeliveryMemory;
+  memory: DeliveryMemory;
   /** The linked broadcaster; another channel's delivery is acknowledged and dropped. */
   broadcasterUserId: string;
-  normalise: Omit<NormaliseContext, "deliveryId">;
+  normalise: Omit<NormaliseContext, "deliveryId" | "events">;
+  /**
+   * The builder for one delivery's events. Their ids derive from the
+   * delivery id and their order, so a retry rebuilds the same ids and a
+   * consumer that saw one already can drop it.
+   */
+  eventsFor(deliveryId: string): PlatformEvents;
   publish(subject: string, data: Uint8Array): Promise<void>;
   /** Told after a stream status delivery is published. */
   liveChanged(status: SchemaStreamStatusObserved): void;
@@ -33,8 +52,10 @@ export interface KickIngestDeps {
  * One webhook delivery, in the order that keeps Kick's retries useful: a
  * delivery is acknowledged only once every event it became is on the bus,
  * and remembered as delivered only then, so a retry after a failed publish
- * publishes it once. Anything Kick did not sign is refused before its body
- * is read.
+ * publishes each event once. Anything Kick did not sign is refused before its
+ * body is read. A signed delivery too old to act on is acknowledged and
+ * dropped: refusing it would count against the subscription, and Kick
+ * unsubscribes an app from events it keeps failing.
  */
 export async function ingestKickDelivery(request: Uint8Array, deps: KickIngestDeps): Promise<KickWebhookReply> {
   const parsedRequest = parseRequest(request);
@@ -57,16 +78,39 @@ export async function ingestKickDelivery(request: Uint8Array, deps: KickIngestDe
 
   const sentAt = Date.parse(delivery.timestamp);
   if (Number.isNaN(sentAt) || Math.abs(deps.clock.now() - sentAt) > deps.maxSkewMs) {
-    deps.logger.warn("kick: refused a delivery outside the accepted time window", {
+    deps.logger.info("kick: dropped a signed delivery outside the accepted time window", {
       messageId: delivery.messageId,
       timestamp: delivery.timestamp,
     });
     return kickWebhookReply("stale");
   }
 
-  if (deps.delivered.get(delivery.messageId) !== undefined) {
+  const { memory } = deps;
+  const running = memory.inFlight.get(delivery.messageId);
+  if (running !== undefined) {
+    const first = await running;
+    return memory.delivered.get(delivery.messageId) === undefined ? first : kickWebhookReply("duplicate");
+  }
+  if (memory.delivered.get(delivery.messageId) !== undefined) {
     return kickWebhookReply("duplicate");
   }
+  const processing = processDelivery(delivery, eventType, eventVersion, deps);
+  memory.inFlight.set(delivery.messageId, processing);
+  try {
+    return await processing;
+  } finally {
+    memory.inFlight.delete(delivery.messageId);
+  }
+}
+
+/** A verified, in-window delivery that is not yet published: normalise and publish it. */
+async function processDelivery(
+  delivery: SignedDelivery,
+  eventType: string,
+  eventVersion: string,
+  deps: KickIngestDeps
+): Promise<KickWebhookReply> {
+  const { memory } = deps;
 
   let body: unknown;
   try {
@@ -90,6 +134,7 @@ export async function ingestKickDelivery(request: Uint8Array, deps: KickIngestDe
   try {
     result = normaliseKickDelivery(eventType, eventVersion, body, {
       ...deps.normalise,
+      events: deps.eventsFor(delivery.messageId),
       deliveryId: delivery.messageId,
     });
   } catch (err) {
@@ -110,13 +155,18 @@ export async function ingestKickDelivery(request: Uint8Array, deps: KickIngestDe
   }
   if (result.kind === "ignored") {
     deps.logger.debug("kick: nothing to publish for a delivery", { eventType, eventVersion, reason: result.reason });
-    deps.delivered.set(delivery.messageId, true);
+    memory.delivered.set(delivery.messageId, true);
     return kickWebhookReply("ignored");
   }
 
-  for (const [subject, data] of result.events) {
+  const alreadyPublished = memory.published.get(delivery.messageId) ?? 0;
+  for (const [index, [subject, data]] of result.events.entries()) {
+    if (index < alreadyPublished) {
+      continue;
+    }
     try {
       await deps.publish(subject, data);
+      memory.published.set(delivery.messageId, index + 1);
     } catch (err) {
       deps.logger.error("kick: could not publish a delivery's event; Kick will retry it", {
         messageId: delivery.messageId,
@@ -132,7 +182,8 @@ export async function ingestKickDelivery(request: Uint8Array, deps: KickIngestDe
   if (result.redemptionId !== undefined) {
     deps.redemptionPublished(result.redemptionId);
   }
-  deps.delivered.set(delivery.messageId, true);
+  memory.delivered.set(delivery.messageId, true);
+  memory.published.delete(delivery.messageId);
   return kickWebhookReply("published");
 }
 

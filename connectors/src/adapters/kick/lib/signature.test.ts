@@ -95,13 +95,35 @@ describe("KickSignatureVerifier", () => {
     const check = verifier(endpoint.api, time);
     await check.verify(await signed(privateKey));
 
-    expect(await check.verify(await signed(forger.privateKey))).toBe("invalid");
-    expect(await check.verify(await signed(forger.privateKey))).toBe("invalid");
+    expect(await check.verify(await signed(forger.privateKey))).toBe("unavailable");
+    expect(await check.verify(await signed(forger.privateKey))).toBe("unavailable");
     expect(endpoint.fetched()).toBe(1);
 
     await time.advance(60_000);
     expect(await check.verify(await signed(forger.privateKey))).toBe("invalid");
     expect(endpoint.fetched()).toBe(2);
+  });
+
+  test("a key rotated inside the throttle window is a retry, not a refusal, and verifies once the window opens", async () => {
+    const old = await keyPair();
+    const rotated = await keyPair();
+    const time = new FakeTime();
+    const check = verifier(keyEndpoint(old.pem, rotated.pem).api, time);
+    expect(await check.verify(await signed(old.privateKey))).toBe("valid");
+
+    expect(await check.verify(await signed(rotated.privateKey))).toBe("unavailable");
+    await time.advance(60_000);
+    expect(await check.verify(await signed(rotated.privateKey))).toBe("valid");
+  });
+
+  test("concurrent deliveries at startup share one key fetch, and all verify", async () => {
+    const { privateKey, pem } = await keyPair();
+    const endpoint = keyEndpoint(pem);
+    const check = verifier(endpoint.api);
+    const deliveries = await Promise.all([signed(privateKey), signed(privateKey), signed(privateKey)]);
+
+    expect(await Promise.all(deliveries.map((d) => check.verify(d)))).toEqual(["valid", "valid", "valid"]);
+    expect(endpoint.fetched()).toBe(1);
   });
 
   test("no key from Kick is unavailable, never valid", async () => {

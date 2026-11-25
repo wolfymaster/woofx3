@@ -283,3 +283,19 @@ describe("normaliseKickDelivery quirks", () => {
     });
   }
 });
+
+describe("a delivery whose unsigned event type header was swapped", () => {
+  const swapped: [name: string, claimed: string, body: unknown][] = [
+    ["a follow claimed as a chat line", "chat.message.sent", followed],
+    ["a chat line claimed as a follow", "channel.followed", chatMessage],
+    ["a sub claimed as a gift", "channel.subscription.gifts", subscriptionNew],
+    ["a gift claimed as KICKs", "kicks.gifted", gifts],
+    ["KICKs claimed as a redemption", "channel.reward.redemption.updated", kicksGifted],
+    ["a redemption claimed as a stream status", "livestream.status.updated", redemption],
+  ];
+  for (const [name, claimed, body] of swapped) {
+    test(`${name} is refused as malformed`, () => {
+      expect(normaliseKickDelivery(claimed, "1", clone(body), context().ctx)).toMatchObject({ kind: "malformed" });
+    });
+  }
+});

@@ -44,20 +44,27 @@ the signature itself, so nothing that forwarded the delivery is trusted.
 |---|---|
 | Headers missing or not a delivery | 400 `malformed` |
 | RSA PKCS#1 v1.5 SHA-256 signature over `${messageId}.${timestamp}.${body}` does not verify | 401 `bad_signature` |
-| No public key could be fetched | 503 `unavailable` |
-| Timestamp more than an hour from the clock, either way | 401 `stale` |
-| Message id already published | 200 `duplicate` |
+| No public key could be fetched, or the cached key fails and a refetch is throttled (a key Kick rotated within the last minute) | 503 `unavailable` |
+| Timestamp more than an hour from the clock, either way | 200 `stale`, dropped: a refusal would count against the subscription |
+| Message id already published, or being published by a concurrent copy | 200 `duplicate` once that copy published |
 | `broadcaster.user_id` is not the linked channel | 200 `ignored` (never an error: Kick unsubscribes an app from events it keeps failing) |
 | Unknown event type or version | 200 `ignored` |
 | Body not the event's shape | 400 `malformed` |
-| An event could not be published | 500 `publish_failed`; the delivery is not remembered, so Kick's retry publishes once |
+| An event could not be published | 500 `publish_failed`; Kick's retry resumes after the events already published |
 | Every event published | 200 `published` |
 | Adapter stopped, starting or parked | 503 `unavailable`, answered by the host |
 
 The public key comes from `GET /public/v1/public-key` and is cached; Kick
 rotates it without a key id, so a failed check fetches it again, at most once a
-minute. Delivered ids and published redemptions live in the adapter's host
-state, which outlives adapter restarts but not a process restart.
+minute. Delivered ids, per-delivery progress and published redemptions live
+in the adapter's host state, which outlives adapter restarts but not a process
+restart. Each event's CloudEvent id is `<Kick-Event-Message-Id>:<index>`, so a
+consumer that sees a repeat after a process restart can drop it by id.
+
+Kick signs only the message id, timestamp and body; the event type and version
+headers are not signed. Every event's schema requires a field no other event
+carries, so a resent delivery with a swapped type is refused, except a new sub
+and a renewal, which Kick sends in the same shape.
 
 On a hosted engine the shared woofx3 Kick app's webhook URL is a dashboard
 route that maps the delivery's broadcaster to the engine and forwards the

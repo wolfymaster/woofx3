@@ -39,7 +39,7 @@ export const KICK_EVENT_SUBJECTS: readonly string[] = [
  * nothing. Both are lost on a process restart.
  */
 export interface KickHostState {
-  delivered: DeliveryMemory;
+  deliveries: DeliveryMemory;
   redemptionsSeen: BoundedMap<string, true>;
 }
 
@@ -155,7 +155,7 @@ export class KickAdapter implements Adapter<KickHostState> {
       broadcasterId: broadcaster?.userId ?? null,
       slug: broadcaster?.slug ?? null,
       subscriptions: this.run?.subscriptions() ?? null,
-      deliveriesRemembered: this.hostState.delivered.size,
+      deliveriesRemembered: this.hostState.deliveries.delivered.size,
       ownLinesAwaitingEcho: this.selfSent.size,
     };
   }
@@ -196,7 +196,11 @@ export class KickAdapter implements Adapter<KickHostState> {
 
 export function kickHostState(deps: Pick<KickAdapterDeps, "config" | "clock">): KickHostState {
   return {
-    delivered: new BoundedMap({ capacity: deps.config.dedupe.capacity, ttlMs: deps.config.dedupe.ttlMs }, deps.clock),
+    deliveries: {
+      delivered: new BoundedMap({ capacity: deps.config.dedupe.capacity, ttlMs: deps.config.dedupe.ttlMs }, deps.clock),
+      published: new BoundedMap({ capacity: deps.config.dedupe.capacity, ttlMs: deps.config.dedupe.ttlMs }, deps.clock),
+      inFlight: new Map(),
+    },
     redemptionsSeen: new BoundedMap(
       { capacity: deps.config.redemptionSeen.capacity, ttlMs: deps.config.redemptionSeen.ttlMs },
       deps.clock
