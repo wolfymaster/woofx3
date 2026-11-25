@@ -725,7 +725,7 @@ fn is_internal_request(descriptor: &serde_json::Value) -> bool {
 /// The platforms a manifest trigger may be pinned to. Must match the ids in
 /// `platforms` of shared/common/contracts/platform-gateway.json; a test reads
 /// that file to keep them equal.
-pub const KNOWN_PLATFORMS: &[&str] = &["twitch"];
+pub const KNOWN_PLATFORMS: &[&str] = &["twitch", "kick"];
 
 /// A trigger's `platform` is matched exactly against the CloudEvent
 /// `platform` attribute, so a misspelt or differently cased id would pin the

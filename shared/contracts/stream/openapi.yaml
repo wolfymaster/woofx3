@@ -460,7 +460,7 @@ components:
     PlatformId:
       description: The streaming platform an event came from.
       type: string
-      enum: [twitch]
+      enum: [twitch, kick]
     ChatterMembership:
       description: >
         Platform membership of a chat message's author, neutral across platforms.
@@ -1168,7 +1168,7 @@ components:
         platform:
           description: The platform the invoking line was said on; null when no platform's chat caused the run.
           type: [string, "null"]
-          enum: [twitch, null]
+          enum: [twitch, kick, null]
         channelId:
           type: string
     ChannelCheerEvent:

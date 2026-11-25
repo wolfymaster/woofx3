@@ -88,7 +88,7 @@
       "reply": {
         "platforms": [
           {
-            "id": "kick",
+            "id": "youtube",
             "displayName": "Kick",
             "state": "connected",
             "connected": true,

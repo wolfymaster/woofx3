@@ -198,7 +198,7 @@
       "invalidField": "target.ids[0]",
       "request": {
         "action": "chat.send",
-        "target": { "kind": "platforms", "ids": ["kick"] },
+        "target": { "kind": "platforms", "ids": ["youtube"] },
         "payload": { "message": "hello chat" },
         "idempotencyKey": "exec-1:task-1",
         "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
@@ -231,7 +231,7 @@
       "invalidField": "target.origin.platform",
       "request": {
         "action": "chat.send",
-        "target": { "kind": "origin", "origin": { "platform": "kick" } },
+        "target": { "kind": "origin", "origin": { "platform": "youtube" } },
         "payload": { "message": "hello chat" },
         "idempotencyKey": "exec-1:task-1",
         "requestedBy": { "kind": "workflow", "ref": "workflow-1" }
@@ -457,14 +457,14 @@
     },
     {
       "name": "options for an unknown platform",
-      "invalidField": "options.kick",
+      "invalidField": "options.youtube",
       "request": {
         "action": "chat.send",
         "target": { "kind": "all" },
         "payload": { "message": "hello chat" },
         "idempotencyKey": "exec-1:task-1",
         "requestedBy": { "kind": "workflow", "ref": "workflow-1" },
-        "options": { "kick": {} }
+        "options": { "youtube": {} }
       }
     },
     {
