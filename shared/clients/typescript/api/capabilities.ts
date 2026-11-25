@@ -82,6 +82,12 @@ export const ENGINE_CAPABILITIES = {
    * downloads its bundle with the license key and the engine's install id.
    */
   marketplaceBundleLicenseKeys: "marketplace.bundleLicenseKeys",
+  /**
+   * Kick: `setKickToken`, `deleteKickToken` and `getKickLink`, the
+   * `kick.token.requested` engine request, the `kick` integration and the
+   * connectors Kick adapter.
+   */
+  integrationsKick: "integrations.kick",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];
@@ -106,9 +112,11 @@ export interface EngineCapabilities {
  * Ids declared here that this build does not advertise, so clients can name
  * them before or after the engine supports them: a shared contract that lands
  * before the engine implements it, or an older protocol the engine no longer
- * serves. None today.
+ * serves.
  */
-export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = new Set<EngineCapability>([]);
+export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = new Set<EngineCapability>([
+  ENGINE_CAPABILITIES.integrationsKick,
+]);
 
 /**
  * Ids that describe how an engine is run rather than what its build can do,
