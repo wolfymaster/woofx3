@@ -187,8 +187,8 @@ func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 	}
 	now := r.now().UTC()
 	err := r.db.Raw(`
-		INSERT INTO triggers (id, taxonomy, name, description, event, config_schema, emits, sentence, allow_variants, created_by_type, created_by_ref, manifest_id, transport, handler, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO triggers (id, taxonomy, name, description, event, config_schema, emits, sentence, platform, allow_variants, created_by_type, created_by_ref, manifest_id, transport, handler, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (created_by_type, created_by_ref, manifest_id) WHERE archived_at IS NULL DO UPDATE SET
 			taxonomy = EXCLUDED.taxonomy,
 			name = EXCLUDED.name,
@@ -197,12 +197,13 @@ func (r *ModuleRepository) UpsertTrigger(t *models.Trigger) error {
 			config_schema = EXCLUDED.config_schema,
 			emits = EXCLUDED.emits,
 			sentence = EXCLUDED.sentence,
+			platform = EXCLUDED.platform,
 			allow_variants = EXCLUDED.allow_variants,
 			transport = EXCLUDED.transport,
 			handler = EXCLUDED.handler,
 			updated_at = EXCLUDED.updated_at
 		RETURNING id
-	`, rowID(r.ids, t.ID), t.Taxonomy, t.Name, t.Description, t.Event, t.ConfigSchema, emits, t.Sentence, t.AllowVariants, t.CreatedByType, t.CreatedByRef, t.ManifestID, t.Transport, t.Handler, now, now).Scan(&result).Error
+	`, rowID(r.ids, t.ID), t.Taxonomy, t.Name, t.Description, t.Event, t.ConfigSchema, emits, t.Sentence, t.Platform, t.AllowVariants, t.CreatedByType, t.CreatedByRef, t.ManifestID, t.Transport, t.Handler, now, now).Scan(&result).Error
 	if err != nil {
 		return err
 	}
