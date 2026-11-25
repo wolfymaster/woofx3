@@ -85,6 +85,7 @@ async function startEngine() {
     requestGuard: { allowedHosts: null, allowedOrigins: null, listedOrigins: null },
     onProcessingCallback: async () => {},
     barkloaderWebhookSecret: null,
+    kickWebhook: async () => new Response(null, { status: 404 }),
   });
   return { stream, webhooks, url: `ws://127.0.0.1:${server.port}/api` };
 }

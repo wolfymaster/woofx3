@@ -116,6 +116,7 @@ describe("over a WebSocket", () => {
       requestGuard: { allowedHosts: null, allowedOrigins: null, listedOrigins: null },
       onProcessingCallback: async () => {},
       barkloaderWebhookSecret: null,
+      kickWebhook: async () => new Response(null, { status: 404 }),
     });
     const socket = new WebSocket(`ws://127.0.0.1:${server.port}/api`, { headers: { Origin: PAIRED_FROM } } as never);
     const stub = newWebSocketRpcSession<ApiGatewayContract>(socket);
