@@ -17,14 +17,13 @@ import type {
   TwitchUnbanUserParams,
   TwitchUpdateChatSettingsParams,
 } from "@woofx3/api";
+import { PLATFORM_API_REPLY_CODES, type PlatformApiReplyCode } from "@woofx3/common/cloudevents/PlatformApi/reply";
 import {
   HELIX_COMMAND,
   type HelixCommandArgs,
   type HelixOperationName,
   TWITCHAPI_ERROR_TYPE,
-  TWITCHAPI_REPLY_CODES,
   TWITCHAPI_SUBJECT,
-  type TwitchApiReplyCode,
   twitchApiResultType,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import type { SharedLogger } from "@woofx3/common/logging";
@@ -40,7 +39,7 @@ export const TWITCH_HELIX_TIMEOUT_MS = 10_000;
  * turned off, starting or parked. Its own message may name host internals,
  * so callers get this one under `unavailable`.
  */
-const INTEGRATION_UNAVAILABLE_CODE: TwitchApiReplyCode = "integration_unavailable";
+const INTEGRATION_UNAVAILABLE_CODE: PlatformApiReplyCode = "integration_unavailable";
 const INTEGRATION_UNAVAILABLE_MESSAGE = "Twitch is turned off or not running in this engine";
 
 type Requester = Pick<NATSClient, "request">;
@@ -49,8 +48,8 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function replyCode(value: unknown): TwitchApiReplyCode | null {
-  return TWITCHAPI_REPLY_CODES.find((code) => code === value) ?? null;
+function replyCode(value: unknown): PlatformApiReplyCode | null {
+  return PLATFORM_API_REPLY_CODES.find((code) => code === value) ?? null;
 }
 
 /** Twitch's `message` from a Helix error body, or "" when the body has none. */
