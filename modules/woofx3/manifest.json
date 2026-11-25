@@ -653,6 +653,10 @@
             {
               "value": "twitch",
               "label": "Twitch"
+            },
+            {
+              "value": "kick",
+              "label": "Kick"
             }
           ],
           "description": "Which platform to look the user up on."

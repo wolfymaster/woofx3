@@ -18,6 +18,8 @@ func userInfoFunction(platform platformgateway.PlatformID) (string, error) {
 	switch platform {
 	case platformgateway.PlatformTwitch:
 		return "woofx3_twitch:function:getUserInfo", nil
+	case platformgateway.PlatformKick:
+		return "woofx3_kick:function:getUserInfo", nil
 	}
 	return "", fmt.Errorf("platform %q has no user lookup", platform)
 }

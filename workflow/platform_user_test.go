@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/wolfymaster/woofx3/common/platformgateway"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
@@ -18,6 +19,7 @@ func TestUserInfoPlatform(t *testing.T) {
 		{"origin from trigger", nil, &types.Event{Platform: "twitch"}, "twitch", ""},
 		{"explicit origin", map[string]any{"platform": "origin"}, &types.Event{Platform: "twitch"}, "twitch", ""},
 		{"explicit platform, no trigger", map[string]any{"platform": "twitch"}, nil, "twitch", ""},
+		{"origin from a Kick trigger", nil, &types.Event{Platform: "kick"}, "kick", ""},
 		{"no platform behind the trigger", nil, &types.Event{}, "", "no platform"},
 		{"unknown platform", map[string]any{"platform": "youtube"}, nil, "", `"youtube" is not one`},
 		{"not text", map[string]any{"platform": 3.0}, nil, "", "platform must be text"},
@@ -62,6 +64,24 @@ func TestValidatePlatformUserInfoParams(t *testing.T) {
 			}
 			if tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
 				t.Fatalf("error = %v, want one containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestUserInfoFunctionNamesEachPlatformsModule(t *testing.T) {
+	tests := []struct {
+		platform platformgateway.PlatformID
+		want     string
+	}{
+		{platformgateway.PlatformTwitch, "woofx3_twitch:function:getUserInfo"},
+		{platformgateway.PlatformKick, "woofx3_kick:function:getUserInfo"},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.platform), func(t *testing.T) {
+			got, err := userInfoFunction(tt.platform)
+			if err != nil || got != tt.want {
+				t.Fatalf("userInfoFunction(%s) = %q, %v; want %q", tt.platform, got, err, tt.want)
 			}
 		})
 	}
