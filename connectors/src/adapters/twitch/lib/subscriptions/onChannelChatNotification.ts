@@ -5,8 +5,8 @@ import type {
 } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type EventFactory from "@woofx3/common/cloudevents/EventFactory";
+import { type EventTuple, publishEvent } from "../../../shared/publish-event";
 import type { Context } from "../../types";
-import { type EventTuple, publishEvent } from "../publishEvent";
 
 function baseFields(event: EventSubChannelChatNotificationEvent) {
   return {

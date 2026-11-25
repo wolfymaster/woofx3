@@ -14,8 +14,8 @@ import {
   type UpdateStreamArgs,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import { type Clock, errorMessage } from "../../../host/deps";
+import type { SelfSentRecorder } from "../../shared/self-sent";
 import { HELIX_DEADLINE_MS, type HelixAuth, runHelixOperation } from "./helix";
-import type { SelfSentRecorder } from "./self-sent";
 import type { EnqueueShoutout } from "./shoutoutQueue";
 import { httpStatusOf, TwitchApiError } from "./twitchApiError";
 

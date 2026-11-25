@@ -1,7 +1,7 @@
 import type { EventSubChannelRaidEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
+import { publishEvent } from "../../../shared/publish-event";
 import type { Context } from "../../types";
-import { publishEvent } from "../publishEvent";
 
 export default function onChannelRaid(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onChannelRaidTo(ctx.broadcaster.id, async (event: EventSubChannelRaidEvent) => {

@@ -1,7 +1,7 @@
 import type { EventSubChannelRedemptionAddEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
+import { publishEvent } from "../../../shared/publish-event";
 import type { Context } from "../../types";
-import { publishEvent } from "../publishEvent";
 
 export default function onChannelRedemptionAdd(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onChannelRedemptionAdd(ctx.broadcaster.id, async (event: EventSubChannelRedemptionAddEvent) => {

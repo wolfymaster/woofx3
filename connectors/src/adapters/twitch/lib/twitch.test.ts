@@ -2,8 +2,8 @@ import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { ApiClient, HelixUser } from "@twurple/api";
 import { type ShoutoutEnqueueTarget, TWITCHAPI_COMMANDS } from "@woofx3/common/cloudevents/Twitch/commands";
 import { FakeTime } from "../../../host/testing";
+import { type SelfSentRecorder, SelfSentRegistry } from "../../shared/self-sent";
 import type { HelixAuth } from "./helix";
-import { type SelfSentRecorder, SelfSentRegistry } from "./self-sent";
 import type { EnqueueOutcome } from "./shoutoutQueue";
 import TwitchApi, {
   isTwitchApiCommand,

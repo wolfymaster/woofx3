@@ -1,5 +1,5 @@
-import { COMMAND_PREFIX } from "../../../chat/command-prefix";
-import type { Clock } from "../../../host/deps";
+import { COMMAND_PREFIX } from "../../chat/command-prefix";
+import type { Clock } from "../../host/deps";
 
 /** U+200B ZERO WIDTH SPACE, which guardChatLine in ./helix.ts may put in front of a line. */
 export const ZERO_WIDTH_SPACE = "\u200b";

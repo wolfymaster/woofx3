@@ -1,7 +1,7 @@
 import type { EventSubStreamOfflineEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
+import { publishEvent } from "../../../shared/publish-event";
 import type { Context } from "../../types";
-import { publishEvent } from "../publishEvent";
 
 // Mirrors `onStreamOnline.ts`. The raw `stream.offline` EventSub
 // notification only identifies the broadcaster — there's no payload

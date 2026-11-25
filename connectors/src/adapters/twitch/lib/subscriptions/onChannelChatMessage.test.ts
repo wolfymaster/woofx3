@@ -4,8 +4,8 @@ import type { EventSubChannelChatMessageEvent, EventSubSubscription } from "@twu
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import { FakeTime, RecordingLogger } from "../../../../host/testing";
+import { SelfSentRegistry } from "../../../shared/self-sent";
 import type { Context } from "../../types";
-import { SelfSentRegistry } from "../self-sent";
 import onChannelChatMessage, { readMembership } from "./onChannelChatMessage";
 
 const BROADCASTER = "broadcaster-1";

@@ -6,9 +6,9 @@ import type {
   HelixOperationName,
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import { COMMAND_PREFIX } from "../../../chat/command-prefix";
-import { type SelfSentLine, type SelfSentRecorder, ZERO_WIDTH_SPACE } from "./self-sent";
+import { type SelfSentLine, type SelfSentRecorder, ZERO_WIDTH_SPACE } from "../../shared/self-sent";
+import { untilAborted } from "../../shared/until-aborted";
 import { TwitchApiError } from "./twitchApiError";
-import { untilAborted } from "./untilAborted";
 
 // Twurple passes these straight to fetch and leaves declaring the ones a
 // caller uses to the caller.

@@ -17,10 +17,10 @@ import type {
 } from "../../host/adapter";
 import type { RandomSource, Timers } from "../../host/deps";
 import type { LinkState } from "../../host/link-readers";
+import { SelfSentRegistry } from "../shared/self-sent";
+import { SendQueue } from "../shared/send-queue";
 import TwitchApplication, { type TwitchAppContext, type TwitchReplyDeps, twitchApiErrorReply } from "./application";
 import { type TwitchEgressSession, twitchEgress } from "./egress";
-import { SelfSentRegistry } from "./lib/self-sent";
-import { SendQueue } from "./lib/send-queue";
 
 /** Every subject the adapter publishes: one per Twitch event type. */
 export const TWITCH_EVENT_SUBJECTS: readonly string[] = Object.values(TwitchEventType);
