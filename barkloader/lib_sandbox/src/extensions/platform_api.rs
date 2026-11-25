@@ -45,7 +45,8 @@ impl PlatformApiSpec {
 }
 
 /// Every platform api a module can reach, served by its own extension.
-pub const PLATFORM_API_SPECS: &[&PlatformApiSpec] = &[&super::twitch::TWITCH_SPEC];
+pub const PLATFORM_API_SPECS: &[&PlatformApiSpec] =
+    &[&super::twitch::TWITCH_SPEC, &super::kick::KICK_SPEC];
 
 /// The longest one call waits for the adapter. Platforms answer in well under
 /// a second; this bounds a hung service. A call never waits past the
