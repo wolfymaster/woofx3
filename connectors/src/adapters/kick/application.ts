@@ -1,9 +1,16 @@
+import EventFactory from "@woofx3/common/cloudevents/EventFactory";
+import type { KickWebhookReply } from "@woofx3/common/cloudevents/Kick/webhook";
 import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/integration-settings";
 import type { KickConfig } from "../../config/kick";
 import type { AdapterContext } from "../../host/adapter";
 import type { Clock } from "../../host/deps";
 import type { BusMessage } from "../../host/scoped-bus";
+import type { SelfSentRegistry } from "../shared/self-sent";
+import type { KickHostState } from "./adapter";
+import { KICK_EVENT_SOURCE } from "./event-source";
+import { ingestKickDelivery } from "./ingest";
 import { KickApi, type KickApiFailure, type KickChannel } from "./lib/kick-api";
+import { KickSignatureVerifier } from "./lib/signature";
 import { KickTokenClient } from "./lib/token";
 
 /** The linked Kick channel, fixed for one run. */
@@ -17,6 +24,8 @@ export interface KickApplicationDeps {
   config: KickConfig;
   clock: Clock;
   fetch: typeof fetch;
+  hostState: KickHostState;
+  selfSent: SelfSentRegistry;
 }
 
 /**
@@ -29,9 +38,13 @@ export default class KickApplication {
   private readonly tokens: KickTokenClient;
   readonly api: KickApi;
   private linked: { broadcaster: KickBroadcaster } | undefined;
+  private readonly verifier: KickSignatureVerifier;
+  private readonly events = new EventFactory({ source: KICK_EVENT_SOURCE }).Platform("kick");
+  /** Badge types already logged as unknown, so each shows once per run. */
+  private readonly unknownBadges = new Set<string>();
 
   constructor(
-    deps: KickApplicationDeps,
+    private readonly deps: KickApplicationDeps,
     private readonly ctx: AdapterContext
   ) {
     this.tokens = new KickTokenClient({
@@ -48,6 +61,11 @@ export default class KickApplication {
       timeoutMs: deps.config.requestTimeoutMs,
       userAgent: deps.config.userAgent,
       signal: this.lifetime.signal,
+    });
+    this.verifier = new KickSignatureVerifier({
+      api: this.api,
+      clock: deps.clock,
+      publicKeyRefetchMinIntervalMs: deps.config.publicKeyRefetchMinIntervalMs,
     });
   }
 
@@ -69,6 +87,37 @@ export default class KickApplication {
     await this.ctx.bus.subscribe(INTEGRATION_TOKEN_UPDATED_SUBJECT, (msg) => this.onTokenUpdated(msg));
     this.linked = { broadcaster: await this.findBroadcaster() };
     await this.ctx.liveStatus.seed(() => this.readLive(), this.lifetime.signal);
+  }
+
+  /** One webhook delivery from `engine.kick.webhook`; the host only hands it over while the run is connected. */
+  async ingest(request: Uint8Array): Promise<KickWebhookReply> {
+    const linked = this.linked;
+    if (linked === undefined) {
+      throw new Error("a Kick delivery reached the run before it found its broadcaster");
+    }
+    const { hostState, selfSent } = this.deps;
+    return ingestKickDelivery(request, {
+      verify: (delivery) => this.verifier.verify(delivery),
+      clock: this.deps.clock,
+      logger: this.ctx.logger,
+      maxSkewMs: this.deps.config.webhookMaxSkewMs,
+      delivered: hostState.delivered,
+      broadcasterUserId: linked.broadcaster.userId,
+      normalise: {
+        events: this.events,
+        claimOwnLine: (echo) => selfSent.claimEcho(echo),
+        redemptionPublished: (redemptionId) => hostState.redemptionsSeen.get(redemptionId) !== undefined,
+        unknownBadge: (type) => {
+          if (!this.unknownBadges.has(type)) {
+            this.unknownBadges.add(type);
+            this.ctx.logger.info("kick: a chat badge type sets no membership", { type });
+          }
+        },
+      },
+      publish: (subject, data) => this.ctx.bus.publish(subject, data),
+      liveChanged: (status) => this.ctx.liveStatus.changed(status),
+      redemptionPublished: (redemptionId) => hostState.redemptionsSeen.set(redemptionId, true),
+    });
   }
 
   async stop(): Promise<void> {

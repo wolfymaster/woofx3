@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { FakeTime } from "../../host/testing";
-import { KickAdapter } from "./adapter";
+import { KickAdapter, kickHostState } from "./adapter";
 import { type FakeKickServer, startFakeKick } from "./fake-kick-server";
 import { KickTokenBus, kickConfigAt, supervisedKick } from "./testing";
 
@@ -13,7 +13,8 @@ afterEach(async () => {
 function setup() {
   kick = startFakeKick();
   const bus = new KickTokenBus();
-  const adapter = new KickAdapter({ config: kickConfigAt(kick.url), clock: new FakeTime(Date.now()), fetch });
+  const deps = { config: kickConfigAt(kick.url), clock: new FakeTime(Date.now()), fetch };
+  const adapter = new KickAdapter(deps, kickHostState(deps));
   return { bus, adapter, ...supervisedKick(adapter, bus) };
 }
 
@@ -24,7 +25,7 @@ describe("KickAdapter under the supervisor", () => {
     await apply(true, true);
 
     expect(supervisor.status("kick").state).toBe("connected");
-    expect(adapter.detail()).toEqual({ broadcasterId: "4242", slug: "wolfy" });
+    expect(adapter.detail()).toMatchObject({ broadcasterId: "4242", slug: "wolfy" });
   });
 
   const offline: [name: string, reply: KickTokenBus["tokenReply"], reason: string][] = [
@@ -41,7 +42,7 @@ describe("KickAdapter under the supervisor", () => {
       const status = supervisor.status("kick");
       expect(status.state).toBe("degraded");
       expect(status.state === "degraded" ? status.reason : "").toContain(reason);
-      expect(adapter.detail()).toEqual({ broadcasterId: null, slug: null });
+      expect(adapter.detail()).toMatchObject({ broadcasterId: null, slug: null });
       expect(kick.requests).toEqual([]);
     });
   }
