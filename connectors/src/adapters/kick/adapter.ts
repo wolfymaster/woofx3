@@ -122,7 +122,7 @@ export class KickAdapter implements Adapter<KickHostState> {
         {
           subject: KICKAPI_SUBJECT,
           budgetMs: KICKAPI_SERVED_BUDGET_MS,
-          handle: (request) => this.answerKickApi(request),
+          handle: (request, ctx) => this.answerKickApi(request, ctx.deadline),
           unavailableReply: (unavailable) => kickApiUnavailableReply(unavailable, deps),
         },
       ],
@@ -177,12 +177,12 @@ export class KickAdapter implements Adapter<KickHostState> {
     return { kind: "ready", broadcasterUserId: broadcaster.userId, api: run.api };
   }
 
-  private async answerKickApi(request: Uint8Array): Promise<Uint8Array> {
+  private async answerKickApi(request: Uint8Array, deadline: number): Promise<Uint8Array> {
     const run = this.run;
     if (run === undefined) {
       throw new Error("kickapi reached the kick adapter while it is not running");
     }
-    return run.answerKickApi(request);
+    return run.answerKickApi(request, deadline);
   }
 
   private async ingest(request: Uint8Array): Promise<Uint8Array> {

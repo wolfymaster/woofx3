@@ -74,11 +74,14 @@ async function sendLine(deps: KickEgressDeps, ctx: EgressContext, payload: ChatS
   }
   const line = deps.selfSent.begin(payload.message, ctx.workflowChain);
   ctx.markSent();
-  const sent = await session.api.sendChat({
-    content: payload.message,
-    broadcasterUserId: session.broadcasterUserId,
-    ...(payload.replyToMessageId === undefined ? {} : { replyTo: payload.replyToMessageId }),
-  });
+  const sent = await session.api.sendChat(
+    {
+      content: payload.message,
+      broadcasterUserId: session.broadcasterUserId,
+      ...(payload.replyToMessageId === undefined ? {} : { replyTo: payload.replyToMessageId }),
+    },
+    { deadline: ctx.deadline }
+  );
   if (!sent.ok) {
     line.failed();
     return failedOutcome(sent.error, STATUS_FAILURES);
@@ -99,7 +102,12 @@ async function deleteLine(
   if (payload.messageId.trim() === "") {
     return refusedHere("a delete needs the message id");
   }
-  return write(deps, ctx, (session) => session.api.deleteChat(payload.messageId), DELETE_STATUS_FAILURES);
+  return write(
+    deps,
+    ctx,
+    (session) => session.api.deleteChat(payload.messageId, { deadline: ctx.deadline }),
+    DELETE_STATUS_FAILURES
+  );
 }
 
 /** A timeout when the payload carries a duration, rounded up to whole minutes, else a ban. */
@@ -121,12 +129,15 @@ async function ban(
     return refusedHere("the broadcaster cannot be timed out or banned");
   }
   return write(deps, ctx, (ready) =>
-    ready.api.ban({
-      broadcasterUserId: ready.broadcasterUserId,
-      userId: payload.viewer,
-      ...(durationMinutes === undefined ? {} : { durationMinutes }),
-      ...(payload.reason === undefined ? {} : { reason: payload.reason }),
-    })
+    ready.api.ban(
+      {
+        broadcasterUserId: ready.broadcasterUserId,
+        userId: payload.viewer,
+        ...(durationMinutes === undefined ? {} : { durationMinutes }),
+        ...(payload.reason === undefined ? {} : { reason: payload.reason }),
+      },
+      { deadline: ctx.deadline }
+    )
   );
 }
 
@@ -182,6 +193,9 @@ function failedOutcome(
     }
     case "timeout": {
       return { status: "unconfirmed", message: "Kick did not answer in time; it may have acted" };
+    }
+    case "stopped": {
+      return { status: "unconfirmed", message: "the Kick connection stopped before Kick answered; it may have acted" };
     }
     case "unreachable": {
       return { status: "failed", code: "upstream", message: `Kick could not be reached: ${failure.detail}` };

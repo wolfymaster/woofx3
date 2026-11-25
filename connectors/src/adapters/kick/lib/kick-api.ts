@@ -75,6 +75,7 @@ export interface KickEventName {
  * Why a call produced no result:
  * - http: Kick answered with an error status; `code` is its machine code when the body had one;
  * - timeout: the request was sent and no answer came in time, so Kick may have acted;
+ * - stopped: the adapter run stopped while the request was out, so Kick may have acted;
  * - unreachable: the request never left (no connection, or no token to send);
  * - not_linked: no Kick account is linked, or the link has to be renewed by relinking;
  * - malformed: Kick answered 2xx with a body that is not the documented shape.
@@ -82,6 +83,7 @@ export interface KickEventName {
 export type KickApiFailure =
   | { kind: "http"; status: number; code: string | undefined; message: string; retryAfterMs: number | undefined }
   | { kind: "timeout" }
+  | { kind: "stopped" }
   | { kind: "unreachable"; detail: string }
   | { kind: "not_linked" }
   | { kind: "malformed"; detail: string };
@@ -94,12 +96,23 @@ export interface KickApiDeps {
   clock: Clock;
   /** Where api.kick.com is; a fake Kick server in tests. */
   baseUrl: string;
-  /** How long one call may wait for Kick's answer. */
+  /** How long one attempt may wait for Kick's answer. */
   timeoutMs: number;
+  /** How long one attempt may wait for the api to hand over the token. */
+  tokenTimeoutMs: number;
   /** Cloudflare in front of api.kick.com refuses clients without a browser-like user agent. */
   userAgent: string;
   /** Aborts every call in flight, when the adapter run stops. */
   signal: AbortSignal;
+}
+
+/**
+ * One command's bound: a caller that waits a fixed budget (a served subject,
+ * a gateway action) passes its deadline, so a token renewal, a 401 retry
+ * and a second call share it instead of each taking a full timeout.
+ */
+export interface KickCall {
+  deadline?: number;
 }
 
 type Query = ReadonlyArray<readonly [string, string]>;
@@ -111,6 +124,8 @@ interface KickRequest {
   body?: unknown;
   /** The public key endpoint takes no token. */
   auth: boolean;
+  /** Clock time the whole call, renewal and retry included, must be done by. */
+  deadline: number | undefined;
 }
 
 /** A 2xx answer's envelope `data`, or nothing for a 204. */
@@ -127,9 +142,9 @@ export class KickApi {
   constructor(private readonly deps: KickApiDeps) {}
 
   /** The token's own user: `GET /public/v1/users` with no ids. */
-  async self(): Promise<KickResult<KickUser>> {
+  async self(call?: KickCall): Promise<KickResult<KickUser>> {
     const users = await this.parsed(
-      { method: "GET", path: "/public/v1/users", auth: true },
+      { method: "GET", path: "/public/v1/users", auth: true, deadline: call?.deadline },
       KickUserWireSchema.array()
     );
     if (!users.ok) {
@@ -143,16 +158,25 @@ export class KickApi {
   }
 
   /** `GET /public/v1/users?id=...`: up to 50 users by id. */
-  async users(ids: string[]): Promise<KickResult<KickUser[]>> {
+  async users(ids: string[], call?: KickCall): Promise<KickResult<KickUser[]>> {
     const users = await this.parsed(
-      { method: "GET", path: "/public/v1/users", query: ids.map((id) => ["id", id] as const), auth: true },
+      {
+        method: "GET",
+        path: "/public/v1/users",
+        query: ids.map((id) => ["id", id] as const),
+        auth: true,
+        deadline: call?.deadline,
+      },
       KickUserWireSchema.array()
     );
     return users.ok ? { ok: true, value: users.value.map(toUser) } : users;
   }
 
   /** `GET /public/v1/channels`: the token's own channel, or up to 50 by broadcaster id or by slug. */
-  async channels(query: { ids: string[] } | { slugs: string[] } | "self"): Promise<KickResult<KickChannel[]>> {
+  async channels(
+    query: { ids: string[] } | { slugs: string[] } | "self",
+    call?: KickCall
+  ): Promise<KickResult<KickChannel[]>> {
     const params: Query =
       query === "self"
         ? []
@@ -160,14 +184,17 @@ export class KickApi {
           ? query.ids.map((id) => ["broadcaster_user_id", id] as const)
           : query.slugs.map((slug) => ["slug", slug] as const);
     const channels = await this.parsed(
-      { method: "GET", path: "/public/v1/channels", query: params, auth: true },
+      { method: "GET", path: "/public/v1/channels", query: params, auth: true, deadline: call?.deadline },
       KickChannelWireSchema.array()
     );
     return channels.ok ? { ok: true, value: channels.value.map(toChannel) } : channels;
   }
 
   /** `PATCH /public/v1/channels`: the token's channel title, category and tags. */
-  async updateChannel(update: { title?: string; categoryId?: number; tags?: string[] }): Promise<KickResult<null>> {
+  async updateChannel(
+    update: { title?: string; categoryId?: number; tags?: string[] },
+    call?: KickCall
+  ): Promise<KickResult<null>> {
     const body: Record<string, unknown> = {};
     if (update.title !== undefined) {
       body.stream_title = update.title;
@@ -178,13 +205,13 @@ export class KickApi {
     if (update.tags !== undefined) {
       body.custom_tags = update.tags;
     }
-    return this.empty({ method: "PATCH", path: "/public/v1/channels", body, auth: true });
+    return this.empty({ method: "PATCH", path: "/public/v1/channels", body, auth: true, deadline: call?.deadline });
   }
 
   /** The category whose name matches `name` best: an exact match, ignoring case, else Kick's first. */
-  async findCategory(name: string): Promise<KickResult<KickCategory | null>> {
+  async findCategory(name: string, call?: KickCall): Promise<KickResult<KickCategory | null>> {
     const found = await this.parsed(
-      { method: "GET", path: "/public/v2/categories", query: [["name[]", name]], auth: true },
+      { method: "GET", path: "/public/v2/categories", query: [["name[]", name]], auth: true, deadline: call?.deadline },
       KickCategoryWireSchema.array()
     );
     if (!found.ok) {
@@ -196,11 +223,14 @@ export class KickApi {
   }
 
   /** `POST /public/v1/chat` as the token's user into `broadcasterUserId`'s chat. */
-  async sendChat(line: {
-    content: string;
-    broadcasterUserId: string;
-    replyTo?: string;
-  }): Promise<KickResult<{ messageId: string; sent: boolean }>> {
+  async sendChat(
+    line: {
+      content: string;
+      broadcasterUserId: string;
+      replyTo?: string;
+    },
+    call?: KickCall
+  ): Promise<KickResult<{ messageId: string; sent: boolean }>> {
     const body: Record<string, unknown> = {
       content: line.content,
       type: "user",
@@ -210,24 +240,32 @@ export class KickApi {
       body.reply_to_message_id = line.replyTo;
     }
     const sent = await this.parsed(
-      { method: "POST", path: "/public/v1/chat", body, auth: true },
+      { method: "POST", path: "/public/v1/chat", body, auth: true, deadline: call?.deadline },
       KickSentChatWireSchema
     );
     return sent.ok ? { ok: true, value: { messageId: sent.value.message_id, sent: sent.value.is_sent } } : sent;
   }
 
   /** `DELETE /public/v1/chat/{message_id}`. */
-  async deleteChat(messageId: string): Promise<KickResult<null>> {
-    return this.empty({ method: "DELETE", path: `/public/v1/chat/${encodeURIComponent(messageId)}`, auth: true });
+  async deleteChat(messageId: string, call?: KickCall): Promise<KickResult<null>> {
+    return this.empty({
+      method: "DELETE",
+      path: `/public/v1/chat/${encodeURIComponent(messageId)}`,
+      auth: true,
+      deadline: call?.deadline,
+    });
   }
 
   /** `POST /public/v1/moderation/bans`: a timeout of `durationMinutes`, or a ban without one. */
-  async ban(target: {
-    broadcasterUserId: string;
-    userId: string;
-    durationMinutes?: number;
-    reason?: string;
-  }): Promise<KickResult<null>> {
+  async ban(
+    target: {
+      broadcasterUserId: string;
+      userId: string;
+      durationMinutes?: number;
+      reason?: string;
+    },
+    call?: KickCall
+  ): Promise<KickResult<null>> {
     const body: Record<string, unknown> = {
       broadcaster_user_id: Number(target.broadcasterUserId),
       user_id: Number(target.userId),
@@ -238,13 +276,19 @@ export class KickApi {
     if (target.reason !== undefined) {
       body.reason = target.reason;
     }
-    return this.empty({ method: "POST", path: "/public/v1/moderation/bans", body, auth: true });
+    return this.empty({
+      method: "POST",
+      path: "/public/v1/moderation/bans",
+      body,
+      auth: true,
+      deadline: call?.deadline,
+    });
   }
 
   /** `GET /public/v1/channels/rewards`: the token's channel point rewards. */
-  async rewards(): Promise<KickResult<KickReward[]>> {
+  async rewards(call?: KickCall): Promise<KickResult<KickReward[]>> {
     const rewards = await this.parsed(
-      { method: "GET", path: "/public/v1/channels/rewards", auth: true },
+      { method: "GET", path: "/public/v1/channels/rewards", auth: true, deadline: call?.deadline },
       KickRewardWireSchema.array()
     );
     if (!rewards.ok) {
@@ -263,9 +307,9 @@ export class KickApi {
   }
 
   /** `GET /public/v1/events/subscriptions`: this app's subscriptions to the token's channel. */
-  async subscriptions(): Promise<KickResult<KickSubscription[]>> {
+  async subscriptions(call?: KickCall): Promise<KickResult<KickSubscription[]>> {
     const subscriptions = await this.parsed(
-      { method: "GET", path: "/public/v1/events/subscriptions", auth: true },
+      { method: "GET", path: "/public/v1/events/subscriptions", auth: true, deadline: call?.deadline },
       KickSubscriptionWireSchema.array()
     );
     if (!subscriptions.ok) {
@@ -283,13 +327,14 @@ export class KickApi {
   }
 
   /** `POST /public/v1/events/subscriptions` for the token's channel; Kick answers per event. */
-  async subscribe(events: readonly KickEventName[]): Promise<KickResult<KickSubscribeOutcome[]>> {
+  async subscribe(events: readonly KickEventName[], call?: KickCall): Promise<KickResult<KickSubscribeOutcome[]>> {
     const outcomes = await this.parsed(
       {
         method: "POST",
         path: "/public/v1/events/subscriptions",
         body: { events: events.map(({ name, version }) => ({ name, version })), method: "webhook" },
         auth: true,
+        deadline: call?.deadline,
       },
       KickSubscribeOutcomeWireSchema.array()
     );
@@ -308,19 +353,20 @@ export class KickApi {
   }
 
   /** `DELETE /public/v1/events/subscriptions?id=...`. */
-  async unsubscribe(ids: string[]): Promise<KickResult<null>> {
+  async unsubscribe(ids: string[], call?: KickCall): Promise<KickResult<null>> {
     return this.empty({
       method: "DELETE",
       path: "/public/v1/events/subscriptions",
       query: ids.map((id) => ["id", id] as const),
       auth: true,
+      deadline: call?.deadline,
     });
   }
 
   /** `GET /public/v1/public-key`: the PEM webhook signatures verify against. */
-  async publicKey(): Promise<KickResult<string>> {
+  async publicKey(call?: KickCall): Promise<KickResult<string>> {
     const key = await this.parsed(
-      { method: "GET", path: "/public/v1/public-key", auth: false },
+      { method: "GET", path: "/public/v1/public-key", auth: false, deadline: call?.deadline },
       KickPublicKeyWireSchema
     );
     return key.ok ? { ok: true, value: key.value.public_key } : key;
@@ -358,8 +404,21 @@ export class KickApi {
     forceToken: boolean
   ): Promise<{ kind: "unauthorized" | "done"; answered: Answered }> {
     const headers: Record<string, string> = { Accept: "application/json", "User-Agent": this.deps.userAgent };
+    if (this.deps.signal.aborted) {
+      return { kind: "done", answered: { ok: false, error: { kind: "stopped" } } };
+    }
     if (request.auth) {
-      const token = await this.deps.token.get({ force: forceToken });
+      const tokenWait = this.remaining(request, this.deps.tokenTimeoutMs);
+      if (tokenWait <= 0) {
+        return {
+          kind: "done",
+          answered: {
+            ok: false,
+            error: { kind: "unreachable", detail: "the caller's deadline passed before the request left" },
+          },
+        };
+      }
+      const token = await this.deps.token.get({ force: forceToken, timeoutMs: tokenWait });
       if (!token.ok) {
         const error: KickApiFailure =
           token.failure.reason === "not_linked" || token.failure.reason === "relink_required"
@@ -376,7 +435,17 @@ export class KickApi {
     for (const [key, value] of request.query ?? []) {
       url.searchParams.append(key, value);
     }
-    const timeout = AbortSignal.timeout(this.deps.timeoutMs);
+    const wait = this.remaining(request, this.deps.timeoutMs);
+    if (wait <= 0) {
+      return {
+        kind: "done",
+        answered: {
+          ok: false,
+          error: { kind: "unreachable", detail: "the caller's deadline passed before the request left" },
+        },
+      };
+    }
+    const timeout = AbortSignal.timeout(wait);
     let response: Response;
     try {
       response = await this.deps.fetch(url, {
@@ -386,7 +455,7 @@ export class KickApi {
         signal: AbortSignal.any([timeout, this.deps.signal]),
       });
     } catch (err) {
-      return { kind: "done", answered: { ok: false, error: fetchFailure(err, timeout) } };
+      return { kind: "done", answered: { ok: false, error: fetchFailure(err, timeout, this.deps.signal) } };
     }
     if (response.status === 401 && request.auth && !forceToken) {
       return { kind: "unauthorized", answered: { ok: false, error: await this.httpFailure(response) } };
@@ -401,7 +470,10 @@ export class KickApi {
     try {
       body = await response.json();
     } catch (err) {
-      if (timeout.aborted || this.deps.signal.aborted) {
+      if (this.deps.signal.aborted) {
+        return { kind: "done", answered: { ok: false, error: { kind: "stopped" } } };
+      }
+      if (timeout.aborted) {
         return { kind: "done", answered: { ok: false, error: { kind: "timeout" } } };
       }
       return {
@@ -414,6 +486,11 @@ export class KickApi {
       return { kind: "done", answered: { ok: false, error: { kind: "malformed", detail: "not a Kick envelope" } } };
     }
     return { kind: "done", answered: { ok: true, data: envelope.data.data } };
+  }
+
+  /** How long this step may wait: `limit`, cut to what is left of the request's deadline. */
+  private remaining(request: KickRequest, limit: number): number {
+    return request.deadline === undefined ? limit : Math.min(limit, request.deadline - this.deps.clock.now());
   }
 
   private async httpFailure(response: Response): Promise<KickApiFailure> {
@@ -448,7 +525,10 @@ export class KickApi {
   }
 }
 
-function fetchFailure(err: unknown, timeout: AbortSignal): KickApiFailure {
+function fetchFailure(err: unknown, timeout: AbortSignal, run: AbortSignal): KickApiFailure {
+  if (run.aborted) {
+    return { kind: "stopped" };
+  }
   if (timeout.aborted) {
     return { kind: "timeout" };
   }
@@ -491,6 +571,9 @@ export function describeKickFailure(failure: KickApiFailure): string {
     }
     case "timeout": {
       return "Kick did not answer in time";
+    }
+    case "stopped": {
+      return "the Kick connection stopped before Kick answered";
     }
     case "unreachable": {
       return `Kick could not be reached: ${failure.detail}`;

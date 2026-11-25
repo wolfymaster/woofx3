@@ -74,6 +74,7 @@ export default class KickApplication {
       clock: deps.clock,
       baseUrl: deps.config.apiBaseUrl,
       timeoutMs: deps.config.requestTimeoutMs,
+      tokenTimeoutMs: deps.config.tokenRequestTimeoutMs,
       userAgent: deps.config.userAgent,
       signal: this.lifetime.signal,
     });
@@ -168,7 +169,7 @@ export default class KickApplication {
   }
 
   /** One `kickapi` request; the host only hands it over while the run is connected. */
-  async answerKickApi(request: Uint8Array): Promise<Uint8Array> {
+  async answerKickApi(request: Uint8Array, deadline: number): Promise<Uint8Array> {
     const linked = this.linked;
     if (linked === undefined) {
       throw new Error("a kickapi request reached the run before it found its broadcaster");
@@ -176,7 +177,8 @@ export default class KickApplication {
     return answerKickApiRequest(
       request,
       { api: this.api, broadcaster: linked.broadcaster },
-      { clock: this.deps.clock, ids: this.deps.ids, logger: this.ctx.logger }
+      { clock: this.deps.clock, ids: this.deps.ids, logger: this.ctx.logger },
+      deadline
     );
   }
 

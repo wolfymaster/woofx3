@@ -62,6 +62,7 @@ function setup(timeoutMs = 2000) {
     clock: time,
     baseUrl: kick.url,
     timeoutMs,
+    tokenTimeoutMs: 2000,
     userAgent: "woofx3-test",
     signal: new AbortController().signal,
   });

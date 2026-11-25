@@ -34,6 +34,7 @@ function api(overrides: Partial<KickApiDeps> = {}): KickApi {
     clock: new FakeTime(),
     baseUrl: kick.url,
     timeoutMs: 2000,
+    tokenTimeoutMs: 2000,
     userAgent: USER_AGENT,
     signal: new AbortController().signal,
     ...overrides,

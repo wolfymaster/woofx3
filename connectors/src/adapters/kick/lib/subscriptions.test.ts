@@ -36,6 +36,7 @@ function setup(random: RandomSource = halfRandom) {
     clock: time,
     baseUrl: kick.url,
     timeoutMs: 2000,
+    tokenTimeoutMs: 2000,
     userAgent: "woofx3-test",
     signal: new AbortController().signal,
   });
