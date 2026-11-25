@@ -162,10 +162,10 @@ describe("engine.kick.webhook", () => {
     bus.gate = undefined;
     release();
 
-    expect(await Promise.all([first, second])).toEqual([
-      { status: 200, reason: "published" },
-      { status: 200, reason: "duplicate" },
-    ]);
+    // Either copy may finish verifying first; exactly one publishes.
+    const replies = await Promise.all([first, second]);
+    expect(replies.map((reply) => reply.reason).sort()).toEqual(["duplicate", "published"]);
+    expect(replies.every((reply) => reply.status === 200)).toBe(true);
     expect(subjects()).toEqual(["channel.follow"]);
   });
 
