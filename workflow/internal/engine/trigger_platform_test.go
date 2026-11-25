@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wolfymaster/woofx3/common/platformgateway"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
 )
 
@@ -12,7 +13,7 @@ func pinnedFollowWorkflow(platform string) *types.WorkflowDefinition {
 	return &types.WorkflowDefinition{
 		ID:      "wf-follow",
 		Name:    "follow alert",
-		Trigger: &types.TriggerConfig{Type: "event", Event: "channel.follow", Platform: platform},
+		Trigger: &types.TriggerConfig{Type: "event", Event: "channel.follow", Platform: platformgateway.PlatformID(platform)},
 		Tasks:   []types.TaskDefinition{{ID: "say", Type: "action", Action: "echo", Parameters: map[string]any{}}},
 	}
 }

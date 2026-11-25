@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
 	"github.com/wolfymaster/woofx3/common/logging"
+	"github.com/wolfymaster/woofx3/common/platformgateway"
 	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
 	"github.com/wolfymaster/woofx3/workflow/internal/expression"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
@@ -906,8 +907,8 @@ func (e *Engine[TServices]) unmetTriggerConditions(wf *types.WorkflowDefinition,
 		return nil
 	}
 	var unmet []UnmetCondition
-	if pin := wf.Trigger.Platform; pin != "" && event.Platform != pin {
-		unmet = append(unmet, UnmetCondition{Field: TriggerPlatformField, Operator: "eq", Value: pin})
+	if pin := wf.Trigger.Platform; pin != "" && platformgateway.PlatformID(event.Platform) != pin {
+		unmet = append(unmet, UnmetCondition{Field: TriggerPlatformField, Operator: "eq", Value: string(pin)})
 	}
 	if len(wf.Trigger.Conditions) == 0 {
 		return unmet
