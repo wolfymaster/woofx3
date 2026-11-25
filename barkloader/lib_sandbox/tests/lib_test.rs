@@ -1,4 +1,4 @@
-use lib_sandbox::extensions::{LocalExtension, TwitchExtension};
+use lib_sandbox::extensions::{LocalExtension, PlatformApiExtension, TWITCH_SPEC};
 use lib_sandbox::host::noop::noop_host_context;
 use lib_sandbox::host::{
     ExtensionRegistry, HostExtension, HostFunction, NatsPublisher, NatsRequester, RequestError,
@@ -469,8 +469,9 @@ fn invoke_with_twitch(
         .unwrap();
 
     let mut host_ctx = noop_host_context();
-    host_ctx.extensions =
-        Arc::new(ExtensionRegistry::new().with(Arc::new(TwitchExtension::new(twitch))));
+    host_ctx.extensions = Arc::new(
+        ExtensionRegistry::new().with(Arc::new(PlatformApiExtension::new(twitch, &TWITCH_SPEC))),
+    );
     Sandbox::new(registry, host_ctx, SandboxLimits::default())
         .unwrap()
         .invoke(InvokeRequest {

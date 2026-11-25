@@ -12,7 +12,9 @@ use actix_web::{App, HttpServer, web::Data};
 use anyhow::Result;
 use lib_module::db_proxy::RequestContext as DbRequestContext;
 use lib_repository::{Repository, RepositoryFactory, RepositoryImpl};
-use lib_sandbox::extensions::{LocalExtension, ObsExtension, TwitchExtension};
+use lib_sandbox::extensions::{
+    LocalExtension, ObsExtension, PLATFORM_API_SPECS, PlatformApiExtension,
+};
 use lib_sandbox::host::noop::{NoopNatsRequester, noop_host_context};
 use lib_sandbox::host::{ExtensionRegistry, NatsRequester};
 use lib_sandbox::{ModuleRegistry, SandboxActionRunner, SandboxFactory, SandboxLimits};
@@ -182,14 +184,19 @@ async fn setup() -> Result<AppContext> {
         ));
         oauth_service = Some(oauth.clone());
 
-        // Platform integrations (twitch / obs), the module's own local
+        // Platform integrations (each platform api, obs), the module's own local
         // endpoints (`ctx.local`) and `ctx.oauth` are bound through the
         // extension registry. Each extension owns its own
         // Arc<dyn …> of the relevant transport, so the runtime adapters stay
         // agnostic to which platforms exist.
+        let platform_apis =
+            PLATFORM_API_SPECS
+                .iter()
+                .fold(ExtensionRegistry::new(), |registry, spec| {
+                    registry.with(Arc::new(PlatformApiExtension::new(requester.clone(), spec)))
+                });
         ctx.extensions = Arc::new(
-            ExtensionRegistry::new()
-                .with(Arc::new(TwitchExtension::new(requester.clone())))
+            platform_apis
                 .with(Arc::new(ObsExtension::new(requester.clone())))
                 .with(Arc::new(LocalExtension::new(requester)))
                 .with(Arc::new(OAuthExtension::new(oauth))),

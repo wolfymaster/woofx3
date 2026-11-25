@@ -44,6 +44,7 @@ use super::module_manifest::{
 use super::reserved_subjects::declared_event_reservation;
 use super::resource_kind_ref::parse_kind_ref;
 use super::theme::{self, InstalledModule};
+use lib_sandbox::extensions::{PLATFORM_API_SPECS, PlatformApiSpec};
 use woofx3_cloudevents::messages_gen::ModuleFieldOptionsRequestType;
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
@@ -535,15 +536,6 @@ fn field_options_subject() -> String {
     ModuleFieldOptionsRequestType::BarkloaderModuleFieldOptions.to_string()
 }
 
-/// The connectors Twitch adapter's request subject. It answers any method of its Twitch
-/// client, writes included (a shoutout, adding a moderator), so a form may
-/// request only the reads listed in `TWITCHAPI_FORM_READS`.
-const TWITCHAPI_SUBJECT: &str = "twitchapi";
-
-/// The `twitchapi` commands an uploaded module's forms may request. Each is a
-/// read a picker needs; opening another read to uploads means adding it here.
-const TWITCHAPI_FORM_READS: [&str; 1] = ["listChannelPointRewards"];
-
 /// Keep an uploaded module's forms to the requests they need.
 ///
 /// A field's `source` and a button's `action` name a subject and a payload,
@@ -551,8 +543,9 @@ const TWITCHAPI_FORM_READS: [&str; 1] = ["listChannelPointRewards"];
 /// button is pressed. Without this, a field could switch OBS scenes or add a
 /// moderator just by being looked at, or run another module's function with
 /// that module's permissions. An upload's forms may therefore request only
-/// the field-options subject for its own functions and the `twitchapi` reads in
-/// `TWITCHAPI_FORM_READS`: an allowlist, because a new command subject should
+/// the field-options subject for its own functions and, on each platform api
+/// subject, the reads its spec lists in `field_source_commands`: an
+/// allowlist, because a new command subject should
 /// stay closed to forms until someone decides otherwise. The system module's
 /// forms are the engine's own and may read its subjects. A module that lists
 /// engine-held names, such as OBS's scenes, does it from its own function
@@ -632,14 +625,26 @@ impl FormRequests<'_> {
             ));
         };
         let field_options = field_options_subject();
-        match event {
-            _ if event == field_options => self.check_field_options_request(descriptor, context),
-            TWITCHAPI_SUBJECT => check_twitchapi_request(descriptor, context),
-            _ => Err(anyhow!(
-                "{context}: requests {event:?}; an uploaded module's forms may request only \
-                 {field_options} (its own functions) or {TWITCHAPI_SUBJECT} (the reads {TWITCHAPI_FORM_READS:?})"
-            )),
+        if event == field_options {
+            return self.check_field_options_request(descriptor, context);
         }
+        if let Some(spec) = PLATFORM_API_SPECS.iter().find(|spec| spec.subject == event) {
+            return check_platform_api_request(spec, descriptor, context);
+        }
+        let platform_reads: Vec<String> = PLATFORM_API_SPECS
+            .iter()
+            .map(|spec| {
+                format!(
+                    "{} (the reads {:?})",
+                    spec.subject, spec.field_source_commands
+                )
+            })
+            .collect();
+        Err(anyhow!(
+            "{context}: requests {event:?}; an uploaded module's forms may request only \
+             {field_options} (its own functions) or {}",
+            platform_reads.join(", ")
+        ))
     }
 
     fn check_field_options_request(
@@ -674,16 +679,22 @@ impl FormRequests<'_> {
     }
 }
 
-fn check_twitchapi_request(descriptor: &serde_json::Value, context: &str) -> Result<()> {
+fn check_platform_api_request(
+    spec: &PlatformApiSpec,
+    descriptor: &serde_json::Value,
+    context: &str,
+) -> Result<()> {
     let command = descriptor
         .pointer("/request/payload/command")
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default();
-    if TWITCHAPI_FORM_READS.contains(&command) {
+    if spec.field_source_commands.contains(&command) {
         return Ok(());
     }
     Err(anyhow!(
-        "{context}: requests {TWITCHAPI_SUBJECT} command {command:?}; a form may request only {TWITCHAPI_FORM_READS:?}"
+        "{context}: requests {} command {command:?}; a form may request only {:?}",
+        spec.subject,
+        spec.field_source_commands
     ))
 }
 
@@ -3762,6 +3773,31 @@ mod tests {
                 .expect_err("only an allowlisted read is reachable from a form")
                 .to_string();
             assert!(err.contains("listChannelPointRewards"), "{payload}: {err}");
+        }
+    }
+
+    #[test]
+    fn every_platform_api_opens_only_its_listed_reads_to_upload_forms() {
+        for spec in PLATFORM_API_SPECS {
+            for command in spec.field_source_commands {
+                validate(&action_with_field_source(
+                    spec.subject,
+                    &format!(r#"{{ "command": "{command}" }}"#),
+                ))
+                .unwrap_or_else(|err| panic!("{} {command}: {err}", spec.subject));
+            }
+            for &(command, _) in spec.commands {
+                if spec.field_source_commands.contains(&command) {
+                    continue;
+                }
+                let err = validate(&action_with_field_source(
+                    spec.subject,
+                    &format!(r#"{{ "command": "{command}" }}"#),
+                ))
+                .expect_err("a module command is not a form read unless listed")
+                .to_string();
+                assert!(err.contains("a form may request only"), "{command}: {err}");
+            }
         }
     }
 
