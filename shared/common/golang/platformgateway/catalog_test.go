@@ -253,8 +253,8 @@ func TestGatewayRequestValidate(t *testing.T) {
 			r.RequestedBy.Kind = "module"
 		}, field("requestedBy.kind")},
 		{"options for an unknown platform", func(t *testing.T, r *GatewayRequest) {
-			r.Options = map[PlatformID]json.RawMessage{"kick": json.RawMessage(`{}`)}
-		}, field("options.kick")},
+			r.Options = map[PlatformID]json.RawMessage{"youtube": json.RawMessage(`{}`)}
+		}, field("options.youtube")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -309,7 +309,7 @@ func TestPlatformDisplayNames(t *testing.T) {
 			t.Errorf("platform %q: valid %v, display name %q", id, id.Valid(), id.DisplayName())
 		}
 	}
-	if PlatformID("kick").Valid() || PlatformID("kick").DisplayName() != "" {
+	if PlatformID("youtube").Valid() || PlatformID("youtube").DisplayName() != "" {
 		t.Errorf("an unknown platform should be invalid with no display name")
 	}
 }

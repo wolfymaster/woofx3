@@ -67,17 +67,18 @@ type PlatformID string
 
 const (
 	PlatformTwitch PlatformID = "twitch"
+	PlatformKick   PlatformID = "kick"
 )
 
 // PlatformIDs returns every PlatformID in contract order.
 func PlatformIDs() []PlatformID {
-	return []PlatformID{PlatformTwitch}
+	return []PlatformID{PlatformTwitch, PlatformKick}
 }
 
 // Valid reports whether v is one of the contract's values.
 func (v PlatformID) Valid() bool {
 	switch v {
-	case PlatformTwitch:
+	case PlatformTwitch, PlatformKick:
 		return true
 	}
 	return false
@@ -288,6 +289,8 @@ func (v PlatformID) DisplayName() string {
 	switch v {
 	case PlatformTwitch:
 		return "Twitch"
+	case PlatformKick:
+		return "Kick"
 	}
 	return ""
 }

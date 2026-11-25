@@ -4,7 +4,7 @@
 // adapter runs while it is connected AND enabled. See docs/services/twitch-channel.md.
 
 /** Integrations backed by account credentials. Local adapters such as obs are not integrations and never appear here. */
-export const INTEGRATION_IDS = ["twitch"] as const;
+export const INTEGRATION_IDS = ["twitch", "kick"] as const;
 
 export type IntegrationId = (typeof INTEGRATION_IDS)[number];
 

@@ -9,7 +9,7 @@
     "capabilities": "platform.gateway.capabilities.result",
     "fieldOptions": "platform.gateway.field_options.result"
   },
-  "platforms": [{ "id": "twitch", "displayName": "Twitch" }],
+  "platforms": [{ "id": "twitch", "displayName": "Twitch" }, { "id": "kick", "displayName": "Kick" }],
   "requesters": ["workflow", "dispatcher", "api"],
   "failureCodes": ["invalid", "rate_limited", "forbidden", "upstream"],
   "outcomeStatuses": ["delivered", "dropped", "unsupported", "unavailable", "unconfirmed", "failed"],

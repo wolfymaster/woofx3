@@ -19,7 +19,7 @@ func TestUserInfoPlatform(t *testing.T) {
 		{"explicit origin", map[string]any{"platform": "origin"}, &types.Event{Platform: "twitch"}, "twitch", ""},
 		{"explicit platform, no trigger", map[string]any{"platform": "twitch"}, nil, "twitch", ""},
 		{"no platform behind the trigger", nil, &types.Event{}, "", "no platform"},
-		{"unknown platform", map[string]any{"platform": "kick"}, nil, "", `"kick" is not one`},
+		{"unknown platform", map[string]any{"platform": "youtube"}, nil, "", `"youtube" is not one`},
 		{"not text", map[string]any{"platform": 3.0}, nil, "", "platform must be text"},
 	}
 	for _, tt := range tests {

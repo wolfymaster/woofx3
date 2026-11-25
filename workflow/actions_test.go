@@ -320,14 +320,14 @@ func TestResolveChatTarget(t *testing.T) {
 			platformgateway.Target{Kind: platformgateway.TargetOrigin, Origin: &platformgateway.OriginRef{Platform: platformgateway.PlatformTwitch}},
 			"",
 		},
-		{"origin from a platform with no adapter is refused", "origin", &types.Event{Platform: "kick"}, platformgateway.Target{}, `the trigger came from "kick"`},
+		{"origin from a platform with no adapter is refused", "origin", &types.Event{Platform: "youtube"}, platformgateway.Target{}, `the trigger came from "youtube"`},
 		{"all", "all", chatLine(), all, ""},
 		{
 			"a stored twitch step targets twitch alone", "twitch", nil,
 			platformgateway.Target{Kind: platformgateway.TargetPlatforms, IDs: []platformgateway.PlatformID{platformgateway.PlatformTwitch}},
 			"",
 		},
-		{"a platform with no adapter is refused", "kick", chatLine(), platformgateway.Target{}, `platform "kick" is not one this engine can send to; choose origin, all, twitch`},
+		{"a platform with no adapter is refused", "youtube", chatLine(), platformgateway.Target{}, `platform "youtube" is not one this engine can send to; choose origin, all, twitch, kick`},
 		{"an unresolved expression is refused", "${trigger.data.nope}", chatLine(), platformgateway.Target{}, "is not one this engine can send to"},
 	}
 	for _, tt := range tests {
@@ -366,7 +366,7 @@ func TestValidateChatPlatformParam(t *testing.T) {
 		{"origin", map[string]any{"platform": "origin"}, false},
 		{"all", map[string]any{"platform": "all"}, false},
 		{"twitch", map[string]any{"platform": "twitch"}, false},
-		{"a platform this engine has no adapter for", map[string]any{"platform": "kick"}, false},
+		{"a platform this engine has no adapter for", map[string]any{"platform": "youtube"}, false},
 		{"an id with digits and underscores", map[string]any{"platform": "you_tube2"}, false},
 		{"an expression", map[string]any{"platform": "${trigger.platform}"}, false},
 		{"upper case", map[string]any{"platform": "Twitch"}, true},
@@ -492,7 +492,7 @@ func TestChatReplyActionFailsUnlessTheReplyIsOK(t *testing.T) {
 		{name: "the gateway is down", err: ErrGatewayUnavailable, wantIs: ErrGatewayUnavailable},
 		{name: "the gateway went quiet", err: ErrGatewayTimeout, wantIs: ErrGatewayTimeout},
 		{name: "no message", params: map[string]any{"platform": "all"}, wantErr: "message parameter is required"},
-		{name: "a platform with no adapter", params: map[string]any{"message": "hi", "platform": "kick"}, wantErr: `platform "kick"`},
+		{name: "a platform with no adapter", params: map[string]any{"message": "hi", "platform": "youtube"}, wantErr: `platform "youtube"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -527,7 +527,7 @@ func TestChatReplyDryRun(t *testing.T) {
 		{map[string]any{"message": "hi", "platform": "origin"}, `would send "hi" to the chat the trigger came from`, false},
 		{map[string]any{"message": "hi", "platform": "all"}, `would send "hi" to every linked platform's chat`, false},
 		{map[string]any{"message": "hi", "platform": "twitch"}, `would send "hi" to twitch chat`, false},
-		{map[string]any{"message": "hi", "platform": "kick"}, "", true},
+		{map[string]any{"message": "hi", "platform": "youtube"}, "", true},
 		{map[string]any{"platform": "twitch"}, "", true},
 	}
 	for _, tt := range tests {

@@ -11,7 +11,11 @@
     { "name": "an object without an error", "invalidField": "error", "reply": { "options": [] } },
     { "name": "an empty error", "invalidField": "error", "reply": { "error": "" } },
     { "name": "neither an array nor an object", "invalidField": "reply", "reply": "twitch" },
-    { "name": "an unknown platform", "invalidField": "[0].value", "reply": [{ "value": "kick", "label": "Kick" }] },
+    {
+      "name": "an unknown platform",
+      "invalidField": "[0].value",
+      "reply": [{ "value": "youtube", "label": "YouTube" }]
+    },
     {
       "name": "a platform offered twice",
       "invalidField": "[1].value",

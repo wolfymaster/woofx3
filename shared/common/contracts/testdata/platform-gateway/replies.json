@@ -94,8 +94,8 @@
     { "name": "a null ok", "invalidField": "ok", "reply": { "ok": null, "results": {} } },
     {
       "name": "an unknown platform",
-      "invalidField": "results.kick",
-      "reply": { "ok": true, "results": { "kick": { "status": "delivered" } } }
+      "invalidField": "results.youtube",
+      "reply": { "ok": true, "results": { "youtube": { "status": "delivered" } } }
     },
     {
       "name": "an unknown status",
