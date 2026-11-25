@@ -50,7 +50,8 @@ export type KickWebhookRequest = z.infer<typeof KickWebhookRequestSchema>;
  * - ignored: valid, but nothing to publish (another channel's event, an unknown event type);
  * - malformed: headers or body are not a Kick delivery;
  * - bad_signature: Kick did not sign it;
- * - stale: its timestamp is too old or in the future;
+ * - stale: signed, but its timestamp is too old or in the future to act on;
+ *   acknowledged, since a refusal would count against the subscription;
  * - publish_failed: an event could not be published; Kick should retry;
  * - unavailable: the adapter cannot take deliveries right now; Kick should retry.
  */
@@ -74,7 +75,7 @@ export const KICK_WEBHOOK_STATUS: Readonly<Record<KickWebhookReason, KickWebhook
   ignored: 200,
   malformed: 400,
   bad_signature: 401,
-  stale: 401,
+  stale: 200,
   publish_failed: 500,
   unavailable: 503,
 };

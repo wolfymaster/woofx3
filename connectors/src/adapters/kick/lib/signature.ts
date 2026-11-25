@@ -35,6 +35,7 @@ const ALGORITHM = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" } as const;
 export class KickSignatureVerifier {
   private key: CryptoKey | undefined;
   private fetchedAt: number | undefined;
+  private fetching: Promise<boolean> | undefined;
 
   constructor(private readonly deps: KickSignatureVerifierDeps) {}
 
@@ -47,8 +48,11 @@ export class KickSignatureVerifier {
     if (this.key !== undefined && (await this.check(signature, signed)) === "valid") {
       return "valid";
     }
-    if (!this.mayRefetch()) {
-      return this.key === undefined ? "unavailable" : "invalid";
+    // A throttled refetch cannot tell a forgery from a delivery signed with a
+    // key Kick rotated since the last fetch, so neither is refused: a 503
+    // makes Kick retry the genuine one once the window opens.
+    if (this.fetching === undefined && !this.mayRefetch()) {
+      return "unavailable";
     }
     if (!(await this.refetch())) {
       return "unavailable";
@@ -70,8 +74,20 @@ export class KickSignatureVerifier {
     );
   }
 
-  /** Fetches and imports the key; false when Kick did not give a usable one. */
-  private async refetch(): Promise<boolean> {
+  /**
+   * Fetches and imports the key; false when Kick did not give a usable one.
+   * Concurrent deliveries share one fetch.
+   */
+  private refetch(): Promise<boolean> {
+    if (this.fetching === undefined) {
+      this.fetching = this.fetchKey().finally(() => {
+        this.fetching = undefined;
+      });
+    }
+    return this.fetching;
+  }
+
+  private async fetchKey(): Promise<boolean> {
     this.fetchedAt = this.deps.clock.now();
     const pem = await this.deps.api.publicKey();
     if (!pem.ok) {

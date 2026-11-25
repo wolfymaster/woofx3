@@ -68,6 +68,11 @@ export interface KickConfig {
 }
 
 export function kickConfig(env: KickEnv): KickConfig {
+  if (KICK_DEFAULTS.dedupeTtlMs <= KICK_DEFAULTS.webhookMaxSkewMs) {
+    throw new Error(
+      "KICK_DEFAULTS.dedupeTtlMs must exceed webhookMaxSkewMs, or a retry inside the window publishes again"
+    );
+  }
   return {
     apiBaseUrl: KICK_DEFAULTS.apiBaseUrl,
     userAgent: KICK_DEFAULTS.userAgent,

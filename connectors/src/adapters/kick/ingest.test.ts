@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { countingIds, FakeTime, halfRandom } from "../../host/testing";
 import { KickAdapter, kickHostState } from "./adapter";
 import { type FakeKickServer, startFakeKick } from "./fake-kick-server";
-import { channelFollowed, chatMessageSent, livestreamStatusUpdated } from "./fixtures";
+import { channelFollowed, chatMessageSent, livestreamStatusUpdated, subscriptionGifts } from "./fixtures";
 import { KickTokenBus, kickConfigAt, kickDelivery, kickSigningKey, supervisedKick } from "./testing";
 
 const SENT_AT = "2026-11-25T10:00:00Z";
@@ -10,9 +10,16 @@ const SENT_AT = "2026-11-25T10:00:00Z";
 /** A token bus whose publishes can be made to fail, as a closed scope or a NATS outage does. */
 class FlakyBus extends KickTokenBus {
   failPublishes = 0;
+  /** Publishes that succeed before the failing ones start. */
+  failAfter = 0;
+  /** While set, every publish waits for it, as a slow bus does. */
+  gate: Promise<void> | undefined;
 
   override async publish(subject: string, data: Uint8Array): Promise<void> {
-    if (this.failPublishes > 0) {
+    await this.gate;
+    if (this.failAfter > 0) {
+      this.failAfter--;
+    } else if (this.failPublishes > 0) {
       this.failPublishes--;
       throw new Error("the bus is down");
     }
@@ -93,9 +100,9 @@ describe("engine.kick.webhook", () => {
     ["not a time", "yesterday"],
   ];
   for (const [name, timestamp] of stale) {
-    test(`a delivery ${name} is refused as stale`, async () => {
+    test(`a delivery ${name} is acknowledged and dropped, so it never counts against the subscription`, async () => {
       const { deliver, follow, subjects } = await running();
-      expect(await deliver(await follow("01STALE", { timestamp }))).toEqual({ status: 401, reason: "stale" });
+      expect(await deliver(await follow("01STALE", { timestamp }))).toEqual({ status: 200, reason: "stale" });
       expect(subjects()).toEqual([]);
     });
   }
@@ -139,6 +146,53 @@ describe("engine.kick.webhook", () => {
     expect(await deliver(await follow())).toEqual({ status: 500, reason: "publish_failed" });
     expect(await deliver(await follow())).toEqual({ status: 200, reason: "published" });
     expect(subjects()).toEqual(["channel.follow"]);
+  });
+
+  test("a copy of a delivery that arrives while the first is publishing waits for it and publishes nothing", async () => {
+    const { bus, deliver, follow, subjects } = await running();
+    let release = () => {};
+    bus.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const request = await follow();
+
+    const first = deliver(request);
+    const second = deliver(request);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    bus.gate = undefined;
+    release();
+
+    expect(await Promise.all([first, second])).toEqual([
+      { status: 200, reason: "published" },
+      { status: 200, reason: "duplicate" },
+    ]);
+    expect(subjects()).toEqual(["channel.follow"]);
+  });
+
+  test("a retry after a partial failure publishes only the rest, with the same event ids", async () => {
+    const { bus, deliver, key, subjects } = await running();
+    const request = await kickDelivery(key, {
+      messageId: "01GIFTS",
+      timestamp: SENT_AT,
+      eventType: "channel.subscription.gifts",
+      body: subscriptionGifts,
+    });
+    bus.failAfter = 2;
+    bus.failPublishes = 1;
+
+    expect(await deliver(request)).toEqual({ status: 500, reason: "publish_failed" });
+    expect(await deliver(request)).toEqual({ status: 200, reason: "published" });
+
+    expect(subjects()).toEqual([
+      "channel.subscriptionGift",
+      "channel.subscribe",
+      "channel.subscribe",
+      "channel.subscribe",
+    ]);
+    const ids = bus.published
+      .filter((p) => p.subject !== "stream.status.observed")
+      .map((p) => JSON.parse(new TextDecoder().decode(p.data)).id);
+    expect(ids).toEqual(["01GIFTS:0", "01GIFTS:1", "01GIFTS:2", "01GIFTS:3"]);
   });
 
   test("a stream going live is published and told to the live status board", async () => {

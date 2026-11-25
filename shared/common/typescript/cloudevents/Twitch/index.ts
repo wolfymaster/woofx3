@@ -171,9 +171,16 @@ function walkPayload(value: unknown, path: string, ancestors: object[]): void {
 /** Builds the platform-neutral stream events (`user.message`, `channel.follow`,
  *  ...) and stamps each with the platform it came from, fixed per builder. */
 export default class PlatformEvents {
+  /**
+   * `eventId`, when given, names each event this builder encodes in turn, so
+   * a producer that may build the same events twice (a redelivered webhook)
+   * gives them the same ids and consumers can drop the repeat. Without it
+   * every event gets a fresh random id.
+   */
   constructor(
     private readonly source: string,
-    private readonly platform: StreamPlatform
+    private readonly platform: StreamPlatform,
+    private readonly eventId?: () => string
   ) {}
 
   chatMessage(event: TwitchEvent.ChatMessage, attributes: TwitchEvent.ChatMessageAttributes = {}): EventTuple {
@@ -311,7 +318,13 @@ export default class PlatformEvents {
     attributes: TwitchEvent.ChatMessageAttributes = {}
   ): EventTuple {
     assertPlainPayload(event);
-    const wire = JSON.stringify(Event({ ...attributes, type, source: this.source, platform: this.platform }, event));
+    const id = this.eventId?.();
+    const wire = JSON.stringify(
+      Event(
+        { ...attributes, ...(id === undefined ? {} : { id }), type, source: this.source, platform: this.platform },
+        event
+      )
+    );
     const validate = VALIDATORS[type];
     if (!validate(JSON.parse(wire))) {
       const problem = validate.errors?.[0];

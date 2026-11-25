@@ -66,11 +66,21 @@ const FollowedSchema = z.object({
   follower: z.object({ user_id: KickId, username: z.string() }),
 });
 
-const SubscriptionSchema = z.object({
+/**
+ * Kick sends a new sub and a renewal in the same shape, and the event type
+ * that tells them apart travels in a header Kick does not sign. A party that
+ * sees a delivery could resend it with the other type before Kick's copy
+ * arrives, publishing a new sub as a resub or the reverse. Every other event
+ * has a field its schema requires and no other event carries, so a swapped
+ * type there is refused as malformed.
+ */
+const SubscriptionNewSchema = z.object({
   broadcaster: BroadcasterSchema,
   subscriber: z.object({ user_id: KickId, username: z.string() }),
   duration: z.number().int().nonnegative(),
 });
+
+const SubscriptionRenewalSchema = SubscriptionNewSchema;
 
 const GiftsSchema = z.object({
   broadcaster: BroadcasterSchema,
@@ -204,7 +214,7 @@ const followed: Normaliser = (body, ctx) => {
 };
 
 const subscriptionNew: Normaliser = (body, ctx) => {
-  const parsed = parse(SubscriptionSchema, body);
+  const parsed = parse(SubscriptionNewSchema, body);
   if (!isParsed(parsed)) {
     return parsed;
   }
@@ -224,7 +234,7 @@ const subscriptionNew: Normaliser = (body, ctx) => {
 };
 
 const subscriptionRenewal: Normaliser = (body, ctx) => {
-  const parsed = parse(SubscriptionSchema, body);
+  const parsed = parse(SubscriptionRenewalSchema, body);
   if (!isParsed(parsed)) {
     return parsed;
   }

@@ -45,7 +45,6 @@ export default class KickApplication {
   private linked: { broadcaster: KickBroadcaster } | undefined;
   private readonly verifier: KickSignatureVerifier;
   private readonly reconciler: SubscriptionReconciler;
-  private readonly events = new EventFactory({ source: KICK_EVENT_SOURCE }).Platform("kick");
   /** Badge types already logged as unknown, so each shows once per run. */
   private readonly unknownBadges = new Set<string>();
 
@@ -135,10 +134,13 @@ export default class KickApplication {
       clock: this.deps.clock,
       logger: this.ctx.logger,
       maxSkewMs: this.deps.config.webhookMaxSkewMs,
-      delivered: hostState.delivered,
+      memory: hostState.deliveries,
+      eventsFor: (deliveryId) => {
+        let index = 0;
+        return new EventFactory({ source: KICK_EVENT_SOURCE }).Platform("kick", () => `${deliveryId}:${index++}`);
+      },
       broadcasterUserId: linked.broadcaster.userId,
       normalise: {
-        events: this.events,
         claimOwnLine: (echo) => selfSent.claimEcho(echo),
         redemptionPublished: (redemptionId) => hostState.redemptionsSeen.get(redemptionId) !== undefined,
         unknownBadge: (type) => {
@@ -191,7 +193,8 @@ export default class KickApplication {
     if (!channel.stream.isLive) {
       return { live: false };
     }
-    return startedAt === null ? { live: true } : { live: true, startedAt: new Date(startedAt).toISOString() };
+    const started = startedAt === null ? Number.NaN : Date.parse(startedAt);
+    return Number.isNaN(started) ? { live: true } : { live: true, startedAt: new Date(started).toISOString() };
   }
 
   /**
