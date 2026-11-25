@@ -20,6 +20,7 @@ require (
 	github.com/wolfymaster/woofx3/common/config v0.0.0
 	github.com/wolfymaster/woofx3/common/logging v0.0.0
 	github.com/wolfymaster/woofx3/common/messages v0.0.0
+	github.com/wolfymaster/woofx3/common/platformgateway v0.0.0
 	github.com/wolfymaster/woofx3/common/runtime v0.0.0
 	go.opentelemetry.io/otel v1.47.0
 	google.golang.org/protobuf v1.36.12
@@ -104,7 +105,6 @@ require (
 	github.com/tetratelabs/wazero v1.2.1 // indirect
 	github.com/wasilibs/go-re2 v1.3.0 // indirect
 	github.com/wolfymaster/woofx3/clients/barkloader v0.0.0 // indirect
-	github.com/wolfymaster/woofx3/common/messages v0.0.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.21.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.23.0 // indirect
@@ -145,5 +145,6 @@ replace (
 	github.com/wolfymaster/woofx3/common/config => ../shared/common/golang/config
 	github.com/wolfymaster/woofx3/common/logging => ../shared/common/golang/logging
 	github.com/wolfymaster/woofx3/common/messages => ../shared/common/golang/messages
+	github.com/wolfymaster/woofx3/common/platformgateway => ../shared/common/golang/platformgateway
 	github.com/wolfymaster/woofx3/common/runtime => ../shared/common/golang/runtime
 )

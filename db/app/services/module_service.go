@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"github.com/wolfymaster/woofx3/common/platformgateway"
 	"github.com/wolfymaster/woofx3/db/app/secrets"
 	"github.com/wolfymaster/woofx3/db/app/workers"
 	"github.com/wolfymaster/woofx3/db/database/models"
@@ -513,6 +514,13 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 	if req.CreatedByType != "" && req.CreatedByRef != "" {
 		createdByType = req.CreatedByType
 		createdByRef = req.CreatedByRef
+	}
+	// A trigger's platform is matched exactly against each event's platform,
+	// so an id outside the contract would pin it to events that never come.
+	for _, in := range req.Triggers {
+		if in.Platform != "" && !platformgateway.PlatformID(in.Platform).Valid() {
+			return nil, twirp.InvalidArgumentError("platform", fmt.Sprintf("trigger %q names unknown platform %q", in.ManifestId, in.Platform))
+		}
 	}
 	saved := make([]*models.Trigger, 0, len(req.Triggers))
 	for _, in := range req.Triggers {

@@ -2,7 +2,10 @@ package services
 
 import (
 	"context"
+	"errors"
 	"testing"
+
+	"github.com/twitchtv/twirp"
 
 	client "github.com/wolfymaster/woofx3/clients/db"
 )
@@ -35,5 +38,19 @@ func TestRegisterTriggersKeepsEachTriggersPlatform(t *testing.T) {
 				t.Fatalf("platform = %q, want %q", got.GetTrigger().GetPlatform(), tc.platform)
 			}
 		})
+	}
+}
+
+func TestRegisterTriggersRefusesAnUnknownPlatform(t *testing.T) {
+	svc, _ := newModuleSvc(t)
+	for _, platform := range []string{"Twitch", "youtube", " twitch"} {
+		_, err := svc.RegisterTriggers(context.Background(), &client.RegisterTriggersRequest{ModuleId: "pups", Triggers: []*client.TriggerInput{{
+			Name: "Follow", Description: "Follow", Event: "channel.follow", ConfigSchema: "[]",
+			ManifestId: "follow", Transport: "eventbus", Platform: platform,
+		}}})
+		var twerr twirp.Error
+		if !errors.As(err, &twerr) || twerr.Code() != twirp.InvalidArgument {
+			t.Fatalf("platform %q: err = %v, want InvalidArgument", platform, err)
+		}
 	}
 }
