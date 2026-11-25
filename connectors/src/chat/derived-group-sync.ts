@@ -130,7 +130,7 @@ export class DerivedGroupSync {
     if (bareLogin === "") {
       return "unchanged";
     }
-    const login = permissionSubject(viewer.platform, bareLogin);
+    const login = permissionSubject(viewer.platform, bareLogin, viewer.platformUserId);
     const desired = membershipGroups(membership);
     const previous = this.lastSeen.get(key);
     if (

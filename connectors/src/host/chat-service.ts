@@ -2,6 +2,7 @@ import { MODERATION_LIMITS } from "@woofx3/api/moderation-config";
 import { builtinCommands } from "../chat/builtins";
 import { type DispatcherDb, dbProxyDispatcherDb } from "../chat/db-client";
 import { CHAT_DISPATCHER_GRANTS, ChatDispatcher, type DispatcherCounters } from "../chat/dispatcher";
+import { KickApiClient } from "../chat/kickapi-client";
 import { GatewayReplier, type ReplierCounters } from "../chat/replier";
 import { TwitchApiClient } from "../chat/twitchapi-client";
 import type { ChatConfig } from "../config/chat";
@@ -97,6 +98,7 @@ export class ChatService {
       builtins: builtinCommands({
         db,
         twitchApi: new TwitchApiClient({ bus: this.scope, timeoutMs: deps.config.twitchApi.timeoutMs }),
+        kickApi: new KickApiClient({ bus: this.scope, timeoutMs: deps.config.kickApi.timeoutMs }),
         permits: linkPermits(this.moderationConfig, permits),
         random: deps.random,
         logger: deps.logger,

@@ -11,15 +11,10 @@ import type { EgressContext, EgressHandlers } from "../../host/adapter";
 import type { SelfSentRecorder } from "../shared/self-sent";
 import type { SendQueue } from "../shared/send-queue";
 import type { KickApi, KickApiFailure, KickResult } from "./lib/kick-api";
+import { kickBan } from "./lib/moderation";
 
 /** Kick refuses a chat message above this many UTF-8 bytes (its 500-character cap is the gateway contract's). */
 export const KICK_CHAT_MAX_BYTES = 2048;
-
-/** Kick counts a timeout in whole minutes, 1 to 7 days. */
-export const KICK_TIMEOUT_MAX_MINUTES = 10_080;
-
-/** Kick refuses a ban or timeout reason longer than this. */
-export const KICK_BAN_REASON_MAX_LENGTH = 100;
 
 /** The failure code for each Kick error status. Any other status is `upstream`. */
 const STATUS_FAILURES: Readonly<Partial<Record<number, FailureCode>>> = {
@@ -116,16 +111,11 @@ async function ban(
   if (!/^\d+$/.test(payload.viewer)) {
     return refusedHere("a Kick viewer is named by their numeric user id");
   }
-  let durationMinutes: number | undefined;
-  if ("durationSeconds" in payload) {
-    durationMinutes = Math.ceil(payload.durationSeconds / 60);
-    if (durationMinutes < 1 || durationMinutes > KICK_TIMEOUT_MAX_MINUTES) {
-      return refusedHere(`a timeout is 1 to ${KICK_TIMEOUT_MAX_MINUTES * 60} seconds on Kick`);
-    }
+  const checked = kickBan("durationSeconds" in payload ? payload.durationSeconds : undefined, payload.reason);
+  if (!checked.ok) {
+    return refusedHere(checked.error);
   }
-  if (payload.reason !== undefined && [...payload.reason].length > KICK_BAN_REASON_MAX_LENGTH) {
-    return refusedHere(`a ban or timeout reason is at most ${KICK_BAN_REASON_MAX_LENGTH} characters on Kick`);
-  }
+  const { durationMinutes } = checked;
   const session = deps.session();
   if (session.kind === "ready" && session.broadcasterUserId === payload.viewer) {
     return refusedHere("the broadcaster cannot be timed out or banned");

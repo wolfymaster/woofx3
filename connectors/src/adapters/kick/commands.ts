@@ -17,7 +17,6 @@ import {
 } from "@woofx3/common/cloudevents/PlatformApi/reply";
 import type { Logger } from "../../host/deps";
 import type { KickBroadcaster } from "./application";
-import { KICK_TIMEOUT_MAX_MINUTES } from "./egress";
 import {
   describeKickFailure,
   type KickApi,
@@ -25,6 +24,7 @@ import {
   type KickChannel,
   type KickResult,
 } from "./lib/kick-api";
+import { kickBan, kickSlugCandidates } from "./lib/moderation";
 
 /** Kick allows at most this many custom tags on a stream. */
 export const KICK_MAX_TAGS = 10;
@@ -44,6 +44,15 @@ function invalid(error: string): CommandOutcome {
   return { ok: false, error, code: "invalid_arguments" };
 }
 
+/** The reply code for each Kick error status a caller can act on; others are uncoded. */
+const STATUS_CODES: Readonly<Partial<Record<number, PlatformApiReplyCode>>> = {
+  400: "invalid_arguments",
+  422: "invalid_arguments",
+  401: "unauthorized",
+  403: "missing_scope",
+  429: "rate_limited",
+};
+
 /** Kick's refusal with the reply code a caller can act on. */
 function failed(failure: KickApiFailure): CommandOutcome {
   const error = describeKickFailure(failure);
@@ -53,24 +62,17 @@ function failed(failure: KickApiFailure): CommandOutcome {
   if (failure.kind !== "http") {
     return { ok: false, error, code: undefined };
   }
-  const codes: Readonly<Partial<Record<number, PlatformApiReplyCode>>> = {
-    400: "invalid_arguments",
-    422: "invalid_arguments",
-    401: "unauthorized",
-    403: "missing_scope",
-    429: "rate_limited",
-  };
-  return { ok: false, error, code: codes[failure.status] };
+  return { ok: false, error, code: STATUS_CODES[failure.status] };
 }
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/** `{ userId }` (digits) or `{ userName }` (a slug, `@` and case dropped), exactly one. */
+/** `{ userId }` (digits) or `{ userName }` (a display name or slug), exactly one. */
 function target(args: Record<string, unknown>): KickUserTarget | string {
   const userId = text(args.userId);
-  const userName = text(args.userName).replace(/^@+/, "").toLowerCase();
+  const userName = text(args.userName).replace(/^@+/, "");
   if ((userId === "") === (userName === "")) {
     return "name the user by exactly one of userId or userName";
   }
@@ -80,10 +82,20 @@ function target(args: Record<string, unknown>): KickUserTarget | string {
   return { userName };
 }
 
-/** The channel `who` names; null when Kick has none. */
+/** The channel `who` names; null when Kick has none. A name is asked for under each slug it may be. */
 async function channelOf(api: KickApi, who: KickUserTarget): Promise<KickResult<KickChannel | null>> {
-  const found = await api.channels("userId" in who ? { ids: [who.userId] } : { slugs: [who.userName] });
-  return found.ok ? { ok: true, value: found.value[0] ?? null } : found;
+  if ("userId" in who) {
+    const found = await api.channels({ ids: [who.userId] });
+    return found.ok ? { ok: true, value: found.value[0] ?? null } : found;
+  }
+  const candidates = kickSlugCandidates(who.userName);
+  const found = await api.channels({ slugs: candidates });
+  if (!found.ok) {
+    return found;
+  }
+  const bySlug = new Map(found.value.map((channel) => [channel.slug.toLowerCase(), channel]));
+  const match = candidates.map((slug) => bySlug.get(slug)).find((channel) => channel !== undefined);
+  return { ok: true, value: match ?? null };
 }
 
 const getUser: Handler = async (api, _broadcaster, args) => {
@@ -173,14 +185,15 @@ const timeout: Handler = async (api, broadcaster, args) => {
     return invalid(`timeout: ${who}`);
   }
   const seconds = args.durationSeconds;
-  if (typeof seconds !== "number" || !Number.isFinite(seconds)) {
+  if (typeof seconds !== "number") {
     return invalid("timeout: durationSeconds is a number of seconds");
   }
-  const minutes = Math.ceil(seconds / 60);
-  if (minutes < 1 || minutes > KICK_TIMEOUT_MAX_MINUTES) {
-    return invalid(`timeout: a timeout is 1 to ${KICK_TIMEOUT_MAX_MINUTES * 60} seconds on Kick`);
-  }
   const reason = text(args.reason);
+  const checked = kickBan(seconds, reason === "" ? undefined : reason);
+  if (!checked.ok || checked.durationMinutes === undefined) {
+    return invalid(`timeout: ${checked.ok ? "a timeout needs a duration" : checked.error}`);
+  }
+  const minutes = checked.durationMinutes;
   let userId: string;
   if ("userId" in who) {
     userId = who.userId;

@@ -3,6 +3,7 @@ import { EventType as ActionEventType } from "@woofx3/common/cloudevents/Action"
 import type { ChatCommandEvent } from "@woofx3/common/cloudevents/Chat/commands";
 import { EventType as CommandEventType } from "@woofx3/common/cloudevents/Command";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
+import { KICKAPI_SUBJECT } from "@woofx3/common/cloudevents/Kick/commands";
 import { EventType as TwitchEventType } from "@woofx3/common/cloudevents/Twitch";
 import { TWITCHAPI_SUBJECT } from "@woofx3/common/cloudevents/Twitch/commands";
 import type { ChatConfig } from "../config/chat";
@@ -32,7 +33,7 @@ export const COMMAND_EVENT_SUBJECTS = [CommandEventType.Created, CommandEventTyp
 export const CHAT_DISPATCHER_GRANTS: SubjectGrants = {
   subscribes: [CHAT_LINE_SUBJECT, ...COMMAND_EVENT_SUBJECTS],
   publishes: ["chat.command.*", ActionEventType.Execute, CommandEventType.ExecuteWorkflow],
-  requests: [PLATFORM_GATEWAY_SUBJECTS.send, TWITCHAPI_SUBJECT],
+  requests: [PLATFORM_GATEWAY_SUBJECTS.send, TWITCHAPI_SUBJECT, KICKAPI_SUBJECT],
 };
 
 export type DispatcherBus = Pick<ScopedBus, "publish" | "subscribe" | "request">;

@@ -45,7 +45,7 @@ describe("CommandPermissions", () => {
         chatLine({ platform: "kick", platformUserId: "k-1", chatterLogin: "bob" })
       )
     ).toBe("denied");
-    expect(db.permissionChecks.map((check) => check.username)).toEqual(["bob", "kick:bob"]);
+    expect(db.permissionChecks.map((check) => check.username)).toEqual(["bob", "kick:k-1"]);
   });
 
   test("simulated badges cannot escalate: an untrusted line is denied without a check", async () => {
