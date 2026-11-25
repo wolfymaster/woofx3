@@ -35,7 +35,13 @@ export function adapterRegistry(deps: AdapterRegistryDeps): AdapterRegistry {
     },
     kick: async () => {
       const { kickAdapterModule } = await import("../adapters/kick/adapter");
-      return kickAdapterModule({ config: deps.config.kick, clock: deps.clock, fetch });
+      return kickAdapterModule({
+        config: deps.config.kick,
+        clock: deps.clock,
+        fetch,
+        timers: deps.timers,
+        random: deps.random,
+      });
     },
     obs: async () => {
       const { obsAdapterModule } = await import("../adapters/obs/adapter");

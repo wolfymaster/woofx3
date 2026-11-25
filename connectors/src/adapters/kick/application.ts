@@ -3,14 +3,15 @@ import type { KickWebhookReply } from "@woofx3/common/cloudevents/Kick/webhook";
 import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/integration-settings";
 import type { KickConfig } from "../../config/kick";
 import type { AdapterContext } from "../../host/adapter";
-import type { Clock } from "../../host/deps";
+import type { Clock, RandomSource, Timers } from "../../host/deps";
 import type { BusMessage } from "../../host/scoped-bus";
 import type { SelfSentRegistry } from "../shared/self-sent";
 import type { KickHostState } from "./adapter";
 import { KICK_EVENT_SOURCE } from "./event-source";
 import { ingestKickDelivery } from "./ingest";
-import { KickApi, type KickApiFailure, type KickChannel } from "./lib/kick-api";
+import { describeKickFailure, KickApi, type KickApiFailure, type KickChannel } from "./lib/kick-api";
 import { KickSignatureVerifier } from "./lib/signature";
+import { SubscriptionReconciler } from "./lib/subscriptions";
 import { KickTokenClient } from "./lib/token";
 
 /** The linked Kick channel, fixed for one run. */
@@ -26,6 +27,8 @@ export interface KickApplicationDeps {
   fetch: typeof fetch;
   hostState: KickHostState;
   selfSent: SelfSentRegistry;
+  timers: Timers;
+  random: RandomSource;
 }
 
 /**
@@ -39,6 +42,7 @@ export default class KickApplication {
   readonly api: KickApi;
   private linked: { broadcaster: KickBroadcaster } | undefined;
   private readonly verifier: KickSignatureVerifier;
+  private readonly reconciler: SubscriptionReconciler;
   private readonly events = new EventFactory({ source: KICK_EVENT_SOURCE }).Platform("kick");
   /** Badge types already logged as unknown, so each shows once per run. */
   private readonly unknownBadges = new Set<string>();
@@ -61,6 +65,13 @@ export default class KickApplication {
       timeoutMs: deps.config.requestTimeoutMs,
       userAgent: deps.config.userAgent,
       signal: this.lifetime.signal,
+    });
+    this.reconciler = new SubscriptionReconciler({
+      api: this.api,
+      timers: deps.timers,
+      random: deps.random,
+      logger: ctx.logger,
+      config: { intervalMs: deps.config.subscriptionReconcileIntervalMs, backoff: deps.config.reconcileBackoff },
     });
     this.verifier = new KickSignatureVerifier({
       api: this.api,
@@ -87,6 +98,14 @@ export default class KickApplication {
     await this.ctx.bus.subscribe(INTEGRATION_TOKEN_UPDATED_SUBJECT, (msg) => this.onTokenUpdated(msg));
     this.linked = { broadcaster: await this.findBroadcaster() };
     await this.ctx.liveStatus.seed(() => this.readLive(), this.lifetime.signal);
+    // A subscription Kick refuses (a missing scope) leaves the run connected:
+    // its REST actions still work, and /health shows the refusal.
+    await this.reconciler.start();
+  }
+
+  /** Per subscribed event, for /health. */
+  subscriptions(): ReturnType<SubscriptionReconciler["detail"]> {
+    return this.reconciler.detail();
   }
 
   /** One webhook delivery from `engine.kick.webhook`; the host only hands it over while the run is connected. */
@@ -122,6 +141,7 @@ export default class KickApplication {
 
   async stop(): Promise<void> {
     this.lifetime.abort(new Error("the Kick adapter stopped"));
+    await this.reconciler.stop();
   }
 
   private async findBroadcaster(): Promise<KickBroadcaster> {
@@ -175,12 +195,15 @@ export default class KickApplication {
       return;
     }
     if (!user.ok) {
-      this.ctx.logger.warn("kick: could not read the relinked Kick user", { err: failureText(user.error) });
+      this.ctx.logger.warn("kick: could not read the relinked Kick user", { err: describeKickFailure(user.error) });
       return;
     }
     if (before !== undefined && user.value.userId !== before.userId) {
       this.ctx.reportFault(`Kick was relinked to another channel (${user.value.userId})`);
+      return;
     }
+    // The same channel, perhaps with other scopes: subscribe to what they now allow.
+    await this.reconciler.reconcileNow();
   }
 }
 
@@ -198,25 +221,5 @@ function startFailure(doing: string, failure: KickApiFailure): Error {
   if (failure.kind === "not_linked") {
     return new Error("Kick is not linked: no Kick token is stored, or it has to be linked again");
   }
-  return new Error(`could not ${doing}: ${failureText(failure)}`);
-}
-
-export function failureText(failure: KickApiFailure): string {
-  switch (failure.kind) {
-    case "http": {
-      return failure.message;
-    }
-    case "timeout": {
-      return "Kick did not answer in time";
-    }
-    case "unreachable": {
-      return `Kick could not be reached: ${failure.detail}`;
-    }
-    case "not_linked": {
-      return "Kick is not linked";
-    }
-    case "malformed": {
-      return `Kick's answer could not be read: ${failure.detail}`;
-    }
-  }
+  return new Error(`could not ${doing}: ${describeKickFailure(failure)}`);
 }

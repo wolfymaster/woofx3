@@ -9,7 +9,7 @@ import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/i
 import { BoundedMap } from "../../chat/bounded-map";
 import type { KickConfig } from "../../config/kick";
 import type { Adapter, AdapterContext, AdapterManifest, AdapterModule } from "../../host/adapter";
-import type { Clock } from "../../host/deps";
+import type { Clock, RandomSource, Timers } from "../../host/deps";
 import type { LinkState } from "../../host/link-readers";
 import { SelfSentRegistry } from "../shared/self-sent";
 import KickApplication from "./application";
@@ -43,6 +43,8 @@ export interface KickAdapterDeps {
   config: KickConfig;
   clock: Clock;
   fetch: typeof fetch;
+  timers: Timers;
+  random: RandomSource;
 }
 
 const encoder = new TextEncoder();
@@ -105,6 +107,7 @@ export class KickAdapter implements Adapter<KickHostState> {
     return {
       broadcasterId: broadcaster?.userId ?? null,
       slug: broadcaster?.slug ?? null,
+      subscriptions: this.run?.subscriptions() ?? null,
       deliveriesRemembered: this.hostState.delivered.size,
       ownLinesAwaitingEcho: this.selfSent.size,
     };
