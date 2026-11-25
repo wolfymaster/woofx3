@@ -33,8 +33,8 @@ describe("loadAdapters", () => {
   });
 
   test("fails on an entry that is not an adapter id", async () => {
-    const registry = { kick: async () => ({ create: () => new FakeAdapter() }) } as AdapterRegistry;
-    await expect(loadAdapters(registry)).rejects.toThrow('"kick", which is not an adapter id');
+    const registry = { youtube: async () => ({ create: () => new FakeAdapter() }) } as AdapterRegistry;
+    await expect(loadAdapters(registry)).rejects.toThrow('"youtube", which is not an adapter id');
   });
 
   test("fails when the built adapter claims a different id", async () => {

@@ -1,5 +1,6 @@
 import { isPlatformId, type PlatformId } from "@woofx3/api/platform-gateway";
 import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
+import { KICK_EVENT_SOURCE } from "../adapters/kick/event-source";
 import { TWITCH_EVENT_SOURCE } from "../adapters/twitch/event-source";
 import { type ViewerKey, viewerKey } from "./viewer";
 
@@ -11,6 +12,7 @@ import { type ViewerKey, viewerKey } from "./viewer";
  */
 export const TRUSTED_LINE_SOURCES: Readonly<Record<PlatformId, string>> = {
   twitch: TWITCH_EVENT_SOURCE,
+  kick: KICK_EVENT_SOURCE,
 };
 
 /** One chat line as the dispatcher acts on it, after the trust rules ran. */

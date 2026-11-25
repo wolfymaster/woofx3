@@ -34,7 +34,9 @@ const CAPABILITIES = PLATFORM_GATEWAY_SUBJECTS.capabilities;
 const FIELD_OPTIONS = PLATFORM_GATEWAY_SUBJECTS.fieldOptions;
 
 // The contract has one platform; a second, test-only id shows filtering across two.
-const KICK = "kick" as PlatformId;
+const KICK: PlatformId = "kick";
+/** A platform the contract does not list, so it has no display name. */
+const UNNAMED = "youtube" as PlatformId;
 const CATALOG: readonly PlatformId[] = ["twitch", KICK];
 const BUDGET_MS = 1_500;
 
@@ -218,12 +220,12 @@ describe("platform.gateway.field_options", () => {
     const time = new FakeTime();
     const build = () =>
       new GatewayDiscovery({
-        egress: EgressRegistry.fromManifests([manifest(KICK, { "chat.send": handler })], CATALOG),
+        egress: EgressRegistry.fromManifests([manifest(UNNAMED, { "chat.send": handler })], [...CATALOG, UNNAMED]),
         adapters: new FakePlatforms(),
         requests: new HostRequests({ clock: time, ids: countingIds(), timers: time, logger: new RecordingLogger() }),
         budgetMs: BUDGET_MS,
       });
-    expect(build).toThrow('platform "kick" has no display name');
+    expect(build).toThrow('platform "youtube" has no display name');
   });
 });
 

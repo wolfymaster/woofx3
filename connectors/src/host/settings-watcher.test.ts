@@ -133,7 +133,7 @@ describe("SettingsWatcher", () => {
     const bodies = [
       bytes("not json"),
       bytes(JSON.stringify({ integration: "twitch" })),
-      cloudEvent(INTEGRATION_TOKEN_UPDATED_SUBJECT, { integration: "kick" }),
+      cloudEvent(INTEGRATION_TOKEN_UPDATED_SUBJECT, { integration: "youtube" }),
     ];
     for (const body of bodies) {
       bus.deliver(INTEGRATION_TOKEN_UPDATED_SUBJECT, body);
