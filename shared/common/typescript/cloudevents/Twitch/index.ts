@@ -1,5 +1,5 @@
 import Event from "../BaseEvent";
-import * as TwitchEvent from "./events";
+import type { PlatformId } from "../messages.gen";
 import {
   validateChannelAdBreakBeginEvent,
   validateChannelAdBreakEndEvent,
@@ -11,6 +11,7 @@ import {
   validateChannelFollowEvent,
   validateChannelGiftPaidUpgradeEvent,
   validateChannelHypeTrainEvent,
+  validateChannelKicksEvent,
   validateChannelPayItForwardEvent,
   validateChannelPointsRedeemEvent,
   validateChannelPrimePaidUpgradeEvent,
@@ -32,7 +33,7 @@ import {
   validateStreamOnlineEvent,
   validateUserMessageEvent,
 } from "../messages.validate.gen";
-import type { PlatformId } from "../messages.gen";
+import * as TwitchEvent from "./events";
 
 /** A platform id as it appears on the wire, from the stream contract's `PlatformId`. */
 export type StreamPlatform = `${PlatformId}`;
@@ -46,6 +47,7 @@ type EventTuple = [string, Uint8Array];
 export interface TwitchEventPayloads {
   [TwitchEvent.EventType.ChatMessage]: TwitchEvent.ChatMessage;
   [TwitchEvent.EventType.Cheer]: TwitchEvent.Cheer;
+  [TwitchEvent.EventType.Kicks]: TwitchEvent.Kicks;
   [TwitchEvent.EventType.Follow]: TwitchEvent.Follow;
   [TwitchEvent.EventType.HypeTrainBegin]: TwitchEvent.HypeTrainBegin;
   [TwitchEvent.EventType.Raid]: TwitchEvent.Raid;
@@ -82,6 +84,7 @@ type EventValidator = ((value: unknown) => boolean) & { errors?: { instancePath:
 const VALIDATORS: Record<TwitchEvent.EventType, EventValidator> = {
   [TwitchEvent.EventType.ChatMessage]: validateUserMessageEvent,
   [TwitchEvent.EventType.Cheer]: validateChannelCheerEvent,
+  [TwitchEvent.EventType.Kicks]: validateChannelKicksEvent,
   [TwitchEvent.EventType.Follow]: validateChannelFollowEvent,
   [TwitchEvent.EventType.HypeTrainBegin]: validateChannelHypeTrainEvent,
   [TwitchEvent.EventType.Raid]: validateChannelRaidEvent,
@@ -179,6 +182,10 @@ export default class PlatformEvents {
 
   cheer(event: TwitchEvent.Cheer): EventTuple {
     return this.encodeEvent(TwitchEvent.EventType.Cheer, event);
+  }
+
+  kicks(event: TwitchEvent.Kicks): EventTuple {
+    return this.encodeEvent(TwitchEvent.EventType.Kicks, event);
   }
 
   follow(event: TwitchEvent.Follow): EventTuple {

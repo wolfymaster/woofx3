@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { clearCurrentSessionId, setCurrentSessionId } from "../session";
 import EventFactory from "../EventFactory";
+import { clearCurrentSessionId, setCurrentSessionId } from "../session";
 import PlatformEvents, { assertPlainPayload, type ChatMessage, type HypeTrainBegin } from "./index";
 
 beforeEach(() => {
@@ -109,6 +109,33 @@ describe("platform attribute", () => {
       expect(decoded(bytes)).toMatchObject({ platform: "twitch", source: "connectors" });
     });
   }
+});
+
+describe("channel.kicks", () => {
+  const KICKS = {
+    amount: 100,
+    giftName: "Full Send",
+    giftType: "BASIC",
+    giftTier: "BASIC",
+    message: "w",
+    userId: "123",
+    userName: "pup",
+    isAnonymous: false,
+  };
+
+  test("encodes a KICKs gift from Kick", () => {
+    const [topic, bytes] = new PlatformEvents("kick", "kick").kicks(KICKS);
+
+    expect(topic).toBe("channel.kicks");
+    expect(decoded(bytes)).toMatchObject({ type: "channel.kicks", platform: "kick", data: KICKS });
+  });
+
+  test("refuses a gift without its amount", () => {
+    const { amount: _, ...missing } = KICKS;
+    expect(() => new PlatformEvents("kick", "kick").kicks(missing as typeof KICKS)).toThrow(
+      "channel.kicks event does not match its contract"
+    );
+  });
 });
 
 describe("assertPlainPayload", () => {
