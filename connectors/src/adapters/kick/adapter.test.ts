@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { FakeTime } from "../../host/testing";
+import { FakeTime, halfRandom } from "../../host/testing";
 import { KickAdapter, kickHostState } from "./adapter";
 import { type FakeKickServer, startFakeKick } from "./fake-kick-server";
 import { KickTokenBus, kickConfigAt, supervisedKick } from "./testing";
@@ -13,7 +13,8 @@ afterEach(async () => {
 function setup() {
   kick = startFakeKick();
   const bus = new KickTokenBus();
-  const deps = { config: kickConfigAt(kick.url), clock: new FakeTime(Date.now()), fetch };
+  const time = new FakeTime(Date.now());
+  const deps = { config: kickConfigAt(kick.url), clock: time, timers: time, random: halfRandom, fetch };
   const adapter = new KickAdapter(deps, kickHostState(deps));
   return { bus, adapter, ...supervisedKick(adapter, bus) };
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { FakeTime } from "../../host/testing";
+import { FakeTime, halfRandom } from "../../host/testing";
 import { KickAdapter, kickHostState } from "./adapter";
 import { type FakeKickServer, startFakeKick } from "./fake-kick-server";
 import { channelFollowed, chatMessageSent, livestreamStatusUpdated } from "./fixtures";
@@ -32,7 +32,7 @@ async function running() {
   kick.state.publicKeyPem = key.pem;
   const bus = new FlakyBus();
   const time = new FakeTime(Date.parse(SENT_AT));
-  const deps = { config: kickConfigAt(kick.url), clock: time, fetch };
+  const deps = { config: kickConfigAt(kick.url), clock: time, timers: time, random: halfRandom, fetch };
   const hostState = kickHostState(deps);
   const adapter = new KickAdapter(deps, hostState);
   const supervised = supervisedKick(adapter, bus, time);

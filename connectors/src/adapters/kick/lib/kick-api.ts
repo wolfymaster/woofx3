@@ -473,3 +473,24 @@ function toChannel(wire: z.infer<typeof KickChannelWireSchema>): KickChannel {
     },
   };
 }
+
+/** A failure in words, for logs and /health. */
+export function describeKickFailure(failure: KickApiFailure): string {
+  switch (failure.kind) {
+    case "http": {
+      return failure.message;
+    }
+    case "timeout": {
+      return "Kick did not answer in time";
+    }
+    case "unreachable": {
+      return `Kick could not be reached: ${failure.detail}`;
+    }
+    case "not_linked": {
+      return "Kick is not linked";
+    }
+    case "malformed": {
+      return `Kick's answer could not be read: ${failure.detail}`;
+    }
+  }
+}
