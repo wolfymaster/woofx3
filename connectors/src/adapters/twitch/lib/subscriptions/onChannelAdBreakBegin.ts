@@ -1,8 +1,8 @@
 import type { EventSubChannelAdBreakBeginEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { TimerHandle } from "../../../../host/deps";
+import { publishEvent } from "../../../shared/publish-event";
 import type { Context } from "../../types";
-import { publishEvent } from "../publishEvent";
 
 /**
  * The fields of Twurple's begin event the announcer reads. Twurple passes

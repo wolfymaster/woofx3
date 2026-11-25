@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
 import type { HelixOperationName } from "@woofx3/common/cloudevents/Twitch/commands";
 import { FakeTime } from "../../../host/testing";
+import { SelfSentRegistry } from "../../shared/self-sent";
 import {
   buildHelixRequest,
   guardChatLine,
@@ -13,7 +14,6 @@ import {
   type SentChatMessage,
   validateHelixParams,
 } from "./helix";
-import { SelfSentRegistry } from "./self-sent";
 import { TwitchApiError } from "./twitchApiError";
 
 const BROADCASTER_ID = "broadcaster-1";

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { FakeTime } from "../../../host/testing";
+import { FakeTime } from "../../host/testing";
 import { type ChatEcho, normalizeChatLine, type SelfSentConfig, SelfSentRegistry } from "./self-sent";
 
 const CONFIG: SelfSentConfig = { capacity: 4, ttlMs: 30_000 };

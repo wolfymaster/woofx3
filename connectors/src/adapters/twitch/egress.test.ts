@@ -30,6 +30,8 @@ import {
   text,
   unlinked,
 } from "../../host/testing";
+import { SelfSentRegistry } from "../shared/self-sent";
+import { SendQueue } from "../shared/send-queue";
 import {
   type AnnounceOptions,
   helixFailureCode,
@@ -38,8 +40,6 @@ import {
   twitchEgress,
 } from "./egress";
 import { HELIX_DEADLINE_MS, type HelixAuth, HelixNoAnswer, runHelixOperation } from "./lib/helix";
-import { SelfSentRegistry } from "./lib/self-sent";
-import { SendQueue } from "./lib/send-queue";
 import type { TwitchApiCall } from "./lib/twitch";
 import { TwitchApiError } from "./lib/twitchApiError";
 

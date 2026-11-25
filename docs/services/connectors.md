@@ -332,7 +332,7 @@ is `unavailable` with `stopped` or `starting`.
 The engine speaks with the broadcaster's token, so every line it says comes
 back on EventSub's chat feed as the broadcaster's. The adapter tells those
 lines apart from the streamer typing and marks them on the `user.message`
-event (`lib/self-sent.ts`):
+event (`adapters/shared/self-sent.ts`):
 
 - Every Send Chat Message call is recorded just before the request leaves,
   whether it comes from the platform gateway or the `twitchapi`
