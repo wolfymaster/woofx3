@@ -23,6 +23,7 @@ function trigger(event: string, overrides: Partial<Trigger> = {}): Trigger {
     transport: "eventbus",
     handler: "",
     sentence: "",
+    platform: "",
     ...overrides,
   };
 }

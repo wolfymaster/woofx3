@@ -7,6 +7,7 @@ require (
 	github.com/nats-io/nats-server/v2 v2.12.2
 	github.com/nats-io/nats.go v1.47.0
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/wolfymaster/woofx3/clients/barkloader v0.0.0
 	github.com/wolfymaster/woofx3/clients/db v0.0.0
 	github.com/wolfymaster/woofx3/clients/nats v0.0.0
@@ -45,7 +46,6 @@ require (
 	github.com/ogen-go/ogen v1.25.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/twitchtv/twirp v8.1.3+incompatible // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/otelslog v0.21.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.23.0 // indirect

@@ -90,7 +90,7 @@ func (r *Reconciler) reconcileOnce(ctx context.Context) {
 			continue
 		}
 		enabled[dbwf.GetId()] = struct{}{}
-		def, err := convertDBWorkflowToEngineWorkflow(dbwf)
+		def, err := r.manager.convert(ctx, dbwf)
 		if err != nil {
 			health.Record(dbwf.GetId(), err)
 			continue

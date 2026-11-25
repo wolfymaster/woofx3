@@ -425,6 +425,7 @@ pub fn validate_with_provenance(
     )?;
     let widgets = resolve_widgets(&manifest.widgets, &widgets_table)?;
     validate_trigger_transports(manifest, &module_id, provenance)?;
+    validate_trigger_platforms(manifest)?;
     validate_internal_requests(manifest, &module_id, provenance)?;
     validate_no_ingress_bindings(manifest, &module_id, &workflows)?;
 
@@ -721,6 +722,29 @@ fn is_internal_request(descriptor: &serde_json::Value) -> bool {
     descriptor.get("kind").and_then(serde_json::Value::as_str) == Some("internal")
 }
 
+/// The platforms a manifest trigger may be pinned to. Must match the ids in
+/// `platforms` of shared/common/contracts/platform-gateway.json; a test reads
+/// that file to keep them equal.
+pub const KNOWN_PLATFORMS: &[&str] = &["twitch"];
+
+/// A trigger's `platform` is matched exactly against the CloudEvent
+/// `platform` attribute, so a misspelt or differently cased id would pin the
+/// trigger to events that never come. It is refused instead.
+fn validate_trigger_platforms(manifest: &ModuleManifest) -> Result<()> {
+    for (i, trigger) in manifest.triggers.iter().enumerate() {
+        let Some(platform) = &trigger.platform else {
+            continue;
+        };
+        if !KNOWN_PLATFORMS.contains(&platform.as_str()) {
+            return Err(anyhow!(
+                "trigger #{i} ({}): platform {platform:?} is not one of {KNOWN_PLATFORMS:?}",
+                trigger.id
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Enforce what each trigger transport may declare.
 ///
 /// A webhook trigger is fired by its handler, never by the bus, and nothing
@@ -786,6 +810,11 @@ fn validate_trigger_transports(
         if trigger.allow_variants {
             return Err(anyhow!(
                 "{label}: a webhook trigger cannot set `allowVariants`; nothing binds to it"
+            ));
+        }
+        if trigger.platform.is_some() {
+            return Err(anyhow!(
+                "{label}: a webhook trigger cannot set `platform`; its handler, not a platform event, fires it"
             ));
         }
     }
@@ -5519,6 +5548,59 @@ mod tests {
     // ---------------------------------------------------------------
     // Trigger sentences and the per-field wording they render
     // ---------------------------------------------------------------
+
+    fn trigger_with_platform(platform: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus",
+                "event": "channel.follow"{platform} }}]"#
+        ))
+    }
+
+    #[test]
+    fn accepts_a_trigger_without_a_platform_or_with_a_known_one() {
+        for platform in ["", r#", "platform": "twitch""#] {
+            validate(&trigger_with_platform(platform))
+                .unwrap_or_else(|err| panic!("{platform}: {err}"));
+        }
+    }
+
+    #[test]
+    fn refuses_a_trigger_platform_that_is_not_a_known_id() {
+        for platform in ["Twitch", "twitch ", "", "youtube"] {
+            let err = bad_err(&trigger_with_platform(&format!(
+                r#", "platform": "{platform}""#
+            )));
+            assert!(err.contains("trigger #0 (t1)"), "{platform}: {err}");
+            assert!(err.contains(&format!("{platform:?}")), "{platform}: {err}");
+        }
+    }
+
+    #[test]
+    fn refuses_a_platform_on_a_webhook_trigger() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "hook", "name": "Hook", "runtime": "js", "path": "hook.js" }],
+            "triggers": [{ "id": "t1", "name": "T1", "type": "webhook", "handler": "hook", "platform": "twitch" }]"#,
+        );
+        let err = bad_err(&m);
+        assert!(err.contains("cannot set `platform`"), "{err}");
+    }
+
+    #[test]
+    fn known_platforms_match_the_platform_gateway_contract() {
+        let contract: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../shared/common/contracts/platform-gateway.json"
+        ))
+        .expect("platform-gateway.json parses");
+        let ids: Vec<&str> = contract["platforms"]
+            .as_array()
+            .expect("platforms is an array")
+            .iter()
+            .map(|p| p["id"].as_str().expect("platform id is a string"))
+            .collect();
+        assert_eq!(ids, KNOWN_PLATFORMS);
+    }
 
     fn trigger_with_sentence(sentence: &str) -> ModuleManifest {
         minimal(&format!(

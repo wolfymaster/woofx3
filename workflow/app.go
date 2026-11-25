@@ -122,6 +122,7 @@ func (a *WorkflowApp) SetServices(
 	a.recordDbClient = recordClient
 	a.commandDbClient = dbClient.Command
 	a.manager.SetDbClient(dbClient.Workflow)
+	a.manager.SetTriggerLookup(dbClient.Module)
 	a.engine.SetAssetURLResolver(NewSceneManagerURLResolver(dbClient.Setting, sceneManagerURL, a.logger))
 }
 

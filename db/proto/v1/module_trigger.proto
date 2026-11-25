@@ -55,6 +55,10 @@ message Trigger {
   // Empty means the author declared none. Never set on a webhook trigger,
   // which nothing configures.
   string sentence = 17;
+  // The platform whose events alone fire this trigger, an id from
+  // shared/common/contracts/platform-gateway.json `platforms`. Empty means
+  // the trigger fires for its event from any platform.
+  string platform = 18;
 }
 
 message TriggerInput {
@@ -71,6 +75,7 @@ message TriggerInput {
   string transport = 10;  // see Trigger.transport
   string handler = 11;    // see Trigger.handler
   string sentence = 12;   // see Trigger.sentence
+  string platform = 13;   // see Trigger.platform
 }
 
 message RegisterTriggersRequest {

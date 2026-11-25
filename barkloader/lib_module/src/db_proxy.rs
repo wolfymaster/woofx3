@@ -111,6 +111,9 @@ pub struct TriggerInputJson {
     /// The trigger's sentence template. "" when the manifest declared none -
     /// see `ManifestTrigger::sentence`.
     pub sentence: String,
+    /// The platform the trigger is pinned to. "" when the manifest declared
+    /// none - see `ManifestTrigger::platform`.
+    pub platform: String,
     pub allow_variants: bool,
     /// Stable manifest-local id (e.g. "channel_subscribe"). Forms the
     /// canonical id `{moduleId}:trigger:{manifest_id}` together with the

@@ -70,6 +70,12 @@ export interface Trigger {
    * which nothing configures.
    */
   sentence: string;
+  /**
+   * The platform whose events alone fire this trigger, an id from
+   * shared/common/contracts/platform-gateway.json `platforms`. Empty means
+   * the trigger fires for its event from any platform.
+   */
+  platform: string;
 }
 
 export interface TriggerInput {
@@ -84,6 +90,7 @@ export interface TriggerInput {
   transport: string;
   handler: string;
   sentence: string;
+  platform: string;
 }
 
 export interface RegisterTriggersRequest {
@@ -162,6 +169,7 @@ export const Trigger = {
       transport: "",
       handler: "",
       sentence: "",
+      platform: "",
       ...msg,
     };
   },
@@ -214,6 +222,9 @@ export const Trigger = {
     }
     if (msg.sentence) {
       writer.writeString(17, msg.sentence);
+    }
+    if (msg.platform) {
+      writer.writeString(18, msg.platform);
     }
     return writer;
   },
@@ -284,6 +295,10 @@ export const Trigger = {
           msg.sentence = reader.readString();
           break;
         }
+        case 18: {
+          msg.platform = reader.readString();
+          break;
+        }
         default: {
           reader.skipField();
           break;
@@ -331,6 +346,7 @@ export const TriggerInput = {
       transport: "",
       handler: "",
       sentence: "",
+      platform: "",
       ...msg,
     };
   },
@@ -374,6 +390,9 @@ export const TriggerInput = {
     }
     if (msg.sentence) {
       writer.writeString(12, msg.sentence);
+    }
+    if (msg.platform) {
+      writer.writeString(13, msg.platform);
     }
     return writer;
   },
@@ -430,6 +449,10 @@ export const TriggerInput = {
         }
         case 12: {
           msg.sentence = reader.readString();
+          break;
+        }
+        case 13: {
+          msg.platform = reader.readString();
           break;
         }
         default: {
@@ -766,6 +789,7 @@ export const TriggerJSON = {
       transport: "",
       handler: "",
       sentence: "",
+      platform: "",
       ...msg,
     };
   },
@@ -816,6 +840,9 @@ export const TriggerJSON = {
     }
     if (msg.sentence) {
       json["sentence"] = msg.sentence;
+    }
+    if (msg.platform) {
+      json["platform"] = msg.platform;
     }
     return json;
   },
@@ -880,6 +907,10 @@ export const TriggerJSON = {
     if (_sentence_) {
       msg.sentence = _sentence_;
     }
+    const _platform_ = json["platform"];
+    if (_platform_) {
+      msg.platform = _platform_;
+    }
     return msg;
   },
 };
@@ -918,6 +949,7 @@ export const TriggerInputJSON = {
       transport: "",
       handler: "",
       sentence: "",
+      platform: "",
       ...msg,
     };
   },
@@ -961,6 +993,9 @@ export const TriggerInputJSON = {
     }
     if (msg.sentence) {
       json["sentence"] = msg.sentence;
+    }
+    if (msg.platform) {
+      json["platform"] = msg.platform;
     }
     return json;
   },
@@ -1012,6 +1047,10 @@ export const TriggerInputJSON = {
     const _sentence_ = json["sentence"];
     if (_sentence_) {
       msg.sentence = _sentence_;
+    }
+    const _platform_ = json["platform"];
+    if (_platform_) {
+      msg.platform = _platform_;
     }
     return msg;
   },

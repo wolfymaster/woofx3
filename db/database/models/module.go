@@ -128,7 +128,10 @@ type Trigger struct {
 	// configured instance of this trigger, e.g. "{reward} is redeemed", where
 	// each `{fieldId}` names a field in ConfigSchema. Empty means the author
 	// declared none. See module_trigger.proto Trigger.sentence.
-	Sentence      string `gorm:"column:sentence;type:text;not null;default:''"`
+	Sentence string `gorm:"column:sentence;type:text;not null;default:''"`
+	// Platform is the platform whose events alone fire this trigger, or empty
+	// for any platform. See module_trigger.proto Trigger.platform.
+	Platform      string `gorm:"column:platform;type:text;not null;default:''"`
 	AllowVariants bool   `gorm:"column:allow_variants;default:false"`
 	CreatedByType string `gorm:"column:created_by_type;type:text;not null;default:'MODULE'"`
 	CreatedByRef  string `gorm:"column:created_by_ref;type:text;not null;default:''"`
