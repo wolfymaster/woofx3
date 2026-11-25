@@ -31,7 +31,7 @@ export interface HttpDeps {
    * are not checked (see barkloader-webhook-auth.ts).
    */
   barkloaderWebhookSecret: string | null;
-  /** Serves `/logs/*`; see logs/log-http.ts. Without it those paths answer 404. */
+  /** Serves `/logs/*`; see engine-logs/LogsHttp.ts. Without it those paths answer 404. */
   logs?: LogsHttp;
 }
 
