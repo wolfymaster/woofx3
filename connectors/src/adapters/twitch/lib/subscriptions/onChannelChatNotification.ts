@@ -43,7 +43,7 @@ function notificationEvent(
   event: Exclude<EventSubChannelChatNotificationEvent, EventSubChannelChatRaidNotificationEvent>
 ): EventTuple {
   const base = baseFields(event);
-  const twitch = events.Twitch();
+  const twitch = events.Platform("twitch");
 
   switch (event.type) {
     case "sub": {

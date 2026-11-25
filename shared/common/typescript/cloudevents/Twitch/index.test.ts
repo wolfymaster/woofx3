@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { clearCurrentSessionId, setCurrentSessionId } from "../session";
-import TwitchEvents, { assertPlainPayload, type ChatMessage, type HypeTrainBegin } from "./index";
+import EventFactory from "../EventFactory";
+import PlatformEvents, { assertPlainPayload, type ChatMessage, type HypeTrainBegin } from "./index";
 
 beforeEach(() => {
   setCurrentSessionId("session-1");
@@ -50,22 +51,24 @@ function decoded(bytes: Uint8Array): Record<string, unknown> {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-describe("TwitchEvents", () => {
+describe("PlatformEvents", () => {
   test("stamps a chat message with the workflow chain that said it", () => {
-    const [topic, bytes] = new TwitchEvents("twitch").chatMessage(CHAT_MESSAGE, { workflowChain: "wf-a,wf-b" });
+    const [topic, bytes] = new PlatformEvents("twitch", "twitch").chatMessage(CHAT_MESSAGE, {
+      workflowChain: "wf-a,wf-b",
+    });
 
     expect(topic).toBe("user.message");
     expect(decoded(bytes)).toMatchObject({ workflowChain: "wf-a,wf-b", platform: "twitch", data: CHAT_MESSAGE });
   });
 
   test("leaves the chain off a chat message no workflow said", () => {
-    const [, bytes] = new TwitchEvents("twitch").chatMessage({ ...CHAT_MESSAGE, fromEngine: false });
+    const [, bytes] = new PlatformEvents("twitch", "twitch").chatMessage({ ...CHAT_MESSAGE, fromEngine: false });
 
     expect(decoded(bytes)).not.toHaveProperty("workflowChain");
   });
 
   test("encodes a plain payload as the event's data", () => {
-    const [topic, bytes] = new TwitchEvents("twitch").hypeTrainBegin(HYPE_TRAIN);
+    const [topic, bytes] = new PlatformEvents("twitch", "twitch").hypeTrainBegin(HYPE_TRAIN);
     const event = JSON.parse(new TextDecoder().decode(bytes));
 
     expect(topic).toBe("channel.hypetrain");
@@ -76,7 +79,7 @@ describe("TwitchEvents", () => {
   test("refuses to encode a class instance", () => {
     const sdkEvent = new SdkEvent() as unknown as HypeTrainBegin;
 
-    expect(() => new TwitchEvents("twitch").hypeTrainBegin(sdkEvent)).toThrow(
+    expect(() => new PlatformEvents("twitch", "twitch").hypeTrainBegin(sdkEvent)).toThrow(
       "payload is an instance of SdkEvent; map it into a plain object before publishing"
     );
   });
@@ -85,9 +88,27 @@ describe("TwitchEvents", () => {
     const contribution = new SdkEvent() as unknown as HypeTrainBegin["topContributions"][number];
 
     expect(() =>
-      new TwitchEvents("twitch").hypeTrainBegin({ ...HYPE_TRAIN, topContributions: [contribution] })
+      new PlatformEvents("twitch", "twitch").hypeTrainBegin({ ...HYPE_TRAIN, topContributions: [contribution] })
     ).toThrow("payload.topContributions[0] is an instance of SdkEvent");
   });
+});
+
+describe("platform attribute", () => {
+  const builders: [string, () => [string, Uint8Array]][] = [
+    ["a builder for twitch", () => new PlatformEvents("connectors", "twitch").chatMessage(CHAT_MESSAGE)],
+    [
+      "the factory's twitch builder",
+      () => new EventFactory({ source: "connectors" }).Platform("twitch").chatMessage(CHAT_MESSAGE),
+    ],
+  ];
+
+  for (const [name, build] of builders) {
+    test(`${name} stamps platform twitch`, () => {
+      const [, bytes] = build();
+
+      expect(decoded(bytes)).toMatchObject({ platform: "twitch", source: "connectors" });
+    });
+  }
 });
 
 describe("assertPlainPayload", () => {
@@ -130,11 +151,11 @@ describe("assertPlainPayload", () => {
   }
 });
 
-describe("TwitchEvents contract check", () => {
+describe("PlatformEvents contract check", () => {
   test("refuses a chat message whose nullable field was left undefined", () => {
     const missing = { ...CHAT_MESSAGE, channelId: undefined } as unknown as ChatMessage;
 
-    expect(() => new TwitchEvents("twitch").chatMessage(missing)).toThrow(
+    expect(() => new PlatformEvents("twitch", "twitch").chatMessage(missing)).toThrow(
       "user.message event does not match its contract"
     );
   });
@@ -142,11 +163,11 @@ describe("TwitchEvents contract check", () => {
   test("refuses a field the contract does not know", () => {
     const extra = { ...CHAT_MESSAGE, extra: 1 } as unknown as ChatMessage;
 
-    expect(() => new TwitchEvents("twitch").chatMessage(extra)).toThrow("additional properties");
+    expect(() => new PlatformEvents("twitch", "twitch").chatMessage(extra)).toThrow("additional properties");
   });
 
   test("keeps a null in a nullable field", () => {
-    const [, bytes] = new TwitchEvents("twitch").chatMessage(CHAT_MESSAGE);
+    const [, bytes] = new PlatformEvents("twitch", "twitch").chatMessage(CHAT_MESSAGE);
 
     expect(decoded(bytes).data).toMatchObject({ channelId: null, channelName: null });
   });

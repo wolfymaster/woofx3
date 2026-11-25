@@ -54,7 +54,7 @@ function buildRefusingContext(): { ctx: Context; logger: RecordingLogger; publis
       },
     },
     events: {
-      Twitch: () => {
+      Platform: () => {
         throw BUILD_REFUSED;
       },
     } as unknown as EventFactory,

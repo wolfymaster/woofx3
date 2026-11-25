@@ -10,7 +10,7 @@ import { publishEvent } from "../publishEvent";
 export default function onStreamOffline(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onStreamOffline(ctx.broadcaster.id, async (event: EventSubStreamOfflineEvent) => {
     await publishEvent(ctx, () =>
-      ctx.events.Twitch().streamOffline({
+      ctx.events.Platform("twitch").streamOffline({
         broadcasterUserId: event.broadcasterId,
         broadcasterUserName: event.broadcasterName,
       })

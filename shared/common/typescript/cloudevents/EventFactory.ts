@@ -1,4 +1,4 @@
-import TwitchEvents from "./Twitch";
+import PlatformEvents, { type StreamPlatform } from "./Twitch";
 import TwitchApiEvents from "./Twitch/commands";
 import ChatCommandEvents from "./Chat/commands";
 import CommandEvents from "./Command";
@@ -17,8 +17,8 @@ export default class EventFactory {
     this.source = opts?.source ?? "unkown";
   }
 
-  Twitch() {
-    return new TwitchEvents(this.source);
+  Platform(platform: StreamPlatform) {
+    return new PlatformEvents(this.source, platform);
   }
 
   Action() {

@@ -50,7 +50,7 @@ export class AdBreakAnnouncer {
     const endedAt = new Date(startedAtMs + durationSeconds * 1000).toISOString();
 
     void publishEvent(this.ctx, () =>
-      this.ctx.events.Twitch().adBreakBegin({
+      this.ctx.events.Platform("twitch").adBreakBegin({
         durationSeconds,
         isAutomatic,
         startedAt,
@@ -61,7 +61,7 @@ export class AdBreakAnnouncer {
     const publishEnd = () => {
       this.pending = null;
       void publishEvent(this.ctx, () =>
-        this.ctx.events.Twitch().adBreakEnd({
+        this.ctx.events.Platform("twitch").adBreakEnd({
           durationSeconds,
           isAutomatic,
           startedAt,

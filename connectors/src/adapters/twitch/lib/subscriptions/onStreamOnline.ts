@@ -10,7 +10,7 @@ export default function onStreamOnline(ctx: Context, listener: EventSubWsListene
     // payload contract (`startedAt: string`) non-nullable for downstream consumers.
     const startedAt = (event.startDate ?? new Date(ctx.clock.now())).toISOString();
     await publishEvent(ctx, () =>
-      ctx.events.Twitch().streamOnline({
+      ctx.events.Platform("twitch").streamOnline({
         broadcasterUserId: event.broadcasterId,
         broadcasterUserName: event.broadcasterName,
         startedAt,
