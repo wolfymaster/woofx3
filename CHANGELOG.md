@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.80.0](https://github.com/wolfymaster/woofx3/compare/v0.79.0...v0.80.0) (2026-11-25)
+
+### Features
+
+* **api:** read the engine's log files and serve a live tail and a zip export ([f93e045](https://github.com/wolfymaster/woofx3/commit/f93e045ef19db9f2a8042b7de23da5c71a6896c6))
+
+### Bug Fixes
+
+* **edge:** route /logs/* to the api ([9e10d1b](https://github.com/wolfymaster/woofx3/commit/9e10d1b48c0a5f0c2da8945d22223538b7e5cdb0))
+
 ## [0.79.0](https://github.com/wolfymaster/woofx3/compare/v0.78.1...v0.79.0) (2026-11-24)
 
 ### Features
