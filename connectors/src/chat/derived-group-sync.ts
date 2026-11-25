@@ -2,7 +2,7 @@ import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
 import { type Clock, errorMessage, type Logger } from "../host/deps";
 import { BoundedMap } from "./bounded-map";
 import type { DispatcherDb } from "./db-client";
-import { type ViewerKey, viewerKeyString } from "./viewer";
+import { permissionSubject, type ViewerKey, viewerKeyString } from "./viewer";
 
 /**
  * The built-in groups whose membership is derived from the platform rather
@@ -126,10 +126,11 @@ export class DerivedGroupSync {
    */
   async reconcile(viewer: ViewerKey, chatterLogin: string, membership: ChatterMembership): Promise<ReconcileOutcome> {
     const key = viewerKeyString(viewer);
-    const login = chatterLogin.trim().toLowerCase();
-    if (login === "") {
+    const bareLogin = chatterLogin.trim().toLowerCase();
+    if (bareLogin === "") {
       return "unchanged";
     }
+    const login = permissionSubject(viewer.platform, bareLogin);
     const desired = membershipGroups(membership);
     const previous = this.lastSeen.get(key);
     if (
