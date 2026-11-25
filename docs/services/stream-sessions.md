@@ -36,6 +36,15 @@ its last segment's end once the stream has stayed down past the grace window, an
 an **idle session** with no segments holds the offline time up to the next
 broadcast.
 
+**A simulcast is one broadcast.** The resolver tracks which platforms are live
+by each event's `platform`. A segment opens when the first platform goes live
+and closes only when the last live platform goes offline, so a Kick stream
+ending first does not close the segment Twitch is still live in. After a
+restart, each platform's `stream.status.observed` answer adds or removes it the
+same way; a platform that answers offline before another answers live can
+close the segment briefly, and the live answer reopens it within the grace
+window.
+
 This matters more than it sounds. Because there is always an answer:
 
 - no event ever carries a null session, so offline chat, follows and subs still

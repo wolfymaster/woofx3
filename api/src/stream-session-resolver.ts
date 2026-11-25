@@ -1,17 +1,16 @@
 import { EngineEventType } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
 import type { SchemaModuleStorageChange } from "@woofx3/common/cloudevents/messages.gen";
-import { SessionEndedEventType, SessionStartedEventType } from "@woofx3/common/cloudevents/messages.gen";
 import {
-  validateSessionEndedEvent,
-  validateSessionStartedEvent,
-} from "@woofx3/common/cloudevents/messages.validate.gen";
-import {
+  SessionEndedEventType,
+  SessionStartedEventType,
   type SchemaStreamStatusObserved as StreamStatusObserved,
   StreamStatusObservedEventType,
   StreamStatusRequestedEventType,
 } from "@woofx3/common/cloudevents/messages.gen";
 import {
+  validateSessionEndedEvent,
+  validateSessionStartedEvent,
   validateStreamStatusObservedEvent,
   validateStreamStatusRequestedEvent,
 } from "@woofx3/common/cloudevents/messages.validate.gen";
@@ -55,6 +54,13 @@ export class StreamSessionResolver {
   private checkTimer: ReturnType<typeof setInterval> | null = null;
   /** Whether a live segment is open; null until the first read of the stored session says. */
   private live: boolean | null = null;
+  /**
+   * The platforms whose stream is live, by their events' `platform`. A
+   * simulcast is one broadcast: its segment opens when the first platform
+   * goes live and closes when the last one goes offline, so one platform
+   * ending first does not end the segment the others are still live in.
+   */
+  private readonly livePlatforms = new Set<string>();
   /**
    * The tail of the running decisions. Each reads the session's state and then
    * writes, so a broadcast-end check overlapping a `stream.online` could close
@@ -196,11 +202,25 @@ export class StreamSessionResolver {
   }
 
   private handleStreamOnline(msg: Msg): Promise<void> {
+    this.livePlatforms.add(readPlatform(msg));
     return this.streamWentLive(this.eventTime(msg));
   }
 
   private handleStreamOffline(msg: Msg): Promise<void> {
-    return this.streamWentOffline(this.eventTime(msg));
+    return this.platformWentOffline(readPlatform(msg), this.eventTime(msg));
+  }
+
+  /** Closes the segment only when no other platform is still live. */
+  private platformWentOffline(platform: string, at: Date): Promise<void> {
+    this.livePlatforms.delete(platform);
+    if (this.livePlatforms.size > 0) {
+      this.logger.debug("StreamSessionResolver: a platform went offline while another is still live", {
+        platform,
+        live: [...this.livePlatforms],
+      });
+      return Promise.resolve();
+    }
+    return this.streamWentOffline(at);
   }
 
   /**
@@ -216,10 +236,12 @@ export class StreamSessionResolver {
       this.logger.warn(`${StreamStatusObservedEventType.stream_status_observed}: malformed event; skipping`);
       return;
     }
+    const platform = readPlatform(msg);
     if (!status.live) {
-      await this.streamWentOffline(new Date());
+      await this.platformWentOffline(platform, new Date());
       return;
     }
+    this.livePlatforms.add(platform);
     const startedAt = status.startedAt === undefined ? Number.NaN : Date.parse(status.startedAt);
     await this.streamWentLive(Number.isNaN(startedAt) ? new Date() : new Date(startedAt));
   }
@@ -479,6 +501,17 @@ export function timestampToEpochMs(ts: { seconds?: bigint; nanos?: number } | un
     return undefined;
   }
   return Number(seconds) * 1000 + Math.floor(nanos / 1_000_000);
+}
+
+/** The CloudEvent `platform` an event came from; "" for one that names none, such as a simulated event. */
+function readPlatform(msg: Msg): string {
+  try {
+    const platform = (msg.json() as Record<string, unknown>).platform;
+    return typeof platform === "string" ? platform : "";
+  } catch {
+    // Not JSON: its other readers refuse it too; here it counts as no platform.
+    return "";
+  }
 }
 
 function readEventStamp(msg: Msg): string | null {
