@@ -3,10 +3,11 @@ import type { KickWebhookReply } from "@woofx3/common/cloudevents/Kick/webhook";
 import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/integration-settings";
 import type { KickConfig } from "../../config/kick";
 import type { AdapterContext } from "../../host/adapter";
-import type { Clock, RandomSource, Timers } from "../../host/deps";
+import type { Clock, IdSource, RandomSource, Timers } from "../../host/deps";
 import type { BusMessage } from "../../host/scoped-bus";
 import type { SelfSentRegistry } from "../shared/self-sent";
 import type { KickHostState } from "./adapter";
+import { answerKickApiRequest } from "./commands";
 import { KICK_EVENT_SOURCE } from "./event-source";
 import { ingestKickDelivery } from "./ingest";
 import { describeKickFailure, KickApi, type KickApiFailure, type KickChannel } from "./lib/kick-api";
@@ -29,6 +30,7 @@ export interface KickApplicationDeps {
   selfSent: SelfSentRegistry;
   timers: Timers;
   random: RandomSource;
+  ids: IdSource;
 }
 
 /**
@@ -106,6 +108,19 @@ export default class KickApplication {
   /** Per subscribed event, for /health. */
   subscriptions(): ReturnType<SubscriptionReconciler["detail"]> {
     return this.reconciler.detail();
+  }
+
+  /** One `kickapi` request; the host only hands it over while the run is connected. */
+  async answerKickApi(request: Uint8Array): Promise<Uint8Array> {
+    const linked = this.linked;
+    if (linked === undefined) {
+      throw new Error("a kickapi request reached the run before it found its broadcaster");
+    }
+    return answerKickApiRequest(
+      request,
+      { api: this.api, broadcaster: linked.broadcaster },
+      { clock: this.deps.clock, ids: this.deps.ids, logger: this.ctx.logger }
+    );
   }
 
   /** One webhook delivery from `engine.kick.webhook`; the host only hands it over while the run is connected. */

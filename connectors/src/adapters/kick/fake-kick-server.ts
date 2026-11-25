@@ -41,6 +41,8 @@ export interface FakeKickState {
   validTokens: Set<string>;
   /** The token's own user. */
   self: { user_id: number; name: string; profile_picture: string };
+  /** Other users, found by id. */
+  users: { user_id: number; name: string; profile_picture: string }[];
   channels: FakeKickChannel[];
   categories: { id: number; name: string }[];
   rewards: { id: string; title: string; cost: number; description: string; is_enabled: boolean }[];
@@ -74,6 +76,7 @@ function defaultState(): FakeKickState {
   return {
     validTokens: new Set(["token-1"]),
     self: { user_id: 4242, name: "wolfy", profile_picture: "https://files.kick.com/wolfy.png" },
+    users: [{ user_id: 777, name: "Pup_Pal", profile_picture: "https://files.kick.com/pup.png" }],
     channels: [
       {
         broadcaster_user_id: 4242,
@@ -82,6 +85,20 @@ function defaultState(): FakeKickState {
         channel_description: "a den",
         category: { id: 15, name: "Just Chatting" },
         stream: { is_live: false, start_time: null, viewer_count: 0, language: "en", custom_tags: [] },
+      },
+      {
+        broadcaster_user_id: 777,
+        slug: "pup-pal",
+        stream_title: "pup stream",
+        channel_description: "",
+        category: { id: 101, name: "Minecraft" },
+        stream: {
+          is_live: true,
+          start_time: "2026-11-25T09:00:00Z",
+          viewer_count: 12,
+          language: "en",
+          custom_tags: ["cozy"],
+        },
       },
     ],
     categories: [
@@ -112,7 +129,13 @@ export function startFakeKick(): FakeKickServer {
   };
 
   const defaults: Record<string, FakeKickHandler> = {
-    "GET /public/v1/users": () => kickJson([state.self]),
+    "GET /public/v1/users": (request) => {
+      const ids = request.query.getAll("id").map(Number);
+      if (ids.length === 0) {
+        return kickJson([state.self]);
+      }
+      return kickJson([state.self, ...state.users].filter((u) => ids.includes(u.user_id)));
+    },
     "GET /public/v1/channels": (request) => {
       const ids = request.query.getAll("broadcaster_user_id").map(Number);
       const slugs = request.query.getAll("slug");

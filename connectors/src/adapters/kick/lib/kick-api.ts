@@ -142,6 +142,15 @@ export class KickApi {
     return { ok: true, value: toUser(user) };
   }
 
+  /** `GET /public/v1/users?id=...`: up to 50 users by id. */
+  async users(ids: string[]): Promise<KickResult<KickUser[]>> {
+    const users = await this.parsed(
+      { method: "GET", path: "/public/v1/users", query: ids.map((id) => ["id", id] as const), auth: true },
+      KickUserWireSchema.array()
+    );
+    return users.ok ? { ok: true, value: users.value.map(toUser) } : users;
+  }
+
   /** `GET /public/v1/channels`: the token's own channel, or up to 50 by broadcaster id or by slug. */
   async channels(query: { ids: string[] } | { slugs: string[] } | "self"): Promise<KickResult<KickChannel[]>> {
     const params: Query =

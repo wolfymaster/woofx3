@@ -41,6 +41,7 @@ export function adapterRegistry(deps: AdapterRegistryDeps): AdapterRegistry {
         fetch,
         timers: deps.timers,
         random: deps.random,
+        ids: deps.ids,
       });
     },
     obs: async () => {

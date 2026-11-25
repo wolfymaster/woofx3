@@ -8,7 +8,7 @@ import {
 import PlatformEvents from "@woofx3/common/cloudevents/Twitch";
 import { EgressRegistry } from "../../gateway/egress-registry";
 import type { EgressContext, EgressHandlerSpec } from "../../host/adapter";
-import { FakeTime, halfRandom } from "../../host/testing";
+import { countingIds, FakeTime, halfRandom } from "../../host/testing";
 import { SelfSentRegistry } from "../shared/self-sent";
 import { SendQueue } from "../shared/send-queue";
 import { KickAdapter, kickHostState } from "./adapter";
@@ -192,7 +192,14 @@ describe("Kick egress", () => {
 
   test("announcements, pins and warnings are unsupported on Kick", () => {
     const time = new FakeTime();
-    const deps = { config: kickConfigAt("http://kick.test"), clock: time, timers: time, random: halfRandom, fetch };
+    const deps = {
+      config: kickConfigAt("http://kick.test"),
+      clock: time,
+      timers: time,
+      random: halfRandom,
+      ids: countingIds(),
+      fetch,
+    };
     kick = startFakeKick();
     const registry = EgressRegistry.fromManifests([new KickAdapter(deps, kickHostState(deps)).manifest], PLATFORM_IDS);
     expect(
