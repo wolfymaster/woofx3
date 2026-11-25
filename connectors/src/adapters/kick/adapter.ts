@@ -12,7 +12,9 @@ import type { Adapter, AdapterContext, AdapterManifest, AdapterModule } from "..
 import type { Clock, RandomSource, Timers } from "../../host/deps";
 import type { LinkState } from "../../host/link-readers";
 import { SelfSentRegistry } from "../shared/self-sent";
+import { SendQueue } from "../shared/send-queue";
 import KickApplication from "./application";
+import { type KickEgressSession, kickEgress } from "./egress";
 import type { DeliveryMemory } from "./ingest";
 
 /** Every subject the adapter publishes: the woofx3 events Kick deliveries become. */
@@ -52,7 +54,8 @@ const encoder = new TextEncoder();
 /**
  * Kick as a host adapter: runs while Kick is linked and enabled, and turns
  * the webhook deliveries the api hands it on `engine.kick.webhook` into bus
- * events. Each start builds a fresh KickApplication, so nothing from an
+ * events, and performs the platform gateway's chat and moderation actions.
+ * Each start builds a fresh KickApplication, so nothing from an
  * earlier run leaks into the next one. The record of the engine's own chat
  * lines lives as long as the adapter, so a line said before a restart is
  * still known when its echo arrives after it.
@@ -67,6 +70,7 @@ export class KickAdapter implements Adapter<KickHostState> {
     private readonly hostState: KickHostState
   ) {
     this.selfSent = new SelfSentRegistry(deps.config.selfSent, deps.clock);
+    const queue = new SendQueue(deps.config.sendQueueCap);
     this.manifest = {
       id: "kick",
       publishes: KICK_EVENT_SUBJECTS,
@@ -80,6 +84,7 @@ export class KickAdapter implements Adapter<KickHostState> {
           unavailableReply: () => encoder.encode(JSON.stringify(kickWebhookReply("unavailable"))),
         },
       ],
+      egress: kickEgress({ session: () => this.egressSession(), queue, selfSent: this.selfSent }),
     };
   }
 
@@ -111,6 +116,23 @@ export class KickAdapter implements Adapter<KickHostState> {
       deliveriesRemembered: this.hostState.delivered.size,
       ownLinesAwaitingEcho: this.selfSent.size,
     };
+  }
+
+  /**
+   * The running connection for egress. The gateway only hands a request over
+   * while the adapter is connected; a write waiting in the queue can still
+   * find it stopped.
+   */
+  private egressSession(): KickEgressSession {
+    const run = this.run;
+    if (run === undefined) {
+      return { kind: "unavailable", reason: "stopped" };
+    }
+    const broadcaster = run.broadcaster;
+    if (broadcaster === undefined) {
+      return { kind: "unavailable", reason: "starting" };
+    }
+    return { kind: "ready", broadcasterUserId: broadcaster.userId, api: run.api };
   }
 
   private async ingest(request: Uint8Array): Promise<Uint8Array> {
