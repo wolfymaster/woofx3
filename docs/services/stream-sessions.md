@@ -36,6 +36,20 @@ its last segment's end once the stream has stayed down past the grace window, an
 an **idle session** with no segments holds the offline time up to the next
 broadcast.
 
+**A simulcast is one broadcast.** The resolver tracks which platforms are live
+by each event's `platform`. A segment opens when the first platform goes live
+and closes only when the last live platform goes offline, so a Kick stream
+ending first does not close the segment Twitch is still live in. An offline
+event can be lost (Kick's webhooks are lossy), so while any platform is live
+the resolver publishes `stream.status.requested` on every check, and right
+away when one platform ends while others remain; a live platform that does
+not answer within one check interval (its adapter stopped) counts as
+offline. After a restart the answers arrive in any order: an offline answer
+before a live one does not close the segment, and closes it at the next check
+if no platform answered live. The Kick adapter also reads its channel's live
+state every five minutes and publishes a going-live or going-offline its
+webhook missed.
+
 This matters more than it sounds. Because there is always an answer:
 
 - no event ever carries a null session, so offline chat, follows and subs still

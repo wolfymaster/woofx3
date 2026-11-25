@@ -1,8 +1,8 @@
 import type { EventSubChannelAdBreakBeginEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { TimerHandle } from "../../../../host/deps";
+import { publishEvent } from "../../../shared/publish-event";
 import type { Context } from "../../types";
-import { publishEvent } from "../publishEvent";
 
 /**
  * The fields of Twurple's begin event the announcer reads. Twurple passes
@@ -50,7 +50,7 @@ export class AdBreakAnnouncer {
     const endedAt = new Date(startedAtMs + durationSeconds * 1000).toISOString();
 
     void publishEvent(this.ctx, () =>
-      this.ctx.events.Twitch().adBreakBegin({
+      this.ctx.events.Platform("twitch").adBreakBegin({
         durationSeconds,
         isAutomatic,
         startedAt,
@@ -61,7 +61,7 @@ export class AdBreakAnnouncer {
     const publishEnd = () => {
       this.pending = null;
       void publishEvent(this.ctx, () =>
-        this.ctx.events.Twitch().adBreakEnd({
+        this.ctx.events.Platform("twitch").adBreakEnd({
           durationSeconds,
           isAutomatic,
           startedAt,

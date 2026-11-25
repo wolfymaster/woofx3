@@ -8,6 +8,7 @@ var reservedSubjects = reservedSubjectsContract{
 		"db.",
 		"engine.",
 		"twitchapi",
+		"kickapi",
 		"message.send",
 		"ui.notify.",
 		"ui.alert.",

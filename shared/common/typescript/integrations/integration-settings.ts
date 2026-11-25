@@ -4,13 +4,21 @@
 // adapter runs while it is connected AND enabled. See docs/services/twitch-channel.md.
 
 /** Integrations backed by account credentials. Local adapters such as obs are not integrations and never appear here. */
-export const INTEGRATION_IDS = ["twitch"] as const;
+export const INTEGRATION_IDS = ["twitch", "kick"] as const;
 
 export type IntegrationId = (typeof INTEGRATION_IDS)[number];
 
 export function isIntegrationId(value: unknown): value is IntegrationId {
   return INTEGRATION_IDS.some((id) => id === value);
 }
+
+/**
+ * The engine settings that hold each account-backed integration's token. The
+ * api writes them; the connectors host reads them to decide whether the
+ * integration is linked.
+ */
+export const TWITCH_TOKEN_SETTING = "twitch_token";
+export const KICK_TOKEN_SETTING = "kick_token";
 
 /** Engine setting holding "true" or "false" for one integration. */
 export function integrationEnabledSettingKey(id: IntegrationId): string {

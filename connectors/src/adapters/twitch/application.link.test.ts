@@ -4,8 +4,8 @@ import type { EventSubSubscription } from "@twurple/eventsub-base";
 import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
 import { systemTimers } from "../../host/deps";
 import { countingIds, FakeTime, halfRandom, RecordingLogger } from "../../host/testing";
+import { SelfSentRegistry } from "../shared/self-sent";
 import type { TwitchAppContext } from "./application";
-import { SelfSentRegistry } from "./lib/self-sent";
 
 /** Whether listeners confirm subscriptions; false leaves TwitchEventBus waiting to settle. */
 let confirmSubscriptions = true;

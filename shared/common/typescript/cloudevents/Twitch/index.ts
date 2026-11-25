@@ -1,5 +1,5 @@
 import Event from "../BaseEvent";
-import * as TwitchEvent from "./events";
+import type { PlatformId } from "../messages.gen";
 import {
   validateChannelAdBreakBeginEvent,
   validateChannelAdBreakEndEvent,
@@ -11,6 +11,7 @@ import {
   validateChannelFollowEvent,
   validateChannelGiftPaidUpgradeEvent,
   validateChannelHypeTrainEvent,
+  validateChannelKicksEvent,
   validateChannelPayItForwardEvent,
   validateChannelPointsRedeemEvent,
   validateChannelPrimePaidUpgradeEvent,
@@ -32,6 +33,10 @@ import {
   validateStreamOnlineEvent,
   validateUserMessageEvent,
 } from "../messages.validate.gen";
+import * as TwitchEvent from "./events";
+
+/** A platform id as it appears on the wire, from the stream contract's `PlatformId`. */
+export type StreamPlatform = `${PlatformId}`;
 
 export * from "./events";
 export * from "./messages";
@@ -42,6 +47,7 @@ type EventTuple = [string, Uint8Array];
 export interface TwitchEventPayloads {
   [TwitchEvent.EventType.ChatMessage]: TwitchEvent.ChatMessage;
   [TwitchEvent.EventType.Cheer]: TwitchEvent.Cheer;
+  [TwitchEvent.EventType.Kicks]: TwitchEvent.Kicks;
   [TwitchEvent.EventType.Follow]: TwitchEvent.Follow;
   [TwitchEvent.EventType.HypeTrainBegin]: TwitchEvent.HypeTrainBegin;
   [TwitchEvent.EventType.Raid]: TwitchEvent.Raid;
@@ -78,6 +84,7 @@ type EventValidator = ((value: unknown) => boolean) & { errors?: { instancePath:
 const VALIDATORS: Record<TwitchEvent.EventType, EventValidator> = {
   [TwitchEvent.EventType.ChatMessage]: validateUserMessageEvent,
   [TwitchEvent.EventType.Cheer]: validateChannelCheerEvent,
+  [TwitchEvent.EventType.Kicks]: validateChannelKicksEvent,
   [TwitchEvent.EventType.Follow]: validateChannelFollowEvent,
   [TwitchEvent.EventType.HypeTrainBegin]: validateChannelHypeTrainEvent,
   [TwitchEvent.EventType.Raid]: validateChannelRaidEvent,
@@ -161,11 +168,20 @@ function walkPayload(value: unknown, path: string, ancestors: object[]): void {
   }
 }
 
-/** Provenance stamped on every event this builder emits. */
-const PLATFORM = "twitch";
-
-export default class TwitchEvents {
-  constructor(private source: string) {}
+/** Builds the platform-neutral stream events (`user.message`, `channel.follow`,
+ *  ...) and stamps each with the platform it came from, fixed per builder. */
+export default class PlatformEvents {
+  /**
+   * `eventId`, when given, names each event this builder encodes in turn, so
+   * a producer that may build the same events twice (a redelivered webhook)
+   * gives them the same ids and consumers can drop the repeat. Without it
+   * every event gets a fresh random id.
+   */
+  constructor(
+    private readonly source: string,
+    private readonly platform: StreamPlatform,
+    private readonly eventId?: () => string
+  ) {}
 
   chatMessage(event: TwitchEvent.ChatMessage, attributes: TwitchEvent.ChatMessageAttributes = {}): EventTuple {
     return this.encodeEvent(TwitchEvent.EventType.ChatMessage, event, attributes);
@@ -173,6 +189,10 @@ export default class TwitchEvents {
 
   cheer(event: TwitchEvent.Cheer): EventTuple {
     return this.encodeEvent(TwitchEvent.EventType.Cheer, event);
+  }
+
+  kicks(event: TwitchEvent.Kicks): EventTuple {
+    return this.encodeEvent(TwitchEvent.EventType.Kicks, event);
   }
 
   follow(event: TwitchEvent.Follow): EventTuple {
@@ -298,7 +318,13 @@ export default class TwitchEvents {
     attributes: TwitchEvent.ChatMessageAttributes = {}
   ): EventTuple {
     assertPlainPayload(event);
-    const wire = JSON.stringify(Event({ ...attributes, type, source: this.source, platform: PLATFORM }, event));
+    const id = this.eventId?.();
+    const wire = JSON.stringify(
+      Event(
+        { ...attributes, ...(id === undefined ? {} : { id }), type, source: this.source, platform: this.platform },
+        event
+      )
+    );
     const validate = VALIDATORS[type];
     if (!validate(JSON.parse(wire))) {
       const problem = validate.errors?.[0];

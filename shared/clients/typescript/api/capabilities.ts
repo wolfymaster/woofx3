@@ -82,6 +82,12 @@ export const ENGINE_CAPABILITIES = {
    * downloads its bundle with the license key and the engine's install id.
    */
   marketplaceBundleLicenseKeys: "marketplace.bundleLicenseKeys",
+  /**
+   * Kick: `setKickToken`, `deleteKickToken` and `getKickLink`, the
+   * `kick.token.requested` engine request, the `kick` integration and the
+   * connectors Kick adapter.
+   */
+  integrationsKick: "integrations.kick",
 } as const;
 
 export type EngineCapability = (typeof ENGINE_CAPABILITIES)[keyof typeof ENGINE_CAPABILITIES];

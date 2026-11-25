@@ -52,7 +52,7 @@ export const MODERATION_TIMEOUT_DURATION_SECONDS_MIN = 1;
 export const MODERATION_TIMEOUT_DURATION_SECONDS_MAX = 1209600;
 
 /** A streaming platform the gateway can reach. */
-export const PLATFORM_IDS = ["twitch"] as const;
+export const PLATFORM_IDS = ["twitch", "kick"] as const;
 export type PlatformId = (typeof PLATFORM_IDS)[number];
 
 export function isPlatformId(value: unknown): value is PlatformId {
@@ -118,6 +118,7 @@ export function isTwitchAnnouncementColor(value: unknown): value is TwitchAnnoun
 /** Each platform's name as a streamer reads it. */
 export const PLATFORM_DISPLAY_NAMES: Readonly<Record<PlatformId, string>> = {
   twitch: "Twitch",
+  kick: "Kick",
 };
 
 /** The actions in the catalog. */

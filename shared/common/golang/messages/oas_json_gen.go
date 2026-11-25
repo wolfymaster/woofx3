@@ -637,6 +637,8 @@ func (s *ChatCommandPlatform) Decode(d *jx.Decoder) error {
 	switch ChatCommandPlatform(v) {
 	case ChatCommandPlatformTwitch:
 		*s = ChatCommandPlatformTwitch
+	case ChatCommandPlatformKick:
+		*s = ChatCommandPlatformKick
 	default:
 		*s = ChatCommandPlatform(v)
 	}
@@ -2797,6 +2799,8 @@ func (s *PlatformId) Decode(d *jx.Decoder) error {
 	switch PlatformId(v) {
 	case PlatformIdTwitch:
 		*s = PlatformIdTwitch
+	case PlatformIdKick:
+		*s = PlatformIdKick
 	default:
 		*s = PlatformId(v)
 	}

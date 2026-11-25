@@ -175,6 +175,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/channel.kicks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Published by connectors on channel.kicks. */
+        post: operations["channelKicks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/channel.follow": {
         parameters: {
             query?: never;
@@ -1339,6 +1356,7 @@ export interface components {
             sourceBroadcasterName: string | null;
             broadcasterId: string;
             broadcasterName: string;
+            /** @description The subscription level, 1000, 2000 or 3000; a platform with one subscription level reports 1000. */
             tier: string;
             isPrime: boolean;
             durationMonths: number;
@@ -1627,6 +1645,7 @@ export interface components {
             gifterId: string;
             gifterName: string;
             isAnonymous: boolean;
+            /** @description The subscription level, 1000, 2000 or 3000; a platform with one subscription level reports 1000. */
             tier: string;
         };
         /** @description The `channel.subscribe` CloudEvent as the connectors publish it. */
@@ -1646,6 +1665,7 @@ export interface components {
         ChannelSubscribe: {
             isGift: boolean;
             isCommunityGift: boolean;
+            /** @description The subscription level, 1000, 2000 or 3000; a platform with one subscription level reports 1000. */
             tier: string;
             userId: string | null;
             userName: string | null;
@@ -1782,6 +1802,32 @@ export interface components {
             userId: string;
             userName: string;
         };
+        /** @description The `channel.kicks` CloudEvent as the connectors publish it. */
+        ChannelKicksEvent: {
+            specversion: components["schemas"]["EventSpecVersion"];
+            id: components["schemas"]["EventId"];
+            /** @enum {string} */
+            type: ChannelKicksEventType;
+            source: components["schemas"]["EventSource"];
+            time: components["schemas"]["EventTime"];
+            platform: components["schemas"]["PlatformId"];
+            /** @description The stream session the event happened during; absent before the publisher knows one. */
+            sessionId?: components["schemas"]["EntityId"];
+            data: components["schemas"]["ChannelKicks"];
+        };
+        /** @description KICKs gifted in a Kick channel. KICKs are Kick's paid currency, apart from Twitch bits, so a bits threshold never fires on them. */
+        ChannelKicks: {
+            /** @description KICKs in the gift. */
+            amount: number;
+            giftName: string;
+            giftType: string;
+            giftTier: string;
+            /** @description The sender's message; empty when there is none. */
+            message: string;
+            userId: string | null;
+            userName: string | null;
+            isAnonymous: boolean;
+        };
         /** @description The `channel.cheer` CloudEvent as the connectors publish it. */
         ChannelCheerEvent: {
             specversion: components["schemas"]["EventSpecVersion"];
@@ -1843,7 +1889,7 @@ export interface components {
              * @description The platform the invoking line was said on; null when no platform's chat caused the run.
              * @enum {string|null}
              */
-            platform: "twitch" | null;
+            platform: "twitch" | "kick" | null;
             channelId?: string;
         };
         /** @description The `user.message` CloudEvent as the connectors publish it. */
@@ -2138,6 +2184,8 @@ export type SchemaChannelHypeTrain = components['schemas']['ChannelHypeTrain'];
 export type SchemaHypeTrainContribution = components['schemas']['HypeTrainContribution'];
 export type SchemaChannelFollowEvent = components['schemas']['ChannelFollowEvent'];
 export type SchemaChannelFollow = components['schemas']['ChannelFollow'];
+export type SchemaChannelKicksEvent = components['schemas']['ChannelKicksEvent'];
+export type SchemaChannelKicks = components['schemas']['ChannelKicks'];
 export type SchemaChannelCheerEvent = components['schemas']['ChannelCheerEvent'];
 export type SchemaChannelCheer = components['schemas']['ChannelCheer'];
 export type SchemaChatCommandEvent = components['schemas']['ChatCommandEvent'];
@@ -2381,6 +2429,28 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ChannelCheerEvent"];
+            };
+        };
+        responses: {
+            /** @description Published without a reply; the bus sends none. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    channelKicks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChannelKicksEvent"];
             };
         };
         responses: {
@@ -3371,7 +3441,8 @@ export enum ChannelAdBreakEndEventType {
     channel_ad_break_end = "channel.ad_break.end"
 }
 export enum PlatformId {
-    twitch = "twitch"
+    twitch = "twitch",
+    kick = "kick"
 }
 export enum ChannelAdBreakBeginEventType {
     channel_ad_break_begin = "channel.ad_break.begin"
@@ -3458,6 +3529,9 @@ export enum HypeTrainContributionType {
 }
 export enum ChannelFollowEventType {
     channel_follow = "channel.follow"
+}
+export enum ChannelKicksEventType {
+    channel_kicks = "channel.kicks"
 }
 export enum ChannelCheerEventType {
     channel_cheer = "channel.cheer"

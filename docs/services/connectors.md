@@ -332,7 +332,7 @@ is `unavailable` with `stopped` or `starting`.
 The engine speaks with the broadcaster's token, so every line it says comes
 back on EventSub's chat feed as the broadcaster's. The adapter tells those
 lines apart from the streamer typing and marks them on the `user.message`
-event (`lib/self-sent.ts`):
+event (`adapters/shared/self-sent.ts`):
 
 - Every Send Chat Message call is recorded just before the request leaves,
   whether it comes from the platform gateway or the `twitchapi`
@@ -364,6 +364,21 @@ connectors pins its `@twurple/*` packages to the release
 `shared/clients/typescript/twitch` resolves. TypeScript only treats the two
 copies' classes as one type when name and version match, so upgrade both
 lockfiles together.
+
+## The Kick adapter
+
+The Kick adapter (`adapters/kick/`) runs while `kick_token` holds a value and
+the integration is enabled. A start gets the token from the api on
+`engine.kick.token`, reads the Kick user and channel to fix the broadcaster,
+seeds the live state and starts the event subscription reconciler; no stored
+token leaves it degraded. It serves `engine.kick.webhook` (webhook ingress) and
+`kickapi` (`ctx.kick`), and declares egress for `chat.send`, `chat.delete`,
+`moderation.timeout` and `moderation.ban`. A relink to the same channel keeps
+the run and reconciles subscriptions; another channel reports a fault so the
+host restarts it. Its `/health` detail carries `broadcasterId`, `slug`,
+`subscriptions` (per event `subscribed` or `failed` with Kick's reason, and the
+last pass's error), `deliveriesRemembered` and `ownLinesAwaitingEcho`. See
+[Kick](./kick-channel.md).
 
 ## The OBS adapter
 
@@ -491,7 +506,13 @@ platform's user id, never by a display name. The memory of written groups
 is keyed this way, and the permission cache by that and the login, so two
 accounts that show the same name never share a decision.
 Permission and group rows in db-proxy are keyed by the speaker's login,
-lowercased: db-proxy keys permission and group rows by login.
+lowercased, on Twitch. A login is unique only within one platform and can
+change, so Kick rows are keyed by `kick:<user id>`: a Kick account named
+like a Twitch moderator never inherits that moderator's grants or groups,
+and a Kick viewer who renames keeps theirs. `!grantcommands @Pup_Pal` said
+on Kick looks the name up on Kick (display name or slug) and grants that
+account's id; `!permit` permits its slug, the login its lines carry. Twitch
+rows keep the bare login.
 
 **Stored commands** are read from db-proxy, the owner of the data.
 `command.created`, `command.updated` and `command.deleted` only trigger a
@@ -543,6 +564,18 @@ includes `twitchapi` among its requests.
 | `WOOFX3_CONNECTORS_ADAPTER_CONCURRENCY` | `16` | Handlers one subscription runs at once. |
 | `WOOFX3_CONNECTORS_ADAPTER_QUEUE_CAP` | `256` | Messages one subscription queues behind them. |
 | `WOOFX3_CONNECTORS_SHUTDOWN_DEADLINE_MS` | `15000` | Whole-process shutdown before exit code 1. Must exceed the db-proxy timeout plus the chat drain plus the larger of the stop deadline and the longest served budget, the platform gateway's included. |
+
+The Kick adapter reads:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `WOOFX3_KICK_SEND_QUEUE_CAP` | `100` | Gateway writes to Kick that may wait behind the one being sent. |
+| `WOOFX3_KICK_SELF_SENT_CAPACITY` | `256` | The engine's own Kick chat lines remembered while their webhook echo is awaited. |
+| `WOOFX3_KICK_SELF_SENT_TTL_MS` | `30000` | How long an own line waits for its echo. |
+
+Its other tunables (request and token timeouts, the webhook time window, the
+delivery and redemption memories, the key refetch interval, the subscription
+interval and backoff) are `KICK_DEFAULTS` in `connectors/src/config/kick.ts`.
 
 The platform gateway's own settings (`WOOFX3_CONNECTORS_GATEWAY_*`) are listed
 in [Platform gateway contract](./platform-gateway.md#configuration-and-health).

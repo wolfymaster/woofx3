@@ -1,8 +1,8 @@
 import type { EventSubChannelChatMessageEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { ChatterMembership } from "@woofx3/common/cloudevents/Chat/events";
+import { type EventTuple, publishEvent } from "../../../shared/publish-event";
 import type { Context } from "../../types";
-import { type EventTuple, publishEvent } from "../publishEvent";
 
 /**
  * Map Twitch's badges onto the platform-neutral ChatterMembership shape.
@@ -77,7 +77,7 @@ async function chatMessageEvent(ctx: Context, event: EventSubChannelChatMessageE
     ? await ctx.membershipEnricher.enrich(ctx.broadcaster.id, chatterId, badged)
     : badged;
 
-  return ctx.events.Twitch().chatMessage(
+  return ctx.events.Platform("twitch").chatMessage(
     {
       messageId,
       amount: bits,

@@ -68,7 +68,11 @@ type Trigger struct {
 	// braces balanced and unnested, every placeholder a declared field id.
 	// Empty means the author declared none. Never set on a webhook trigger,
 	// which nothing configures.
-	Sentence      string `protobuf:"bytes,17,opt,name=sentence,proto3" json:"sentence,omitempty"`
+	Sentence string `protobuf:"bytes,17,opt,name=sentence,proto3" json:"sentence,omitempty"`
+	// The platform whose events alone fire this trigger, an id from
+	// shared/common/contracts/platform-gateway.json `platforms`. Empty means
+	// the trigger fires for its event from any platform.
+	Platform      string `protobuf:"bytes,18,opt,name=platform,proto3" json:"platform,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -201,6 +205,13 @@ func (x *Trigger) GetSentence() string {
 	return ""
 }
 
+func (x *Trigger) GetPlatform() string {
+	if x != nil {
+		return x.Platform
+	}
+	return ""
+}
+
 type TriggerInput struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
@@ -214,6 +225,7 @@ type TriggerInput struct {
 	Transport     string                 `protobuf:"bytes,10,opt,name=transport,proto3" json:"transport,omitempty"` // see Trigger.transport
 	Handler       string                 `protobuf:"bytes,11,opt,name=handler,proto3" json:"handler,omitempty"`     // see Trigger.handler
 	Sentence      string                 `protobuf:"bytes,12,opt,name=sentence,proto3" json:"sentence,omitempty"`   // see Trigger.sentence
+	Platform      string                 `protobuf:"bytes,13,opt,name=platform,proto3" json:"platform,omitempty"`   // see Trigger.platform
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -321,6 +333,13 @@ func (x *TriggerInput) GetHandler() string {
 func (x *TriggerInput) GetSentence() string {
 	if x != nil {
 		return x.Sentence
+	}
+	return ""
+}
+
+func (x *TriggerInput) GetPlatform() string {
+	if x != nil {
+		return x.Platform
 	}
 	return ""
 }
@@ -533,7 +552,7 @@ var File_module_trigger_proto protoreflect.FileDescriptor
 
 const file_module_trigger_proto_rawDesc = "" +
 	"\n" +
-	"\x14module_trigger.proto\x12\x06module\x1a\fcommon.proto\"\xb6\x03\n" +
+	"\x14module_trigger.proto\x12\x06module\x1a\fcommon.proto\"\xd2\x03\n" +
 	"\aTrigger\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x05 \x01(\tR\x04name\x12 \n" +
@@ -550,7 +569,8 @@ const file_module_trigger_proto_rawDesc = "" +
 	"\x05emits\x18\x0e \x01(\tR\x05emits\x12\x1c\n" +
 	"\ttransport\x18\x0f \x01(\tR\ttransport\x12\x18\n" +
 	"\ahandler\x18\x10 \x01(\tR\ahandler\x12\x1a\n" +
-	"\bsentence\x18\x11 \x01(\tR\bsentenceJ\x04\b\x04\x10\x05R\bcategory\"\xdd\x02\n" +
+	"\bsentence\x18\x11 \x01(\tR\bsentence\x12\x1a\n" +
+	"\bplatform\x18\x12 \x01(\tR\bplatformJ\x04\b\x04\x10\x05R\bcategory\"\xf9\x02\n" +
 	"\fTriggerInput\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12 \n" +
 	"\vdescription\x18\x03 \x01(\tR\vdescription\x12\x14\n" +
@@ -564,7 +584,8 @@ const file_module_trigger_proto_rawDesc = "" +
 	"\ttransport\x18\n" +
 	" \x01(\tR\ttransport\x12\x18\n" +
 	"\ahandler\x18\v \x01(\tR\ahandler\x12\x1a\n" +
-	"\bsentence\x18\f \x01(\tR\bsentenceJ\x04\b\x01\x10\x02R\bcategory\"\xa6\x02\n" +
+	"\bsentence\x18\f \x01(\tR\bsentence\x12\x1a\n" +
+	"\bplatform\x18\r \x01(\tR\bplatformJ\x04\b\x01\x10\x02R\bcategory\"\xa6\x02\n" +
 	"\x17RegisterTriggersRequest\x12\x1d\n" +
 	"\n" +
 	"module_key\x18\x01 \x01(\tR\tmoduleKey\x12\x1f\n" +

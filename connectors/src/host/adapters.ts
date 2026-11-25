@@ -15,6 +15,8 @@ export interface AdapterRegistryDeps {
   ids: IdSource;
   random: RandomSource;
   timers: Timers;
+  /** HTTP for adapters that call a platform's REST API. */
+  fetch: typeof fetch;
 }
 
 /**
@@ -31,6 +33,17 @@ export function adapterRegistry(deps: AdapterRegistryDeps): AdapterRegistry {
         ids: deps.ids,
         timers: deps.timers,
         random: deps.random,
+      });
+    },
+    kick: async () => {
+      const { kickAdapterModule } = await import("../adapters/kick/adapter");
+      return kickAdapterModule({
+        config: deps.config.kick,
+        clock: deps.clock,
+        fetch: deps.fetch,
+        timers: deps.timers,
+        random: deps.random,
+        ids: deps.ids,
       });
     },
     obs: async () => {

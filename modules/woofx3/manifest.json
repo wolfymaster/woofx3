@@ -2,7 +2,7 @@
   "id": "woofx3",
   "name": "woofx3",
   "author": "WolfyMaster LLC",
-  "version": "0.48.1",
+  "version": "0.49.0",
   "category": "system",
   "description": "Chat commands, alerts, counters, timers, queues, schedules, forms, databases and scene widgets, ready to use.",
   "resources": [
@@ -653,6 +653,10 @@
             {
               "value": "twitch",
               "label": "Twitch"
+            },
+            {
+              "value": "kick",
+              "label": "Kick"
             }
           ],
           "description": "Which platform to look the user up on."

@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
 	"github.com/wolfymaster/woofx3/common/logging"
+	"github.com/wolfymaster/woofx3/common/platformgateway"
 	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
 	"github.com/wolfymaster/woofx3/workflow/internal/expression"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
@@ -872,6 +873,10 @@ func (e *Engine[TServices]) evaluateTrigger(wf *types.WorkflowDefinition, event 
 	return nil
 }
 
+// TriggerPlatformField names the platform pin in an UnmetCondition: the
+// workflow's module trigger fires only for events from that platform.
+const TriggerPlatformField = "trigger.platform"
+
 // UnmetCondition is a trigger condition an event did not satisfy. Error is set
 // when the condition could not be evaluated at all, which rejects the event
 // the same way a false condition does.
@@ -889,21 +894,29 @@ type UnmetCondition struct {
 // condition such as "has never chatted" must not hold for everyone while the
 // viewer's facts cannot be read.
 // Conditions are ANDed; there is no
-// `conditionLogic` on TriggerConfig.
+// `conditionLogic` on TriggerConfig. A trigger pinned to a platform also
+// needs the event to come from it, reported as the `trigger.platform`
+// condition.
 //
 // Every condition is evaluated rather than stopping at the first false one, so
 // a caller testing a workflow is told all the reasons a sample did not match.
 // Nothing a condition reads can have a side effect, so evaluating the rest
 // changes only the explanation, never the decision.
 func (e *Engine[TServices]) unmetTriggerConditions(wf *types.WorkflowDefinition, event *types.Event, viewer expression.LazyLoader) []UnmetCondition {
-	if wf.Trigger == nil || len(wf.Trigger.Conditions) == 0 {
+	if wf.Trigger == nil {
 		return nil
+	}
+	var unmet []UnmetCondition
+	if pin := wf.Trigger.Platform; pin != "" && platformgateway.PlatformID(event.Platform) != pin {
+		unmet = append(unmet, UnmetCondition{Field: TriggerPlatformField, Operator: "eq", Value: string(pin)})
+	}
+	if len(wf.Trigger.Conditions) == 0 {
+		return unmet
 	}
 	resolver := expression.NewResolver()
 	resolver.AddSource("trigger", event.TriggerFields())
 	resolver.AddLazySource(viewerSource, viewer)
 
-	var unmet []UnmetCondition
 	for _, c := range wf.Trigger.Conditions {
 		ok, err := expression.Evaluate(&expression.Condition{Field: c.Field, Operator: c.Operator, Value: c.Value}, resolver)
 		if err != nil {

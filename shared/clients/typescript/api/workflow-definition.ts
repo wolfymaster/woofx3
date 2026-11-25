@@ -54,6 +54,13 @@ export type TriggerConfig =
        * workflow/internal/types/types.go.
        */
       order?: number;
+      /**
+       * Canonical id of the module trigger this trigger was made from
+       * (`{moduleId}:trigger:{manifestId}`). When that trigger declares a
+       * platform, the workflow fires only for events from it. Must match
+       * TriggerConfig.Ref in workflow/internal/types/types.go.
+       */
+      $ref?: string;
     }
   | { type: "schedule"; schedule: string; conditions?: ConditionConfig[] }
   | { type: typeof TRIGGER_TYPE_COMMAND; event: string; conditions?: ConditionConfig[] };

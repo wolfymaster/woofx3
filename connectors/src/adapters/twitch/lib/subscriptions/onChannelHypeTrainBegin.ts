@@ -1,9 +1,9 @@
 import type { EventSubChannelHypeTrainBeginV2Event, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
-import type { HypeTrainBegin } from "@woofx3/common/cloudevents/Twitch";
 import { HypeTrainContributionType } from "@woofx3/common/cloudevents/messages.gen";
+import type { HypeTrainBegin } from "@woofx3/common/cloudevents/Twitch";
+import { publishEvent } from "../../../shared/publish-event";
 import type { Context } from "../../types";
-import { publishEvent } from "../publishEvent";
 
 /**
  * Copies the hype train's fields out of Twurple's event. The event itself must
@@ -32,6 +32,6 @@ export function toHypeTrainBegin(event: EventSubChannelHypeTrainBeginV2Event): H
 
 export default function onChannelHypeTrainBegin(ctx: Context, listener: EventSubWsListener): EventSubSubscription {
   return listener.onChannelHypeTrainBeginV2(ctx.broadcaster.id, async (event: EventSubChannelHypeTrainBeginV2Event) => {
-    await publishEvent(ctx, () => ctx.events.Twitch().hypeTrainBegin(toHypeTrainBegin(event)));
+    await publishEvent(ctx, () => ctx.events.Platform("twitch").hypeTrainBegin(toHypeTrainBegin(event)));
   });
 }

@@ -30,7 +30,14 @@ const bus = await MessageBus.createMessageBus({ name: "connectors", ...config.bu
 const application = new ConnectorsApplication({
   config,
   logger,
-  adapters: adapterRegistry({ config, clock: systemClock, ids: systemIds, random: systemRandom, timers: systemTimers }),
+  adapters: adapterRegistry({
+    config,
+    clock: systemClock,
+    ids: systemIds,
+    random: systemRandom,
+    timers: systemTimers,
+    fetch: globalThis.fetch,
+  }),
   readers: linkReaders({ obsHostExplicit: config.obs.hostExplicit }),
   clock: systemClock,
   random: systemRandom,

@@ -13,6 +13,7 @@ import type {
 } from "@woofx3/api";
 import type { DecidePairingRequest } from "@woofx3/api/pairing";
 import type { SendToPlatformsParams } from "@woofx3/api/platform-gateway";
+import type { KickTokenGrant } from "@woofx3/api/webhooks";
 import { RpcTarget } from "capnweb";
 import type { Api } from "./api";
 import type { SessionLease } from "./client-sessions";
@@ -96,6 +97,10 @@ export class ApiSession extends RpcTarget {
 
   async setTwitchToken(token: TwitchAccessToken, convexUserId?: string) {
     return this.api.setTwitchToken(token, convexUserId, { clientId: this.clientId });
+  }
+
+  async setKickToken(token: KickTokenGrant, convexUserId?: string) {
+    return this.api.setKickToken(token, convexUserId, { clientId: this.clientId });
   }
 
   /** The session is the registration's key, so a second call replaces the first. */
@@ -287,6 +292,9 @@ export const RPC_METHODS = [
   "sendToPlatforms",
   "deleteTwitchToken",
   "getTwitchLink",
+  "setKickToken",
+  "deleteKickToken",
+  "getKickLink",
   "startTwitchDeviceLogin",
   "getTwitchDeviceLogin",
   "cancelTwitchDeviceLogin",

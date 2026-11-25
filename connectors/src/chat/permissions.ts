@@ -3,7 +3,7 @@ import { BoundedMap } from "./bounded-map";
 import type { CommandDefinition } from "./commands";
 import type { DispatcherDb, PermissionDecision } from "./db-client";
 import type { ChatLine } from "./trust";
-import { viewerKeyString } from "./viewer";
+import { permissionSubject, viewerKeyString } from "./viewer";
 
 export interface AuthCacheConfig {
   capacity: number;
@@ -68,7 +68,7 @@ export class CommandPermissions {
       return cached;
     }
     const decision = await this.db.hasPermission(
-      line.chatterLogin,
+      permissionSubject(line.platform, line.chatterLogin, line.viewer.platformUserId),
       commandResource(commandName),
       COMMAND_PERMISSION_ACTION
     );

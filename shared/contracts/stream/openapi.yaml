@@ -63,6 +63,20 @@ paths:
       responses:
         "200":
           description: Published without a reply; the bus sends none.
+  /channel.kicks:
+    post:
+      operationId: channelKicks
+      x-consumers: [ts]
+      summary: Published by connectors on channel.kicks.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChannelKicksEvent"
+      responses:
+        "200":
+          description: Published without a reply; the bus sends none.
   /channel.follow:
     post:
       operationId: channelFollow
@@ -460,7 +474,7 @@ components:
     PlatformId:
       description: The streaming platform an event came from.
       type: string
-      enum: [twitch]
+      enum: [twitch, kick]
     ChatterMembership:
       description: >
         Platform membership of a chat message's author, neutral across platforms.
@@ -544,6 +558,33 @@ components:
           type: [string, "null"]
         userName:
           type: [string, "null"]
+    ChannelKicks:
+      description: >
+        KICKs gifted in a Kick channel. KICKs are Kick's paid currency, apart from Twitch bits, so a
+        bits threshold never fires on them.
+      type: object
+      additionalProperties: false
+      required: [amount, giftName, giftType, giftTier, message, userId, userName, isAnonymous]
+      properties:
+        amount:
+          description: KICKs in the gift.
+          type: integer
+          minimum: 0
+        giftName:
+          type: string
+        giftType:
+          type: string
+        giftTier:
+          type: string
+        message:
+          description: The sender's message; empty when there is none.
+          type: string
+        userId:
+          type: [string, "null"]
+        userName:
+          type: [string, "null"]
+        isAnonymous:
+          type: boolean
     ChannelFollow:
       description: A viewer followed the channel.
       type: object
@@ -647,6 +688,7 @@ components:
         isCommunityGift:
           type: boolean
         tier:
+          description: The subscription level, 1000, 2000 or 3000; a platform with one subscription level reports 1000.
           type: string
         userId:
           type: [string, "null"]
@@ -667,6 +709,7 @@ components:
         isAnonymous:
           type: boolean
         tier:
+          description: The subscription level, 1000, 2000 or 3000; a platform with one subscription level reports 1000.
           type: string
     ChannelResub:
       description: A resubscription.
@@ -693,6 +736,7 @@ components:
         broadcasterName:
           type: string
         tier:
+          description: The subscription level, 1000, 2000 or 3000; a platform with one subscription level reports 1000.
           type: string
         isPrime:
           type: boolean
@@ -1168,7 +1212,7 @@ components:
         platform:
           description: The platform the invoking line was said on; null when no platform's chat caused the run.
           type: [string, "null"]
-          enum: [twitch, null]
+          enum: [twitch, kick, null]
         channelId:
           type: string
     ChannelCheerEvent:
@@ -1195,6 +1239,30 @@ components:
           $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
         data:
           $ref: "#/components/schemas/ChannelCheer"
+    ChannelKicksEvent:
+      description: The `channel.kicks` CloudEvent as the connectors publish it.
+      type: object
+      additionalProperties: false
+      required: [specversion, id, type, source, time, platform, data]
+      properties:
+        specversion:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSpecVersion"
+        id:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventId"
+        type:
+          type: string
+          enum: [channel.kicks]
+        source:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
+        time:
+          $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        platform:
+          $ref: "#/components/schemas/PlatformId"
+        sessionId:
+          description: The stream session the event happened during; absent before the publisher knows one.
+          $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
+        data:
+          $ref: "#/components/schemas/ChannelKicks"
     ChannelFollowEvent:
       description: The `channel.follow` CloudEvent as the connectors publish it.
       type: object

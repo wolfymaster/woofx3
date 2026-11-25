@@ -2,8 +2,10 @@ import {
   type IntegrationEnabled,
   type IntegrationId,
   integrationEnabledSettingKey,
+  KICK_TOKEN_SETTING,
   parseIntegrationEnabled,
   resolveEnabled,
+  TWITCH_TOKEN_SETTING,
 } from "@woofx3/common/integrations/integration-settings";
 import { obsLinkReader } from "../adapters/obs/link";
 import type { AdapterId } from "./adapter-ids";
@@ -58,23 +60,31 @@ export interface LinkReader {
   read(store: LinkStore): Promise<LinkReading>;
 }
 
-/** Must match TWITCH_TOKEN_SETTING in api/src/twitch-token-source.ts, which writes it. */
-export const TWITCH_TOKEN_SETTING = "twitch_token";
+export { KICK_TOKEN_SETTING, TWITCH_TOKEN_SETTING };
 
-/** Twitch is connected while `twitch_token` holds a value; unlinking stores an empty one. */
-export const twitchLinkReader: LinkReader = {
-  watches: ["twitch"],
-  events: [],
-  async read(db) {
-    const [token, flag] = await Promise.all([
-      db.getSetting(TWITCH_TOKEN_SETTING),
-      db.getSetting(integrationEnabledSettingKey("twitch")),
-    ]);
-    const connected = token !== null && token.trim() !== "";
-    const parsed = parseIntegrationEnabled(flag);
-    return { connected, enabled: resolveEnabled(parsed, connected), flag: parsed, ignored: [] };
-  },
-};
+/**
+ * An account-backed integration is connected while its token setting holds a
+ * value; unlinking stores an empty one.
+ */
+export function tokenLinkReader(integration: IntegrationId, tokenSetting: string): LinkReader {
+  return {
+    watches: [integration],
+    events: [],
+    async read(db) {
+      const [token, flag] = await Promise.all([
+        db.getSetting(tokenSetting),
+        db.getSetting(integrationEnabledSettingKey(integration)),
+      ]);
+      const connected = token !== null && token.trim() !== "";
+      const parsed = parseIntegrationEnabled(flag);
+      return { connected, enabled: resolveEnabled(parsed, connected), flag: parsed, ignored: [] };
+    },
+  };
+}
+
+export const twitchLinkReader = tokenLinkReader("twitch", TWITCH_TOKEN_SETTING);
+
+export const kickLinkReader = tokenLinkReader("kick", KICK_TOKEN_SETTING);
 
 export type LinkReaderRegistry = Record<AdapterId, LinkReader>;
 
@@ -87,6 +97,7 @@ export interface LinkReadersDeps {
 export function linkReaders(deps: LinkReadersDeps): LinkReaderRegistry {
   return {
     twitch: twitchLinkReader,
+    kick: kickLinkReader,
     obs: obsLinkReader({ hostExplicit: deps.obsHostExplicit }),
   };
 }

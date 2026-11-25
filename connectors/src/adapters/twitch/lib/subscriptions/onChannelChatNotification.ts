@@ -5,8 +5,8 @@ import type {
 } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import type EventFactory from "@woofx3/common/cloudevents/EventFactory";
+import { type EventTuple, publishEvent } from "../../../shared/publish-event";
 import type { Context } from "../../types";
-import { type EventTuple, publishEvent } from "../publishEvent";
 
 function baseFields(event: EventSubChannelChatNotificationEvent) {
   return {
@@ -43,7 +43,7 @@ function notificationEvent(
   event: Exclude<EventSubChannelChatNotificationEvent, EventSubChannelChatRaidNotificationEvent>
 ): EventTuple {
   const base = baseFields(event);
-  const twitch = events.Twitch();
+  const twitch = events.Platform("twitch");
 
   switch (event.type) {
     case "sub": {

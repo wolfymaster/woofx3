@@ -2,12 +2,11 @@ import type { ApiClient, HelixUser } from "@twurple/api";
 import type { AuthProvider } from "@twurple/auth";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import {
-  HELIX_COMMAND,
-  TWITCHAPI_ERROR_TYPE,
-  TWITCHAPI_SUBJECT,
-  type TwitchApiReplyCode,
-  twitchApiResultType,
-} from "@woofx3/common/cloudevents/Twitch/commands";
+  encodePlatformApiError,
+  encodePlatformApiReply,
+  type PlatformApiReplyCode,
+} from "@woofx3/common/cloudevents/PlatformApi/reply";
+import { HELIX_COMMAND, TWITCHAPI_SUBJECT, twitchApiResultType } from "@woofx3/common/cloudevents/Twitch/commands";
 import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/integration-settings";
 import { type Span, SpanKind, withSpan } from "@woofx3/common/logging";
 import { ListModuleSettings } from "@woofx3/db/module_setting.pb";
@@ -18,19 +17,19 @@ import { type Clock, errorMessage, type IdSource, type Logger, type RandomSource
 import type { LiveStatusHandle } from "../../host/live-status";
 import type { BusMessage, ScopedBus } from "../../host/scoped-bus";
 import type { DbProxyClientConfig } from "../../services/db-proxy";
+import type { EventPublisher } from "../shared/publish-event";
+import { type PublishTarget, publishEvent } from "../shared/publish-event";
+import type { SelfSentRegistry } from "../shared/self-sent";
+import { untilAborted } from "../shared/until-aborted";
 import { TWITCH_EVENT_SOURCE } from "./event-source";
 import { AdBreakScheduler } from "./lib/adBreakScheduler";
 import { AdBreakLeadSetting } from "./lib/adBreakSettings";
 import { ChatterMembershipEnricher, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
-import { type PublishTarget, publishEvent } from "./lib/publishEvent";
-import type { SelfSentRegistry } from "./lib/self-sent";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
 import TwitchApi, { isTwitchApiCommand, type TwitchApiCall, twitchApiErrorCodeOf } from "./lib/twitch";
 import { TWITCH_API_HANDLERS } from "./lib/twitchApiCommands";
 import TwitchEventBus from "./lib/twitchEventBus";
-import { untilAborted } from "./lib/untilAborted";
-import type { EventPublisher } from "./types";
 
 /** Inbound request on the `twitchapi` subject: `{ command, args? }`. */
 interface TwitchApiRequest {
@@ -156,7 +155,6 @@ async function closeConnection(connection: Connection): Promise<void> {
   }
 }
 
-const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 /**
@@ -405,7 +403,7 @@ export default class TwitchApplication {
     const adBreakScheduler = new AdBreakScheduler({
       fetchSchedule: () => twitchApi.getAdSchedule({}),
       publishUpcoming: (event) => {
-        void publishEvent(eventTarget, () => events.Twitch().adBreakUpcoming(event));
+        void publishEvent(eventTarget, () => events.Platform("twitch").adBreakUpcoming(event));
       },
       logger: ctx.logger,
       readLeadSeconds: () => adBreakLeadSetting.read(),
@@ -614,7 +612,7 @@ export default class TwitchApplication {
         ctx.logger.warn("twitchapi: refused invalid args", { command, err: outcome.error });
         return this.errorReply(`${command}: ${outcome.error}`, outcome.code);
       }
-      return twitchApiReply(twitchApiResultType(command), outcome.value, this.deps);
+      return encodePlatformApiReply(TWITCHAPI_SUBJECT, twitchApiResultType(command), outcome.value, this.deps);
     } catch (err) {
       const message = errorMessage(err);
       ctx.logger.error("twitchapi: handler failed", { command, err: message });
@@ -622,35 +620,18 @@ export default class TwitchApplication {
     }
   }
 
-  private errorReply(error: string, code?: TwitchApiReplyCode): Uint8Array {
+  private errorReply(error: string, code?: PlatformApiReplyCode): Uint8Array {
     return twitchApiErrorReply(error, code, this.deps);
   }
 }
 
-/**
- * A `twitchapi.error` reply. `code` is set when the failure is one a caller
- * can act on differently (e.g. `missing_scope` means relink Twitch,
- * `rate_limited` means wait); absent for everything else.
- */
+/** A `twitchapi.error` reply; see `encodePlatformApiError` for when `code` is set. */
 export function twitchApiErrorReply(
   error: string,
-  code: TwitchApiReplyCode | undefined,
+  code: PlatformApiReplyCode | undefined,
   deps: TwitchReplyDeps
 ): Uint8Array {
-  return twitchApiReply(TWITCHAPI_ERROR_TYPE, code ? { error, code } : { error }, deps);
-}
-
-/** A `twitchapi` reply: a CloudEvent of `type` around `data`, with source `twitchapi`. */
-function twitchApiReply(type: string, data: unknown, deps: TwitchReplyDeps): Uint8Array {
-  return encoder.encode(
-    JSON.stringify({
-      id: deps.ids.next(),
-      type,
-      source: TWITCHAPI_SUBJECT,
-      time: new Date(deps.clock.now()).toISOString(),
-      data,
-    })
-  );
+  return encodePlatformApiError(TWITCHAPI_SUBJECT, error, code, deps);
 }
 
 /**

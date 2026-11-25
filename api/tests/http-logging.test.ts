@@ -51,6 +51,7 @@ function start(sink: Captured[]): string {
     requestGuard: OPEN_REQUEST_GUARD_POLICY,
     onProcessingCallback: async () => {},
     barkloaderWebhookSecret: null,
+    kickWebhook: async () => new Response(null, { status: 404 }),
   });
   return `http://127.0.0.1:${server.port}`;
 }
@@ -100,6 +101,7 @@ describe("api RPC logging", () => {
       requestGuard: ALLOWLIST_POLICY,
       onProcessingCallback: async () => {},
       barkloaderWebhookSecret: null,
+      kickWebhook: async () => new Response(null, { status: 404 }),
     });
     const res = await fetch(`http://127.0.0.1:${server.port}/api`, {
       method: "POST",

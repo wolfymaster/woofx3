@@ -35,6 +35,7 @@ function start(requestGuard: RequestGuardPolicy): string {
     requestGuard,
     onProcessingCallback: async () => {},
     barkloaderWebhookSecret: null,
+    kickWebhook: async () => new Response(null, { status: 404 }),
   });
   return `http://127.0.0.1:${server.port}`;
 }

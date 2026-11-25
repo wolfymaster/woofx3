@@ -95,5 +95,6 @@ func All() []*gormigrate.Migration {
 		AddDatabaseRecords(),
 		AddClientEventsTarget(),
 		AddModuleMarketplaceLicenseKey(),
+		AddTriggerPlatform(),
 	}
 }

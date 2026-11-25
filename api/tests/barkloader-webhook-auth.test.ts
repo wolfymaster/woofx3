@@ -29,6 +29,7 @@ function start(barkloaderWebhookSecret: string | null) {
     requestGuard: OPEN_REQUEST_GUARD_POLICY,
     onProcessingCallback,
     barkloaderWebhookSecret,
+    kickWebhook: async () => new Response(null, { status: 404 }),
   });
   const post = (headers: Record<string, string> = {}) =>
     fetch(`http://127.0.0.1:${server!.port}${PATH}`, {

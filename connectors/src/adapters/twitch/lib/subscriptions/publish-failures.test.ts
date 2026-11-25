@@ -3,19 +3,18 @@ import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
-import { FakeTime, RecordingLogger } from "../../../host/testing";
-import type { Context } from "../types";
-import { publishEvent } from "./publishEvent";
-import { SelfSentRegistry } from "./self-sent";
-import onChannelChatMessage from "./subscriptions/onChannelChatMessage";
-import onChannelChatNotification from "./subscriptions/onChannelChatNotification";
-import onChannelCheer from "./subscriptions/onChannelCheer";
-import onChannelFollow from "./subscriptions/onChannelFollow";
-import onChannelHypeTrainBegin from "./subscriptions/onChannelHypeTrainBegin";
-import onChannelRaid from "./subscriptions/onChannelRaid";
-import onChannelRedemptionAdd from "./subscriptions/onChannelRedemptionAdd";
-import onStreamOffline from "./subscriptions/onStreamOffline";
-import onStreamOnline from "./subscriptions/onStreamOnline";
+import { FakeTime, RecordingLogger } from "../../../../host/testing";
+import { SelfSentRegistry } from "../../../shared/self-sent";
+import type { Context } from "../../types";
+import onChannelChatMessage from "./onChannelChatMessage";
+import onChannelChatNotification from "./onChannelChatNotification";
+import onChannelCheer from "./onChannelCheer";
+import onChannelFollow from "./onChannelFollow";
+import onChannelHypeTrainBegin from "./onChannelHypeTrainBegin";
+import onChannelRaid from "./onChannelRaid";
+import onChannelRedemptionAdd from "./onChannelRedemptionAdd";
+import onStreamOffline from "./onStreamOffline";
+import onStreamOnline from "./onStreamOnline";
 
 const BUS_DOWN = new Error("the bus scope is closed");
 
@@ -54,7 +53,7 @@ function buildRefusingContext(): { ctx: Context; logger: RecordingLogger; publis
       },
     },
     events: {
-      Twitch: () => {
+      Platform: () => {
         throw BUILD_REFUSED;
       },
     } as unknown as EventFactory,
@@ -94,29 +93,6 @@ function capturingListener(): { listener: EventSubWsListener; deliver: Callback 
     },
   };
 }
-
-describe("publishEvent", () => {
-  test("logs a refused publish with its subject instead of rejecting", async () => {
-    const { ctx, logger } = refusingContext();
-
-    await publishEvent(ctx, () => ["user.follow", new Uint8Array()]);
-
-    expect(logger.at("error")).toEqual([
-      expect.objectContaining({ metadata: { subject: "user.follow", err: BUS_DOWN.message } }),
-    ]);
-  });
-
-  test("logs an event that fails to build instead of rejecting, and publishes nothing", async () => {
-    const { ctx, logger, published } = buildRefusingContext();
-
-    await publishEvent(ctx, () => {
-      throw BUILD_REFUSED;
-    });
-
-    expect(published).toEqual([]);
-    expect(logger.at("error")).toEqual([expect.objectContaining({ metadata: { err: BUILD_REFUSED.message } })]);
-  });
-});
 
 const chatMessage = {
   messageId: "msg-1",

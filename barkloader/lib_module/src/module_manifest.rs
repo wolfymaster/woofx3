@@ -64,6 +64,13 @@ pub struct ManifestTrigger {
     /// to the trigger's name.
     #[serde(default)]
     pub sentence: Option<String>,
+    /// The platform whose events alone fire this trigger (`twitch`), one of
+    /// `manifest_validate::KNOWN_PLATFORMS`. Absent means the trigger fires
+    /// for its event from any platform. Event types are platform-neutral
+    /// (`channel.follow` comes from every platform), so a platform module
+    /// pins its triggers to keep another platform's events from firing them.
+    #[serde(default)]
+    pub platform: Option<String>,
     /// When true, the UI lets the user create multiple bound instances ("variants")
     /// of this trigger, each with its own values for the `schema` fields. Used for
     /// triggers like cheer/subscribe/subscription.gift where the same event class
@@ -1518,6 +1525,7 @@ impl ManifestTrigger {
             config_schema,
             emits: encode_data_shape(self.emits.as_ref()),
             sentence: self.sentence.clone().unwrap_or_default(),
+            platform: self.platform.clone().unwrap_or_default(),
             allow_variants: self.allow_variants,
             manifest_id: self.id.clone(),
             transport,

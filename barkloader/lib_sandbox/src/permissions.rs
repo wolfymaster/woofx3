@@ -15,13 +15,25 @@ pub const TWITCH_MODERATION: &str = "twitch.moderation";
 /// Change the channel's title, category or tags: `ctx.twitch.updateStream`.
 pub const TWITCH_CHANNEL: &str = "twitch.channel";
 
+/// Act on Kick chatters: `ctx.kick.timeout`.
+pub const KICK_MODERATION: &str = "kick.moderation";
+
+/// Change the Kick channel's title, category or tags: `ctx.kick.updateStream`.
+pub const KICK_CHANNEL: &str = "kick.channel";
+
 /// Change OBS: switch the program scene, show or hide a source, mute or
 /// unmute an input, show a web page in a browser source
 /// (`ctx.obs.switchScene`, `setSourceVisibility`, `setInputMute`,
 /// `showBrowserSource`). Listing OBS's names needs none.
 pub const OBS_CONTROL: &str = "obs.control";
 
-pub const KNOWN_PERMISSIONS: &[&str] = &[TWITCH_MODERATION, TWITCH_CHANNEL, OBS_CONTROL];
+pub const KNOWN_PERMISSIONS: &[&str] = &[
+    TWITCH_MODERATION,
+    TWITCH_CHANNEL,
+    KICK_MODERATION,
+    KICK_CHANNEL,
+    OBS_CONTROL,
+];
 
 /// Whether a manifest may declare `id`: one of `KNOWN_PERMISSIONS`, or a
 /// `net:<host>` naming a host `ctx.http` may reach (see `crate::net`).

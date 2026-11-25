@@ -1,5 +1,12 @@
-import { errorMessage, type Logger } from "../../../host/deps";
-import type { EventPublisher } from "../types";
+import { errorMessage, type Logger } from "../../host/deps";
+
+/**
+ * Where the adapter's events go. The adapter's scoped bus satisfies it, and
+ * refuses any subject its manifest does not list.
+ */
+export interface EventPublisher {
+  publish(subject: string, data: Uint8Array): Promise<void>;
+}
 
 /** What publishing an event needs from the adapter's context. */
 export interface PublishTarget {
@@ -11,7 +18,7 @@ export interface PublishTarget {
 export type EventTuple = [subject: string, data: Uint8Array];
 
 /**
- * Builds one Twitch event and publishes it, logging a failure of either step
+ * Builds one platform event and publishes it, logging a failure of either step
  * instead of rejecting. Events come from EventSub callbacks and timers, which
  * have nobody to hand an error to, and a lost event is not worth stopping the
  * adapter for. Building goes through `build` so that a payload the event
@@ -29,13 +36,13 @@ export async function publishEvent(
     const result = build();
     built = Array.isArray(result) ? result : await result;
   } catch (err) {
-    target.logger.error("twitch: could not build an event; it is dropped", { err: errorMessage(err) });
+    target.logger.error("could not build an event; it is dropped", { err: errorMessage(err) });
     return;
   }
   const [subject, data] = built;
   try {
     await target.messageBus.publish(subject, data);
   } catch (err) {
-    target.logger.error("twitch: failed to publish an event; it is dropped", { subject, err: errorMessage(err) });
+    target.logger.error("failed to publish an event; it is dropped", { subject, err: errorMessage(err) });
   }
 }

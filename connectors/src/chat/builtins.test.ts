@@ -4,6 +4,7 @@ import { RecordingLogger } from "../host/testing";
 import type { LinkPermits } from "../moderation/permit-store";
 import { builtinCommands, formatStreamPosition, VANISH_MAX_SECONDS } from "./builtins";
 import { type CommandDefinition, type CommandInvocation, CommandTable } from "./commands";
+import type { KickAccount, KickApiPort, KickLookupResult } from "./kickapi-client";
 import { BROADCASTER, chatLine, FakeDispatcherDb, MODERATOR } from "./testing";
 import type { ChatLine } from "./trust";
 import type { TwitchApiFailure, TwitchApiPort, TwitchApiResult } from "./twitchapi-client";
@@ -26,6 +27,19 @@ class FakeTwitchApi implements TwitchApiPort {
   }
 }
 
+/** Kick's users by any name people type, as the Kick adapter's lookup answers. */
+class FakeKickApi implements KickApiPort {
+  readonly users = new Map<string, KickAccount>([
+    ["pup_pal", { userId: "777", login: "pup-pal" }],
+    ["pup-pal", { userId: "777", login: "pup-pal" }],
+  ]);
+
+  async findUser(name: string): Promise<KickLookupResult> {
+    const found = this.users.get(name);
+    return found === undefined ? { ok: false, failure: { kind: "missing" } } : { ok: true, value: found };
+  }
+}
+
 /** Permits that last `seconds`, or none when null, recording who got one. */
 class FakePermits implements LinkPermits {
   readonly granted: Array<{ platform: string; login: string }> = [];
@@ -44,7 +58,8 @@ function setup(randomValue = 0) {
   const twitchApi = new FakeTwitchApi();
   const permits = new FakePermits();
   const logger = new RecordingLogger();
-  const commands = builtinCommands({ db, twitchApi, permits, random: { next: () => randomValue }, logger });
+  const kickApi = new FakeKickApi();
+  const commands = builtinCommands({ db, twitchApi, kickApi, permits, random: { next: () => randomValue }, logger });
   const byName = (name: string): CommandDefinition => {
     const found = commands.find((command) => command.name === name);
     if (found === undefined) {
@@ -119,6 +134,21 @@ describe("built-in commands", () => {
       const { db, run } = setup();
       expect(await run("grantcommands", chatLine(), "@Some_Mod")).toBe("");
       expect([...db.resourceRoles]).toEqual(["some_mod command/* moderator"]);
+    });
+
+    const kickNames = ["@Pup_Pal", "pup-pal", "PUP_PAL"];
+    test.each(kickNames)("a grant on a Kick line for %p keys the Kick account by its id", async (typed) => {
+      const { db, run } = setup();
+      expect(await run("grantcommands", chatLine({ platform: "kick" }), typed)).toBe("");
+      expect([...db.resourceRoles]).toEqual(["kick:777 command/* moderator"]);
+    });
+
+    test("a grant for a Kick name Kick does not know changes nothing", async () => {
+      const { db, run } = setup();
+      expect(await run("grantcommands", chatLine({ platform: "kick" }), "nobody")).toBe(
+        "Kick has no user named nobody"
+      );
+      expect(db.resourceRoles.size).toBe(0);
     });
 
     test("revoke it again", async () => {
@@ -279,6 +309,14 @@ describe("!permit", () => {
       "@some_viewer may post a link for the next 60 seconds"
     );
     expect(permits.granted).toEqual([{ platform: "twitch", login: "some_viewer" }]);
+  });
+
+  test("on Kick, permits the slug the links filter sees for the display name typed", async () => {
+    const { permits, run } = setup();
+    expect(await run("permit", chatLine({ platform: "kick", membership: MODERATOR }), "@Pup_Pal")).toBe(
+      "@pup-pal may post a link for the next 60 seconds"
+    );
+    expect(permits.granted).toEqual([{ platform: "kick", login: "pup-pal" }]);
   });
 
   test("may be run by the broadcaster and moderators only", () => {

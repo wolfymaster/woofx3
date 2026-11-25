@@ -1,10 +1,22 @@
 import { describe, expect, test } from "bun:test";
-import { type LinkStore, TWITCH_TOKEN_SETTING, twitchLinkReader } from "./link-readers";
+import {
+  KICK_TOKEN_SETTING,
+  kickLinkReader,
+  type LinkReader,
+  type LinkStore,
+  TWITCH_TOKEN_SETTING,
+  twitchLinkReader,
+} from "./link-readers";
 import { fixedLinkStore } from "./testing";
 
 const settings = (values: Record<string, string | null>) => fixedLinkStore(values);
 
-describe("twitchLinkReader", () => {
+const TOKEN_READERS: Array<[name: string, reader: LinkReader, tokenSetting: string, flagSetting: string]> = [
+  ["twitch", twitchLinkReader, TWITCH_TOKEN_SETTING, "integration.twitch.enabled"],
+  ["kick", kickLinkReader, KICK_TOKEN_SETTING, "integration.kick.enabled"],
+];
+
+describe.each(TOKEN_READERS)("%s link reader", (_name, reader, tokenSetting, flagSetting) => {
   const cases: Array<{
     name: string;
     token: string | null;
@@ -38,9 +50,7 @@ describe("twitchLinkReader", () => {
   ];
   for (const c of cases) {
     test(c.name, async () => {
-      const reading = await twitchLinkReader.read(
-        settings({ [TWITCH_TOKEN_SETTING]: c.token, "integration.twitch.enabled": c.flag })
-      );
+      const reading = await reader.read(settings({ [tokenSetting]: c.token, [flagSetting]: c.flag }));
       expect({ connected: reading.connected, enabled: reading.enabled, kind: reading.flag?.kind }).toEqual({
         connected: c.connected,
         enabled: c.enabled,
@@ -56,6 +66,6 @@ describe("twitchLinkReader", () => {
       },
       installedModules: async () => [],
     };
-    await expect(twitchLinkReader.read(failing)).rejects.toThrow("db-proxy is down");
+    await expect(reader.read(failing)).rejects.toThrow("db-proxy is down");
   });
 });

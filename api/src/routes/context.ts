@@ -20,7 +20,7 @@ import type {
   WorkflowGroupUpdatedEvent,
   WorkflowUpdatedEvent,
 } from "@woofx3/api/webhooks";
-import { EngineEventType } from "@woofx3/api/webhooks";
+import { EngineEventType, type KickTokenGrant } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
 import { encode } from "@woofx3/common/cloudevents/utils";
 import {
@@ -41,6 +41,7 @@ import type { EngineEventStream } from "../engine-event-stream";
 import type { EventLogSelectionSource } from "../event-log-selection";
 import { releaseStub } from "../held-stub";
 import { EngineInstallId } from "../install-id";
+import { KickTokenSource } from "../kick-token-source";
 import type { MarketplaceClient } from "../marketplace-client";
 import type { PairingRegistry } from "../pairing";
 import { PlatformGatewayClient } from "../platform-gateway-client";
@@ -137,6 +138,8 @@ export class ApiRouteHost extends RpcTarget {
    * so capnweb never offers it to a client.
    */
   readonly twitchToken: TwitchTokenSource;
+  /** The linked Kick account's token. An instance property for the same reason as `twitchToken`. */
+  readonly kickToken: KickTokenSource;
   /** Twitch device logins in progress. An instance property for the same reason as `twitchToken`. */
   readonly twitchDeviceLogins: TwitchDeviceLogins;
   /** The linked account's Helix profile. An instance property for the same reason as `twitchToken`. */
@@ -311,6 +314,17 @@ export class ApiRouteHost extends RpcTarget {
       { type: EngineEventType.TWITCH_LINK_CHANGED, ...change },
       { revision: change.revision, twitchUserId: change.linked ? change.userId : null }
     );
+  }
+
+  /** Write the linked Kick account's token, mark the integration enabled and tell the connectors to reload it. */
+  protected async storeKickToken(
+    grant: KickTokenGrant,
+    dashboardClientId: string,
+    engineUserId?: string
+  ): Promise<void> {
+    await this.kickToken.store(grant, dashboardClientId, engineUserId);
+    await this.writeIntegrationEnabled("kick", true);
+    await this.announceIntegrationChanged("kick", true);
   }
 
   /**
@@ -520,6 +534,11 @@ export class ApiRouteHost extends RpcTarget {
       publicClient: twitchOAuth,
       onLinkChanged: (change) => this.onTwitchLinkChanged(change),
       now: opts.clock,
+    });
+    this.kickToken = new KickTokenSource({
+      db: this.db,
+      dashboard: () => this.webhookClient,
+      now: opts.clock ?? (() => Date.now()),
     });
     this.twitchProfiles = new TwitchProfiles({ logger: opts.logger, now: opts.clock });
     this.twitchDeviceLogins = new TwitchDeviceLogins({

@@ -102,6 +102,7 @@ function engine(pairs: boolean) {
     requestGuard: { allowedHosts: null, allowedOrigins: null, listedOrigins: null },
     onProcessingCallback: async () => {},
     barkloaderWebhookSecret: null,
+    kickWebhook: async () => new Response(null, { status: 404 }),
   });
   const url = `http://127.0.0.1:${server.port}/api`;
   return {

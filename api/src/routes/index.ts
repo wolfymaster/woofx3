@@ -16,6 +16,7 @@ import { eventsRoutes } from "./events";
 import { fieldOptionsRoutes } from "./field-options";
 import { groupsRoutes } from "./groups";
 import { inboundWebhooksRoutes } from "./inbound-webhooks";
+import { kickLinkRoutes } from "./kick-link";
 import { marketplaceRoutes } from "./marketplace";
 import { marketplaceCatalogRoutes } from "./marketplace-catalog";
 import { moderationRoutes } from "./moderation";
@@ -87,6 +88,7 @@ export type RegisteredApiRoutes = typeof engineRoutes &
   typeof uiSettingsRoutes &
   typeof twitchDeviceLoginRoutes &
   typeof twitchLinkRoutes &
+  typeof kickLinkRoutes &
   typeof pairingRoutes &
   typeof moderationRoutes;
 
@@ -162,6 +164,7 @@ export function registerAllRoutes(host: ApiRouteHost): void {
     instrumentRoutes(twitchRoutes),
     instrumentRoutes(uiSettingsRoutes),
     instrumentRoutes(twitchDeviceLoginRoutes),
-    instrumentRoutes(twitchLinkRoutes)
+    instrumentRoutes(twitchLinkRoutes),
+    instrumentRoutes(kickLinkRoutes)
   );
 }

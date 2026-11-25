@@ -6,16 +6,23 @@ import { systemIds, systemTimers } from "./deps";
 import { FakeAdapter, FakeTime, halfRandom, servedSubject } from "./testing";
 
 describe("loadAdapters", () => {
-  test("ships with the twitch and obs adapters registered, each serving its subjects", async () => {
+  test("ships with the twitch, kick and obs adapters registered, each serving its subjects", async () => {
     const config = connectorsConfig({
       woofx3MessagebusUrl: "ws://127.0.0.1:4225",
       woofx3DatabaseProxyUrl: "http://127.0.0.1:5555",
       woofx3DbProxyToken: "connectors-db-proxy-token-0123456789abcdef",
     });
     const { adapters, hostStates } = await loadAdapters(
-      adapterRegistry({ config, clock: new FakeTime(), ids: systemIds, random: halfRandom, timers: systemTimers })
+      adapterRegistry({
+        config,
+        clock: new FakeTime(),
+        ids: systemIds,
+        random: halfRandom,
+        timers: systemTimers,
+        fetch,
+      })
     );
-    expect([...adapters.keys()]).toEqual(["twitch", "obs"]);
+    expect([...adapters.keys()]).toEqual(["twitch", "kick", "obs"]);
     expect(adapters.get("twitch")?.manifest.serves.map((served) => served.subject)).toEqual(["twitchapi"]);
     expect(adapters.get("obs")?.manifest.serves.map((served) => served.subject)).toEqual([
       "engine.obs.command",
@@ -33,8 +40,8 @@ describe("loadAdapters", () => {
   });
 
   test("fails on an entry that is not an adapter id", async () => {
-    const registry = { kick: async () => ({ create: () => new FakeAdapter() }) } as AdapterRegistry;
-    await expect(loadAdapters(registry)).rejects.toThrow('"kick", which is not an adapter id');
+    const registry = { youtube: async () => ({ create: () => new FakeAdapter() }) } as AdapterRegistry;
+    await expect(loadAdapters(registry)).rejects.toThrow('"youtube", which is not an adapter id');
   });
 
   test("fails when the built adapter claims a different id", async () => {

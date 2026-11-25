@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
-import { SessionEndedEventType, SessionStartedEventType } from "@woofx3/common/cloudevents/messages.gen";
-import { StreamStatusObservedEventType, StreamStatusRequestedEventType } from "@woofx3/common/cloudevents/messages.gen";
+import {
+  SessionEndedEventType,
+  SessionStartedEventType,
+  StreamStatusObservedEventType,
+  StreamStatusRequestedEventType,
+} from "@woofx3/common/cloudevents/messages.gen";
 import { clearCurrentSessionId, getCurrentSessionId } from "@woofx3/common/cloudevents/session";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
 import type { Msg } from "@woofx3/nats/src/types";
@@ -20,7 +24,7 @@ function fakeLogger() {
 }
 
 function makeMsg(subject: string, payload: unknown): Msg {
-  const body = JSON.stringify({ type: subject, data: payload });
+  const body = JSON.stringify({ type: subject, platform: "twitch", data: payload });
   return {
     subject,
     data: new TextEncoder().encode(body),
@@ -638,6 +642,182 @@ describe("StreamSessionResolver syncing with the platforms", () => {
       await handlers.get(OBSERVED)?.(msg);
     }
     expect(db.openStreamSessionSegment).not.toHaveBeenCalled();
+    expect(db.closeStreamSessionSegment).not.toHaveBeenCalled();
+  });
+});
+
+describe("a simulcast on two platforms", () => {
+  /** A `stream.online` or `stream.offline` from `platform`. */
+  function platformMsg(subject: string, platform: string, data: unknown = {}): Msg {
+    const body = JSON.stringify({ type: subject, platform, time: "2026-01-01T00:00:00.000Z", data });
+    return {
+      subject,
+      data: new TextEncoder().encode(body),
+      json: () => JSON.parse(body),
+      string: () => body,
+      respond: () => false,
+    };
+  }
+
+  const cases: { name: string; steps: [subject: string, platform: string][]; closes: number }[] = [
+    {
+      name: "one platform ending keeps the segment open while the other is live",
+      steps: [
+        [EventType.StreamOnline, "twitch"],
+        [EventType.StreamOnline, "kick"],
+        [EventType.StreamOffline, "kick"],
+      ],
+      closes: 0,
+    },
+    {
+      name: "the last platform ending closes the segment",
+      steps: [
+        [EventType.StreamOnline, "twitch"],
+        [EventType.StreamOnline, "kick"],
+        [EventType.StreamOffline, "kick"],
+        [EventType.StreamOffline, "twitch"],
+      ],
+      closes: 1,
+    },
+    {
+      name: "a platform redelivering its offline does not close the other's segment",
+      steps: [
+        [EventType.StreamOnline, "twitch"],
+        [EventType.StreamOnline, "kick"],
+        [EventType.StreamOffline, "kick"],
+        [EventType.StreamOffline, "kick"],
+      ],
+      closes: 0,
+    },
+  ];
+  for (const { name, steps, closes } of cases) {
+    test(name, async () => {
+      const { resolver, db, handlers } = setup();
+      await resolver.start();
+
+      for (const [subject, platform] of steps) {
+        await handlers.get(subject)?.(platformMsg(subject, platform, { startedAt: "2026-01-01T00:00:00.000Z" }));
+      }
+
+      expect(db.closeStreamSessionSegment).toHaveBeenCalledTimes(closes);
+    });
+  }
+
+  test("after a restart, a platform found offline does not close the segment another is found live in", async () => {
+    const { resolver, db, handlers } = setup();
+    await resolver.start();
+    const observed = handlers.get(StreamStatusObservedEventType.stream_status_observed);
+
+    await observed?.(observedMsg({ live: true, startedAt: "2026-10-31T12:00:00.000Z" }, "twitch"));
+    await observed?.(observedMsg({ live: false }, "kick"));
+
+    expect(db.openStreamSessionSegment).toHaveBeenCalledTimes(1);
+    expect(db.closeStreamSessionSegment).not.toHaveBeenCalled();
+  });
+});
+
+describe("a platform whose offline never arrives", () => {
+  const INTERVAL_MS = 60_000;
+  const OBSERVED = StreamStatusObservedEventType.stream_status_observed;
+
+  function platformMsg(subject: string, platform: string, data: unknown = {}): Msg {
+    const body = JSON.stringify({ type: subject, platform, time: "2026-01-01T00:00:00.000Z", data });
+    return {
+      subject,
+      data: new TextEncoder().encode(body),
+      json: () => JSON.parse(body),
+      string: () => body,
+      respond: () => false,
+    };
+  }
+
+  function liveSetup() {
+    let now = JUST_AFTER_FIRST_SESSION;
+    const env = setup(
+      {
+        ensureCurrentStreamSession: mock(async () => ({
+          status: { code: "OK" },
+          session: session("session-1"),
+          isSegmentOpen: true,
+          lastSegmentEndedAt: ABSENT_TIMESTAMP,
+        })),
+      },
+      () => now
+    );
+    const requests = () =>
+      published(env.nats).filter((p) => p.type === StreamStatusRequestedEventType.stream_status_requested).length;
+    return {
+      ...env,
+      requests,
+      advance: (ms: number) => {
+        now += ms;
+      },
+    };
+  }
+
+  test("a simulcast platform that stops answering is dropped after one check, closing the segment", async () => {
+    const { resolver, db, handlers, advance, requests } = liveSetup();
+    await resolver.start();
+    await handlers.get(EventType.StreamOnline)?.(platformMsg(EventType.StreamOnline, "twitch"));
+    await handlers.get(EventType.StreamOnline)?.(platformMsg(EventType.StreamOnline, "kick"));
+    const before = requests();
+    advance(INTERVAL_MS);
+    await resolver.check();
+    expect(requests()).toBe(before + 1);
+
+    await handlers.get(EventType.StreamOffline)?.(platformMsg(EventType.StreamOffline, "twitch"));
+    expect(db.closeStreamSessionSegment).not.toHaveBeenCalled();
+
+    advance(INTERVAL_MS);
+    await resolver.check();
+    expect(db.closeStreamSessionSegment).toHaveBeenCalledTimes(1);
+  });
+
+  test("a simulcast platform that answers live keeps the segment open", async () => {
+    const { resolver, db, handlers, advance } = liveSetup();
+    await resolver.start();
+    await handlers.get(EventType.StreamOnline)?.(platformMsg(EventType.StreamOnline, "twitch"));
+    await handlers.get(EventType.StreamOnline)?.(platformMsg(EventType.StreamOnline, "kick"));
+    advance(INTERVAL_MS);
+    await resolver.check();
+
+    await handlers.get(EventType.StreamOffline)?.(platformMsg(EventType.StreamOffline, "twitch"));
+    await handlers.get(OBSERVED)?.(observedMsg({ live: true, startedAt: "2026-01-01T00:00:00.000Z" }, "kick"));
+    advance(INTERVAL_MS);
+    await resolver.check();
+
+    expect(db.closeStreamSessionSegment).not.toHaveBeenCalled();
+  });
+
+  test("after a restart, an offline answer arriving before a live one does not close the segment", async () => {
+    const { resolver, db, handlers, advance } = liveSetup();
+    await resolver.start();
+    const observed = handlers.get(OBSERVED);
+
+    await observed?.(observedMsg({ live: false }, "kick"));
+    await observed?.(observedMsg({ live: true, startedAt: "2026-01-01T00:00:00.000Z" }, "twitch"));
+    advance(INTERVAL_MS);
+    await resolver.check();
+
+    expect(db.closeStreamSessionSegment).not.toHaveBeenCalled();
+  });
+
+  test("after a restart, an offline answer with no live one closes the segment once the request settles", async () => {
+    const { resolver, db, handlers, advance } = liveSetup();
+    await resolver.start();
+
+    await handlers.get(OBSERVED)?.(observedMsg({ live: false }, "kick"));
+    expect(db.closeStreamSessionSegment).not.toHaveBeenCalled();
+    advance(INTERVAL_MS);
+    await resolver.check();
+
+    expect(db.closeStreamSessionSegment).toHaveBeenCalledTimes(1);
+  });
+
+  test("an event from a platform this engine does not know is ignored", async () => {
+    const { resolver, db, handlers } = liveSetup();
+    await resolver.start();
+    await handlers.get(EventType.StreamOffline)?.(platformMsg(EventType.StreamOffline, "youtube"));
     expect(db.closeStreamSessionSegment).not.toHaveBeenCalled();
   });
 });

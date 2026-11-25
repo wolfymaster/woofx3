@@ -81,6 +81,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { StreamGaugeSampler },
       { TwitchHelixGauges },
       { serveTwitchToken },
+      { serveKickToken },
+      { handleKickWebhook },
       { serveDashboardRelayCredential },
       { serveShoutoutQueue },
       { UserEventRecorder },
@@ -126,6 +128,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./stream-gauge-sampler"),
       import("./twitch-helix-gauges"),
       import("./twitch-token-source"),
+      import("./kick-token-source"),
+      import("./kick-webhook"),
       import("./relay-dashboard-edge"),
       import("./shoutout-queue"),
       import("./user-event-recorder"),
@@ -305,6 +309,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
 
       await initOverlayTokenHandlers(natsClient, webhookClient, logger);
       await serveTwitchToken(natsClient, api.twitchToken, logger);
+      await serveKickToken(natsClient, api.kickToken, logger);
       await serveDashboardRelayCredential(natsClient, () => webhookClient, logger);
       await serveShoutoutQueue(
         natsClient,
@@ -389,6 +394,16 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       requestGuard: config.requestGuard,
       onProcessingCallback: (body) => api.handleProcessingCallback(body as never),
       barkloaderWebhookSecret: config.barkloaderWebhookAuth === "required" ? config.barkloaderKey : null,
+      kickWebhook: (req) =>
+        handleKickWebhook(req, {
+          request: (subject, data, opts) => {
+            if (natsClient === null) {
+              return Promise.reject(new Error("the message bus is not connected"));
+            }
+            return natsClient.request(subject, data, opts);
+          },
+          logger,
+        }),
     });
 
     logger.info("API server started", {

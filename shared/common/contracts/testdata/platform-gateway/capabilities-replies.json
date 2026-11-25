@@ -88,8 +88,8 @@
       "reply": {
         "platforms": [
           {
-            "id": "kick",
-            "displayName": "Kick",
+            "id": "youtube",
+            "displayName": "YouTube",
             "state": "connected",
             "connected": true,
             "enabled": true,

@@ -4,12 +4,14 @@ import { type ChatConfig, ChatEnvSchema, chatConfig } from "./config/chat";
 import { type CompanionConfig, CompanionEnvSchema, companionConfig, companionConfigProblems } from "./config/companion";
 import { type GatewayConfig, GatewayEnvSchema, gatewayConfig } from "./config/gateway";
 import { type HostConfig, HostEnvSchema, hostConfig, hostConfigProblems } from "./config/host";
+import { type KickConfig, KickEnvSchema, kickConfig } from "./config/kick";
 import { type ObsConfig, ObsEnvSchema, obsConfig, obsConfigProblems } from "./config/obs";
 import { type TwitchConfig, TwitchEnvSchema, twitchConfig } from "./config/twitch";
 
 export const ConnectorsEnvSchema = BusEnvSchema.extend(HostEnvSchema.shape)
   .extend(GatewayEnvSchema.shape)
   .extend(TwitchEnvSchema.shape)
+  .extend(KickEnvSchema.shape)
   .extend(ChatEnvSchema.shape)
   .extend(ObsEnvSchema.shape)
   .extend(CompanionEnvSchema.shape)
@@ -30,6 +32,7 @@ export interface ConnectorsConfig {
   host: HostConfig;
   gateway: GatewayConfig;
   twitch: TwitchConfig;
+  kick: KickConfig;
   chat: ChatConfig;
   obs: ObsConfig;
   companion: CompanionConfig;
@@ -47,6 +50,7 @@ export function connectorsConfig(env: Record<string, unknown>): ConnectorsConfig
     host: hostConfig(parsed),
     gateway: gatewayConfig(parsed),
     twitch: twitchConfig(parsed),
+    kick: kickConfig(parsed),
     chat: chatConfig(parsed),
     obs: obsConfig(parsed),
     companion: companionConfig(parsed),

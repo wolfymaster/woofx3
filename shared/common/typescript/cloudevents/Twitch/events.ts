@@ -12,6 +12,7 @@ import type * as Stream from "../messages.gen";
 export enum EventType {
   ChatMessage = "user.message",
   Cheer = "channel.cheer",
+  Kicks = "channel.kicks",
   Follow = "channel.follow",
   HypeTrainBegin = "channel.hypetrain",
   Raid = "channel.raid",
@@ -45,6 +46,7 @@ export enum EventType {
 /** The payload types are generated from shared/contracts/stream/openapi.yaml; these names point at them. */
 export type ChatMessage = Stream.SchemaUserMessage;
 export type Cheer = Stream.SchemaChannelCheer;
+export type Kicks = Stream.SchemaChannelKicks;
 export type Follow = Stream.SchemaChannelFollow;
 export type HypeTrainContribution = Stream.SchemaHypeTrainContribution;
 export type HypeTrainBegin = Stream.SchemaChannelHypeTrain;

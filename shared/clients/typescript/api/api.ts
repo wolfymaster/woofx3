@@ -61,6 +61,7 @@ import type {
 import type {
   ActionDefinition,
   AlertSnapshot,
+  KickTokenGrant,
   ModuleResourceUsage,
   ResourceInstanceDefinition,
   SceneSnapshot,
@@ -457,6 +458,30 @@ export interface TwitchLinkedAccount {
 export type TwitchLinkInfo =
   | { linked: false; revision: number }
   | ({ linked: true; revision: number } & TwitchLinkedAccount);
+
+/**
+ * The linked Kick account as `getKickLink` describes it, never its token.
+ * `userId` is the Kick user id as a decimal string.
+ */
+export interface KickLinkedAccount {
+  userId: string;
+  /** The channel slug, from Kick. Null when the engine could not ask Kick; the link itself is still there. */
+  slug: string | null;
+  scopes: string[];
+  /** Milliseconds since the epoch when the current access token expires. */
+  expiresAt: number;
+  /**
+   * Milliseconds since the epoch when renewing the token was refused, so the
+   * streamer has to link Kick again; null while it works. Kept in memory:
+   * after a restart it is null again until the next renewal is refused.
+   */
+  authFailedAt: number | null;
+}
+
+/** `getKickLink`'s answer. `revision` rises on every change to the link. */
+export type KickLinkInfo =
+  | { linked: false; revision: number }
+  | ({ linked: true; revision: number } & KickLinkedAccount);
 
 // ==================== Actions ====================
 
@@ -2418,6 +2443,18 @@ export interface Woofx3EngineApi {
    * sends a `twitch.link.changed` webhook with a higher `revision`.
    */
   getTwitchLink(): Promise<TwitchLinkInfo>;
+
+  /**
+   * Store the linked Kick account's token, from the dashboard that linked
+   * it and renews it (`kick.token.requested`). `convexUserId` scopes the row
+   * to the engine user who linked it, as for `setTwitchToken`. Linking again
+   * re-enables the Kick integration.
+   */
+  setKickToken(token: KickTokenGrant, convexUserId?: string): Promise<{ ok: true }>;
+  /** Forget the linked Kick account and turn the integration off. */
+  deleteKickToken(): Promise<{ ok: true }>;
+  /** The linked Kick account, or `linked: false`. */
+  getKickLink(): Promise<KickLinkInfo>;
 
   // Twitch device login: the engine links Twitch itself with its public
   // Twitch app (see ./twitch-device-login.ts).

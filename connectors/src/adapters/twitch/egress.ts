@@ -16,8 +16,8 @@ import type { HelixCommandArgs, HelixCommandResult } from "@woofx3/common/cloude
 import type { EgressContext, EgressHandlerSpec, EgressHandlers } from "../../host/adapter";
 import { type Clock, errorMessage } from "../../host/deps";
 import { type ParseResult, parsed, parseFailed } from "../../host/host-requests";
+import type { SendQueue } from "../shared/send-queue";
 import { HELIX_DEADLINE_MS, HelixNoAnswer, readSentChatMessage } from "./lib/helix";
-import type { SendQueue } from "./lib/send-queue";
 import { TIMEOUT_MAX_SECONDS, TIMEOUT_REASON_MAX_LENGTH, type TwitchApiCall } from "./lib/twitch";
 import { TwitchApiError } from "./lib/twitchApiError";
 

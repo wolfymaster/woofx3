@@ -44,6 +44,7 @@ use super::module_manifest::{
 use super::reserved_subjects::declared_event_reservation;
 use super::resource_kind_ref::parse_kind_ref;
 use super::theme::{self, InstalledModule};
+use lib_sandbox::extensions::{PLATFORM_API_SPECS, PlatformApiSpec};
 use woofx3_cloudevents::messages_gen::ModuleFieldOptionsRequestType;
 
 /// Resolved action implementation. Mirrors `ManifestActionImpl` but
@@ -424,6 +425,7 @@ pub fn validate_with_provenance(
     )?;
     let widgets = resolve_widgets(&manifest.widgets, &widgets_table)?;
     validate_trigger_transports(manifest, &module_id, provenance)?;
+    validate_trigger_platforms(manifest)?;
     validate_internal_requests(manifest, &module_id, provenance)?;
     validate_no_ingress_bindings(manifest, &module_id, &workflows)?;
 
@@ -535,15 +537,6 @@ fn field_options_subject() -> String {
     ModuleFieldOptionsRequestType::BarkloaderModuleFieldOptions.to_string()
 }
 
-/// The connectors Twitch adapter's request subject. It answers any method of its Twitch
-/// client, writes included (a shoutout, adding a moderator), so a form may
-/// request only the reads listed in `TWITCHAPI_FORM_READS`.
-const TWITCHAPI_SUBJECT: &str = "twitchapi";
-
-/// The `twitchapi` commands an uploaded module's forms may request. Each is a
-/// read a picker needs; opening another read to uploads means adding it here.
-const TWITCHAPI_FORM_READS: [&str; 1] = ["listChannelPointRewards"];
-
 /// Keep an uploaded module's forms to the requests they need.
 ///
 /// A field's `source` and a button's `action` name a subject and a payload,
@@ -551,8 +544,9 @@ const TWITCHAPI_FORM_READS: [&str; 1] = ["listChannelPointRewards"];
 /// button is pressed. Without this, a field could switch OBS scenes or add a
 /// moderator just by being looked at, or run another module's function with
 /// that module's permissions. An upload's forms may therefore request only
-/// the field-options subject for its own functions and the `twitchapi` reads in
-/// `TWITCHAPI_FORM_READS`: an allowlist, because a new command subject should
+/// the field-options subject for its own functions and, on each platform api
+/// subject, the reads its spec lists in `field_source_commands`: an
+/// allowlist, because a new command subject should
 /// stay closed to forms until someone decides otherwise. The system module's
 /// forms are the engine's own and may read its subjects. A module that lists
 /// engine-held names, such as OBS's scenes, does it from its own function
@@ -632,14 +626,26 @@ impl FormRequests<'_> {
             ));
         };
         let field_options = field_options_subject();
-        match event {
-            _ if event == field_options => self.check_field_options_request(descriptor, context),
-            TWITCHAPI_SUBJECT => check_twitchapi_request(descriptor, context),
-            _ => Err(anyhow!(
-                "{context}: requests {event:?}; an uploaded module's forms may request only \
-                 {field_options} (its own functions) or {TWITCHAPI_SUBJECT} (the reads {TWITCHAPI_FORM_READS:?})"
-            )),
+        if event == field_options {
+            return self.check_field_options_request(descriptor, context);
         }
+        if let Some(spec) = PLATFORM_API_SPECS.iter().find(|spec| spec.subject == event) {
+            return check_platform_api_request(spec, descriptor, context);
+        }
+        let platform_reads: Vec<String> = PLATFORM_API_SPECS
+            .iter()
+            .map(|spec| {
+                format!(
+                    "{} (the reads {:?})",
+                    spec.subject, spec.field_source_commands
+                )
+            })
+            .collect();
+        Err(anyhow!(
+            "{context}: requests {event:?}; an uploaded module's forms may request only \
+             {field_options} (its own functions) or {}",
+            platform_reads.join(", ")
+        ))
     }
 
     fn check_field_options_request(
@@ -674,16 +680,22 @@ impl FormRequests<'_> {
     }
 }
 
-fn check_twitchapi_request(descriptor: &serde_json::Value, context: &str) -> Result<()> {
+fn check_platform_api_request(
+    spec: &PlatformApiSpec,
+    descriptor: &serde_json::Value,
+    context: &str,
+) -> Result<()> {
     let command = descriptor
         .pointer("/request/payload/command")
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default();
-    if TWITCHAPI_FORM_READS.contains(&command) {
+    if spec.field_source_commands.contains(&command) {
         return Ok(());
     }
     Err(anyhow!(
-        "{context}: requests {TWITCHAPI_SUBJECT} command {command:?}; a form may request only {TWITCHAPI_FORM_READS:?}"
+        "{context}: requests {} command {command:?}; a form may request only {:?}",
+        spec.subject,
+        spec.field_source_commands
     ))
 }
 
@@ -708,6 +720,29 @@ fn reject_nested_requests(fields: &[ManifestConfigField], context: &str) -> Resu
 /// in api/src/routes/field-options.ts.
 fn is_internal_request(descriptor: &serde_json::Value) -> bool {
     descriptor.get("kind").and_then(serde_json::Value::as_str) == Some("internal")
+}
+
+/// The platforms a manifest trigger may be pinned to. Must match the ids in
+/// `platforms` of shared/common/contracts/platform-gateway.json; a test reads
+/// that file to keep them equal.
+pub const KNOWN_PLATFORMS: &[&str] = &["twitch", "kick"];
+
+/// A trigger's `platform` is matched exactly against the CloudEvent
+/// `platform` attribute, so a misspelt or differently cased id would pin the
+/// trigger to events that never come. It is refused instead.
+fn validate_trigger_platforms(manifest: &ModuleManifest) -> Result<()> {
+    for (i, trigger) in manifest.triggers.iter().enumerate() {
+        let Some(platform) = &trigger.platform else {
+            continue;
+        };
+        if !KNOWN_PLATFORMS.contains(&platform.as_str()) {
+            return Err(anyhow!(
+                "trigger #{i} ({}): platform {platform:?} is not one of {KNOWN_PLATFORMS:?}",
+                trigger.id
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Enforce what each trigger transport may declare.
@@ -775,6 +810,11 @@ fn validate_trigger_transports(
         if trigger.allow_variants {
             return Err(anyhow!(
                 "{label}: a webhook trigger cannot set `allowVariants`; nothing binds to it"
+            ));
+        }
+        if trigger.platform.is_some() {
+            return Err(anyhow!(
+                "{label}: a webhook trigger cannot set `platform`; its handler, not a platform event, fires it"
             ));
         }
     }
@@ -3766,6 +3806,31 @@ mod tests {
     }
 
     #[test]
+    fn every_platform_api_opens_only_its_listed_reads_to_upload_forms() {
+        for spec in PLATFORM_API_SPECS {
+            for command in spec.field_source_commands {
+                validate(&action_with_field_source(
+                    spec.subject,
+                    &format!(r#"{{ "command": "{command}" }}"#),
+                ))
+                .unwrap_or_else(|err| panic!("{} {command}: {err}", spec.subject));
+            }
+            for &(command, _) in spec.commands {
+                if spec.field_source_commands.contains(&command) {
+                    continue;
+                }
+                let err = validate(&action_with_field_source(
+                    spec.subject,
+                    &format!(r#"{{ "command": "{command}" }}"#),
+                ))
+                .expect_err("a module command is not a form read unless listed")
+                .to_string();
+                assert!(err.contains("a form may request only"), "{command}: {err}");
+            }
+        }
+    }
+
+    #[test]
     fn accepts_an_upload_field_source_on_its_own_function() {
         validate(&action_with_field_source(
             &field_options_subject(),
@@ -5483,6 +5548,59 @@ mod tests {
     // ---------------------------------------------------------------
     // Trigger sentences and the per-field wording they render
     // ---------------------------------------------------------------
+
+    fn trigger_with_platform(platform: &str) -> ModuleManifest {
+        minimal(&format!(
+            r#",
+            "triggers": [{{ "id": "t1", "name": "T1", "type": "eventbus",
+                "event": "channel.follow"{platform} }}]"#
+        ))
+    }
+
+    #[test]
+    fn accepts_a_trigger_without_a_platform_or_with_a_known_one() {
+        for platform in ["", r#", "platform": "twitch""#] {
+            validate(&trigger_with_platform(platform))
+                .unwrap_or_else(|err| panic!("{platform}: {err}"));
+        }
+    }
+
+    #[test]
+    fn refuses_a_trigger_platform_that_is_not_a_known_id() {
+        for platform in ["Twitch", "twitch ", "", "youtube"] {
+            let err = bad_err(&trigger_with_platform(&format!(
+                r#", "platform": "{platform}""#
+            )));
+            assert!(err.contains("trigger #0 (t1)"), "{platform}: {err}");
+            assert!(err.contains(&format!("{platform:?}")), "{platform}: {err}");
+        }
+    }
+
+    #[test]
+    fn refuses_a_platform_on_a_webhook_trigger() {
+        let m = minimal(
+            r#",
+            "functions": [{ "id": "hook", "name": "Hook", "runtime": "js", "path": "hook.js" }],
+            "triggers": [{ "id": "t1", "name": "T1", "type": "webhook", "handler": "hook", "platform": "twitch" }]"#,
+        );
+        let err = bad_err(&m);
+        assert!(err.contains("cannot set `platform`"), "{err}");
+    }
+
+    #[test]
+    fn known_platforms_match_the_platform_gateway_contract() {
+        let contract: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../shared/common/contracts/platform-gateway.json"
+        ))
+        .expect("platform-gateway.json parses");
+        let ids: Vec<&str> = contract["platforms"]
+            .as_array()
+            .expect("platforms is an array")
+            .iter()
+            .map(|p| p["id"].as_str().expect("platform id is a string"))
+            .collect();
+        assert_eq!(ids, KNOWN_PLATFORMS);
+    }
 
     fn trigger_with_sentence(sentence: &str) -> ModuleManifest {
         minimal(&format!(

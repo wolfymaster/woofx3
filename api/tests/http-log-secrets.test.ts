@@ -75,6 +75,7 @@ function startEngine(logger: SharedLogger) {
     requestGuard: { allowedHosts: null, allowedOrigins: null, listedOrigins: null },
     onProcessingCallback: async () => {},
     barkloaderWebhookSecret: null,
+    kickWebhook: async () => new Response(null, { status: 404 }),
   });
   return `127.0.0.1:${server.port}/api`;
 }
