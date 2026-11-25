@@ -41,6 +41,8 @@ import type { EngineEventStream } from "../engine-event-stream";
 import type { EventLogSelectionSource } from "../event-log-selection";
 import { releaseStub } from "../held-stub";
 import { EngineInstallId } from "../install-id";
+import type { LogAccessTokens } from "../engine-logs/LogAccessTokens";
+import type { LogStore } from "../engine-logs/LogStore";
 import type { MarketplaceClient } from "../marketplace-client";
 import type { PairingRegistry } from "../pairing";
 import { PlatformGatewayClient } from "../platform-gateway-client";
@@ -130,6 +132,9 @@ export class ApiRouteHost extends RpcTarget {
   protected engineEventStream: EngineEventStream | null = null;
   protected eventLogSelection: EventLogSelectionSource | null = null;
   protected clientRevocation: ClientRevocation | null = null;
+  /** The engine's own log files, and the tokens for its plain HTTP log routes. */
+  protected logStore: LogStore | null = null;
+  protected logAccessTokens: LogAccessTokens | null = null;
   /** The engine's browser pairings; null on an engine that does not pair (see `hostingOffersPairing`). */
   protected pairingRegistry: PairingRegistry | null = null;
   /**

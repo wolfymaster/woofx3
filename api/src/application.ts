@@ -1,5 +1,5 @@
 import { describeRequestGuardPolicy } from "@woofx3/common/http/request-guard";
-import type { SharedLogger } from "@woofx3/common/logging";
+import { resolveConfig as resolveLoggingConfig, type SharedLogger } from "@woofx3/common/logging";
 import type { ApplicationContext, IApplication, Application as RuntimeApplication } from "@woofx3/common/runtime";
 import type { Msg } from "@woofx3/nats/src/types";
 import type { Api } from "./api";
@@ -99,6 +99,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { connectMessageBus },
       { describeHealth },
       { ENGINE_CAPABILITIES_SCHEMA, hostingOffersPairing, supportedEngineCapabilities },
+      { createLogs },
     ] = await Promise.all([
       import("@woofx3/nats"),
       import("./alert-log-handlers"),
@@ -144,6 +145,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       import("./message-bus"),
       import("./health"),
       import("@woofx3/api"),
+      import("./engine-logs"),
     ]);
 
     const config = ctx.runtimeConfig;
@@ -359,6 +361,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
     }
     const gateway = new ApiGateway(api, auth, db, logger, config.registration, sessions, pairing);
     gateway.setWebhookClient(webhookClient);
+    const logs = createLogs({ directory: resolveLoggingConfig().logDir, logger });
+    api.setLogs(logs.store, logs.tokens);
 
     this.server = createHttpServer({
       port: config.port,
@@ -389,6 +393,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       requestGuard: config.requestGuard,
       onProcessingCallback: (body) => api.handleProcessingCallback(body as never),
       barkloaderWebhookSecret: config.barkloaderWebhookAuth === "required" ? config.barkloaderKey : null,
+      logs: logs.http,
     });
 
     logger.info("API server started", {

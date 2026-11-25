@@ -1,6 +1,8 @@
 import type { ClientRevocation } from "./client-sessions";
 import type { EngineEventStream } from "./engine-event-stream";
 import type { EventLogSelectionSource } from "./event-log-selection";
+import type { LogAccessTokens } from "./engine-logs/LogAccessTokens";
+import type { LogStore } from "./engine-logs/LogStore";
 import type { PairingRegistry } from "./pairing";
 import { type RegisteredApiRoutes, registerAllRoutes } from "./routes";
 import { type ApiOptions, ApiRouteHost } from "./routes/context";
@@ -49,6 +51,11 @@ export class Api extends ApiRouteHost {
 
   setPairingRegistry(registry: PairingRegistry): void {
     this.pairingRegistry = registry;
+  }
+
+  setLogs(store: LogStore, tokens: LogAccessTokens): void {
+    this.logStore = store;
+    this.logAccessTokens = tokens;
   }
 
   setClientRevocation(revocation: ClientRevocation): void {
