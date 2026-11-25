@@ -12,6 +12,14 @@ export function isIntegrationId(value: unknown): value is IntegrationId {
   return INTEGRATION_IDS.some((id) => id === value);
 }
 
+/**
+ * The engine settings that hold each account-backed integration's token. The
+ * api writes them; the connectors host reads them to decide whether the
+ * integration is linked.
+ */
+export const TWITCH_TOKEN_SETTING = "twitch_token";
+export const KICK_TOKEN_SETTING = "kick_token";
+
 /** Engine setting holding "true" or "false" for one integration. */
 export function integrationEnabledSettingKey(id: IntegrationId): string {
   return `integration.${id}.enabled`;

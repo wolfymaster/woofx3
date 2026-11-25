@@ -4,7 +4,7 @@ import {
   KICK_WEBHOOK_REQUEST_TIMEOUT_MS,
   KICK_WEBHOOK_SUBJECT,
   KickWebhookReplySchema,
-  type KickWebhookRequest,
+  KickWebhookRequestSchema,
 } from "@woofx3/common/cloudevents/Kick/webhook";
 import type { SharedLogger } from "@woofx3/common/logging";
 import { requestFailureKind } from "@woofx3/nats";
@@ -13,6 +13,8 @@ export interface KickWebhookDeps {
   request(subject: string, data: Uint8Array, opts: { timeout: number }): Promise<{ data: Uint8Array }>;
   logger: SharedLogger;
 }
+
+const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 
 function answer(status: number, reason: string): Response {
   return Response.json({ reason }, { status, headers: { "Cache-Control": "no-store" } });
@@ -68,33 +70,32 @@ export async function handleKickWebhook(req: Request, deps: KickWebhookDeps): Pr
     return answer(413, "too_large");
   }
 
-  const headers: Partial<Record<keyof typeof KICK_WEBHOOK_HEADERS, string>> = {};
-  for (const [field, name] of Object.entries(KICK_WEBHOOK_HEADERS) as [keyof typeof KICK_WEBHOOK_HEADERS, string][]) {
-    const value = req.headers.get(name);
-    if (value === null || value.trim() === "") {
-      deps.logger.warn("Refused a Kick webhook without its header", { header: name });
-      return answer(400, "malformed");
-    }
-    headers[field] = value;
-  }
-  const delivery: KickWebhookRequest = {
-    messageId: headers.messageId ?? "",
-    subscriptionId: headers.subscriptionId ?? "",
-    signature: headers.signature ?? "",
-    timestamp: headers.timestamp ?? "",
-    eventType: headers.eventType ?? "",
-    eventVersion: headers.eventVersion ?? "",
+  const delivery = KickWebhookRequestSchema.safeParse({
+    ...Object.fromEntries(
+      Object.entries(KICK_WEBHOOK_HEADERS).map(([field, name]) => [field, req.headers.get(name)?.trim() ?? ""])
+    ),
     bodyBase64: Buffer.from(body).toString("base64"),
-  };
+  });
+  if (!delivery.success) {
+    deps.logger.debug("Refused a Kick webhook without its headers", {
+      field: String(delivery.error.issues[0]?.path[0] ?? ""),
+    });
+    return answer(400, "malformed");
+  }
+  // Refused here, before a bus round trip: Kick's signature is always base64.
+  if (!BASE64.test(delivery.data.signature)) {
+    deps.logger.debug("Refused a Kick webhook whose signature is not base64");
+    return answer(401, "bad_signature");
+  }
 
   let reply: { data: Uint8Array };
   try {
-    reply = await deps.request(KICK_WEBHOOK_SUBJECT, new TextEncoder().encode(JSON.stringify(delivery)), {
+    reply = await deps.request(KICK_WEBHOOK_SUBJECT, new TextEncoder().encode(JSON.stringify(delivery.data)), {
       timeout: KICK_WEBHOOK_REQUEST_TIMEOUT_MS,
     });
   } catch (err) {
     deps.logger.warn("No answer from the Kick adapter for a webhook; Kick will retry it", {
-      messageId: delivery.messageId,
+      messageId: delivery.data.messageId,
       failure: requestFailureKind(err),
     });
     return answer(503, "unavailable");
@@ -108,7 +109,7 @@ export async function handleKickWebhook(req: Request, deps: KickWebhookDeps): Pr
   const outcome = KickWebhookReplySchema.safeParse(parsed);
   if (!outcome.success) {
     deps.logger.error("The Kick adapter answered a webhook with something unreadable", {
-      messageId: delivery.messageId,
+      messageId: delivery.data.messageId,
     });
     return answer(503, "unavailable");
   }

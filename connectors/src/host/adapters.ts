@@ -15,6 +15,8 @@ export interface AdapterRegistryDeps {
   ids: IdSource;
   random: RandomSource;
   timers: Timers;
+  /** HTTP for adapters that call a platform's REST API. */
+  fetch: typeof fetch;
 }
 
 /**
@@ -38,7 +40,7 @@ export function adapterRegistry(deps: AdapterRegistryDeps): AdapterRegistry {
       return kickAdapterModule({
         config: deps.config.kick,
         clock: deps.clock,
-        fetch,
+        fetch: deps.fetch,
         timers: deps.timers,
         random: deps.random,
         ids: deps.ids,
