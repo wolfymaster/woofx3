@@ -133,6 +133,11 @@ pub struct Trigger {
     /// which nothing configures.
     #[prost(string, tag="17")]
     pub sentence: ::prost::alloc::string::String,
+    /// The platform whose events alone fire this trigger, an id from
+    /// shared/common/contracts/platform-gateway.json `platforms`. Empty means
+    /// the trigger fires for its event from any platform.
+    #[prost(string, tag="18")]
+    pub platform: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct TriggerInput {
@@ -163,6 +168,9 @@ pub struct TriggerInput {
     /// see Trigger.sentence
     #[prost(string, tag="12")]
     pub sentence: ::prost::alloc::string::String,
+    /// see Trigger.platform
+    #[prost(string, tag="13")]
+    pub platform: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct RegisterTriggersRequest {
