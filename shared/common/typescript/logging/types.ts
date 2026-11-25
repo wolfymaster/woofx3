@@ -27,6 +27,10 @@ export type LoggingConfig = {
   otelEnabled: boolean;
   /** OTLP/HTTP base URL, e.g. `http://localhost:4318`. Empty means no collector. */
   otelExporterEndpoint: string;
+  /** Headers sent on every OTLP request (logs and traces). Secrets: never logged. */
+  otelExporterHeaders: Record<string, string>;
+  /** Merged into every OTel resource; `service.name` always wins over an entry here. */
+  otelResourceAttributes: Record<string, string>;
   /** Write spans under `logDir` when tracing is on but no collector is configured. */
   otelLocalFileEnabled: boolean;
   /** Independent tracing override. Defaults to the value of `otelEnabled`. */
@@ -35,6 +39,8 @@ export type LoggingConfig = {
   redactPaths: string[];
   runtimeLevelChanges: boolean;
   singleLineFile: boolean;
+  /** Release tag reported as `service.version`; empty leaves the attribute off. */
+  serviceVersion: string;
 };
 
 export type LoggerConfigOverride = Partial<LoggingConfig>;

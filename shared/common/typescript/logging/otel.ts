@@ -7,7 +7,7 @@ import { type Resource, resourceFromAttributes } from "@opentelemetry/resources"
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { BatchSpanProcessor, type SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
-import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions";
 import { FileSpanExporter } from "./file-span-exporter";
 import { makeTraceFileName } from "./naming";
 import type { LoggingConfig } from "./types";
@@ -35,19 +35,24 @@ type InitTelemetryOptions = {
 
 let telemetry: Telemetry | null = null;
 
-function buildResource(serviceName: string): Resource {
-  return resourceFromAttributes({ [ATTR_SERVICE_NAME]: serviceName });
+/** `service.name` is applied last: it names the process and must not be overridable by the attribute list. */
+export function buildResource(serviceName: string, config: LoggingConfig): Resource {
+  const version = config.serviceVersion === "" ? {} : { [ATTR_SERVICE_VERSION]: config.serviceVersion };
+  return resourceFromAttributes({ ...config.otelResourceAttributes, ...version, [ATTR_SERVICE_NAME]: serviceName });
 }
 
 function normalizeEndpoint(endpoint: string): string {
   return endpoint.endsWith("/") ? endpoint.slice(0, -1) : endpoint;
 }
 
-function buildLoggerProvider(serviceName: string, endpoint: string): LoggerProvider {
-  const exporter = new OTLPLogExporter({ url: `${normalizeEndpoint(endpoint)}/v1/logs` });
+export function buildLoggerProvider(serviceName: string, endpoint: string, config: LoggingConfig): LoggerProvider {
+  const exporter = new OTLPLogExporter({
+    headers: config.otelExporterHeaders,
+    url: `${normalizeEndpoint(endpoint)}/v1/logs`,
+  });
   return new LoggerProvider({
     processors: [new BatchLogRecordProcessor({ exporter })],
-    resource: buildResource(serviceName),
+    resource: buildResource(serviceName, config),
   });
 }
 
@@ -59,7 +64,10 @@ function buildLoggerProvider(serviceName: string, endpoint: string): LoggerProvi
  */
 function buildSpanProcessor(serviceName: string, config: LoggingConfig): SpanProcessor | null {
   if (config.otelExporterEndpoint) {
-    const exporter = new OTLPTraceExporter({ url: `${normalizeEndpoint(config.otelExporterEndpoint)}/v1/traces` });
+    const exporter = new OTLPTraceExporter({
+      headers: config.otelExporterHeaders,
+      url: `${normalizeEndpoint(config.otelExporterEndpoint)}/v1/traces`,
+    });
     return new BatchSpanProcessor(exporter);
   }
   if (config.otelLocalFileEnabled) {
@@ -99,7 +107,7 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
   // Logs have no local-file fallback: the pino file stream already covers
   // that case, so the bridge only exists when a collector can receive it.
   if (config.otelEnabled && config.otelExporterEndpoint) {
-    loggerProvider = buildLoggerProvider(serviceName, config.otelExporterEndpoint);
+    loggerProvider = buildLoggerProvider(serviceName, config.otelExporterEndpoint, config);
     otelLogger = loggerProvider.getLogger(INSTRUMENTATION_SCOPE);
   }
 
@@ -108,7 +116,7 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     const processor = buildSpanProcessor(serviceName, config);
     if (processor) {
       tracerProvider = new NodeTracerProvider({
-        resource: buildResource(serviceName),
+        resource: buildResource(serviceName, config),
         spanProcessors: [processor],
       });
       tracerProvider.register();

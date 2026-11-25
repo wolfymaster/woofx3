@@ -1,4 +1,4 @@
-export { SpanKind, SpanStatusCode, type Span } from "@opentelemetry/api";
+export { type Span, SpanKind, SpanStatusCode } from "@opentelemetry/api";
 export { createServiceLogger, makeLogger, resolveConfig } from "./logger";
 export { makeLogFileName, makeTraceFileName } from "./naming";
 export {
@@ -8,8 +8,8 @@ export {
   initTelemetry,
   shutdownTelemetry,
   type Telemetry,
-  withSpan,
   type WithSpanOptions,
+  withSpan,
 } from "./otel";
 export type {
   CreateServiceLoggerOptions,

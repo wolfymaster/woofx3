@@ -319,6 +319,21 @@ its own working directory and write somewhere different. Rust
 services also accept `logDir` from `.woofx3.json` in place of `WOOFX3_LOG_DIR`,
 as they do without a data directory.
 
+### Telemetry origin and authentication
+
+Every service in all three runtimes reads two settings that let a central
+collector tell engines apart and accept their telemetry:
+
+| Setting | Env var | Meaning |
+|---|---|---|
+| `otelResourceAttributes` | `WOOFX3_OTEL_RESOURCE_ATTRIBUTES` | `key=value` pairs merged into every OTel resource. `service.name` always stays the process's own name. |
+| `otelExporterHeaders` | `WOOFX3_OTEL_EXPORTER_HEADERS` | `key=value` headers sent on every OTLP request. A secret: never logged. |
+
+`WOOFX3_VERSION`, when set, is reported as `service.version`. A pair without a
+key stops the service at startup instead of being skipped, so telemetry is
+never sent unauthenticated or unattributed by accident. Unset, all three leave
+behaviour unchanged.
+
 An engine that ran without a data directory keeps its state when one is set.
 Before starting any service, the orchestrator copies `data/` (the system
 database and module storage) and `modules/` (installed modules) from its

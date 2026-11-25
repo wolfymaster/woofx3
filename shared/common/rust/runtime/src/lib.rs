@@ -9,10 +9,11 @@ mod otel;
 mod secret;
 
 pub use otel::{
-    OtelConfig, OTEL_ENABLED_KEY, OTEL_EXPORTER_ENDPOINT_KEY, OTEL_LOCAL_FILE_ENABLED_KEY,
-    OTEL_TRACING_ENABLED_KEY,
+    OtelConfig, OTEL_ENABLED_KEY, OTEL_EXPORTER_ENDPOINT_KEY, OTEL_EXPORTER_HEADERS_KEY,
+    OTEL_LOCAL_FILE_ENABLED_KEY, OTEL_RESOURCE_ATTRIBUTES_KEY, OTEL_TRACING_ENABLED_KEY,
+    VERSION_KEY,
 };
-pub use secret::{validate_secret, SecretError, MIN_SECRET_BYTES};
+pub use secret::{validate_secret, SecretError, SecretString, MIN_SECRET_BYTES};
 
 /// Config file names read from a config root, in order of preference. Must
 /// match `FileNames` in `shared/common/golang/config/location.go` and
@@ -74,6 +75,12 @@ pub enum ConfigError {
     ParseError(#[from] serde_json::Error),
     #[error("config key `{key}` is not a boolean: `{value}`")]
     InvalidBool { key: String, value: String },
+    /// `pair` is the pair itself for non-secret keys and `#<position>` for
+    /// secret ones, so a header value never reaches an error message.
+    #[error(
+        "config key `{key}` has a malformed pair {pair}: expected `key=value` with a non-empty key"
+    )]
+    InvalidPair { key: String, pair: String },
     #[error("{DATA_DIR_ENV} must be an absolute path, not `{0}`")]
     RelativeDataDir(String),
 }

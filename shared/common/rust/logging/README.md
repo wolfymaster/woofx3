@@ -52,6 +52,26 @@ Resolved through `woofx3_runtime::Config`, so every key can come from `.woofx3.j
 Booleans accept `true`/`false`, `1`/`0`, `yes`/`no`, `on`/`off` (case-insensitive).
 Anything else is a startup error rather than a silent default.
 
+### Tagging telemetry and authenticating export
+
+| Env var | `.woofx3.json` key | Default | Meaning |
+| --- | --- | --- | --- |
+| `WOOFX3_OTEL_RESOURCE_ATTRIBUTES` | `otelResourceAttributes` | unset | `key=value` pairs merged into every OTel resource, e.g. `service.namespace=my-engine,woofx3.engine.id=42` |
+| `WOOFX3_OTEL_EXPORTER_HEADERS` | `otelExporterHeaders` | unset | `key=value` headers sent on every OTLP request (logs and traces). A secret: never logged or printed |
+| `WOOFX3_VERSION` | `version` | unset | Reported as `service.version` on every resource when set |
+
+Both pair lists use the same syntax as the standard `OTEL_RESOURCE_ATTRIBUTES` and
+`OTEL_EXPORTER_OTLP_HEADERS`, with these rules (shared with the Go and TypeScript loggers):
+
+- Pairs are separated by `,`; whitespace around pairs, keys and values is trimmed and empty
+  segments are ignored.
+- Each pair splits on its **first** `=`, so values may contain `=`. Keys and values are
+  then percent-decoded (`%20`, `%2C`); a bad escape stops startup.
+- A later duplicate key wins.
+- A pair with no `=` or an empty key is a startup error. The error names a malformed attribute
+  pair, but only the position of a malformed header pair, because header values are secrets.
+- `service.name` is always the process's own name; an attribute list cannot override it.
+
 Two more knobs come from the environment only, matching the Go logger:
 
 | Env var | Default | Meaning |
