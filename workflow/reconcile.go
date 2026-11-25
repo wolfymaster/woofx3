@@ -18,6 +18,10 @@ type Reconciler struct {
 	dbClient dbv1.WorkflowService
 	logger   tasks.Logger
 	interval time.Duration
+	// wake asks for a pass before the next tick: a module registered or
+	// deregistered triggers, which can change the platform a loaded
+	// workflow is pinned to. Buffered by one, so a burst asks once.
+	wake chan struct{}
 }
 
 // reconcilerRegistry is the minimal registry surface Reconciler needs. The
@@ -42,6 +46,15 @@ func newReconciler(manager *WorkflowManager, registry reconcilerRegistry, dbClie
 		dbClient: dbClient,
 		logger:   logger,
 		interval: interval,
+		wake:     make(chan struct{}, 1),
+	}
+}
+
+// Wake asks for a pass as soon as the one running, if any, finishes. Never blocks.
+func (r *Reconciler) Wake() {
+	select {
+	case r.wake <- struct{}{}:
+	default:
 	}
 }
 
@@ -54,6 +67,8 @@ func (r *Reconciler) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			r.reconcileOnce(ctx)
+		case <-r.wake:
 			r.reconcileOnce(ctx)
 		}
 	}
@@ -83,6 +98,7 @@ func (r *Reconciler) reconcileOnce(ctx context.Context) {
 	}
 
 	health := r.manager.Health()
+	pins := r.manager.platforms.listed(ctx)
 	desired := make(map[string]*types.WorkflowDefinition, len(resp.Workflows))
 	enabled := make(map[string]struct{}, len(resp.Workflows))
 	for _, dbwf := range resp.Workflows {
@@ -90,7 +106,7 @@ func (r *Reconciler) reconcileOnce(ctx context.Context) {
 			continue
 		}
 		enabled[dbwf.GetId()] = struct{}{}
-		def, err := r.manager.convert(ctx, dbwf)
+		def, err := r.manager.convert(ctx, dbwf, pins)
 		if err != nil {
 			health.Record(dbwf.GetId(), err)
 			continue
@@ -121,7 +137,15 @@ func (r *Reconciler) reconcileOnce(ctx context.Context) {
 		}
 	}
 	for id, def := range desired {
-		if _, stored := inMem[id]; !stored {
+		stored, inMemory := inMem[id]
+		if !inMemory {
+			continue
+		}
+		// A module that re-registered its triggers can pin, unpin or move a
+		// workflow that is already loaded; its stored definition is replaced
+		// so it fires only for its platform from now on.
+		if pinOf(stored) != pinOf(def) {
+			health.Record(id, r.registry.Register(def))
 			continue
 		}
 		if entry, tracked := health.Status(id); tracked && entry.Status == WorkflowHealthError {
@@ -138,6 +162,14 @@ func (r *Reconciler) reconcileOnce(ctx context.Context) {
 	if added > 0 || len(toRemove) > 0 {
 		r.logger.Info("reconcile applied", "added", added, "removed", len(toRemove))
 	}
+}
+
+// pinOf is the platform a workflow's trigger is pinned to, empty for none.
+func pinOf(def *types.WorkflowDefinition) string {
+	if def.Trigger == nil {
+		return ""
+	}
+	return string(def.Trigger.Platform)
 }
 
 // reconcileDiff returns workflows in desired but not inMem (toAdd) and IDs in

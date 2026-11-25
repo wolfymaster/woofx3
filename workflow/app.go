@@ -228,6 +228,12 @@ func (a *WorkflowApp) Run(ctx context.Context) error {
 	// the in-memory registry against the DB and apply adds/removes.
 	reconciler := newReconciler(a.manager, a.engine.Registry(), a.manager.dbClient, a.logger, 0)
 	go reconciler.Run(ctx)
+	// Non-fatal: the periodic pass still refreshes the pins, only later.
+	if _, err := natsClient.Subscribe(subjectDbModuleTriggerPattern, func(natsclient.Msg) {
+		reconciler.Wake()
+	}); err != nil {
+		a.logger.Error("Failed to subscribe to trigger changes for platform pins", "subject", subjectDbModuleTriggerPattern, "error", err)
+	}
 	a.logger.Info("Reconciler started", "interval", reconciler.interval)
 
 	a.engine.SetPublisher(publisher)

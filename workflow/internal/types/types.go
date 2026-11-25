@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/wolfymaster/woofx3/common/platformgateway"
 )
 
 type WorkflowDefinition struct {
@@ -77,7 +79,7 @@ type TriggerConfig struct {
 	// Platform is the platform the module trigger named by Ref is pinned
 	// to, read from its trigger row when the workflow loads; empty fires for
 	// every platform. Never stored: the trigger row owns it.
-	Platform string `json:"-" yaml:"-"`
+	Platform platformgateway.PlatformID `json:"-" yaml:"-"`
 }
 
 type ConditionConfig struct {
