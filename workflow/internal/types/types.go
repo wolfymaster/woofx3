@@ -71,6 +71,13 @@ type TriggerConfig struct {
 	// event trigger is ordered; a command trigger's workflow is started by
 	// Engine.RunCommand, which ignores Order.
 	Order *int `json:"order,omitempty" yaml:"order,omitempty"`
+	// Ref is the canonical id of the module trigger this trigger was made
+	// from (`{moduleId}:trigger:{manifestId}`), written by the UI.
+	Ref string `json:"$ref,omitempty" yaml:"$ref,omitempty"`
+	// Platform is the platform the module trigger named by Ref is pinned
+	// to, read from its trigger row when the workflow loads; empty fires for
+	// every platform. Never stored: the trigger row owns it.
+	Platform string `json:"-" yaml:"-"`
 }
 
 type ConditionConfig struct {

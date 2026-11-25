@@ -26,6 +26,9 @@ type WorkflowManager struct {
 	registry WorkflowRegistry
 	dbClient dbv1.WorkflowService
 	health   *WorkflowHealthTracker
+	// platforms pins each loaded workflow's trigger to its module trigger's
+	// platform. Set by SetTriggerLookup.
+	platforms *triggerPlatformResolver
 	// callTimeout bounds each read from the db client, whatever transport it
 	// uses.
 	callTimeout time.Duration
@@ -41,6 +44,11 @@ type WorkflowManager struct {
 
 func (m *WorkflowManager) SetDbClient(client dbv1.WorkflowService) {
 	m.dbClient = client
+}
+
+// SetTriggerLookup wires where a workflow's `$ref` trigger is read from.
+func (m *WorkflowManager) SetTriggerLookup(triggers triggerLookup) {
+	m.platforms = &triggerPlatformResolver{triggers: triggers, logger: m.logger, timeout: m.callTimeout}
 }
 
 // NewWorkflowManager creates a new WorkflowManager instance
@@ -63,8 +71,8 @@ func (m *WorkflowManager) Health() *WorkflowHealthTracker {
 // load converts and registers one stored workflow, recording the outcome as
 // the workflow's health. Every path that loads a stored workflow goes through
 // here, so a refusal always reaches the health record rather than only a log.
-func (m *WorkflowManager) load(dbWorkflow *dbv1.Workflow) (*types.WorkflowDefinition, error) {
-	workflowDef, err := convertDBWorkflowToEngineWorkflow(dbWorkflow)
+func (m *WorkflowManager) load(ctx context.Context, dbWorkflow *dbv1.Workflow) (*types.WorkflowDefinition, error) {
+	workflowDef, err := m.convert(ctx, dbWorkflow)
 	if err == nil && m.registry != nil {
 		err = m.registry.RegisterWorkflow(workflowDef)
 	}
@@ -73,6 +81,20 @@ func (m *WorkflowManager) load(dbWorkflow *dbv1.Workflow) (*types.WorkflowDefini
 		return nil, err
 	}
 	return workflowDef, nil
+}
+
+// convert turns a stored workflow into its engine definition with its
+// trigger's platform pin resolved. Every load path, the reconciler's
+// included, converts through here.
+func (m *WorkflowManager) convert(ctx context.Context, dbWorkflow *dbv1.Workflow) (*types.WorkflowDefinition, error) {
+	def, err := convertDBWorkflowToEngineWorkflow(dbWorkflow)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.platforms.resolve(ctx, def); err != nil {
+		return nil, err
+	}
+	return def, nil
 }
 
 // LoadWorkflowsFromDB loads all enabled workflows from the database
@@ -108,7 +130,7 @@ func (m *WorkflowManager) LoadWorkflowsFromDB(ctx context.Context) error {
 			continue
 		}
 
-		workflowDef, err := m.load(dbWorkflow)
+		workflowDef, err := m.load(ctx, dbWorkflow)
 		if err != nil {
 			continue
 		}
@@ -177,7 +199,7 @@ func (m *WorkflowManager) HandleWorkflowCreateOrUpdate(evt *cloudevents.Workflow
 		return
 	}
 
-	workflowDef, err := m.load(resp.Workflow)
+	workflowDef, err := m.load(context.Background(), resp.Workflow)
 	if err != nil {
 		return
 	}
