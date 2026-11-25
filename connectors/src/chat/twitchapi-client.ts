@@ -1,18 +1,10 @@
+import { isPlatformApiReplyCode, type PlatformApiReplyCode } from "@woofx3/common/cloudevents/PlatformApi/reply";
 import type { CreateMarkerArgs, TimeoutArgs, UpdateStreamArgs } from "@woofx3/common/cloudevents/Twitch/commands";
-import TwitchApiEvents, {
-  TWITCHAPI_ERROR_TYPE,
-  TWITCHAPI_REPLY_CODES,
-  type TwitchApiReplyCode,
-  twitchApiResultType,
-} from "@woofx3/common/cloudevents/Twitch/commands";
+import TwitchApiEvents, { TWITCHAPI_ERROR_TYPE, twitchApiResultType } from "@woofx3/common/cloudevents/Twitch/commands";
 import { requestFailureKind } from "@woofx3/nats";
 import { z } from "zod";
 import { errorMessage } from "../host/deps";
 import type { ScopedBus } from "../host/scoped-bus";
-
-function isReplyCode(code: unknown): code is TwitchApiReplyCode {
-  return TWITCHAPI_REPLY_CODES.some((known) => known === code);
-}
 
 /**
  * Why a `twitchapi` call produced no result:
@@ -24,7 +16,7 @@ function isReplyCode(code: unknown): code is TwitchApiReplyCode {
 export type TwitchApiFailure =
   | { kind: "no_answer" }
   | { kind: "unreachable" }
-  | { kind: "refused"; message: string; code: TwitchApiReplyCode | undefined }
+  | { kind: "refused"; message: string; code: PlatformApiReplyCode | undefined }
   | { kind: "failed"; message: string };
 
 export type TwitchApiResult<T> = { ok: true; value: T } | { ok: false; failure: TwitchApiFailure };
@@ -112,7 +104,10 @@ function readReply<T>(reply: Uint8Array, resultType: string, schema: z.ZodType<T
       return failed("the Twitch adapter refused the request");
     }
     const { error, code } = refusal.data;
-    return { ok: false, failure: { kind: "refused", message: error, code: isReplyCode(code) ? code : undefined } };
+    return {
+      ok: false,
+      failure: { kind: "refused", message: error, code: isPlatformApiReplyCode(code) ? code : undefined },
+    };
   }
   if (envelope.data.type !== resultType) {
     return failed(`the Twitch adapter sent a reply of an unexpected type (${envelope.data.type})`);

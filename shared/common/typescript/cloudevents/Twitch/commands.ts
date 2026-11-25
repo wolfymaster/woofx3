@@ -1,4 +1,5 @@
 import type { ShoutoutEnqueueRequestedEvent } from "@woofx3/api/webhooks";
+import { platformApiErrorType, platformApiResultType } from "../PlatformApi/reply";
 import { encodeCommand, err, ok, type ParseResult } from "../utils";
 
 /** The NATS subject the connectors host's Twitch adapter takes `twitchapi` commands on. */
@@ -57,25 +58,7 @@ export function parseShoutoutEnqueueReply(body: unknown): ParseResult<ShoutoutEn
 export const TWITCHAPI_SERVED_BUDGET_MS = 9_000;
 
 /** The CloudEvent type of every `twitchapi` refusal. */
-export const TWITCHAPI_ERROR_TYPE = "twitchapi.error";
-
-/**
- * Every `code` a `twitchapi.error` reply can carry: an actionable Twitch
- * refusal, `not_linked` (no Twitch account is linked), or
- * `integration_unavailable` (linked, but the adapter is turned off or not
- * running). The connectors host sends the last two for any command while the
- * adapter is down; the adapter itself sends `not_linked` for `helix` only.
- */
-export const TWITCHAPI_REPLY_CODES = [
-  "missing_scope",
-  "unauthorized",
-  "rate_limited",
-  "invalid_arguments",
-  "not_linked",
-  "integration_unavailable",
-] as const;
-
-export type TwitchApiReplyCode = (typeof TWITCHAPI_REPLY_CODES)[number];
+export const TWITCHAPI_ERROR_TYPE = platformApiErrorType(TWITCHAPI_SUBJECT);
 
 /**
  * The commands the connectors host's Twitch adapter serves on the `twitchapi` subject. Listed
@@ -102,7 +85,7 @@ export type TwitchApiCommand = (typeof TWITCHAPI_COMMANDS)[number];
 
 /** The CloudEvent type of a successful reply to `twitchapi` command `command`. */
 export function twitchApiResultType(command: TwitchApiCommand): string {
-  return `twitchapi.${command}.result`;
+  return platformApiResultType(TWITCHAPI_SUBJECT, command);
 }
 
 /**
