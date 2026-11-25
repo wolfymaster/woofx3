@@ -418,12 +418,14 @@ type ChatCommandPlatform string
 
 const (
 	ChatCommandPlatformTwitch ChatCommandPlatform = "twitch"
+	ChatCommandPlatformKick   ChatCommandPlatform = "kick"
 )
 
 // AllValues returns all ChatCommandPlatform values.
 func (ChatCommandPlatform) AllValues() []ChatCommandPlatform {
 	return []ChatCommandPlatform{
 		ChatCommandPlatformTwitch,
+		ChatCommandPlatformKick,
 	}
 }
 
@@ -431,6 +433,8 @@ func (ChatCommandPlatform) AllValues() []ChatCommandPlatform {
 func (s ChatCommandPlatform) MarshalText() ([]byte, error) {
 	switch s {
 	case ChatCommandPlatformTwitch:
+		return []byte(s), nil
+	case ChatCommandPlatformKick:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -442,6 +446,9 @@ func (s *ChatCommandPlatform) UnmarshalText(data []byte) error {
 	switch ChatCommandPlatform(data) {
 	case ChatCommandPlatformTwitch:
 		*s = ChatCommandPlatformTwitch
+		return nil
+	case ChatCommandPlatformKick:
+		*s = ChatCommandPlatformKick
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -1884,12 +1891,14 @@ type PlatformId string
 
 const (
 	PlatformIdTwitch PlatformId = "twitch"
+	PlatformIdKick   PlatformId = "kick"
 )
 
 // AllValues returns all PlatformId values.
 func (PlatformId) AllValues() []PlatformId {
 	return []PlatformId{
 		PlatformIdTwitch,
+		PlatformIdKick,
 	}
 }
 
@@ -1897,6 +1906,8 @@ func (PlatformId) AllValues() []PlatformId {
 func (s PlatformId) MarshalText() ([]byte, error) {
 	switch s {
 	case PlatformIdTwitch:
+		return []byte(s), nil
+	case PlatformIdKick:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -1908,6 +1919,9 @@ func (s *PlatformId) UnmarshalText(data []byte) error {
 	switch PlatformId(data) {
 	case PlatformIdTwitch:
 		*s = PlatformIdTwitch
+		return nil
+	case PlatformIdKick:
+		*s = PlatformIdKick
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

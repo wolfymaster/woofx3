@@ -1843,7 +1843,7 @@ export interface components {
              * @description The platform the invoking line was said on; null when no platform's chat caused the run.
              * @enum {string|null}
              */
-            platform: "twitch" | null;
+            platform: "twitch" | "kick" | null;
             channelId?: string;
         };
         /** @description The `user.message` CloudEvent as the connectors publish it. */
@@ -3371,7 +3371,8 @@ export enum ChannelAdBreakEndEventType {
     channel_ad_break_end = "channel.ad_break.end"
 }
 export enum PlatformId {
-    twitch = "twitch"
+    twitch = "twitch",
+    kick = "kick"
 }
 export enum ChannelAdBreakBeginEventType {
     channel_ad_break_begin = "channel.ad_break.begin"

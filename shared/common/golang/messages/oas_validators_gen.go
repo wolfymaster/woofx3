@@ -280,6 +280,8 @@ func (s ChatCommandPlatform) Validate() error {
 	switch s {
 	case "twitch":
 		return nil
+	case "kick":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -868,6 +870,8 @@ func (s Platform) Validate() error {
 func (s PlatformId) Validate() error {
 	switch s {
 	case "twitch":
+		return nil
+	case "kick":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
