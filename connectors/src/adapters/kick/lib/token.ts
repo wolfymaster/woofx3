@@ -43,7 +43,8 @@ export class KickTokenClient {
   constructor(private readonly deps: KickTokenClientDeps) {}
 
   /** The current token. `force` asks the api for a renewal because Kick refused the cached one. */
-  async get(opts: { force?: boolean } = {}): Promise<KickTokenResult> {
+  /** `timeoutMs` cuts the wait below the configured one, for a caller with a deadline. */
+  async get(opts: { force?: boolean; timeoutMs?: number } = {}): Promise<KickTokenResult> {
     const force = opts.force === true;
     const cached = this.cached;
     if (!force && cached !== undefined && this.fresh(cached)) {
@@ -53,7 +54,7 @@ export class KickTokenClient {
     let raw: { data: Uint8Array };
     try {
       raw = await this.deps.request(KICK_TOKEN_SUBJECT, new TextEncoder().encode(JSON.stringify({ force })), {
-        timeout: this.deps.timeoutMs,
+        timeout: Math.min(this.deps.timeoutMs, opts.timeoutMs ?? this.deps.timeoutMs),
       });
     } catch (err) {
       const kind = requestFailureKind(err);

@@ -240,6 +240,11 @@ function session(clientId: string) {
       publish: mock((subject: string, data: Uint8Array) => {
         published.push({ subject, data: JSON.parse(new TextDecoder().decode(data)) });
       }),
+      request: mock(async () => ({
+        data: new TextEncoder().encode(
+          JSON.stringify({ type: "kickapi.getUser.result", data: { userId: "4242", login: "wolfy" } })
+        ),
+      })),
     } as unknown as ApiOptions["nats"],
     functions: null,
     barkloaderUrl: "http://barkloader.local",
@@ -280,6 +285,7 @@ describe("Kick link over RPC", () => {
       scopes: GRANT.scope,
       expiresAt: NOW + 7_200_000,
       authFailedAt: null,
+      slug: "wolfy",
     });
     expect(JSON.stringify(linked)).not.toContain("access-1");
 

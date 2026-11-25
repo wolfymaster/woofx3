@@ -28,9 +28,9 @@ async function running() {
   if (served === undefined) {
     throw new Error("the adapter does not serve kickapi");
   }
-  const ask = async (command: string, args?: Record<string, unknown>) => {
+  const ask = async (command: string, args?: Record<string, unknown>, deadline = time.now() + 9_000) => {
     const reply = await served.handle(new TextEncoder().encode(JSON.stringify({ command, args })), {
-      deadline: 0,
+      deadline,
       signal: new AbortController().signal,
       hostState: kickHostState(deps),
     });
@@ -41,7 +41,7 @@ async function running() {
     };
   };
   const writes = () => kick.requests.filter((r) => r.method !== "GET" && r.path !== "/public/v1/events/subscriptions");
-  return { served, ask, writes, ...supervised };
+  return { served, ask, writes, time, ...supervised };
 }
 
 describe("kickapi", () => {
@@ -127,6 +127,24 @@ describe("kickapi", () => {
   test("listRewards answers as a picker's options", async () => {
     const { ask } = await running();
     expect((await ask("listRewards")).data).toEqual([{ value: "01REWARD", label: "Hydrate" }]);
+  });
+
+  test("a command whose deadline has passed sends nothing to Kick", async () => {
+    const { ask, time } = await running();
+    const before = kick.requests.length;
+    expect(await ask("timeout", { userId: "777", durationSeconds: 60 }, time.now() - 1)).toMatchObject({
+      type: "kickapi.error",
+    });
+    expect(kick.requests.length).toBe(before);
+  });
+
+  test("a slow Kick ends the command at its deadline, not after stacked timeouts", async () => {
+    const { ask, time } = await running();
+    kick.route("GET", "/public/v1/channels", () => new Promise<Response>(() => {}));
+    const started = Date.now();
+    const reply = await ask("getUser", { userName: "pup-pal" }, time.now() + 150);
+    expect(reply).toMatchObject({ type: "kickapi.error" });
+    expect(Date.now() - started).toBeLessThan(1_500);
   });
 
   test("an unknown command is refused without a code", async () => {

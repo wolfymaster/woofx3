@@ -21,6 +21,7 @@ import {
   describeKickFailure,
   type KickApi,
   type KickApiFailure,
+  type KickCall,
   type KickChannel,
   type KickResult,
 } from "./lib/kick-api";
@@ -34,7 +35,13 @@ export type CommandOutcome =
   | { ok: true; value: unknown }
   | { ok: false; error: string; code: PlatformApiReplyCode | undefined };
 
-type Handler = (api: KickApi, broadcaster: KickBroadcaster, args: Record<string, unknown>) => Promise<CommandOutcome>;
+/** One command; `call` carries the served request's deadline into every Kick call it makes. */
+type Handler = (
+  api: KickApi,
+  broadcaster: KickBroadcaster,
+  args: Record<string, unknown>,
+  call: KickCall
+) => Promise<CommandOutcome>;
 
 function ok(value: unknown): CommandOutcome {
   return { ok: true, value };
@@ -83,13 +90,13 @@ function target(args: Record<string, unknown>): KickUserTarget | string {
 }
 
 /** The channel `who` names; null when Kick has none. A name is asked for under each slug it may be. */
-async function channelOf(api: KickApi, who: KickUserTarget): Promise<KickResult<KickChannel | null>> {
+async function channelOf(api: KickApi, who: KickUserTarget, call: KickCall): Promise<KickResult<KickChannel | null>> {
   if ("userId" in who) {
-    const found = await api.channels({ ids: [who.userId] });
+    const found = await api.channels({ ids: [who.userId] }, call);
     return found.ok ? { ok: true, value: found.value[0] ?? null } : found;
   }
   const candidates = kickSlugCandidates(who.userName);
-  const found = await api.channels({ slugs: candidates });
+  const found = await api.channels({ slugs: candidates }, call);
   if (!found.ok) {
     return found;
   }
@@ -98,19 +105,19 @@ async function channelOf(api: KickApi, who: KickUserTarget): Promise<KickResult<
   return { ok: true, value: match ?? null };
 }
 
-const getUser: Handler = async (api, _broadcaster, args) => {
+const getUser: Handler = async (api, _broadcaster, args, call) => {
   const who = target(args);
   if (typeof who === "string") {
     return invalid(`getUser: ${who}`);
   }
-  const channel = await channelOf(api, who);
+  const channel = await channelOf(api, who, call);
   if (!channel.ok) {
     return failed(channel.error);
   }
   if (channel.value === null) {
     return invalid(`getUser: Kick has no channel ${"userId" in who ? who.userId : who.userName}`);
   }
-  const users = await api.users([channel.value.broadcasterUserId]);
+  const users = await api.users([channel.value.broadcasterUserId], call);
   if (!users.ok) {
     return failed(users.error);
   }
@@ -134,7 +141,7 @@ const getUser: Handler = async (api, _broadcaster, args) => {
   return ok(info);
 };
 
-const updateStream: Handler = async (api, _broadcaster, args) => {
+const updateStream: Handler = async (api, _broadcaster, args, call) => {
   const title = text(args.title);
   const categoryName = text(args.category);
   if (args.tags !== undefined && !(Array.isArray(args.tags) && args.tags.every((t) => typeof t === "string"))) {
@@ -151,7 +158,7 @@ const updateStream: Handler = async (api, _broadcaster, args) => {
   const result: UpdateStreamResult = {};
   let categoryId: number | undefined;
   if (categoryName !== "") {
-    const category = await api.findCategory(categoryName);
+    const category = await api.findCategory(categoryName, call);
     if (!category.ok) {
       return failed(category.error);
     }
@@ -162,11 +169,14 @@ const updateStream: Handler = async (api, _broadcaster, args) => {
     result.categoryId = String(category.value.id);
     result.categoryName = category.value.name;
   }
-  const updated = await api.updateChannel({
-    ...(title === "" ? {} : { title }),
-    ...(categoryId === undefined ? {} : { categoryId }),
-    ...(tags === undefined ? {} : { tags }),
-  });
+  const updated = await api.updateChannel(
+    {
+      ...(title === "" ? {} : { title }),
+      ...(categoryId === undefined ? {} : { categoryId }),
+      ...(tags === undefined ? {} : { tags }),
+    },
+    call
+  );
   if (!updated.ok) {
     return failed(updated.error);
   }
@@ -179,7 +189,7 @@ const updateStream: Handler = async (api, _broadcaster, args) => {
   return ok(result);
 };
 
-const timeout: Handler = async (api, broadcaster, args) => {
+const timeout: Handler = async (api, broadcaster, args, call) => {
   const who = target(args);
   if (typeof who === "string") {
     return invalid(`timeout: ${who}`);
@@ -198,7 +208,7 @@ const timeout: Handler = async (api, broadcaster, args) => {
   if ("userId" in who) {
     userId = who.userId;
   } else {
-    const channel = await channelOf(api, who);
+    const channel = await channelOf(api, who, call);
     if (!channel.ok) {
       return failed(channel.error);
     }
@@ -210,12 +220,15 @@ const timeout: Handler = async (api, broadcaster, args) => {
   if (userId === broadcaster.userId) {
     return invalid("timeout: the broadcaster cannot be timed out");
   }
-  const banned = await api.ban({
-    broadcasterUserId: broadcaster.userId,
-    userId,
-    durationMinutes: minutes,
-    ...(reason === "" ? {} : { reason }),
-  });
+  const banned = await api.ban(
+    {
+      broadcasterUserId: broadcaster.userId,
+      userId,
+      durationMinutes: minutes,
+      ...(reason === "" ? {} : { reason }),
+    },
+    call
+  );
   if (!banned.ok) {
     return failed(banned.error);
   }
@@ -223,8 +236,8 @@ const timeout: Handler = async (api, broadcaster, args) => {
   return ok(applied);
 };
 
-const listRewards: Handler = async (api) => {
-  const rewards = await api.rewards();
+const listRewards: Handler = async (api, _broadcaster, _args, call) => {
+  const rewards = await api.rewards(call);
   if (!rewards.ok) {
     return failed(rewards.error);
   }
@@ -270,7 +283,8 @@ function readRequest(body: Uint8Array): { command: string; args: Record<string, 
 export async function answerKickApiRequest(
   body: Uint8Array,
   run: { api: KickApi; broadcaster: KickBroadcaster },
-  deps: PlatformApiReplyDeps & { logger: Logger }
+  deps: PlatformApiReplyDeps & { logger: Logger },
+  deadline: number
 ): Promise<Uint8Array> {
   const request = readRequest(body);
   if (typeof request === "string") {
@@ -280,7 +294,7 @@ export async function answerKickApiRequest(
     deps.logger.warn("kickapi: unknown command", { command: request.command });
     return encodePlatformApiError(KICKAPI_SUBJECT, `Unknown command: ${request.command}`, undefined, deps);
   }
-  const outcome = await KICK_API_HANDLERS[request.command](run.api, run.broadcaster, request.args);
+  const outcome = await KICK_API_HANDLERS[request.command](run.api, run.broadcaster, request.args, { deadline });
   if (!outcome.ok) {
     deps.logger.warn("kickapi: refused", { command: request.command, err: outcome.error });
     return encodePlatformApiError(KICKAPI_SUBJECT, outcome.error, outcome.code, deps);
