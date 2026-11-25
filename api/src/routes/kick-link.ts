@@ -1,6 +1,36 @@
 import type { KickLinkInfo } from "@woofx3/api";
 import type { KickTokenGrant } from "@woofx3/api/webhooks";
+import { KICKAPI_SUBJECT, kickApiResultType } from "@woofx3/common/cloudevents/Kick/commands";
+import type { SharedLogger } from "@woofx3/common/logging";
+import type NATSClient from "@woofx3/nats/src/client";
 import { routeModule } from "./context";
+
+/** How long `getKickLink` waits for the Kick adapter to name the linked channel before answering without it. */
+const KICK_SLUG_LOOKUP_TIMEOUT_MS = 3_000;
+
+/** The linked user's channel slug from the Kick adapter, or null when it cannot say right now. */
+async function linkedSlug(
+  nats: Pick<NATSClient, "request">,
+  logger: SharedLogger,
+  userId: string
+): Promise<string | null> {
+  try {
+    const reply = await nats.request(
+      KICKAPI_SUBJECT,
+      new TextEncoder().encode(JSON.stringify({ command: "getUser", args: { userId } })),
+      { timeout: KICK_SLUG_LOOKUP_TIMEOUT_MS }
+    );
+    const event = JSON.parse(new TextDecoder().decode(reply.data)) as { type?: unknown; data?: { login?: unknown } };
+    return event.type === kickApiResultType("getUser") && typeof event.data?.login === "string"
+      ? event.data.login
+      : null;
+  } catch (err) {
+    logger.debug("Could not look up the linked Kick channel's slug", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
 
 /** Linking Kick; the token row is `KickTokenSource`'s. */
 export const kickLinkRoutes = routeModule({
@@ -48,7 +78,7 @@ export const kickLinkRoutes = routeModule({
       linked: true,
       revision,
       userId: account.userId,
-      slug: null,
+      slug: this.nats === null ? null : await linkedSlug(this.nats, this.logger, account.userId),
       scopes: account.scopes,
       expiresAt: account.expiresAt,
       authFailedAt: account.authFailedAt,
