@@ -1,3 +1,4 @@
+import { isPlatformId, type PlatformId } from "@woofx3/api/platform-gateway";
 import { EngineEventType } from "@woofx3/api/webhooks";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
 import type { SchemaModuleStorageChange } from "@woofx3/common/cloudevents/messages.gen";
@@ -60,7 +61,16 @@ export class StreamSessionResolver {
    * goes live and closes when the last one goes offline, so one platform
    * ending first does not end the segment the others are still live in.
    */
-  private readonly livePlatforms = new Set<string>();
+  private readonly livePlatforms = new Set<PlatformId>();
+  /**
+   * The last `stream.status.requested` still collecting answers: when it went
+   * out, which platforms answered, and when a platform answered offline while
+   * none was known live. A platform's own offline event can be lost (Kick's
+   * webhooks are), so while any platform is live the resolver asks again on
+   * every check, and a live platform that does not answer within one check
+   * interval (its adapter stopped) counts as offline.
+   */
+  private statusRound: { sentAt: number; answered: Set<PlatformId>; offlineAt: number | null } | null = null;
   /**
    * The tail of the running decisions. Each reads the session's state and then
    * writes, so a broadcast-end check overlapping a `stream.online` could close
@@ -106,7 +116,7 @@ export class StreamSessionResolver {
     // A stream that ended while this process was down is over already.
     await this.endBroadcastIfOver();
     this.checkTimer = setInterval(() => {
-      void this.endBroadcastIfOver();
+      void this.check();
     }, this.checkIntervalMs);
 
     // After subscribing, so no answer is missed. A platform that connects later
@@ -122,6 +132,45 @@ export class StreamSessionResolver {
     if (this.checkTimer !== null) {
       clearInterval(this.checkTimer);
       this.checkTimer = null;
+    }
+  }
+
+  /**
+   * One periodic check: settles the status request in flight, asks again
+   * while a platform is live, and ends a broadcast past its grace window.
+   * Exposed for tests.
+   */
+  async check(): Promise<void> {
+    await this.settleStatusRound();
+    if (this.livePlatforms.size > 0 && this.statusRound === null) {
+      await this.requestStreamStatus();
+    }
+    await this.endBroadcastIfOver();
+  }
+
+  /**
+   * Once a status request has waited a check interval, a live platform that
+   * did not answer is offline, and an offline answer held back because no
+   * platform was known live closes the segment if still none is.
+   */
+  private async settleStatusRound(): Promise<void> {
+    const round = this.statusRound;
+    if (round === null || this.now() - round.sentAt < this.checkIntervalMs) {
+      return;
+    }
+    this.statusRound = null;
+    const silent = [...this.livePlatforms].filter((platform) => !round.answered.has(platform));
+    for (const platform of silent) {
+      this.logger.warn(
+        "StreamSessionResolver: a live platform did not answer whether it is still live; treating it as offline",
+        {
+          platform,
+        }
+      );
+      this.livePlatforms.delete(platform);
+    }
+    if (this.livePlatforms.size === 0 && (silent.length > 0 || round.offlineAt !== null)) {
+      await this.streamWentOffline(new Date(round.offlineAt ?? this.now()));
     }
   }
 
@@ -192,6 +241,7 @@ export class StreamSessionResolver {
   }
 
   private async requestStreamStatus(): Promise<void> {
+    this.statusRound = { sentAt: this.now(), answered: new Set(), offlineAt: null };
     try {
       await this.publish(StreamStatusRequestedEventType.stream_status_requested, validateStreamStatusRequestedEvent);
     } catch (err) {
@@ -202,25 +252,51 @@ export class StreamSessionResolver {
   }
 
   private handleStreamOnline(msg: Msg): Promise<void> {
-    this.livePlatforms.add(readPlatform(msg));
+    const platform = this.platformOf(msg, EventType.StreamOnline);
+    if (platform === null) {
+      return Promise.resolve();
+    }
+    this.livePlatforms.add(platform);
+    this.statusRound?.answered.add(platform);
     return this.streamWentLive(this.eventTime(msg));
   }
 
   private handleStreamOffline(msg: Msg): Promise<void> {
-    return this.platformWentOffline(readPlatform(msg), this.eventTime(msg));
+    const platform = this.platformOf(msg, EventType.StreamOffline);
+    if (platform === null) {
+      return Promise.resolve();
+    }
+    this.statusRound?.answered.add(platform);
+    return this.platformWentOffline(platform, this.eventTime(msg));
   }
 
-  /** Closes the segment only when no other platform is still live. */
-  private platformWentOffline(platform: string, at: Date): Promise<void> {
+  /**
+   * Closes the segment only when no other platform is still live. When others
+   * remain, asks them all again: one of them may have ended without its
+   * offline event arriving.
+   */
+  private async platformWentOffline(platform: PlatformId, at: Date): Promise<void> {
     this.livePlatforms.delete(platform);
     if (this.livePlatforms.size > 0) {
       this.logger.debug("StreamSessionResolver: a platform went offline while another is still live", {
         platform,
         live: [...this.livePlatforms],
       });
-      return Promise.resolve();
+      if (this.statusRound === null) {
+        await this.requestStreamStatus();
+      }
+      return;
     }
-    return this.streamWentOffline(at);
+    await this.streamWentOffline(at);
+  }
+
+  /** The event's platform, or null after a warning when it names none this engine knows. */
+  private platformOf(msg: Msg, subject: string): PlatformId | null {
+    const platform = readPlatform(msg);
+    if (platform === null) {
+      this.logger.warn(`${subject}: the event names no known platform; skipping`);
+    }
+    return platform;
   }
 
   /**
@@ -236,14 +312,31 @@ export class StreamSessionResolver {
       this.logger.warn(`${StreamStatusObservedEventType.stream_status_observed}: malformed event; skipping`);
       return;
     }
-    const platform = readPlatform(msg);
+    const platform = this.platformOf(msg, StreamStatusObservedEventType.stream_status_observed);
+    if (platform === null) {
+      return;
+    }
+    this.statusRound?.answered.add(platform);
     if (!status.live) {
-      await this.platformWentOffline(platform, new Date());
+      if (this.livePlatforms.has(platform)) {
+        await this.platformWentOffline(platform, new Date(this.now()));
+        return;
+      }
+      // Answers to one request arrive in any order: an offline platform
+      // answering before a live one must not close the segment the live one
+      // is in. The round's settling closes it if none answers live.
+      if (this.livePlatforms.size === 0 && this.live === true && this.statusRound !== null) {
+        this.statusRound.offlineAt ??= this.now();
+        return;
+      }
+      if (this.livePlatforms.size === 0) {
+        await this.streamWentOffline(new Date(this.now()));
+      }
       return;
     }
     this.livePlatforms.add(platform);
     const startedAt = status.startedAt === undefined ? Number.NaN : Date.parse(status.startedAt);
-    await this.streamWentLive(Number.isNaN(startedAt) ? new Date() : new Date(startedAt));
+    await this.streamWentLive(Number.isNaN(startedAt) ? new Date(this.now()) : new Date(startedAt));
   }
 
   private streamWentLive(at: Date): Promise<void> {
@@ -404,7 +497,7 @@ export class StreamSessionResolver {
    * is gone. One failed announcement does not stop the rest.
    */
   private async announceCleared(cleared: storage.StorageItem[]): Promise<void> {
-    const occurredAt = new Date().toISOString();
+    const occurredAt = new Date(this.now()).toISOString();
     for (const item of cleared) {
       const subject = `module.storage.${item.namespace}.changed`;
       const change: SchemaModuleStorageChange = { moduleId: item.namespace, key: item.key, value: null, occurredAt };
@@ -438,7 +531,7 @@ export class StreamSessionResolver {
         return new Date(parsed);
       }
     }
-    return new Date();
+    return new Date(this.now());
   }
 
   /**
@@ -503,14 +596,14 @@ export function timestampToEpochMs(ts: { seconds?: bigint; nanos?: number } | un
   return Number(seconds) * 1000 + Math.floor(nanos / 1_000_000);
 }
 
-/** The CloudEvent `platform` an event came from; "" for one that names none, such as a simulated event. */
-function readPlatform(msg: Msg): string {
+/** The CloudEvent `platform` an event came from, or null when it names none this engine knows. */
+function readPlatform(msg: Msg): PlatformId | null {
   try {
     const platform = (msg.json() as Record<string, unknown>).platform;
-    return typeof platform === "string" ? platform : "";
+    return isPlatformId(platform) ? platform : null;
   } catch {
-    // Not JSON: its other readers refuse it too; here it counts as no platform.
-    return "";
+    // Not JSON: its other readers refuse it too; here it names no platform.
+    return null;
   }
 }
 
