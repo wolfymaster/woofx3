@@ -112,11 +112,9 @@ export interface EngineCapabilities {
  * Ids declared here that this build does not advertise, so clients can name
  * them before or after the engine supports them: a shared contract that lands
  * before the engine implements it, or an older protocol the engine no longer
- * serves.
+ * serves. None today.
  */
-export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = new Set<EngineCapability>([
-  ENGINE_CAPABILITIES.integrationsKick,
-]);
+export const UNADVERTISED_ENGINE_CAPABILITIES: ReadonlySet<EngineCapability> = new Set<EngineCapability>([]);
 
 /**
  * Ids that describe how an engine is run rather than what its build can do,
