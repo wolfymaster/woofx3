@@ -103,6 +103,14 @@ describe("POST /webhooks/kick", () => {
     expect(responder.sent).toEqual([]);
   });
 
+  test("a signature that is not base64 is refused before a bus round trip", async () => {
+    const responder = adapter({ status: 200, reason: "published" });
+    const headers = { ...KICK_HEADERS, "Kick-Event-Signature": "not base64!" };
+    const response = await handleKickWebhook(post(BODY, headers), { request: responder.request, logger: SILENT });
+    expect(response.status).toBe(401);
+    expect(responder.sent).toEqual([]);
+  });
+
   test("a body over the cap is a 413 and reaches nobody", async () => {
     const responder = adapter({ status: 200, reason: "published" });
     const big = "x".repeat(KICK_WEBHOOK_MAX_BODY_BYTES + 1);

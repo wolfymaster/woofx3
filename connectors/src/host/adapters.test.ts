@@ -13,7 +13,14 @@ describe("loadAdapters", () => {
       woofx3DbProxyToken: "connectors-db-proxy-token-0123456789abcdef",
     });
     const { adapters, hostStates } = await loadAdapters(
-      adapterRegistry({ config, clock: new FakeTime(), ids: systemIds, random: halfRandom, timers: systemTimers })
+      adapterRegistry({
+        config,
+        clock: new FakeTime(),
+        ids: systemIds,
+        random: halfRandom,
+        timers: systemTimers,
+        fetch,
+      })
     );
     expect([...adapters.keys()]).toEqual(["twitch", "kick", "obs"]);
     expect(adapters.get("twitch")?.manifest.serves.map((served) => served.subject)).toEqual(["twitchapi"]);

@@ -89,7 +89,7 @@
         "platforms": [
           {
             "id": "youtube",
-            "displayName": "Kick",
+            "displayName": "YouTube",
             "state": "connected",
             "connected": true,
             "enabled": true,

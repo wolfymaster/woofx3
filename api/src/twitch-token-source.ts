@@ -5,6 +5,7 @@ import {
   type TwitchTokenGrant,
   type TwitchTokenRequestedResponse,
 } from "@woofx3/api/webhooks";
+import { TWITCH_TOKEN_SETTING } from "@woofx3/common/integrations/integration-settings";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
@@ -12,7 +13,7 @@ import { type PublicClientToken, type TwitchOAuthClient, TwitchOAuthError } from
 import { publicClientIdOf, selectStrategy } from "@woofx3/twitch/token-strategy";
 import type { DbClient } from "./db-client";
 
-export const TWITCH_TOKEN_SETTING = "twitch_token";
+export { TWITCH_TOKEN_SETTING };
 
 /**
  * NATS subject the engine's other services ask on for the linked account's

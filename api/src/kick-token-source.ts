@@ -4,13 +4,13 @@ import {
   type KickTokenReply,
   type KickTokenUnavailableReason,
 } from "@woofx3/common/cloudevents/Kick/token";
+import { KICK_TOKEN_SETTING } from "@woofx3/common/integrations/integration-settings";
 import type { SharedLogger } from "@woofx3/common/logging";
 import type NATSClient from "@woofx3/nats/src/client";
 import type { Msg } from "@woofx3/nats/src/types";
 import type { DbClient } from "./db-client";
 
-/** Must match KICK_TOKEN_SETTING in connectors/src/host/link-readers.ts, which reads it. */
-export const KICK_TOKEN_SETTING = "kick_token";
+export { KICK_TOKEN_SETTING };
 
 /** A token this close to its expiry is renewed before use. */
 const EXPIRY_MARGIN_MS = 60_000;

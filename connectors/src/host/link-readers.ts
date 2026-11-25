@@ -2,8 +2,10 @@ import {
   type IntegrationEnabled,
   type IntegrationId,
   integrationEnabledSettingKey,
+  KICK_TOKEN_SETTING,
   parseIntegrationEnabled,
   resolveEnabled,
+  TWITCH_TOKEN_SETTING,
 } from "@woofx3/common/integrations/integration-settings";
 import { obsLinkReader } from "../adapters/obs/link";
 import type { AdapterId } from "./adapter-ids";
@@ -58,11 +60,7 @@ export interface LinkReader {
   read(store: LinkStore): Promise<LinkReading>;
 }
 
-/** Must match TWITCH_TOKEN_SETTING in api/src/twitch-token-source.ts, which writes it. */
-export const TWITCH_TOKEN_SETTING = "twitch_token";
-
-/** Must match KICK_TOKEN_SETTING in api/src/kick-token-source.ts, which writes it. */
-export const KICK_TOKEN_SETTING = "kick_token";
+export { KICK_TOKEN_SETTING, TWITCH_TOKEN_SETTING };
 
 /**
  * An account-backed integration is connected while its token setting holds a

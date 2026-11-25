@@ -316,14 +316,6 @@ export class ApiRouteHost extends RpcTarget {
     );
   }
 
-  /**
-   * Write the linked Twitch account's token, mark the integration enabled and
-   * tell the services that hold one to reload it. `engineUserId` scopes the
-   * row to the engine user who linked it, when known.
-   *
-   * Linking again re-enables, so a Convex re-registration (which calls
-   * setTwitchToken) switches a disabled integration back on.
-   */
   /** Write the linked Kick account's token, mark the integration enabled and tell the connectors to reload it. */
   protected async storeKickToken(
     grant: KickTokenGrant,
@@ -335,6 +327,14 @@ export class ApiRouteHost extends RpcTarget {
     await this.announceIntegrationChanged("kick", true);
   }
 
+  /**
+   * Write the linked Twitch account's token, mark the integration enabled and
+   * tell the services that hold one to reload it. `engineUserId` scopes the
+   * row to the engine user who linked it, when known.
+   *
+   * Linking again re-enables, so a Convex re-registration (which calls
+   * setTwitchToken) switches a disabled integration back on.
+   */
   protected async storeTwitchToken<T extends { userId: string }>(stored: T, engineUserId?: string): Promise<void> {
     await this.twitchToken.store(stored, engineUserId);
     await this.writeIntegrationEnabled("twitch", true);
