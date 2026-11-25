@@ -43,6 +43,11 @@ value sets every side must agree on, so no consumer keeps its own copy:
 | `limits.callerTimeoutMs` | 12000 | `CallerTimeout` / `CALLER_TIMEOUT_MS` | every caller's wait, and the bound on the gateway's own deadline |
 | `platformOptions.twitch.announcementColors` | `primary`, `blue`, `green`, `orange` or `purple` | `TwitchAnnouncementColor` / `TWITCH_ANNOUNCEMENT_COLORS` | the workflow `chat.announce` step and the Twitch adapter |
 
+`platforms` lists `twitch` and `kick`. Kick has no announcement, pin or
+warning, so its adapter declares no handler for `chat.announce`, `chat.pin` or
+`moderation.warn`, and the gateway answers those `unsupported` for Kick (see
+[Kick](./kick-channel.md#chat-and-moderation-through-the-gateway)).
+
 The woofx3 module's `twitchColor` select and the pages that list the colours
 cannot import the generated list; a workflow test fails when they differ from
 it.
