@@ -506,11 +506,13 @@ platform's user id, never by a display name. The memory of written groups
 is keyed this way, and the permission cache by that and the login, so two
 accounts that show the same name never share a decision.
 Permission and group rows in db-proxy are keyed by the speaker's login,
-lowercased. A login is unique only within one platform, so every platform
-but Twitch prefixes its id (`kick:bob`): a Kick account named like a Twitch
-moderator never inherits that moderator's grants or groups, and
-`!grantcommands bob` said on Kick grants `kick:bob`. Twitch rows keep the
-bare login.
+lowercased, on Twitch. A login is unique only within one platform and can
+change, so Kick rows are keyed by `kick:<user id>`: a Kick account named
+like a Twitch moderator never inherits that moderator's grants or groups,
+and a Kick viewer who renames keeps theirs. `!grantcommands @Pup_Pal` said
+on Kick looks the name up on Kick (display name or slug) and grants that
+account's id; `!permit` permits its slug, the login its lines carry. Twitch
+rows keep the bare login.
 
 **Stored commands** are read from db-proxy, the owner of the data.
 `command.created`, `command.updated` and `command.deleted` only trigger a

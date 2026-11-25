@@ -48,6 +48,7 @@ describe("kickapi", () => {
   const users: [name: string, args: Record<string, unknown>][] = [
     ["by id", { userId: "777" }],
     ["by slug, as typed in chat", { userName: "@Pup-Pal" }],
+    ["by display name, as a trigger's chatterName carries it", { userName: "Pup_Pal" }],
   ];
   for (const [name, args] of users) {
     test(`getUser ${name}`, async () => {
@@ -81,6 +82,7 @@ describe("kickapi", () => {
     ["nothing to change", "updateStream", {}],
     ["a timeout above 7 days", "timeout", { userId: "777", durationSeconds: 604_801 }],
     ["a timeout of the broadcaster", "timeout", { userId: "4242", durationSeconds: 60 }],
+    ["a reason longer than Kick takes", "timeout", { userId: "777", durationSeconds: 60, reason: "x".repeat(101) }],
   ];
   for (const [name, command, args] of refused) {
     test(`${command} refuses ${name} as invalid_arguments, changing nothing`, async () => {
@@ -103,6 +105,14 @@ describe("kickapi", () => {
       categoryName: "Minecraft",
     });
     expect(writes().map((w) => w.body)).toEqual([{ category_id: 101 }]);
+  });
+
+  test("timeout by display name finds the chatter's id", async () => {
+    const { ask } = await running();
+    expect((await ask("timeout", { userName: "@Pup_Pal", durationSeconds: 60 })).data).toEqual({
+      userId: "777",
+      durationSeconds: 60,
+    });
   });
 
   test("timeout by slug rounds up to whole minutes and reports what was applied", async () => {

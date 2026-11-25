@@ -68,7 +68,7 @@ export class CommandPermissions {
       return cached;
     }
     const decision = await this.db.hasPermission(
-      permissionSubject(line.platform, line.chatterLogin),
+      permissionSubject(line.platform, line.chatterLogin, line.viewer.platformUserId),
       commandResource(commandName),
       COMMAND_PERMISSION_ACTION
     );

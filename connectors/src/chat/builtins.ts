@@ -3,6 +3,7 @@ import { errorMessage, type Logger, type RandomSource } from "../host/deps";
 import type { LinkPermits } from "../moderation/permit-store";
 import type { ChatRole, CommandDefinition, CommandHandler } from "./commands";
 import type { DispatcherDb } from "./db-client";
+import type { KickApiPort } from "./kickapi-client";
 import { failureReply, type TwitchApiPort } from "./twitchapi-client";
 import { permissionSubject } from "./viewer";
 
@@ -13,8 +14,7 @@ export const VANISH_MAX_SECONDS = 600;
 export const COMMAND_GRANT_RESOURCE = "command/*";
 export const COMMAND_GRANT_ROLE = "moderator";
 
-/** A Twitch login: lowercase letters, digits and underscores, 1 to 25 long. */
-/** A login each platform allows; a Kick slug may also hold hyphens. */
+/** The names each platform allows, lowercased; a Kick name may hold hyphens. */
 const LOGIN_PATTERNS: Readonly<Record<PlatformId, RegExp>> = {
   twitch: /^[a-z0-9_]{1,25}$/,
   kick: /^[a-z0-9_-]{1,25}$/,
@@ -26,6 +26,7 @@ const CHANNEL_EDITOR_ROLES: readonly ChatRole[] = ["broadcaster", "moderator"];
 export interface BuiltinDeps {
   db: Pick<DispatcherDb, "addUserToResource" | "removeUserFromResource">;
   twitchApi: TwitchApiPort;
+  kickApi: KickApiPort;
   permits: LinkPermits;
   random: RandomSource;
   logger: Logger;
@@ -39,13 +40,41 @@ export function formatStreamPosition(positionSeconds: number): string {
   return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-/** The login a grant command names, or null when the text is not exactly one valid login. */
+/** The name a command names, or null when the text is not exactly one valid name. */
 function parseLogin(args: readonly string[], platform: PlatformId): string | null {
   if (args.length !== 1) {
     return null;
   }
   const login = args[0].replace(/^@/, "").toLowerCase();
   return LOGIN_PATTERNS[platform].test(login) ? login : null;
+}
+
+/** Whom a command's typed name is: the row key it grants and the login its chat lines carry. */
+type Target = { ok: true; subject: string; login: string } | { ok: false; reply: string };
+
+/**
+ * Twitch rows are keyed by the login typed. A Kick name is looked up, since
+ * people type the display name and Kick keys by user id and slug.
+ */
+async function resolveTarget(deps: BuiltinDeps, platform: PlatformId, name: string, doing: string): Promise<Target> {
+  if (platform === "twitch") {
+    return { ok: true, subject: permissionSubject(platform, name, ""), login: name };
+  }
+  const found = await deps.kickApi.findUser(name);
+  if (!found.ok) {
+    return {
+      ok: false,
+      reply:
+        found.failure.kind === "missing"
+          ? `Kick has no user named ${name}`
+          : `Could not ${doing} @${name}: ${found.failure.message}`,
+    };
+  }
+  return {
+    ok: true,
+    subject: permissionSubject(platform, found.value.login, found.value.userId),
+    login: found.value.login,
+  };
 }
 
 /**
@@ -77,8 +106,12 @@ export function builtinCommands(deps: BuiltinDeps): CommandDefinition[] {
       if (login === null) {
         return `Usage: !${name} <login>`;
       }
+      const target = await resolveTarget(deps, line.platform, login, doing);
+      if (!target.ok) {
+        return target.reply;
+      }
       try {
-        await apply(permissionSubject(line.platform, login));
+        await apply(target.subject);
       } catch (error) {
         deps.logger.error("a command grant change failed", { command: name, login, error: errorMessage(error) });
         return `Could not ${doing} @${login}`;
@@ -135,10 +168,15 @@ export function builtinCommands(deps: BuiltinDeps): CommandDefinition[] {
       variables: [],
       allowRoles: CHANNEL_EDITOR_ROLES,
       handler: guard("permit", async ({ line, args }) => {
-        const login = parseLogin(args, line.platform);
-        if (login === null) {
+        const typed = parseLogin(args, line.platform);
+        if (typed === null) {
           return "Usage: !permit <login>";
         }
+        const target = await resolveTarget(deps, line.platform, typed, "permit");
+        if (!target.ok) {
+          return target.reply;
+        }
+        const login = target.login;
         // A moderator posting a link is exempt or not by the rules; a permit for oneself changes nothing.
         if (login === line.chatterLogin) {
           return "";

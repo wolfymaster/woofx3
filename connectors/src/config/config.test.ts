@@ -71,6 +71,7 @@ describe("connectorsConfig", () => {
       groups: { lastSeenCapacity: CHAT_DEFAULTS.groupLastSeenCapacity, catalogTtlMs: 300_000 },
       store: { reloadDebounceMs: 250, reloadBackstopMs: 300_000 },
       twitchApi: { timeoutMs: 10_000 },
+      kickApi: { timeoutMs: 10_000 },
       drainMs: CHAT_DEFAULTS.drainMs,
       replyTimeoutMs: CALLER_TIMEOUT_MS,
     });

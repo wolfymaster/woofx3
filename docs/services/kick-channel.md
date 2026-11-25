@@ -109,7 +109,7 @@ Module code reaches Kick through `ctx.kick`, which sends `{ command, args }` on
 
 | Command | Args | Permission |
 |---|---|---|
-| `getUser` | `{ userId }` or `{ userName }` (the channel slug) | none |
+| `getUser` | `{ userId }` or `{ userName }` (a display name or channel slug; both `name` and `name` with `_` as `-` are tried) | none |
 | `listRewards` | none; answers picker options `[{ value, label }]` | none |
 | `updateStream` | `{ title?, category?, tags? }`; the category is Kick's closest name match, at most 10 tags | `kick.channel` |
 | `timeout` | `{ userId \| userName, durationSeconds, reason? }`; rounded up to whole minutes, at most 7 days, never the broadcaster; answers the applied `durationSeconds` | `kick.moderation` |
@@ -126,7 +126,7 @@ Module code reaches Kick through `ctx.kick`, which sends `{ command, args }` on
 Kick's 400 and 422 are `invalid`, 401 and 403 `forbidden`, 429 `rate_limited`,
 anything else `upstream`; no answer after the request left is `unconfirmed`.
 
-Chat permissions and derived groups for Kick chatters are keyed `kick:<slug>`;
+Chat permissions and derived groups for Kick chatters are keyed `kick:<user id>`;
 see [Connectors](./connectors.md#chat-command-dispatcher).
 
 ## Limits

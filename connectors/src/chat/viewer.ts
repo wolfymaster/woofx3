@@ -24,13 +24,19 @@ export function viewerKeyString(key: ViewerKey): string {
 }
 
 /**
- * The name a viewer's permission and group rows are keyed by in db-proxy.
- * Those rows hold a bare login, which is unique only within one platform, so
- * every platform but Twitch prefixes its own id: a Kick account named like a
- * Twitch moderator must not inherit that moderator's grants. Twitch keeps the
- * bare login, so the rows that existed before any other platform still
- * match. Platform ids contain no ":", so no Twitch login looks prefixed.
+ * The name a viewer's permission and group rows are keyed by in db-proxy, per
+ * platform. Twitch keeps the bare login, so the rows that existed before any
+ * other platform still match. Kick keys by `kick:<user id>`: a Kick account
+ * named like a Twitch moderator never inherits that moderator's grants, and a
+ * Kick viewer who renames keeps theirs instead of leaving them to whoever
+ * takes the old name next. Platform ids contain no ":", so no Twitch login
+ * looks prefixed.
  */
-export function permissionSubject(platform: PlatformId, login: string): string {
-  return platform === "twitch" ? login : `${platform}:${login}`;
+const PERMISSION_SUBJECTS: Readonly<Record<PlatformId, (login: string, platformUserId: string) => string>> = {
+  twitch: (login) => login,
+  kick: (_login, platformUserId) => `kick:${platformUserId}`,
+};
+
+export function permissionSubject(platform: PlatformId, login: string, platformUserId: string): string {
+  return PERMISSION_SUBJECTS[platform](login, platformUserId);
 }
