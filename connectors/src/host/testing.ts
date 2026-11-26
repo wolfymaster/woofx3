@@ -1,6 +1,10 @@
 // Fakes shared by the host's tests: a hand-driven clock and timers, a bus,
 // a recording logger and a scriptable adapter. Not imported by the host.
+
 import type { StoredRelayConfig } from "@woofx3/common/cloudevents/Relay/relay";
+import type { Meter } from "@woofx3/common/logging";
+import { MetricsHarness } from "@woofx3/common/logging/metrics-testing";
+import { EventMetrics } from "../adapters/twitch/lib/eventMetrics";
 import type { EndpointStore } from "../companion/endpoint-store";
 import type { CompanionGateway, CompanionHandle } from "../companion/types";
 import { CompanionEnvSchema, companionConfig } from "../config/companion";
@@ -401,3 +405,12 @@ export function servedSubject(subject: string, budgetMs: number, handle?: Served
 export const linked: LinkState = { connected: true, enabled: true };
 export const disabled: LinkState = { connected: true, enabled: false };
 export const unlinked: LinkState = { connected: false, enabled: false };
+
+/** A meter nothing reads back, for tests that are not about metrics. */
+export function unreadMeter(): Meter {
+  return new MetricsHarness().meter;
+}
+
+export function unreadEventMetrics(): EventMetrics {
+  return new EventMetrics(unreadMeter(), new FakeTime());
+}

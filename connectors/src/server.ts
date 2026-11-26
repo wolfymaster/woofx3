@@ -1,5 +1,5 @@
 import path from "node:path";
-import { createServiceLogger } from "@woofx3/common/logging";
+import { createServiceLogger, getMeter } from "@woofx3/common/logging";
 import {
   createApplication,
   createNATSMonitor,
@@ -30,7 +30,14 @@ const bus = await MessageBus.createMessageBus({ name: "connectors", ...config.bu
 const application = new ConnectorsApplication({
   config,
   logger,
-  adapters: adapterRegistry({ config, clock: systemClock, ids: systemIds, random: systemRandom, timers: systemTimers }),
+  adapters: adapterRegistry({
+    config,
+    clock: systemClock,
+    ids: systemIds,
+    meter: getMeter(),
+    random: systemRandom,
+    timers: systemTimers,
+  }),
   readers: linkReaders({ obsHostExplicit: config.obs.hostExplicit }),
   clock: systemClock,
   random: systemRandom,

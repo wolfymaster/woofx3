@@ -3,7 +3,7 @@ import type { HelixUser } from "@twurple/api";
 import type { EventSubChannelChatMessageEvent, EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
-import { FakeTime, RecordingLogger } from "../../../../host/testing";
+import { FakeTime, RecordingLogger, unreadEventMetrics } from "../../../../host/testing";
 import type { Context } from "../../types";
 import { SelfSentRegistry } from "../self-sent";
 import onChannelChatMessage, { readMembership } from "./onChannelChatMessage";
@@ -53,6 +53,7 @@ function subscribed() {
       },
     },
     events: new EventFactory({ source: "twitch" }),
+    metrics: unreadEventMetrics(),
     selfSent,
     clock: new FakeTime(),
     timers: new FakeTime(),

@@ -3,8 +3,10 @@ import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
-import { FakeTime, RecordingLogger } from "../../../host/testing";
+import { MetricsHarness } from "@woofx3/common/logging/metrics-testing";
+import { FakeTime, RecordingLogger, unreadEventMetrics } from "../../../host/testing";
 import type { Context } from "../types";
+import { EventMetrics } from "./eventMetrics";
 import { publishEvent } from "./publishEvent";
 import { SelfSentRegistry } from "./self-sent";
 import onChannelChatMessage from "./subscriptions/onChannelChatMessage";
@@ -27,6 +29,7 @@ function refusingContext(): { ctx: Context; logger: RecordingLogger } {
     logger,
     messageBus: { publish: async () => Promise.reject(BUS_DOWN) },
     events: new EventFactory({ source: "twitch" }),
+    metrics: unreadEventMetrics(),
     selfSent: new SelfSentRegistry({ capacity: 1, ttlMs: 1 }, new FakeTime()),
     clock: new FakeTime(),
     timers: new FakeTime(),
@@ -58,6 +61,7 @@ function buildRefusingContext(): { ctx: Context; logger: RecordingLogger; publis
         throw BUILD_REFUSED;
       },
     } as unknown as EventFactory,
+    metrics: unreadEventMetrics(),
     selfSent: new SelfSentRegistry({ capacity: 1, ttlMs: 1 }, new FakeTime()),
     clock: new FakeTime(),
     timers: new FakeTime(),
@@ -96,6 +100,29 @@ function capturingListener(): { listener: EventSubWsListener; deliver: Callback 
 }
 
 describe("publishEvent", () => {
+  test("test_publish_counts_the_event_under_its_subject_even_when_the_bus_refuses_it", async () => {
+    const { ctx } = refusingContext();
+    const harness = new MetricsHarness();
+    ctx.metrics = new EventMetrics(harness.meter, new FakeTime());
+
+    await publishEvent(ctx, () => ["user.follow", new Uint8Array()]);
+
+    const received = await harness.metric("woofx3.events.received");
+    expect(received.points.map((point) => [point.attributes, point.value])).toEqual([
+      [{ "event.type": "user.follow", platform: "twitch" }, 1],
+    ]);
+  });
+
+  test("test_publish_counts_nothing_when_the_event_cannot_be_built", async () => {
+    const { ctx } = buildRefusingContext();
+    const harness = new MetricsHarness();
+    ctx.metrics = new EventMetrics(harness.meter, new FakeTime());
+
+    await publishEvent(ctx, () => ctx.events.Twitch().follow({ userId: "1", userName: "a" }));
+
+    expect(harness.metric("woofx3.events.received")).rejects.toThrow("no metric named");
+  });
+
   test("logs a refused publish with its subject instead of rejecting", async () => {
     const { ctx, logger } = refusingContext();
 

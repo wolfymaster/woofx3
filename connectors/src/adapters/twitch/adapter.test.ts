@@ -31,6 +31,7 @@ import {
   shippedLinkReaders,
   testCompanion,
   text,
+  unreadMeter,
 } from "../../host/testing";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
 
@@ -149,6 +150,7 @@ function newAdapter(time = new FakeTime()) {
     ids: countingIds(),
     timers: systemTimers,
     random: halfRandom,
+    meter: unreadMeter(),
   });
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { HelixUser } from "@twurple/api";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import type { Timers } from "../../../../host/deps";
-import { FakeTime } from "../../../../host/testing";
+import { FakeTime, unreadEventMetrics } from "../../../../host/testing";
 import type { Context } from "../../types";
 import { AdBreakAnnouncer } from "./onChannelAdBreakBegin";
 
@@ -44,6 +44,7 @@ function harness() {
       }),
     } as unknown as Context["messageBus"],
     events: new EventFactory({ source: "twitch" }),
+    metrics: unreadEventMetrics(),
     selfSent: {} as Context["selfSent"],
     clock: new FakeTime(NOW),
     timers,
