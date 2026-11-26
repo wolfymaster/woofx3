@@ -35,6 +35,10 @@ export type LoggingConfig = {
   otelLocalFileEnabled: boolean;
   /** Independent tracing override. Defaults to the value of `otelEnabled`. */
   otelTracingEnabled: boolean;
+  /** Independent metrics override. Defaults to the value of `otelEnabled`. Metrics have no local-file fallback. */
+  otelMetricsEnabled: boolean;
+  /** How often accumulated metrics are exported. */
+  otelMetricsIntervalMs: number;
   prettyConsole: boolean;
   redactPaths: string[];
   runtimeLevelChanges: boolean;

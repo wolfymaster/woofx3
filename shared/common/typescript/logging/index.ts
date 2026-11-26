@@ -2,7 +2,9 @@ export { type Span, SpanKind, SpanStatusCode } from "@opentelemetry/api";
 export { createServiceLogger, makeLogger, resolveConfig } from "./logger";
 export { makeLogFileName, makeTraceFileName } from "./naming";
 export {
+  buildMeterProvider,
   currentTraceContext,
+  getMeter,
   getTelemetry,
   getTracer,
   initTelemetry,
