@@ -79,12 +79,14 @@ Precedence matches the rest of the repo:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `WOOFX3_OTEL_ENABLED` | `true` when `WOOFX3_OTEL_EXPORTER_ENDPOINT` is set, else `false` | master switch for logs and tracing |
+| `WOOFX3_OTEL_ENABLED` | `true` when `WOOFX3_OTEL_EXPORTER_ENDPOINT` is set, else `false` | master switch for logs, tracing and metrics |
 | `WOOFX3_OTEL_EXPORTER_ENDPOINT` | unset | OTLP/HTTP base URL, e.g. `http://localhost:4318`. Unset means no collector is available |
 | `WOOFX3_OTEL_TRACING_ENABLED` | value of `WOOFX3_OTEL_ENABLED` | independent override for tracing only |
+| `WOOFX3_OTEL_METRICS_ENABLED` | value of `WOOFX3_OTEL_ENABLED` | independent override for metrics only. Metrics need a collector: there is no local-file fallback |
+| `WOOFX3_OTEL_METRICS_INTERVAL_MS` | `60000` | how often metrics are exported; must be a positive integer |
 | `WOOFX3_OTEL_LOCAL_FILE_ENABLED` | `true` | when tracing is on but no collector is configured, write spans under `logDir` instead of dropping them |
 | `WOOFX3_OTEL_RESOURCE_ATTRIBUTES` | unset | comma-separated `key=value` pairs merged into every resource, same syntax as `OTEL_RESOURCE_ATTRIBUTES`. `service.name` always wins |
-| `WOOFX3_OTEL_EXPORTER_HEADERS` | unset | comma-separated `key=value` headers sent on every OTLP request (logs and traces), same syntax as `OTEL_EXPORTER_OTLP_HEADERS`. Treat as a secret; it is never logged |
+| `WOOFX3_OTEL_EXPORTER_HEADERS` | unset | comma-separated `key=value` headers sent on every OTLP request (logs, traces and metrics), same syntax as `OTEL_EXPORTER_OTLP_HEADERS`. Treat as a secret; it is never logged |
 | `WOOFX3_VERSION` | unset | reported as `service.version` on every resource |
 
 A pair without a key fails startup. Values are split on the first `=`, then

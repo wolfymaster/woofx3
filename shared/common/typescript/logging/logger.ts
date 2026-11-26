@@ -36,6 +36,18 @@ function toBool(value: string | undefined, fallback: boolean): boolean {
   return value === "1" || value.toLowerCase() === "true";
 }
 
+/** An unset value takes the fallback; a set value that is not a positive integer fails startup rather than silently exporting at the wrong rate. */
+function toPositiveInt(value: string | undefined, fallback: number, name: string): number {
+  if (value == null || value === "") {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer, got "${value}"`);
+  }
+  return parsed;
+}
+
 export function resolveConfig(configOverride?: Partial<LoggingConfig>): LoggingConfig {
   const defaults: LoggingConfig = {
     level: "info",
@@ -45,6 +57,8 @@ export function resolveConfig(configOverride?: Partial<LoggingConfig>): LoggingC
     otelExporterHeaders: {},
     otelLocalFileEnabled: true,
     otelResourceAttributes: {},
+    otelMetricsEnabled: false,
+    otelMetricsIntervalMs: 60_000,
     otelTracingEnabled: false,
     prettyConsole: true,
     redactPaths: defaultRedactPaths,
@@ -69,6 +83,12 @@ export function resolveConfig(configOverride?: Partial<LoggingConfig>): LoggingC
     otelResourceAttributes: parseOtelPairs(
       process.env.WOOFX3_OTEL_RESOURCE_ATTRIBUTES,
       "WOOFX3_OTEL_RESOURCE_ATTRIBUTES"
+    ),
+    otelMetricsEnabled: toBool(process.env.WOOFX3_OTEL_METRICS_ENABLED, otelEnabled),
+    otelMetricsIntervalMs: toPositiveInt(
+      process.env.WOOFX3_OTEL_METRICS_INTERVAL_MS,
+      defaults.otelMetricsIntervalMs,
+      "WOOFX3_OTEL_METRICS_INTERVAL_MS"
     ),
     otelTracingEnabled: toBool(process.env.WOOFX3_OTEL_TRACING_ENABLED, otelEnabled),
     prettyConsole: toBool(process.env.WOOFX3_LOG_PRETTY, defaults.prettyConsole),
