@@ -19,15 +19,17 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "tracing-log",
 ] }
 tracing-opentelemetry = { version = "0.33", default-features = false, features = ["tracing-log"] }
-opentelemetry = { version = "0.32", default-features = false, features = ["trace", "logs"] }
+opentelemetry = { version = "0.32", default-features = false, features = ["trace", "logs", "metrics"] }
 opentelemetry_sdk = { version = "0.32", default-features = false, features = [
     "trace",
     "logs",
+    "metrics",
     "internal-logs",
 ] }
 opentelemetry-otlp = { version = "0.32", default-features = false, features = [
     "trace",
     "logs",
+    "metrics",
     "http-proto",
     "reqwest-blocking-client",
     "reqwest-rustls",
@@ -36,3 +38,4 @@ opentelemetry-appender-tracing = { version = "0.32", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"
+opentelemetry_sdk = { version = "0.32", default-features = false, features = ["testing", "metrics"] }
