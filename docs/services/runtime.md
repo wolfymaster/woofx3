@@ -383,6 +383,24 @@ Every service's message bus client reads `messagebusUrl` and
 was started without authentication. A blank token sends none. See [Message bus hardening](./deployment.md#message-bus-hardening) for the
 server side and which key each client reads.
 
+### Metrics
+
+With a collector configured, every service exports metrics over the same OTLP endpoint, resource and headers as logs and traces (`/v1/metrics`). `WOOFX3_OTEL_METRICS_ENABLED` turns metrics off on their own and `WOOFX3_OTEL_METRICS_INTERVAL_MS` sets the export interval (default 60000). With no collector there is no metrics output.
+
+Durations are histograms in seconds with explicit bucket boundaries. Attributes stay bounded: no viewer, user, alert, workflow or run id, and no concrete message subject.
+
+| Metric | Type | Unit | Attributes | Emitted by |
+|---|---|---|---|---|
+| `woofx3.events.received` | counter | `{event}` | `event.type`, `platform` | connectors: every event a platform adapter builds, counted before it is published |
+| `woofx3.events.last_received_time` | observable gauge | `s` (Unix time) | `platform` | connectors: when the latest event arrived. A value that stops moving while a stream is live means events stopped arriving |
+| `woofx3.event.ingest.lag` | histogram | `s` | `platform` | connectors: platform timestamp to arrival, for events whose payload carries a timestamp (Twitch follows and channel point redemptions) |
+| `woofx3.event_shipper.queue.size` | observable gauge | `{event}` | `target` | api: envelopes buffered for a Convex events target |
+| `woofx3.event_shipper.dropped` | counter | `{event}` | `target` | api: envelopes dropped because the buffer was full |
+| `woofx3.event_shipper.post.duration` | histogram | `s` | `target` | api: each POST to the target, delivered or not |
+| `woofx3.event_shipper.post.failures` | counter | `{request}` | `target` | api: POSTs that were retried or refused |
+
+`target` is the host of the events URL.
+
 ### Staying connected to the message bus
 
 The shared message bus clients (Go and TypeScript) own one connection each,
