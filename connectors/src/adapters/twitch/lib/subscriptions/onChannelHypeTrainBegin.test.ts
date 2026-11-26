@@ -3,6 +3,7 @@ import type { HelixUser } from "@twurple/api";
 import { EventSubChannelHypeTrainBeginV2Event } from "@twurple/eventsub-base";
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
+import { unreadEventMetrics } from "../../../../host/testing";
 import type { Context } from "../../types";
 import onChannelHypeTrainBegin from "./onChannelHypeTrainBegin";
 
@@ -50,6 +51,7 @@ function harness() {
   const ctx = {
     broadcaster: { id: "broadcaster-1" } as HelixUser,
     logger: { warn: mock(() => {}), error } as unknown as Context["logger"],
+    metrics: unreadEventMetrics(),
     messageBus: {
       publish: mock((topic: string, bytes: Uint8Array) => {
         published.push({ topic, raw: new TextDecoder().decode(bytes) });

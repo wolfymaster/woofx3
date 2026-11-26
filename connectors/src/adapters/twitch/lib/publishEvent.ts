@@ -1,10 +1,15 @@
 import { errorMessage, type Logger } from "../../../host/deps";
 import type { EventPublisher } from "../types";
+import type { EventMetrics } from "./eventMetrics";
+
+/** The `platform` attribute on every metric this adapter emits. */
+const TWITCH_PLATFORM = "twitch";
 
 /** What publishing an event needs from the adapter's context. */
 export interface PublishTarget {
   messageBus: EventPublisher;
   logger: Logger;
+  metrics: EventMetrics;
 }
 
 /** A built event: the subject it goes out on and its encoded CloudEvent. */
@@ -17,10 +22,14 @@ export type EventTuple = [subject: string, data: Uint8Array];
  * adapter for. Building goes through `build` so that a payload the event
  * factory refuses, or a Twurple getter that throws, is caught here too rather
  * than escaping the callback as an unhandled rejection. Never rejects.
+ *
+ * `occurredAt` is the time Twitch gives the event, where its payload carries
+ * one; it is what ingest lag is measured from.
  */
 export async function publishEvent(
   target: PublishTarget,
-  build: () => EventTuple | Promise<EventTuple>
+  build: () => EventTuple | Promise<EventTuple>,
+  occurredAt?: Date
 ): Promise<void> {
   let built: EventTuple;
   try {
@@ -33,6 +42,7 @@ export async function publishEvent(
     return;
   }
   const [subject, data] = built;
+  target.metrics.record(TWITCH_PLATFORM, subject, occurredAt);
   try {
     await target.messageBus.publish(subject, data);
   } catch (err) {

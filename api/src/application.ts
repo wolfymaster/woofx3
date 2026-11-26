@@ -1,5 +1,5 @@
 import { describeRequestGuardPolicy } from "@woofx3/common/http/request-guard";
-import { resolveConfig as resolveLoggingConfig, type SharedLogger } from "@woofx3/common/logging";
+import { getMeter, resolveConfig as resolveLoggingConfig, type SharedLogger } from "@woofx3/common/logging";
 import type { ApplicationContext, IApplication, Application as RuntimeApplication } from "@woofx3/common/runtime";
 import type { Msg } from "@woofx3/nats/src/types";
 import type { Api } from "./api";
@@ -232,6 +232,8 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       logger,
       config: DEFAULT_EVENT_SHIPPER_CONFIG,
       random: { next: Math.random },
+      clock: { now: Date.now },
+      meter: getMeter(),
       sleep,
       fetch,
     });
