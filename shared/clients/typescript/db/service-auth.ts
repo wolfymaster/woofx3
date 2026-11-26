@@ -1,3 +1,7 @@
+import { getMeter, type Meter } from "@woofx3/common/logging";
+import { client, type RpcTransport } from "twirpscript";
+import { instrumentTransport } from "./rpc-metrics";
+
 /**
  * The .woofx3.json key of the service token db-proxy requires of every
  * caller; its variable is WOOFX3_DB_PROXY_TOKEN.
@@ -6,13 +10,15 @@ export const DB_PROXY_TOKEN_CONFIG_KEY = "dbProxyToken";
 
 /**
  * How a TypeScript service reaches db-proxy: its base URL and the
- * `Authorization: Bearer <token>` header db-proxy refuses requests without.
+ * `Authorization: Bearer <token>` header db-proxy refuses requests without, plus
+ * a transport that reports `rpc.client.duration` for every call.
  * The shape is a twirpscript ClientConfiguration, so it is passed as-is to the
  * generated RPC functions.
  */
 export interface DbProxyClientConfig {
   baseURL: string;
   headers: Record<string, string>;
+  rpcTransport: RpcTransport;
 }
 
 /**
@@ -21,7 +27,12 @@ export interface DbProxyClientConfig {
  * Throws on a blank URL or token: callers validate both at startup, so either
  * one being blank here is a wiring bug.
  */
-export function dbProxyClientConfig(baseURL: string, token: string): DbProxyClientConfig {
+export function dbProxyClientConfig(
+  baseURL: string,
+  token: string,
+  meter: Meter = getMeter(),
+  transport: RpcTransport = client.rpcTransport
+): DbProxyClientConfig {
   if (baseURL.trim() === "") {
     throw new Error("db proxy base URL is empty");
   }
@@ -29,5 +40,9 @@ export function dbProxyClientConfig(baseURL: string, token: string): DbProxyClie
   if (trimmed === "") {
     throw new Error("db proxy service token is empty");
   }
-  return { baseURL, headers: { Authorization: `Bearer ${trimmed}` } };
+  return {
+    baseURL,
+    headers: { Authorization: `Bearer ${trimmed}` },
+    rpcTransport: instrumentTransport(meter, transport),
+  };
 }
