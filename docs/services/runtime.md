@@ -398,6 +398,10 @@ Durations are histograms in seconds with explicit bucket boundaries. Attributes 
 | `woofx3.event_shipper.dropped` | counter | `{event}` | `target` | api: envelopes dropped because the buffer was full |
 | `woofx3.event_shipper.post.duration` | histogram | `s` | `target` | api: each POST to the target, delivered or not |
 | `woofx3.event_shipper.post.failures` | counter | `{request}` | `target` | api: POSTs that were retried or refused |
+| `woofx3.alerts` | counter | `{alert}` | `outcome` | sceneManager: `queued` (recorded for a running scene), `played` (a page reported it finished), `skipped` (Skip ended the playing alert), `dropped` (Clear removed a waiting one), `failed` (refused or reached no scene). An alert shown on several widgets is counted as `played` once per ack that closes it |
+| `woofx3.alerts.queue.depth` | observable gauge | `{alert}` | none | sceneManager: alerts no page has started yet, counted once however many widgets hold them |
+| `woofx3.alerts.queue.wait` | histogram | `s` | none | sceneManager: from an alert being recorded for a widget to a page reporting it started. Alerts recovered after a restart have no recorded time and are left out |
+| `woofx3.event.pipeline.duration` | histogram | `s` | `stage` (`layout`, `frames`, `scenes`, `record`) | sceneManager: time an alert's dispatch spends in each stage before any page hears of it |
 
 `target` is the host of the events URL.
 
