@@ -11,6 +11,9 @@ use opentelemetry_sdk::metrics::{InMemoryMetricExporter, PeriodicReader, SdkMete
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// A point's sorted attribute pairs and its observation count.
+type Point = (Vec<(String, String)>, u64);
+
 fn registry() -> Arc<ModuleRegistry> {
     let registry = Arc::new(ModuleRegistry::new());
     let mut functions = HashMap::new();
@@ -60,7 +63,7 @@ fn invoke(sandbox: &mut Sandbox, function: &str) -> bool {
 fn recorded(
     provider: &SdkMeterProvider,
     exporter: &InMemoryMetricExporter,
-) -> (String, Vec<(Vec<(String, String)>, u64)>) {
+) -> (String, Vec<Point>) {
     provider.force_flush().unwrap();
     let exported = exporter.get_finished_metrics().unwrap();
     let metric = exported
