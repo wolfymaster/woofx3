@@ -10,9 +10,14 @@
 
 mod file_exporter;
 
+const LOGS_PATH: &str = "/v1/logs";
+const TRACES_PATH: &str = "/v1/traces";
+const METRICS_PATH: &str = "/v1/metrics";
+
 use std::collections::HashMap;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use chrono::Local;
 use opentelemetry::trace::TracerProvider as _;
@@ -20,6 +25,7 @@ use opentelemetry::KeyValue;
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_otlp::{WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::logs::SdkLoggerProvider;
+use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use opentelemetry_sdk::Resource;
 use thiserror::Error;
@@ -79,6 +85,7 @@ pub struct LoggingGuard {
     _file_writer: WorkerGuard,
     tracer_provider: Option<SdkTracerProvider>,
     logger_provider: Option<SdkLoggerProvider>,
+    meter_provider: Option<SdkMeterProvider>,
 }
 
 impl LoggingGuard {
@@ -90,6 +97,9 @@ impl LoggingGuard {
         if let Some(provider) = &self.logger_provider {
             let _ = provider.force_flush();
         }
+        if let Some(provider) = &self.meter_provider {
+            let _ = provider.force_flush();
+        }
     }
 }
 
@@ -99,6 +109,9 @@ impl Drop for LoggingGuard {
             let _ = provider.shutdown();
         }
         if let Some(provider) = self.logger_provider.take() {
+            let _ = provider.shutdown();
+        }
+        if let Some(provider) = self.meter_provider.take() {
             let _ = provider.shutdown();
         }
     }
@@ -143,6 +156,17 @@ pub fn init(service_name: &str) -> Result<LoggingGuard, LoggingError> {
         false => None,
     };
 
+    // Like logs, metrics have no local-file fallback: without a collector the
+    // global no-op meter stays in place.
+    let meter_provider = match otel.exports_metrics() {
+        true => {
+            let provider = build_meter_provider(service_name, &otel)?;
+            opentelemetry::global::set_meter_provider(provider.clone());
+            Some(provider)
+        }
+        false => None,
+    };
+
     let otel_trace_layer = tracer_provider.as_ref().map(|provider| {
         tracing_opentelemetry::layer().with_tracer(provider.tracer(service_name.to_string()))
     });
@@ -164,6 +188,7 @@ pub fn init(service_name: &str) -> Result<LoggingGuard, LoggingError> {
         _file_writer: file_writer_guard,
         tracer_provider,
         logger_provider,
+        meter_provider,
     })
 }
 
@@ -187,7 +212,7 @@ fn build_tracer_provider(
         Some(endpoint) => {
             let exporter = opentelemetry_otlp::SpanExporter::builder()
                 .with_http()
-                .with_endpoint(endpoint)
+                .with_endpoint(signal_endpoint(endpoint, TRACES_PATH))
                 .with_headers(exporter_headers(otel))
                 .build()?;
             Ok(builder.with_batch_exporter(exporter).build())
@@ -216,7 +241,7 @@ fn build_logger_provider(
 
     let exporter = opentelemetry_otlp::LogExporter::builder()
         .with_http()
-        .with_endpoint(endpoint)
+        .with_endpoint(signal_endpoint(endpoint, LOGS_PATH))
         .with_headers(exporter_headers(otel))
         .build()?;
 
@@ -224,6 +249,45 @@ fn build_logger_provider(
         .with_resource(resource_for(service_name, otel))
         .with_batch_exporter(exporter)
         .build())
+}
+
+fn build_meter_provider(
+    service_name: &str,
+    otel: &OtelConfig,
+) -> Result<SdkMeterProvider, LoggingError> {
+    let endpoint = otel
+        .exporter_endpoint
+        .as_ref()
+        .expect("exports_metrics() guarantees an exporter endpoint");
+
+    let exporter = opentelemetry_otlp::MetricExporter::builder()
+        .with_http()
+        .with_endpoint(signal_endpoint(endpoint, METRICS_PATH))
+        .with_headers(exporter_headers(otel))
+        .build()?;
+    let reader = PeriodicReader::builder(exporter)
+        .with_interval(Duration::from_millis(otel.metrics_interval_ms))
+        .build();
+
+    Ok(SdkMeterProvider::builder()
+        .with_resource(resource_for(service_name, otel))
+        .with_reader(reader)
+        .build())
+}
+
+/// The OTLP exporters use a programmatic endpoint as given, without adding the
+/// signal path, so the collector's base URL gets it here: the TypeScript and Go
+/// runtimes do the same. A base URL that already carries a path is kept.
+fn signal_endpoint(base: &str, signal_path: &str) -> String {
+    let trimmed = base.trim_end_matches('/');
+    let has_path = trimmed
+        .split_once("://")
+        .is_some_and(|(_, rest)| rest.contains('/'));
+    if has_path {
+        trimmed.to_string()
+    } else {
+        format!("{trimmed}{signal_path}")
+    }
 }
 
 /// Later attributes win on a duplicate key, so `service.name` goes last: the
@@ -311,6 +375,58 @@ mod tests {
             .iter()
             .find(|(name, _)| name.as_str() == key)
             .map(|(_, value)| value.to_string())
+    }
+
+    #[test]
+    fn test_signal_endpoint_adds_the_signal_path_to_a_base_url() {
+        for (base, want) in [
+            ("http://localhost:4318", "http://localhost:4318/v1/metrics"),
+            ("http://localhost:4318/", "http://localhost:4318/v1/metrics"),
+            (
+                "https://otlp.example.com/otlp",
+                "https://otlp.example.com/otlp",
+            ),
+        ] {
+            assert_eq!(signal_endpoint(base, METRICS_PATH), want);
+        }
+    }
+
+    #[test]
+    fn test_meter_provider_exports_with_the_engines_resource() {
+        use opentelemetry_sdk::metrics::InMemoryMetricExporter;
+
+        let otel = otel_from(&[("otelResourceAttributes", "service.namespace=alpha")]);
+        let exporter = InMemoryMetricExporter::default();
+        let provider = SdkMeterProvider::builder()
+            .with_resource(resource_for("barkloader", &otel))
+            .with_reader(PeriodicReader::builder(exporter.clone()).build())
+            .build();
+
+        let counter = opentelemetry::metrics::MeterProvider::meter(&provider, "test")
+            .u64_counter("woofx3.test")
+            .build();
+        counter.add(2, &[KeyValue::new("kind", "a")]);
+        provider.force_flush().unwrap();
+
+        let exported = exporter.get_finished_metrics().unwrap();
+        let resource = exported[0].resource();
+        assert_eq!(
+            resource_value(resource, "service.namespace").as_deref(),
+            Some("alpha")
+        );
+        assert_eq!(
+            resource_value(resource, "service.name").as_deref(),
+            Some("barkloader")
+        );
+        assert_eq!(
+            exported[0]
+                .scope_metrics()
+                .next()
+                .unwrap()
+                .metrics()
+                .count(),
+            1
+        );
     }
 
     #[test]

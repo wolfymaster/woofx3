@@ -13,6 +13,12 @@ pub const OTEL_ENABLED_KEY: &str = "otelEnabled";
 pub const OTEL_EXPORTER_ENDPOINT_KEY: &str = "otelExporterEndpoint";
 /// Independent override for tracing. Defaults to the value of `otelEnabled`.
 pub const OTEL_TRACING_ENABLED_KEY: &str = "otelTracingEnabled";
+/// Independent override for metrics. Defaults to the value of `otelEnabled`.
+pub const OTEL_METRICS_ENABLED_KEY: &str = "otelMetricsEnabled";
+/// How often metrics are exported, in milliseconds. Must be a positive integer.
+pub const OTEL_METRICS_INTERVAL_MS_KEY: &str = "otelMetricsIntervalMs";
+/// Metrics export interval when [`OTEL_METRICS_INTERVAL_MS_KEY`] is unset.
+pub const DEFAULT_METRICS_INTERVAL_MS: u64 = 60_000;
 /// Write trace data under `logs/` when tracing is on but no collector exists.
 pub const OTEL_LOCAL_FILE_ENABLED_KEY: &str = "otelLocalFileEnabled";
 
@@ -28,6 +34,8 @@ pub struct OtelConfig {
     pub enabled: bool,
     pub exporter_endpoint: Option<String>,
     pub tracing_enabled: bool,
+    pub metrics_enabled: bool,
+    pub metrics_interval_ms: u64,
     pub local_file_enabled: bool,
     pub service_version: Option<String>,
     pub resource_attributes: BTreeMap<String, String>,
@@ -104,6 +112,20 @@ impl OtelConfig {
         let tracing_enabled = config
             .get_bool(OTEL_TRACING_ENABLED_KEY)?
             .unwrap_or(enabled);
+        let metrics_enabled = config
+            .get_bool(OTEL_METRICS_ENABLED_KEY)?
+            .unwrap_or(enabled);
+        let metrics_interval_ms = match config.get_non_empty(OTEL_METRICS_INTERVAL_MS_KEY) {
+            Some(raw) => raw
+                .parse::<u64>()
+                .ok()
+                .filter(|millis| *millis > 0)
+                .ok_or_else(|| ConfigError::InvalidPositiveInteger {
+                    key: OTEL_METRICS_INTERVAL_MS_KEY.to_string(),
+                    value: raw,
+                })?,
+            None => DEFAULT_METRICS_INTERVAL_MS,
+        };
         let local_file_enabled = config
             .get_bool(OTEL_LOCAL_FILE_ENABLED_KEY)?
             .unwrap_or(true);
@@ -124,6 +146,8 @@ impl OtelConfig {
             enabled,
             exporter_endpoint,
             tracing_enabled,
+            metrics_enabled,
+            metrics_interval_ms,
             local_file_enabled,
             service_version: config.get_non_empty(VERSION_KEY),
             resource_attributes,
@@ -139,6 +163,12 @@ impl OtelConfig {
     /// Spans are shipped over OTLP only when tracing is on and a collector exists.
     pub fn exports_traces(&self) -> bool {
         self.tracing_enabled && self.exporter_endpoint.is_some()
+    }
+
+    /// Metrics are shipped over OTLP only when metrics are on and a collector exists.
+    /// They have no local-file fallback.
+    pub fn exports_metrics(&self) -> bool {
+        self.metrics_enabled && self.exporter_endpoint.is_some()
     }
 
     /// Without a collector, tracing falls back to a local trace file so span data
@@ -221,6 +251,62 @@ mod tests {
         assert!(otel.tracing_enabled);
         assert!(!otel.exports_traces());
         assert!(otel.writes_local_traces());
+    }
+
+    #[test]
+    fn metrics_are_off_without_an_endpoint_and_on_with_one() {
+        let off = config_from(&[]).otel().unwrap();
+        assert!(!off.metrics_enabled);
+        assert!(!off.exports_metrics());
+        assert_eq!(off.metrics_interval_ms, DEFAULT_METRICS_INTERVAL_MS);
+
+        let on = config_from(&[(OTEL_EXPORTER_ENDPOINT_KEY, "http://localhost:4318")])
+            .otel()
+            .unwrap();
+        assert!(on.exports_metrics());
+    }
+
+    #[test]
+    fn metrics_can_be_switched_off_alone_or_with_the_master_switch() {
+        let alone = config_from(&[
+            (OTEL_EXPORTER_ENDPOINT_KEY, "http://localhost:4318"),
+            (OTEL_METRICS_ENABLED_KEY, "false"),
+        ])
+        .otel()
+        .unwrap();
+        assert!(alone.exports_logs());
+        assert!(!alone.exports_metrics());
+
+        let master = config_from(&[
+            (OTEL_EXPORTER_ENDPOINT_KEY, "http://localhost:4318"),
+            (OTEL_ENABLED_KEY, "false"),
+        ])
+        .otel()
+        .unwrap();
+        assert!(!master.exports_metrics());
+    }
+
+    #[test]
+    fn metrics_forced_on_without_a_collector_export_nothing() {
+        let otel = config_from(&[(OTEL_METRICS_ENABLED_KEY, "true")])
+            .otel()
+            .unwrap();
+        assert!(otel.metrics_enabled);
+        assert!(!otel.exports_metrics());
+    }
+
+    #[test]
+    fn the_metrics_interval_is_read_and_unusable_values_are_refused() {
+        let otel = config_from(&[(OTEL_METRICS_INTERVAL_MS_KEY, "5000")])
+            .otel()
+            .unwrap();
+        assert_eq!(otel.metrics_interval_ms, 5000);
+        for raw in ["0", "-1", "1.5", "soon"] {
+            let err = config_from(&[(OTEL_METRICS_INTERVAL_MS_KEY, raw)])
+                .otel()
+                .unwrap_err();
+            assert!(matches!(err, ConfigError::InvalidPositiveInteger { .. }));
+        }
     }
 
     #[test]
