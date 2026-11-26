@@ -45,6 +45,15 @@ func NewWithTransports(config Config, transports []Transport) (*Logger, error) {
 		closers = append(closers, tracingCloser)
 	}
 
+	metricsCloser, err := startMetrics(resolved)
+	if err != nil {
+		closeAll(closers)
+		return nil, err
+	}
+	if metricsCloser != nil {
+		closers = append(closers, metricsCloser)
+	}
+
 	handler := &fanoutHandler{handlers: handlers}
 	baseSlog := slog.New(handler)
 

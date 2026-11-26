@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/wolfymaster/woofx3/common/config"
 )
@@ -17,6 +18,8 @@ const (
 	envOTelEnabled          = "WOOFX3_OTEL_ENABLED"
 	envOTelExporterEndpoint = "WOOFX3_OTEL_EXPORTER_ENDPOINT"
 	envOTelTracingEnabled   = "WOOFX3_OTEL_TRACING_ENABLED"
+	envOTelMetricsEnabled   = "WOOFX3_OTEL_METRICS_ENABLED"
+	envOTelMetricsInterval  = "WOOFX3_OTEL_METRICS_INTERVAL_MS"
 	envOTelLocalFileEnabled = "WOOFX3_OTEL_LOCAL_FILE_ENABLED"
 	envOTelResourceAttrs    = "WOOFX3_OTEL_RESOURCE_ATTRIBUTES"
 	envOTelExporterHeaders  = "WOOFX3_OTEL_EXPORTER_HEADERS"
@@ -50,7 +53,12 @@ type Config struct {
 	OTelEnabled          *bool
 	OTelExporterEndpoint string
 	OTelTracingEnabled   *bool
+	OTelMetricsEnabled   *bool
 	OTelLocalFileEnabled *bool
+
+	// OTelMetricsInterval is how often metrics are exported, falling back to
+	// WOOFX3_OTEL_METRICS_INTERVAL_MS and then defaultMetricsInterval.
+	OTelMetricsInterval time.Duration
 
 	// OTelResourceAttributes and OTelExporterHeaders are comma-separated
 	// key=value lists, falling back to WOOFX3_OTEL_RESOURCE_ATTRIBUTES and
@@ -73,6 +81,8 @@ type resolvedConfig struct {
 	OTelEnabled          bool
 	OTelExporterEndpoint string
 	OTelTracingEnabled   bool
+	OTelMetricsEnabled   bool
+	OTelMetricsInterval  time.Duration
 	OTelLocalFileEnabled bool
 
 	// OTelResourceAttributes may name service.name or service.version;
@@ -160,6 +170,16 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 		return resolvedConfig{}, err
 	}
 
+	otelMetricsEnabled, err := resolveBool(cfg.OTelMetricsEnabled, envOTelMetricsEnabled, otelEnabled)
+	if err != nil {
+		return resolvedConfig{}, err
+	}
+
+	otelMetricsInterval, err := resolveMetricsInterval(cfg.OTelMetricsInterval)
+	if err != nil {
+		return resolvedConfig{}, err
+	}
+
 	otelLocalFileEnabled, err := resolveBool(cfg.OTelLocalFileEnabled, envOTelLocalFileEnabled, true)
 	if err != nil {
 		return resolvedConfig{}, err
@@ -193,6 +213,8 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 		OTelEnabled:             otelEnabled,
 		OTelExporterEndpoint:    otelExporterEndpoint,
 		OTelTracingEnabled:      otelTracingEnabled,
+		OTelMetricsEnabled:      otelMetricsEnabled,
+		OTelMetricsInterval:     otelMetricsInterval,
 		OTelLocalFileEnabled:    otelLocalFileEnabled,
 		OTelResourceAttributes:  otelResourceAttributes,
 		OTelExporterHeaders:     otelExporterHeaders,
@@ -215,6 +237,27 @@ func resolveBool(explicit *bool, envKey string, fallback bool) (bool, error) {
 		return false, fmt.Errorf("invalid %s: %w", envKey, err)
 	}
 	return parsed, nil
+}
+
+// resolveMetricsInterval applies explicit over environment over default. A set
+// but unusable value is an error: exporting at a rate nobody chose is worse
+// than refusing to start.
+func resolveMetricsInterval(explicit time.Duration) (time.Duration, error) {
+	if explicit < 0 {
+		return 0, fmt.Errorf("metrics interval must be positive, got %s", explicit)
+	}
+	if explicit > 0 {
+		return explicit, nil
+	}
+	raw := strings.TrimSpace(os.Getenv(envOTelMetricsInterval))
+	if raw == "" {
+		return defaultMetricsInterval, nil
+	}
+	millis, err := strconv.Atoi(raw)
+	if err != nil || millis <= 0 {
+		return 0, fmt.Errorf("invalid %s: must be a positive integer, got %q", envOTelMetricsInterval, raw)
+	}
+	return time.Duration(millis) * time.Millisecond, nil
 }
 
 func firstNonEmpty(values ...string) string {

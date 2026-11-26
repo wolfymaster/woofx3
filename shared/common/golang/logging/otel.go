@@ -14,8 +14,9 @@ const (
 	// Instrumentation scope reported for spans produced by StartSpan.
 	tracerName = "github.com/wolfymaster/woofx3/common/logging"
 
-	otlpLogsPath   = "/v1/logs"
-	otlpTracesPath = "/v1/traces"
+	otlpLogsPath    = "/v1/logs"
+	otlpTracesPath  = "/v1/traces"
+	otlpMetricsPath = "/v1/metrics"
 
 	otelShutdownTimeout = 5 * time.Second
 )
