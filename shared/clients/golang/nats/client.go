@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // ErrConnectionClosed is returned once the client's connection is closed for
@@ -39,12 +40,15 @@ func defaultReconnectPolicy() reconnectPolicy {
 }
 
 type Client struct {
-	config     Config
-	reconnect  reconnectPolicy
-	logger     *slog.Logger
-	connection *nats.Conn
-	closed     bool
-	mu         sync.Mutex
+	config    Config
+	reconnect reconnectPolicy
+	logger    *slog.Logger
+	// processDuration is nil until SetMetrics; handlers are then not timed.
+	processDuration metric.Float64Histogram
+	now             func() time.Time
+	connection      *nats.Conn
+	closed          bool
+	mu              sync.Mutex
 }
 
 func NewClient(config Config, logger *slog.Logger) *Client {
@@ -55,6 +59,7 @@ func NewClient(config Config, logger *slog.Logger) *Client {
 		config:    config,
 		reconnect: defaultReconnectPolicy(),
 		logger:    logger,
+		now:       time.Now,
 	}
 }
 
@@ -201,7 +206,7 @@ func (c *Client) Subscribe(subject string, handler Handler) (Subscription, error
 			subject: msg.Subject,
 			data:    msg.Data,
 		}
-		handler(wrappedMsg)
+		c.observed(subject, func() { handler(wrappedMsg) })
 	})
 
 	if err != nil {
@@ -270,7 +275,8 @@ func (c *Client) SubscribeWithReply(subject string, handler func(Msg) []byte) (S
 			subject: msg.Subject,
 			data:    msg.Data,
 		}
-		response := handler(wrappedMsg)
+		var response []byte
+		c.observed(subject, func() { response = handler(wrappedMsg) })
 		if response != nil && msg.Reply != "" {
 			msg.Respond(response)
 		}

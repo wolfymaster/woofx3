@@ -38,7 +38,7 @@ func main() {
 	slogAdapter := &SlogAdapter{logger: logger}
 
 	// Messagebus (does not depend on config values)
-	natsSvc := service.NewNATS(logger, "nats", "messagebus")
+	natsSvc := service.NewNATS(logger, "nats", "messagebus").WithMetrics(logging.Meter(), logging.ShortDurationBucketsSeconds())
 	// Workflows resolve system canonical ids (woofx3:action:alert and
 	// siblings) as soon as they load, and those rows exist only once
 	// barkloader has installed the bundled modules. Waiting on its readiness

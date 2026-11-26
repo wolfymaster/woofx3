@@ -47,7 +47,7 @@ func main() {
 	ids := database.RandomIDs{}
 	now := func() time.Time { return time.Now().UTC() }
 	app := NewDatabaseApp(&DatabaseAppConfig{Logger: logger, IDs: ids, Now: now, Workers: workersConfig})
-	natsSvc := service.NewNATS(logger, "nats", "messagebus")
+	natsSvc := service.NewNATS(logger, "nats", "messagebus").WithMetrics(logging.Meter(), logging.ShortDurationBucketsSeconds())
 	natsMonitor := monitor.NewNATS("nats", natsSvc, "db", "HEARTBEAT", 15*time.Second, logger)
 	dbEnvConfig := &config.DatabaseEnvConfig{}
 
