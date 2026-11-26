@@ -13,6 +13,9 @@ import (
 	"testing"
 
 	"github.com/twitchtv/twirp"
+	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
 	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/db/app/middleware"
@@ -150,5 +153,65 @@ func TestDefaultMaxBodyBytesCoversTheBundledManifest(t *testing.T) {
 	if int64(len(manifest))*headroom > config.DefaultMaxBodyBytes {
 		t.Fatalf("bundled manifest is %d bytes; DefaultMaxBodyBytes (%d) no longer leaves %dx headroom",
 			len(manifest), config.DefaultMaxBodyBytes, headroom)
+	}
+}
+
+// A call the service refuses is still timed, under the Twirp code it was refused with.
+func TestHTTPChainTimesRefusedCalls(t *testing.T) {
+	reader := sdkmetric.NewManualReader()
+	provider := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader))
+	metrics, err := client.NewRPCMetrics(provider.Meter("test"), client.RPCServer, []float64{0.1, 1})
+	if err != nil {
+		t.Fatalf("NewRPCMetrics: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	auth, err := middleware.NewServiceAuth(chainTestToken, nil, logger)
+	if err != nil {
+		t.Fatalf("NewServiceAuth: %v", err)
+	}
+	svc, err := NewHTTPServerService(nil, "127.0.0.1", "0", config.DefaultHTTPServerConfig(), auth, logger, nil)
+	if err != nil {
+		t.Fatalf("NewHTTPServerService: %v", err)
+	}
+	svc.WithRPCMetrics(metrics)
+	svc.mux = http.NewServeMux()
+	common := client.NewCommonServiceServer(pingOnly{})
+	svc.mux.Handle(common.PathPrefix(), common)
+	server := httptest.NewServer(svc.handler())
+	defer server.Close()
+
+	_, err = client.NewCommonServiceProtobufClient(server.URL, server.Client()).Ping(context.Background(), &client.PingRequest{})
+	if err == nil {
+		t.Fatal("a call without a token succeeded")
+	}
+
+	var rm metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &rm); err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+	var found bool
+	for _, scope := range rm.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			if m.Name != "rpc.server.duration" {
+				continue
+			}
+			found = true
+			if m.Unit != "s" {
+				t.Errorf("unit = %q, want s", m.Unit)
+			}
+			points := m.Data.(metricdata.Histogram[float64]).DataPoints
+			want := attribute.NewSet(
+				attribute.String("rpc.system", "twirp"),
+				attribute.String("rpc.service", "common.CommonService"),
+				attribute.String("rpc.method", "Ping"),
+				attribute.String("error.type", "unauthenticated"),
+			)
+			if len(points) != 1 || !points[0].Attributes.Equals(&want) {
+				t.Errorf("points = %+v, want one with %v", points, want.ToSlice())
+			}
+		}
+	}
+	if !found {
+		t.Fatal("rpc.server.duration was not recorded")
 	}
 }

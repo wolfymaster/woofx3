@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/twitchtv/twirp"
+	client "github.com/wolfymaster/woofx3/clients/db"
 	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/wolfymaster/woofx3/common/logging"
@@ -44,6 +45,8 @@ type HTTPServerService struct {
 	initMu            sync.Mutex
 	routesInitialized atomic.Bool
 	mux               *http.ServeMux
+	// rpcMetrics times each Twirp call; nil leaves them untimed.
+	rpcMetrics *client.RPCMetrics
 }
 
 func NewHTTPServerService(
@@ -75,6 +78,12 @@ func NewHTTPServerService(
 	}, nil
 }
 
+// WithRPCMetrics has the service time every Twirp call it serves.
+func (s *HTTPServerService) WithRPCMetrics(metrics *client.RPCMetrics) *HTTPServerService {
+	s.rpcMetrics = metrics
+	return s
+}
+
 func (s *HTTPServerService) Connect(ctx context.Context, appCtx *runtime.ApplicationContext) error {
 	s.logger.Info("Setting up HTTP server")
 
@@ -104,12 +113,15 @@ func (s *HTTPServerService) Connect(ctx context.Context, appCtx *runtime.Applica
 
 // handler is the full request chain, outermost first: the body limit, so no
 // layer reads more than MaxBodyBytes; tracing, so the request span is on the
-// context for everything after it; logging, so refused requests are recorded
-// too; service auth; then lazy route setup and the Twirp handlers.
+// context for everything after it; call timing, so refused requests are
+// counted too; logging; service auth; then lazy route setup and the Twirp handlers.
 func (s *HTTPServerService) handler() http.Handler {
 	var handler http.Handler = http.HandlerFunc(s.lazyInitHandler)
 	handler = s.auth.Wrap(handler)
 	handler = s.loggingMiddleware(handler)
+	if s.rpcMetrics != nil {
+		handler = s.rpcMetrics.Handler(handler)
+	}
 	handler = s.tracingMiddleware(handler)
 	return limitBody(handler, s.serverConfig.MaxBodyBytes)
 }
