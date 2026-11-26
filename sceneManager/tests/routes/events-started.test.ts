@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { MetricsHarness } from "@woofx3/common/logging/metrics-testing";
+import { AlertMetrics } from "../../src/events/alert-metrics";
 import { reportAlertsCompleted, reportAlertsPlaying } from "../../src/routes/events";
 
 function fakeLogger() {
@@ -19,6 +21,8 @@ function recordingDb() {
     },
   };
 }
+
+const unread = () => new AlertMetrics(new MetricsHarness().meter);
 
 const failingDb = {
   updateAlertLifecycle: async () => {
@@ -74,16 +78,42 @@ describe("reportAlertsCompleted", () => {
   it("moves each finished alert's row to completed once, and ignores other events", async () => {
     const { calls, db } = recordingDb();
 
-    await reportAlertsCompleted(db, fakeLogger(), [
-      { type: "alert", key: "alert-a", value: { alertId: "alert-a", rowId: "row-1" } },
-      { type: "alert", key: "alert-a", value: { alertId: "alert-a", rowId: "row-1" } },
-      { type: "widget.event", key: "count", value: 1 },
-    ]);
+    await reportAlertsCompleted(
+      db,
+      fakeLogger(),
+      [
+        { type: "alert", key: "alert-a", value: { alertId: "alert-a", rowId: "row-1" } },
+        { type: "alert", key: "alert-a", value: { alertId: "alert-a", rowId: "row-1" } },
+        { type: "widget.event", key: "count", value: 1 },
+      ],
+      unread()
+    );
 
     expect(calls).toEqual([{ id: "row-1", envelopeId: "alert-a", status: "completed" }]);
   });
 
+  it("test_completed_alerts_are_counted_as_played_once_each", async () => {
+    const { db } = recordingDb();
+    const harness = new MetricsHarness();
+
+    await reportAlertsCompleted(
+      db,
+      fakeLogger(),
+      [
+        { type: "alert", key: "alert-a", value: { alertId: "alert-a", rowId: "row-1" } },
+        { type: "alert", key: "alert-a", value: { alertId: "alert-a", rowId: "row-1" } },
+        { type: "alert", key: "alert-b", value: { alertId: "alert-b", rowId: "row-2" } },
+        { type: "widget.event", key: "count", value: 1 },
+      ],
+      new AlertMetrics(harness.meter)
+    );
+
+    const alerts = await harness.metric("woofx3.alerts");
+    expect(alerts.unit).toBe("{alert}");
+    expect(alerts.points.map((point) => [point.attributes, point.value])).toEqual([[{ outcome: "played" }, 2]]);
+  });
+
   it("survives a missing alert row", async () => {
-    await reportAlertsCompleted(failingDb, fakeLogger(), [{ type: "alert", key: "alert-a", value: null }]);
+    await reportAlertsCompleted(failingDb, fakeLogger(), [{ type: "alert", key: "alert-a", value: null }], unread());
   });
 });

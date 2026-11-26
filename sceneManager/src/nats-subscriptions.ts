@@ -26,6 +26,7 @@ import {
   skipCurrentAlerts,
 } from "./events/alert-controls";
 import { type AlertEnvelope, dispatchAlert } from "./events/alert-dispatch";
+import type { AlertMetrics } from "./events/alert-metrics";
 import type { DeliveryStore } from "./events/delivery-store";
 import { handleStatusReport } from "./events/handlers";
 import { closeDeliveriesToRemovedPlacements } from "./events/removed-placements";
@@ -41,6 +42,7 @@ interface InitArgs {
   db: DbClient;
   host: OverlayHost;
   deliveryStore: DeliveryStore;
+  alertMetrics: AlertMetrics;
   /** Frames each alert's widgets as it is dispatched. */
   framing: AlertFraming;
   moduleState: ModuleStateWatch;
@@ -128,6 +130,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
     db,
     host,
     deliveryStore,
+    alertMetrics: metrics,
     framing,
     moduleState,
     resolver,
@@ -143,7 +146,7 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
   }
 
   await subscribeJson<AlertEnvelope>(nats, logger, "ui.notify.alert", async (raw, msg) => {
-    await dispatchAlert(raw, { db, host, deliveryStore, framing, logger });
+    await dispatchAlert(raw, { db, host, deliveryStore, framing, logger, metrics });
   });
 
   // Only the api's requests are acted on. A plain publish has no one to
@@ -176,9 +179,9 @@ export async function initSubscriptions(args: InitArgs): Promise<void> {
       msg.respond(new TextEncoder().encode(JSON.stringify(reply)));
     });
 
-  const replays = new AlertReplays({ db, host, deliveryStore, framing, logger });
-  await answer(ALERT_SKIP_SUBJECT, () => skipCurrentAlerts({ db, host, deliveryStore, logger }));
-  await answer(ALERT_CLEAR_SUBJECT, () => clearQueuedAlerts({ db, host, deliveryStore, logger }));
+  const replays = new AlertReplays({ db, host, deliveryStore, framing, logger, metrics });
+  await answer(ALERT_SKIP_SUBJECT, () => skipCurrentAlerts({ db, host, deliveryStore, logger, metrics }));
+  await answer(ALERT_CLEAR_SUBJECT, () => clearQueuedAlerts({ db, host, deliveryStore, logger, metrics }));
   await answer(ALERT_REPLAY_SUBJECT, (body) => replays.replay(typeof body.id === "string" ? body.id : ""));
   await answer(ALERT_QUEUE_STATE_SUBJECT, () => readAlertQueue({ host, deliveryStore }));
   logger.info("Answering widget.queue.{skip,clear,replay,state}");
