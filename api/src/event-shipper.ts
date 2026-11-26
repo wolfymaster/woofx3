@@ -1,7 +1,13 @@
 import type { EventsTarget } from "@woofx3/api";
 import type { CallbackEnvelope } from "@woofx3/api/webhooks";
-import type { SharedLogger } from "@woofx3/common/logging";
-import { type Backoff, createBackoff, type RandomSource } from "@woofx3/common/runtime";
+import {
+  type Counter,
+  type Histogram,
+  type Meter,
+  SHORT_DURATION_BUCKETS_SECONDS,
+  type SharedLogger,
+} from "@woofx3/common/logging";
+import { type Backoff, type Clock, createBackoff, type RandomSource } from "@woofx3/common/runtime";
 
 export interface EventShipperConfig {
   /** Envelopes held per target; past it the oldest is dropped. */
@@ -40,6 +46,8 @@ export interface EventShipperDeps {
   logger: SharedLogger;
   config: EventShipperConfig;
   random: RandomSource;
+  clock: Clock;
+  meter: Meter;
   sleep: Sleep;
   fetch: typeof fetch;
 }
@@ -53,6 +61,27 @@ interface Lane {
   pumping: Promise<void> | null;
   /** Envelopes dropped for a full buffer since the last delivery. */
   dropped: number;
+  /** The `target` attribute on this lane's metrics: the host, never the URL path or token. */
+  name: string;
+}
+
+const MS_PER_SECOND = 1000;
+
+/** What a metric attribute calls a target whose URL does not parse. */
+const UNKNOWN_TARGET = "unknown";
+
+function targetName(target: EventsTarget): string {
+  try {
+    return new URL(target.url).host;
+  } catch {
+    return UNKNOWN_TARGET;
+  }
+}
+
+interface ShipperInstruments {
+  dropped: Counter;
+  postDuration: Histogram;
+  postFailures: Counter;
 }
 
 /**
@@ -69,15 +98,46 @@ interface Lane {
 export class EventShipper {
   private readonly lanes = new Map<string, Lane>();
   private readonly abort = new AbortController();
+  private readonly instruments: ShipperInstruments;
   private running = false;
 
   constructor(private readonly deps: EventShipperDeps) {
-    const { config } = deps;
+    const { config, meter } = deps;
     if (!(config.maxBuffered >= config.maxPostEvents && config.maxPostEvents >= 1)) {
       throw new Error(
         `EventShipper needs maxBuffered >= maxPostEvents >= 1, got ${config.maxBuffered} and ${config.maxPostEvents}`
       );
     }
+    this.instruments = {
+      dropped: meter.createCounter("woofx3.event_shipper.dropped", {
+        description: "Envelopes dropped because a target's buffer was full.",
+        unit: "{event}",
+      }),
+      postDuration: meter.createHistogram("woofx3.event_shipper.post.duration", {
+        advice: { explicitBucketBoundaries: [...SHORT_DURATION_BUCKETS_SECONDS] },
+        description: "Time a POST to an events target took, whatever its outcome.",
+        unit: "s",
+      }),
+      postFailures: meter.createCounter("woofx3.event_shipper.post.failures", {
+        description: "POSTs that did not deliver: retried or refused.",
+        unit: "{request}",
+      }),
+    };
+    meter
+      .createObservableGauge("woofx3.event_shipper.queue.size", {
+        description: "Envelopes buffered for a target and not yet delivered.",
+        unit: "{event}",
+      })
+      .addCallback((result) => {
+        // Lanes that differ only by token share a host; their sizes add up.
+        const sizes = new Map<string, number>();
+        for (const lane of this.lanes.values()) {
+          sizes.set(lane.name, (sizes.get(lane.name) ?? 0) + lane.buffer.length);
+        }
+        for (const [target, size] of sizes) {
+          result.observe(size, { target });
+        }
+      });
   }
 
   start(): void {
@@ -133,6 +193,7 @@ export class EventShipper {
         backoff: createBackoff({ baseMs, maxMs }, this.deps.random),
         pumping: null,
         dropped: 0,
+        name: targetName(target),
       };
       this.lanes.set(key, lane);
     }
@@ -146,6 +207,7 @@ export class EventShipper {
       return;
     }
     lane.buffer.splice(0, excess);
+    this.instruments.dropped.add(excess, { target: lane.name });
     if (lane.dropped === 0) {
       this.deps.logger.error("EventShipper: buffer full, dropping the oldest events", {
         url: lane.target.url,
@@ -158,7 +220,7 @@ export class EventShipper {
   private async pump(lane: Lane): Promise<void> {
     while (lane.buffer.length > 0 && !this.abort.signal.aborted) {
       const batch = lane.buffer.splice(0, this.deps.config.maxPostEvents);
-      const outcome = await this.post(lane.target, batch);
+      const outcome = await this.post(lane, batch);
       if (outcome === "retry") {
         // Back in front, so order holds; the oldest go first if that overfills.
         lane.buffer.unshift(...batch);
@@ -178,7 +240,19 @@ export class EventShipper {
     lane.pumping = null;
   }
 
-  private async post(target: EventsTarget, events: CallbackEnvelope[]): Promise<PostOutcome> {
+  /** One POST, timed and counted; `attempt` decides what its outcome means. */
+  private async post(lane: Lane, events: CallbackEnvelope[]): Promise<PostOutcome> {
+    const startedAt = this.deps.clock.now();
+    const outcome = await this.attempt(lane.target, events);
+    const attributes = { target: lane.name };
+    this.instruments.postDuration.record((this.deps.clock.now() - startedAt) / MS_PER_SECOND, attributes);
+    if (outcome !== "delivered") {
+      this.instruments.postFailures.add(1, attributes);
+    }
+    return outcome;
+  }
+
+  private async attempt(target: EventsTarget, events: CallbackEnvelope[]): Promise<PostOutcome> {
     const { logger, config } = this.deps;
     let status: number;
     try {
