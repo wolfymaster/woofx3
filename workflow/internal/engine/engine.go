@@ -88,8 +88,10 @@ type Engine[TServices any] struct {
 	viewerFacts          ViewerFacts
 	assetURLResolver     AssetURLResolver
 	logger               tasks.Logger
-	ctx                  context.Context
-	cancel               context.CancelFunc
+	// metrics is nil until SetMetrics; its methods then do nothing.
+	metrics *engineMetrics
+	ctx     context.Context
+	cancel  context.CancelFunc
 	// maxConcurrency caps how many independent tasks run at once. Zero means
 	// DefaultMaxConcurrentTasks.
 	maxConcurrency int
@@ -358,6 +360,9 @@ func (e *Engine[TServices]) recordStep(
 	inputs map[string]any,
 	taskExec *types.TaskExecution,
 ) {
+	if e.metrics != nil {
+		e.metrics.stepSettled(e.stepAction(execution.WorkflowID, taskID), taskExec)
+	}
 	if e.runRecorder == nil || taskExec == nil || execution.Ephemeral {
 		return
 	}
@@ -996,6 +1001,7 @@ func (e *Engine[TServices]) beginRun(wf *types.WorkflowDefinition, event *types.
 	// so neither can see a queued run before it reads as queued.
 	ctl.queued = start == runQueued
 	e.runs.put(execution, ctl)
+	e.metrics.runStarted(execution)
 
 	if start == runQueued {
 		e.logger.Info("Queued workflow execution for its turn", "workflow", wf.ID, "execution", execution.ID)
@@ -1220,11 +1226,11 @@ func (e *Engine[TServices]) runTasksFrom(execution *types.WorkflowExecution, exe
 				// the documented default of "fail" when the definition names none.
 				if taskExec.WaitState.OnTimeout == tasks.OnTimeoutFail {
 					taskExec.Status = types.TaskStatusFailed
-					taskExec.Error = "wait timeout"
+					taskExec.Error = errWaitTimeout.Error()
 					now := time.Now()
 					taskExec.CompletedAt = &now
 					e.recordStep(execution, taskDef.ID, i, nil, taskExec)
-					e.setExecutionStatus(execution, types.ExecutionStatusFailed, errors.New("wait timeout"))
+					e.setExecutionStatus(execution, types.ExecutionStatusFailed, errWaitTimeout)
 					e.logger.Error("Wait task timed out", "workflow", execution.WorkflowID, "task", taskDef.ID)
 					e.checkSubWorkflowCompletion(execution.ID)
 					return
@@ -1703,6 +1709,7 @@ func (e *Engine[TServices]) setExecutionStatus(
 		// Stamped before the outcome is announced, so whoever hears it can
 		// rely on the run's retention having started.
 		e.runs.settle(execution.ID, now)
+		e.metrics.runSettled(execution, status, err, now.Sub(execution.StartedAt))
 	}
 	e.emitRunLifecycle(execution)
 	e.recordRunSettled(execution)
@@ -1986,6 +1993,7 @@ func (e *Engine[TServices]) executeWorkflowSync(wf *types.WorkflowDefinition, ev
 	}
 
 	e.runs.put(execution, newRunControl(executionID, newRunViewer(viewerTrigger(wf), event, e.newViewerLoader(viewerTrigger(wf), event))))
+	e.metrics.runStarted(execution)
 
 	e.logger.Info("Starting sub-workflow execution", "workflow", wf.ID, "execution", executionID)
 

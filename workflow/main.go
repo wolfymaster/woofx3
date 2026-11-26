@@ -77,6 +77,10 @@ func main() {
 				return err
 			}
 
+			if err := app.engine.SetMetrics(logging.Meter(), logging.ShortDurationBucketsSeconds(), logging.LongDurationBucketsSeconds()); err != nil {
+				return err
+			}
+
 			// Database
 			dbProxyToken, err := cfg.dbProxyToken()
 			if err != nil {
