@@ -4,6 +4,8 @@ edition = "2024"
 
 [dependencies]
 woofx3-cloudevents = { path = "../../shared/common/rust/cloudevents" }
+woofx3-logging = { path = "../../shared/common/rust/logging" }
+opentelemetry = { version = "0.32", default-features = false, features = ["metrics"] }
 anyhow = "1.0.98"
 tracing = "0.1"
 mlua = { features = ["lua54", "serialize", "vendored"], version = "0.10.3" }
@@ -21,3 +23,6 @@ hmac = "0.12"
 sha1 = "0.10"
 sha2 = "0.10"
 subtle = "2.6"
+
+[dev-dependencies]
+opentelemetry_sdk = { version = "0.32", default-features = false, features = ["testing", "metrics"] }

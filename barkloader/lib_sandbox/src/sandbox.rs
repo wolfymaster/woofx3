@@ -4,6 +4,7 @@ use crate::function_result::resolve_function_result;
 use crate::host::{
     ActionRunner, HostContext, InvocationContext, MAX_INVOCATION_TIMEOUT, RunCaller,
 };
+use crate::metrics::{FunctionMetrics, Outcome};
 use crate::models::request::InvokeRequest;
 use crate::module_registry::ModuleRegistry;
 use crate::resource_access::{InstanceId, ResourceAccess, parse_instance_id};
@@ -22,6 +23,7 @@ pub struct SandboxFactory {
     limits: SandboxLimits,
     /// One permit per invocation slot, shared by every clone of the factory.
     permits: Arc<Semaphore>,
+    metrics: FunctionMetrics,
 }
 
 impl SandboxFactory {
@@ -36,11 +38,17 @@ impl SandboxFactory {
             host_ctx,
             limits,
             permits: Arc::new(Semaphore::new(limits.max_concurrent_invocations)),
+            metrics: FunctionMetrics::global(),
         })
     }
 
     pub fn create(&self) -> Result<Sandbox, Error> {
-        Sandbox::new(self.registry.clone(), self.host_ctx.clone(), self.limits)
+        Sandbox::with_metrics(
+            self.registry.clone(),
+            self.host_ctx.clone(),
+            self.limits,
+            self.metrics.clone(),
+        )
     }
 
     /// Creates a fresh `Sandbox` and invokes `request` on Tokio's blocking
@@ -116,6 +124,7 @@ pub struct Sandbox {
     registry: Arc<ModuleRegistry>,
     function_executor: FunctionExecutor,
     host_ctx: HostContext,
+    metrics: FunctionMetrics,
 }
 
 /// How long an invocation may run: the requested `timeout_ms`, capped at
@@ -133,11 +142,23 @@ impl Sandbox {
         host_ctx: HostContext,
         limits: SandboxLimits,
     ) -> Result<Self, Error> {
+        Self::with_metrics(registry, host_ctx, limits, FunctionMetrics::global())
+    }
+
+    /// A sandbox that reports through `metrics`; the factory shares one set of
+    /// instruments across every sandbox it creates.
+    pub fn with_metrics(
+        registry: Arc<ModuleRegistry>,
+        host_ctx: HostContext,
+        limits: SandboxLimits,
+        metrics: FunctionMetrics,
+    ) -> Result<Self, Error> {
         limits.validate()?;
         Ok(Self {
             registry,
             function_executor: FunctionExecutor::new(limits),
             host_ctx,
+            metrics,
         })
     }
 
@@ -201,16 +222,25 @@ impl Sandbox {
             deadline,
         };
 
-        let result = self
-            .function_executor
-            .execute(&function, &invocation)
-            .and_then(|value| {
-                self.publish_requested_events(
-                    &invocation.module_id,
-                    request.workflow_chain.clone(),
-                    value,
-                )
-            });
+        let started = Instant::now();
+        let executed = self.function_executor.execute(&function, &invocation);
+        self.metrics.record(
+            &invocation.module_id,
+            &function.name,
+            started.elapsed(),
+            if executed.is_ok() {
+                Outcome::Ok
+            } else {
+                Outcome::Error
+            },
+        );
+        let result = executed.and_then(|value| {
+            self.publish_requested_events(
+                &invocation.module_id,
+                request.workflow_chain.clone(),
+                value,
+            )
+        });
 
         match &result {
             Ok(value) => {
