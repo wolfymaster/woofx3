@@ -12,7 +12,7 @@ They use the metrics listed in `docs/services/runtime.md` and the engine's logs 
 The dashboards pick their data sources from variables, so they work on any stack with a Prometheus and a Loki data source.
 
 ```bash
-bun infra/grafana/build.ts   # regenerate dashboards/*.json from build.ts
+bun infra/grafana/build.ts && bunx biome format --write infra/grafana/dashboards   # regenerate dashboards/*.json from build.ts
 GRAFANA_URL=https://<stack>.grafana.net GRAFANA_TOKEN=<service account token> bun infra/grafana/push.ts
 ```
 
