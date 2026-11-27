@@ -10,6 +10,8 @@ interface OpenDelivery {
   key: string;
   value: unknown;
   lastAttemptAt: number;
+  /** When this process recorded the delivery; null for one hydrated after a restart, whose wait is unknown. */
+  recordedAt: number | null;
   /**
    * When a page last said it started this delivery, or null. In memory
    * only: after a restart every page reloads and reports again.
@@ -30,6 +32,11 @@ export interface OpenDeliveryRef {
   key: string;
   value: unknown;
   startedAt: number | null;
+}
+
+/** Told when a page first starts a delivery, for the metrics only. */
+export interface DeliveryObserver {
+  deliveryStarted(type: string, recordedAt: number, startedAt: number): void;
 }
 
 type SseController = ReadableStreamDefaultController<Uint8Array>;
@@ -78,7 +85,8 @@ export class DeliveryStore {
   constructor(
     private readonly db: DbClient,
     private readonly logger: Logger,
-    private readonly present: PresentDelivery = (frame) => frame
+    private readonly present: PresentDelivery = (frame) => frame,
+    private readonly observer: DeliveryObserver = { deliveryStarted: () => {} }
   ) {}
 
   /**
@@ -121,6 +129,7 @@ export class DeliveryStore {
         key: event.key,
         value: event.value,
         lastAttemptAt: 0,
+        recordedAt: null,
         startedAt: null,
         delivered: false,
       });
@@ -257,6 +266,7 @@ export class DeliveryStore {
         key: params.key,
         value: params.value,
         lastAttemptAt: Date.now(),
+        recordedAt: Date.now(),
         startedAt: null,
         delivered: false,
       });
@@ -452,6 +462,19 @@ export class DeliveryStore {
     return byInstance;
   }
 
+  /** How many distinct deliveries of `type` no page has started, across every scene. */
+  waitingCount(type: string): number {
+    const keys = new Set<string>();
+    for (const sceneId of this.open.keys()) {
+      for (const delivery of this.openDeliveriesFor(sceneId)) {
+        if (delivery.type === type && delivery.startedAt === null) {
+          keys.add(delivery.key);
+        }
+      }
+    }
+    return keys.size;
+  }
+
   /**
    * A page started playing an event on these instances. Returns the
    * deliveries this is the first start report for, so the caller can
@@ -466,6 +489,9 @@ export class DeliveryStore {
         continue;
       }
       if (delivery.startedAt === null) {
+        if (delivery.recordedAt !== null) {
+          this.observer.deliveryStarted(delivery.type, delivery.recordedAt, now);
+        }
         firsts.push({ eventId, type: delivery.type, key: delivery.key, value: delivery.value, startedAt: now });
       }
       delivery.startedAt = now;

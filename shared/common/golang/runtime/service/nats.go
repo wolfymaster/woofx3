@@ -9,6 +9,7 @@ import (
 	"github.com/nats-io/nats.go"
 	natsclient "github.com/wolfymaster/woofx3/clients/nats"
 	"github.com/wolfymaster/woofx3/common/runtime"
+	"go.opentelemetry.io/otel/metric"
 )
 
 type NATSService struct {
@@ -19,6 +20,9 @@ type NATSService struct {
 	mu     sync.RWMutex
 	client *natsclient.Client
 	conn   *nats.Conn
+	// meter times the client's subscription handlers; nil leaves them untimed.
+	meter   metric.Meter
+	buckets []float64
 }
 
 func NewNATS(logger *slog.Logger, name, serviceType string) *NATSService {
@@ -32,6 +36,14 @@ func NewNATS(logger *slog.Logger, name, serviceType string) *NATSService {
 		BaseService: runtime.NewBaseService[*natsclient.Client](name, serviceType, nil, false),
 		logger:      logger,
 	}
+}
+
+// WithMetrics has the connected client report messaging.process.duration to
+// meter, with histogram boundaries in seconds.
+func (s *NATSService) WithMetrics(meter metric.Meter, buckets []float64) *NATSService {
+	s.meter = meter
+	s.buckets = buckets
+	return s
 }
 
 func (s *NATSService) Connect(ctx context.Context, appCtx *runtime.ApplicationContext) error {
@@ -50,6 +62,11 @@ func (s *NATSService) Connect(ctx context.Context, appCtx *runtime.ApplicationCo
 	client, err := natsclient.CreateMessageBus(natsConfig, s.logger)
 	if err != nil {
 		return err
+	}
+	if s.meter != nil {
+		if err := client.SetMetrics(s.meter, s.buckets); err != nil {
+			return fmt.Errorf("reporting NATS metrics: %w", err)
+		}
 	}
 
 	s.client = client

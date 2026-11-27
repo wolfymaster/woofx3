@@ -2,6 +2,7 @@ import { RequestGuard } from "@woofx3/common/http/request-guard";
 import { SpanKind, withSpan } from "@woofx3/common/logging";
 import type { ApplicationContext } from "@woofx3/common/runtime";
 import type { SceneManagerContext, SceneManagerServices } from "./application";
+import type { AlertMetrics } from "./events/alert-metrics";
 import type { DeliveryStore } from "./events/delivery-store";
 import type { GoogleFontCache } from "./fonts/google-font-cache";
 import type { FrameAssembler } from "./scene/frame-assembler";
@@ -57,6 +58,7 @@ export interface HttpDeps {
   frameAssembler: FrameAssembler;
   sessionTokens: SessionTokenService;
   deliveryStore: DeliveryStore;
+  alertMetrics: AlertMetrics;
   moduleState: ModuleStateWatch;
   /** Module settings, for the instances a widget's module links. */
   settingsDb: LinkedResourcesDb;
