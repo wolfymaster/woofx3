@@ -74,12 +74,27 @@ func TestResolveConfigRejectsInvalidBool(t *testing.T) {
 }
 
 func TestOTelEndpointURLAddsSignalPath(t *testing.T) {
-	got, err := otelEndpointURL("http://localhost:4318", otlpTracesPath)
-	if err != nil {
-		t.Fatalf("otelEndpointURL: %v", err)
+	tests := []struct {
+		name     string
+		endpoint string
+		want     string
+	}{
+		{name: "bare host", endpoint: "http://localhost:4318", want: "http://localhost:4318/v1/traces"},
+		{name: "trailing slash", endpoint: "http://localhost:4318/", want: "http://localhost:4318/v1/traces"},
+		{name: "a gateway's own path", endpoint: "https://otlp.example.com/otlp", want: "https://otlp.example.com/otlp/v1/traces"},
+		{name: "a gateway path with a trailing slash", endpoint: "https://otlp.example.com/otlp/", want: "https://otlp.example.com/otlp/v1/traces"},
+		{name: "already the signal URL", endpoint: "https://otlp.example.com/otlp/v1/traces", want: "https://otlp.example.com/otlp/v1/traces"},
 	}
-	if got != "http://localhost:4318/v1/traces" {
-		t.Fatalf("unexpected url: %s", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := otelEndpointURL(tt.endpoint, otlpTracesPath)
+			if err != nil {
+				t.Fatalf("otelEndpointURL: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("got %s, want %s", got, tt.want)
+			}
+		})
 	}
 
 	if _, err := otelEndpointURL("localhost:4318", otlpLogsPath); err == nil {
