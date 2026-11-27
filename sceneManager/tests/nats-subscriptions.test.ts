@@ -1,7 +1,9 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { CompositionPreviewTokenReply } from "@woofx3/common/cloudevents/Scene/composition-preview";
 import type { SceneRepairReply } from "@woofx3/common/cloudevents/Scene/editor";
+import { MetricsHarness } from "@woofx3/common/logging/metrics-testing";
 import { reportAlertNotPlayed } from "../src/events/alert-dispatch";
+import { AlertMetrics } from "../src/events/alert-metrics";
 import { initSubscriptions, notifySceneUpdated } from "../src/nats-subscriptions";
 
 function fakeLogger() {
@@ -153,6 +155,7 @@ describe("alert queue control subjects", () => {
       host: {} as any,
       deliveryStore: deliveryStore as any,
       framing: { frameAlert: async () => ({}) },
+      alertMetrics: new AlertMetrics(new MetricsHarness().meter),
       moduleState: {} as any,
       resolver: {} as any,
       sceneDocuments: {
@@ -286,6 +289,7 @@ describe("module setting changes", () => {
       host: {} as any,
       deliveryStore: {} as any,
       framing: { frameAlert: async () => ({}) },
+      alertMetrics: new AlertMetrics(new MetricsHarness().meter),
       moduleState: {
         settingUpdated: async (moduleId: string, key: string) => {
           settingsUpdated.push(`${moduleId}/${key}`);
@@ -335,6 +339,7 @@ describe("OBS subjects", () => {
       host: {} as never,
       deliveryStore: {} as never,
       framing: { frameAlert: async () => ({}) },
+      alertMetrics: new AlertMetrics(new MetricsHarness().meter),
       moduleState: {} as never,
       resolver: {} as never,
       sceneDocuments: {

@@ -5,6 +5,7 @@
     "module": "esnext",
     "moduleResolution": "node",
     "paths": {
+      "@woofx3/common/*": ["../../../common/typescript/*"],
       "@woofx3/*": ["../*"]
     },
     "strict": true,

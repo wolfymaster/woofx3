@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	client "github.com/wolfymaster/woofx3/clients/db"
 	"github.com/wolfymaster/woofx3/common/logging"
 	"github.com/wolfymaster/woofx3/common/runtime"
 	"github.com/wolfymaster/woofx3/common/runtime/monitor"
@@ -47,7 +48,7 @@ func main() {
 	ids := database.RandomIDs{}
 	now := func() time.Time { return time.Now().UTC() }
 	app := NewDatabaseApp(&DatabaseAppConfig{Logger: logger, IDs: ids, Now: now, Workers: workersConfig})
-	natsSvc := service.NewNATS(logger, "nats", "messagebus")
+	natsSvc := service.NewNATS(logger, "nats", "messagebus").WithMetrics(logging.Meter(), logging.ShortDurationBucketsSeconds())
 	natsMonitor := monitor.NewNATS("nats", natsSvc, "db", "HEARTBEAT", 15*time.Second, logger)
 	dbEnvConfig := &config.DatabaseEnvConfig{}
 
@@ -107,10 +108,15 @@ func main() {
 				return err
 			}
 
+			rpcMetrics, err := client.NewRPCMetrics(logging.Meter(), client.RPCServer, logging.ShortDurationBucketsSeconds())
+			if err != nil {
+				return err
+			}
 			httpSvc, err := services.NewHTTPServerService(app, httpHost, httpPort, serverConfig, serviceAuth, logger, routes.SetupAllRoutes)
 			if err != nil {
 				return err
 			}
+			httpSvc.WithRPCMetrics(rpcMetrics)
 			if err := application.Register("http", httpSvc); err != nil {
 				return err
 			}

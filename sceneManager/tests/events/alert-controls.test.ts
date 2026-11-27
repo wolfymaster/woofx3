@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { AlertQueueState } from "@woofx3/api";
+import { MetricsHarness } from "@woofx3/common/logging/metrics-testing";
 import {
   AlertReplays,
   clearQueuedAlerts,
@@ -10,12 +11,17 @@ import {
   skipCurrentAlerts,
 } from "../../src/events/alert-controls";
 import { dispatchAlert, presentAlertDeliveries } from "../../src/events/alert-dispatch";
+import { AlertMetrics } from "../../src/events/alert-metrics";
 import { DeliveryStore } from "../../src/events/delivery-store";
 import { AlertFrameUnavailableError, type AlertFraming } from "../../src/scene/frame-catalog";
 import type { OverlayWidgetInstance } from "../../src/scene/scene-host";
 
 function fakeLogger() {
   return { debug: () => {}, info: () => {}, warn: () => {}, error: () => {} } as any;
+}
+
+function unreadAlertMetrics(): AlertMetrics {
+  return new AlertMetrics(new MetricsHarness().meter);
 }
 
 /** Frames every layout widget at a frame URL named after its widget. */
@@ -185,13 +191,14 @@ const sceneWidgets: Record<string, OverlayWidgetInstance[]> = {
   "scene-2": [alertInstance("inst-2", "default")],
 };
 
-function queueDeps(db: ReturnType<typeof fakeDb>["db"], store: DeliveryStore) {
+function queueDeps(db: ReturnType<typeof fakeDb>["db"], store: DeliveryStore, metrics = unreadAlertMetrics()) {
   return {
     db,
     host: fakeHost(sceneWidgets) as any,
     deliveryStore: store,
     framing: fakeFraming(),
     logger: fakeLogger(),
+    metrics,
   };
 }
 
@@ -543,6 +550,7 @@ describe("replayAlert", () => {
       deliveryStore: store,
       framing: fakeFraming(),
       logger: fakeLogger(),
+      metrics: unreadAlertMetrics(),
       newEnvelopeId: () => "env-replay",
     };
     return { writes, overlays, deps };
@@ -630,6 +638,7 @@ describe("dispatchAlert", () => {
         deliveryStore: store,
         framing: fakeFraming(),
         logger: fakeLogger(),
+        metrics: unreadAlertMetrics(),
       },
     };
   }
@@ -819,6 +828,7 @@ describe("AlertReplays", () => {
       deliveryStore: store,
       framing: fakeFraming(),
       logger: fakeLogger(),
+      metrics: unreadAlertMetrics(),
       newEnvelopeId: () => `env-${calls}`,
     };
     return { deps, calls: () => calls, release };
@@ -865,5 +875,115 @@ describe("presentAlertDeliveries", () => {
 
     expect(present({ ...base, type: "alert", value: 1 }).value).toEqual({ signed: 1 });
     expect(present({ ...base, type: "widget.event", value: 1 }).value).toBe(1);
+  });
+});
+
+describe("alert metrics", () => {
+  function metricsHarness() {
+    const harness = new MetricsHarness();
+    return { harness, metrics: new AlertMetrics(harness.meter) };
+  }
+
+  async function counted(harness: MetricsHarness): Promise<Record<string, number>> {
+    const alerts = await harness.metric("woofx3.alerts");
+    expect(alerts.unit).toBe("{alert}");
+    return Object.fromEntries(alerts.points.map((point) => [String(point.attributes.outcome), point.value as number]));
+  }
+
+  function dispatchSetup(metrics: AlertMetrics) {
+    const { db } = fakeDb();
+    const store = new DeliveryStore(db as any, fakeLogger());
+    fakeOverlay(store, "scene-1");
+    let time = 0;
+    return {
+      store,
+      deps: {
+        db,
+        host: fakeHost({ "scene-1": [alertInstance("inst-1", "default")] }) as any,
+        deliveryStore: store,
+        framing: fakeFraming(),
+        logger: fakeLogger(),
+        metrics,
+        now: () => (time += 10),
+      },
+    };
+  }
+
+  it("test_dispatch_counts_a_recorded_alert_as_queued_and_times_each_stage", async () => {
+    const { harness, metrics } = metricsHarness();
+    const { deps } = dispatchSetup(metrics);
+
+    await dispatchAlert(JSON.parse(envelope()), deps);
+
+    expect(await counted(harness)).toEqual({ queued: 1 });
+    const stages = await harness.metric("woofx3.event.pipeline.duration");
+    expect(stages.unit).toBe("s");
+    expect(
+      stages.points.map((point) => point.attributes).sort((a, b) => String(a.stage).localeCompare(String(b.stage)))
+    ).toEqual([{ stage: "frames" }, { stage: "layout" }, { stage: "record" }, { stage: "scenes" }]);
+  });
+
+  it("test_dispatch_counts_an_alert_that_reaches_no_scene_as_failed", async () => {
+    const { harness, metrics } = metricsHarness();
+    const { deps } = dispatchSetup(metrics);
+
+    await dispatchAlert(JSON.parse(envelope("sidebar")), deps);
+
+    expect(await counted(harness)).toEqual({ failed: 1 });
+  });
+
+  it("test_skip_counts_the_playing_alert_as_skipped_and_clear_counts_waiting_ones_as_dropped", async () => {
+    const { harness, metrics } = metricsHarness();
+    const { db } = fakeDb();
+    const store = new DeliveryStore(db as any, fakeLogger());
+    fakeOverlay(store, "scene-1");
+    await queueAlert(store, "scene-1", "alert-a", ["inst-1"]);
+    await queueAlert(store, "scene-1", "alert-b", ["inst-1"]);
+    await queueAlert(store, "scene-1", "alert-c", ["inst-1"]);
+    store.markStarted("scene-1", "evt-1", ["inst-1"]);
+
+    await skipCurrentAlerts(queueDeps(db, store, metrics));
+    await clearQueuedAlerts(queueDeps(db, store, metrics));
+
+    expect(await counted(harness)).toEqual({ skipped: 1, dropped: 2 });
+  });
+
+  it("test_a_start_report_records_the_wait_in_seconds_and_other_deliveries_are_ignored", async () => {
+    const { harness, metrics } = metricsHarness();
+    const { db } = fakeDb();
+    const store = new DeliveryStore(db as any, fakeLogger(), undefined, metrics);
+    await queueAlert(store, "scene-1", "alert-a", ["inst-1"]);
+    await store.recordEvent({
+      sceneId: "scene-1",
+      type: "widget_status",
+      key: "k",
+      value: {},
+      targetInstanceIds: ["inst-1"],
+    });
+
+    store.markStarted("scene-1", "evt-1", ["inst-1"], Date.now() + 2_500);
+    store.markStarted("scene-1", "evt-2", ["inst-1"], Date.now() + 2_500);
+
+    const wait = await harness.metric("woofx3.alerts.queue.wait");
+    expect(wait.unit).toBe("s");
+    expect(wait.points).toHaveLength(1);
+    expect(wait.points[0]?.attributes).toEqual({});
+    const value = wait.points[0]?.value as { count: number; sum: number };
+    expect(value.count).toBe(1);
+    expect(value.sum).toBeGreaterThanOrEqual(2.5);
+  });
+
+  it("test_queue_depth_counts_alerts_no_page_has_started", async () => {
+    const { harness, metrics } = metricsHarness();
+    const { db } = fakeDb();
+    const store = new DeliveryStore(db as any, fakeLogger());
+    metrics.observeQueueDepth(() => store.waitingCount("alert"));
+    await queueAlert(store, "scene-1", "alert-a", ["left", "right"]);
+    await queueAlert(store, "scene-1", "alert-b", ["left", "right"]);
+    store.markStarted("scene-1", "evt-1", ["left", "right"]);
+
+    const depth = await harness.metric("woofx3.alerts.queue.depth");
+    expect(depth.unit).toBe("{alert}");
+    expect(depth.points.map((point) => [point.attributes, point.value])).toEqual([[{}, 1]]);
   });
 });

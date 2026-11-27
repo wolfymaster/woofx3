@@ -3,7 +3,14 @@ import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
 import { systemTimers } from "../../host/deps";
-import { countingIds, FakeTime, halfRandom, RecordingLogger } from "../../host/testing";
+import {
+  countingIds,
+  FakeTime,
+  halfRandom,
+  RecordingLogger,
+  unreadEventMetrics,
+  unreadPlatformMetrics,
+} from "../../host/testing";
 import type { TwitchAppContext } from "./application";
 import { SelfSentRegistry } from "./lib/self-sent";
 
@@ -137,6 +144,8 @@ function newApp(): InstanceType<typeof TwitchApplication> {
     ids: countingIds(),
     timers: systemTimers,
     random: halfRandom,
+    metrics: unreadEventMetrics(),
+    platformMetrics: unreadPlatformMetrics(),
     selfSent: selfSentLines(),
   });
 }

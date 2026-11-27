@@ -3,7 +3,7 @@ import { RefreshLatch } from "../adapters/obs/refresh-latch";
 import { connectorsConfig } from "../config";
 import { type AdapterRegistry, adapterRegistry, loadAdapters } from "./adapters";
 import { systemIds, systemTimers } from "./deps";
-import { FakeAdapter, FakeTime, halfRandom, servedSubject } from "./testing";
+import { FakeAdapter, FakeTime, halfRandom, servedSubject, unreadMeter } from "./testing";
 
 describe("loadAdapters", () => {
   test("ships with the twitch and obs adapters registered, each serving its subjects", async () => {
@@ -13,7 +13,14 @@ describe("loadAdapters", () => {
       woofx3DbProxyToken: "connectors-db-proxy-token-0123456789abcdef",
     });
     const { adapters, hostStates } = await loadAdapters(
-      adapterRegistry({ config, clock: new FakeTime(), ids: systemIds, random: halfRandom, timers: systemTimers })
+      adapterRegistry({
+        config,
+        clock: new FakeTime(),
+        ids: systemIds,
+        random: halfRandom,
+        timers: systemTimers,
+        meter: unreadMeter(),
+      })
     );
     expect([...adapters.keys()]).toEqual(["twitch", "obs"]);
     expect(adapters.get("twitch")?.manifest.serves.map((served) => served.subject)).toEqual(["twitchapi"]);

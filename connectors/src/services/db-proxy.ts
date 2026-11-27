@@ -1,3 +1,4 @@
+import { getMeter } from "@woofx3/common/logging";
 import type { Service } from "@woofx3/common/runtime";
 import { Ping } from "@woofx3/db/common.pb";
 import { dbProxyClientConfig as serviceAuthConfig } from "@woofx3/db/service-auth";
@@ -14,17 +15,15 @@ export function dbProxyClientConfig(baseURL: string, token: string, timeoutMs: n
   if (!(Number.isInteger(timeoutMs) && timeoutMs > 0)) {
     throw new Error(`the db-proxy timeout must be a whole number of milliseconds above 0, got ${timeoutMs}`);
   }
-  return {
-    ...serviceAuthConfig(baseURL, token),
-    rpcTransport: (url, { method, headers, body }) =>
-      fetch(url, {
-        method,
-        headers,
-        // fetch's types take only ArrayBuffer-backed views; twirpscript's body may sit on any buffer.
-        body: body instanceof Uint8Array ? new Uint8Array(body) : body,
-        signal: AbortSignal.timeout(timeoutMs),
-      }),
-  };
+  return serviceAuthConfig(baseURL, token, getMeter(), (url, { method, headers, body }) =>
+    fetch(url, {
+      method,
+      headers,
+      // fetch's types take only ArrayBuffer-backed views; twirpscript's body may sit on any buffer.
+      body: body instanceof Uint8Array ? new Uint8Array(body) : body,
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  );
 }
 
 /**

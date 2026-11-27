@@ -383,6 +383,41 @@ Every service's message bus client reads `messagebusUrl` and
 was started without authentication. A blank token sends none. See [Message bus hardening](./deployment.md#message-bus-hardening) for the
 server side and which key each client reads.
 
+### Metrics
+
+With a collector configured, every service exports metrics over the same OTLP endpoint, resource and headers as logs and traces (`/v1/metrics`). `WOOFX3_OTEL_METRICS_ENABLED` turns metrics off on their own and `WOOFX3_OTEL_METRICS_INTERVAL_MS` sets the export interval (default 60000). With no collector there is no metrics output.
+
+Durations are histograms in seconds with explicit bucket boundaries. Attributes stay bounded: no viewer, user, alert, workflow or run id, and no concrete message subject.
+
+| Metric | Type | Unit | Attributes | Emitted by |
+|---|---|---|---|---|
+| `woofx3.events.received` | counter | `{event}` | `event.type`, `platform` | connectors: every event a platform adapter builds, counted before it is published |
+| `woofx3.events.last_received_time` | observable gauge | `s` (Unix time) | `platform` | connectors: when the latest event arrived. A value that stops moving while a stream is live means events stopped arriving |
+| `woofx3.event.ingest.lag` | histogram | `s` | `platform` | connectors: platform timestamp to arrival, for events whose payload carries a timestamp (Twitch follows and channel point redemptions) |
+| `woofx3.event_shipper.queue.size` | observable gauge | `{event}` | `target` | api: envelopes buffered for a Convex events target |
+| `woofx3.event_shipper.dropped` | counter | `{event}` | `target` | api: envelopes dropped because the buffer was full |
+| `woofx3.event_shipper.post.duration` | histogram | `s` | `target` | api: each POST to the target, delivered or not |
+| `woofx3.event_shipper.post.failures` | counter | `{request}` | `target` | api: POSTs that were retried or refused |
+| `messaging.process.duration` | histogram | `s` | `messaging.system=nats`, `messaging.destination.name`, `error.type` | the TypeScript NATS client: each subscription handler call. The destination is the subscription's pattern, never the message's concrete subject; `error.type` is the thrown error's name |
+| `rpc.client.duration` | histogram | `s` | `rpc.system=twirp`, `rpc.service`, `rpc.method`, `error.type` | the TypeScript db client (every service that builds its config with `dbProxyClientConfig`) and the Rust Twirp client: each call to db-proxy. `error.type` is the Twirp error code, `http_<status>` for a non-Twirp error response, or `request` when there was no response |
+| `woofx3.barkloader.function.duration` | histogram | `s` | `module.id`, `function.name`, `outcome` (`ok`, `error`) | barkloader: each module function run in the sandbox |
+| `woofx3.workflow.runs` | counter | `{run}` | `outcome` (`completed`, `failed`, `cancelled`, `timed_out`), `trigger.type` | workflow: runs that reached a final state. `timed_out` is a run failed by a wait step's timeout. `trigger.type` is the triggering event's type. Dry runs are not counted |
+| `woofx3.workflow.run.duration` | histogram | `s` | `outcome` | workflow: start to final state |
+| `woofx3.workflow.runs.active` | up-down counter | `{run}` | none | workflow: runs started and not yet in a final state, including queued and waiting ones |
+| `woofx3.workflow.step.duration` | histogram | `s` | `step.action`, `outcome` (`success`, `failed`, `cancelled`) | workflow: each settled step. `step.action` is the registered action, or the task type for non-action steps. Skipped steps are not timed |
+| `messaging.process.duration` | histogram | `s` | `messaging.system=nats`, `messaging.destination.name`, `error.type` | Go NATS client: each subscription handler. The destination is the subscription pattern, never the concrete subject. Handlers return no error, so `error.type` is only `panic` |
+| `rpc.server.duration` | histogram | `s` | `rpc.system=twirp`, `rpc.service`, `rpc.method`, `error.type` | db-proxy: every Twirp call it serves, refused ones included. `error.type` is the Twirp error code |
+| `rpc.client.duration` | histogram | `s` | `rpc.system=twirp`, `rpc.service`, `rpc.method`, `error.type` | Go db client (workflow): every Twirp call. `error.type` is the Twirp code, `unknown` when the body is not a Twirp error, `transport_error` when there was no response |
+| `woofx3.alerts` | counter | `{alert}` | `outcome` | sceneManager: `queued` (recorded for a running scene), `played` (a page reported it finished), `skipped` (Skip ended the playing alert), `dropped` (Clear removed a waiting one), `failed` (refused or reached no scene). An alert shown on several widgets is counted as `played` once per ack that closes it |
+| `woofx3.alerts.queue.depth` | observable gauge | `{alert}` | none | sceneManager: alerts no page has started yet, counted once however many widgets hold them |
+| `woofx3.alerts.queue.wait` | histogram | `s` | none | sceneManager: from an alert being recorded for a widget to a page reporting it started. Alerts recovered after a restart have no recorded time and are left out |
+| `woofx3.event.pipeline.duration` | histogram | `s` | `stage` (`layout`, `frames`, `scenes`, `record`) | sceneManager: time an alert's dispatch spends in each stage before any page hears of it |
+| `woofx3.dependency.up` | observable gauge | `1` | `dependency` (`nats`, `db`, `barkloader`, `convex_queue`) | api: 1 or 0 each collection. `nats` is the client not being closed, `db` a db-proxy call succeeding, `barkloader` a fresh heartbeat, `convex_queue` the last POST to every events target delivering. A dependency that cannot be told (messaging not configured, nothing shipped yet) is not reported |
+| `woofx3.platform.connection.up` | observable gauge | `1` | `platform` | connectors: 1 while every required Twitch EventSub subscription is confirmed |
+| `woofx3.platform.reconnects` | counter | `{reconnect}` | `platform` | connectors: each Twitch connection made after the first, whether the host restarted the adapter or a relink reconnected it |
+
+`target` is the host of the events URL.
+
 ### Staying connected to the message bus
 
 The shared message bus clients (Go and TypeScript) own one connection each,

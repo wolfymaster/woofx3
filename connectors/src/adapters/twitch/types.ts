@@ -2,6 +2,7 @@ import type { HelixUser } from "@twurple/api";
 import type EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import type { Clock, Logger, Timers } from "../../host/deps";
 import type { ChatterMembershipEnricher } from "./lib/chatterMembership";
+import type { EventMetrics } from "./lib/eventMetrics";
 import type { SelfSentRegistry } from "./lib/self-sent";
 
 /**
@@ -17,6 +18,7 @@ export interface Context {
   logger: Logger;
   messageBus: EventPublisher;
   events: EventFactory;
+  metrics: EventMetrics;
   /**
    * Fills in the membership fields Twitch does not stamp on a message.
    * Optional: enrichment is switched off by config, and a chat message

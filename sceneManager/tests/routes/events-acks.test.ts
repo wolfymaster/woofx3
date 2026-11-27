@@ -8,6 +8,7 @@ function deps(failed: string[]) {
   return {
     ctx: { logger, services: { db: { client: { updateAlertLifecycle: async () => ({}) } } } },
     sessionTokens: { verify: async (token: string) => (token === "good" ? { sceneId: "scene-1" } : null) },
+    alertMetrics: { count: () => {} },
     deliveryStore: {
       ackDelivered: async () => failed,
       ackCompleted: async () => ({ closed: [], failed }),

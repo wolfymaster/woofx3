@@ -1,10 +1,21 @@
 import path from "node:path";
-import { type Attributes, type Span, type SpanOptions, SpanStatusCode, type Tracer, trace } from "@opentelemetry/api";
+import {
+  type Attributes,
+  type Meter,
+  metrics,
+  type Span,
+  type SpanOptions,
+  SpanStatusCode,
+  type Tracer,
+  trace,
+} from "@opentelemetry/api";
 import { type Logger as OtelLogger, SeverityNumber } from "@opentelemetry/api-logs";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { type Resource, resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
+import { MeterProvider, type MetricReader, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
 import { BatchSpanProcessor, type SpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions";
@@ -25,6 +36,8 @@ export type Telemetry = {
   readonly serviceName: string;
   /** True only when a span processor is actually installed. */
   readonly tracingActive: boolean;
+  /** True only when a meter provider is registered; otherwise the global no-op meter stays. */
+  readonly metricsActive: boolean;
   shutdown(): Promise<void>;
 };
 
@@ -54,6 +67,18 @@ export function buildLoggerProvider(serviceName: string, endpoint: string, confi
     processors: [new BatchLogRecordProcessor({ exporter })],
     resource: buildResource(serviceName, config),
   });
+}
+
+export function buildMeterProvider(serviceName: string, config: LoggingConfig, reader: MetricReader): MeterProvider {
+  return new MeterProvider({ readers: [reader], resource: buildResource(serviceName, config) });
+}
+
+function buildOtlpMetricReader(endpoint: string, config: LoggingConfig): PeriodicExportingMetricReader {
+  const exporter = new OTLPMetricExporter({
+    headers: config.otelExporterHeaders,
+    url: `${normalizeEndpoint(endpoint)}/v1/metrics`,
+  });
+  return new PeriodicExportingMetricReader({ exporter, exportIntervalMillis: config.otelMetricsIntervalMs });
 }
 
 /**
@@ -92,11 +117,12 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     throw new Error("initTelemetry: serviceName is required");
   }
 
-  if (!config.otelEnabled && !config.otelTracingEnabled) {
+  if (!config.otelEnabled && !config.otelTracingEnabled && !config.otelMetricsEnabled) {
     telemetry = {
       otelLogger: null,
       serviceName,
       shutdown: async () => {},
+      metricsActive: false,
       tracingActive: false,
     };
     return telemetry;
@@ -123,11 +149,19 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     }
   }
 
+  // Like logs, metrics have no local-file fallback: without a collector the global no-op meter stays.
+  let meterProvider: MeterProvider | null = null;
+  if (config.otelMetricsEnabled && config.otelExporterEndpoint) {
+    meterProvider = buildMeterProvider(serviceName, config, buildOtlpMetricReader(config.otelExporterEndpoint, config));
+    metrics.setGlobalMeterProvider(meterProvider);
+  }
+
   telemetry = {
+    metricsActive: meterProvider != null,
     otelLogger,
     serviceName,
     shutdown: async () => {
-      await Promise.all([loggerProvider?.shutdown(), tracerProvider?.shutdown()]);
+      await Promise.all([loggerProvider?.shutdown(), tracerProvider?.shutdown(), meterProvider?.shutdown()]);
     },
     tracingActive: tracerProvider != null,
   };
@@ -143,6 +177,10 @@ export async function shutdownTelemetry(): Promise<void> {
     return;
   }
   await telemetry.shutdown();
+}
+
+export function getMeter(name: string = INSTRUMENTATION_SCOPE): Meter {
+  return metrics.getMeter(name);
 }
 
 export function getTracer(name: string = INSTRUMENTATION_SCOPE): Tracer {

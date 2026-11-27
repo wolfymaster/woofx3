@@ -1,6 +1,12 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { Msg as NatsCoreMsg } from "@nats-io/nats-core";
+import { MetricsHarness } from "@woofx3/common/logging/metrics-testing";
 import { consumeMessages } from "@woofx3/nats/src/client";
+import { MessageProcessMetrics } from "@woofx3/nats/src/message-metrics";
+
+function unreadMetrics(): MessageProcessMetrics {
+  return new MessageProcessMetrics(new MetricsHarness().meter);
+}
 
 function logger() {
   return { info: mock(() => {}), warn: mock(() => {}), debug: mock(() => {}), error: mock(() => {}) };
@@ -26,7 +32,8 @@ describe("consumeMessages", () => {
           throw new Error("bad message");
         }
       },
-      log
+      log,
+      unreadMetrics()
     );
 
     expect(seen).toEqual(["alerts.a", "alerts.b", "alerts.c"]);
@@ -45,7 +52,8 @@ describe("consumeMessages", () => {
       async () => {
         throw new Error("db down");
       },
-      log
+      log,
+      unreadMetrics()
     );
     await Promise.resolve();
 
@@ -71,7 +79,8 @@ describe("consumeMessages", () => {
           await blocked;
         }
       },
-      logger()
+      logger(),
+      unreadMetrics()
     );
 
     expect(started).toEqual(["x.slow", "x.fast"]);

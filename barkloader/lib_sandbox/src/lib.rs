@@ -4,6 +4,7 @@ pub mod extensions;
 mod function_executor;
 pub mod function_result;
 pub mod host;
+pub mod metrics;
 pub mod models;
 pub mod module_registry;
 pub mod net;

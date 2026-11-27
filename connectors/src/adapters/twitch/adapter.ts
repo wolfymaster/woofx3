@@ -5,6 +5,7 @@ import {
 } from "@woofx3/common/cloudevents/Twitch/commands";
 import { EventType as TwitchEventType } from "@woofx3/common/cloudevents/Twitch/events";
 import { INTEGRATION_TOKEN_UPDATED_SUBJECT } from "@woofx3/common/integrations/integration-settings";
+import type { Meter } from "@woofx3/common/logging";
 import { TWITCH_TOKEN_SUBJECT } from "@woofx3/twitch/dashboard-auth-provider";
 import type { TwitchConfig } from "../../config/twitch";
 import type {
@@ -19,6 +20,8 @@ import type { RandomSource, Timers } from "../../host/deps";
 import type { LinkState } from "../../host/link-readers";
 import TwitchApplication, { type TwitchAppContext, type TwitchReplyDeps, twitchApiErrorReply } from "./application";
 import { type TwitchEgressSession, twitchEgress } from "./egress";
+import { EventMetrics } from "./lib/eventMetrics";
+import { PlatformConnectionMetrics } from "./lib/platformMetrics";
 import { SelfSentRegistry } from "./lib/self-sent";
 import { SendQueue } from "./lib/send-queue";
 
@@ -52,6 +55,7 @@ export interface TwitchAdapterDeps extends TwitchReplyDeps {
   config: TwitchConfig;
   timers: Timers;
   random: RandomSource;
+  meter: Meter;
 }
 
 /**
@@ -67,8 +71,17 @@ export class TwitchAdapter implements Adapter {
   readonly manifest: AdapterManifest;
   private run: { app: TwitchApplication; ctx: TwitchAppContext } | undefined;
   private readonly selfSent: SelfSentRegistry;
+  /** Built once: a run builds its own application, and a second set of instruments would repeat the series. */
+  private readonly metrics: EventMetrics;
+  private readonly platformMetrics: PlatformConnectionMetrics;
 
   constructor(private readonly deps: TwitchAdapterDeps) {
+    this.metrics = new EventMetrics(deps.meter, deps.clock);
+    this.platformMetrics = new PlatformConnectionMetrics(
+      deps.meter,
+      "twitch",
+      () => this.run?.app.eventSubStatus().ready ?? false
+    );
     this.selfSent = new SelfSentRegistry(deps.config.selfSent, deps.clock);
     const queue = new SendQueue(deps.config.sendQueueCap);
     this.manifest = {
@@ -107,6 +120,8 @@ export class TwitchAdapter implements Adapter {
       timers: this.deps.timers,
       random: this.deps.random,
       selfSent: this.selfSent,
+      metrics: this.metrics,
+      platformMetrics: this.platformMetrics,
     });
     const appCtx: TwitchAppContext = {
       logger: ctx.logger,

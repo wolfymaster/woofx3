@@ -4,6 +4,7 @@ import type { EventSubChannelChatNotificationEvent } from "@twurple/eventsub-bas
 import type { EventSubWsListener } from "@twurple/eventsub-ws";
 import EventFactory from "@woofx3/common/cloudevents/EventFactory";
 import { EventType } from "@woofx3/common/cloudevents/Twitch/events";
+import { unreadEventMetrics } from "../../../../host/testing";
 import type { Context } from "../../types";
 import onChannelChatNotification from "./onChannelChatNotification";
 
@@ -38,6 +39,7 @@ describe("onChannelChatNotification", () => {
     const ctx = {
       broadcaster: { id: BROADCASTER } as HelixUser,
       logger: { warn: mock(() => {}) } as unknown as Context["logger"],
+      metrics: unreadEventMetrics(),
       messageBus: { publish } as unknown as Context["messageBus"],
       events: new EventFactory({ source: "test" }),
     } as Context;

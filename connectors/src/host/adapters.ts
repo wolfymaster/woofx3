@@ -1,3 +1,4 @@
+import type { Meter } from "@woofx3/common/logging";
 import type { ConnectorsConfig } from "../config";
 import type { Adapter, AdapterModule } from "./adapter";
 import { ADAPTER_IDS, type AdapterId } from "./adapter-ids";
@@ -15,6 +16,7 @@ export interface AdapterRegistryDeps {
   ids: IdSource;
   random: RandomSource;
   timers: Timers;
+  meter: Meter;
 }
 
 /**
@@ -31,6 +33,7 @@ export function adapterRegistry(deps: AdapterRegistryDeps): AdapterRegistry {
         ids: deps.ids,
         timers: deps.timers,
         random: deps.random,
+        meter: deps.meter,
       });
     },
     obs: async () => {

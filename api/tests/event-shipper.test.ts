@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { CallbackEnvelope } from "@woofx3/api/webhooks";
+import { MetricsHarness } from "@woofx3/common/logging/metrics-testing";
 import { EventShipper, type EventShipperConfig, type Sleep } from "../src/event-shipper";
 
 const TARGET = { url: "https://queue.example/v1/engine-events", token: "events-token" };
@@ -72,14 +73,34 @@ function scriptedFetch(statuses: (number | Error)[] = []) {
   return { posts, fetch: fetch as unknown as typeof globalThis.fetch };
 }
 
+/** A clock that moves only when a test says so. */
+function steppedClock(start = 0) {
+  let now = start;
+  return {
+    clock: { now: () => now },
+    advance: (ms: number) => {
+      now += ms;
+    },
+  };
+}
+
 function shipper(overrides: Partial<EventShipperConfig> = {}, statuses: (number | Error)[] = []) {
   const config = { ...CONFIG, ...overrides };
   const logger = fakeLogger();
   const { delays, sleep } = recordingSleep(config);
   const { posts, fetch } = scriptedFetch(statuses);
-  const s = new EventShipper({ logger, config, random: { next: () => 0.5 }, sleep, fetch });
+  const harness = new MetricsHarness();
+  const s = new EventShipper({
+    logger,
+    config,
+    random: { next: () => 0.5 },
+    clock: steppedClock().clock,
+    meter: harness.meter,
+    sleep,
+    fetch,
+  });
   s.start();
-  return { s, logger, delays, posts };
+  return { s, logger, delays, posts, harness };
 }
 
 function ids(n: number, from = 1): string[] {
@@ -160,7 +181,16 @@ describe("EventShipper", () => {
       delivered.push(...(JSON.parse(init.body as string) as { events: CallbackEnvelope[] }).events.map((e) => e.id));
       return new Response(null, { status: 202 });
     }) as unknown as typeof globalThis.fetch;
-    const s = new EventShipper({ logger, config, random: { next: () => 0.5 }, sleep, fetch });
+    const harness = new MetricsHarness();
+    const s = new EventShipper({
+      logger,
+      config,
+      random: { next: () => 0.5 },
+      clock: steppedClock().clock,
+      meter: harness.meter,
+      sleep,
+      fetch,
+    });
     s.start();
 
     for (const id of ids(6)) {
@@ -178,6 +208,74 @@ describe("EventShipper", () => {
       "EventShipper: events were dropped while the buffer was full",
       expect.objectContaining({ dropped: 2 })
     );
+    const dropped = await harness.metric("woofx3.event_shipper.dropped");
+    expect(dropped.unit).toBe("{event}");
+    expect(dropped.points.map((point) => [point.attributes, point.value])).toEqual([[{ target: "queue.example" }, 2]]);
+  });
+
+  it("reports the buffered envelopes per target host while a POST is in flight", async () => {
+    const config = { ...CONFIG, maxPostEvents: 1 };
+    const harness = new MetricsHarness();
+    const fetch = (() => new Promise<Response>(() => {})) as unknown as typeof globalThis.fetch;
+    const s = new EventShipper({
+      logger: fakeLogger(),
+      config,
+      random: { next: () => 0.5 },
+      clock: steppedClock().clock,
+      meter: harness.meter,
+      sleep: async () => {},
+      fetch,
+    });
+    s.start();
+
+    for (const id of ids(3)) {
+      s.ship(TARGET, envelope(id));
+    }
+
+    const size = await harness.metric("woofx3.event_shipper.queue.size");
+    expect(size.unit).toBe("{event}");
+    expect(size.points.map((point) => [point.attributes, point.value])).toEqual([[{ target: "queue.example" }, 2]]);
+  });
+
+  it("times every POST in seconds and counts the ones that did not deliver", async () => {
+    const harness = new MetricsHarness();
+    const { clock, advance } = steppedClock();
+    const statuses = [503, 202];
+    let delivered: () => void = () => {};
+    const done = new Promise<void>((resolve) => {
+      delivered = resolve;
+    });
+    const fetch = (async () => {
+      advance(250);
+      const status = statuses.shift();
+      if (status === 202) {
+        delivered();
+      }
+      return new Response(null, { status });
+    }) as unknown as typeof globalThis.fetch;
+    const s = new EventShipper({
+      logger: fakeLogger(),
+      config: CONFIG,
+      random: { next: () => 0.5 },
+      clock,
+      meter: harness.meter,
+      sleep: async () => {},
+      fetch,
+    });
+    s.start();
+
+    s.ship(TARGET, envelope("e1"));
+    await done;
+    await s.stop();
+
+    const duration = await harness.metric("woofx3.event_shipper.post.duration");
+    expect(duration.unit).toBe("s");
+    expect(duration.points).toHaveLength(1);
+    expect(duration.points[0]?.attributes).toEqual({ target: "queue.example" });
+    expect(duration.points[0]?.value).toMatchObject({ count: 2, sum: 0.5 });
+    const failures = await harness.metric("woofx3.event_shipper.post.failures");
+    expect(failures.unit).toBe("{request}");
+    expect(failures.points.map((point) => [point.attributes, point.value])).toEqual([[{ target: "queue.example" }, 1]]);
   });
 
   it("stop gives up after drainTimeoutMs on a target that never answers, and logs what it abandoned", async () => {
@@ -187,7 +285,15 @@ describe("EventShipper", () => {
         throw new Error("aborted");
       })) as unknown as typeof globalThis.fetch;
     // Every wait, the drain timeout included, passes at once.
-    const s = new EventShipper({ logger, config: CONFIG, random: { next: () => 0.5 }, sleep: async () => {}, fetch });
+    const s = new EventShipper({
+      logger,
+      config: CONFIG,
+      random: { next: () => 0.5 },
+      clock: steppedClock().clock,
+      meter: new MetricsHarness().meter,
+      sleep: async () => {},
+      fetch,
+    });
     s.start();
     s.ship(TARGET, envelope("e1"));
     s.ship(TARGET, envelope("e2"));
@@ -216,9 +322,32 @@ describe("EventShipper", () => {
           logger: fakeLogger(),
           config: { ...CONFIG, maxBuffered: 10, maxPostEvents: 50 },
           random: { next: () => 0.5 },
+          clock: steppedClock().clock,
+          meter: new MetricsHarness().meter,
           sleep: async () => {},
           fetch,
         })
     ).toThrow("maxBuffered >= maxPostEvents");
   });
 });
+
+describe("EventShipper delivery health", () => {
+  it("is unknown before anything ships, then follows the last POST to each target", async () => {
+    const { s, delays } = shipper({}, [503, 202]);
+    expect(s.deliveryHealthy()).toBeNull();
+
+    s.ship(TARGET, envelope("e1"));
+    await untilCalled(delays);
+    expect(s.deliveryHealthy()).toBe(false);
+
+    await s.stop();
+    expect(s.deliveryHealthy()).toBe(true);
+  });
+});
+
+/** Resolves once a backoff wait has been recorded, i.e. the first POST failed. */
+async function untilCalled(delays: number[]): Promise<void> {
+  while (delays.length === 0) {
+    await Promise.resolve();
+  }
+}

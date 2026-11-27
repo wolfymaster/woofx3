@@ -1,5 +1,6 @@
 import type { Logger } from "@woofx3/common/runtime";
 import { type AckRefusal, encodeStreamFrame, KEEPALIVE_FRAME, parseAckBody } from "../../contract/overlay-stream";
+import type { AlertMetrics } from "../events/alert-metrics";
 import { type AlertLifecycleWriter, alertReportTargets, updateAlertLifecycle } from "../events/alert-dispatch";
 import { handleStatusReport } from "../events/handlers";
 import type { HttpDeps } from "../http";
@@ -171,7 +172,7 @@ export async function handleEventCompletedRoute(
     return jsonError(400, "invalid_body");
   }
   const { closed, failed } = await deps.deliveryStore.ackCompleted(sceneId, eventId, instanceIds);
-  await reportAlertsCompleted(deps.ctx.services.db.client, deps.ctx.logger, closed);
+  await reportAlertsCompleted(deps.ctx.services.db.client, deps.ctx.logger, closed, deps.alertMetrics);
   return ackAnswer(failed);
 }
 
@@ -196,13 +197,18 @@ function ackAnswer(failed: string[]): Response {
  * An alert fanned out to several widgets completes on the first one to finish;
  * the db proxy refuses the others' reports of the same verdict and publishes
  * nothing for them.
+ *
+ * Counted as played once per alert in `closed`. An alert on several widgets
+ * is counted again for each widget that finishes in a separate ack.
  */
-export function reportAlertsCompleted(
+export async function reportAlertsCompleted(
   db: AlertLifecycleWriter,
   logger: Logger,
-  closed: Array<{ type: string; key: string; value: unknown }>
+  closed: Array<{ type: string; key: string; value: unknown }>,
+  metrics: AlertMetrics
 ): Promise<void> {
-  return reportAlerts(db, logger, closed, "completed");
+  metrics.count("played", alertReportTargets(closed).length);
+  await reportAlerts(db, logger, closed, "completed");
 }
 
 /** Move each alert among `deliveries` to `status`, best-effort: a refused or failed write is only logged. */
