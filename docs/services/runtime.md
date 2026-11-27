@@ -402,6 +402,9 @@ Durations are histograms in seconds with explicit bucket boundaries. Attributes 
 | `woofx3.alerts.queue.depth` | observable gauge | `{alert}` | none | sceneManager: alerts no page has started yet, counted once however many widgets hold them |
 | `woofx3.alerts.queue.wait` | histogram | `s` | none | sceneManager: from an alert being recorded for a widget to a page reporting it started. Alerts recovered after a restart have no recorded time and are left out |
 | `woofx3.event.pipeline.duration` | histogram | `s` | `stage` (`layout`, `frames`, `scenes`, `record`) | sceneManager: time an alert's dispatch spends in each stage before any page hears of it |
+| `woofx3.dependency.up` | observable gauge | `1` | `dependency` (`nats`, `db`, `barkloader`, `convex_queue`) | api: 1 or 0 each collection. `nats` is the client not being closed, `db` a db-proxy call succeeding, `barkloader` a fresh heartbeat, `convex_queue` the last POST to every events target delivering. A dependency that cannot be told (messaging not configured, nothing shipped yet) is not reported |
+| `woofx3.platform.connection.up` | observable gauge | `1` | `platform` | connectors: 1 while every required Twitch EventSub subscription is confirmed |
+| `woofx3.platform.reconnects` | counter | `{reconnect}` | `platform` | connectors: each Twitch connection made after the first, whether the host restarted the adapter or a relink reconnected it |
 
 `target` is the host of the events URL.
 

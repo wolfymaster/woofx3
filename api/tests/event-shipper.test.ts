@@ -330,3 +330,24 @@ describe("EventShipper", () => {
     ).toThrow("maxBuffered >= maxPostEvents");
   });
 });
+
+describe("EventShipper delivery health", () => {
+  it("is unknown before anything ships, then follows the last POST to each target", async () => {
+    const { s, delays } = shipper({}, [503, 202]);
+    expect(s.deliveryHealthy()).toBeNull();
+
+    s.ship(TARGET, envelope("e1"));
+    await untilCalled(delays);
+    expect(s.deliveryHealthy()).toBe(false);
+
+    await s.stop();
+    expect(s.deliveryHealthy()).toBe(true);
+  });
+});
+
+/** Resolves once a backoff wait has been recorded, i.e. the first POST failed. */
+async function untilCalled(delays: number[]): Promise<void> {
+  while (delays.length === 0) {
+    await Promise.resolve();
+  }
+}

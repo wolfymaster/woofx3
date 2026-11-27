@@ -5,6 +5,7 @@ import type { Msg } from "@woofx3/nats/src/types";
 import type { Api } from "./api";
 import type { ApiConfig } from "./config";
 import type DbService from "./db-service";
+import { registerDependencyMetrics } from "./dependency-metrics";
 import type { EngineEventStream } from "./engine-event-stream";
 import type { EventCatalog } from "./event-catalog";
 import type { EventLogSelectionSource } from "./event-log-selection";
@@ -95,7 +96,7 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       { initWorkflowRunHandlers },
       { initDatabaseRecordHandlers },
       { default: BarkloaderClient },
-      { checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
+      { BARKLOADER_HEARTBEAT_MAX_AGE_MS, checkReadiness, HEARTBEAT_SUBJECT, HeartbeatTracker },
       { connectMessageBus },
       { describeHealth },
       { ENGINE_CAPABILITIES_SCHEMA, hostingOffersPairing, supportedEngineCapabilities },
@@ -238,6 +239,22 @@ export default class ApiApplication implements IApplication<ApiRuntimeContext, A
       fetch,
     });
     this.eventShipper.start();
+    const eventShipper = this.eventShipper;
+    registerDependencyMetrics(
+      getMeter(),
+      {
+        // No client means messaging is not configured: unknown, not down.
+        nats: () => (natsClient ? !natsClient.isClosed() : null),
+        db: async () => {
+          await db.migrationStatus();
+          return true;
+        },
+        barkloader: () =>
+          natsClient ? heartbeats.isReady("barkloader", Date.now(), BARKLOADER_HEARTBEAT_MAX_AGE_MS) : null,
+        convex_queue: () => eventShipper.deliveryHealthy(),
+      },
+      logger
+    );
     const webhookClient = new WebhookClient(
       db,
       logger,

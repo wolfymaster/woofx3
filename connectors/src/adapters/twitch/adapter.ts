@@ -21,6 +21,7 @@ import type { LinkState } from "../../host/link-readers";
 import TwitchApplication, { type TwitchAppContext, type TwitchReplyDeps, twitchApiErrorReply } from "./application";
 import { type TwitchEgressSession, twitchEgress } from "./egress";
 import { EventMetrics } from "./lib/eventMetrics";
+import { PlatformConnectionMetrics } from "./lib/platformMetrics";
 import { SelfSentRegistry } from "./lib/self-sent";
 import { SendQueue } from "./lib/send-queue";
 
@@ -72,9 +73,15 @@ export class TwitchAdapter implements Adapter {
   private readonly selfSent: SelfSentRegistry;
   /** Built once: a run builds its own application, and a second set of instruments would repeat the series. */
   private readonly metrics: EventMetrics;
+  private readonly platformMetrics: PlatformConnectionMetrics;
 
   constructor(private readonly deps: TwitchAdapterDeps) {
     this.metrics = new EventMetrics(deps.meter, deps.clock);
+    this.platformMetrics = new PlatformConnectionMetrics(
+      deps.meter,
+      "twitch",
+      () => this.run?.app.eventSubStatus().ready ?? false
+    );
     this.selfSent = new SelfSentRegistry(deps.config.selfSent, deps.clock);
     const queue = new SendQueue(deps.config.sendQueueCap);
     this.manifest = {
@@ -114,6 +121,7 @@ export class TwitchAdapter implements Adapter {
       random: this.deps.random,
       selfSent: this.selfSent,
       metrics: this.metrics,
+      platformMetrics: this.platformMetrics,
     });
     const appCtx: TwitchAppContext = {
       logger: ctx.logger,

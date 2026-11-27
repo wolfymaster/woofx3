@@ -24,6 +24,7 @@ import { AdBreakLeadSetting } from "./lib/adBreakSettings";
 import { ChatterMembershipEnricher, TwurpleMembershipLookup } from "./lib/chatterMembership";
 import type { EventMetrics } from "./lib/eventMetrics";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
+import type { PlatformConnectionMetrics } from "./lib/platformMetrics";
 import { type PublishTarget, publishEvent } from "./lib/publishEvent";
 import type { SelfSentRegistry } from "./lib/self-sent";
 import { enqueueShoutoutOverNats } from "./lib/shoutoutQueue";
@@ -114,6 +115,7 @@ export interface TwitchApplicationDeps extends TwitchReplyDeps {
    */
   selfSent: SelfSentRegistry;
   metrics: EventMetrics;
+  platformMetrics: PlatformConnectionMetrics;
 }
 
 /** How a connect attempt ended. `not_linked`: no Twitch token is stored. */
@@ -361,6 +363,7 @@ export default class TwitchApplication {
     ctx.twitchApi = connected.twitchApi;
     this.link = "connected";
     void this.track(this.seedLiveState(ctx, connected, signal));
+    this.deps.platformMetrics.connected();
     ctx.logger.info("twitch: connected", { broadcasterId: connected.broadcaster.id });
     if (this.relinkPending) {
       this.relinkPending = false;
