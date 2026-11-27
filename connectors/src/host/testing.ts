@@ -5,6 +5,7 @@ import type { StoredRelayConfig } from "@woofx3/common/cloudevents/Relay/relay";
 import type { Meter } from "@woofx3/common/logging";
 import { MetricsHarness } from "@woofx3/common/logging/metrics-testing";
 import { EventMetrics } from "../adapters/twitch/lib/eventMetrics";
+import { PlatformConnectionMetrics } from "../adapters/twitch/lib/platformMetrics";
 import type { EndpointStore } from "../companion/endpoint-store";
 import type { CompanionGateway, CompanionHandle } from "../companion/types";
 import { CompanionEnvSchema, companionConfig } from "../config/companion";
@@ -413,4 +414,8 @@ export function unreadMeter(): Meter {
 
 export function unreadEventMetrics(): EventMetrics {
   return new EventMetrics(unreadMeter(), new FakeTime());
+}
+
+export function unreadPlatformMetrics(): PlatformConnectionMetrics {
+  return new PlatformConnectionMetrics(unreadMeter(), "twitch", () => false);
 }

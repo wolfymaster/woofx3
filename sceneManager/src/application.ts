@@ -1,3 +1,4 @@
+import { getMeter } from "@woofx3/common/logging";
 import { describeRequestGuardPolicy } from "@woofx3/common/http/request-guard";
 import type {
   ApplicationContext,
@@ -12,9 +13,11 @@ import { presentAlertDeliveries } from "./events/alert-dispatch";
 import { DeliveryStore } from "./events/delivery-store";
 import { closeDeliveriesToRemovedPlacements } from "./events/removed-placements";
 import { GoogleFontCache } from "./fonts/google-font-cache";
+import { AlertMetrics } from "./events/alert-metrics";
 import { createHttpServer } from "./http";
 import { initSubscriptions } from "./nats-subscriptions";
 import { type RefreshRequester, startRefreshRequests, systemRefreshTimers } from "./obs/refresh-request";
+import { ALERT_EVENT_TYPE } from "./scene/alert-layout";
 import { FrameAssembler, HttpBarkloaderFrameClient } from "./scene/frame-assembler";
 import { FrameCatalog } from "./scene/frame-catalog";
 import { MediaProxy } from "./scene/media-proxy";
@@ -92,7 +95,9 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
     const mediaProxy = new MediaProxy(runtimeConfig.barkloaderKey);
     const sessionTokens = new SessionTokenService(runtimeConfig.tokenSecret);
 
-    const deliveryStore = new DeliveryStore(db, logger, presentAlertDeliveries(mediaProxy));
+    const alertMetrics = new AlertMetrics(getMeter());
+    const deliveryStore = new DeliveryStore(db, logger, presentAlertDeliveries(mediaProxy), alertMetrics);
+    alertMetrics.observeQueueDepth(() => deliveryStore.waitingCount(ALERT_EVENT_TYPE));
     // Edits are written back here, so the database stays each scene's record.
     const sceneDocuments = new SceneDocuments(host, deliveryStore, logger, {
       mediaProxy,
@@ -123,6 +128,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       db,
       host,
       deliveryStore,
+      alertMetrics,
       framing,
       moduleState,
       resolver,
@@ -138,6 +144,7 @@ export default class SceneManager implements IApplication<SceneManagerContext, S
       frameAssembler,
       sessionTokens,
       deliveryStore,
+      alertMetrics,
       moduleState,
       settingsDb: db,
       sceneDocuments,

@@ -18,6 +18,7 @@ import {
   dispatchAlert,
   updateAlertLifecycle,
 } from "./alert-dispatch";
+import type { AlertMetrics } from "./alert-metrics";
 import type { DeliveryStore, OpenDeliveryRef } from "./delivery-store";
 
 /** Operator requests the api forwards; request/reply, answered by this service. */
@@ -38,6 +39,7 @@ export interface AlertQueueDeps extends AlertQueueReadDeps {
   db: AlertLifecycleWriter;
   deliveryStore: Pick<DeliveryStore, "connectedSceneIds" | "openDeliveriesByInstance" | "cancel">;
   logger: Logger;
+  metrics: AlertMetrics;
 }
 
 interface Cancellation {
@@ -83,7 +85,7 @@ export async function skipCurrentAlerts(deps: AlertQueueDeps): Promise<AlertSkip
   if (!alertWidgets) {
     return { ok: false, skipped: 0, reason: NO_OVERLAY_OPEN };
   }
-  const skipped = await cancelAlerts(alertWidgets, playing, deps);
+  const skipped = await cancelAlerts(alertWidgets, playing, deps, "skipped");
   deps.logger.info("alert queue: skipped the playing alert", { skipped });
   return { ok: true, skipped };
 }
@@ -98,7 +100,7 @@ export async function clearQueuedAlerts(deps: AlertQueueDeps): Promise<AlertClea
   if (!alertWidgets) {
     return { ok: false, cleared: 0, reason: NO_OVERLAY_OPEN };
   }
-  const cleared = await cancelAlerts(alertWidgets, waiting, deps);
+  const cleared = await cancelAlerts(alertWidgets, waiting, deps, "dropped");
   deps.logger.info("alert queue: cleared waiting alerts", { cleared });
   return { ok: true, cleared };
 }
@@ -194,12 +196,13 @@ async function loadAlertWidgets(deps: AlertQueueReadDeps): Promise<Map<string, S
  *
  * Returns how many distinct plays were cancelled: one play shows on every
  * alert widget of its target name, and the operator asked about alerts, not
- * widgets.
+ * widgets. Each is counted under `outcome`.
  */
 async function cancelAlerts(
   alertWidgets: Map<string, Set<string>>,
   choose: Chooser,
-  deps: AlertQueueDeps
+  deps: AlertQueueDeps,
+  outcome: "skipped" | "dropped"
 ): Promise<number> {
   const plan = planAlerts(alertWidgets, choose, deps.deliveryStore);
 
@@ -213,6 +216,7 @@ async function cancelAlerts(
     writes.push(reportAlertSkipped(deps.db, deps.logger, target));
   }
   await Promise.all(writes);
+  deps.metrics.count(outcome, targets.length);
   return targets.length;
 }
 

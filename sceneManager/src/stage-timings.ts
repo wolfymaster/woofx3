@@ -25,6 +25,11 @@ export class StageTimings<TStage extends string> {
     }
   }
 
+  /** Milliseconds spent per stage so far. */
+  stageDurations(): ReadonlyMap<TStage, number> {
+    return this.durations;
+  }
+
   /** `{ <stage>Ms, totalMs }`, rounded to tenths of a millisecond. */
   logFields(): Record<string, number> {
     const fields: Record<string, number> = {};

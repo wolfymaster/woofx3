@@ -6,6 +6,7 @@ import { AlertFrameUnavailableError, type AlertFraming } from "../scene/frame-ca
 import type { MediaProxy } from "../scene/media-proxy";
 import type { OverlayHost } from "../scene/scene-host";
 import { StageTimings } from "../stage-timings";
+import type { AlertMetrics, DispatchStage } from "./alert-metrics";
 import type { DeliveryStore, PresentDelivery } from "./delivery-store";
 
 /** The `ui.notify.alert` envelope the workflow engine publishes and records. */
@@ -98,16 +99,14 @@ export interface AlertDispatchDeps {
   /** Where each layout widget's frame loads from, recorded with the alert. */
   framing: AlertFraming;
   logger: Logger;
+  metrics: AlertMetrics;
   /** Milliseconds on a monotonic clock, for the dispatch's stage timings; `performance.now` when absent. */
   now?: () => number;
 }
 
-/**
- * The stages an alert's dispatch is timed by: reading its layout against the
- * widget catalog, framing its widgets, finding the alert widgets of each
- * running scene, and recording (then pushing) each scene's delivery.
- */
-type DispatchStage = "layout" | "frames" | "scenes" | "record";
+// DispatchStage names the stages an alert's dispatch is timed by: reading its
+// layout against the widget catalog, framing its widgets, finding the alert
+// widgets of each running scene, and recording (then pushing) each delivery.
 
 /** Where an alert went: queued on `scenes` running scenes, or refused with a reason. */
 export type AlertDispatchOutcome = { ok: true; scenes: number } | { ok: false; reason: string };
@@ -120,6 +119,22 @@ export type AlertDispatchOutcome = { ok: true; scenes: number } | { ok: false; r
  * returned.
  */
 export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps): Promise<AlertDispatchOutcome> {
+  const timings = new StageTimings<DispatchStage>(deps.now ?? (() => performance.now()));
+  let outcome: AlertDispatchOutcome | undefined;
+  try {
+    outcome = await runDispatch(raw, deps, timings);
+    return outcome;
+  } finally {
+    deps.metrics.count(outcome?.ok ? "queued" : "failed");
+    deps.metrics.stages(timings.stageDurations());
+  }
+}
+
+async function runDispatch(
+  raw: AlertEnvelope,
+  deps: AlertDispatchDeps,
+  timings: StageTimings<DispatchStage>
+): Promise<AlertDispatchOutcome> {
   const { db, host, logger } = deps;
   const alertId = typeof raw.id === "string" ? raw.id : "";
   if (!alertId) {
@@ -129,7 +144,6 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
   const target: AlertReportTarget = { rowId: typeof raw.rowId === "string" ? raw.rowId : "", envelopeId: alertId };
   const parameters =
     typeof raw.parameters === "object" && raw.parameters !== null ? (raw.parameters as Record<string, unknown>) : {};
-  const timings = new StageTimings<DispatchStage>(deps.now ?? (() => performance.now()));
   const parsed = await timings.time("layout", async () =>
     parseAlertLayout(parameters.layout, await host.loadWidgetCatalog())
   );
