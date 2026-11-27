@@ -398,6 +398,9 @@ Durations are histograms in seconds with explicit bucket boundaries. Attributes 
 | `woofx3.event_shipper.dropped` | counter | `{event}` | `target` | api: envelopes dropped because the buffer was full |
 | `woofx3.event_shipper.post.duration` | histogram | `s` | `target` | api: each POST to the target, delivered or not |
 | `woofx3.event_shipper.post.failures` | counter | `{request}` | `target` | api: POSTs that were retried or refused |
+| `woofx3.dependency.up` | observable gauge | `1` | `dependency` (`nats`, `db`, `barkloader`, `convex_queue`) | api: 1 or 0 each collection. `nats` is the client not being closed, `db` a db-proxy call succeeding, `barkloader` a fresh heartbeat, `convex_queue` the last POST to every events target delivering. A dependency that cannot be told (messaging not configured, nothing shipped yet) is not reported |
+| `woofx3.platform.connection.up` | observable gauge | `1` | `platform` | connectors: 1 while every required Twitch EventSub subscription is confirmed |
+| `woofx3.platform.reconnects` | counter | `{reconnect}` | `platform` | connectors: each Twitch connection made after the first, whether the host restarted the adapter or a relink reconnected it |
 
 `target` is the host of the events URL.
 

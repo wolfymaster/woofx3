@@ -3,7 +3,14 @@ import type { HelixUser } from "@twurple/api";
 import type { EventSubSubscription } from "@twurple/eventsub-base";
 import { TWITCH_DEFAULTS, type TwitchConfig } from "../../config/twitch";
 import { systemTimers } from "../../host/deps";
-import { countingIds, FakeTime, halfRandom, RecordingLogger, unreadEventMetrics } from "../../host/testing";
+import {
+  countingIds,
+  FakeTime,
+  halfRandom,
+  RecordingLogger,
+  unreadEventMetrics,
+  unreadPlatformMetrics,
+} from "../../host/testing";
 import type { TwitchAppContext } from "./application";
 import { HELIX_DEADLINE_MS } from "./lib/helix";
 import { SelfSentRegistry } from "./lib/self-sent";
@@ -150,6 +157,7 @@ describe("TwitchApplication", () => {
       timers: systemTimers,
       random: halfRandom,
       metrics: unreadEventMetrics(),
+      platformMetrics: unreadPlatformMetrics(),
       selfSent: selfSentLines(),
     });
 
@@ -172,6 +180,7 @@ describe("TwitchApplication", () => {
       timers: systemTimers,
       random: halfRandom,
       metrics: unreadEventMetrics(),
+      platformMetrics: unreadPlatformMetrics(),
       selfSent: selfSentLines(),
     });
     await app.start(ctx, running);
@@ -207,6 +216,7 @@ describe("TwitchApplication", () => {
         timers: systemTimers,
         random: halfRandom,
         metrics: unreadEventMetrics(),
+        platformMetrics: unreadPlatformMetrics(),
         selfSent: selfSentLines(),
       });
 
@@ -227,6 +237,7 @@ describe("TwitchApplication", () => {
       timers: systemTimers,
       random: halfRandom,
       metrics: unreadEventMetrics(),
+      platformMetrics: unreadPlatformMetrics(),
       selfSent: selfSentLines(),
     });
 
@@ -244,6 +255,7 @@ describe("TwitchApplication twitchapi requests", () => {
     timers: systemTimers,
     random: halfRandom,
     metrics: unreadEventMetrics(),
+    platformMetrics: unreadPlatformMetrics(),
     selfSent: selfSentLines(),
   });
 

@@ -63,6 +63,8 @@ interface Lane {
   dropped: number;
   /** The `target` attribute on this lane's metrics: the host, never the URL path or token. */
   name: string;
+  /** Whether the last POST to this target failed to deliver. */
+  failing: boolean;
 }
 
 const MS_PER_SECOND = 1000;
@@ -140,6 +142,17 @@ export class EventShipper {
       });
   }
 
+  /**
+   * Whether every target's last POST delivered. Null until something has been
+   * shipped, because a target nobody has talked to is unknown, not up.
+   */
+  deliveryHealthy(): boolean | null {
+    if (this.lanes.size === 0) {
+      return null;
+    }
+    return [...this.lanes.values()].every((lane) => !lane.failing);
+  }
+
   start(): void {
     this.running = true;
   }
@@ -194,6 +207,7 @@ export class EventShipper {
         pumping: null,
         dropped: 0,
         name: targetName(target),
+        failing: false,
       };
       this.lanes.set(key, lane);
     }
@@ -244,6 +258,7 @@ export class EventShipper {
   private async post(lane: Lane, events: CallbackEnvelope[]): Promise<PostOutcome> {
     const startedAt = this.deps.clock.now();
     const outcome = await this.attempt(lane.target, events);
+    lane.failing = outcome !== "delivered";
     const attributes = { target: lane.name };
     this.instruments.postDuration.record((this.deps.clock.now() - startedAt) / MS_PER_SECOND, attributes);
     if (outcome !== "delivered") {
