@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "node",
+    "paths": {
+      "@woofx3/common/*": ["../../../common/typescript/*"]
+    },
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "es2022",
+    "types": ["bun"]
+  },
+  "include": ["rpc-metrics.ts", "rpc-metrics.test.ts", "service-auth.ts"]
+}

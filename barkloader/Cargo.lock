@@ -2690,6 +2690,8 @@ dependencies = [
  "hex",
  "hmac",
  "mlua",
+ "opentelemetry",
+ "opentelemetry_sdk",
  "rquickjs",
  "serde",
  "serde_json",
@@ -2702,6 +2704,7 @@ dependencies = [
  "url",
  "uuid",
  "woofx3-cloudevents",
+ "woofx3-logging",
 ]
 
 [[package]]
@@ -3184,6 +3187,7 @@ dependencies = [
  "portable-atomic",
  "rand 0.9.1",
  "thiserror 2.0.12",
+ "tokio",
 ]
 
 [[package]]
@@ -5689,11 +5693,13 @@ name = "woofx3-twirp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "opentelemetry",
  "reqwest 0.12.15",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
  "woofx3",
+ "woofx3-logging",
 ]
 
 [[package]]

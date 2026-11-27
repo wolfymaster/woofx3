@@ -9,6 +9,7 @@
 //! no tracing, so a service that never sees a collector pays nothing for this.
 
 mod file_exporter;
+pub mod metric_buckets;
 
 const LOGS_PATH: &str = "/v1/logs";
 const TRACES_PATH: &str = "/v1/traces";

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { type AddressInfo, createServer } from "node:net";
 import type { ConnectionOptions, NatsConnection } from "@nats-io/nats-core";
 import { wsconnect } from "@nats-io/nats-core";
+import { MetricsHarness } from "@woofx3/common/logging/metrics-testing";
 import NATSClient, { type ClientDeps, connectOptions, DEFAULT_RECONNECT_POLICY } from "./client";
 import type { Logger } from "./types";
 
@@ -109,7 +110,7 @@ function fakeDialer(): { deps: ClientDeps; connections: FakeConnection[]; answer
       resolve();
     }
   };
-  return { deps: { dial, sleep: noSleep }, connections, answer };
+  return { deps: { dial, sleep: noSleep, meter: new MetricsHarness().meter }, connections, answer };
 }
 
 const config = { url: "ws://127.0.0.1:4225", name: "test" };
@@ -134,6 +135,7 @@ describe("NATSClient", () => {
     return {
       attempts: () => attempts,
       pauses,
+      meter: new MetricsHarness().meter,
       dial: async () => {
         attempts += 1;
         if (attempts <= refusals) {

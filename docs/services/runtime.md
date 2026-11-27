@@ -398,6 +398,9 @@ Durations are histograms in seconds with explicit bucket boundaries. Attributes 
 | `woofx3.event_shipper.dropped` | counter | `{event}` | `target` | api: envelopes dropped because the buffer was full |
 | `woofx3.event_shipper.post.duration` | histogram | `s` | `target` | api: each POST to the target, delivered or not |
 | `woofx3.event_shipper.post.failures` | counter | `{request}` | `target` | api: POSTs that were retried or refused |
+| `messaging.process.duration` | histogram | `s` | `messaging.system=nats`, `messaging.destination.name`, `error.type` | the TypeScript NATS client: each subscription handler call. The destination is the subscription's pattern, never the message's concrete subject; `error.type` is the thrown error's name |
+| `rpc.client.duration` | histogram | `s` | `rpc.system=twirp`, `rpc.service`, `rpc.method`, `error.type` | the TypeScript db client (every service that builds its config with `dbProxyClientConfig`) and the Rust Twirp client: each call to db-proxy. `error.type` is the Twirp error code, `http_<status>` for a non-Twirp error response, or `request` when there was no response |
+| `woofx3.barkloader.function.duration` | histogram | `s` | `module.id`, `function.name`, `outcome` (`ok`, `error`) | barkloader: each module function run in the sandbox |
 | `woofx3.workflow.runs` | counter | `{run}` | `outcome` (`completed`, `failed`, `cancelled`, `timed_out`), `trigger.type` | workflow: runs that reached a final state. `timed_out` is a run failed by a wait step's timeout. `trigger.type` is the triggering event's type. Dry runs are not counted |
 | `woofx3.workflow.run.duration` | histogram | `s` | `outcome` | workflow: start to final state |
 | `woofx3.workflow.runs.active` | up-down counter | `{run}` | none | workflow: runs started and not yet in a final state, including queued and waiting ones |

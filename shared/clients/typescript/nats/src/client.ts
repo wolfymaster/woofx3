@@ -1,5 +1,7 @@
-import type { ConnectionOptions, Msg as NatsCoreMsg, NatsConnection, Subscription } from "@nats-io/nats-core";
+import type { ConnectionOptions, NatsConnection, Msg as NatsCoreMsg, Subscription } from "@nats-io/nats-core";
 import { jwtAuthenticator, wsconnect } from "@nats-io/nats-core";
+import { getMeter, type Meter } from "@woofx3/common/logging";
+import { MessageProcessMetrics } from "./message-metrics";
 import { MessageImpl } from "./msg";
 import type { Handler, Logger, Msg, NATSConfig, ReconnectPolicy } from "./types";
 
@@ -14,11 +16,14 @@ export const DEFAULT_RECONNECT_POLICY: ReconnectPolicy = {
 export interface ClientDeps {
   dial: (options: ConnectionOptions) => Promise<NatsConnection>;
   sleep: (ms: number) => Promise<void>;
+  meter: Meter;
 }
 
 export const DEFAULT_CLIENT_DEPS: ClientDeps = {
   dial: wsconnect,
   sleep: (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+  // The global meter delegates to the provider the service installs later.
+  meter: getMeter(),
 };
 
 function assertReconnectPolicy(policy: ReconnectPolicy): void {
@@ -85,6 +90,7 @@ export default class NATSClient {
   private dialing: Promise<NatsConnection> | null = null;
   private closed = false;
   private readonly policy: ReconnectPolicy;
+  private readonly processMetrics: MessageProcessMetrics;
 
   /** Throws when config.reconnect is not a valid policy. */
   constructor(
@@ -93,6 +99,7 @@ export default class NATSClient {
     private readonly deps: ClientDeps = DEFAULT_CLIENT_DEPS
   ) {
     this.policy = reconnectPolicy(config);
+    this.processMetrics = new MessageProcessMetrics(deps.meter);
   }
 
   async connect(): Promise<void> {
@@ -210,7 +217,7 @@ export default class NATSClient {
     const subscription = connection.subscribe(subject);
     this.logger.debug("Subscribed to subject", { subject });
 
-    void consumeMessages(subject, subscription, handler, this.logger);
+    void consumeMessages(subject, subscription, handler, this.logger, this.processMetrics);
 
     return subscription;
   }
@@ -254,41 +261,41 @@ export default class NATSClient {
  * ends. A handler that throws, or whose promise rejects, is logged with the
  * subject and the loop goes on to the next message: one bad message must not
  * end the subscription for every message after it. Handlers are not awaited,
- * so a slow one never holds up the messages behind it.
+ * so a slow one never holds up the messages behind it. Each handler call is
+ * timed under `subject`, the subscription's pattern.
  */
 export async function consumeMessages(
   subject: string,
   messages: AsyncIterable<NatsCoreMsg>,
   handler: Handler,
-  logger: Logger
+  logger: Logger,
+  metrics: MessageProcessMetrics
 ): Promise<void> {
   try {
     for await (const msg of messages) {
-      dispatchMessage(subject, new MessageImpl(msg.subject, msg.data, msg), handler, logger);
+      dispatchMessage(subject, new MessageImpl(msg.subject, msg.data, msg), handler, logger, metrics);
     }
   } catch (error) {
     logger.error("subscription ended with an error", { subject, error: describeError(error) });
   }
 }
 
-function dispatchMessage(subject: string, msg: Msg, handler: Handler, logger: Logger): void {
-  const fail = (error: unknown): void => {
-    logger.error("subscription handler failed", {
-      subject,
-      messageSubject: msg.subject,
-      error: describeError(error),
+function dispatchMessage(
+  subject: string,
+  msg: Msg,
+  handler: Handler,
+  logger: Logger,
+  metrics: MessageProcessMetrics
+): void {
+  metrics
+    .around(subject, () => handler(msg))
+    .catch((error: unknown) => {
+      logger.error("subscription handler failed", {
+        subject,
+        messageSubject: msg.subject,
+        error: describeError(error),
+      });
     });
-  };
-  let result: void | Promise<void>;
-  try {
-    result = handler(msg);
-  } catch (error) {
-    fail(error);
-    return;
-  }
-  if (result instanceof Promise) {
-    result.catch(fail);
-  }
 }
 
 function describeError(error: unknown): { message: string; stack?: string } {
