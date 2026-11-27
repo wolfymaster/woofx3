@@ -2,10 +2,7 @@
   "uid": "woofx3-engine",
   "title": "woofx3 / Engine detail",
   "description": "One engine: health, events, alerts, workflows, modules, delivery to the dashboard, and its logs.",
-  "tags": [
-    "woofx3",
-    "engine"
-  ],
+  "tags": ["woofx3", "engine"],
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "1m",
@@ -115,9 +112,7 @@
       "options": {
         "colorMode": "background",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       }
     },
@@ -171,9 +166,7 @@
       "options": {
         "colorMode": "background",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       }
     },
@@ -227,9 +220,7 @@
       "options": {
         "colorMode": "background",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       }
     },
@@ -283,9 +274,7 @@
       "options": {
         "colorMode": "background",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       }
     },

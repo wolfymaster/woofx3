@@ -2,10 +2,7 @@
   "uid": "woofx3-fleet",
   "title": "woofx3 / Fleet overview",
   "description": "Is every engine up, receiving events and processing alerts? One row per engine below; open Engine detail for one.",
-  "tags": [
-    "woofx3",
-    "engine"
-  ],
+  "tags": ["woofx3", "engine"],
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "1m",
@@ -114,9 +111,7 @@
       "options": {
         "colorMode": "background",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       }
     },
@@ -170,9 +165,7 @@
       "options": {
         "colorMode": "background",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       }
     },
@@ -226,9 +219,7 @@
       "options": {
         "colorMode": "background",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       }
     },
@@ -282,9 +273,7 @@
       "options": {
         "colorMode": "background",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       }
     },
@@ -338,9 +327,7 @@
       "options": {
         "colorMode": "background",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+          "calcs": ["lastNotNull"]
         }
       }
     },
