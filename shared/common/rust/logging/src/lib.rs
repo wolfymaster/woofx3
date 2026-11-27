@@ -278,13 +278,12 @@ fn build_meter_provider(
 
 /// The OTLP exporters use a programmatic endpoint as given, without adding the
 /// signal path, so the collector's base URL gets it here: the TypeScript and Go
-/// runtimes do the same. A base URL that already carries a path is kept.
+/// runtimes do the same. A base URL may carry its own path (a hosted gateway
+/// serves OTLP under `/otlp`), and the signal path still goes after it. A URL
+/// that already ends in the signal path is kept.
 fn signal_endpoint(base: &str, signal_path: &str) -> String {
     let trimmed = base.trim_end_matches('/');
-    let has_path = trimmed
-        .split_once("://")
-        .is_some_and(|(_, rest)| rest.contains('/'));
-    if has_path {
+    if trimmed.ends_with(signal_path) {
         trimmed.to_string()
     } else {
         format!("{trimmed}{signal_path}")
@@ -379,13 +378,17 @@ mod tests {
     }
 
     #[test]
-    fn test_signal_endpoint_adds_the_signal_path_to_a_base_url() {
+    fn test_signal_endpoint_adds_the_signal_path_after_any_base_path() {
         for (base, want) in [
             ("http://localhost:4318", "http://localhost:4318/v1/metrics"),
             ("http://localhost:4318/", "http://localhost:4318/v1/metrics"),
             (
                 "https://otlp.example.com/otlp",
-                "https://otlp.example.com/otlp",
+                "https://otlp.example.com/otlp/v1/metrics",
+            ),
+            (
+                "https://otlp.example.com/otlp/v1/metrics",
+                "https://otlp.example.com/otlp/v1/metrics",
             ),
         ] {
             assert_eq!(signal_endpoint(base, METRICS_PATH), want);
