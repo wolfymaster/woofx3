@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.83.0](https://github.com/wolfymaster/woofx3/compare/v0.82.0...v0.83.0) (2026-11-27)
+
+### Features
+
+* **infra:** leave undelivered alerts out of the failure rate ([3f21b86](https://github.com/wolfymaster/woofx3/commit/3f21b86948b295d38017b881856fc0848f6ca2f0))
+* **sceneManager:** count an alert nobody could receive as undelivered ([bc03edd](https://github.com/wolfymaster/woofx3/commit/bc03edd26e78b71fd052645bc686b7ec2d0a5b4d))
+
 ## [0.82.0](https://github.com/wolfymaster/woofx3/compare/v0.81.0...v0.82.0) (2026-11-27)
 
 ### Features
