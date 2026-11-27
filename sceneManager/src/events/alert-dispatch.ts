@@ -6,7 +6,7 @@ import { AlertFrameUnavailableError, type AlertFraming } from "../scene/frame-ca
 import type { MediaProxy } from "../scene/media-proxy";
 import type { OverlayHost } from "../scene/scene-host";
 import { StageTimings } from "../stage-timings";
-import type { AlertMetrics, DispatchStage } from "./alert-metrics";
+import type { AlertMetrics, AlertOutcome, DispatchStage } from "./alert-metrics";
 import type { DeliveryStore, PresentDelivery } from "./delivery-store";
 
 /** The `ui.notify.alert` envelope the workflow engine publishes and records. */
@@ -108,8 +108,14 @@ export interface AlertDispatchDeps {
 // layout against the widget catalog, framing its widgets, finding the alert
 // widgets of each running scene, and recording (then pushing) each delivery.
 
-/** Where an alert went: queued on `scenes` running scenes, or refused with a reason. */
-export type AlertDispatchOutcome = { ok: true; scenes: number } | { ok: false; reason: string };
+/**
+ * Why an alert did not play: it was unusable or could not be framed (`refused`), or it was fine and no running
+ * scene had an alert widget to receive it (`no_scene`).
+ */
+export type AlertRefusal = "refused" | "no_scene";
+
+/** Where an alert went: queued on `scenes` running scenes, or not played, with a reason and its cause. */
+export type AlertDispatchOutcome = { ok: true; scenes: number } | { ok: false; reason: string; cause: AlertRefusal };
 
 /**
  * Validate an alert envelope and queue it on every running scene with an
@@ -125,9 +131,17 @@ export async function dispatchAlert(raw: AlertEnvelope, deps: AlertDispatchDeps)
     outcome = await runDispatch(raw, deps, timings);
     return outcome;
   } finally {
-    deps.metrics.count(outcome?.ok ? "queued" : "failed");
+    deps.metrics.count(alertOutcomeOf(outcome));
     deps.metrics.stages(timings.stageDurations());
   }
+}
+
+/** The metric outcome of a dispatch; one that threw (no outcome) is a failure. */
+function alertOutcomeOf(outcome: AlertDispatchOutcome | undefined): AlertOutcome {
+  if (outcome?.ok) {
+    return "queued";
+  }
+  return outcome?.cause === "no_scene" ? "undelivered" : "failed";
 }
 
 async function runDispatch(
@@ -139,7 +153,7 @@ async function runDispatch(
   const alertId = typeof raw.id === "string" ? raw.id : "";
   if (!alertId) {
     logger.warn("ui.notify.alert: missing id; dropping");
-    return { ok: false, reason: "the alert has no id" };
+    return { ok: false, reason: "the alert has no id", cause: "refused" };
   }
   const target: AlertReportTarget = { rowId: typeof raw.rowId === "string" ? raw.rowId : "", envelopeId: alertId };
   const parameters =
@@ -150,7 +164,7 @@ async function runDispatch(
   if (!parsed.ok) {
     logger.warn("ui.notify.alert: unusable parameters.layout; dropping", { alertId, reason: parsed.reason });
     await reportAlertNotPlayed(db, logger, { target, reason: parsed.reason });
-    return { ok: false, reason: parsed.reason };
+    return { ok: false, reason: parsed.reason, cause: "refused" };
   }
   if (parsed.rejected.length > 0) {
     logger.warn("ui.notify.alert: dropped layout widgets that cannot play in an alert", {
@@ -174,7 +188,7 @@ async function runDispatch(
         : "the layout contains no widgets";
     logger.warn("ui.notify.alert: layout has no widgets to play; dropping", { alertId, reason });
     await reportAlertNotPlayed(db, logger, { target, reason });
-    return { ok: false, reason };
+    return { ok: false, reason, cause: "refused" };
   }
   if (!hasVisibleWidget(parsed.layout)) {
     // A hidden widget does not play, so this alert would be an empty
@@ -182,7 +196,7 @@ async function runDispatch(
     const reason = "every widget in the layout is hidden";
     logger.warn("ui.notify.alert: layout has no visible widget; dropping", { alertId });
     await reportAlertNotPlayed(db, logger, { target, reason });
-    return { ok: false, reason };
+    return { ok: false, reason, cause: "refused" };
   }
   const eventType = typeof raw.event?.type === "string" ? raw.event.type : "";
   const delivery: Omit<AlertDelivery, "frames"> = {
@@ -271,7 +285,7 @@ async function fanOutAlert(
         reason: err.message,
       });
       await reportAlertNotPlayed(db, logger, { target: alert.report, reason: err.message });
-      return { ok: false, reason: err.message };
+      return { ok: false, reason: err.message, cause: "refused" };
     }
     const delivery: AlertDelivery = { ...alert.delivery, frames };
     const eventId = await timings.time("record", () =>
@@ -307,7 +321,7 @@ async function fanOutAlert(
     // question being asked, and a misspelled target name looks identical to a
     // scene nobody opened.
     await reportAlertNotPlayed(db, logger, { target: alert.report, reason });
-    return { ok: false, reason };
+    return { ok: false, reason, cause: "no_scene" };
   }
   return { ok: true, scenes: recorded };
 }

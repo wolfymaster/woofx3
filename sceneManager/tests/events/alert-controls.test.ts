@@ -796,7 +796,7 @@ describe("dispatchAlert", () => {
       deps
     );
 
-    expect(outcome).toEqual({ ok: false, reason: "every widget in the layout is hidden" });
+    expect(outcome).toEqual({ ok: false, reason: "every widget in the layout is hidden", cause: "refused" });
     expect(overlays[0]!.deliveries()).toEqual([]);
     expect(writes.lifecycle).toEqual([
       { id: "row-3", envelopeId: "env-hidden", status: "failed", error: "every widget in the layout is hidden" },
@@ -923,12 +923,23 @@ describe("alert metrics", () => {
     ).toEqual([{ stage: "frames" }, { stage: "layout" }, { stage: "record" }, { stage: "scenes" }]);
   });
 
-  it("test_dispatch_counts_an_alert_that_reaches_no_scene_as_failed", async () => {
+  it("test_dispatch_counts_an_alert_that_reaches_no_scene_as_undelivered", async () => {
     const { harness, metrics } = metricsHarness();
     const { deps } = dispatchSetup(metrics);
 
-    await dispatchAlert(JSON.parse(envelope("sidebar")), deps);
+    const outcome = await dispatchAlert(JSON.parse(envelope("sidebar")), deps);
 
+    expect(outcome).toMatchObject({ ok: false, cause: "no_scene" });
+    expect(await counted(harness)).toEqual({ undelivered: 1 });
+  });
+
+  it("test_dispatch_counts_an_unusable_alert_as_failed", async () => {
+    const { harness, metrics } = metricsHarness();
+    const { deps } = dispatchSetup(metrics);
+
+    const outcome = await dispatchAlert({ ...JSON.parse(envelope()), id: undefined }, deps);
+
+    expect(outcome).toMatchObject({ ok: false, cause: "refused" });
     expect(await counted(harness)).toEqual({ failed: 1 });
   });
 
