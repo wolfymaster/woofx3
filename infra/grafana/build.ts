@@ -92,12 +92,14 @@ const fleetDashboard = dashboard(
         },
         {
           title: "Alert failure rate (1h)",
+          description:
+            "Failed over queued plus failed. Alerts nobody was listening for (no overlay open) are counted separately as undelivered.",
           kind: "stat",
           datasource: PROMETHEUS,
           unit: "percentunit",
           targets: [
             {
-              expr: `sum(increase(${m.alerts}{${fleet},outcome="failed"}[1h])) / clamp_min(sum(increase(${m.alerts}{${fleet}}[1h])), 1)`,
+              expr: `sum(increase(${m.alerts}{${fleet},outcome="failed"}[1h])) / clamp_min(sum(increase(${m.alerts}{${fleet},outcome=~"queued|failed"}[1h])), 1)`,
             },
           ],
           badAbove: 0.05,
@@ -127,12 +129,13 @@ const fleetDashboard = dashboard(
             { expr: `sum by (service_namespace) (rate(${m.eventsReceived}{${fleet}}[5m])) * 60` },
             { expr: `sum by (service_namespace) (rate(${m.alerts}{${fleet},outcome="queued"}[5m])) * 60` },
             {
-              expr: `sum by (service_namespace) (increase(${m.alerts}{${fleet},outcome="failed"}[1h])) / clamp_min(sum by (service_namespace) (increase(${m.alerts}{${fleet}}[1h])), 1)`,
+              expr: `sum by (service_namespace) (increase(${m.alerts}{${fleet},outcome="failed"}[1h])) / clamp_min(sum by (service_namespace) (increase(${m.alerts}{${fleet},outcome=~"queued|failed"}[1h])), 1)`,
             },
             { expr: `time() - max by (service_namespace) (${m.lastReceived}{${fleet}})` },
             { expr: `min by (service_namespace) (${m.dependency}{${fleet}})` },
             { expr: `min by (service_namespace) (${m.platformUp}{${fleet}})` },
             { expr: `sum by (service_namespace) (increase(${m.shipDropped}{${fleet}}[1h]))` },
+            { expr: `sum by (service_namespace) (increase(${m.alerts}{${fleet},outcome="undelivered"}[1h]))` },
           ],
           columns: {
             A: { name: "Events / min" },
@@ -142,6 +145,7 @@ const fleetDashboard = dashboard(
             E: { name: "Dependencies up (1 = all)" },
             F: { name: "Platform up (1 = yes)" },
             G: { name: "Events dropped (1h)" },
+            H: { name: "Alerts nobody could receive (1h)" },
           },
         },
       ],

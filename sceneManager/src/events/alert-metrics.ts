@@ -13,9 +13,12 @@ const MS_PER_SECOND = 1000;
  * How an alert's life ended or where it stands: `queued` when it was recorded
  * for a running scene, `played` when a page finished it, `skipped` when an
  * operator ended the one on screen, `dropped` when a Clear removed it from the
- * waiting queue, and `failed` when it never reached a scene.
+ * waiting queue, `failed` when it was unusable or could not be framed, and
+ * `undelivered` when it was fine but no running scene had an alert widget to
+ * receive it, as when no overlay is open. Failure rates leave `undelivered`
+ * out: nothing was wrong with those alerts.
  */
-export type AlertOutcome = "queued" | "played" | "skipped" | "dropped" | "failed";
+export type AlertOutcome = "queued" | "played" | "skipped" | "dropped" | "failed" | "undelivered";
 
 /** The stages an alert's dispatch is timed by; a closed set, so `stage` stays bounded. */
 export type DispatchStage = "layout" | "frames" | "scenes" | "record";
