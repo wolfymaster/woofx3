@@ -38,7 +38,7 @@ func main() {
 	slogAdapter := &SlogAdapter{logger: logger}
 
 	// Messagebus (does not depend on config values)
-	natsSvc := service.NewNATS(logger, "nats", "messagebus")
+	natsSvc := service.NewNATS(logger, "nats", "messagebus").WithMetrics(logging.Meter(), logging.ShortDurationBucketsSeconds())
 	// Workflows resolve system canonical ids (woofx3:action:alert and
 	// siblings) as soon as they load, and those rows exist only once
 	// barkloader has installed the bundled modules. Waiting on its readiness
@@ -77,6 +77,10 @@ func main() {
 				return err
 			}
 
+			if err := app.engine.SetMetrics(logging.Meter(), logging.ShortDurationBucketsSeconds(), logging.LongDurationBucketsSeconds()); err != nil {
+				return err
+			}
+
 			// Database
 			dbProxyToken, err := cfg.dbProxyToken()
 			if err != nil {
@@ -86,14 +90,20 @@ func main() {
 			if err != nil {
 				return err
 			}
+			rpcMetrics, err := db.NewRPCMetrics(logging.Meter(), db.RPCClient, logging.ShortDurationBucketsSeconds())
+			if err != nil {
+				return err
+			}
 			httpClient, err := db.WithServiceToken(newDBHTTPClient(dbTimeout), dbProxyToken)
 			if err != nil {
 				return err
 			}
+			httpClient = db.WithRPCMetrics(httpClient, rpcMetrics)
 			factHTTPClient, err := db.WithServiceToken(newFactHTTPClient(), dbProxyToken)
 			if err != nil {
 				return err
 			}
+			factHTTPClient = db.WithRPCMetrics(factHTTPClient, rpcMetrics)
 			dbClient := db.NewDbProxyClient(cfg.DatabaseProxyURL, httpClient)
 			// The alert, viewer fact and database record services are not on DbProxyClient,
 			// which predates them.

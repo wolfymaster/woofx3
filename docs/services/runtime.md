@@ -398,6 +398,13 @@ Durations are histograms in seconds with explicit bucket boundaries. Attributes 
 | `woofx3.event_shipper.dropped` | counter | `{event}` | `target` | api: envelopes dropped because the buffer was full |
 | `woofx3.event_shipper.post.duration` | histogram | `s` | `target` | api: each POST to the target, delivered or not |
 | `woofx3.event_shipper.post.failures` | counter | `{request}` | `target` | api: POSTs that were retried or refused |
+| `woofx3.workflow.runs` | counter | `{run}` | `outcome` (`completed`, `failed`, `cancelled`, `timed_out`), `trigger.type` | workflow: runs that reached a final state. `timed_out` is a run failed by a wait step's timeout. `trigger.type` is the triggering event's type. Dry runs are not counted |
+| `woofx3.workflow.run.duration` | histogram | `s` | `outcome` | workflow: start to final state |
+| `woofx3.workflow.runs.active` | up-down counter | `{run}` | none | workflow: runs started and not yet in a final state, including queued and waiting ones |
+| `woofx3.workflow.step.duration` | histogram | `s` | `step.action`, `outcome` (`success`, `failed`, `cancelled`) | workflow: each settled step. `step.action` is the registered action, or the task type for non-action steps. Skipped steps are not timed |
+| `messaging.process.duration` | histogram | `s` | `messaging.system=nats`, `messaging.destination.name`, `error.type` | Go NATS client: each subscription handler. The destination is the subscription pattern, never the concrete subject. Handlers return no error, so `error.type` is only `panic` |
+| `rpc.server.duration` | histogram | `s` | `rpc.system=twirp`, `rpc.service`, `rpc.method`, `error.type` | db-proxy: every Twirp call it serves, refused ones included. `error.type` is the Twirp error code |
+| `rpc.client.duration` | histogram | `s` | `rpc.system=twirp`, `rpc.service`, `rpc.method`, `error.type` | Go db client (workflow): every Twirp call. `error.type` is the Twirp code, `unknown` when the body is not a Twirp error, `transport_error` when there was no response |
 | `woofx3.alerts` | counter | `{alert}` | `outcome` | sceneManager: `queued` (recorded for a running scene), `played` (a page reported it finished), `skipped` (Skip ended the playing alert), `dropped` (Clear removed a waiting one), `failed` (refused or reached no scene). An alert shown on several widgets is counted as `played` once per ack that closes it |
 | `woofx3.alerts.queue.depth` | observable gauge | `{alert}` | none | sceneManager: alerts no page has started yet, counted once however many widgets hold them |
 | `woofx3.alerts.queue.wait` | histogram | `s` | none | sceneManager: from an alert being recorded for a widget to a page reporting it started. Alerts recovered after a restart have no recorded time and are left out |
