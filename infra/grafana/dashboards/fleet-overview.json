@@ -227,7 +227,7 @@
       "id": 5,
       "type": "stat",
       "title": "Alert failure rate (1h)",
-      "description": "",
+      "description": "Failed over queued plus failed. Alerts nobody was listening for (no overlay open) are counted separately as undelivered.",
       "datasource": {
         "type": "prometheus",
         "uid": "${ds_prom}"
@@ -245,7 +245,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum(increase(woofx3_alerts_total{service_namespace=~\"$engine\",outcome=\"failed\"}[1h])) / clamp_min(sum(increase(woofx3_alerts_total{service_namespace=~\"$engine\"}[1h])), 1)",
+          "expr": "sum(increase(woofx3_alerts_total{service_namespace=~\"$engine\",outcome=\"failed\"}[1h])) / clamp_min(sum(increase(woofx3_alerts_total{service_namespace=~\"$engine\",outcome=~\"queued|failed\"}[1h])), 1)",
           "legendFormat": "",
           "instant": true,
           "range": false
@@ -390,7 +390,7 @@
             "type": "prometheus",
             "uid": "${ds_prom}"
           },
-          "expr": "sum by (service_namespace) (increase(woofx3_alerts_total{service_namespace=~\"$engine\",outcome=\"failed\"}[1h])) / clamp_min(sum by (service_namespace) (increase(woofx3_alerts_total{service_namespace=~\"$engine\"}[1h])), 1)",
+          "expr": "sum by (service_namespace) (increase(woofx3_alerts_total{service_namespace=~\"$engine\",outcome=\"failed\"}[1h])) / clamp_min(sum by (service_namespace) (increase(woofx3_alerts_total{service_namespace=~\"$engine\",outcome=~\"queued|failed\"}[1h])), 1)",
           "legendFormat": "",
           "instant": true,
           "range": false,
@@ -439,6 +439,18 @@
             "uid": "${ds_prom}"
           },
           "expr": "sum by (service_namespace) (increase(woofx3_event_shipper_dropped_total{service_namespace=~\"$engine\"}[1h]))",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "H",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${ds_prom}"
+          },
+          "expr": "sum by (service_namespace) (increase(woofx3_alerts_total{service_namespace=~\"$engine\",outcome=\"undelivered\"}[1h]))",
           "legendFormat": "",
           "instant": true,
           "range": false,
@@ -548,6 +560,18 @@
               {
                 "id": "displayName",
                 "value": "Events dropped (1h)"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #H"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Alerts nobody could receive (1h)"
               }
             ]
           }
