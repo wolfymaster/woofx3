@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.82.0](https://github.com/wolfymaster/woofx3/compare/v0.81.0...v0.82.0) (2026-11-27)
+
+### Features
+
+* **api:** add event shipper queue, drop and POST metrics ([3c51aad](https://github.com/wolfymaster/woofx3/commit/3c51aad15f97e85464d119ff3381c1a109ff43ae))
+* **api:** add the woofx3.dependency.up gauge ([00efa14](https://github.com/wolfymaster/woofx3/commit/00efa143c558c7886b89cb3c75b5cd567eb9dc55))
+* **api:** report whether the last POST to each events target delivered ([fd8096b](https://github.com/wolfymaster/woofx3/commit/fd8096bc81bbb4a32315408a0d8178fc1ce7bcd1))
+* **barkloader:** report woofx3.barkloader.function.duration per invocation ([d380b15](https://github.com/wolfymaster/woofx3/commit/d380b1522a1135ac7a302ec004a49a1eb5a50adb))
+* **connectors:** add platform connection and reconnect metrics ([6b0096d](https://github.com/wolfymaster/woofx3/commit/6b0096dea6d81fd585111ab5d93bf809a0dd8ee6))
+* **connectors:** count events received and measure ingest lag ([c31baef](https://github.com/wolfymaster/woofx3/commit/c31baef8ade7d88afa18908efe9c0d9d3daedad4))
+* **db-client:** time Twirp calls as rpc.client.duration and rpc.server.duration ([2704e39](https://github.com/wolfymaster/woofx3/commit/2704e39f2f41a6c898829b0ee5216b8f3b8c3cd8))
+* **db:** report rpc.client.duration for every db-proxy call from TypeScript ([d558039](https://github.com/wolfymaster/woofx3/commit/d558039b5a8050fe2d6eaa9a9fdf18adeaf865c9))
+* **db:** time every Twirp call db-proxy serves ([4f6cc8d](https://github.com/wolfymaster/woofx3/commit/4f6cc8d3bfa9b201bb11b3fb7a038f085b657365))
+* **infra:** generate Grafana dashboards for the engine fleet ([a247b5b](https://github.com/wolfymaster/woofx3/commit/a247b5b4ed970985e2bb644d010e3ac803fc7640))
+* **logging:** add a MeterProvider to the Go runtime ([50d75a3](https://github.com/wolfymaster/woofx3/commit/50d75a3ae946ca9cf923f2eaee26345b0dc73bf5))
+* **logging:** add a MeterProvider to the Rust runtime ([873368c](https://github.com/wolfymaster/woofx3/commit/873368cd0a57f773a83355e3b7290094915d4821))
+* **logging:** add a MeterProvider to the TypeScript runtime ([5ab2793](https://github.com/wolfymaster/woofx3/commit/5ab27937b1770159ff1ddceecfcb73435eb80ec1))
+* **logging:** add Go histogram bucket sets in seconds ([232e43d](https://github.com/wolfymaster/woofx3/commit/232e43d7f603ea5efbb34835c33673e4db76c22a))
+* **logging:** add metric bucket sets and an in-memory metrics harness ([d634bc3](https://github.com/wolfymaster/woofx3/commit/d634bc3a95b73946d54f9d697151c231af84ab95))
+* **logging:** add Rust histogram bucket constants in seconds ([a52b0c5](https://github.com/wolfymaster/woofx3/commit/a52b0c59e88f789dd519c66a7c84e834cecb6485))
+* **nats:** report messaging.process.duration per subscription handler ([9e1bae1](https://github.com/wolfymaster/woofx3/commit/9e1bae1ff08fa38eb903e26e45cbe1022730adf9))
+* **nats:** time subscription handlers as messaging.process.duration ([9b9a30f](https://github.com/wolfymaster/woofx3/commit/9b9a30f873bd5dfd01456fd30c53ec2bb3db76ea))
+* **sceneManager:** count alerts by outcome and time their dispatch and queue wait ([a8595d1](https://github.com/wolfymaster/woofx3/commit/a8595d11ad10b0c5d4fa674e00ea430325be34c0))
+* **twirp:** report rpc.client.duration from the Rust Twirp client ([1e56c5b](https://github.com/wolfymaster/woofx3/commit/1e56c5b3527531b0c010a16c7ca37d81f237d24c))
+* **workflow:** report workflow runs and steps as metrics ([8fc0689](https://github.com/wolfymaster/woofx3/commit/8fc0689e02d39b79169c3913e89afbb14c4762dc))
+* **workflow:** time its calls to db-proxy ([ec297c4](https://github.com/wolfymaster/woofx3/commit/ec297c43dd3ee1d6ca2d77b4d2ef67aa1254d5cd))
+
+### Bug Fixes
+
+* **logging:** add the OTLP signal path after a base URL's own path ([5098b11](https://github.com/wolfymaster/woofx3/commit/5098b11c368d2ad6325e9e9db9b5c278287c49fd))
+* **logging:** add the OTLP signal path after a base URL's own path ([2c3598c](https://github.com/wolfymaster/woofx3/commit/2c3598cbc64100bc2de3d0923b080a8f53c179fc))
+
 ## [0.81.0](https://github.com/wolfymaster/woofx3/compare/v0.80.0...v0.81.0) (2026-11-25)
 
 ### Features
