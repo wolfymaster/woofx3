@@ -3,6 +3,7 @@ package logging
 import (
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -22,7 +23,9 @@ const (
 )
 
 // otelEndpointURL normalizes a collector base URL such as
-// "http://localhost:4318" into a fully qualified signal URL. A misconfigured
+// "http://localhost:4318" into a fully qualified signal URL. The signal path
+// goes after the base URL's own path, because a hosted gateway serves OTLP
+// under one (".../otlp"); a URL that already ends in it is kept. A misconfigured
 // endpoint is a startup error rather than a silent fallback to the OTLP
 // default of localhost:4318, which would quietly ship telemetry nowhere.
 func otelEndpointURL(endpoint string, signalPath string) (string, error) {
@@ -33,8 +36,9 @@ func otelEndpointURL(endpoint string, signalPath string) (string, error) {
 	if parsed.Scheme == "" || parsed.Host == "" {
 		return "", fmt.Errorf("OTLP endpoint %q must include a scheme and host, for example http://localhost:4318", endpoint)
 	}
-	if parsed.Path == "" || parsed.Path == "/" {
-		parsed.Path = signalPath
+	base := strings.TrimRight(parsed.Path, "/")
+	if !strings.HasSuffix(base, signalPath) {
+		parsed.Path = base + signalPath
 	}
 	return parsed.String(), nil
 }
