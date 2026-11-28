@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { propagation, ROOT_CONTEXT, trace } from "@opentelemetry/api";
-import { TraceHarness } from "../logging/trace-testing";
+import { TraceHarness } from "@woofx3/common/logging/TraceHarness";
 import Event from "./BaseEvent";
 import { clearCurrentSessionId, setCurrentSessionId } from "./session";
 
