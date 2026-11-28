@@ -13,7 +13,10 @@ import (
 
 	"github.com/twitchtv/twirp"
 	client "github.com/wolfymaster/woofx3/clients/db"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/wolfymaster/woofx3/common/logging"
 	"github.com/wolfymaster/woofx3/common/runtime"
@@ -260,12 +263,15 @@ func (s *HTTPServerService) loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// tracingMiddleware opens one span per inbound request. Every Twirp RPC is
+// tracingMiddleware opens one SERVER span per inbound request, a child of the
+// caller's trace when the request carries a traceparent. Every Twirp RPC is
 // served through this mux, so this is the single top-level entry point for the
 // db proxy.
 func (s *HTTPServerService) tracingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx, span := logging.StartSpan(r.Context(), r.Method+" "+r.URL.Path,
+		// A request without a traceparent starts a new root.
+		parent := otel.GetTextMapPropagator().Extract(r.Context(), propagation.HeaderCarrier(r.Header))
+		ctx, span := logging.StartSpanKind(parent, trace.SpanKindServer, r.Method+" "+r.URL.Path,
 			attribute.String("http.request.method", r.Method),
 			attribute.String("url.path", r.URL.Path),
 		)

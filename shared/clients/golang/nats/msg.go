@@ -1,10 +1,26 @@
 package nats
 
-import "encoding/json"
+import (
+	"context"
+	"encoding/json"
+)
 
 type MessageImpl struct {
+	ctx     context.Context
 	subject string
 	data    []byte
+}
+
+func newMessage(ctx context.Context, subject string, data []byte) *MessageImpl {
+	return &MessageImpl{ctx: ctx, subject: subject, data: data}
+}
+
+// Context carries the consumer span a subscription started for this message.
+func (m *MessageImpl) Context() context.Context {
+	if m.ctx == nil {
+		return context.Background()
+	}
+	return m.ctx
 }
 
 func (m *MessageImpl) Subject() string {
@@ -24,8 +40,5 @@ func (m *MessageImpl) String() string {
 }
 
 func CreateMessage(subject string, data []byte) Msg {
-	return &MessageImpl{
-		subject: subject,
-		data:    data,
-	}
+	return newMessage(context.Background(), subject, data)
 }

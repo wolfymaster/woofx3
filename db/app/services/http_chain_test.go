@@ -38,6 +38,11 @@ func (pingOnly) MigrationStatus(context.Context, *client.MigrationStatusRequest)
 // common service routed, the way db-proxy serves it once routes are set up.
 func newChainServer(t *testing.T, serverConfig config.HTTPServerConfig) *httptest.Server {
 	t.Helper()
+	return newChainServerFor(t, serverConfig, pingOnly{})
+}
+
+func newChainServerFor(t *testing.T, serverConfig config.HTTPServerConfig, handler client.CommonService) *httptest.Server {
+	t.Helper()
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	auth, err := middleware.NewServiceAuth(chainTestToken, nil, logger)
 	if err != nil {
@@ -48,7 +53,7 @@ func newChainServer(t *testing.T, serverConfig config.HTTPServerConfig) *httptes
 		t.Fatalf("NewHTTPServerService: %v", err)
 	}
 	svc.mux = http.NewServeMux()
-	common := client.NewCommonServiceServer(pingOnly{})
+	common := client.NewCommonServiceServer(handler)
 	svc.mux.Handle(common.PathPrefix(), common)
 	server := httptest.NewServer(svc.handler())
 	t.Cleanup(server.Close)

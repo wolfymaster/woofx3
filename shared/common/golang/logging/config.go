@@ -3,6 +3,7 @@ package logging
 import (
 	"fmt"
 	"log/slog"
+	"math"
 	"net/url"
 	"os"
 	"strconv"
@@ -14,12 +15,14 @@ import (
 
 const (
 	defaultLogDirectory = "logs"
+	defaultSamplerRatio = 1.0
 
 	envOTelEnabled          = "WOOFX3_OTEL_ENABLED"
 	envOTelExporterEndpoint = "WOOFX3_OTEL_EXPORTER_ENDPOINT"
 	envOTelTracingEnabled   = "WOOFX3_OTEL_TRACING_ENABLED"
 	envOTelMetricsEnabled   = "WOOFX3_OTEL_METRICS_ENABLED"
 	envOTelMetricsInterval  = "WOOFX3_OTEL_METRICS_INTERVAL_MS"
+	envOTelSamplerRatio     = "WOOFX3_OTEL_TRACES_SAMPLER_RATIO"
 	envOTelLocalFileEnabled = "WOOFX3_OTEL_LOCAL_FILE_ENABLED"
 	envOTelResourceAttrs    = "WOOFX3_OTEL_RESOURCE_ATTRIBUTES"
 	envOTelExporterHeaders  = "WOOFX3_OTEL_EXPORTER_HEADERS"
@@ -60,6 +63,11 @@ type Config struct {
 	// WOOFX3_OTEL_METRICS_INTERVAL_MS and then defaultMetricsInterval.
 	OTelMetricsInterval time.Duration
 
+	// OTelTracesSamplerRatio is the fraction of root traces kept, in [0, 1].
+	// nil defers to WOOFX3_OTEL_TRACES_SAMPLER_RATIO, then 1.0. Spans whose
+	// parent was sampled are always kept, so traces stay complete.
+	OTelTracesSamplerRatio *float64
+
 	// OTelResourceAttributes and OTelExporterHeaders are comma-separated
 	// key=value lists, falling back to WOOFX3_OTEL_RESOURCE_ATTRIBUTES and
 	// WOOFX3_OTEL_EXPORTER_HEADERS. Header values are secrets.
@@ -84,6 +92,7 @@ type resolvedConfig struct {
 	OTelMetricsEnabled   bool
 	OTelMetricsInterval  time.Duration
 	OTelLocalFileEnabled bool
+	OTelSamplerRatio     float64
 
 	// OTelResourceAttributes may name service.name or service.version;
 	// newOTelResource applies those last so they cannot override the
@@ -180,6 +189,11 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 		return resolvedConfig{}, err
 	}
 
+	otelSamplerRatio, err := resolveSamplerRatio(cfg.OTelTracesSamplerRatio)
+	if err != nil {
+		return resolvedConfig{}, err
+	}
+
 	otelLocalFileEnabled, err := resolveBool(cfg.OTelLocalFileEnabled, envOTelLocalFileEnabled, true)
 	if err != nil {
 		return resolvedConfig{}, err
@@ -216,6 +230,7 @@ func resolveConfig(cfg Config) (resolvedConfig, error) {
 		OTelMetricsEnabled:      otelMetricsEnabled,
 		OTelMetricsInterval:     otelMetricsInterval,
 		OTelLocalFileEnabled:    otelLocalFileEnabled,
+		OTelSamplerRatio:        otelSamplerRatio,
 		OTelResourceAttributes:  otelResourceAttributes,
 		OTelExporterHeaders:     otelExporterHeaders,
 		ServiceVersion:          strings.TrimSpace(os.Getenv(envVersion)),
@@ -258,6 +273,27 @@ func resolveMetricsInterval(explicit time.Duration) (time.Duration, error) {
 		return 0, fmt.Errorf("invalid %s: must be a positive integer, got %q", envOTelMetricsInterval, raw)
 	}
 	return time.Duration(millis) * time.Millisecond, nil
+}
+
+// resolveSamplerRatio applies explicit over environment over default. A ratio
+// outside [0, 1] is an error: silently sampling at a rate nobody chose would
+// hide traces or flood the collector.
+func resolveSamplerRatio(explicit *float64) (float64, error) {
+	if explicit != nil {
+		if math.IsNaN(*explicit) || *explicit < 0 || *explicit > 1 {
+			return 0, fmt.Errorf("invalid sampler ratio: must be between 0 and 1, got %v", *explicit)
+		}
+		return *explicit, nil
+	}
+	raw := strings.TrimSpace(os.Getenv(envOTelSamplerRatio))
+	if raw == "" {
+		return defaultSamplerRatio, nil
+	}
+	ratio, err := strconv.ParseFloat(raw, 64)
+	if err != nil || math.IsNaN(ratio) || ratio < 0 || ratio > 1 {
+		return 0, fmt.Errorf("invalid %s: must be a number between 0 and 1, got %q", envOTelSamplerRatio, raw)
+	}
+	return ratio, nil
 }
 
 func firstNonEmpty(values ...string) string {

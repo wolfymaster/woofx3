@@ -561,6 +561,7 @@ func (s *commandService) DeleteCommand(ctx context.Context, req *client.DeleteCo
 			return nil
 		}
 		return s.publisher.PublishIn(tx, workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "command",
 			EntityID:        m.ID.String(),
 			Operation:       "deleted",

@@ -1,5 +1,7 @@
 package nats
 
+import "context"
+
 type Config struct {
 	URL      string `env:"WOOFX3_MESSAGEBUS_URL,required"`
 	Name     string `env:"WOOFX3_MESSAGEBUS_NAME"`
@@ -19,6 +21,9 @@ type Logger interface {
 }
 
 type Msg interface {
+	// Context holds the message's trace context. Handlers pass it to calls
+	// they make so those continue the producer's trace.
+	Context() context.Context
 	Subject() string
 	Data() []byte
 	JSON(v interface{}) error

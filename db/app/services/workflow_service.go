@@ -185,6 +185,7 @@ func (s *workflowService) CreateWorkflow(ctx context.Context, req *client.Create
 	if s.publisher != nil {
 		// stylegate:ignore WFX-API-002 reason="CreateWorkflow writes its row outside a transaction; moving it is a separate change"
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "workflow",
 			EntityID:        wf.ID.String(),
 			Operation:       "created",
@@ -316,6 +317,7 @@ func (s *workflowService) UpdateWorkflow(ctx context.Context, req *client.Update
 			return nil
 		}
 		return s.publisher.PublishIn(tx, workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "workflow",
 			EntityID:        wf.ID.String(),
 			Operation:       "updated",
@@ -399,6 +401,7 @@ func (s *workflowService) DeleteWorkflow(ctx context.Context, req *client.Delete
 			deletePayload["projection_key"] = pk
 		}
 		if err := s.publisher.PublishIn(tx, workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "workflow",
 			EntityID:        workflowID,
 			Operation:       "deleted",
@@ -508,6 +511,7 @@ func (s *workflowService) ExecuteWorkflow(ctx context.Context, req *client.Execu
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "workflow_execution",
 			EntityID:        exec.ID.String(),
 			Operation:       "created",
@@ -606,6 +610,7 @@ func (s *workflowService) CancelWorkflowExecution(ctx context.Context, req *clie
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "workflow_execution",
 			EntityID:        exec.ID.String(),
 			Operation:       "cancelled",
@@ -803,6 +808,7 @@ func (s *workflowService) RecordWorkflowRunStep(ctx context.Context, req *client
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "workflow_execution_step",
 			EntityID:        step.ID.String(),
 			Operation:       "recorded",

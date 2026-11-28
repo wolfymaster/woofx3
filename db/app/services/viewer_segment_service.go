@@ -735,7 +735,7 @@ func (a *segmentApply) viewer(viewer repo.ViewerKey, changes []repo.FactChange, 
 			return err
 		}
 		edgeData := a.edgeEvent(segment.ID, viewer, viewerName, eventSession, before, after)
-		if err := a.service.publisher.PublishEventIn(a.tx, edge, segment.ID, edgeExtensions(viewer, eventSession), &edgeData); err != nil {
+		if err := a.service.publisher.PublishEventIn(context.Background(), a.tx, edge, segment.ID, edgeExtensions(viewer, eventSession), &edgeData); err != nil {
 			return err
 		}
 	}

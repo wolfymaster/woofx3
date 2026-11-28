@@ -72,6 +72,9 @@ and the global no-op `TracerProvider` left in place.
   appended automatically. Unset means no collector is available.
 - `WOOFX3_OTEL_TRACING_ENABLED` (bool) -- independent override for tracing.
   Defaults to the value of `WOOFX3_OTEL_ENABLED`.
+- `WOOFX3_OTEL_TRACES_SAMPLER_RATIO` (number 0..1, default `1.0`) -- fraction of
+  new traces kept. Spans with a sampled parent are always kept, so traces
+  stay complete. Values outside 0..1 fail startup.
 - `WOOFX3_OTEL_LOCAL_FILE_ENABLED` (bool, default `true`) -- when tracing is
   enabled but no collector is configured, spans are written to
   `logs/<service>_traces_YYYYMMDD_HHMM.log` instead of being dropped.
