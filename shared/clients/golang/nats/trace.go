@@ -50,7 +50,7 @@ var _ propagation.TextMapCarrier = eventCarrier{}
 // a traceparent keeps it, as does anything that is not a JSON object, or a ctx
 // with no active span: injecting is best effort and never fails a publish.
 func InjectTraceContext(ctx context.Context, data []byte) []byte {
-	if !trace.SpanContextFromContext(ctx).IsValid() {
+	if ctx == nil || !trace.SpanContextFromContext(ctx).IsValid() {
 		return data
 	}
 	var event eventCarrier
