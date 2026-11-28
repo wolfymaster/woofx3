@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { TraceHarness } from "@woofx3/common/logging/trace-testing";
 import BarkloaderClient from "./index";
 
 const OPEN = 1;
@@ -81,5 +82,31 @@ describe("BarkloaderClient.connect", () => {
 
     expect(socket.url).toBe("ws://localhost:9999/ws");
     expect(socket.options?.headers).toEqual({ Authorization: "Bearer 0123456789abcdef0123456789abcdef" });
+  });
+});
+
+describe("BarkloaderClient.invoke trace context", () => {
+  const harness = TraceHarness.install();
+
+  test("test_the_active_context_rides_in_data_beside_the_event_and_extracts_to_the_same_trace", async () => {
+    const { client, socket } = makeClient();
+    let traceId = "";
+    await harness.inSpan("workflow-step", (span) => {
+      traceId = span.spanContext().traceId;
+      void client.invoke("mod:function:f", { data: {} }).catch(() => {});
+    });
+
+    const sent = JSON.parse(socket.sent.at(-1) ?? "{}");
+    expect(harness.traceIdOf(sent.data.traceparent)).toBe(traceId);
+    expect(sent.data.event).toEqual({ data: {} });
+  });
+
+  test("test_no_trace_attributes_are_sent_when_nothing_is_recording", () => {
+    const { client, socket } = makeClient();
+    void client.invoke("mod:function:f", {}).catch(() => {});
+
+    const sent = JSON.parse(socket.sent.at(-1) ?? "{}");
+    expect("traceparent" in sent.data).toBe(false);
+    expect("tracestate" in sent.data).toBe(false);
   });
 });

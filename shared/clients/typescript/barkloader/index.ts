@@ -1,3 +1,5 @@
+import { withTraceHeaders } from "@woofx3/common/logging";
+
 export type MessageHandler = (msg: BarkloaderMessageResponse) => void;
 export type ReconnectAttemptHandler = (attempt: number, maxRetries: number | typeof Infinity) => void;
 
@@ -151,8 +153,14 @@ export default class BarkloaderClient {
   // engine can see a loop running through a module function. Only a workflow
   // run has one; every caller in this language starts a chain rather than
   // continuing one, so it is omitted here in practice.
+  //
+  // The active trace context rides in `data.traceparent` / `data.tracestate`
+  // (barkloader reads them there, not from headers), so the span it opens
+  // around the function continues the caller's trace. They sit beside
+  // `event`, never inside it: module code does not see trace context.
   public invoke(func: string, event: Record<string, unknown>, workflowChain?: string): Promise<unknown> {
     const id = crypto.randomUUID();
+    const { traceparent, tracestate } = withTraceHeaders();
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingInvokes.delete(id);
@@ -175,7 +183,7 @@ export default class BarkloaderClient {
           JSON.stringify({
             type: "invoke",
             id,
-            data: { function: func, event, workflowChain, timeoutMs: INVOKE_TIMEOUT_MS },
+            data: { function: func, event, workflowChain, timeoutMs: INVOKE_TIMEOUT_MS, traceparent, tracestate },
           })
         );
       } catch (err) {
