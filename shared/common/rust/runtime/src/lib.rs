@@ -9,10 +9,10 @@ mod otel;
 mod secret;
 
 pub use otel::{
-    OtelConfig, DEFAULT_METRICS_INTERVAL_MS, OTEL_ENABLED_KEY, OTEL_EXPORTER_ENDPOINT_KEY,
-    OTEL_EXPORTER_HEADERS_KEY, OTEL_LOCAL_FILE_ENABLED_KEY, OTEL_METRICS_ENABLED_KEY,
-    OTEL_METRICS_INTERVAL_MS_KEY, OTEL_RESOURCE_ATTRIBUTES_KEY, OTEL_TRACING_ENABLED_KEY,
-    VERSION_KEY,
+    OtelConfig, DEFAULT_METRICS_INTERVAL_MS, DEFAULT_TRACES_SAMPLER_RATIO, OTEL_ENABLED_KEY,
+    OTEL_EXPORTER_ENDPOINT_KEY, OTEL_EXPORTER_HEADERS_KEY, OTEL_LOCAL_FILE_ENABLED_KEY,
+    OTEL_METRICS_ENABLED_KEY, OTEL_METRICS_INTERVAL_MS_KEY, OTEL_RESOURCE_ATTRIBUTES_KEY,
+    OTEL_TRACES_SAMPLER_RATIO_KEY, OTEL_TRACING_ENABLED_KEY, VERSION_KEY,
 };
 pub use secret::{validate_secret, SecretError, SecretString, MIN_SECRET_BYTES};
 
@@ -78,6 +78,8 @@ pub enum ConfigError {
     InvalidBool { key: String, value: String },
     #[error("config key `{key}` is not a positive integer: `{value}`")]
     InvalidPositiveInteger { key: String, value: String },
+    #[error("config key `{key}` is not a number between 0 and 1: `{value}`")]
+    InvalidRatio { key: String, value: String },
     /// `pair` is the pair itself for non-secret keys and `#<position>` for
     /// secret ones, so a header value never reaches an error message.
     #[error(
