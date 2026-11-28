@@ -375,6 +375,18 @@ func (s *ChatCommandEvent) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		if s.Platform.Set {
 			e.FieldStart("platform")
 			s.Platform.Encode(e)
@@ -416,19 +428,21 @@ func (s *ChatCommandEvent) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfChatCommandEvent = [12]string{
+var jsonFieldsNameOfChatCommandEvent = [14]string{
 	0:  "specversion",
 	1:  "id",
 	2:  "type",
 	3:  "source",
 	4:  "time",
-	5:  "platform",
-	6:  "sessionId",
-	7:  "triggerId",
-	8:  "triggeredBy",
-	9:  "workflowChain",
-	10: "dryRun",
-	11: "data",
+	5:  "traceparent",
+	6:  "tracestate",
+	7:  "platform",
+	8:  "sessionId",
+	9:  "triggerId",
+	10: "triggeredBy",
+	11: "workflowChain",
+	12: "dryRun",
+	13: "data",
 }
 
 // Decode decodes ChatCommandEvent from json.
@@ -492,6 +506,26 @@ func (s *ChatCommandEvent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
 			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
+			}
 		case "platform":
 			if err := func() error {
 				s.Platform.Reset()
@@ -553,7 +587,7 @@ func (s *ChatCommandEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"dryRun\"")
 			}
 		case "data":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -573,7 +607,7 @@ func (s *ChatCommandEvent) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00011110,
-		0b00001000,
+		0b00100000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -958,6 +992,18 @@ func (s *DatabaseRecordChangedEvent) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("datacontenttype")
 		s.Datacontenttype.Encode(e)
 	}
@@ -987,18 +1033,20 @@ func (s *DatabaseRecordChangedEvent) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfDatabaseRecordChangedEvent = [11]string{
+var jsonFieldsNameOfDatabaseRecordChangedEvent = [13]string{
 	0:  "specversion",
 	1:  "id",
 	2:  "type",
 	3:  "source",
 	4:  "time",
-	5:  "datacontenttype",
-	6:  "entityid",
-	7:  "operation",
-	8:  "platform",
-	9:  "sessionid",
-	10: "data",
+	5:  "traceparent",
+	6:  "tracestate",
+	7:  "datacontenttype",
+	8:  "entityid",
+	9:  "operation",
+	10: "platform",
+	11: "sessionid",
+	12: "data",
 }
 
 // Decode decodes DatabaseRecordChangedEvent from json.
@@ -1060,8 +1108,28 @@ func (s *DatabaseRecordChangedEvent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
 			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
+			}
 		case "datacontenttype":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				if err := s.Datacontenttype.Decode(d); err != nil {
 					return err
@@ -1071,7 +1139,7 @@ func (s *DatabaseRecordChangedEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"datacontenttype\"")
 			}
 		case "entityid":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				if err := s.Entityid.Decode(d); err != nil {
 					return err
@@ -1081,7 +1149,7 @@ func (s *DatabaseRecordChangedEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"entityid\"")
 			}
 		case "operation":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				if err := s.Operation.Decode(d); err != nil {
 					return err
@@ -1111,7 +1179,7 @@ func (s *DatabaseRecordChangedEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sessionid\"")
 			}
 		case "data":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -1130,8 +1198,8 @@ func (s *DatabaseRecordChangedEvent) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b11111111,
-		0b00000100,
+		0b10011111,
+		0b00010011,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -1934,19 +2002,33 @@ func (s *HeartbeatEvent) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("data")
 		s.Data.Encode(e)
 	}
 }
 
-var jsonFieldsNameOfHeartbeatEvent = [7]string{
+var jsonFieldsNameOfHeartbeatEvent = [9]string{
 	0: "specversion",
 	1: "id",
 	2: "type",
 	3: "source",
 	4: "subject",
 	5: "time",
-	6: "data",
+	6: "traceparent",
+	7: "tracestate",
+	8: "data",
 }
 
 // Decode decodes HeartbeatEvent from json.
@@ -1954,7 +2036,7 @@ func (s *HeartbeatEvent) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode HeartbeatEvent to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -2018,8 +2100,28 @@ func (s *HeartbeatEvent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
 			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
+			}
 		case "data":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -2037,8 +2139,9 @@ func (s *HeartbeatEvent) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b01111111,
+	for i, mask := range [2]uint8{
+		0b00111111,
+		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -2560,6 +2663,72 @@ func (s OptString) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptString) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes Traceparent as json.
+func (o OptTraceparent) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes Traceparent from json.
+func (o *OptTraceparent) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptTraceparent to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptTraceparent) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptTraceparent) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes Tracestate as json.
+func (o OptTracestate) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes Tracestate from json.
+func (o *OptTracestate) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptTracestate to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptTracestate) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptTracestate) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -3601,18 +3770,32 @@ func (s *SceneCommandRequest) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("data")
 		s.Data.Encode(e)
 	}
 }
 
-var jsonFieldsNameOfSceneCommandRequest = [6]string{
+var jsonFieldsNameOfSceneCommandRequest = [8]string{
 	0: "specversion",
 	1: "id",
 	2: "type",
 	3: "source",
 	4: "time",
-	5: "data",
+	5: "traceparent",
+	6: "tracestate",
+	7: "data",
 }
 
 // Decode decodes SceneCommandRequest from json.
@@ -3674,8 +3857,28 @@ func (s *SceneCommandRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
 			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
+			}
 		case "data":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -3694,7 +3897,7 @@ func (s *SceneCommandRequest) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00111111,
+		0b10011111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -4152,6 +4355,86 @@ func (s *SubmissionViewer) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SubmissionViewer) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes Traceparent as json.
+func (s Traceparent) Encode(e *jx.Encoder) {
+	unwrapped := string(s)
+
+	e.Str(unwrapped)
+}
+
+// Decode decodes Traceparent from json.
+func (s *Traceparent) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode Traceparent to nil")
+	}
+	var unwrapped string
+	if err := func() error {
+		v, err := d.Str()
+		unwrapped = string(v)
+		if err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = Traceparent(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s Traceparent) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *Traceparent) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes Tracestate as json.
+func (s Tracestate) Encode(e *jx.Encoder) {
+	unwrapped := string(s)
+
+	e.Str(unwrapped)
+}
+
+// Decode decodes Tracestate from json.
+func (s *Tracestate) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode Tracestate to nil")
+	}
+	var unwrapped string
+	if err := func() error {
+		v, err := d.Str()
+		unwrapped = string(v)
+		if err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		return errors.Wrap(err, "alias")
+	}
+	*s = Tracestate(unwrapped)
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s Tracestate) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *Tracestate) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -4682,6 +4965,18 @@ func (s *UserPageFormSubmittedEvent) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("datacontenttype")
 		s.Datacontenttype.Encode(e)
 	}
@@ -4711,18 +5006,20 @@ func (s *UserPageFormSubmittedEvent) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUserPageFormSubmittedEvent = [11]string{
+var jsonFieldsNameOfUserPageFormSubmittedEvent = [13]string{
 	0:  "specversion",
 	1:  "id",
 	2:  "type",
 	3:  "source",
 	4:  "time",
-	5:  "datacontenttype",
-	6:  "entityid",
-	7:  "operation",
-	8:  "platform",
-	9:  "sessionid",
-	10: "data",
+	5:  "traceparent",
+	6:  "tracestate",
+	7:  "datacontenttype",
+	8:  "entityid",
+	9:  "operation",
+	10: "platform",
+	11: "sessionid",
+	12: "data",
 }
 
 // Decode decodes UserPageFormSubmittedEvent from json.
@@ -4784,8 +5081,28 @@ func (s *UserPageFormSubmittedEvent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
 			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
+			}
 		case "datacontenttype":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				if err := s.Datacontenttype.Decode(d); err != nil {
 					return err
@@ -4795,7 +5112,7 @@ func (s *UserPageFormSubmittedEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"datacontenttype\"")
 			}
 		case "entityid":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				if err := s.Entityid.Decode(d); err != nil {
 					return err
@@ -4805,7 +5122,7 @@ func (s *UserPageFormSubmittedEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"entityid\"")
 			}
 		case "operation":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				if err := s.Operation.Decode(d); err != nil {
 					return err
@@ -4835,7 +5152,7 @@ func (s *UserPageFormSubmittedEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sessionid\"")
 			}
 		case "data":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -4854,8 +5171,8 @@ func (s *UserPageFormSubmittedEvent) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b11111111,
-		0b00000100,
+		0b10011111,
+		0b00010011,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -5303,6 +5620,18 @@ func (s *ViewerSegmentEnteredEvent) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("datacontenttype")
 		s.Datacontenttype.Encode(e)
 	}
@@ -5332,18 +5661,20 @@ func (s *ViewerSegmentEnteredEvent) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfViewerSegmentEnteredEvent = [11]string{
+var jsonFieldsNameOfViewerSegmentEnteredEvent = [13]string{
 	0:  "specversion",
 	1:  "id",
 	2:  "type",
 	3:  "source",
 	4:  "time",
-	5:  "datacontenttype",
-	6:  "entityid",
-	7:  "operation",
-	8:  "platform",
-	9:  "sessionid",
-	10: "data",
+	5:  "traceparent",
+	6:  "tracestate",
+	7:  "datacontenttype",
+	8:  "entityid",
+	9:  "operation",
+	10: "platform",
+	11: "sessionid",
+	12: "data",
 }
 
 // Decode decodes ViewerSegmentEnteredEvent from json.
@@ -5405,8 +5736,28 @@ func (s *ViewerSegmentEnteredEvent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
 			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
+			}
 		case "datacontenttype":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				if err := s.Datacontenttype.Decode(d); err != nil {
 					return err
@@ -5416,7 +5767,7 @@ func (s *ViewerSegmentEnteredEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"datacontenttype\"")
 			}
 		case "entityid":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				if err := s.Entityid.Decode(d); err != nil {
 					return err
@@ -5426,7 +5777,7 @@ func (s *ViewerSegmentEnteredEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"entityid\"")
 			}
 		case "operation":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				if err := s.Operation.Decode(d); err != nil {
 					return err
@@ -5456,7 +5807,7 @@ func (s *ViewerSegmentEnteredEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sessionid\"")
 			}
 		case "data":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -5475,8 +5826,8 @@ func (s *ViewerSegmentEnteredEvent) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b11111111,
-		0b00000100,
+		0b10011111,
+		0b00010011,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -5628,6 +5979,18 @@ func (s *ViewerSegmentLeftEvent) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("datacontenttype")
 		s.Datacontenttype.Encode(e)
 	}
@@ -5657,18 +6020,20 @@ func (s *ViewerSegmentLeftEvent) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfViewerSegmentLeftEvent = [11]string{
+var jsonFieldsNameOfViewerSegmentLeftEvent = [13]string{
 	0:  "specversion",
 	1:  "id",
 	2:  "type",
 	3:  "source",
 	4:  "time",
-	5:  "datacontenttype",
-	6:  "entityid",
-	7:  "operation",
-	8:  "platform",
-	9:  "sessionid",
-	10: "data",
+	5:  "traceparent",
+	6:  "tracestate",
+	7:  "datacontenttype",
+	8:  "entityid",
+	9:  "operation",
+	10: "platform",
+	11: "sessionid",
+	12: "data",
 }
 
 // Decode decodes ViewerSegmentLeftEvent from json.
@@ -5730,8 +6095,28 @@ func (s *ViewerSegmentLeftEvent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
 			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
+			}
 		case "datacontenttype":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				if err := s.Datacontenttype.Decode(d); err != nil {
 					return err
@@ -5741,7 +6126,7 @@ func (s *ViewerSegmentLeftEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"datacontenttype\"")
 			}
 		case "entityid":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				if err := s.Entityid.Decode(d); err != nil {
 					return err
@@ -5751,7 +6136,7 @@ func (s *ViewerSegmentLeftEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"entityid\"")
 			}
 		case "operation":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				if err := s.Operation.Decode(d); err != nil {
 					return err
@@ -5781,7 +6166,7 @@ func (s *ViewerSegmentLeftEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sessionid\"")
 			}
 		case "data":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -5800,8 +6185,8 @@ func (s *ViewerSegmentLeftEvent) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b11111111,
-		0b00000100,
+		0b10011111,
+		0b00010011,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -6385,6 +6770,18 @@ func (s *WorkflowCommandExecuteRequest) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		if s.Platform.Set {
 			e.FieldStart("platform")
 			s.Platform.Encode(e)
@@ -6420,18 +6817,20 @@ func (s *WorkflowCommandExecuteRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkflowCommandExecuteRequest = [11]string{
+var jsonFieldsNameOfWorkflowCommandExecuteRequest = [13]string{
 	0:  "specversion",
 	1:  "id",
 	2:  "type",
 	3:  "source",
 	4:  "time",
-	5:  "platform",
-	6:  "sessionId",
-	7:  "triggerId",
-	8:  "triggeredBy",
-	9:  "workflowChain",
-	10: "data",
+	5:  "traceparent",
+	6:  "tracestate",
+	7:  "platform",
+	8:  "sessionId",
+	9:  "triggerId",
+	10: "triggeredBy",
+	11: "workflowChain",
+	12: "data",
 }
 
 // Decode decodes WorkflowCommandExecuteRequest from json.
@@ -6493,6 +6892,26 @@ func (s *WorkflowCommandExecuteRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
 			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
+			}
 		case "platform":
 			if err := func() error {
 				s.Platform.Reset()
@@ -6544,7 +6963,7 @@ func (s *WorkflowCommandExecuteRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"workflowChain\"")
 			}
 		case "data":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -6564,7 +6983,7 @@ func (s *WorkflowCommandExecuteRequest) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00011111,
-		0b00000100,
+		0b00010000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -7089,6 +7508,18 @@ func (s *WorkflowExecuteRequest) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		if s.Platform.Set {
 			e.FieldStart("platform")
 			s.Platform.Encode(e)
@@ -7124,18 +7555,20 @@ func (s *WorkflowExecuteRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkflowExecuteRequest = [11]string{
+var jsonFieldsNameOfWorkflowExecuteRequest = [13]string{
 	0:  "specversion",
 	1:  "id",
 	2:  "type",
 	3:  "source",
 	4:  "time",
-	5:  "platform",
-	6:  "sessionId",
-	7:  "triggerId",
-	8:  "triggeredBy",
-	9:  "workflowChain",
-	10: "data",
+	5:  "traceparent",
+	6:  "tracestate",
+	7:  "platform",
+	8:  "sessionId",
+	9:  "triggerId",
+	10: "triggeredBy",
+	11: "workflowChain",
+	12: "data",
 }
 
 // Decode decodes WorkflowExecuteRequest from json.
@@ -7197,6 +7630,26 @@ func (s *WorkflowExecuteRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
 			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
+			}
 		case "platform":
 			if err := func() error {
 				s.Platform.Reset()
@@ -7248,7 +7701,7 @@ func (s *WorkflowExecuteRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"workflowChain\"")
 			}
 		case "data":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -7268,7 +7721,7 @@ func (s *WorkflowExecuteRequest) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00011111,
-		0b00000100,
+		0b00010000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -7519,17 +7972,31 @@ func (s *WorkflowHealthChangedEvent) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("data")
 		s.Data.Encode(e)
 	}
 }
 
-var jsonFieldsNameOfWorkflowHealthChangedEvent = [5]string{
+var jsonFieldsNameOfWorkflowHealthChangedEvent = [7]string{
 	0: "id",
 	1: "type",
 	2: "source",
 	3: "time",
-	4: "data",
+	4: "traceparent",
+	5: "tracestate",
+	6: "data",
 }
 
 // Decode decodes WorkflowHealthChangedEvent from json.
@@ -7581,8 +8048,28 @@ func (s *WorkflowHealthChangedEvent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
 			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
+			}
 		case "data":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -7601,7 +8088,7 @@ func (s *WorkflowHealthChangedEvent) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011111,
+		0b01001111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -8008,17 +8495,31 @@ func (s *WorkflowHealthSnapshotEvent) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("data")
 		s.Data.Encode(e)
 	}
 }
 
-var jsonFieldsNameOfWorkflowHealthSnapshotEvent = [5]string{
+var jsonFieldsNameOfWorkflowHealthSnapshotEvent = [7]string{
 	0: "id",
 	1: "type",
 	2: "source",
 	3: "time",
-	4: "data",
+	4: "traceparent",
+	5: "tracestate",
+	6: "data",
 }
 
 // Decode decodes WorkflowHealthSnapshotEvent from json.
@@ -8070,8 +8571,28 @@ func (s *WorkflowHealthSnapshotEvent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
 			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
+			}
 		case "data":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -8090,7 +8611,7 @@ func (s *WorkflowHealthSnapshotEvent) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011111,
+		0b01001111,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -8454,6 +8975,18 @@ func (s *WorkflowReplayRequest) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		if s.Platform.Set {
 			e.FieldStart("platform")
 			s.Platform.Encode(e)
@@ -8489,18 +9022,20 @@ func (s *WorkflowReplayRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkflowReplayRequest = [11]string{
+var jsonFieldsNameOfWorkflowReplayRequest = [13]string{
 	0:  "specversion",
 	1:  "id",
 	2:  "type",
 	3:  "source",
 	4:  "time",
-	5:  "platform",
-	6:  "sessionId",
-	7:  "triggerId",
-	8:  "triggeredBy",
-	9:  "workflowChain",
-	10: "data",
+	5:  "traceparent",
+	6:  "tracestate",
+	7:  "platform",
+	8:  "sessionId",
+	9:  "triggerId",
+	10: "triggeredBy",
+	11: "workflowChain",
+	12: "data",
 }
 
 // Decode decodes WorkflowReplayRequest from json.
@@ -8562,6 +9097,26 @@ func (s *WorkflowReplayRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
 			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
+			}
 		case "platform":
 			if err := func() error {
 				s.Platform.Reset()
@@ -8613,7 +9168,7 @@ func (s *WorkflowReplayRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"workflowChain\"")
 			}
 		case "data":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -8633,7 +9188,7 @@ func (s *WorkflowReplayRequest) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00011111,
-		0b00000100,
+		0b00010000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -8743,6 +9298,18 @@ func (s *WorkflowRunCancelledEvent) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		if s.Platform.Set {
 			e.FieldStart("platform")
 			s.Platform.Encode(e)
@@ -8784,18 +9351,20 @@ func (s *WorkflowRunCancelledEvent) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkflowRunCancelledEvent = [11]string{
+var jsonFieldsNameOfWorkflowRunCancelledEvent = [13]string{
 	0:  "id",
 	1:  "type",
 	2:  "source",
 	3:  "time",
-	4:  "platform",
-	5:  "sessionId",
-	6:  "triggerId",
-	7:  "triggeredBy",
-	8:  "workflowChain",
-	9:  "dryRun",
-	10: "data",
+	4:  "traceparent",
+	5:  "tracestate",
+	6:  "platform",
+	7:  "sessionId",
+	8:  "triggerId",
+	9:  "triggeredBy",
+	10: "workflowChain",
+	11: "dryRun",
+	12: "data",
 }
 
 // Decode decodes WorkflowRunCancelledEvent from json.
@@ -8846,6 +9415,26 @@ func (s *WorkflowRunCancelledEvent) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
+			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
 			}
 		case "platform":
 			if err := func() error {
@@ -8908,7 +9497,7 @@ func (s *WorkflowRunCancelledEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"dryRun\"")
 			}
 		case "data":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -8928,7 +9517,7 @@ func (s *WorkflowRunCancelledEvent) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00001111,
-		0b00000100,
+		0b00010000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -9202,6 +9791,18 @@ func (s *WorkflowRunCompletedEvent) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		if s.Platform.Set {
 			e.FieldStart("platform")
 			s.Platform.Encode(e)
@@ -9243,18 +9844,20 @@ func (s *WorkflowRunCompletedEvent) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkflowRunCompletedEvent = [11]string{
+var jsonFieldsNameOfWorkflowRunCompletedEvent = [13]string{
 	0:  "id",
 	1:  "type",
 	2:  "source",
 	3:  "time",
-	4:  "platform",
-	5:  "sessionId",
-	6:  "triggerId",
-	7:  "triggeredBy",
-	8:  "workflowChain",
-	9:  "dryRun",
-	10: "data",
+	4:  "traceparent",
+	5:  "tracestate",
+	6:  "platform",
+	7:  "sessionId",
+	8:  "triggerId",
+	9:  "triggeredBy",
+	10: "workflowChain",
+	11: "dryRun",
+	12: "data",
 }
 
 // Decode decodes WorkflowRunCompletedEvent from json.
@@ -9305,6 +9908,26 @@ func (s *WorkflowRunCompletedEvent) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
+			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
 			}
 		case "platform":
 			if err := func() error {
@@ -9367,7 +9990,7 @@ func (s *WorkflowRunCompletedEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"dryRun\"")
 			}
 		case "data":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -9387,7 +10010,7 @@ func (s *WorkflowRunCompletedEvent) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00001111,
-		0b00000100,
+		0b00010000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -9535,6 +10158,18 @@ func (s *WorkflowRunFailedEvent) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		if s.Platform.Set {
 			e.FieldStart("platform")
 			s.Platform.Encode(e)
@@ -9576,18 +10211,20 @@ func (s *WorkflowRunFailedEvent) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkflowRunFailedEvent = [11]string{
+var jsonFieldsNameOfWorkflowRunFailedEvent = [13]string{
 	0:  "id",
 	1:  "type",
 	2:  "source",
 	3:  "time",
-	4:  "platform",
-	5:  "sessionId",
-	6:  "triggerId",
-	7:  "triggeredBy",
-	8:  "workflowChain",
-	9:  "dryRun",
-	10: "data",
+	4:  "traceparent",
+	5:  "tracestate",
+	6:  "platform",
+	7:  "sessionId",
+	8:  "triggerId",
+	9:  "triggeredBy",
+	10: "workflowChain",
+	11: "dryRun",
+	12: "data",
 }
 
 // Decode decodes WorkflowRunFailedEvent from json.
@@ -9638,6 +10275,26 @@ func (s *WorkflowRunFailedEvent) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
+			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
 			}
 		case "platform":
 			if err := func() error {
@@ -9700,7 +10357,7 @@ func (s *WorkflowRunFailedEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"dryRun\"")
 			}
 		case "data":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -9720,7 +10377,7 @@ func (s *WorkflowRunFailedEvent) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00001111,
-		0b00000100,
+		0b00010000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -9868,6 +10525,18 @@ func (s *WorkflowRunStartedEvent) encodeFields(e *jx.Encoder) {
 		s.Time.Encode(e)
 	}
 	{
+		if s.Traceparent.Set {
+			e.FieldStart("traceparent")
+			s.Traceparent.Encode(e)
+		}
+	}
+	{
+		if s.Tracestate.Set {
+			e.FieldStart("tracestate")
+			s.Tracestate.Encode(e)
+		}
+	}
+	{
 		if s.Platform.Set {
 			e.FieldStart("platform")
 			s.Platform.Encode(e)
@@ -9909,18 +10578,20 @@ func (s *WorkflowRunStartedEvent) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkflowRunStartedEvent = [11]string{
+var jsonFieldsNameOfWorkflowRunStartedEvent = [13]string{
 	0:  "id",
 	1:  "type",
 	2:  "source",
 	3:  "time",
-	4:  "platform",
-	5:  "sessionId",
-	6:  "triggerId",
-	7:  "triggeredBy",
-	8:  "workflowChain",
-	9:  "dryRun",
-	10: "data",
+	4:  "traceparent",
+	5:  "tracestate",
+	6:  "platform",
+	7:  "sessionId",
+	8:  "triggerId",
+	9:  "triggeredBy",
+	10: "workflowChain",
+	11: "dryRun",
+	12: "data",
 }
 
 // Decode decodes WorkflowRunStartedEvent from json.
@@ -9971,6 +10642,26 @@ func (s *WorkflowRunStartedEvent) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"time\"")
+			}
+		case "traceparent":
+			if err := func() error {
+				s.Traceparent.Reset()
+				if err := s.Traceparent.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"traceparent\"")
+			}
+		case "tracestate":
+			if err := func() error {
+				s.Tracestate.Reset()
+				if err := s.Tracestate.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"tracestate\"")
 			}
 		case "platform":
 			if err := func() error {
@@ -10033,7 +10724,7 @@ func (s *WorkflowRunStartedEvent) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"dryRun\"")
 			}
 		case "data":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				if err := s.Data.Decode(d); err != nil {
 					return err
@@ -10053,7 +10744,7 @@ func (s *WorkflowRunStartedEvent) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b00001111,
-		0b00000100,
+		0b00010000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

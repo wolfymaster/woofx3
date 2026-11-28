@@ -1,7 +1,6 @@
 package monitor
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -28,7 +27,7 @@ func encodeHeartbeat(appName string, ready bool, now time.Time) ([]byte, error) 
 	if err := event.Validate(); err != nil {
 		return nil, fmt.Errorf("heartbeat for %q does not fit its contract: %w", appName, err)
 	}
-	return json.Marshal(event)
+	return event.MarshalJSON()
 }
 
 // decodeHeartbeat reads a message from the heartbeat subject. Anything that

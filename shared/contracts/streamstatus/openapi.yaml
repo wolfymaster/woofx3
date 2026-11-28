@@ -58,6 +58,10 @@ components:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         platform:
           $ref: "../common/cloudevents.yaml#/components/schemas/EntityId"
         sessionId:
@@ -81,6 +85,10 @@ components:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
     StreamStatusObserved:
       description: Whether the stream is live. `startedAt` is present only when live, and only when the platform says when it began.
       type: object

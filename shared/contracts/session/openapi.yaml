@@ -54,6 +54,10 @@ components:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         data:
           $ref: "#/components/schemas/SessionStarted"
     SessionEndedEvent:
@@ -73,6 +77,10 @@ components:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         data:
           $ref: "#/components/schemas/SessionEnded"
     SessionStarted:

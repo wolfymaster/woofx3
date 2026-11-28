@@ -43,6 +43,10 @@ components:
           enum: [HEARTBEAT]
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         data:
           $ref: "#/components/schemas/HeartbeatData"
     HeartbeatData:

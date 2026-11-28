@@ -528,6 +528,73 @@
         "platform": "twitch",
         "data": []
       }
+    },
+    {
+      "name": "with the trace context of the publishing span",
+      "valid": true,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "user.message",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": {
+          "messageId": "abc-1",
+          "amount": 3,
+          "isPaid": true,
+          "channelId": "abc-1",
+          "channelName": "abc-1",
+          "chatterId": "abc-1",
+          "chatterName": "abc-1",
+          "chatterLogin": "abc-1",
+          "message": "abc-1",
+          "membership": {
+            "isBroadcaster": false,
+            "isModerator": true,
+            "isSubscriber": true,
+            "isVip": false,
+            "isFollower": true,
+            "subscriberTier": "tier1"
+          },
+          "fromEngine": true
+        },
+        "traceparent": "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+        "tracestate": "vendor=1"
+      }
+    },
+    {
+      "name": "a malformed traceparent",
+      "valid": false,
+      "value": {
+        "specversion": "1.0.0",
+        "id": "7c3f0f55-0c4b-4a37-a2a5-2d1f1c8b9e10",
+        "type": "user.message",
+        "source": "twitch",
+        "time": "2026-11-19T10:15:30.123Z",
+        "platform": "twitch",
+        "data": {
+          "messageId": "abc-1",
+          "amount": 3,
+          "isPaid": true,
+          "channelId": "abc-1",
+          "channelName": "abc-1",
+          "chatterId": "abc-1",
+          "chatterName": "abc-1",
+          "chatterLogin": "abc-1",
+          "message": "abc-1",
+          "membership": {
+            "isBroadcaster": false,
+            "isModerator": true,
+            "isSubscriber": true,
+            "isVip": false,
+            "isFollower": true,
+            "subscriberTier": "tier1"
+          },
+          "fromEngine": true
+        },
+        "traceparent": "not-a-traceparent"
+      }
     }
   ]
 }

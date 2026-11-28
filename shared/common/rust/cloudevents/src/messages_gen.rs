@@ -284,6 +284,10 @@ pub struct HeartbeatEvent {
     pub specversion: EventSpecVersion,
     pub subject: HeartbeatEventSubject,
     pub time: EventTime,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub traceparent: ::std::option::Option<Traceparent>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub tracestate: ::std::option::Option<Tracestate>,
     #[serde(rename = "type")]
     pub type_: HeartbeatEventType,
 }
@@ -400,6 +404,10 @@ pub struct ModuleFieldOptionsRequest {
     #[serde(skip_serializing_if = "::std::option::Option::is_none")]
     pub specversion: ::std::option::Option<EventSpecVersion>,
     pub time: EventTime,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub traceparent: ::std::option::Option<Traceparent>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub tracestate: ::std::option::Option<Tracestate>,
     #[serde(rename = "type")]
     pub type_: ModuleFieldOptionsRequestType,
 }
@@ -525,6 +533,10 @@ pub struct ModuleStorageChangedEvent {
     pub source: ModuleStorageChangedEventSource,
     pub specversion: EventSpecVersion,
     pub time: EventTime,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub traceparent: ::std::option::Option<Traceparent>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub tracestate: ::std::option::Option<Tracestate>,
     #[serde(rename = "type")]
     pub type_: ModuleStorageChangedEventType,
 }
@@ -696,6 +708,10 @@ pub struct SessionStartedEvent {
     pub source: EventSource,
     pub specversion: EventSpecVersion,
     pub time: EventTime,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub traceparent: ::std::option::Option<Traceparent>,
+    #[serde(skip_serializing_if = "::std::option::Option::is_none")]
+    pub tracestate: ::std::option::Option<Tracestate>,
     #[serde(rename = "type")]
     pub type_: SessionStartedEventType,
 }
@@ -746,6 +762,121 @@ impl ::std::convert::TryFrom<::std::string::String> for SessionStartedEventType 
         value.parse()
     }
 }
+#[doc = "W3C Trace Context `traceparent` of the span that published the event (CloudEvents Distributed Tracing extension); absent when the publisher was not tracing.\n"]
+#[derive(:: serde :: Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[serde(transparent)]
+pub struct Traceparent(::std::string::String);
+impl ::std::ops::Deref for Traceparent {
+    type Target = ::std::string::String;
+    fn deref(&self) -> &::std::string::String {
+        &self.0
+    }
+}
+impl ::std::convert::From<Traceparent> for ::std::string::String {
+    fn from(value: Traceparent) -> Self {
+        value.0
+    }
+}
+impl ::std::str::FromStr for Traceparent {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        ::std::convert::TryFrom::try_from(value)
+    }
+}
+impl ::std::convert::TryFrom<&str> for Traceparent {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        if value.chars().count() > 55usize {
+            return Err("longer than 55 characters".into());
+        }
+        if value.chars().count() < 55usize {
+            return Err("shorter than 55 characters".into());
+        }
+        static PATTERN: ::std::sync::LazyLock<::regress::Regex> =
+            ::std::sync::LazyLock::new(|| {
+                ::regress::Regex::with_flags(
+                    "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$",
+                    "u",
+                )
+                .unwrap()
+            });
+        if PATTERN.find(value).is_none() {
+            return Err(
+                "doesn't match pattern \"^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$\""
+                    .into(),
+            );
+        }
+        Ok(Self(value.to_string()))
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for Traceparent {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        ::std::convert::TryFrom::try_from(value.as_str())
+    }
+}
+impl<'de> ::serde::Deserialize<'de> for Traceparent {
+    fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
+    where
+        D: ::serde::Deserializer<'de>,
+    {
+        ::std::convert::TryFrom::try_from(::std::string::String::deserialize(deserializer)?)
+            .map_err(|e: self::error::ConversionError| {
+                <D::Error as ::serde::de::Error>::custom(e.to_string())
+            })
+    }
+}
+#[doc = "W3C Trace Context `tracestate`, paired with `traceparent`."]
+#[derive(:: serde :: Serialize, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[serde(transparent)]
+pub struct Tracestate(::std::string::String);
+impl ::std::ops::Deref for Tracestate {
+    type Target = ::std::string::String;
+    fn deref(&self) -> &::std::string::String {
+        &self.0
+    }
+}
+impl ::std::convert::From<Tracestate> for ::std::string::String {
+    fn from(value: Tracestate) -> Self {
+        value.0
+    }
+}
+impl ::std::str::FromStr for Tracestate {
+    type Err = self::error::ConversionError;
+    fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        ::std::convert::TryFrom::try_from(value)
+    }
+}
+impl ::std::convert::TryFrom<&str> for Tracestate {
+    type Error = self::error::ConversionError;
+    fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+        if value.chars().count() > 512usize {
+            return Err("longer than 512 characters".into());
+        }
+        Ok(Self(value.to_string()))
+    }
+}
+impl ::std::convert::TryFrom<::std::string::String> for Tracestate {
+    type Error = self::error::ConversionError;
+    fn try_from(
+        value: ::std::string::String,
+    ) -> ::std::result::Result<Self, self::error::ConversionError> {
+        ::std::convert::TryFrom::try_from(value.as_str())
+    }
+}
+impl<'de> ::serde::Deserialize<'de> for Tracestate {
+    fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
+    where
+        D: ::serde::Deserializer<'de>,
+    {
+        ::std::convert::TryFrom::try_from(::std::string::String::deserialize(deserializer)?)
+            .map_err(|e: self::error::ConversionError| {
+                <D::Error as ::serde::de::Error>::custom(e.to_string())
+            })
+    }
+}
 #[doc = " Error types."]
 pub mod error {
     #[doc = r" Error from a `TryFrom` or `FromStr` implementation."]
@@ -774,4 +905,4 @@ pub mod error {
 }
 
 /// The contract document the run-time validator reads.
-pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"woofx3 bus messages","version":"1.0.0"},"paths":{"/barkloader.module.field_options":{"post":{"operationId":"moduleFieldOptions","x-consumers":["ts","rust"],"summary":"List the options of a module's select field by running one of its functions. Published by the api, answered by barkloader.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ModuleFieldOptionsRequest"}}}},"responses":{"200":{"description":"The function's own result, a list of options or an object with an error; its shape belongs to the module.","content":{"application/json":{"schema":{}}}}}}},"/com.woofx3.heartbeat":{"post":{"operationId":"heartbeat","x-consumers":["go","ts","rust"],"summary":"Report whether a service is ready to be depended on. Published by every service, read by the runtime health monitors and the api's readiness probe.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HeartbeatEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}},"/module.storage.changed":{"post":{"operationId":"moduleStorageChanged","x-consumers":["ts","rust"],"summary":"A key of a module's persistent storage was written or cleared. Published on `module.storage.<moduleId>.changed` by barkloader after a module function's write and by the api for each session-scoped key a session end cleared; read by the api, which forwards it as a webhook, and by the scene manager.\n","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ModuleStorageChangedEvent"}}}},"responses":{"202":{"description":"Published; nothing answers an event."}}}},"/session.started":{"post":{"operationId":"sessionStarted","x-consumers":["ts","rust"],"summary":"Name the session events are stamped with. Published by the api on a new session and when it starts; read by every publishing process.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionStartedEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}}},"components":{"schemas":{"SessionStartedEvent":{"description":"CloudEvent stating the current session. It carries no `sessionId` attribute, since it is what establishes one.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["session.started"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"data":{"$ref":"#/components/schemas/SessionStarted"}}},"SessionStarted":{"type":"object","additionalProperties":false,"required":["sessionId","startedAt"],"properties":{"sessionId":{"$ref":"#/components/schemas/EntityId"},"startedAt":{"$ref":"#/components/schemas/EventTime"}}},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200},"EventSource":{"description":"Name of the component that produced the event.","type":"string","minLength":1,"maxLength":200},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventSpecVersion":{"description":"The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.\n","type":"string","enum":["1.0.0"]},"ModuleStorageChangedEvent":{"description":"CloudEvent announcing one storage key's new value.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["module.storage.changed"]},"source":{"type":"string","enum":["barkloader","api"]},"time":{"$ref":"#/components/schemas/EventTime"},"sessionId":{"description":"The stream session the publisher knew when it published; absent when it knew none.","type":"string","minLength":1,"maxLength":200},"data":{"$ref":"#/components/schemas/ModuleStorageChange"}}},"ModuleStorageChange":{"description":"`value` is the value after the write, already decoded, and null when the key was cleared. It is any JSON value, so the key must be present and its content belongs to the module.\n","type":"object","additionalProperties":false,"required":["moduleId","key","value","occurredAt"],"properties":{"moduleId":{"$ref":"#/components/schemas/EntityId"},"key":{"type":"string","minLength":1},"value":{},"occurredAt":{"$ref":"#/components/schemas/EventTime"}}},"HeartbeatEvent":{"description":"CloudEvent saying one service is alive and whether it is ready.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","subject","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["com.woofx3.heartbeat"]},"source":{"$ref":"#/components/schemas/EventSource"},"subject":{"type":"string","enum":["HEARTBEAT"]},"time":{"$ref":"#/components/schemas/EventTime"},"data":{"$ref":"#/components/schemas/HeartbeatData"}}},"HeartbeatData":{"description":"`application` is the name dependents wait for (the service's runtime name). `ready` is false while the service is up but not yet usable.\n","type":"object","additionalProperties":false,"required":["application","ready"],"properties":{"application":{"$ref":"#/components/schemas/EntityId"},"ready":{"type":"boolean"}}},"ModuleFieldOptionsRequest":{"description":"CloudEvent naming the module function that lists a field's options.","type":"object","additionalProperties":false,"required":["id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["barkloader.module.field_options"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"data":{"$ref":"#/components/schemas/ModuleFieldOptions"}}},"ModuleFieldOptions":{"description":"The function that runs is `<moduleId>:function:<functionId>`.","type":"object","additionalProperties":false,"required":["moduleId","functionId"],"properties":{"moduleId":{"$ref":"#/components/schemas/EntityId"},"functionId":{"$ref":"#/components/schemas/EntityId"}}}}}}"####;
+pub const DOCUMENT: &str = r####"{"openapi":"3.1.0","info":{"title":"woofx3 bus messages","version":"1.0.0"},"paths":{"/barkloader.module.field_options":{"post":{"operationId":"moduleFieldOptions","x-consumers":["ts","rust"],"summary":"List the options of a module's select field by running one of its functions. Published by the api, answered by barkloader.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ModuleFieldOptionsRequest"}}}},"responses":{"200":{"description":"The function's own result, a list of options or an object with an error; its shape belongs to the module.","content":{"application/json":{"schema":{}}}}}}},"/com.woofx3.heartbeat":{"post":{"operationId":"heartbeat","x-consumers":["go","ts","rust"],"summary":"Report whether a service is ready to be depended on. Published by every service, read by the runtime health monitors and the api's readiness probe.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/HeartbeatEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}},"/module.storage.changed":{"post":{"operationId":"moduleStorageChanged","x-consumers":["ts","rust"],"summary":"A key of a module's persistent storage was written or cleared. Published on `module.storage.<moduleId>.changed` by barkloader after a module function's write and by the api for each session-scoped key a session end cleared; read by the api, which forwards it as a webhook, and by the scene manager.\n","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ModuleStorageChangedEvent"}}}},"responses":{"202":{"description":"Published; nothing answers an event."}}}},"/session.started":{"post":{"operationId":"sessionStarted","x-consumers":["ts","rust"],"summary":"Name the session events are stamped with. Published by the api on a new session and when it starts; read by every publishing process.","requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/SessionStartedEvent"}}}},"responses":{"202":{"description":"Published to the bus; nothing replies."}}}}},"components":{"schemas":{"SessionStartedEvent":{"description":"CloudEvent stating the current session. It carries no `sessionId` attribute, since it is what establishes one.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["session.started"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"traceparent":{"$ref":"#/components/schemas/Traceparent"},"tracestate":{"$ref":"#/components/schemas/Tracestate"},"data":{"$ref":"#/components/schemas/SessionStarted"}}},"SessionStarted":{"type":"object","additionalProperties":false,"required":["sessionId","startedAt"],"properties":{"sessionId":{"$ref":"#/components/schemas/EntityId"},"startedAt":{"$ref":"#/components/schemas/EventTime"}}},"EventTime":{"description":"RFC 3339 timestamp of when the event was produced.","type":"string","maxLength":40,"pattern":"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"},"EntityId":{"description":"Id of a record owned by another component, opaque to the reader.","type":"string","minLength":1,"maxLength":200},"Tracestate":{"description":"W3C Trace Context `tracestate`, paired with `traceparent`.","type":"string","maxLength":512},"Traceparent":{"description":"W3C Trace Context `traceparent` of the span that published the event (CloudEvents Distributed Tracing extension); absent when the publisher was not tracing.\n","type":"string","minLength":55,"maxLength":55,"pattern":"^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"},"EventSource":{"description":"Name of the component that produced the event.","type":"string","minLength":1,"maxLength":200},"EventId":{"description":"Unique id of one event; the producer chooses the format.","type":"string","minLength":1,"maxLength":200},"EventSpecVersion":{"description":"The `specversion` every bus message carries. `1.0.0` is not a CloudEvents specification value (that is `1.0`); it is what the TypeScript and Rust event factories wrote first, and every producer and consumer agrees on it.\n","type":"string","enum":["1.0.0"]},"ModuleStorageChangedEvent":{"description":"CloudEvent announcing one storage key's new value.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["module.storage.changed"]},"source":{"type":"string","enum":["barkloader","api"]},"time":{"$ref":"#/components/schemas/EventTime"},"traceparent":{"$ref":"#/components/schemas/Traceparent"},"tracestate":{"$ref":"#/components/schemas/Tracestate"},"sessionId":{"description":"The stream session the publisher knew when it published; absent when it knew none.","type":"string","minLength":1,"maxLength":200},"data":{"$ref":"#/components/schemas/ModuleStorageChange"}}},"ModuleStorageChange":{"description":"`value` is the value after the write, already decoded, and null when the key was cleared. It is any JSON value, so the key must be present and its content belongs to the module.\n","type":"object","additionalProperties":false,"required":["moduleId","key","value","occurredAt"],"properties":{"moduleId":{"$ref":"#/components/schemas/EntityId"},"key":{"type":"string","minLength":1},"value":{},"occurredAt":{"$ref":"#/components/schemas/EventTime"}}},"HeartbeatEvent":{"description":"CloudEvent saying one service is alive and whether it is ready.","type":"object","additionalProperties":false,"required":["specversion","id","type","source","subject","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["com.woofx3.heartbeat"]},"source":{"$ref":"#/components/schemas/EventSource"},"subject":{"type":"string","enum":["HEARTBEAT"]},"time":{"$ref":"#/components/schemas/EventTime"},"traceparent":{"$ref":"#/components/schemas/Traceparent"},"tracestate":{"$ref":"#/components/schemas/Tracestate"},"data":{"$ref":"#/components/schemas/HeartbeatData"}}},"HeartbeatData":{"description":"`application` is the name dependents wait for (the service's runtime name). `ready` is false while the service is up but not yet usable.\n","type":"object","additionalProperties":false,"required":["application","ready"],"properties":{"application":{"$ref":"#/components/schemas/EntityId"},"ready":{"type":"boolean"}}},"ModuleFieldOptionsRequest":{"description":"CloudEvent naming the module function that lists a field's options.","type":"object","additionalProperties":false,"required":["id","type","source","time","data"],"properties":{"specversion":{"$ref":"#/components/schemas/EventSpecVersion"},"id":{"$ref":"#/components/schemas/EventId"},"type":{"type":"string","enum":["barkloader.module.field_options"]},"source":{"$ref":"#/components/schemas/EventSource"},"time":{"$ref":"#/components/schemas/EventTime"},"traceparent":{"$ref":"#/components/schemas/Traceparent"},"tracestate":{"$ref":"#/components/schemas/Tracestate"},"data":{"$ref":"#/components/schemas/ModuleFieldOptions"}}},"ModuleFieldOptions":{"description":"The function that runs is `<moduleId>:function:<functionId>`.","type":"object","additionalProperties":false,"required":["moduleId","functionId"],"properties":{"moduleId":{"$ref":"#/components/schemas/EntityId"},"functionId":{"$ref":"#/components/schemas/EntityId"}}}}}}"####;

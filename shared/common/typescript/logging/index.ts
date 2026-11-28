@@ -4,6 +4,7 @@ export { LONG_DURATION_BUCKETS_SECONDS, SHORT_DURATION_BUCKETS_SECONDS } from ".
 export { makeLogFileName, makeTraceFileName } from "./naming";
 export {
   buildMeterProvider,
+  buildSampler,
   currentTraceContext,
   getMeter,
   getTelemetry,

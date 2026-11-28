@@ -55,6 +55,8 @@ fn heartbeat_event(app_name: &str, ready: bool, time: &str) -> Result<HeartbeatE
         source: app_name.parse().map_err(|e| format!("source: {e}"))?,
         subject: HeartbeatEventSubject::Heartbeat,
         time: time.parse().map_err(|e| format!("time: {e}"))?,
+        traceparent: None,
+        tracestate: None,
         data: HeartbeatData { application, ready },
     })
 }

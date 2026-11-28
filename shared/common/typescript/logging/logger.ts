@@ -48,6 +48,18 @@ function toPositiveInt(value: string | undefined, fallback: number, name: string
   return parsed;
 }
 
+/** An unset value takes the fallback; a set value outside 0..1 fails startup rather than silently sampling at the wrong rate. */
+function toRatio(value: string | undefined, fallback: number, name: string): number {
+  if (value == null || value.trim() === "") {
+    return fallback;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error(`${name} must be a number between 0 and 1, got "${value}"`);
+  }
+  return parsed;
+}
+
 export function resolveConfig(configOverride?: Partial<LoggingConfig>): LoggingConfig {
   const defaults: LoggingConfig = {
     level: "info",
@@ -59,6 +71,7 @@ export function resolveConfig(configOverride?: Partial<LoggingConfig>): LoggingC
     otelResourceAttributes: {},
     otelMetricsEnabled: false,
     otelMetricsIntervalMs: 60_000,
+    otelTracesSamplerRatio: 1,
     otelTracingEnabled: false,
     prettyConsole: true,
     redactPaths: defaultRedactPaths,
@@ -89,6 +102,11 @@ export function resolveConfig(configOverride?: Partial<LoggingConfig>): LoggingC
       process.env.WOOFX3_OTEL_METRICS_INTERVAL_MS,
       defaults.otelMetricsIntervalMs,
       "WOOFX3_OTEL_METRICS_INTERVAL_MS"
+    ),
+    otelTracesSamplerRatio: toRatio(
+      process.env.WOOFX3_OTEL_TRACES_SAMPLER_RATIO,
+      defaults.otelTracesSamplerRatio,
+      "WOOFX3_OTEL_TRACES_SAMPLER_RATIO"
     ),
     otelTracingEnabled: toBool(process.env.WOOFX3_OTEL_TRACING_ENABLED, otelEnabled),
     prettyConsole: toBool(process.env.WOOFX3_LOG_PRETTY, defaults.prettyConsole),

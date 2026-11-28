@@ -170,6 +170,42 @@ func (s *ChatCommandEvent) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Platform.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -451,6 +487,42 @@ func (s *DatabaseRecordChangedEvent) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "time",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
 			Error: err,
 		})
 	}
@@ -789,6 +861,42 @@ func (s *HeartbeatEvent) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "time",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
 			Error: err,
 		})
 	}
@@ -1213,6 +1321,42 @@ func (s *SceneCommandRequest) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Data.Validate(); err != nil {
 			return err
 		}
@@ -1380,6 +1524,46 @@ func (s *SubmissionViewer) Validate() error {
 	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s Traceparent) Validate() error {
+	alias := (string)(s)
+	if err := (validate.String{
+		MinLength:     55,
+		MinLengthSet:  true,
+		MaxLength:     55,
+		MaxLengthSet:  true,
+		Email:         false,
+		Hostname:      false,
+		Regex:         regexMap["^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"],
+		MinNumeric:    0,
+		MinNumericSet: false,
+		MaxNumeric:    0,
+		MaxNumericSet: false,
+	}).Validate(string(alias)); err != nil {
+		return errors.Wrap(err, "string")
+	}
+	return nil
+}
+
+func (s Tracestate) Validate() error {
+	alias := (string)(s)
+	if err := (validate.String{
+		MinLength:     0,
+		MinLengthSet:  false,
+		MaxLength:     512,
+		MaxLengthSet:  true,
+		Email:         false,
+		Hostname:      false,
+		Regex:         nil,
+		MinNumeric:    0,
+		MinNumericSet: false,
+		MaxNumeric:    0,
+		MaxNumericSet: false,
+	}).Validate(string(alias)); err != nil {
+		return errors.Wrap(err, "string")
 	}
 	return nil
 }
@@ -1669,6 +1853,42 @@ func (s *UserPageFormSubmittedEvent) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Datacontenttype.Validate(); err != nil {
 			return err
 		}
@@ -1934,6 +2154,42 @@ func (s *ViewerSegmentEnteredEvent) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Datacontenttype.Validate(); err != nil {
 			return err
 		}
@@ -2095,6 +2351,42 @@ func (s *ViewerSegmentLeftEvent) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "time",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
 			Error: err,
 		})
 	}
@@ -2454,6 +2746,42 @@ func (s *WorkflowCommandExecuteRequest) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "time",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
 			Error: err,
 		})
 	}
@@ -2844,6 +3172,42 @@ func (s *WorkflowExecuteRequest) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Platform.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -3085,6 +3449,42 @@ func (s *WorkflowHealthChangedEvent) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := s.Data.Validate(); err != nil {
 			return err
 		}
@@ -3284,6 +3684,42 @@ func (s *WorkflowHealthSnapshotEvent) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "time",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
 			Error: err,
 		})
 	}
@@ -3502,6 +3938,42 @@ func (s *WorkflowReplayRequest) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Platform.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -3664,6 +4136,42 @@ func (s *WorkflowRunCancelledEvent) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "time",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
 			Error: err,
 		})
 	}
@@ -3907,6 +4415,42 @@ func (s *WorkflowRunCompletedEvent) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Platform.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -4082,6 +4626,42 @@ func (s *WorkflowRunFailedEvent) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Platform.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
@@ -4253,6 +4833,42 @@ func (s *WorkflowRunStartedEvent) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "time",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Traceparent.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "traceparent",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Tracestate.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "tracestate",
 			Error: err,
 		})
 	}
