@@ -1,6 +1,7 @@
 package workers
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -13,6 +14,10 @@ import (
 	"github.com/wolfymaster/woofx3/db/database/migrate/migrations"
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"github.com/wolfymaster/woofx3/db/database/repository"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 )
 
@@ -85,7 +90,7 @@ func validEdge() *messages.ViewerSegmentEdge {
 func TestEncodeCloudEventIsTheContractsEnvelope(t *testing.T) {
 	db := openOutboxDB(t)
 	publisher := NewEventPublisher(repository.NewDbEventRepository(db), slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err := publisher.PublishEventIn(db, "viewer.segment.entered", "user:segment:chatty",
+	if err := publisher.PublishEventIn(context.Background(), db, "viewer.segment.entered", "user:segment:chatty",
 		map[string]string{"platform": "twitch", "sessionid": "s1"}, validEdge()); err != nil {
 		t.Fatalf("PublishEventIn: %v", err)
 	}
@@ -111,23 +116,23 @@ func TestPublishEventInCarriesItsSubjectAsTypeAndItsExtensionsOntoTheWire(t *tes
 	db := openOutboxDB(t)
 	publisher := NewEventPublisher(repository.NewDbEventRepository(db), slog.New(slog.NewTextHandler(io.Discard, nil)))
 
-	if err := publisher.PublishEventIn(db, "viewer.segment.entered", "user:segment:chatty",
+	if err := publisher.PublishEventIn(context.Background(), db, "viewer.segment.entered", "user:segment:chatty",
 		map[string]string{"bad_name": "x"}, validEdge()); err == nil {
 		t.Fatal("an extension name the SDK would drop was accepted")
 	}
-	if err := publisher.PublishEventIn(db, "viewer", "user:segment:chatty", nil, validEdge()); err == nil {
+	if err := publisher.PublishEventIn(context.Background(), db, "viewer", "user:segment:chatty", nil, validEdge()); err == nil {
 		t.Fatal("a subject with no operation was accepted")
 	}
 	broken := validEdge()
 	broken.ViewerId = ""
-	if err := publisher.PublishEventIn(db, "viewer.segment.entered", "user:segment:chatty", nil, broken); err == nil {
+	if err := publisher.PublishEventIn(context.Background(), db, "viewer.segment.entered", "user:segment:chatty", nil, broken); err == nil {
 		t.Fatal("data that breaks its contract was written to the outbox")
 	}
-	if err := publisher.PublishEventIn(db, "viewer.segment.entered", "user:segment:chatty", nil, nil); err == nil {
+	if err := publisher.PublishEventIn(context.Background(), db, "viewer.segment.entered", "user:segment:chatty", nil, nil); err == nil {
 		t.Fatal("an event with no data was written to the outbox")
 	}
 	err := db.Transaction(func(tx *gorm.DB) error {
-		return publisher.PublishEventIn(tx, "viewer.segment.entered", "user:segment:chatty",
+		return publisher.PublishEventIn(context.Background(), tx, "viewer.segment.entered", "user:segment:chatty",
 			map[string]string{"platform": "twitch", "sessionid": "s1"}, validEdge())
 	})
 	if err != nil {
@@ -162,5 +167,43 @@ func TestPublishEventInCarriesItsSubjectAsTypeAndItsExtensionsOntoTheWire(t *tes
 	ce = cloudevents.NewEvent()
 	if err := setEventExtensions(&ce, &plain); err != nil || len(ce.Extensions()) != 0 {
 		t.Fatalf("an event without extensions got %v, %v", ce.Extensions(), err)
+	}
+}
+
+func TestPublishCarriesTheCallersTraceOntoTheWire(t *testing.T) {
+	previous := otel.GetTextMapPropagator()
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+	t.Cleanup(func() { otel.SetTextMapPropagator(previous) })
+	provider := sdktrace.NewTracerProvider()
+	t.Cleanup(func() { _ = provider.Shutdown(context.Background()) })
+	ctx, span := provider.Tracer("test").Start(context.Background(), "request")
+	defer span.End()
+
+	db := openOutboxDB(t)
+	publisher := NewEventPublisher(repository.NewDbEventRepository(db), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := publisher.PublishEventIn(ctx, db, "viewer.segment.entered", "user:segment:chatty",
+		map[string]string{"platform": "twitch"}, validEdge()); err != nil {
+		t.Fatalf("PublishEventIn: %v", err)
+	}
+	var event models.WorkerEvent
+	if err := db.First(&event).Error; err != nil {
+		t.Fatalf("read event: %v", err)
+	}
+	wire, err := encodeCloudEvent(&event)
+	if err != nil {
+		t.Fatalf("encodeCloudEvent: %v", err)
+	}
+
+	var envelope map[string]any
+	if err := json.Unmarshal(wire, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	traceparent, _ := envelope["traceparent"].(string)
+	extracted := otel.GetTextMapPropagator().Extract(context.Background(), propagation.MapCarrier{"traceparent": traceparent})
+	if got := trace.SpanContextFromContext(extracted).TraceID(); got != span.SpanContext().TraceID() {
+		t.Fatalf("wire trace id = %s, want %s (traceparent %q)", got, span.SpanContext().TraceID(), traceparent)
+	}
+	if envelope["platform"] != "twitch" {
+		t.Fatalf("caller extension lost: %v", envelope)
 	}
 }
