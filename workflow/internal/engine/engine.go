@@ -14,12 +14,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/wolfymaster/woofx3/common/cloudevents"
-	"github.com/wolfymaster/woofx3/common/logging"
 	"github.com/wolfymaster/woofx3/workflow/internal/eventmatch"
 	"github.com/wolfymaster/woofx3/workflow/internal/expression"
 	"github.com/wolfymaster/woofx3/workflow/internal/tasks"
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
 
@@ -436,6 +434,7 @@ func (e *Engine[TServices]) registerPublishAction() {
 			event.Source = source
 		}
 
+		stampTrace(ctx.Context, event)
 		if err := e.publisher.Publish(event); err != nil {
 			return nil, fmt.Errorf("failed to publish event: %w", err)
 		}
@@ -1040,12 +1039,8 @@ func (e *Engine[TServices]) runExecution(wf *types.WorkflowDefinition, execution
 	}
 
 	// Top-level entry point for the engine: a trigger fired and a workflow
-	// run begins here. Task-level child spans need the context threaded
-	// through executeTasksFromIndex, which is tracked separately.
-	_, span := logging.StartSpan(context.Background(), "workflow.execute",
-		attribute.String("workflow.id", wf.ID),
-		attribute.String("workflow.execution_id", executionID),
-	)
+	// run begins here, under the trace of the event that fired it.
+	span := e.beginRunSegment(execution, event)
 	defer span.End()
 
 	taskExports := make(map[string]map[string]any)
@@ -1771,6 +1766,7 @@ func (e *Engine[TServices]) emitRunLifecycle(execution *types.WorkflowExecution)
 		event.SessionID = execution.TriggerEvent.SessionID
 	}
 
+	stampTrace(e.traceContext(execution.ID, execution.TriggerEvent), event)
 	if err := e.publisher.Publish(event); err != nil {
 		e.logger.Warn("run lifecycle not published",
 			"execution", execution.ID,
@@ -2139,6 +2135,7 @@ func (e *Engine[TServices]) resumeSubWorkflowExecution(waiter *SubWorkflowWaiter
 
 	e.refreshViewer(execution.ID)
 
+	defer e.beginResumedSegment(execution).End()
 	e.executeTasksFromIndex(execution, waiter.ExecutionOrder, waiter.CurrentIndex+1, waiter.TaskExports, waiter.TriggerEvent)
 }
 
@@ -2169,6 +2166,7 @@ func (e *Engine[TServices]) resumeWait(w *WaitingExecution) {
 
 	e.refreshViewer(w.ExecutionID)
 
+	defer e.beginResumedSegment(execution).End()
 	e.runTasksFrom(execution, w.ExecutionOrder, w.CurrentIndex, w.TaskExports, w.TriggerEvent, w.SkippedTasks)
 }
 
@@ -2178,7 +2176,7 @@ func (e *Engine[TServices]) resumeWait(w *WaitingExecution) {
 // The resolved parameters are returned even when the task fails, and that is
 // the point: a failed step is the one where "what was this actually asked to
 // do?" matters most, and the definition only holds the unresolved template.
-func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution *types.WorkflowExecution, event *types.Event, taskExports map[string]map[string]any) (*types.TaskResult, map[string]any, error) {
+func (e *Engine[TServices]) executeTask(ctx context.Context, taskDef *types.TaskDefinition, execution *types.WorkflowExecution, event *types.Event, taskExports map[string]map[string]any) (*types.TaskResult, map[string]any, error) {
 	resolver := e.buildResolver(execution, event, taskExports)
 
 	// Diagnostic: log what the resolver will see and what it produced.
@@ -2220,7 +2218,7 @@ func (e *Engine[TServices]) executeTask(taskDef *types.TaskDefinition, execution
 	}
 
 	taskCtx := &tasks.TaskContext{
-		Context:      e.runContext(execution.ID),
+		Context:      ctx,
 		DryRun:       execution.DryRun,
 		WorkflowID:   execution.WorkflowID,
 		ExecutionID:  execution.ID,

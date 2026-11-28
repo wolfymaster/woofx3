@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/otel/trace"
 	"sync"
 	"time"
 
@@ -66,6 +67,11 @@ type runControl struct {
 	// viewer is the run's `${viewer.*}` source, kept beside the rest of the
 	// run's lifetime state so its steps share one read until a pause.
 	viewer *runViewer
+
+	// segment is the span the run's steps are children of, and origin the
+	// first one; see beginSegment. Guarded by mu.
+	segment trace.SpanContext
+	origin  trace.SpanContext
 }
 
 // claimSettle marks the run settled with `status`, or reports that it already

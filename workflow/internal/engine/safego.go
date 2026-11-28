@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"go.opentelemetry.io/otel/codes"
 	"runtime/debug"
 
 	"github.com/wolfymaster/woofx3/workflow/internal/types"
@@ -91,16 +92,21 @@ func (e *Engine[TServices]) executeTaskGuarded(
 	event *types.Event,
 	taskExports map[string]map[string]any,
 ) (result *types.TaskResult, params map[string]any, err error) {
+	ctx, span := e.startStepSpan(execution, taskDef, event)
+	defer span.End()
 	defer func() {
 		recovered := recover()
-		if recovered == nil {
-			return
+		if recovered != nil {
+			where := fmt.Sprintf("task %s", taskDef.ID)
+			e.logPanic(where, refTo(execution), recovered)
+			result, params, err = nil, nil, panicError(where)
 		}
-		where := fmt.Sprintf("task %s", taskDef.ID)
-		e.logPanic(where, refTo(execution), recovered)
-		result, params, err = nil, nil, panicError(where)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "task failed")
+		}
 	}()
-	return e.executeTask(taskDef, execution, event, taskExports)
+	return e.executeTask(ctx, taskDef, execution, event, taskExports)
 }
 
 func (e *Engine[TServices]) logPanic(where string, run runRef, recovered any) {
