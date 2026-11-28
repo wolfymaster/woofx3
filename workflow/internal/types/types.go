@@ -220,6 +220,11 @@ type Event struct {
 	// Empty for an event nothing in a workflow caused: a platform event, a
 	// dashboard request, a background task.
 	WorkflowChain string `json:"workflowChain,omitempty"`
+	// TraceParent and TraceState are the CloudEvents Distributed Tracing
+	// extension attributes: the W3C trace context of whatever published the
+	// event. The engine reads and sets them; module code never sees them.
+	TraceParent string `json:"traceparent,omitempty"`
+	TraceState  string `json:"tracestate,omitempty"`
 	// DryRun is the CloudEvents extension attribute marking an event a dry
 	// run caused: its `workflow.run.*` lifecycle. A workflow the event
 	// triggers runs as a dry run too, so a dry run cannot set off a real
