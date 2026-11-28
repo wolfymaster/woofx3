@@ -233,7 +233,7 @@ func (c *Client) Send(data string) error {
 	return conn.WriteMessage(websocket.TextMessage, []byte(data))
 }
 
-// Invoke calls a module function on the barkloader server and waits for the
+// InvokeContext calls a module function on the barkloader server and waits for the
 // response. `event` is the sandbox invocation context (trigger fields plus a
 // `parameters` object for workflow action inputs — see counter/twitch modules).
 //
@@ -246,12 +246,9 @@ func (c *Client) Send(data string) error {
 // triggering event's chain plus the calling workflow. Barkloader stamps it on
 // every event the function announces, which is how the workflow engine sees a
 // loop that runs through a module function. Empty when no workflow is calling.
-func (c *Client) Invoke(functionName string, event map[string]interface{}, workflowChain string) (map[string]interface{}, error) {
-	return c.InvokeContext(context.Background(), functionName, event, workflowChain)
-}
-
-// InvokeContext is Invoke carrying ctx's trace context to barkloader. ctx does
-// not bound the call: that is invokeTimeout.
+//
+// ctx supplies the trace context sent to barkloader. It does not bound the
+// call: that is invokeTimeout.
 func (c *Client) InvokeContext(ctx context.Context, functionName string, event map[string]interface{}, workflowChain string) (map[string]interface{}, error) {
 	if !c.IsConnected() {
 		return nil, ErrNotConnected

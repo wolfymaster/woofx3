@@ -31,7 +31,7 @@ func TestInvokeContextCarriesTheCallersTrace(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }() // test server teardown; the close error carries no signal
 		for {
 			_, message, err := conn.ReadMessage()
 			if err != nil {
@@ -67,7 +67,7 @@ func TestInvokeContextCarriesTheCallersTrace(t *testing.T) {
 		t.Fatalf("barkloader saw trace %s, want %s", got, caller.SpanContext().TraceID())
 	}
 
-	if _, err := client.Invoke("f", map[string]interface{}{}, ""); err != nil {
+	if _, err := client.InvokeContext(context.Background(), "f", map[string]interface{}{}, ""); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if sent := <-requests; sent.Data.Traceparent != "" {
