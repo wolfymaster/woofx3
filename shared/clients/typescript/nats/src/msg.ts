@@ -1,4 +1,5 @@
 import type { Msg as NatsCoreMsg } from "@nats-io/nats-core";
+import { type Context, propagation, ROOT_CONTEXT } from "@opentelemetry/api";
 import type { Msg } from "./types";
 
 /**
@@ -52,4 +53,38 @@ export function createMessage(subject: string, data: string | Uint8Array | numbe
   }
 
   return new MessageImpl(subject, bytes);
+}
+
+const TRACEPARENT_MARKER = '"traceparent"';
+
+/**
+ * The trace context a CloudEvent carries in its `traceparent` / `tracestate`
+ * extension attributes. Anything that is not a JSON object with a valid
+ * traceparent (plain payloads, malformed values) yields the empty root
+ * context, so a consumer starts a new trace instead of failing.
+ */
+export function extractTraceContext(data: Uint8Array): Context {
+  const text = new TextDecoder().decode(data);
+  // Skips the JSON parse for the many payloads that carry no trace context.
+  if (!text.includes(TRACEPARENT_MARKER)) {
+    return ROOT_CONTEXT;
+  }
+  try {
+    const event: unknown = JSON.parse(text);
+    if (typeof event !== "object" || event === null) {
+      return ROOT_CONTEXT;
+    }
+    const { traceparent, tracestate } = event as Record<string, unknown>;
+    if (typeof traceparent !== "string") {
+      return ROOT_CONTEXT;
+    }
+    const carrier: Record<string, string> = { traceparent };
+    if (typeof tracestate === "string") {
+      carrier.tracestate = tracestate;
+    }
+    return propagation.extract(ROOT_CONTEXT, carrier);
+  } catch {
+    // Not JSON: a non-CloudEvent payload has no trace context to continue.
+    return ROOT_CONTEXT;
+  }
 }
