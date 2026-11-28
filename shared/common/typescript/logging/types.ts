@@ -35,6 +35,8 @@ export type LoggingConfig = {
   otelLocalFileEnabled: boolean;
   /** Independent tracing override. Defaults to the value of `otelEnabled`. */
   otelTracingEnabled: boolean;
+  /** Fraction of new traces recorded, 0..1. Spans continuing a sampled caller's trace are always kept. */
+  otelTracesSamplerRatio: number;
   /** Independent metrics override. Defaults to the value of `otelEnabled`. Metrics have no local-file fallback. */
   otelMetricsEnabled: boolean;
   /** How often accumulated metrics are exported. */

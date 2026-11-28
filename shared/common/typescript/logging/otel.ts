@@ -10,13 +10,20 @@ import {
   trace,
 } from "@opentelemetry/api";
 import { type Logger as OtelLogger, SeverityNumber } from "@opentelemetry/api-logs";
+import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { type Resource, resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { MeterProvider, type MetricReader, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
-import { BatchSpanProcessor, type SpanProcessor } from "@opentelemetry/sdk-trace-base";
+import {
+  BatchSpanProcessor,
+  ParentBasedSampler,
+  type Sampler,
+  type SpanProcessor,
+  TraceIdRatioBasedSampler,
+} from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic-conventions";
 import { FileSpanExporter } from "./file-span-exporter";
@@ -82,6 +89,17 @@ function buildOtlpMetricReader(endpoint: string, config: LoggingConfig): Periodi
 }
 
 /**
+ * Parent-based so a sampled caller's trace stays complete across services;
+ * the ratio only decides for traces that start here.
+ */
+export function buildSampler(ratio: number): Sampler {
+  if (!Number.isFinite(ratio) || ratio < 0 || ratio > 1) {
+    throw new Error(`trace sampler ratio must be within 0..1, got ${ratio}`);
+  }
+  return new ParentBasedSampler({ root: new TraceIdRatioBasedSampler(ratio) });
+}
+
+/**
  * Picks the span destination. A configured collector always wins; the local
  * file is the fallback that keeps force-enabled tracing from silently
  * dropping every span. Returns null when tracing has nowhere to go, which
@@ -143,9 +161,11 @@ export function initTelemetry(options: InitTelemetryOptions): Telemetry {
     if (processor) {
       tracerProvider = new NodeTracerProvider({
         resource: buildResource(serviceName, config),
+        sampler: buildSampler(config.otelTracesSamplerRatio),
         spanProcessors: [processor],
       });
-      tracerProvider.register();
+      // Only W3C trace context crosses process boundaries; baggage is deliberately left out.
+      tracerProvider.register({ propagator: new W3CTraceContextPropagator() });
     }
   }
 

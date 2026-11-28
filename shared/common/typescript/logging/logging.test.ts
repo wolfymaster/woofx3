@@ -10,6 +10,7 @@ const otelEnvKeys = [
   "WOOFX3_OTEL_EXPORTER_ENDPOINT",
   "WOOFX3_OTEL_LOCAL_FILE_ENABLED",
   "WOOFX3_OTEL_TRACING_ENABLED",
+  "WOOFX3_OTEL_TRACES_SAMPLER_RATIO",
 ];
 
 function clearOtelEnv(): void {
@@ -65,6 +66,29 @@ describe("resolveConfig OTel defaults", () => {
     const config = resolveConfig({ otelEnabled: false, otelTracingEnabled: false });
     expect(config.otelEnabled).toBe(false);
     expect(config.otelTracingEnabled).toBe(false);
+  });
+});
+
+describe("resolveConfig trace sampler ratio", () => {
+  beforeEach(clearOtelEnv);
+  afterEach(clearOtelEnv);
+
+  test("defaults to sampling everything", () => {
+    expect(resolveConfig().otelTracesSamplerRatio).toBe(1);
+  });
+
+  test.each([
+    ["0", 0],
+    ["0.25", 0.25],
+    ["1", 1],
+  ])("accepts %s", (raw, expected) => {
+    process.env.WOOFX3_OTEL_TRACES_SAMPLER_RATIO = raw;
+    expect(resolveConfig().otelTracesSamplerRatio).toBe(expected);
+  });
+
+  test.each(["-0.1", "1.5", "abc", "NaN"])("rejects %s at startup", (raw) => {
+    process.env.WOOFX3_OTEL_TRACES_SAMPLER_RATIO = raw;
+    expect(() => resolveConfig()).toThrow("WOOFX3_OTEL_TRACES_SAMPLER_RATIO");
   });
 });
 
