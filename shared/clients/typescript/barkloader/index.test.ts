@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { TraceHarness } from "@woofx3/common/logging/trace-testing";
+import { TraceHarness } from "@woofx3/common/logging/TraceHarness";
 import BarkloaderClient from "./index";
 
 const OPEN = 1;

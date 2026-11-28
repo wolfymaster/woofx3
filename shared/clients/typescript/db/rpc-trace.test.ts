@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { propagation, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import { MetricsHarness } from "@woofx3/common/logging/metrics-testing";
-import { TraceHarness } from "@woofx3/common/logging/trace-testing";
+import { TraceHarness } from "@woofx3/common/logging/TraceHarness";
 import type { RpcTransport } from "twirpscript";
 import { instrumentTransport } from "./rpc-metrics";
 
