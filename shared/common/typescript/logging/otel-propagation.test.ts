@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { propagation, ROOT_CONTEXT, SpanKind, trace } from "@opentelemetry/api";
 import { SamplingDecision } from "@opentelemetry/sdk-trace-base";
 import { buildSampler } from "./otel";
-import { TraceHarness } from "./trace-testing";
+import { TraceHarness } from "./TraceHarness";
 
 const harness = TraceHarness.install();
 const TRACE_ID = "0af7651916cd43dd8448eb211c80319c";
@@ -62,6 +62,6 @@ describe("buildSampler", () => {
   });
 
   test.each([-1, 2, Number.NaN])("rejects ratio %p", (ratio) => {
-    expect(() => buildSampler(ratio)).toThrow();
+    expect(() => buildSampler(ratio)).toThrow("trace sampler ratio must be within 0..1");
   });
 });
