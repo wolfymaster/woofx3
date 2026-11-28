@@ -5698,6 +5698,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.12",
+ "tracing",
  "woofx3",
  "woofx3-logging",
 ]
