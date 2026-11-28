@@ -22,6 +22,9 @@ require (
 	github.com/wolfymaster/woofx3/common/messages v0.0.0
 	github.com/wolfymaster/woofx3/common/runtime v0.0.0
 	go.opentelemetry.io/otel v1.47.0
+	go.opentelemetry.io/otel/sdk v1.47.0
+	go.opentelemetry.io/otel/sdk/metric v1.47.0
+	go.opentelemetry.io/otel/trace v1.47.0
 	google.golang.org/protobuf v1.36.12
 	gorm.io/driver/postgres v1.5.11
 	gorm.io/gorm v1.31.1
@@ -113,10 +116,7 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.47.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.47.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v1.47.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
-	go.opentelemetry.io/otel/trace v1.47.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
