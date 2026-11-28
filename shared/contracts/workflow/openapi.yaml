@@ -213,6 +213,10 @@ components:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         platform:
           $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
@@ -304,6 +308,10 @@ components:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         platform:
           $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
@@ -376,6 +384,10 @@ components:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventSource"
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         platform:
           $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
@@ -458,6 +470,10 @@ components:
           enum: [workflow]
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         platform:
           $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
@@ -489,6 +505,10 @@ components:
           enum: [workflow]
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         platform:
           $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
@@ -520,6 +540,10 @@ components:
           enum: [workflow]
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         platform:
           $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
@@ -551,6 +575,10 @@ components:
           enum: [workflow]
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         platform:
           $ref: "../common/cloudevents.yaml#/components/schemas/Platform"
         sessionId:
@@ -613,6 +641,10 @@ components:
           enum: [workflow]
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         data:
           $ref: "#/components/schemas/WorkflowHealthSnapshot"
     WorkflowHealthChangedEvent:
@@ -631,6 +663,10 @@ components:
           enum: [workflow]
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         data:
           $ref: "#/components/schemas/WorkflowHealth"
     WorkflowHealthReply:

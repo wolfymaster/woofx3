@@ -42,6 +42,19 @@ components:
       type: string
       minLength: 1
       maxLength: 200
+    Traceparent:
+      description: >
+        CloudEvents Distributed Tracing extension: the W3C trace context of the
+        publisher's span. Set by the shared publishers; a consumer that finds it
+        absent or malformed starts a new trace, so the shape is not enforced here.
+      type: string
+      minLength: 1
+      maxLength: 128
+    Tracestate:
+      description: Vendor trace state that travels with `traceparent`; see the W3C Trace Context.
+      type: string
+      minLength: 1
+      maxLength: 1024
     WorkflowChain:
       description: >
         Comma-separated ids of the workflow runs that led to the event, oldest
