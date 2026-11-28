@@ -32,6 +32,7 @@ type fakeMsg struct {
 	data    []byte
 }
 
+func (m fakeMsg) Context() context.Context { return context.Background() }
 func (m fakeMsg) Subject() string          { return m.subject }
 func (m fakeMsg) Data() []byte             { return m.data }
 func (m fakeMsg) JSON(v interface{}) error { return json.Unmarshal(m.data, v) }

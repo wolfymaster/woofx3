@@ -180,12 +180,21 @@ func (c *Client) Healthy() bool {
 	return !c.closed && c.connection != nil && !c.connection.IsClosed()
 }
 
+// Publish sends data without trace context. Callers holding a context use
+// PublishContext.
 func (c *Client) Publish(subject string, data []byte) error {
+	return c.PublishContext(context.Background(), subject, data)
+}
+
+// PublishContext sends data with ctx's trace context injected into it; see
+// InjectTraceContext.
+func (c *Client) PublishContext(ctx context.Context, subject string, data []byte) error {
 	conn, err := c.conn()
 	if err != nil {
 		return err
 	}
 
+	data = InjectTraceContext(ctx, data)
 	if err := conn.Publish(subject, data); err != nil {
 		c.logger.Error("Failed to publish message", "error", err)
 		return fmt.Errorf("failed to publish message: %w", err)
@@ -202,11 +211,11 @@ func (c *Client) Subscribe(subject string, handler Handler) (Subscription, error
 	}
 
 	sub, err := conn.Subscribe(subject, func(msg *nats.Msg) {
-		wrappedMsg := &MessageImpl{
-			subject: msg.Subject,
-			data:    msg.Data,
-		}
-		c.observed(subject, func() { handler(wrappedMsg) })
+		c.observed(subject, func() {
+			ctx, span := startConsumerSpan(msg.Subject, msg.Data)
+			defer span.End()
+			handler(newMessage(ctx, msg.Subject, msg.Data))
+		})
 	})
 
 	if err != nil {
@@ -254,7 +263,7 @@ func (c *Client) RequestWithContext(ctx context.Context, subject string, data []
 		return nil, err
 	}
 
-	msg, err := conn.RequestWithContext(ctx, subject, data)
+	msg, err := conn.RequestWithContext(ctx, subject, InjectTraceContext(ctx, data))
 	if err != nil {
 		c.logger.Error("Failed to send request", "error", err)
 		return nil, fmt.Errorf("failed to send request: %w", err)
@@ -271,12 +280,12 @@ func (c *Client) SubscribeWithReply(subject string, handler func(Msg) []byte) (S
 	}
 
 	sub, err := conn.Subscribe(subject, func(msg *nats.Msg) {
-		wrappedMsg := &MessageImpl{
-			subject: msg.Subject,
-			data:    msg.Data,
-		}
 		var response []byte
-		c.observed(subject, func() { response = handler(wrappedMsg) })
+		c.observed(subject, func() {
+			ctx, span := startConsumerSpan(msg.Subject, msg.Data)
+			defer span.End()
+			response = handler(newMessage(ctx, msg.Subject, msg.Data))
+		})
 		if response != nil && msg.Reply != "" {
 			msg.Respond(response)
 		}
