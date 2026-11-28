@@ -306,6 +306,7 @@ mod tests {
             br#"{"traceparent":"garbage"}"#.to_vec(),
             b"{}".to_vec(),
         ] {
+            // Safe to drop: the test only needs construction not to panic or error.
             let _ = consumer_span("some.subject", &payload);
         }
         let mut event = json!({ "traceparent": "module-supplied", "tracestate": "x=y" });
