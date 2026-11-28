@@ -1,6 +1,7 @@
 package barkloader
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -94,7 +95,7 @@ func TestInvokeConcurrentCallsDoNotRaceOnWrite(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, err := client.Invoke("test:function:echo", map[string]interface{}{"i": i}, "")
+			_, err := client.InvokeContext(context.Background(), "test:function:echo", map[string]interface{}{"i": i}, "")
 			errs[i] = err
 		}(i)
 	}
@@ -164,7 +165,7 @@ func TestInvokeDoesNotDeadlockAgainstConnectCycles(t *testing.T) {
 					return
 				default:
 				}
-				_, _ = client.Invoke("test:function:echo", map[string]interface{}{}, "")
+				_, _ = client.InvokeContext(context.Background(), "test:function:echo", map[string]interface{}{}, "")
 			}
 		}()
 	}
@@ -205,7 +206,7 @@ func TestDisconnectedClientReturnsErrNotConnected(t *testing.T) {
 	}{
 		{"Send", func(c *Client) error { return c.Send("{}") }},
 		{"Invoke", func(c *Client) error {
-			_, err := c.Invoke("test:function:echo", map[string]interface{}{}, "")
+			_, err := c.InvokeContext(context.Background(), "test:function:echo", map[string]interface{}{}, "")
 			return err
 		}},
 	}
@@ -244,7 +245,7 @@ func TestInvokeFailsFastWhenConnectionDrops(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := client.Invoke("test:function:echo", map[string]interface{}{}, "")
+		_, err := client.InvokeContext(context.Background(), "test:function:echo", map[string]interface{}{}, "")
 		errCh <- err
 	}()
 

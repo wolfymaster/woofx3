@@ -10,7 +10,8 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
-    "@nats-io/nats-core": "^3.2.0"
+    "@nats-io/nats-core": "^3.2.0",
+    "@opentelemetry/api": "^1.9.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

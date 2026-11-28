@@ -98,12 +98,12 @@ func main() {
 			if err != nil {
 				return err
 			}
-			httpClient = db.WithRPCMetrics(httpClient, rpcMetrics)
+			httpClient = db.WithTracePropagation(db.WithRPCMetrics(httpClient, rpcMetrics))
 			factHTTPClient, err := db.WithServiceToken(newFactHTTPClient(), dbProxyToken)
 			if err != nil {
 				return err
 			}
-			factHTTPClient = db.WithRPCMetrics(factHTTPClient, rpcMetrics)
+			factHTTPClient = db.WithTracePropagation(db.WithRPCMetrics(factHTTPClient, rpcMetrics))
 			dbClient := db.NewDbProxyClient(cfg.DatabaseProxyURL, httpClient)
 			// The alert, viewer fact and database record services are not on DbProxyClient,
 			// which predates them.

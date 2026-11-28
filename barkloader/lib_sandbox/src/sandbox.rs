@@ -95,6 +95,12 @@ impl SandboxFactory {
                 });
             }
         };
+        // Created here, not on the blocking thread, so it is a child of the
+        // caller's span; the module itself never sees the trace context.
+        let span = tracing::info_span!(
+            "barkloader.function",
+            function = %request.function,
+        );
         let factory = self.clone();
         // The closure's return value has to cross back from the blocking
         // thread pool into this async task, so it has to be `Send`. `Error`
@@ -106,6 +112,7 @@ impl SandboxFactory {
             // Held until the invocation ends, even when the caller stops
             // waiting for it.
             let _permit = permit;
+            let _entered = span.enter();
             factory
                 .create()
                 .and_then(|mut sandbox| sandbox.invoke_until(request, deadline))

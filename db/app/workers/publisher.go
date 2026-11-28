@@ -1,6 +1,7 @@
 package workers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/wolfymaster/woofx3/db/database/models"
 	"github.com/wolfymaster/woofx3/db/database/repository"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"gorm.io/gorm"
 )
 
@@ -45,6 +48,9 @@ type PublishOptions struct {
 	// Extensions are CloudEvent extensions beyond the outbox's own; see
 	// PublishEventIn.
 	Extensions map[string]string
+	// Context supplies the trace context the event is published under. nil
+	// publishes it as the start of a new trace.
+	Context context.Context
 }
 
 func (p *EventPublisher) Publish(opts PublishOptions) error {
@@ -74,7 +80,7 @@ func (p *EventPublisher) PublishIn(tx *gorm.DB, opts PublishOptions) error {
 // rather than the data (the workflow service reads an event's platform only
 // from the `platform` extension). Names must be lowercase letters and digits,
 // which the CloudEvents SDK otherwise drops on the wire.
-func (p *EventPublisher) PublishEventIn(tx *gorm.DB, subject, entityID string, extensions map[string]string, data ContractData) error {
+func (p *EventPublisher) PublishEventIn(ctx context.Context, tx *gorm.DB, subject, entityID string, extensions map[string]string, data ContractData) error {
 	dot := strings.LastIndex(subject, ".")
 	if dot <= 0 || dot == len(subject)-1 {
 		return fmt.Errorf("publish event: subject %q is not `<entity>.<operation>`", subject)
@@ -97,6 +103,7 @@ func (p *EventPublisher) PublishEventIn(tx *gorm.DB, subject, entityID string, e
 		Data:            data,
 		AutoAcknowledge: true,
 		Extensions:      extensions,
+		Context:         ctx,
 	}
 	return p.publishWith(p.repo.WithDB(tx), opts, subject, subject)
 }
@@ -163,8 +170,9 @@ func (p *EventPublisher) publishWith(repo *repository.DbEventRepository, opts Pu
 		event.MaxAttempts = opts.MaxAttempts
 	}
 
-	if len(opts.Extensions) > 0 {
-		extensions, err := json.Marshal(opts.Extensions)
+	extensionValues := withTraceContext(opts.Context, opts.Extensions)
+	if len(extensionValues) > 0 {
+		extensions, err := json.Marshal(extensionValues)
 		if err != nil {
 			return fmt.Errorf("marshal extensions: %w", err)
 		}
@@ -191,6 +199,28 @@ func (p *EventPublisher) publishWith(repo *repository.DbEventRepository, opts Pu
 		"subject", subject)
 
 	return nil
+}
+
+// withTraceContext returns extensions plus the traceparent and tracestate of
+// ctx's span. They are stored with the event because the worker publishes it
+// later, outside the request. An extension the caller set itself wins.
+func withTraceContext(ctx context.Context, extensions map[string]string) map[string]string {
+	if ctx == nil {
+		return extensions
+	}
+	carrier := propagation.MapCarrier{}
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	if len(carrier) == 0 {
+		return extensions
+	}
+	merged := make(map[string]string, len(extensions)+len(carrier))
+	for name, value := range carrier {
+		merged[name] = value
+	}
+	for name, value := range extensions {
+		merged[name] = value
+	}
+	return merged
 }
 
 func generateUUID() string {

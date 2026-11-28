@@ -171,6 +171,7 @@ func (s *moduleService) CreateModule(ctx context.Context, req *client.CreateModu
 
 	if s.publisher != nil && len(m.Functions) > 0 {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "module.function",
 			Operation:       "registered",
 			Data:            buildFunctionRegisteredData(m.ID.String(), m.ModuleID, m.ModuleKey, m.Name, m.Version, m.Functions),
@@ -328,6 +329,7 @@ func (s *moduleService) UpdateModule(ctx context.Context, req *client.UpdateModu
 
 	if s.publisher != nil && len(m.Functions) > 0 {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "module.function",
 			Operation:       "registered",
 			Data:            buildFunctionRegisteredData(m.ID.String(), m.ModuleID, m.ModuleKey, m.Name, m.Version, m.Functions),
@@ -362,6 +364,7 @@ func (s *moduleService) DeleteModule(ctx context.Context, req *client.DeleteModu
 
 	if s.publisher != nil && len(functions) > 0 {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "module.function",
 			Operation:       "deregistered",
 			Data:            buildFunctionDeregisteredData(m.ModuleID, m.ModuleKey, m.Name, m.Version, functions),
@@ -543,6 +546,7 @@ func (s *moduleService) RegisterTriggers(ctx context.Context, req *client.Regist
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "module.trigger",
 			Operation:       "registered",
 			Data:            buildTriggerRegisteredData(createdByRef, req.ModuleKey, req.ModuleName, req.Version, saved),
@@ -630,6 +634,7 @@ func (s *moduleService) DeleteTriggersByModuleId(ctx context.Context, req *clien
 	}
 	if s.publisher != nil && len(triggers) > 0 {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "module.trigger",
 			Operation:       "deregistered",
 			Data:            buildTriggerDeregisteredData(req.ModuleId, req.ModuleKey, triggers),
@@ -708,6 +713,7 @@ func (s *moduleService) RegisterActions(ctx context.Context, req *client.Registe
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "module.action",
 			Operation:       "registered",
 			Data:            buildActionRegisteredData(createdByRef, req.ModuleKey, req.ModuleName, req.Version, saved),
@@ -803,6 +809,7 @@ func (s *moduleService) DeleteActionsByModuleId(ctx context.Context, req *client
 	}
 	if s.publisher != nil && len(actions) > 0 {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "module.action",
 			Operation:       "deregistered",
 			Data:            buildActionDeregisteredData(req.ModuleId, req.ModuleKey, actions),
@@ -1193,6 +1200,7 @@ func (s *moduleService) ArchiveResourceByManifestId(ctx context.Context, req *cl
 		// is disabled off this event.
 		if archived != nil && s.publisher != nil {
 			s.publisher.Publish(workers.PublishOptions{
+				Context:         ctx,
 				EntityType:      "module.trigger",
 				Operation:       "deregistered",
 				Data:            buildTriggerDeregisteredData(req.ModuleId, "", []*models.Trigger{archived}),
@@ -1333,6 +1341,7 @@ func (s *moduleService) CompleteModuleInstall(ctx context.Context, req *client.C
 			data[key] = value
 		}
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			ClientID:        clientID,
 			EntityType:      "module",
 			EntityID:        req.ModuleId,
@@ -1547,6 +1556,7 @@ func (s *moduleService) CompleteModuleDelete(ctx context.Context, req *client.Co
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:    ctx,
 			ClientID:   clientID,
 			EntityType: "module",
 			EntityID:   req.ModuleId,
@@ -1651,6 +1661,7 @@ func (s *moduleService) RegisterWidgets(ctx context.Context, req *client.Registe
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "module.widget",
 			Operation:       "registered",
 			Data:            buildWidgetRegisteredData(createdByRef, req.ModuleKey, req.ModuleName, req.Version, saved),
@@ -1724,6 +1735,7 @@ func (s *moduleService) DeleteWidgetsByModuleId(ctx context.Context, req *client
 	}
 	if s.publisher != nil && len(widgets) > 0 {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "module.widget",
 			Operation:       "deregistered",
 			Data:            buildWidgetDeregisteredData(req.ModuleId, req.ModuleKey, widgets),
@@ -1758,6 +1770,7 @@ func (s *moduleService) RegisterBackgroundTasks(ctx context.Context, req *client
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "module.background_task",
 			Operation:       "registered",
 			Data:            buildBackgroundTaskRegisteredData(createdByRef, req.ModuleKey, req.ModuleName, req.Version, saved),
@@ -1804,6 +1817,7 @@ func (s *moduleService) DeleteBackgroundTasksByModuleId(ctx context.Context, req
 	}
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "module.background_task",
 			Operation:       "deregistered",
 			Data:            buildBackgroundTaskDeregisteredData(req.ModuleId, req.ModuleKey, tasks),
@@ -1975,6 +1989,7 @@ func (s *moduleService) RegisterAssets(ctx context.Context, req *client.Register
 
 	if s.publisher != nil {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "module.asset",
 			Operation:       "registered",
 			Data:            buildAssetRegisteredData(createdByRef, req.ModuleKey, req.ModuleName, req.Version, saved),
@@ -2026,6 +2041,7 @@ func (s *moduleService) DeleteAssetsByModuleId(ctx context.Context, req *client.
 	}
 	if s.publisher != nil && len(assets) > 0 {
 		s.publisher.Publish(workers.PublishOptions{
+			Context:         ctx,
 			EntityType:      "module.asset",
 			Operation:       "deregistered",
 			Data:            buildAssetDeregisteredData(req.ModuleId, req.ModuleKey, assets),

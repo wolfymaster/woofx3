@@ -19,6 +19,11 @@ pub const OTEL_METRICS_ENABLED_KEY: &str = "otelMetricsEnabled";
 pub const OTEL_METRICS_INTERVAL_MS_KEY: &str = "otelMetricsIntervalMs";
 /// Metrics export interval when [`OTEL_METRICS_INTERVAL_MS_KEY`] is unset.
 pub const DEFAULT_METRICS_INTERVAL_MS: u64 = 60_000;
+/// Fraction of new root traces to sample, in `0..=1`. Spans with a parent follow
+/// the parent's decision, so a sampled trace stays complete across services.
+pub const OTEL_TRACES_SAMPLER_RATIO_KEY: &str = "otelTracesSamplerRatio";
+/// Sampler ratio when [`OTEL_TRACES_SAMPLER_RATIO_KEY`] is unset: keep everything.
+pub const DEFAULT_TRACES_SAMPLER_RATIO: f64 = 1.0;
 /// Write trace data under `logs/` when tracing is on but no collector exists.
 pub const OTEL_LOCAL_FILE_ENABLED_KEY: &str = "otelLocalFileEnabled";
 
@@ -29,13 +34,14 @@ pub const OTEL_EXPORTER_HEADERS_KEY: &str = "otelExporterHeaders";
 /// Release tag, reported as `service.version` on every resource.
 pub const VERSION_KEY: &str = "version";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OtelConfig {
     pub enabled: bool,
     pub exporter_endpoint: Option<String>,
     pub tracing_enabled: bool,
     pub metrics_enabled: bool,
     pub metrics_interval_ms: u64,
+    pub traces_sampler_ratio: f64,
     pub local_file_enabled: bool,
     pub service_version: Option<String>,
     pub resource_attributes: BTreeMap<String, String>,
@@ -126,6 +132,17 @@ impl OtelConfig {
                 })?,
             None => DEFAULT_METRICS_INTERVAL_MS,
         };
+        let traces_sampler_ratio = match config.get_non_empty(OTEL_TRACES_SAMPLER_RATIO_KEY) {
+            Some(raw) => raw
+                .parse::<f64>()
+                .ok()
+                .filter(|ratio| (0.0..=1.0).contains(ratio))
+                .ok_or_else(|| ConfigError::InvalidRatio {
+                    key: OTEL_TRACES_SAMPLER_RATIO_KEY.to_string(),
+                    value: raw,
+                })?,
+            None => DEFAULT_TRACES_SAMPLER_RATIO,
+        };
         let local_file_enabled = config
             .get_bool(OTEL_LOCAL_FILE_ENABLED_KEY)?
             .unwrap_or(true);
@@ -148,6 +165,7 @@ impl OtelConfig {
             tracing_enabled,
             metrics_enabled,
             metrics_interval_ms,
+            traces_sampler_ratio,
             local_file_enabled,
             service_version: config.get_non_empty(VERSION_KEY),
             resource_attributes,
@@ -306,6 +324,27 @@ mod tests {
                 .otel()
                 .unwrap_err();
             assert!(matches!(err, ConfigError::InvalidPositiveInteger { .. }));
+        }
+    }
+
+    #[test]
+    fn the_sampler_ratio_defaults_to_one_and_is_read_when_set() {
+        assert_eq!(config_from(&[]).otel().unwrap().traces_sampler_ratio, 1.0);
+        for (raw, want) in [("0", 0.0), ("0.25", 0.25), ("1", 1.0)] {
+            let otel = config_from(&[(OTEL_TRACES_SAMPLER_RATIO_KEY, raw)])
+                .otel()
+                .unwrap();
+            assert_eq!(otel.traces_sampler_ratio, want);
+        }
+    }
+
+    #[test]
+    fn an_out_of_range_or_unparsable_sampler_ratio_is_refused() {
+        for raw in ["-0.1", "1.5", "NaN", "inf", "half"] {
+            let err = config_from(&[(OTEL_TRACES_SAMPLER_RATIO_KEY, raw)])
+                .otel()
+                .unwrap_err();
+            assert!(matches!(err, ConfigError::InvalidRatio { .. }), "{raw}");
         }
     }
 

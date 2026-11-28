@@ -140,7 +140,7 @@ func buildSceneCommandRequest(command messages.SceneCommand) ([]byte, error) {
 	if err := request.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid %s request: %w", sceneCommandSubject, err)
 	}
-	payload, err := json.Marshal(request)
+	payload, err := request.MarshalJSON()
 	if err != nil {
 		return nil, fmt.Errorf("marshal %s: %w", sceneCommandSubject, err)
 	}

@@ -90,7 +90,7 @@ func (s *userPageSubmissionService) RecordUserPageSubmission(ctx context.Context
 		SubmittedAt:  req.SubmittedAt.AsTime().UTC(),
 		RecordedAt:   s.now(),
 	}, func(tx *gorm.DB) error {
-		return s.publisher.PublishEventIn(tx, string(cloudevents.SubjectUserPageFormSubmitted), req.SubmissionId, extensions, &event)
+		return s.publisher.PublishEventIn(ctx, tx, string(cloudevents.SubjectUserPageFormSubmitted), req.SubmissionId, extensions, &event)
 	})
 	if err != nil {
 		return nil, twirp.InternalErrorWith(fmt.Errorf("record submission %s: %w", req.SubmissionId, err))

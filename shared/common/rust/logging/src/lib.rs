@@ -10,6 +10,7 @@
 
 mod file_exporter;
 pub mod metric_buckets;
+pub mod propagation;
 
 const LOGS_PATH: &str = "/v1/logs";
 const TRACES_PATH: &str = "/v1/traces";
@@ -27,7 +28,8 @@ use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
 use opentelemetry_otlp::{WithExportConfig, WithHttpConfig};
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
-use opentelemetry_sdk::trace::SdkTracerProvider;
+use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider};
 use opentelemetry_sdk::Resource;
 use thiserror::Error;
 use tracing_appender::non_blocking::WorkerGuard;
@@ -149,7 +151,11 @@ pub fn init(service_name: &str) -> Result<LoggingGuard, LoggingError> {
         .with_writer(file_writer);
 
     let tracer_provider = match otel.collects_traces() {
-        true => Some(build_tracer_provider(service_name, &otel, &log_directory)?),
+        true => {
+            // W3C `traceparent`/`tracestate` is the only wire format every service speaks.
+            opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
+            Some(build_tracer_provider(service_name, &otel, &log_directory)?)
+        }
         false => None,
     };
     let logger_provider = match otel.exports_logs() {
@@ -207,7 +213,9 @@ fn build_tracer_provider(
     otel: &OtelConfig,
     log_directory: &Path,
 ) -> Result<SdkTracerProvider, LoggingError> {
-    let builder = SdkTracerProvider::builder().with_resource(resource_for(service_name, otel));
+    let builder = SdkTracerProvider::builder()
+        .with_sampler(sampler_for(otel))
+        .with_resource(resource_for(service_name, otel));
 
     match &otel.exporter_endpoint {
         Some(endpoint) => {
@@ -229,6 +237,13 @@ fn build_tracer_provider(
             Ok(builder.with_batch_exporter(exporter).build())
         }
     }
+}
+
+/// Root spans are sampled by ratio; child spans follow their parent's decision.
+fn sampler_for(otel: &OtelConfig) -> Sampler {
+    Sampler::ParentBased(Box::new(Sampler::TraceIdRatioBased(
+        otel.traces_sampler_ratio,
+    )))
 }
 
 fn build_logger_provider(
@@ -375,6 +390,37 @@ mod tests {
             .iter()
             .find(|(name, _)| name.as_str() == key)
             .map(|(_, value)| value.to_string())
+    }
+
+    #[test]
+    fn test_sampler_follows_the_parent_and_ratios_new_roots() {
+        use opentelemetry::trace::{SpanKind, TraceContextExt, TraceId};
+        use opentelemetry_sdk::trace::{SamplingDecision, ShouldSample};
+
+        let sampler = sampler_for(&otel_from(&[("otelTracesSamplerRatio", "0")]));
+        let decide = |parent: Option<&opentelemetry::Context>| {
+            sampler
+                .should_sample(
+                    parent,
+                    TraceId::from(1u128),
+                    "span",
+                    &SpanKind::Internal,
+                    &[],
+                    &[],
+                )
+                .decision
+        };
+        assert_eq!(decide(None), SamplingDecision::Drop);
+
+        let sampled = opentelemetry::trace::SpanContext::new(
+            TraceId::from(1u128),
+            opentelemetry::trace::SpanId::from(1u64),
+            opentelemetry::trace::TraceFlags::SAMPLED,
+            true,
+            Default::default(),
+        );
+        let parent = opentelemetry::Context::new().with_remote_span_context(sampled);
+        assert_eq!(decide(Some(&parent)), SamplingDecision::RecordAndSample);
     }
 
     #[test]

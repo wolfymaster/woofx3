@@ -7,8 +7,10 @@ use metrics::RpcClientMetrics;
 use opentelemetry::metrics::Meter;
 use reqwest::Client;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use std::collections::HashMap;
 use std::time::Instant;
 use thiserror::Error;
+use woofx3_logging::propagation;
 
 #[derive(Debug, Error)]
 pub enum TwirpError {
@@ -110,13 +112,17 @@ impl TwirpClient {
     {
         let url = format!("{}/twirp/{}/{}", self.base_url, service, method);
 
-        let response = self
+        let mut trace_headers = HashMap::new();
+        propagation::inject_current(&mut trace_headers);
+        let mut http_request = self
             .client
             .post(&url)
-            .header("Content-Type", "application/json")
-            .json(request)
-            .send()
-            .await?;
+            .header("Content-Type", "application/json");
+        for (name, value) in &trace_headers {
+            http_request = http_request.header(name, value);
+        }
+
+        let response = http_request.json(request).send().await?;
 
         let status = response.status();
         let body = response.text().await?;
@@ -162,6 +168,15 @@ mod tests {
 
     /// A server that answers one request with `status` and `body`.
     async fn serve_once(status: &str, body: &str) -> String {
+        serve_once_capturing(status, body).await.0
+    }
+
+    /// Like `serve_once`, also returning the raw text of the request it received.
+    async fn serve_once_capturing(
+        status: &str,
+        body: &str,
+    ) -> (String, tokio::sync::oneshot::Receiver<String>) {
+        let (sent, received) = tokio::sync::oneshot::channel();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let response = format!(
@@ -171,10 +186,12 @@ mod tests {
         tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
             let mut buffer = [0u8; 4096];
-            let _ = socket.read(&mut buffer).await.unwrap();
+            let read = socket.read(&mut buffer).await.unwrap();
+            // Most tests drop the receiver; they only care about the response.
+            let _ = sent.send(String::from_utf8_lossy(&buffer[..read]).into_owned());
             socket.write_all(response.as_bytes()).await.unwrap();
         });
-        format!("http://{address}")
+        (format!("http://{address}"), received)
     }
 
     fn client_with_exporter(
@@ -296,6 +313,38 @@ mod tests {
             points[0]
                 .0
                 .contains(&("error.type".to_owned(), "request".to_owned()))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_call_sends_the_current_trace_context_as_headers() {
+        use opentelemetry::trace::{TraceContextExt, TracerProvider as _};
+        use opentelemetry_sdk::propagation::TraceContextPropagator;
+        use opentelemetry_sdk::trace::SdkTracerProvider;
+        use tracing_opentelemetry::OpenTelemetrySpanExt;
+        use tracing_subscriber::layer::SubscriberExt;
+
+        opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
+        let provider = SdkTracerProvider::builder().build();
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
+        let _default = tracing::subscriber::set_default(subscriber);
+        let (url, request) = serve_once_capturing("200 OK", "{}").await;
+        let client = TwirpClient::new(url);
+
+        let span = tracing::info_span!("caller");
+        let trace_id = span.context().span().span_context().trace_id();
+        let _: Value = tracing::Instrument::instrument(
+            client.call("woofx3.db.Test", "Get", &Value::Null),
+            span,
+        )
+        .await
+        .unwrap();
+
+        let raw = request.await.unwrap().to_lowercase();
+        assert!(
+            raw.contains(&format!("traceparent: 00-{trace_id}-")),
+            "{raw}"
         );
     }
 }

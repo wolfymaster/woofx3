@@ -18,6 +18,7 @@ func TestCheckPublished(t *testing.T) {
 			ID: "e1", Type: eventType, Source: "workflow", Time: now,
 			TriggerID: "trigger-1", TriggeredBy: "dashboard", SessionID: "sess-1",
 			WorkflowChain: "wf-0,wf-1", DryRun: true,
+			TraceParent: "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01", TraceState: "vendor=1",
 			Data: data,
 		}
 	}

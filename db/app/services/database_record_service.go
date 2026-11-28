@@ -466,7 +466,7 @@ func (s *DatabaseRecordService) publishChange(tx *gorm.DB, target *databaseTarge
 		}
 		event.PublicValues = messages.NewNilPublicValues(cells)
 	}
-	return s.publisher.PublishEventIn(tx, string(cloudevents.SubjectDatabaseRecordChanged), record.ID.String(), nil, &event)
+	return s.publisher.PublishEventIn(context.Background(), tx, string(cloudevents.SubjectDatabaseRecordChanged), record.ID.String(), nil, &event)
 }
 
 // publicCells types decoded JSON cells for the event. A column holds text, a

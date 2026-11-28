@@ -1,11 +1,13 @@
 use anyhow::Result;
 use async_nats::{Client, ConnectOptions, RequestErrorKind};
 use lib_sandbox::host::{NatsPublisher, NatsRequester, RequestError};
-use serde_json::Value;
+use opentelemetry::propagation::{Extractor, Injector};
+use serde_json::{Map, Value};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::runtime::Handle;
 use tracing::{debug, warn};
+use woofx3_logging::propagation;
 
 use crate::util::get_env_or_default_with_key;
 
@@ -55,8 +57,74 @@ impl NatsService {
     }
 }
 
+/// CloudEvents extension attributes carrying the W3C trace context
+/// (Distributed Tracing extension). Engine-owned: a module never sets them.
+const TRACE_ATTRIBUTES: [&str; 2] = ["traceparent", "tracestate"];
+
+/// The top-level attributes of a CloudEvent, as a propagation carrier.
+struct EventAttributes<'a>(&'a mut Map<String, Value>);
+
+impl Injector for EventAttributes<'_> {
+    fn set(&mut self, key: &str, value: String) {
+        self.0.insert(key.to_string(), Value::String(value));
+    }
+}
+
+/// Read-only view of the same attributes, for extraction.
+struct ReadAttributes<'a>(&'a Map<String, Value>);
+
+impl Extractor for ReadAttributes<'_> {
+    fn get(&self, key: &str) -> Option<&str> {
+        self.0.get(key).and_then(Value::as_str)
+    }
+
+    fn keys(&self) -> Vec<&str> {
+        TRACE_ATTRIBUTES.to_vec()
+    }
+}
+
+/// Makes `span` a child of the trace context in `message`'s top-level
+/// `traceparent` / `tracestate`. Absent, malformed or non-object input leaves
+/// the span a root; it is never an error.
+pub fn continue_trace(span: &tracing::Span, message: &Value) {
+    if let Some(attributes) = message.as_object() {
+        propagation::set_parent_from(span, &ReadAttributes(attributes));
+    }
+}
+
+/// Sets `traceparent` / `tracestate` on an outgoing CloudEvent from the current
+/// span. Whatever the event already carried is dropped first so a stale or
+/// foreign value never rides along; without an active trace the event goes
+/// out with none. Values that are not JSON objects are left alone.
+fn stamp_trace_context(data: &mut Value) {
+    let Some(attributes) = data.as_object_mut() else {
+        return;
+    };
+    for name in TRACE_ATTRIBUTES {
+        attributes.remove(name);
+    }
+    propagation::inject_current(&mut EventAttributes(attributes));
+}
+
+/// A CONSUMER span for handling `payload` received on `subject`, continuing the
+/// trace in the event's `traceparent`. An absent, malformed or non-JSON
+/// context starts a new root trace; it is never an error.
+pub fn consumer_span(subject: &str, payload: &[u8]) -> tracing::Span {
+    let span = tracing::info_span!(
+        "nats.consume",
+        otel.kind = "consumer",
+        messaging.system = "nats",
+        messaging.destination.name = %subject,
+    );
+    if let Ok(message) = serde_json::from_slice::<Value>(payload) {
+        continue_trace(&span, &message);
+    }
+    span
+}
+
 impl NatsPublisher for NatsService {
-    fn publish(&self, subject: &str, data: Value) -> Result<(), String> {
+    fn publish(&self, subject: &str, mut data: Value) -> Result<(), String> {
+        stamp_trace_context(&mut data);
         let bytes = serde_json::to_vec(&data).map_err(|e| e.to_string())?;
         let client = self.client.clone();
         let subject_owned = subject.to_string();
@@ -77,9 +145,10 @@ impl NatsRequester for NatsService {
     fn request(
         &self,
         subject: &str,
-        data: Value,
+        mut data: Value,
         timeout: Duration,
     ) -> Result<Value, RequestError> {
+        stamp_trace_context(&mut data);
         let bytes = serde_json::to_vec(&data).map_err(|e| RequestError::Failed(e.to_string()))?;
         let request = async_nats::Request::new()
             .payload(bytes.into())
@@ -180,6 +249,69 @@ mod tests {
         for value in ["", "   "] {
             assert_eq!(token_from(|_, _| value.to_string()), None, "{value:?}");
         }
+    }
+
+    #[test]
+    fn test_published_events_continue_the_trace_when_consumed() {
+        use opentelemetry::trace::{TraceContextExt, TracerProvider as _};
+        use opentelemetry_sdk::propagation::TraceContextPropagator;
+        use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+        use serde_json::json;
+        use tracing_opentelemetry::OpenTelemetrySpanExt;
+        use tracing_subscriber::layer::SubscriberExt;
+
+        opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
+
+        tracing::subscriber::with_default(subscriber, || {
+            let producer = tracing::info_span!("producer");
+            let mut event = json!({ "type": "x", "traceparent": "module-supplied" });
+            producer.in_scope(|| stamp_trace_context(&mut event));
+            let trace_id = producer.context().span().span_context().trace_id();
+            assert!(
+                event["traceparent"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with(&format!("00-{trace_id}-")),
+                "{event}"
+            );
+
+            let consumer = consumer_span("some.subject", &serde_json::to_vec(&event).unwrap());
+            assert_eq!(
+                consumer.context().span().span_context().trace_id(),
+                trace_id
+            );
+        });
+        provider.force_flush().unwrap();
+        let spans = exporter.get_finished_spans().unwrap();
+        let consumer = spans.iter().find(|s| s.name == "nats.consume").unwrap();
+        let producer = spans.iter().find(|s| s.name == "producer").unwrap();
+        assert_eq!(consumer.span_kind, opentelemetry::trace::SpanKind::Consumer);
+        assert_eq!(
+            consumer.span_context.trace_id(),
+            producer.span_context.trace_id()
+        );
+    }
+
+    #[test]
+    fn test_absent_or_malformed_context_starts_a_root_and_publishing_without_a_trace_adds_none() {
+        use serde_json::json;
+        for payload in [
+            b"not json".to_vec(),
+            br#"{"traceparent":"garbage"}"#.to_vec(),
+            b"{}".to_vec(),
+        ] {
+            // Safe to drop: the test only needs construction not to panic or error.
+            let _ = consumer_span("some.subject", &payload);
+        }
+        let mut event = json!({ "traceparent": "module-supplied", "tracestate": "x=y" });
+        stamp_trace_context(&mut event);
+        assert!(event.get("traceparent").is_none() && event.get("tracestate").is_none());
     }
 
     /// The headers of the WebSocket upgrade the client sends. The listener

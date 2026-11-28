@@ -516,7 +516,7 @@ func NewBarkloaderAction() tasks.ActionFunc[AppServices] {
 				"parameters", argsObj,
 			)
 		}
-		result, err := client.Invoke(canonicalID, eventPayload, ctx.TriggerEvent.ChainThrough(ctx.WorkflowID))
+		result, err := client.InvokeContext(ctx.Context, canonicalID, eventPayload, ctx.TriggerEvent.ChainThrough(ctx.WorkflowID))
 		if err != nil {
 			if ctx.Logger != nil {
 				ctx.Logger.Error(
@@ -594,7 +594,7 @@ func NewAlertAction() tasks.ActionFunc[AppServices] {
 		if err != nil {
 			return nil, err
 		}
-		if err := bus.Publish("ui.notify.alert", message); err != nil {
+		if err := bus.PublishContext(ctx.Context, "ui.notify.alert", message); err != nil {
 			return nil, fmt.Errorf("publish ui.notify.alert: %w", err)
 		}
 		return map[string]any{"published": true}, nil

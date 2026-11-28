@@ -27,6 +27,18 @@ components:
       type: string
       maxLength: 40
       pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$'
+    Traceparent:
+      description: >
+        W3C Trace Context `traceparent` of the span that published the event (CloudEvents
+        Distributed Tracing extension); absent when the publisher was not tracing.
+      type: string
+      minLength: 55
+      maxLength: 55
+      pattern: '^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$'
+    Tracestate:
+      description: W3C Trace Context `tracestate`, paired with `traceparent`.
+      type: string
+      maxLength: 512
     EntityId:
       description: Id of a record owned by another component, opaque to the reader.
       type: string

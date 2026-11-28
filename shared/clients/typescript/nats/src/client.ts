@@ -1,8 +1,9 @@
 import type { ConnectionOptions, NatsConnection, Msg as NatsCoreMsg, Subscription } from "@nats-io/nats-core";
 import { jwtAuthenticator, wsconnect } from "@nats-io/nats-core";
-import { getMeter, type Meter } from "@woofx3/common/logging";
+import { context, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
+import { getMeter, getTracer, type Meter } from "@woofx3/common/logging";
 import { MessageProcessMetrics } from "./message-metrics";
-import { MessageImpl } from "./msg";
+import { extractTraceContext, MessageImpl } from "./msg";
 import type { Handler, Logger, Msg, NATSConfig, ReconnectPolicy } from "./types";
 
 /** The reconnect policy a config gets when it names none. The pace matches the Go client's. */
@@ -288,7 +289,7 @@ function dispatchMessage(
   metrics: MessageProcessMetrics
 ): void {
   metrics
-    .around(subject, () => handler(msg))
+    .around(subject, () => handleInSpan(subject, msg, handler))
     .catch((error: unknown) => {
       logger.error("subscription handler failed", {
         subject,
@@ -296,6 +297,36 @@ function dispatchMessage(
         error: describeError(error),
       });
     });
+}
+
+/**
+ * Runs `handler` inside a CONSUMER span that continues the trace the
+ * message's publisher stamped on it, or starts a new root when it carries
+ * none. The handler's own errors are recorded on the span and rethrown for
+ * the caller's metrics and logging.
+ */
+async function handleInSpan(pattern: string, msg: Msg, handler: Handler): Promise<void> {
+  const span = getTracer().startSpan(
+    `${pattern} process`,
+    {
+      attributes: {
+        "messaging.system": "nats",
+        "messaging.destination.name": pattern,
+        "messaging.operation.type": "process",
+      },
+      kind: SpanKind.CONSUMER,
+    },
+    extractTraceContext(msg.data)
+  );
+  try {
+    await context.with(trace.setSpan(context.active(), span), () => handler(msg));
+  } catch (error) {
+    span.recordException(error instanceof Error ? error : new Error(String(error)));
+    span.setStatus({ code: SpanStatusCode.ERROR });
+    throw error;
+  } finally {
+    span.end();
+  }
 }
 
 function describeError(error: unknown): { message: string; stack?: string } {

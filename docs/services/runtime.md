@@ -387,6 +387,8 @@ server side and which key each client reads.
 
 With a collector configured, every service exports metrics over the same OTLP endpoint, resource and headers as logs and traces (`/v1/metrics`). `WOOFX3_OTEL_METRICS_ENABLED` turns metrics off on their own and `WOOFX3_OTEL_METRICS_INTERVAL_MS` sets the export interval (default 60000). With no collector there is no metrics output.
 
+Traces use a parent-based ratio sampler. `WOOFX3_OTEL_TRACES_SAMPLER_RATIO` (0 to 1, default 1) sets the share of new root traces that are kept; an invalid value stops startup. Spans with a parent follow the parent's decision, and services speak W3C `traceparent`/`tracestate`.
+
 Durations are histograms in seconds with explicit bucket boundaries. Attributes stay bounded: no viewer, user, alert, workflow or run id, and no concrete message subject.
 
 | Metric | Type | Unit | Attributes | Emitted by |

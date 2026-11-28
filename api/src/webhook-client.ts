@@ -2,7 +2,7 @@ import type { CallbackEvent, EngineRequest, RequestEnvelope } from "@woofx3/api/
 import { makeCallbackEnvelope, makeRequestEnvelope } from "@woofx3/api/webhooks";
 import { RELAY_API_REQUEST_TIMEOUT_MS } from "@woofx3/common/cloudevents/Relay/relay";
 import { isLoopbackHostname } from "@woofx3/common/http/request-guard";
-import type { SharedLogger } from "@woofx3/common/logging";
+import { type SharedLogger, withTraceHeaders } from "@woofx3/common/logging";
 import type { DbClient } from "./db-client";
 import type { EngineEventStream } from "./engine-event-stream";
 import type { EventShipper } from "./event-shipper";
@@ -398,7 +398,7 @@ export class WebhookClient {
       }
       const response = await fetch(instance.callbackUrl, {
         method: "POST",
-        headers,
+        headers: withTraceHeaders(headers),
         body: JSON.stringify(body),
         redirect: "error",
         signal: controller.signal,

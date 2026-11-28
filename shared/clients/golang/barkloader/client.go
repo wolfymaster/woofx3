@@ -1,11 +1,14 @@
 package barkloader
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"net/http"
 	"sync"
 	"time"
@@ -82,6 +85,11 @@ type InvokeData struct {
 	// WorkflowChain is stamped on every event the function announces; see
 	// Invoke. Omitted when the caller is not a workflow run.
 	WorkflowChain string `json:"workflowChain,omitempty"`
+	// Traceparent and Tracestate are the W3C trace context of the call, so
+	// barkloader's span around the function joins the caller's trace. Set by
+	// the client from the call's context; empty when it has none.
+	Traceparent string `json:"traceparent,omitempty"`
+	Tracestate  string `json:"tracestate,omitempty"`
 	// TimeoutMs is how long the caller waits for the result, so host calls
 	// that wait on another service stop when the caller does.
 	TimeoutMs int64 `json:"timeoutMs"`
@@ -225,7 +233,7 @@ func (c *Client) Send(data string) error {
 	return conn.WriteMessage(websocket.TextMessage, []byte(data))
 }
 
-// Invoke calls a module function on the barkloader server and waits for the
+// InvokeContext calls a module function on the barkloader server and waits for the
 // response. `event` is the sandbox invocation context (trigger fields plus a
 // `parameters` object for workflow action inputs — see counter/twitch modules).
 //
@@ -238,7 +246,10 @@ func (c *Client) Send(data string) error {
 // triggering event's chain plus the calling workflow. Barkloader stamps it on
 // every event the function announces, which is how the workflow engine sees a
 // loop that runs through a module function. Empty when no workflow is calling.
-func (c *Client) Invoke(functionName string, event map[string]interface{}, workflowChain string) (map[string]interface{}, error) {
+//
+// ctx supplies the trace context sent to barkloader. It does not bound the
+// call: that is invokeTimeout.
+func (c *Client) InvokeContext(ctx context.Context, functionName string, event map[string]interface{}, workflowChain string) (map[string]interface{}, error) {
 	if !c.IsConnected() {
 		return nil, ErrNotConnected
 	}
@@ -261,6 +272,11 @@ func (c *Client) Invoke(functionName string, event map[string]interface{}, workf
 		c.pendingInvokesMu.Unlock()
 	}()
 
+	trace := propagation.MapCarrier{}
+	if ctx != nil {
+		otel.GetTextMapPropagator().Inject(ctx, trace)
+	}
+
 	// Create request
 	request := InvokeRequest{
 		Type: "invoke",
@@ -269,6 +285,8 @@ func (c *Client) Invoke(functionName string, event map[string]interface{}, workf
 			Function:      functionName,
 			Event:         event,
 			WorkflowChain: workflowChain,
+			Traceparent:   trace.Get("traceparent"),
+			Tracestate:    trace.Get("tracestate"),
 			TimeoutMs:     invokeTimeout.Milliseconds(),
 		},
 	}

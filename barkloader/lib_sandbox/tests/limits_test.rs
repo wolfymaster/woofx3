@@ -846,3 +846,44 @@ fn test_lua_gc_metamethods_are_refused() {
         )
     );
 }
+
+#[tokio::test]
+async fn test_invoke_blocking_runs_inside_a_span_that_continues_the_callers_trace() {
+    use opentelemetry::trace::{TraceContextExt, TracerProvider as _};
+    use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+    use tracing::Instrument;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let exporter = InMemorySpanExporter::default();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("test")));
+    let _default = tracing::subscriber::set_default(subscriber);
+    let factory = SandboxFactory::new(
+        registry_with("run.js", "function run(ctx) { return { ok: true }; }"),
+        noop_host_context(),
+        SandboxLimits::default(),
+    )
+    .expect("valid limits");
+
+    let caller = tracing::info_span!("caller");
+    let caller_trace = tracing_opentelemetry::OpenTelemetrySpanExt::context(&caller)
+        .span()
+        .span_context()
+        .trace_id();
+    factory
+        .invoke_blocking(run_request(Value::Null, None))
+        .instrument(caller)
+        .await
+        .expect("invocation runs");
+
+    provider.force_flush().expect("flush");
+    let spans = exporter.get_finished_spans().expect("spans");
+    let function = spans
+        .iter()
+        .find(|span| span.name == "barkloader.function")
+        .expect("the invocation span was exported");
+    assert_eq!(function.span_context.trace_id(), caller_trace);
+}
