@@ -13,7 +13,9 @@ export {
   shutdownTelemetry,
   type Telemetry,
   type WithSpanOptions,
+  withServerSpan,
   withSpan,
+  withTraceHeaders,
 } from "./otel";
 export type {
   CreateServiceLoggerOptions,

@@ -1,4 +1,11 @@
-import { type Meter, SHORT_DURATION_BUCKETS_SECONDS } from "@woofx3/common/logging";
+import {
+  getTracer,
+  type Meter,
+  SHORT_DURATION_BUCKETS_SECONDS,
+  SpanKind,
+  SpanStatusCode,
+  withTraceHeaders,
+} from "@woofx3/common/logging";
 import type { RpcTransport } from "twirpscript";
 
 type RpcTransportResponse = Awaited<ReturnType<RpcTransport>>;
@@ -36,20 +43,32 @@ export function instrumentTransport(
       "rpc.service": match?.[1] ?? "unknown",
       "rpc.method": match?.[2] ?? "unknown",
     };
-    const startedAt = now();
-    try {
-      const response = await transport(url, opts);
-      const settled = response.ok ? response : await bufferedError(response);
-      if (!settled.ok) {
-        attributes["error.type"] = await twirpCode(settled);
+    // The span is active while the headers are built, so db-proxy's server span becomes its child.
+    return getTracer().startActiveSpan(
+      `${attributes["rpc.service"]}/${attributes["rpc.method"]}`,
+      { attributes, kind: SpanKind.CLIENT },
+      async (span) => {
+        const startedAt = now();
+        try {
+          const response = await transport(url, { ...opts, headers: withTraceHeaders(opts.headers) });
+          const settled = response.ok ? response : await bufferedError(response);
+          if (!settled.ok) {
+            attributes["error.type"] = await twirpCode(settled);
+            span.setStatus({ code: SpanStatusCode.ERROR, message: attributes["error.type"] });
+          }
+          duration.record((now() - startedAt) / MS_PER_SECOND, attributes);
+          return settled;
+        } catch (err) {
+          attributes["error.type"] = REQUEST_FAILED;
+          span.recordException(err instanceof Error ? err : new Error(String(err)));
+          span.setStatus({ code: SpanStatusCode.ERROR, message: REQUEST_FAILED });
+          duration.record((now() - startedAt) / MS_PER_SECOND, attributes);
+          throw err;
+        } finally {
+          span.end();
+        }
       }
-      duration.record((now() - startedAt) / MS_PER_SECOND, attributes);
-      return settled;
-    } catch (err) {
-      attributes["error.type"] = REQUEST_FAILED;
-      duration.record((now() - startedAt) / MS_PER_SECOND, attributes);
-      throw err;
-    }
+    );
   };
 }
 
