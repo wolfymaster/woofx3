@@ -45,6 +45,10 @@ components:
           enum: [barkloader, api]
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         sessionId:
           description: The stream session the publisher knew when it published; absent when it knew none.
           type: string

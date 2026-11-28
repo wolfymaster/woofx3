@@ -91,6 +91,10 @@ components:
           $ref: "#/components/schemas/OutboxSource"
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         datacontenttype:
           $ref: "#/components/schemas/OutboxDataContentType"
         entityid:
@@ -121,6 +125,10 @@ components:
           $ref: "#/components/schemas/OutboxSource"
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         datacontenttype:
           $ref: "#/components/schemas/OutboxDataContentType"
         entityid:
@@ -151,6 +159,10 @@ components:
           $ref: "#/components/schemas/OutboxSource"
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         datacontenttype:
           $ref: "#/components/schemas/OutboxDataContentType"
         entityid:
@@ -181,6 +193,10 @@ components:
           $ref: "#/components/schemas/OutboxSource"
         time:
           $ref: "../common/cloudevents.yaml#/components/schemas/EventTime"
+        traceparent:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Traceparent"
+        tracestate:
+          $ref: "../common/cloudevents.yaml#/components/schemas/Tracestate"
         datacontenttype:
           $ref: "#/components/schemas/OutboxDataContentType"
         entityid:
