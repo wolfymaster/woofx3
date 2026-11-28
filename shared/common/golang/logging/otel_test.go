@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -161,4 +162,58 @@ func logOnce(t *testing.T, ctx context.Context) map[string]any {
 		t.Fatalf("unmarshal log payload: %v", err)
 	}
 	return payload
+}
+
+func TestResolveConfigSamplerRatio(t *testing.T) {
+	half := 0.5
+	tooBig := 1.5
+	tests := []struct {
+		name     string
+		env      string
+		explicit *float64
+		want     float64
+		wantErr  bool
+	}{
+		{name: "default", want: 1.0},
+		{name: "env", env: "0.25", want: 0.25},
+		{name: "zero is valid", env: "0", want: 0},
+		{name: "explicit beats env", env: "0.25", explicit: &half, want: 0.5},
+		{name: "env above one", env: "1.5", wantErr: true},
+		{name: "env negative", env: "-0.1", wantErr: true},
+		{name: "env not a number", env: "lots", wantErr: true},
+		{name: "explicit above one", explicit: &tooBig, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("WOOFX3_OTEL_TRACES_SAMPLER_RATIO", tt.env)
+			resolved, err := resolveConfig(Config{ServiceName: "svc", OTelTracesSamplerRatio: tt.explicit})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveConfig: %v", err)
+			}
+			if resolved.OTelSamplerRatio != tt.want {
+				t.Fatalf("ratio = %v, want %v", resolved.OTelSamplerRatio, tt.want)
+			}
+		})
+	}
+}
+
+func TestSamplerFollowsParent(t *testing.T) {
+	sampler := newSampler(0)
+	tid, _ := trace.TraceIDFromHex("0102030405060708090a0b0c0d0e0f10")
+	sid, _ := trace.SpanIDFromHex("0102030405060708")
+	parent := trace.ContextWithSpanContext(context.Background(), trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: tid, SpanID: sid, TraceFlags: trace.FlagsSampled, Remote: true,
+	}))
+	if got := sampler.ShouldSample(sdktrace.SamplingParameters{ParentContext: parent, TraceID: tid}).Decision; got != sdktrace.RecordAndSample {
+		t.Fatalf("sampled parent decision = %v, want RecordAndSample", got)
+	}
+	if got := sampler.ShouldSample(sdktrace.SamplingParameters{ParentContext: context.Background(), TraceID: tid}).Decision; got != sdktrace.Drop {
+		t.Fatalf("root decision at ratio 0 = %v, want Drop", got)
+	}
 }

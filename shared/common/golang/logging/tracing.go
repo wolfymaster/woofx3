@@ -44,6 +44,7 @@ func startTracing(resolved resolvedConfig) (io.Closer, error) {
 
 	provider := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
+		sdktrace.WithSampler(newSampler(resolved.OTelSamplerRatio)),
 		sdktrace.WithResource(newOTelResource(resolved)),
 	)
 
@@ -54,6 +55,12 @@ func startTracing(resolved resolvedConfig) (io.Closer, error) {
 	))
 
 	return &tracerProviderCloser{provider: provider, spanFile: spanFile}, nil
+}
+
+// newSampler keeps a ratio of new traces and follows the parent's decision
+// otherwise, so a trace is never half-sampled across services.
+func newSampler(ratio float64) sdktrace.Sampler {
+	return sdktrace.ParentBased(sdktrace.TraceIDRatioBased(ratio))
 }
 
 // buildSpanExporter prefers the collector. Without one it falls back to a
