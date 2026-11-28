@@ -3,7 +3,7 @@ import type { Msg as NatsCoreMsg } from "@nats-io/nats-core";
 import { trace } from "@opentelemetry/api";
 import Event from "@woofx3/common/cloudevents/BaseEvent";
 import { MetricsHarness } from "@woofx3/common/logging/metrics-testing";
-import { TraceHarness } from "@woofx3/common/logging/trace-testing";
+import { TraceHarness } from "@woofx3/common/logging/TraceHarness";
 import { consumeMessages } from "./client";
 import { MessageProcessMetrics } from "./message-metrics";
 import { extractTraceContext } from "./msg";
@@ -12,9 +12,21 @@ const logger = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {
 const harness = TraceHarness.install();
 const metrics = new MessageProcessMetrics(new MetricsHarness().meter);
 
+function coreMsg(subject: string, payload: string): NatsCoreMsg {
+  const data = new TextEncoder().encode(payload);
+  return {
+    subject,
+    sid: 1,
+    data,
+    respond: () => false,
+    json: <T>() => JSON.parse(payload) as T,
+    string: () => payload,
+  };
+}
+
 async function* messages(...payloads: string[]): AsyncIterable<NatsCoreMsg> {
   for (const payload of payloads) {
-    yield { subject: "alerts.a", data: new TextEncoder().encode(payload) } as unknown as NatsCoreMsg;
+    yield coreMsg("alerts.a", payload);
   }
 }
 
