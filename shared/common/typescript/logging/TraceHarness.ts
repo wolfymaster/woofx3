@@ -1,4 +1,4 @@
-import { context, propagation, type Span, trace } from "@opentelemetry/api";
+import { context, propagation, ROOT_CONTEXT, type Span, trace } from "@opentelemetry/api";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
 import { InMemorySpanExporter, type ReadableSpan, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
@@ -43,6 +43,12 @@ export class TraceHarness {
         span.end();
       }
     });
+  }
+
+  /** The trace id a W3C `traceparent` value names, or undefined when it is not a valid one. */
+  traceIdOf(traceparent: string | undefined): string | undefined {
+    const carrier = traceparent === undefined ? {} : { traceparent };
+    return trace.getSpanContext(propagation.extract(ROOT_CONTEXT, carrier))?.traceId;
   }
 
   /** The W3C headers describing the active context, as an outgoing request would carry them. */

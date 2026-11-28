@@ -9,6 +9,7 @@
       "name": "@woofx3/api-server",
       "version": "0.1.0",
       "dependencies": {
+        "@opentelemetry/api": "^1.9.1",
         "@woofx3/common": "workspace:*",
         "capnweb": "^0.4.0",
         "fflate": "^0.8.3",
@@ -88,6 +89,9 @@
     },
     "shared/clients/typescript/db": {
       "name": "@woofx3/db",
+      "devDependencies": {
+        "@opentelemetry/api": "^1.9.1",
+      },
       "peerDependencies": {
         "protoscript": "^0.0.23",
         "twirpscript": "^0.0.72",

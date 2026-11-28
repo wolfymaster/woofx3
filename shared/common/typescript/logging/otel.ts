@@ -1,9 +1,13 @@
 import path from "node:path";
 import {
   type Attributes,
+  context,
   type Meter,
   metrics,
+  propagation,
+  ROOT_CONTEXT,
   type Span,
+  SpanKind,
   type SpanOptions,
   SpanStatusCode,
   type Tracer,
@@ -226,6 +230,58 @@ export function currentTraceContext(): { spanId: string; traceFlags: string; tra
     traceFlags: spanContext.traceFlags.toString(16).padStart(2, "0"),
     traceId: spanContext.traceId,
   };
+}
+
+/**
+ * `headers` plus the W3C `traceparent` / `tracestate` of the active context,
+ * for an outgoing HTTP request. Returns a new object; adds nothing when no
+ * span is active.
+ */
+export function withTraceHeaders(headers: Record<string, string> = {}): Record<string, string> {
+  const carrier = { ...headers };
+  propagation.inject(context.active(), carrier);
+  return carrier;
+}
+
+/**
+ * Runs `fn` inside a SERVER span that continues the trace the caller put in
+ * the request's `traceparent` header, or starts a new root when it sent none
+ * or sent a malformed one. A 5xx response or a throw marks the span as an error.
+ */
+export async function withServerSpan<T extends Response | undefined>(
+  request: Request,
+  fn: () => Promise<T>
+): Promise<T> {
+  const url = new URL(request.url);
+  const carrier: Record<string, string> = {};
+  request.headers.forEach((value, name) => {
+    carrier[name] = value;
+  });
+  const parent = propagation.extract(ROOT_CONTEXT, carrier);
+  const span = getTracer().startSpan(
+    `${request.method} ${url.pathname}`,
+    {
+      attributes: { "http.request.method": request.method, "url.path": url.pathname },
+      kind: SpanKind.SERVER,
+    },
+    parent
+  );
+  try {
+    const response = await context.with(trace.setSpan(parent, span), fn);
+    if (response !== undefined) {
+      span.setAttribute("http.response.status_code", response.status);
+      if (response.status >= 500) {
+        span.setStatus({ code: SpanStatusCode.ERROR });
+      }
+    }
+    return response;
+  } catch (error) {
+    span.recordException(error instanceof Error ? error : new Error(String(error)));
+    span.setStatus({ code: SpanStatusCode.ERROR });
+    throw error;
+  } finally {
+    span.end();
+  }
 }
 
 export type WithSpanOptions = {

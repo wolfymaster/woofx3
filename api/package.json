@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit --noUnusedLocals --noUnusedParameters"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
     "@woofx3/common": "workspace:*",
     "capnweb": "^0.4.0",
     "fflate": "^0.8.3",
