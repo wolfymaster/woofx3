@@ -902,8 +902,14 @@ export interface components {
             /** @enum {string} */
             source: WorkflowHealthChangedEventSource;
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             data: components["schemas"]["WorkflowHealth"];
         };
+        /** @description Vendor trace state that travels with `traceparent`; see the W3C Trace Context. */
+        Tracestate: string;
+        /** @description CloudEvents Distributed Tracing extension: the W3C trace context of the publisher's span. Set by the shared publishers; a consumer that finds it absent or malformed starts a new trace, so the shape is not enforced here. */
+        Traceparent: string;
         /** @description Unique id of one event; the producer chooses the format. */
         EventId: string;
         /** @description CloudEvent carrying every workflow in error. */
@@ -914,6 +920,8 @@ export interface components {
             /** @enum {string} */
             source: WorkflowHealthSnapshotEventSource;
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             data: components["schemas"]["WorkflowHealthSnapshot"];
         };
         WorkflowHealthSnapshot: {
@@ -928,6 +936,8 @@ export interface components {
             /** @enum {string} */
             source: WorkflowRunCancelledEventSource;
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform?: components["schemas"]["Platform"];
             sessionId?: components["schemas"]["SessionId"];
             triggerId?: components["schemas"]["TriggerId"];
@@ -961,6 +971,8 @@ export interface components {
             /** @enum {string} */
             source: WorkflowRunFailedEventSource;
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform?: components["schemas"]["Platform"];
             sessionId?: components["schemas"]["SessionId"];
             triggerId?: components["schemas"]["TriggerId"];
@@ -978,6 +990,8 @@ export interface components {
             /** @enum {string} */
             source: WorkflowRunCompletedEventSource;
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform?: components["schemas"]["Platform"];
             sessionId?: components["schemas"]["SessionId"];
             triggerId?: components["schemas"]["TriggerId"];
@@ -995,6 +1009,8 @@ export interface components {
             /** @enum {string} */
             source: WorkflowRunStartedEventSource;
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform?: components["schemas"]["Platform"];
             sessionId?: components["schemas"]["SessionId"];
             triggerId?: components["schemas"]["TriggerId"];
@@ -1024,6 +1040,8 @@ export interface components {
             type: WorkflowCommandExecuteRequestType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform?: components["schemas"]["Platform"];
             sessionId?: components["schemas"]["SessionId"];
             triggerId?: components["schemas"]["TriggerId"];
@@ -1055,6 +1073,8 @@ export interface components {
             type: WorkflowReplayRequestType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform?: components["schemas"]["Platform"];
             sessionId?: components["schemas"]["SessionId"];
             triggerId?: components["schemas"]["TriggerId"];
@@ -1100,6 +1120,8 @@ export interface components {
             type: WorkflowExecuteRequestType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform?: components["schemas"]["Platform"];
             sessionId?: components["schemas"]["SessionId"];
             triggerId?: components["schemas"]["TriggerId"];
@@ -1125,6 +1147,8 @@ export interface components {
             type: StreamStatusRequestedEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
         };
         /** @description CloudEvent carrying one platform's live state. `platform` names the platform and `sessionId`, when the publisher knows one, the session it stamps with. */
         StreamStatusObservedEvent: {
@@ -1134,6 +1158,8 @@ export interface components {
             type: StreamStatusObservedEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["EntityId"];
             sessionId?: components["schemas"]["EntityId"];
             data: components["schemas"]["StreamStatusObserved"];
@@ -1151,6 +1177,8 @@ export interface components {
             type: ChannelAdBreakEndEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1176,6 +1204,8 @@ export interface components {
             type: ChannelAdBreakBeginEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1196,6 +1226,8 @@ export interface components {
             type: ChannelAdBreakUpcomingEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1215,6 +1247,8 @@ export interface components {
             type: ChannelSharedAnnouncementEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1241,6 +1275,8 @@ export interface components {
             type: ChannelSharedPayItForwardEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1269,6 +1305,8 @@ export interface components {
             type: ChannelSharedPrimePaidUpgradeEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1295,6 +1333,8 @@ export interface components {
             type: ChannelSharedGiftPaidUpgradeEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1323,6 +1363,8 @@ export interface components {
             type: ChannelSharedResubEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1357,6 +1399,8 @@ export interface components {
             type: ChannelSharedRaidEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1385,6 +1429,8 @@ export interface components {
             type: ChannelSharedSubscriptionGiftEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1415,6 +1461,8 @@ export interface components {
             type: ChannelSharedSubscribeEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1445,6 +1493,8 @@ export interface components {
             type: ChannelWatchStreakEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1472,6 +1522,8 @@ export interface components {
             type: ChannelBitsBadgeTierEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1498,6 +1550,8 @@ export interface components {
             type: ChannelCharityDonationEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1526,6 +1580,8 @@ export interface components {
             type: ChannelAnnouncementEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1539,6 +1595,8 @@ export interface components {
             type: ChannelPayItForwardEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1552,6 +1610,8 @@ export interface components {
             type: ChannelUnraidEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1577,6 +1637,8 @@ export interface components {
             type: ChannelPrimePaidUpgradeEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1590,6 +1652,8 @@ export interface components {
             type: ChannelGiftPaidUpgradeEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1603,6 +1667,8 @@ export interface components {
             type: ChannelResubEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1616,6 +1682,8 @@ export interface components {
             type: ChannelSubscriptionGiftEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1637,6 +1705,8 @@ export interface components {
             type: ChannelSubscribeEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1658,6 +1728,8 @@ export interface components {
             type: StreamOfflineEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1676,6 +1748,8 @@ export interface components {
             type: StreamOnlineEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1695,6 +1769,8 @@ export interface components {
             type: ChannelPointsRedeemEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1718,6 +1794,8 @@ export interface components {
             type: ChannelRaidEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1737,6 +1815,8 @@ export interface components {
             type: ChannelHypeTrainEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1772,6 +1852,8 @@ export interface components {
             type: ChannelFollowEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1790,6 +1872,8 @@ export interface components {
             type: ChannelCheerEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1810,6 +1894,8 @@ export interface components {
             type: string;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform?: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1854,6 +1940,8 @@ export interface components {
             type: UserMessageEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             platform: components["schemas"]["PlatformId"];
             /** @description The stream session the event happened during; absent before the publisher knows one. */
             sessionId?: components["schemas"]["EntityId"];
@@ -1893,6 +1981,8 @@ export interface components {
             type: SessionEndedEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             data: components["schemas"]["SessionEnded"];
         };
         SessionEnded: {
@@ -1908,6 +1998,8 @@ export interface components {
             type: SessionStartedEventType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             data: components["schemas"]["SessionStarted"];
         };
         SessionStarted: {
@@ -1942,6 +2034,8 @@ export interface components {
             type: SceneCommandRequestType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             data: components["schemas"]["SceneCommand"];
         };
         /** @description Shows or hides one widget placement. `placementId` is the placement's id in the scene's widgets, not a widget definition: one widget can be placed on a scene more than once. */
@@ -1960,6 +2054,8 @@ export interface components {
             type: DatabaseRecordChangedEventType;
             source: components["schemas"]["OutboxSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             datacontenttype: components["schemas"]["OutboxDataContentType"];
             entityid: components["schemas"]["EntityId"];
             /** @enum {string} */
@@ -2002,6 +2098,8 @@ export interface components {
             /** @enum {string} */
             source: ModuleStorageChangedEventSource;
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             /** @description The stream session the publisher knew when it published; absent when it knew none. */
             sessionId?: string;
             data: components["schemas"]["ModuleStorageChange"];
@@ -2023,6 +2121,8 @@ export interface components {
             /** @enum {string} */
             subject: HeartbeatEventSubject;
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             data: components["schemas"]["HeartbeatData"];
         };
         /** @description `application` is the name dependents wait for (the service's runtime name). `ready` is false while the service is up but not yet usable. */
@@ -2038,6 +2138,8 @@ export interface components {
             type: ModuleFieldOptionsRequestType;
             source: components["schemas"]["EventSource"];
             time: components["schemas"]["EventTime"];
+            traceparent?: components["schemas"]["Traceparent"];
+            tracestate?: components["schemas"]["Tracestate"];
             data: components["schemas"]["ModuleFieldOptions"];
         };
         /** @description The function that runs is `<moduleId>:function:<functionId>`. */
@@ -2057,6 +2159,8 @@ export type SchemaWorkflowHealth = components['schemas']['WorkflowHealth'];
 export type SchemaEventTime = components['schemas']['EventTime'];
 export type SchemaEntityId = components['schemas']['EntityId'];
 export type SchemaWorkflowHealthChangedEvent = components['schemas']['WorkflowHealthChangedEvent'];
+export type SchemaTracestate = components['schemas']['Tracestate'];
+export type SchemaTraceparent = components['schemas']['Traceparent'];
 export type SchemaEventId = components['schemas']['EventId'];
 export type SchemaWorkflowHealthSnapshotEvent = components['schemas']['WorkflowHealthSnapshotEvent'];
 export type SchemaWorkflowHealthSnapshot = components['schemas']['WorkflowHealthSnapshot'];
