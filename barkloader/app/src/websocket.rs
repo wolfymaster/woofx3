@@ -2,7 +2,7 @@ use actix_ws::{AggregatedMessage, AggregatedMessageStream};
 use futures_util::StreamExt as _;
 use lib_sandbox::SandboxFactory;
 use serde::{Deserialize, Serialize};
-use tracing::{error, info};
+use tracing::{Instrument, error, info};
 #[derive(Debug, Serialize, Deserialize)]
 struct WsMessage {
     #[serde(rename = "type")]
@@ -120,7 +120,9 @@ impl WebSocketSession {
         // block on their own async I/O internally — calling it directly here
         // would panic ("Cannot start a runtime from within a runtime") since
         // this task already runs on the actix async reactor.
-        let result = sandbox.invoke_blocking(request).await;
+        let span = tracing::info_span!("barkloader.invoke", otel.kind = "server", %function);
+        crate::services::nats::continue_trace(&span, &data);
+        let result = sandbox.invoke_blocking(request).instrument(span).await;
         let response = match result {
             Ok(response) => WsMessage {
                 message_type: "result".to_string(),
