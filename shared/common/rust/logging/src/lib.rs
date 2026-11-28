@@ -10,6 +10,7 @@
 
 mod file_exporter;
 pub mod metric_buckets;
+pub mod propagation;
 
 const LOGS_PATH: &str = "/v1/logs";
 const TRACES_PATH: &str = "/v1/traces";

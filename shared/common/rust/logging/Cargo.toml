@@ -38,4 +38,4 @@ opentelemetry-appender-tracing = { version = "0.32", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"
-opentelemetry_sdk = { version = "0.32", default-features = false, features = ["testing", "metrics"] }
+opentelemetry_sdk = { version = "0.32", default-features = false, features = ["testing", "metrics", "trace"] }
