@@ -1,12 +1,12 @@
 import { RequestGuard, type RequestGuardPolicy } from "@woofx3/common/http/request-guard";
-import type { SharedLogger } from "@woofx3/common/logging";
+import { type SharedLogger, withServerSpan } from "@woofx3/common/logging";
 import type { ServerWebSocket } from "bun";
 import { newHttpBatchRpcResponse, newWebSocketRpcSession } from "capnweb";
 import { hasBarkloaderBearer } from "./barkloader-webhook-auth";
+import { LOGS_PATH_PREFIX, type LogsHttp } from "./engine-logs/LogsHttp";
 import type { ApiGateway } from "./gateway";
 import { type ConnectionInfo, ConnectionLifetime, GatewayConnection } from "./gateway-connection";
 import type { Health } from "./health";
-import { LOGS_PATH_PREFIX, type LogsHttp } from "./engine-logs/LogsHttp";
 import type { Readiness } from "./readiness";
 
 export interface HttpDeps {
@@ -181,168 +181,174 @@ export function createHttpServer(deps: HttpDeps) {
   return Bun.serve<SocketData>({
     port,
     hostname,
-    async fetch(req, server) {
-      const url = new URL(req.url);
+    fetch(req, server) {
+      return withServerSpan(req, async () => {
+        const url = new URL(req.url);
 
-      // Before any route, the WebSocket upgrade included: a browser sends
-      // Origin on every upgrade and never preflights one, so this is the
-      // only place a cross-site socket can be refused.
-      const rejected = requestGuard.reject(req);
-      if (rejected) {
-        logger.warn("Request refused by host/origin guard", {
-          status: rejected.status,
-          host: req.headers.get("host"),
-          origin: req.headers.get("origin"),
-          path: url.pathname,
-        });
-        return rejected;
-      }
-
-      // Handle WebSocket upgrade
-      if (url.pathname === "/api" && req.headers.get("upgrade") === "websocket") {
-        logger.debug("WebSocket upgrade request", {
-          path: url.pathname,
-          origin: req.headers.get("origin"),
-        });
-        const upgraded = server.upgrade(req, {
-          data: { origin: req.headers.get("origin"), remoteAddress: server.requestIP(req)?.address ?? null },
-        });
-        if (!upgraded) {
-          logger.error("WebSocket upgrade failed");
-          return new Response("WebSocket upgrade failed", { status: 500 });
-        }
-        return undefined;
-      }
-
-      // Handle HTTP batch requests
-      if (url.pathname === "/api") {
-        // Handle CORS preflight
-        if (req.method === "OPTIONS") {
-          logger.debug("CORS preflight request");
-          return new Response(null, {
-            status: 204,
-            headers: { ...requestGuard.corsOriginHeaders(req), ...BATCH_CORS_HEADERS },
-          });
-        }
-
-        const startTime = Date.now();
-        const lifetime = new ConnectionLifetime(logEndListenerError);
-        try {
-          // Measured, not the client-declared Content-Length (absent when chunked,
-          // arbitrary when lying). capnweb reads the whole body as text anyway.
-          const requestBody = await req.text();
-          const batchRequest = new Request(req.url, { method: req.method, headers: req.headers, body: requestBody });
-          const connection: ConnectionInfo = {
+        // Before any route, the WebSocket upgrade included: a browser sends
+        // Origin on every upgrade and never preflights one, so this is the
+        // only place a cross-site socket can be refused.
+        const rejected = requestGuard.reject(req);
+        if (rejected) {
+          logger.warn("Request refused by host/origin guard", {
+            status: rejected.status,
+            host: req.headers.get("host"),
             origin: req.headers.get("origin"),
-            remoteAddress: server.requestIP(req)?.address ?? null,
-            close: null,
-            onEnd: (listener) => lifetime.onEnd(listener),
-          };
-          const rpcResponse = await newHttpBatchRpcResponse(batchRequest, new GatewayConnection(gateway, connection), {
-            onSendError(error: Error) {
-              logger.error("RPC method error", {
-                error: error.message,
-                stack: error.stack,
-              });
-              return error;
-            },
+            path: url.pathname,
           });
-          // capnweb's batch responder takes no headers, so the CORS headers are
-          // set on the response it returns. The body is buffered by capnweb
-          // already, so reading it here to size it costs nothing extra.
-          const responseBody = await rpcResponse.arrayBuffer();
-          const headers = new Headers(rpcResponse.headers);
-          for (const [name, value] of Object.entries({
-            ...requestGuard.corsOriginHeaders(req),
-            ...BATCH_CORS_HEADERS,
-          })) {
-            headers.set(name, value);
+          return rejected;
+        }
+
+        // Handle WebSocket upgrade
+        if (url.pathname === "/api" && req.headers.get("upgrade") === "websocket") {
+          logger.debug("WebSocket upgrade request", {
+            path: url.pathname,
+            origin: req.headers.get("origin"),
+          });
+          const upgraded = server.upgrade(req, {
+            data: { origin: req.headers.get("origin"), remoteAddress: server.requestIP(req)?.address ?? null },
+          });
+          if (!upgraded) {
+            logger.error("WebSocket upgrade failed");
+            return new Response("WebSocket upgrade failed", { status: 500 });
           }
-          const response = new Response(responseBody, { status: rpcResponse.status, headers });
-          logger.info("HTTP batch RPC request completed", {
-            method: req.method,
-            path: url.pathname,
-            status: response.status,
-            durationMs: Date.now() - startTime,
-            requestBytes: Buffer.byteLength(requestBody),
-            responseBytes: responseBody.byteLength,
-          });
-          return response;
-        } catch (err) {
-          logger.error("RPC error", {
-            error: err instanceof Error ? err.message : String(err),
-            stack: err instanceof Error ? err.stack : undefined,
-            method: req.method,
-            path: url.pathname,
-            durationMs: Date.now() - startTime,
-          });
-          return new Response(
-            JSON.stringify({
-              error: err instanceof Error ? err.message : String(err),
-            }),
-            {
-              status: 500,
-              headers: { "Content-Type": "application/json" },
+          return undefined;
+        }
+
+        // Handle HTTP batch requests
+        if (url.pathname === "/api") {
+          // Handle CORS preflight
+          if (req.method === "OPTIONS") {
+            logger.debug("CORS preflight request");
+            return new Response(null, {
+              status: 204,
+              headers: { ...requestGuard.corsOriginHeaders(req), ...BATCH_CORS_HEADERS },
+            });
+          }
+
+          const startTime = Date.now();
+          const lifetime = new ConnectionLifetime(logEndListenerError);
+          try {
+            // Measured, not the client-declared Content-Length (absent when chunked,
+            // arbitrary when lying). capnweb reads the whole body as text anyway.
+            const requestBody = await req.text();
+            const batchRequest = new Request(req.url, { method: req.method, headers: req.headers, body: requestBody });
+            const connection: ConnectionInfo = {
+              origin: req.headers.get("origin"),
+              remoteAddress: server.requestIP(req)?.address ?? null,
+              close: null,
+              onEnd: (listener) => lifetime.onEnd(listener),
+            };
+            const rpcResponse = await newHttpBatchRpcResponse(
+              batchRequest,
+              new GatewayConnection(gateway, connection),
+              {
+                onSendError(error: Error) {
+                  logger.error("RPC method error", {
+                    error: error.message,
+                    stack: error.stack,
+                  });
+                  return error;
+                },
+              }
+            );
+            // capnweb's batch responder takes no headers, so the CORS headers are
+            // set on the response it returns. The body is buffered by capnweb
+            // already, so reading it here to size it costs nothing extra.
+            const responseBody = await rpcResponse.arrayBuffer();
+            const headers = new Headers(rpcResponse.headers);
+            for (const [name, value] of Object.entries({
+              ...requestGuard.corsOriginHeaders(req),
+              ...BATCH_CORS_HEADERS,
+            })) {
+              headers.set(name, value);
             }
-          );
-        } finally {
-          lifetime.end();
+            const response = new Response(responseBody, { status: rpcResponse.status, headers });
+            logger.info("HTTP batch RPC request completed", {
+              method: req.method,
+              path: url.pathname,
+              status: response.status,
+              durationMs: Date.now() - startTime,
+              requestBytes: Buffer.byteLength(requestBody),
+              responseBytes: responseBody.byteLength,
+            });
+            return response;
+          } catch (err) {
+            logger.error("RPC error", {
+              error: err instanceof Error ? err.message : String(err),
+              stack: err instanceof Error ? err.stack : undefined,
+              method: req.method,
+              path: url.pathname,
+              durationMs: Date.now() - startTime,
+            });
+            return new Response(
+              JSON.stringify({
+                error: err instanceof Error ? err.message : String(err),
+              }),
+              {
+                status: 500,
+                headers: { "Content-Type": "application/json" },
+              }
+            );
+          } finally {
+            lifetime.end();
+          }
         }
-      }
 
-      // Completion callback for asynchronous barkloader work. Kept off
-      // the capnweb surface because barkloader is a peer service posting
-      // plain JSON, not an authenticated control-plane session.
-      if (url.pathname === "/webhooks/barkloader/processing") {
-        if (req.method !== "POST") {
-          return new Response("Method Not Allowed", { status: 405 });
+        // Completion callback for asynchronous barkloader work. Kept off
+        // the capnweb surface because barkloader is a peer service posting
+        // plain JSON, not an authenticated control-plane session.
+        if (url.pathname === "/webhooks/barkloader/processing") {
+          if (req.method !== "POST") {
+            return new Response("Method Not Allowed", { status: 405 });
+          }
+          if (barkloaderWebhookSecret !== null && !hasBarkloaderBearer(req, barkloaderWebhookSecret)) {
+            logger.warn("Refused a processing callback without barkloader's bearer token");
+            return new Response("Unauthorized", { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
+          }
+          try {
+            const body = await req.json();
+            await onProcessingCallback(body);
+          } catch (err) {
+            // Answer 204 regardless. barkloader treats a non-2xx as a
+            // delivery failure worth logging, and there is nothing it can
+            // usefully retry: the job already ran.
+            logger.error("Failed to record processing callback", {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+          return new Response(null, { status: 204 });
         }
-        if (barkloaderWebhookSecret !== null && !hasBarkloaderBearer(req, barkloaderWebhookSecret)) {
-          logger.warn("Refused a processing callback without barkloader's bearer token");
-          return new Response("Unauthorized", { status: 401, headers: { "WWW-Authenticate": "Bearer" } });
-        }
-        try {
-          const body = await req.json();
-          await onProcessingCallback(body);
-        } catch (err) {
-          // Answer 204 regardless. barkloader treats a non-2xx as a
-          // delivery failure worth logging, and there is nothing it can
-          // usefully retry: the job already ran.
-          logger.error("Failed to record processing callback", {
-            error: err instanceof Error ? err.message : String(err),
+
+        if (logs !== undefined && url.pathname.startsWith(LOGS_PATH_PREFIX)) {
+          return logs.handle(req, url, {
+            cors: requestGuard.corsOriginHeaders(req),
+            disableIdleTimeout: () => server.timeout(req, 0),
           });
         }
-        return new Response(null, { status: 204 });
-      }
 
-      if (logs !== undefined && url.pathname.startsWith(LOGS_PATH_PREFIX)) {
-        return logs.handle(req, url, {
-          cors: requestGuard.corsOriginHeaders(req),
-          disableIdleTimeout: () => server.timeout(req, 0),
-        });
-      }
+        // Readiness: 200 only once everything this engine depends on is up,
+        // so a provisioner or load balancer can wait on it.
+        if (url.pathname === "/ready") {
+          const state = await readiness();
+          return new Response(JSON.stringify(state), {
+            status: state.ready ? 200 : 503,
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          });
+        }
 
-      // Readiness: 200 only once everything this engine depends on is up,
-      // so a provisioner or load balancer can wait on it.
-      if (url.pathname === "/ready") {
-        const state = await readiness();
-        return new Response(JSON.stringify(state), {
-          status: state.ready ? 200 : 503,
-          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-        });
-      }
+        // Liveness: 200 as soon as the api process answers; see /ready for
+        // whether the engine can serve.
+        if (url.pathname === "/health") {
+          logger.debug("Health check request");
+          return new Response(JSON.stringify(health()), {
+            headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+          });
+        }
 
-      // Liveness: 200 as soon as the api process answers; see /ready for
-      // whether the engine can serve.
-      if (url.pathname === "/health") {
-        logger.debug("Health check request");
-        return new Response(JSON.stringify(health()), {
-          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-        });
-      }
-
-      logger.debug("Not found", { path: url.pathname, method: req.method });
-      return new Response("Not Found", { status: 404 });
+        logger.debug("Not found", { path: url.pathname, method: req.method });
+        return new Response("Not Found", { status: 404 });
+      });
     },
     websocket: {
       message(ws, message) {
