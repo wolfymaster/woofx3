@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.84.0](https://github.com/wolfymaster/woofx3/compare/v0.83.0...v0.84.0) (2026-11-28)
+
+### Features
+
+* **api:** continue incoming traces and propagate on webhooks ([d70828a](https://github.com/wolfymaster/woofx3/commit/d70828aab508c5e371f33711a1260478e3ab77d6))
+* **barkloader-client:** send trace context with invoke ([f9de46c](https://github.com/wolfymaster/woofx3/commit/f9de46ca3b6e3f0ab0bdb6dcd0570975c2288ea3))
+* **barkloader-client:** send trace context with module invokes ([349debf](https://github.com/wolfymaster/woofx3/commit/349debfe4da39e44f4db175249efaf35b025f713))
+* **barkloader:** propagate W3C trace context on NATS events and invoke requests ([18fdc71](https://github.com/wolfymaster/woofx3/commit/18fdc71548ce9e3fce45cd6961a71cda1abdbea1))
+* **barkloader:** wrap each module function invocation in a span ([93f9f00](https://github.com/wolfymaster/woofx3/commit/93f9f008b71911e7ad21197565b08dc9a3509cef))
+* **cloudevents:** stamp traceparent and tracestate on published events ([91d369a](https://github.com/wolfymaster/woofx3/commit/91d369a29fd138de5fd1657c480a22bb9adb9470))
+* **contracts:** allow traceparent and tracestate on every event ([a8a42c3](https://github.com/wolfymaster/woofx3/commit/a8a42c3be76056cc3f8499833bc7a8bb0ed7c34b))
+* **db-client:** inject traceparent on Twirp calls ([171ced3](https://github.com/wolfymaster/woofx3/commit/171ced3802a4ab218568ad0d1460c076525204ee))
+* **db-client:** propagate trace context on Twirp calls ([067cd2b](https://github.com/wolfymaster/woofx3/commit/067cd2be19d35baa7f0a6a74e6d9658b32829d0b))
+* **db:** carry trace context through the event outbox ([0702527](https://github.com/wolfymaster/woofx3/commit/07025270a88d4560c8e50df81e649ecf3b2899ce))
+* **db:** continue the caller's trace on inbound requests ([705057f](https://github.com/wolfymaster/woofx3/commit/705057f1c1310c5b79915a4acf6006c3e126f110))
+* **logging:** add parent-based trace sampler ratio ([b4b6ffe](https://github.com/wolfymaster/woofx3/commit/b4b6ffe1a89f234ae04ef1f49e3437d86610fe7a))
+* **logging:** add StartSpanWith for links and new roots ([bfbf376](https://github.com/wolfymaster/woofx3/commit/bfbf37658db8d44591cea5200f02b01f30342de0))
+* **logging:** add W3C trace context inject/extract helpers ([abc5c1a](https://github.com/wolfymaster/woofx3/commit/abc5c1abc5d48ce335b22d2756434ef24768f488))
+* **logging:** register W3C propagator and parent-based ratio sampler ([69781b8](https://github.com/wolfymaster/woofx3/commit/69781b837a23ff9df58e210983dde2ecd0eb94f2))
+* **logging:** W3C trace context propagator and parent-based ratio sampler ([114aecf](https://github.com/wolfymaster/woofx3/commit/114aecf3df8caa2f12afc5785d7fd52f65693144))
+* **nats:** carry W3C trace context on CloudEvents ([f424039](https://github.com/wolfymaster/woofx3/commit/f4240394acdfe6ce5f6541e0e6588a36384f123b))
+* **nats:** continue the publisher's trace in subscription handlers ([75fcfa1](https://github.com/wolfymaster/woofx3/commit/75fcfa126b2c3c99f84a709b427c9311ac675315))
+* **twirp:** inject W3C trace context headers into every request ([49fc4d1](https://github.com/wolfymaster/woofx3/commit/49fc4d18f647bab01508d5aae853837c751c2d82))
+* **workflow:** trace runs and steps, linking resumed runs to their origin ([53e6127](https://github.com/wolfymaster/woofx3/commit/53e6127e4825a5bf431a70bb113b29378339b077))
+
+### Bug Fixes
+
+* set the new optional trace fields where generated events are built ([0f2511e](https://github.com/wolfymaster/woofx3/commit/0f2511e091ed2f0306f88e18ee205f1445a62199))
+
 ## [0.83.0](https://github.com/wolfymaster/woofx3/compare/v0.82.0...v0.83.0) (2026-11-27)
 
 ### Features
