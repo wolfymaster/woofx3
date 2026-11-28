@@ -4,7 +4,6 @@ import { InMemorySpanExporter, type ReadableSpan, SimpleSpanProcessor } from "@o
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 
 const exporter = new InMemorySpanExporter();
-let installed = false;
 
 /**
  * Installs a global tracer provider with an in-memory exporter and the W3C
@@ -13,12 +12,15 @@ let installed = false;
  * per process, hence the shared singleton; call `reset()` between tests.
  */
 export class TraceHarness {
+  // Static because the OTel global provider can be registered once per process.
+  private static installed = false;
+
   static install(): TraceHarness {
-    if (!installed) {
+    if (!TraceHarness.installed) {
       new NodeTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] }).register({
         propagator: new W3CTraceContextPropagator(),
       });
-      installed = true;
+      TraceHarness.installed = true;
     }
     return new TraceHarness();
   }

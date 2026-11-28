@@ -4,6 +4,8 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "target": "ES2022",
+    "baseUrl": ".",
+    "paths": { "@woofx3/common/*": ["./*"] },
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
