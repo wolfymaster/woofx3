@@ -27,7 +27,13 @@ func StartSpan(ctx context.Context, name string, attributes ...attribute.KeyValu
 // StartSpanKind is StartSpan for a span of the given kind, such as the SERVER
 // span of an inbound request.
 func StartSpanKind(ctx context.Context, kind trace.SpanKind, name string, attributes ...attribute.KeyValue) (context.Context, trace.Span) {
-	return otel.Tracer(tracerName).Start(ctx, name, trace.WithSpanKind(kind), trace.WithAttributes(attributes...))
+	return StartSpanWith(ctx, name, trace.WithSpanKind(kind), trace.WithAttributes(attributes...))
+}
+
+// StartSpanWith is StartSpan taking raw span options, for what the other
+// helpers do not cover, such as links or a new root.
+func StartSpanWith(ctx context.Context, name string, options ...trace.SpanStartOption) (context.Context, trace.Span) {
+	return otel.Tracer(tracerName).Start(ctx, name, options...)
 }
 
 // startTracing installs a TracerProvider when tracing is enabled and returns a
