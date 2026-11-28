@@ -21,7 +21,13 @@ import (
 // tracing is disabled the global provider is the OTel no-op implementation, so
 // call sites stay allocation-cheap and need no feature flag of their own.
 func StartSpan(ctx context.Context, name string, attributes ...attribute.KeyValue) (context.Context, trace.Span) {
-	return otel.Tracer(tracerName).Start(ctx, name, trace.WithAttributes(attributes...))
+	return StartSpanKind(ctx, trace.SpanKindInternal, name, attributes...)
+}
+
+// StartSpanKind is StartSpan for a span of the given kind, such as the SERVER
+// span of an inbound request.
+func StartSpanKind(ctx context.Context, kind trace.SpanKind, name string, attributes ...attribute.KeyValue) (context.Context, trace.Span) {
+	return otel.Tracer(tracerName).Start(ctx, name, trace.WithSpanKind(kind), trace.WithAttributes(attributes...))
 }
 
 // startTracing installs a TracerProvider when tracing is enabled and returns a
