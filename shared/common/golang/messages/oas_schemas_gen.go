@@ -276,6 +276,8 @@ type ChatCommandEvent struct {
 	Type        string              `json:"type"`
 	Source      EventSource         `json:"source"`
 	Time        EventTime           `json:"time"`
+	Traceparent OptTraceparent      `json:"traceparent"`
+	Tracestate  OptTracestate       `json:"tracestate"`
 	Platform    OptPlatformId       `json:"platform"`
 	// The stream session the event happened during; absent before the publisher knows one.
 	SessionId OptEntityId `json:"sessionId"`
@@ -313,6 +315,16 @@ func (s *ChatCommandEvent) GetSource() EventSource {
 // GetTime returns the value of Time.
 func (s *ChatCommandEvent) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *ChatCommandEvent) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *ChatCommandEvent) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetPlatform returns the value of Platform.
@@ -373,6 +385,16 @@ func (s *ChatCommandEvent) SetSource(val EventSource) {
 // SetTime sets the value of Time.
 func (s *ChatCommandEvent) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *ChatCommandEvent) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *ChatCommandEvent) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetPlatform sets the value of Platform.
@@ -591,6 +613,8 @@ type DatabaseRecordChangedEvent struct {
 	Type            DatabaseRecordChangedEventType      `json:"type"`
 	Source          OutboxSource                        `json:"source"`
 	Time            EventTime                           `json:"time"`
+	Traceparent     OptTraceparent                      `json:"traceparent"`
+	Tracestate      OptTracestate                       `json:"tracestate"`
 	Datacontenttype OutboxDataContentType               `json:"datacontenttype"`
 	Entityid        EntityId                            `json:"entityid"`
 	Operation       DatabaseRecordChangedEventOperation `json:"operation"`
@@ -622,6 +646,16 @@ func (s *DatabaseRecordChangedEvent) GetSource() OutboxSource {
 // GetTime returns the value of Time.
 func (s *DatabaseRecordChangedEvent) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *DatabaseRecordChangedEvent) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *DatabaseRecordChangedEvent) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetDatacontenttype returns the value of Datacontenttype.
@@ -677,6 +711,16 @@ func (s *DatabaseRecordChangedEvent) SetSource(val OutboxSource) {
 // SetTime sets the value of Time.
 func (s *DatabaseRecordChangedEvent) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *DatabaseRecordChangedEvent) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *DatabaseRecordChangedEvent) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetDatacontenttype sets the value of Datacontenttype.
@@ -1022,6 +1066,8 @@ type HeartbeatEvent struct {
 	Source      EventSource           `json:"source"`
 	Subject     HeartbeatEventSubject `json:"subject"`
 	Time        EventTime             `json:"time"`
+	Traceparent OptTraceparent        `json:"traceparent"`
+	Tracestate  OptTracestate         `json:"tracestate"`
 	Data        HeartbeatData         `json:"data"`
 }
 
@@ -1053,6 +1099,16 @@ func (s *HeartbeatEvent) GetSubject() HeartbeatEventSubject {
 // GetTime returns the value of Time.
 func (s *HeartbeatEvent) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *HeartbeatEvent) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *HeartbeatEvent) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetData returns the value of Data.
@@ -1088,6 +1144,16 @@ func (s *HeartbeatEvent) SetSubject(val HeartbeatEventSubject) {
 // SetTime sets the value of Time.
 func (s *HeartbeatEvent) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *HeartbeatEvent) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *HeartbeatEvent) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetData sets the value of Data.
@@ -1660,6 +1726,98 @@ func (o OptString) Get() (v string, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptString) Or(d string) string {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptTraceparent returns new OptTraceparent with value set to v.
+func NewOptTraceparent(v Traceparent) OptTraceparent {
+	return OptTraceparent{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptTraceparent is optional Traceparent.
+type OptTraceparent struct {
+	Value Traceparent
+	Set   bool
+}
+
+// IsSet returns true if OptTraceparent was set.
+func (o OptTraceparent) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptTraceparent) Reset() {
+	var v Traceparent
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptTraceparent) SetTo(v Traceparent) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptTraceparent) Get() (v Traceparent, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptTraceparent) Or(d Traceparent) Traceparent {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptTracestate returns new OptTracestate with value set to v.
+func NewOptTracestate(v Tracestate) OptTracestate {
+	return OptTracestate{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptTracestate is optional Tracestate.
+type OptTracestate struct {
+	Value Tracestate
+	Set   bool
+}
+
+// IsSet returns true if OptTracestate was set.
+func (o OptTracestate) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptTracestate) Reset() {
+	var v Tracestate
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptTracestate) SetTo(v Tracestate) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptTracestate) Get() (v Tracestate, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptTracestate) Or(d Tracestate) Tracestate {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -2250,6 +2408,8 @@ type SceneCommandRequest struct {
 	Type        SceneCommandRequestType `json:"type"`
 	Source      EventSource             `json:"source"`
 	Time        EventTime               `json:"time"`
+	Traceparent OptTraceparent          `json:"traceparent"`
+	Tracestate  OptTracestate           `json:"tracestate"`
 	Data        SceneCommand            `json:"data"`
 }
 
@@ -2276,6 +2436,16 @@ func (s *SceneCommandRequest) GetSource() EventSource {
 // GetTime returns the value of Time.
 func (s *SceneCommandRequest) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *SceneCommandRequest) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *SceneCommandRequest) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetData returns the value of Data.
@@ -2306,6 +2476,16 @@ func (s *SceneCommandRequest) SetSource(val EventSource) {
 // SetTime sets the value of Time.
 func (s *SceneCommandRequest) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *SceneCommandRequest) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *SceneCommandRequest) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetData sets the value of Data.
@@ -2448,6 +2628,10 @@ func (s *SubmissionViewer) SetDisplayName(val string) {
 func (s *SubmissionViewer) SetRoles(val []string) {
 	s.Roles = val
 }
+
+type Traceparent string
+
+type Tracestate string
 
 type TriggerId string
 
@@ -2618,6 +2802,8 @@ type UserPageFormSubmittedEvent struct {
 	Type            UserPageFormSubmittedEventType      `json:"type"`
 	Source          OutboxSource                        `json:"source"`
 	Time            EventTime                           `json:"time"`
+	Traceparent     OptTraceparent                      `json:"traceparent"`
+	Tracestate      OptTracestate                       `json:"tracestate"`
 	Datacontenttype OutboxDataContentType               `json:"datacontenttype"`
 	Entityid        SubmissionKey                       `json:"entityid"`
 	Operation       UserPageFormSubmittedEventOperation `json:"operation"`
@@ -2649,6 +2835,16 @@ func (s *UserPageFormSubmittedEvent) GetSource() OutboxSource {
 // GetTime returns the value of Time.
 func (s *UserPageFormSubmittedEvent) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *UserPageFormSubmittedEvent) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *UserPageFormSubmittedEvent) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetDatacontenttype returns the value of Datacontenttype.
@@ -2704,6 +2900,16 @@ func (s *UserPageFormSubmittedEvent) SetSource(val OutboxSource) {
 // SetTime sets the value of Time.
 func (s *UserPageFormSubmittedEvent) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *UserPageFormSubmittedEvent) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *UserPageFormSubmittedEvent) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetDatacontenttype sets the value of Datacontenttype.
@@ -2922,6 +3128,8 @@ type ViewerSegmentEnteredEvent struct {
 	Type            ViewerSegmentEnteredEventType      `json:"type"`
 	Source          OutboxSource                       `json:"source"`
 	Time            EventTime                          `json:"time"`
+	Traceparent     OptTraceparent                     `json:"traceparent"`
+	Tracestate      OptTracestate                      `json:"tracestate"`
 	Datacontenttype OutboxDataContentType              `json:"datacontenttype"`
 	Entityid        EntityId                           `json:"entityid"`
 	Operation       ViewerSegmentEnteredEventOperation `json:"operation"`
@@ -2953,6 +3161,16 @@ func (s *ViewerSegmentEnteredEvent) GetSource() OutboxSource {
 // GetTime returns the value of Time.
 func (s *ViewerSegmentEnteredEvent) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *ViewerSegmentEnteredEvent) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *ViewerSegmentEnteredEvent) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetDatacontenttype returns the value of Datacontenttype.
@@ -3008,6 +3226,16 @@ func (s *ViewerSegmentEnteredEvent) SetSource(val OutboxSource) {
 // SetTime sets the value of Time.
 func (s *ViewerSegmentEnteredEvent) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *ViewerSegmentEnteredEvent) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *ViewerSegmentEnteredEvent) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetDatacontenttype sets the value of Datacontenttype.
@@ -3119,6 +3347,8 @@ type ViewerSegmentLeftEvent struct {
 	Type            ViewerSegmentLeftEventType      `json:"type"`
 	Source          OutboxSource                    `json:"source"`
 	Time            EventTime                       `json:"time"`
+	Traceparent     OptTraceparent                  `json:"traceparent"`
+	Tracestate      OptTracestate                   `json:"tracestate"`
 	Datacontenttype OutboxDataContentType           `json:"datacontenttype"`
 	Entityid        EntityId                        `json:"entityid"`
 	Operation       ViewerSegmentLeftEventOperation `json:"operation"`
@@ -3150,6 +3380,16 @@ func (s *ViewerSegmentLeftEvent) GetSource() OutboxSource {
 // GetTime returns the value of Time.
 func (s *ViewerSegmentLeftEvent) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *ViewerSegmentLeftEvent) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *ViewerSegmentLeftEvent) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetDatacontenttype returns the value of Datacontenttype.
@@ -3205,6 +3445,16 @@ func (s *ViewerSegmentLeftEvent) SetSource(val OutboxSource) {
 // SetTime sets the value of Time.
 func (s *ViewerSegmentLeftEvent) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *ViewerSegmentLeftEvent) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *ViewerSegmentLeftEvent) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetDatacontenttype sets the value of Datacontenttype.
@@ -3466,6 +3716,8 @@ type WorkflowCommandExecuteRequest struct {
 	Type          WorkflowCommandExecuteRequestType `json:"type"`
 	Source        EventSource                       `json:"source"`
 	Time          EventTime                         `json:"time"`
+	Traceparent   OptTraceparent                    `json:"traceparent"`
+	Tracestate    OptTracestate                     `json:"tracestate"`
 	Platform      OptPlatform                       `json:"platform"`
 	SessionId     OptSessionId                      `json:"sessionId"`
 	TriggerId     OptTriggerId                      `json:"triggerId"`
@@ -3497,6 +3749,16 @@ func (s *WorkflowCommandExecuteRequest) GetSource() EventSource {
 // GetTime returns the value of Time.
 func (s *WorkflowCommandExecuteRequest) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *WorkflowCommandExecuteRequest) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *WorkflowCommandExecuteRequest) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetPlatform returns the value of Platform.
@@ -3552,6 +3814,16 @@ func (s *WorkflowCommandExecuteRequest) SetSource(val EventSource) {
 // SetTime sets the value of Time.
 func (s *WorkflowCommandExecuteRequest) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *WorkflowCommandExecuteRequest) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *WorkflowCommandExecuteRequest) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetPlatform sets the value of Platform.
@@ -3818,6 +4090,8 @@ type WorkflowExecuteRequest struct {
 	Type          WorkflowExecuteRequestType `json:"type"`
 	Source        EventSource                `json:"source"`
 	Time          EventTime                  `json:"time"`
+	Traceparent   OptTraceparent             `json:"traceparent"`
+	Tracestate    OptTracestate              `json:"tracestate"`
 	Platform      OptPlatform                `json:"platform"`
 	SessionId     OptSessionId               `json:"sessionId"`
 	TriggerId     OptTriggerId               `json:"triggerId"`
@@ -3849,6 +4123,16 @@ func (s *WorkflowExecuteRequest) GetSource() EventSource {
 // GetTime returns the value of Time.
 func (s *WorkflowExecuteRequest) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *WorkflowExecuteRequest) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *WorkflowExecuteRequest) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetPlatform returns the value of Platform.
@@ -3904,6 +4188,16 @@ func (s *WorkflowExecuteRequest) SetSource(val EventSource) {
 // SetTime sets the value of Time.
 func (s *WorkflowExecuteRequest) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *WorkflowExecuteRequest) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *WorkflowExecuteRequest) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetPlatform sets the value of Platform.
@@ -4025,11 +4319,13 @@ type WorkflowHealthChangedAccepted struct{}
 // CloudEvent carrying one workflow's new health.
 // Ref: #/components/schemas/WorkflowHealthChangedEvent
 type WorkflowHealthChangedEvent struct {
-	ID     EventId                          `json:"id"`
-	Type   WorkflowHealthChangedEventType   `json:"type"`
-	Source WorkflowHealthChangedEventSource `json:"source"`
-	Time   EventTime                        `json:"time"`
-	Data   WorkflowHealth                   `json:"data"`
+	ID          EventId                          `json:"id"`
+	Type        WorkflowHealthChangedEventType   `json:"type"`
+	Source      WorkflowHealthChangedEventSource `json:"source"`
+	Time        EventTime                        `json:"time"`
+	Traceparent OptTraceparent                   `json:"traceparent"`
+	Tracestate  OptTracestate                    `json:"tracestate"`
+	Data        WorkflowHealth                   `json:"data"`
 }
 
 // GetID returns the value of ID.
@@ -4050,6 +4346,16 @@ func (s *WorkflowHealthChangedEvent) GetSource() WorkflowHealthChangedEventSourc
 // GetTime returns the value of Time.
 func (s *WorkflowHealthChangedEvent) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *WorkflowHealthChangedEvent) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *WorkflowHealthChangedEvent) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetData returns the value of Data.
@@ -4075,6 +4381,16 @@ func (s *WorkflowHealthChangedEvent) SetSource(val WorkflowHealthChangedEventSou
 // SetTime sets the value of Time.
 func (s *WorkflowHealthChangedEvent) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *WorkflowHealthChangedEvent) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *WorkflowHealthChangedEvent) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetData sets the value of Data.
@@ -4221,11 +4537,13 @@ type WorkflowHealthSnapshotAccepted struct{}
 // CloudEvent carrying every workflow in error.
 // Ref: #/components/schemas/WorkflowHealthSnapshotEvent
 type WorkflowHealthSnapshotEvent struct {
-	ID     EventId                           `json:"id"`
-	Type   WorkflowHealthSnapshotEventType   `json:"type"`
-	Source WorkflowHealthSnapshotEventSource `json:"source"`
-	Time   EventTime                         `json:"time"`
-	Data   WorkflowHealthSnapshot            `json:"data"`
+	ID          EventId                           `json:"id"`
+	Type        WorkflowHealthSnapshotEventType   `json:"type"`
+	Source      WorkflowHealthSnapshotEventSource `json:"source"`
+	Time        EventTime                         `json:"time"`
+	Traceparent OptTraceparent                    `json:"traceparent"`
+	Tracestate  OptTracestate                     `json:"tracestate"`
+	Data        WorkflowHealthSnapshot            `json:"data"`
 }
 
 // GetID returns the value of ID.
@@ -4246,6 +4564,16 @@ func (s *WorkflowHealthSnapshotEvent) GetSource() WorkflowHealthSnapshotEventSou
 // GetTime returns the value of Time.
 func (s *WorkflowHealthSnapshotEvent) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *WorkflowHealthSnapshotEvent) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *WorkflowHealthSnapshotEvent) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetData returns the value of Data.
@@ -4271,6 +4599,16 @@ func (s *WorkflowHealthSnapshotEvent) SetSource(val WorkflowHealthSnapshotEventS
 // SetTime sets the value of Time.
 func (s *WorkflowHealthSnapshotEvent) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *WorkflowHealthSnapshotEvent) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *WorkflowHealthSnapshotEvent) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetData sets the value of Data.
@@ -4459,6 +4797,8 @@ type WorkflowReplayRequest struct {
 	Type          WorkflowReplayRequestType `json:"type"`
 	Source        EventSource               `json:"source"`
 	Time          EventTime                 `json:"time"`
+	Traceparent   OptTraceparent            `json:"traceparent"`
+	Tracestate    OptTracestate             `json:"tracestate"`
 	Platform      OptPlatform               `json:"platform"`
 	SessionId     OptSessionId              `json:"sessionId"`
 	TriggerId     OptTriggerId              `json:"triggerId"`
@@ -4490,6 +4830,16 @@ func (s *WorkflowReplayRequest) GetSource() EventSource {
 // GetTime returns the value of Time.
 func (s *WorkflowReplayRequest) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *WorkflowReplayRequest) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *WorkflowReplayRequest) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetPlatform returns the value of Platform.
@@ -4545,6 +4895,16 @@ func (s *WorkflowReplayRequest) SetSource(val EventSource) {
 // SetTime sets the value of Time.
 func (s *WorkflowReplayRequest) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *WorkflowReplayRequest) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *WorkflowReplayRequest) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetPlatform sets the value of Platform.
@@ -4621,6 +4981,8 @@ type WorkflowRunCancelledEvent struct {
 	Type          WorkflowRunCancelledEventType   `json:"type"`
 	Source        WorkflowRunCancelledEventSource `json:"source"`
 	Time          EventTime                       `json:"time"`
+	Traceparent   OptTraceparent                  `json:"traceparent"`
+	Tracestate    OptTracestate                   `json:"tracestate"`
 	Platform      OptPlatform                     `json:"platform"`
 	SessionId     OptSessionId                    `json:"sessionId"`
 	TriggerId     OptTriggerId                    `json:"triggerId"`
@@ -4649,6 +5011,16 @@ func (s *WorkflowRunCancelledEvent) GetSource() WorkflowRunCancelledEventSource 
 // GetTime returns the value of Time.
 func (s *WorkflowRunCancelledEvent) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *WorkflowRunCancelledEvent) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *WorkflowRunCancelledEvent) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetPlatform returns the value of Platform.
@@ -4704,6 +5076,16 @@ func (s *WorkflowRunCancelledEvent) SetSource(val WorkflowRunCancelledEventSourc
 // SetTime sets the value of Time.
 func (s *WorkflowRunCancelledEvent) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *WorkflowRunCancelledEvent) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *WorkflowRunCancelledEvent) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetPlatform sets the value of Platform.
@@ -4857,6 +5239,8 @@ type WorkflowRunCompletedEvent struct {
 	Type          WorkflowRunCompletedEventType   `json:"type"`
 	Source        WorkflowRunCompletedEventSource `json:"source"`
 	Time          EventTime                       `json:"time"`
+	Traceparent   OptTraceparent                  `json:"traceparent"`
+	Tracestate    OptTracestate                   `json:"tracestate"`
 	Platform      OptPlatform                     `json:"platform"`
 	SessionId     OptSessionId                    `json:"sessionId"`
 	TriggerId     OptTriggerId                    `json:"triggerId"`
@@ -4885,6 +5269,16 @@ func (s *WorkflowRunCompletedEvent) GetSource() WorkflowRunCompletedEventSource 
 // GetTime returns the value of Time.
 func (s *WorkflowRunCompletedEvent) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *WorkflowRunCompletedEvent) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *WorkflowRunCompletedEvent) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetPlatform returns the value of Platform.
@@ -4940,6 +5334,16 @@ func (s *WorkflowRunCompletedEvent) SetSource(val WorkflowRunCompletedEventSourc
 // SetTime sets the value of Time.
 func (s *WorkflowRunCompletedEvent) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *WorkflowRunCompletedEvent) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *WorkflowRunCompletedEvent) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetPlatform sets the value of Platform.
@@ -5055,6 +5459,8 @@ type WorkflowRunFailedEvent struct {
 	Type          WorkflowRunFailedEventType   `json:"type"`
 	Source        WorkflowRunFailedEventSource `json:"source"`
 	Time          EventTime                    `json:"time"`
+	Traceparent   OptTraceparent               `json:"traceparent"`
+	Tracestate    OptTracestate                `json:"tracestate"`
 	Platform      OptPlatform                  `json:"platform"`
 	SessionId     OptSessionId                 `json:"sessionId"`
 	TriggerId     OptTriggerId                 `json:"triggerId"`
@@ -5083,6 +5489,16 @@ func (s *WorkflowRunFailedEvent) GetSource() WorkflowRunFailedEventSource {
 // GetTime returns the value of Time.
 func (s *WorkflowRunFailedEvent) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *WorkflowRunFailedEvent) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *WorkflowRunFailedEvent) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetPlatform returns the value of Platform.
@@ -5138,6 +5554,16 @@ func (s *WorkflowRunFailedEvent) SetSource(val WorkflowRunFailedEventSource) {
 // SetTime sets the value of Time.
 func (s *WorkflowRunFailedEvent) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *WorkflowRunFailedEvent) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *WorkflowRunFailedEvent) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetPlatform sets the value of Platform.
@@ -5253,6 +5679,8 @@ type WorkflowRunStartedEvent struct {
 	Type          WorkflowRunStartedEventType   `json:"type"`
 	Source        WorkflowRunStartedEventSource `json:"source"`
 	Time          EventTime                     `json:"time"`
+	Traceparent   OptTraceparent                `json:"traceparent"`
+	Tracestate    OptTracestate                 `json:"tracestate"`
 	Platform      OptPlatform                   `json:"platform"`
 	SessionId     OptSessionId                  `json:"sessionId"`
 	TriggerId     OptTriggerId                  `json:"triggerId"`
@@ -5281,6 +5709,16 @@ func (s *WorkflowRunStartedEvent) GetSource() WorkflowRunStartedEventSource {
 // GetTime returns the value of Time.
 func (s *WorkflowRunStartedEvent) GetTime() EventTime {
 	return s.Time
+}
+
+// GetTraceparent returns the value of Traceparent.
+func (s *WorkflowRunStartedEvent) GetTraceparent() OptTraceparent {
+	return s.Traceparent
+}
+
+// GetTracestate returns the value of Tracestate.
+func (s *WorkflowRunStartedEvent) GetTracestate() OptTracestate {
+	return s.Tracestate
 }
 
 // GetPlatform returns the value of Platform.
@@ -5336,6 +5774,16 @@ func (s *WorkflowRunStartedEvent) SetSource(val WorkflowRunStartedEventSource) {
 // SetTime sets the value of Time.
 func (s *WorkflowRunStartedEvent) SetTime(val EventTime) {
 	s.Time = val
+}
+
+// SetTraceparent sets the value of Traceparent.
+func (s *WorkflowRunStartedEvent) SetTraceparent(val OptTraceparent) {
+	s.Traceparent = val
+}
+
+// SetTracestate sets the value of Tracestate.
+func (s *WorkflowRunStartedEvent) SetTracestate(val OptTracestate) {
+	s.Tracestate = val
 }
 
 // SetPlatform sets the value of Platform.

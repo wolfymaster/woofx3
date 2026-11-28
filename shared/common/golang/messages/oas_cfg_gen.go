@@ -7,6 +7,7 @@ import (
 )
 
 var regexMap = map[string]ogenregex.Regexp{
+	"^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$":                        ogenregex.MustCompile("^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"),
 	"^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$": ogenregex.MustCompile("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$"),
 	"^chat\\.command\\.[^.*>\\s]+$":                                              ogenregex.MustCompile("^chat\\.command\\.[^.*>\\s]+$"),
 }
