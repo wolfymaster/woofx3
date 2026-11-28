@@ -1,3 +1,4 @@
+import { context, propagation } from "@opentelemetry/api";
 import { getCurrentSessionId } from "./session";
 
 export interface BaseEvent<T> {
@@ -59,7 +60,22 @@ export interface BaseEvent<T> {
    * Absent on an event nothing in a workflow caused.
    */
   workflowChain?: string;
+  /**
+   * CloudEvents Distributed Tracing extension: the W3C `traceparent` of the
+   * span that published this event. Stamped by `Event()` from the active
+   * context; an explicit value wins. Engine-owned: modules never read or set it.
+   */
+  traceparent?: string;
+  /** CloudEvents Distributed Tracing extension: W3C `tracestate`, paired with `traceparent`. */
+  tracestate?: string;
   data: T;
+}
+
+/** Empty when nothing is recording, so untraced processes emit no trace attributes. */
+function activeTraceAttributes(): Pick<BaseEvent<unknown>, "traceparent" | "tracestate"> {
+  const carrier: Record<string, string> = {};
+  propagation.inject(context.active(), carrier);
+  return { traceparent: carrier.traceparent, tracestate: carrier.tracestate };
 }
 
 export default function Event<T>(opts: Partial<BaseEvent<T>>, data: T): BaseEvent<T> {
@@ -78,6 +94,8 @@ export default function Event<T>(opts: Partial<BaseEvent<T>>, data: T): BaseEven
     // drops out at JSON.stringify, so an unknown session omits the attribute
     // rather than emitting a null.
     sessionId: getCurrentSessionId(),
+    // Skipped when the caller passes a traceparent, so its tracestate is never mixed with ours.
+    ...(opts.traceparent === undefined ? activeTraceAttributes() : {}),
     data,
     ...opts,
   };

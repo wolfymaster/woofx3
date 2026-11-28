@@ -24,6 +24,8 @@ interface BaseEvent<T> {
   time: Date;           // event timestamp
   platform?: string;    // extension attribute: where the event came from
   workflowChain?: string; // extension attribute: the workflow runs that led to it
+  traceparent?: string; // extension attribute: W3C trace context of the publishing span
+  tracestate?: string;  // extension attribute: W3C tracestate, paired with traceparent
   data: T;              // event-specific payload
 }
 ```
@@ -41,6 +43,14 @@ comma-joined workflow ids. The workflow engine refuses a run whose chain is too
 long, which stops a workflow that keeps triggering itself. Absent on an event
 nothing in a workflow caused; a `user.message` carries it when the line is one
 a workflow said through the platform gateway.
+
+`traceparent` and `tracestate` are the CloudEvents
+[Distributed Tracing extension](https://github.com/cloudevents/spec/blob/main/cloudevents/extensions/distributed-tracing.md),
+carried as top-level lowercase attributes in W3C Trace Context format. `Event()`
+stamps them from the active span, so a subscriber's handler span continues the
+publisher's trace; an explicit `traceparent` in the options wins. They are
+absent when the publisher has no active span. Trace context is engine-owned:
+module code never reads or sets these attributes.
 
 ## EventFactory
 
