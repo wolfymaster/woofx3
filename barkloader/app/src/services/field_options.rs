@@ -4,7 +4,9 @@ use jsonschema::Validator;
 use lib_sandbox::SandboxFactory;
 use lib_sandbox::models::request::InvokeRequest;
 use serde_json::{Value, json};
-use tracing::{error, info, warn};
+use tracing::{Instrument, error, info, warn};
+
+use super::nats::consumer_span;
 use woofx3_cloudevents::messages_gen::{
     DOCUMENT, ModuleFieldOptionsRequest, ModuleFieldOptionsRequestType,
 };
@@ -95,49 +97,53 @@ pub async fn run_field_options_responder(client: Client, sandbox: SandboxFactory
 
         let client_clone = client.clone();
         let sandbox_clone = sandbox.clone();
+        let consume_span = consumer_span(&subject, &msg.payload);
 
-        tokio::spawn(async move {
-            let fn_id = function_id.clone();
-            let result = sandbox_clone
-                .invoke_blocking(InvokeRequest {
-                    function: fn_id,
-                    event: json!({}),
-                    user: None,
-                    params: json!({}),
-                    workflow_chain: None,
-                    timeout_ms: None,
-                })
-                .await;
+        tokio::spawn(
+            async move {
+                let fn_id = function_id.clone();
+                let result = sandbox_clone
+                    .invoke_blocking(InvokeRequest {
+                        function: fn_id,
+                        event: json!({}),
+                        user: None,
+                        params: json!({}),
+                        workflow_chain: None,
+                        timeout_ms: None,
+                    })
+                    .await;
 
-            let reply_bytes = match result {
-                Ok(value) => serde_json::to_vec(&value).unwrap_or_else(|_| b"[]".to_vec()),
-                Err(lib_sandbox::InvokeBlockingError::TaskJoin(e)) => {
+                let reply_bytes = match result {
+                    Ok(value) => serde_json::to_vec(&value).unwrap_or_else(|_| b"[]".to_vec()),
+                    Err(lib_sandbox::InvokeBlockingError::TaskJoin(e)) => {
+                        error!(
+                            "field_options: spawn_blocking for {} failed: {}",
+                            function_id, e
+                        );
+                        b"[]".to_vec()
+                    }
+                    Err(e @ lib_sandbox::InvokeBlockingError::Busy { .. }) => {
+                        warn!("field_options: refused {}: {}", function_id, e);
+                        b"[]".to_vec()
+                    }
+                    Err(e) => {
+                        error!("field_options: invoke {} failed: {}", function_id, e);
+                        b"[]".to_vec()
+                    }
+                };
+
+                if let Err(e) = client_clone
+                    .publish(reply_subject, reply_bytes.into())
+                    .await
+                {
                     error!(
-                        "field_options: spawn_blocking for {} failed: {}",
+                        "field_options: failed to send reply for {}: {}",
                         function_id, e
                     );
-                    b"[]".to_vec()
                 }
-                Err(e @ lib_sandbox::InvokeBlockingError::Busy { .. }) => {
-                    warn!("field_options: refused {}: {}", function_id, e);
-                    b"[]".to_vec()
-                }
-                Err(e) => {
-                    error!("field_options: invoke {} failed: {}", function_id, e);
-                    b"[]".to_vec()
-                }
-            };
-
-            if let Err(e) = client_clone
-                .publish(reply_subject, reply_bytes.into())
-                .await
-            {
-                error!(
-                    "field_options: failed to send reply for {}: {}",
-                    function_id, e
-                );
             }
-        });
+            .instrument(consume_span),
+        );
     }
 
     warn!("field_options: subscriber for {} closed", subject);
